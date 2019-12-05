@@ -14,27 +14,21 @@ class InvalidRequestError(Model):
     Do not edit the class manually.
     """
 
-    def __init__(self, error: str=None, pointer: str=None):
+    def __init__(self, error: str = None, pointer: str = None):
         """InvalidRequestError - a model defined in OpenAPI
 
         :param error: The error of this InvalidRequestError.
         :param pointer: The pointer of this InvalidRequestError.
         """
-        self.openapi_types = {
-            'error': str,
-            'pointer': str
-        }
+        self.openapi_types = {"error": str, "pointer": str}
 
-        self.attribute_map = {
-            'error': 'error',
-            'pointer': 'pointer'
-        }
+        self.attribute_map = {"error": "error", "pointer": "pointer"}
 
         self._error = error
         self._pointer = pointer
 
     @classmethod
-    def from_dict(cls, dikt: dict) -> 'InvalidRequestError':
+    def from_dict(cls, dikt: dict) -> "InvalidRequestError":
         """Returns the dict as a model
 
         :param dikt: A dict.

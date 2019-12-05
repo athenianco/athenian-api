@@ -16,26 +16,33 @@ async def test_calc_metrics(client):
     Calculate metrics.
     """
     body = {
-  "for" : [ {
-    "developers" : [ "github.com/vmarkovtsev", "github.com/mcuadros" ],
-    "repositories" : [ "github.com/src-d/hercules", "github.com/athenianco/athenian-api" ]
-  }, {
-    "developers" : [ "github.com/vmarkovtsev", "github.com/mcuadros" ],
-    "repositories" : [ "github.com/src-d/hercules", "github.com/athenianco/athenian-api" ]
-  } ],
-  "metrics" : [ "[\"pr-lead-time\"]", "[\"pr-lead-time\"]" ],
-  "date_to" : "2000-01-23",
-  "date_from" : "2000-01-23"
-}
-    headers = { 
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
+        "for": [
+            {
+                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "repositories": [
+                    "github.com/src-d/hercules",
+                    "github.com/athenianco/athenian-api",
+                ],
+            },
+            {
+                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "repositories": [
+                    "github.com/src-d/hercules",
+                    "github.com/athenianco/athenian-api",
+                ],
+            },
+        ],
+        "metrics": ['["pr-lead-time"]', '["pr-lead-time"]'],
+        "date_to": "2000-01-23",
+        "date_from": "2000-01-23",
+    }
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
     }
     response = await client.request(
-        method='POST',
-        path='/v1/metrics',
-        headers=headers,
-        json=body,
-        )
-    assert response.status == 200, 'Response body is : ' + (await response.read()).decode('utf-8')
-
+        method="POST", path="/v1/metrics", headers=headers, json=body,
+    )
+    assert response.status == 200, "Response body is : " + (
+        await response.read()
+    ).decode("utf-8")

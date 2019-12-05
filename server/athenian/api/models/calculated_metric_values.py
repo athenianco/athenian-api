@@ -14,27 +14,21 @@ class CalculatedMetricValues(Model):
     Do not edit the class manually.
     """
 
-    def __init__(self, date: date=None, values: List[float]=None):
+    def __init__(self, date: date = None, values: List[float] = None):
         """CalculatedMetricValues - a model defined in OpenAPI
 
         :param date: The date of this CalculatedMetricValues.
         :param values: The values of this CalculatedMetricValues.
         """
-        self.openapi_types = {
-            'date': date,
-            'values': List[float]
-        }
+        self.openapi_types = {"date": date, "values": List[float]}
 
-        self.attribute_map = {
-            'date': 'date',
-            'values': 'values'
-        }
+        self.attribute_map = {"date": "date", "values": "values"}
 
         self._date = date
         self._values = values
 
     @classmethod
-    def from_dict(cls, dikt: dict) -> 'CalculatedMetricValues':
+    def from_dict(cls, dikt: dict) -> "CalculatedMetricValues":
         """Returns the dict as a model
 
         :param dikt: A dict.

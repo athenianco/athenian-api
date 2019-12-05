@@ -17,7 +17,14 @@ class MetricsRequest(Model):
     Do not edit the class manually.
     """
 
-    def __init__(self, _for: List[ForSet]=None, metrics: List[MetricID]=None, date_from: date=None, date_to: date=None, granularity: Granularity=None):
+    def __init__(
+        self,
+        _for: List[ForSet] = None,
+        metrics: List[MetricID] = None,
+        date_from: date = None,
+        date_to: date = None,
+        granularity: Granularity = None,
+    ):
         """MetricsRequest - a model defined in OpenAPI
 
         :param _for: The _for of this MetricsRequest.
@@ -27,19 +34,19 @@ class MetricsRequest(Model):
         :param granularity: The granularity of this MetricsRequest.
         """
         self.openapi_types = {
-            '_for': List[ForSet],
-            'metrics': List[MetricID],
-            'date_from': date,
-            'date_to': date,
-            'granularity': Granularity
+            "_for": List[ForSet],
+            "metrics": List[MetricID],
+            "date_from": date,
+            "date_to": date,
+            "granularity": Granularity,
         }
 
         self.attribute_map = {
-            '_for': 'for',
-            'metrics': 'metrics',
-            'date_from': 'date_from',
-            'date_to': 'date_to',
-            'granularity': 'granularity'
+            "_for": "for",
+            "metrics": "metrics",
+            "date_from": "date_from",
+            "date_to": "date_to",
+            "granularity": "granularity",
         }
 
         self.__for = _for
@@ -49,7 +56,7 @@ class MetricsRequest(Model):
         self._granularity = granularity
 
     @classmethod
-    def from_dict(cls, dikt: dict) -> 'MetricsRequest':
+    def from_dict(cls, dikt: dict) -> "MetricsRequest":
         """Returns the dict as a model
 
         :param dikt: A dict.

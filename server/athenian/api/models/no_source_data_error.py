@@ -15,27 +15,21 @@ class NoSourceDataError(Model):
     Do not edit the class manually.
     """
 
-    def __init__(self, error: str=None, repositories: RepositorySet=None):
+    def __init__(self, error: str = None, repositories: RepositorySet = None):
         """NoSourceDataError - a model defined in OpenAPI
 
         :param error: The error of this NoSourceDataError.
         :param repositories: The repositories of this NoSourceDataError.
         """
-        self.openapi_types = {
-            'error': str,
-            'repositories': RepositorySet
-        }
+        self.openapi_types = {"error": str, "repositories": RepositorySet}
 
-        self.attribute_map = {
-            'error': 'error',
-            'repositories': 'repositories'
-        }
+        self.attribute_map = {"error": "error", "repositories": "repositories"}
 
         self._error = error
         self._repositories = repositories
 
     @classmethod
-    def from_dict(cls, dikt: dict) -> 'NoSourceDataError':
+    def from_dict(cls, dikt: dict) -> "NoSourceDataError":
         """Returns the dict as a model
 
         :param dikt: A dict.
