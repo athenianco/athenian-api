@@ -6,7 +6,7 @@ and is implemented in [aiohttp](https://github.com/aio-libs/aiohttp) (Python).
 
 ### Schema
 
-The API schema is [`spec/openapi.yaml`](spec/openapi.yaml). You can quickly view it in [editor.swagger.io/](https://editor.swagger.io/).
+The API schema is [`spec/openapi.yaml`](spec/openapi.yaml). You can quickly view it in [editor.swagger.io](https://editor.swagger.io/).
 
 ### Server
 
