@@ -1,4 +1,5 @@
 import datetime
+import json
 
 import typing
 from typing import Union
@@ -129,3 +130,11 @@ def _deserialize_dict(data: dict, boxed_type) -> dict:
     :return: deserialized dict.
     """
     return {k: _deserialize(v, boxed_type) for k, v in data.items()}
+
+
+class FriendlyJson:
+    @staticmethod
+    def dumps(data, **kwargs):
+        return json.dumps(data, default=str, **kwargs)
+
+    loads = json.loads

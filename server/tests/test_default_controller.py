@@ -23,7 +23,7 @@ async def test_calc_metrics(client):
     "developers" : [ "github.com/vmarkovtsev", "github.com/mcuadros" ],
     "repositories" : [ "github.com/src-d/hercules", "github.com/athenianco/athenian-api" ]
   } ],
-  "metrics" : [ null, null ],
+  "metrics" : [ "[\"pr-lead-time\"]", "[\"pr-lead-time\"]" ],
   "date_to" : "2000-01-23",
   "date_from" : "2000-01-23"
 }

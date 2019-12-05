@@ -1,15 +1,18 @@
 import os
 import connexion
 
+from athenian.api.util import FriendlyJson
+
 
 def main():
     options = {
         "swagger_ui": True
         }
-    specification_dir = os.path.join(os.path.dirname(__file__), 'openapi')
+    specification_dir = os.path.join(os.path.dirname(__file__), "openapi")
     app = connexion.AioHttpApp(__name__, specification_dir=specification_dir, options=options)
-    app.add_api('openapi.yaml',
-                arguments={'title': 'Athenian Dashboard API'},
+    app.add_api("openapi.yaml",
+                arguments={"title": "Athenian Dashboard API"},
                 pythonic_params=True,
-                pass_context_arg_name='request')
+                pass_context_arg_name="request")
+    connexion.AioHttpApi.jsonifier.json = FriendlyJson
     app.run(port=8080)

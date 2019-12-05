@@ -102,6 +102,8 @@ class CalculatedMetrics(Model):
         :param metrics: The metrics of this CalculatedMetrics.
         :type metrics: List[MetricID]
         """
+        if metrics is None:
+            raise ValueError("Invalid value for `metrics`, must not be `None`")
 
         self._metrics = metrics
 

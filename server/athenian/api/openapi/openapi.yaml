@@ -75,6 +75,7 @@ components:
       - pr-time-to-merge
       - pr-time-to-release
       - pr-lead-time
+      example: pr-lead-time
       type: string
     DeveloperID:
       description: |
@@ -144,8 +145,8 @@ components:
           - github.com/src-d/hercules
           - github.com/athenianco/athenian-api
         metrics:
-        - null
-        - null
+        - pr-lead-time
+        - pr-lead-time
         date_to: 2000-01-23
         date_from: 2000-01-23
       properties:
@@ -209,8 +210,8 @@ components:
     CalculatedMetrics:
       example:
         metrics:
-        - null
-        - null
+        - pr-lead-time
+        - pr-lead-time
         date_to: 2000-01-23
         calculated:
         - values:
@@ -272,7 +273,7 @@ components:
       - date_from
       - date_to
       - granularity
-      - matrics
+      - metrics
       type: object
     CalculatedMetric_values:
       example:
