@@ -4,7 +4,7 @@ import typing
 
 from athenian.api import util
 
-T = typing.TypeVar('T')
+T = typing.TypeVar("T")
 
 
 class Model(object):
@@ -31,18 +31,20 @@ class Model(object):
             if value is None:
                 continue
             if isinstance(value, list):
-                result[json_key] = list(map(
-                    lambda x: x.to_dict() if hasattr(x, "to_dict") else x,
-                    value
-                ))
+                result[json_key] = list(
+                    map(lambda x: x.to_dict() if hasattr(x, "to_dict") else x, value)
+                )
             elif hasattr(value, "to_dict"):
                 result[json_key] = value.to_dict()
             elif isinstance(value, dict):
-                result[json_key] = dict(map(
-                    lambda item: (item[0], item[1].to_dict())
-                    if hasattr(item[1], "to_dict") else item,
-                    value.items()
-                ))
+                result[json_key] = dict(
+                    map(
+                        lambda item: (item[0], item[1].to_dict())
+                        if hasattr(item[1], "to_dict")
+                        else item,
+                        value.items(),
+                    )
+                )
             else:
                 result[json_key] = value
 

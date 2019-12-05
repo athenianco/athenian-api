@@ -25,14 +25,12 @@ class Granularity(Model):
         """Granularity - a model defined in OpenAPI
 
         """
-        self.openapi_types = {
-        }
+        self.openapi_types = {}
 
-        self.attribute_map = {
-        }
+        self.attribute_map = {}
 
     @classmethod
-    def from_dict(cls, dikt: dict) -> 'Granularity':
+    def from_dict(cls, dikt: dict) -> "Granularity":
         """Returns the dict as a model
 
         :param dikt: A dict.

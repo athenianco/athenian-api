@@ -5,11 +5,13 @@ import typing
 from typing import Union
 from athenian.api import typing_utils
 
-T = typing.TypeVar('T')
+T = typing.TypeVar("T")
 Class = typing.Type[T]
 
 
-def _deserialize(data: Union[dict, list, str], klass: Union[Class, str]) -> Union[dict, list, Class, int, float, str, bool, datetime.date, datetime.datetime]:
+def _deserialize(
+    data: Union[dict, list, str], klass: Union[Class, str]
+) -> Union[dict, list, Class, int, float, str, bool, datetime.date, datetime.datetime]:
     """Deserializes dict, list, str into an object.
 
     :param data: dict, list or str.
@@ -68,6 +70,7 @@ def deserialize_date(string: str) -> datetime.date:
     """
     try:
         from dateutil.parser import parse
+
         return parse(string).date()
     except ImportError:
         return string
@@ -83,6 +86,7 @@ def deserialize_datetime(string: str) -> datetime.datetime:
     """
     try:
         from dateutil.parser import parse
+
         return parse(string)
     except ImportError:
         return string

@@ -16,27 +16,26 @@ class ForSet(Model):
     Do not edit the class manually.
     """
 
-    def __init__(self, developers: DeveloperSet=None, repositories: RepositorySet=None):
+    def __init__(
+        self, developers: DeveloperSet = None, repositories: RepositorySet = None
+    ):
         """ForSet - a model defined in OpenAPI
 
         :param developers: The developers of this ForSet.
         :param repositories: The repositories of this ForSet.
         """
-        self.openapi_types = {
-            'developers': DeveloperSet,
-            'repositories': RepositorySet
-        }
+        self.openapi_types = {"developers": DeveloperSet, "repositories": RepositorySet}
 
         self.attribute_map = {
-            'developers': 'developers',
-            'repositories': 'repositories'
+            "developers": "developers",
+            "repositories": "repositories",
         }
 
         self._developers = developers
         self._repositories = repositories
 
     @classmethod
-    def from_dict(cls, dikt: dict) -> 'ForSet':
+    def from_dict(cls, dikt: dict) -> "ForSet":
         """Returns the dict as a model
 
         :param dikt: A dict.

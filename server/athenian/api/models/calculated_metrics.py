@@ -17,7 +17,14 @@ class CalculatedMetrics(Model):
     Do not edit the class manually.
     """
 
-    def __init__(self, calculated: List[CalculatedMetric]=None, metrics: List[MetricID]=None, date_from: date=None, date_to: date=None, granularity: Granularity=None):
+    def __init__(
+        self,
+        calculated: List[CalculatedMetric] = None,
+        metrics: List[MetricID] = None,
+        date_from: date = None,
+        date_to: date = None,
+        granularity: Granularity = None,
+    ):
         """CalculatedMetrics - a model defined in OpenAPI
 
         :param calculated: The calculated of this CalculatedMetrics.
@@ -27,19 +34,19 @@ class CalculatedMetrics(Model):
         :param granularity: The granularity of this CalculatedMetrics.
         """
         self.openapi_types = {
-            'calculated': List[CalculatedMetric],
-            'metrics': List[MetricID],
-            'date_from': date,
-            'date_to': date,
-            'granularity': Granularity
+            "calculated": List[CalculatedMetric],
+            "metrics": List[MetricID],
+            "date_from": date,
+            "date_to": date,
+            "granularity": Granularity,
         }
 
         self.attribute_map = {
-            'calculated': 'calculated',
-            'metrics': 'metrics',
-            'date_from': 'date_from',
-            'date_to': 'date_to',
-            'granularity': 'granularity'
+            "calculated": "calculated",
+            "metrics": "metrics",
+            "date_from": "date_from",
+            "date_to": "date_to",
+            "granularity": "granularity",
         }
 
         self._calculated = calculated
@@ -49,7 +56,7 @@ class CalculatedMetrics(Model):
         self._granularity = granularity
 
     @classmethod
-    def from_dict(cls, dikt: dict) -> 'CalculatedMetrics':
+    def from_dict(cls, dikt: dict) -> "CalculatedMetrics":
         """Returns the dict as a model
 
         :param dikt: A dict.

@@ -26,14 +26,12 @@ class MetricID(Model):
         """MetricID - a model defined in OpenAPI
 
         """
-        self.openapi_types = {
-        }
+        self.openapi_types = {}
 
-        self.attribute_map = {
-        }
+        self.attribute_map = {}
 
     @classmethod
-    def from_dict(cls, dikt: dict) -> 'MetricID':
+    def from_dict(cls, dikt: dict) -> "MetricID":
         """Returns the dict as a model
 
         :param dikt: A dict.

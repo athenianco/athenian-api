@@ -16,27 +16,23 @@ class CalculatedMetric(Model):
     Do not edit the class manually.
     """
 
-    def __init__(self, _for: ForSet=None, values: List[CalculatedMetricValues]=None):
+    def __init__(
+        self, _for: ForSet = None, values: List[CalculatedMetricValues] = None
+    ):
         """CalculatedMetric - a model defined in OpenAPI
 
         :param _for: The _for of this CalculatedMetric.
         :param values: The values of this CalculatedMetric.
         """
-        self.openapi_types = {
-            '_for': ForSet,
-            'values': List[CalculatedMetricValues]
-        }
+        self.openapi_types = {"_for": ForSet, "values": List[CalculatedMetricValues]}
 
-        self.attribute_map = {
-            '_for': 'for',
-            'values': 'values'
-        }
+        self.attribute_map = {"_for": "for", "values": "values"}
 
         self.__for = _for
         self._values = values
 
     @classmethod
-    def from_dict(cls, dikt: dict) -> 'CalculatedMetric':
+    def from_dict(cls, dikt: dict) -> "CalculatedMetric":
         """Returns the dict as a model
 
         :param dikt: A dict.
