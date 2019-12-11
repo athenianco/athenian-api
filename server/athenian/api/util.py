@@ -1,8 +1,8 @@
 import datetime
 import json
-
 import typing
 from typing import Union
+
 from athenian.api import typing_utils
 
 T = typing.TypeVar("T")
@@ -10,7 +10,7 @@ Class = typing.Type[T]
 
 
 def _deserialize(
-    data: Union[dict, list, str], klass: Union[Class, str]
+    data: Union[dict, list, str], klass: Union[Class, str],
 ) -> Union[dict, list, Class, int, float, str, bool, datetime.date, datetime.datetime]:
     """Deserializes dict, list, str into an object.
 
@@ -137,8 +137,11 @@ def _deserialize_dict(data: dict, boxed_type) -> dict:
 
 
 class FriendlyJson:
+    """Allows to serialize datetime.datetime and datetime.date to JSON."""
+
     @staticmethod
     def dumps(data, **kwargs):
+        """Wrap json.dumps to str() unsupported objects."""
         return json.dumps(data, default=str, **kwargs)
 
     loads = json.loads

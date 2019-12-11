@@ -1,0 +1,21 @@
+language: python
+python: 3.7
+sudo: true
+dist: bionic
+cache: pip
+before_cache:
+  - chown -R travis:travis $HOME/.cache/pip
+
+install:
+  - cd server
+  - pip install -r requirements.txt
+  - pip install -r lint-requirements.txt
+  - pip install -r test-requirements.txt
+  - pip install -e .
+
+script:
+  - flake8
+  - pytest
+
+notifications:
+  email: false

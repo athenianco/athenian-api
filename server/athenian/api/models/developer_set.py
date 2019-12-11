@@ -1,11 +1,7 @@
 # coding: utf-8
 
-from datetime import date, datetime
-
-from typing import List, Dict, Type
-
-from athenian.api.models.base_model_ import Model
 from athenian.api import util
+from athenian.api.models.base_model_ import Model
 
 
 class DeveloperSet(Model):
@@ -15,9 +11,7 @@ class DeveloperSet(Model):
     """
 
     def __init__(self):
-        """DeveloperSet - a model defined in OpenAPI
-
-        """
+        """DeveloperSet - a model defined in OpenAPI"""
         self.openapi_types = {}
 
         self.attribute_map = {}

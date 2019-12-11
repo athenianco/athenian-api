@@ -129,6 +129,7 @@ components:
       - week
       - month
       type: string
+      example: day
     MetricsRequest:
       example:
         for:
@@ -149,6 +150,7 @@ components:
         - pr-lead-time
         date_to: 2000-01-23
         date_from: 2000-01-23
+        granularity: day
       properties:
         for:
           description: Sets of developers and repositories to calculate the metrics
@@ -213,6 +215,7 @@ components:
         - pr-lead-time
         - pr-lead-time
         date_to: 2000-01-23
+        granularity: day
         calculated:
         - values:
           - date: 2000-01-23

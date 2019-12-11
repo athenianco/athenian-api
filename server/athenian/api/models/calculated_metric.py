@@ -1,13 +1,11 @@
 # coding: utf-8
 
-from datetime import date, datetime
+from typing import List
 
-from typing import List, Dict, Type
-
+from athenian.api import util
 from athenian.api.models.base_model_ import Model
 from athenian.api.models.calculated_metric_values import CalculatedMetricValues
 from athenian.api.models.for_set import ForSet
-from athenian.api import util
 
 
 class CalculatedMetric(Model):
@@ -17,7 +15,7 @@ class CalculatedMetric(Model):
     """
 
     def __init__(
-        self, _for: ForSet = None, values: List[CalculatedMetricValues] = None
+        self, _for: ForSet = None, values: List[CalculatedMetricValues] = None,
     ):
         """CalculatedMetric - a model defined in OpenAPI
 
@@ -44,7 +42,6 @@ class CalculatedMetric(Model):
     def _for(self):
         """Gets the _for of this CalculatedMetric.
 
-
         :return: The _for of this CalculatedMetric.
         :rtype: ForSet
         """
@@ -53,7 +50,6 @@ class CalculatedMetric(Model):
     @_for.setter
     def _for(self, _for):
         """Sets the _for of this CalculatedMetric.
-
 
         :param _for: The _for of this CalculatedMetric.
         :type _for: ForSet
@@ -67,7 +63,6 @@ class CalculatedMetric(Model):
     def values(self):
         """Gets the values of this CalculatedMetric.
 
-
         :return: The values of this CalculatedMetric.
         :rtype: List[CalculatedMetricValues]
         """
@@ -76,7 +71,6 @@ class CalculatedMetric(Model):
     @values.setter
     def values(self, values):
         """Sets the values of this CalculatedMetric.
-
 
         :param values: The values of this CalculatedMetric.
         :type values: List[CalculatedMetricValues]
