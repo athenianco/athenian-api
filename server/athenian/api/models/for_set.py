@@ -1,13 +1,9 @@
 # coding: utf-8
 
-from datetime import date, datetime
-
-from typing import List, Dict, Type
-
+from athenian.api import util
 from athenian.api.models.base_model_ import Model
 from athenian.api.models.developer_set import DeveloperSet
 from athenian.api.models.repository_set import RepositorySet
-from athenian.api import util
 
 
 class ForSet(Model):
@@ -17,7 +13,7 @@ class ForSet(Model):
     """
 
     def __init__(
-        self, developers: DeveloperSet = None, repositories: RepositorySet = None
+        self, developers: DeveloperSet = None, repositories: RepositorySet = None,
     ):
         """ForSet - a model defined in OpenAPI
 
@@ -47,7 +43,6 @@ class ForSet(Model):
     def developers(self):
         """Gets the developers of this ForSet.
 
-
         :return: The developers of this ForSet.
         :rtype: DeveloperSet
         """
@@ -56,7 +51,6 @@ class ForSet(Model):
     @developers.setter
     def developers(self, developers):
         """Sets the developers of this ForSet.
-
 
         :param developers: The developers of this ForSet.
         :type developers: DeveloperSet
@@ -70,7 +64,6 @@ class ForSet(Model):
     def repositories(self):
         """Gets the repositories of this ForSet.
 
-
         :return: The repositories of this ForSet.
         :rtype: RepositorySet
         """
@@ -79,7 +72,6 @@ class ForSet(Model):
     @repositories.setter
     def repositories(self, repositories):
         """Sets the repositories of this ForSet.
-
 
         :param repositories: The repositories of this ForSet.
         :type repositories: RepositorySet

@@ -32,9 +32,10 @@ async def test_calc_metrics(client):
                 ],
             },
         ],
-        "metrics": ['["pr-lead-time"]', '["pr-lead-time"]'],
+        "metrics": ["pr-lead-time", "pr-lead-time"],
         "date_to": "2000-01-23",
         "date_from": "2000-01-23",
+        "granularity": "day",
     }
     headers = {
         "Accept": "application/json",
@@ -43,6 +44,6 @@ async def test_calc_metrics(client):
     response = await client.request(
         method="POST", path="/v1/metrics", headers=headers, json=body,
     )
-    assert response.status == 200, "Response body is : " + (
-        await response.read()
-    ).decode("utf-8")
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    print(body)

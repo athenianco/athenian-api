@@ -1,11 +1,7 @@
 # coding: utf-8
 
-from datetime import date, datetime
-
-from typing import List, Dict, Type
-
-from athenian.api.models.base_model_ import Model
 from athenian.api import util
+from athenian.api.models.base_model_ import Model
 
 
 class MetricID(Model):
@@ -23,9 +19,7 @@ class MetricID(Model):
     LEAD_TIME = "pr-lead-time"
 
     def __init__(self):
-        """MetricID - a model defined in OpenAPI
-
-        """
+        """MetricID - a model defined in OpenAPI"""
         self.openapi_types = {}
 
         self.attribute_map = {}

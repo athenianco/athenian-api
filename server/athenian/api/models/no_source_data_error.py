@@ -1,12 +1,8 @@
 # coding: utf-8
 
-from datetime import date, datetime
-
-from typing import List, Dict, Type
-
+from athenian.api import util
 from athenian.api.models.base_model_ import Model
 from athenian.api.models.repository_set import RepositorySet
-from athenian.api import util
 
 
 class NoSourceDataError(Model):
@@ -66,7 +62,6 @@ class NoSourceDataError(Model):
     def repositories(self):
         """Gets the repositories of this NoSourceDataError.
 
-
         :return: The repositories of this NoSourceDataError.
         :rtype: RepositorySet
         """
@@ -75,7 +70,6 @@ class NoSourceDataError(Model):
     @repositories.setter
     def repositories(self, repositories):
         """Sets the repositories of this NoSourceDataError.
-
 
         :param repositories: The repositories of this NoSourceDataError.
         :type repositories: RepositorySet

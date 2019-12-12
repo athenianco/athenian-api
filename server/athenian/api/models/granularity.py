@@ -1,11 +1,7 @@
 # coding: utf-8
 
-from datetime import date, datetime
-
-from typing import List, Dict, Type
-
-from athenian.api.models.base_model_ import Model
 from athenian.api import util
+from athenian.api.models.base_model_ import Model
 
 
 class Granularity(Model):
@@ -22,9 +18,7 @@ class Granularity(Model):
     MONTH = "month"
 
     def __init__(self):
-        """Granularity - a model defined in OpenAPI
-
-        """
+        """Granularity - a model defined in OpenAPI"""
         self.openapi_types = {}
 
         self.attribute_map = {}

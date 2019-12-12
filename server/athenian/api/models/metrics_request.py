@@ -1,14 +1,13 @@
 # coding: utf-8
 
-from datetime import date, datetime
+from datetime import date
+from typing import List
 
-from typing import List, Dict, Type
-
+from athenian.api import util
 from athenian.api.models.base_model_ import Model
 from athenian.api.models.for_set import ForSet
 from athenian.api.models.granularity import Granularity
 from athenian.api.models.metric_id import MetricID
-from athenian.api import util
 
 
 class MetricsRequest(Model):
@@ -168,7 +167,6 @@ class MetricsRequest(Model):
     def granularity(self):
         """Gets the granularity of this MetricsRequest.
 
-
         :return: The granularity of this MetricsRequest.
         :rtype: Granularity
         """
@@ -177,7 +175,6 @@ class MetricsRequest(Model):
     @granularity.setter
     def granularity(self, granularity):
         """Sets the granularity of this MetricsRequest.
-
 
         :param granularity: The granularity of this MetricsRequest.
         :type granularity: Granularity

@@ -1,11 +1,10 @@
 # coding: utf-8
 
-from datetime import date, datetime
+from datetime import date
+from typing import List
 
-from typing import List, Dict, Type
-
-from athenian.api.models.base_model_ import Model
 from athenian.api import util
+from athenian.api.models.base_model_ import Model
 
 
 class CalculatedMetricValues(Model):
