@@ -8,6 +8,19 @@ class VersionedMixin:
     versions = Column("versions", ARRAY(Integer()), index=True)
 
 
+"""
+These models were generated from the real DB schema with
+
+sqlacodegen "postgresql://postgres:postgres@0.0.0.0:5432/postgres" --noclasses --nocomments --outfile __init__.py  # noqa
+
+Sadly, the output had to be polished manually, that is:
+
+- Declarative classes instead of imperative table definition.
+- Renames.
+- Mixins to stay DRY.
+"""
+
+
 class IssueComment(Base, VersionedMixin):
     __tablename__ = "github_issue_comments_versioned"
     sum256 = Column("sum256", String(64), primary_key=True)

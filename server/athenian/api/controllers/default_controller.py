@@ -18,6 +18,8 @@ async def calc_metrics(request: web.Request, body) -> web.Response:
     :param body: Desired metric definitions.
     :type body: dict | bytes
     """
+    # The following is a technology demo that we can work with a DB, parse the request and respond
+    # with something sensible.
     body = MetricsRequest.from_dict(body)
     github_repos_query = []
     for for_set in body._for:
@@ -26,7 +28,7 @@ async def calc_metrics(request: web.Request, body) -> web.Response:
                 github_repos_query.append(github.Repository.name == repo[len("github.com/"):])
     github_repos_query = select([github.Repository]).where(sql.or_(*github_repos_query))
     repos = await request.db.fetch_all(query=github_repos_query)
-    print(repos)
+    print(repos)  # demo output, to be removed with the rest of the code
     met = CalculatedMetrics()
     met.date_from = body.date_from
     met.date_to = body.date_to

@@ -1,3 +1,20 @@
+"""
+Structured logging.
+
+This module defines functions to setup the standard Python logging subsystem to do one of the
+two things:
+
+- Output the regular logs with color and arguably proper format. This is good for running your
+  application locally, for debugging purposes.
+- Output JSON objects for each logging call, one line per object ("structured logging"). This
+  mode should be used when running in production so that the logs can be easily parsed.
+
+You can setup everything using:
+
+- `add_logging_args()` as argparse.ArgumentParser initialization time and forget about it.
+- call `setup()` and specify the logging level and mode.
+"""
+
 import argparse
 import codecs
 import datetime

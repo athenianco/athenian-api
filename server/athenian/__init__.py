@@ -1,4 +1,4 @@
-"""Python SDK and supported machine learning based analyzers for lookout."""
+"""Athenians are the best."""
 # DO NOT CHANGE OR ADD ANYTHING HERE
 import pkg_resources
 pkg_resources.declare_namespace(__name__)

@@ -7,7 +7,7 @@ RUN echo '#!/bin/bash\n\
 \n\
 echo\n\
 echo "  $@"\n\
-echo\n\' > /browser && \
+echo\n' > /browser && \
     chmod +x /browser
 
 # runtime environment
