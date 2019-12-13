@@ -18,9 +18,13 @@ from athenian.api.util import FriendlyJson
 
 def parse_args() -> argparse.Namespace:
     """Parse the command line and return the parsed arguments."""
+
+    class Formatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawTextHelpFormatter):
+        pass
+
     parser = argparse.ArgumentParser(__package__, epilog="""environment variables:
   SENTRY_KEY            Sentry token: ???@sentry.io
-  SENTRY_PROJECT        Sentry project name.""", formatter_class=argparse.RawTextHelpFormatter)
+  SENTRY_PROJECT        Sentry project name.""", formatter_class=Formatter)
     add_logging_args(parser)
     parser.add_argument("--host", default="0.0.0.0", help="HTTP server host.")
     parser.add_argument("--port", type=int, default=8080, help="HTTP server port.")
