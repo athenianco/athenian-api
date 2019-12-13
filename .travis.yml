@@ -2,13 +2,21 @@ language: python
 python: 3.7
 sudo: true
 dist: bionic
+
+env:
+  global:
+    - GOOGLE_DOCKER_IMAGE=gcr.io/athenian-1/api
+    - IMAGE=${GOOGLE_DOCKER_IMAGE}:${TRAVIS_BRANCH}-${TRAVIS_COMMIT:0:7}
+
 cache:
-  pip: true
   directories:
-    - $HOME/docker
+    - "$HOME/.cache/pip"
+    - "$HOME/google-cloud-sdk/"
+    - "$HOME/docker"
+
 before_cache:
   - chown -R travis:travis $HOME/.cache/pip
-  - docker save -o $HOME/docker/images.tar athenian/api:latest
+  - docker save -o $HOME/docker/images.tar ${GOOGLE_DOCKER_IMAGE}:latest
 
 matrix:
   fast_finish: true
@@ -22,13 +30,20 @@ matrix:
       script:
         - flake8
         - pytest
-    - before_install:
+    - if: branch != master
+      before_install:
         - docker load -i $HOME/docker/images.tar || true
         - docker image list
       install:
-        - docker build --cache-from athenian/api -t athenian/api .
+        - docker build --cache-from ${GOOGLE_DOCKER_IMAGE} -t ${GOOGLE_DOCKER_IMAGE} .
       script:
-        - docker run --rm athenian/api --help
+        - docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
+    - stage: deploy
+      if: branch = master AND type != pull_request
+      script:
+        - docker load -i $HOME/docker/images.tar || true
+        - docker tag ${GOOGLE_DOCKER_IMAGE} ${IMAGE}
+        - make docker-push
 
 notifications:
   email: false
