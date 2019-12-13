@@ -187,10 +187,28 @@ components:
           values:
           - 0.8008282
           - 0.8008282
+          confidence_mins:
+          - 0.5
+          - 0.5
+          confidence_maxs:
+          - 1.0
+          - 1.0
+          confidence_scores:
+          - 75
+          - 75
         - date: 2000-01-23
           values:
           - 0.8008282
           - 0.8008282
+          confidence_mins:
+          - 0.5
+          - 0.5
+          confidence_maxs:
+          - 1.0
+          - 1.0
+          confidence_scores:
+          - 75
+          - 75
         for:
           developers:
           - github.com/vmarkovtsev
@@ -222,10 +240,28 @@ components:
             values:
             - 0.8008282
             - 0.8008282
+            confidence_mins:
+            - 0.5
+            - 0.5
+            confidence_maxs:
+            - 1.0
+            - 1.0
+            confidence_scores:
+            - 75
+            - 75
           - date: 2000-01-23
             values:
             - 0.8008282
             - 0.8008282
+            confidence_mins:
+            - 0.5
+            - 0.5
+            confidence_maxs:
+            - 1.0
+            - 1.0
+            confidence_scores:
+            - 75
+            - 75
           for:
             developers:
             - github.com/vmarkovtsev
@@ -238,10 +274,28 @@ components:
             values:
             - 0.8008282
             - 0.8008282
+            confidence_mins:
+            - 0.5
+            - 0.5
+            confidence_maxs:
+            - 1.0
+            - 1.0
+            confidence_scores:
+            - 75
+            - 75
           - date: 2000-01-23
             values:
             - 0.8008282
             - 0.8008282
+            confidence_mins:
+            - 0.5
+            - 0.5
+            confidence_maxs:
+            - 1.0
+            - 1.0
+            confidence_scores:
+            - 75
+            - 75
           for:
             developers:
             - github.com/vmarkovtsev
@@ -284,6 +338,15 @@ components:
         values:
         - 0.8008282
         - 0.8008282
+        confidence_mins:
+        - 0.5
+        - 0.5
+        confidence_maxs:
+        - 1.0
+        - 1.0
+        confidence_scores:
+        - 75
+        - 75
       properties:
         date:
           description: Where you should relate the metric value to on the time axis.
@@ -295,6 +358,25 @@ components:
             format: float
             type: number
           type: array
+        confidence_mins:
+          description: Confidence interval @ p=0.95, minimum. The same order as `metrics`.
+          items:
+            format: float
+            type: number
+          type: array
+        confidence_maxs:
+          description: Confidence interval @ p=0.95, maximum. The same order as `metrics`.
+          items:
+            format: float
+            type: number
+          type: array
+        confidence_scores:
+          description: Confidence score from 0 (no idea) to 100 (very confident). The same order as `metrics`.
+          items:
+            format: integer
+            type: number
+          type: array
       required:
       - date
       - values
+      - confidence_scores
