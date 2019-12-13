@@ -12,6 +12,10 @@ The API schema is [`spec/openapi.yaml`](spec/openapi.yaml). You can quickly view
 
 See [`server/README.md`](server/README.md) for the info about how to launch the API server.
 
+### Deployment
+
+See [`DEPLOYMENT.md`](DEPLOYMENT.md).
+
 ### License
 
 Proprietary until further notice.
