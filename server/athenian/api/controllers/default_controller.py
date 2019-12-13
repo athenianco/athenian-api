@@ -25,7 +25,7 @@ async def calc_metrics(request: web.Request, body) -> web.Response:
     for for_set in body._for:
         for repo in for_set.repositories:
             if repo.startswith("github.com/"):
-                github_repos_query.append(github.Repository.name == repo[len("github.com/"):])
+                github_repos_query.append(github.Repository.full_name == repo[len("github.com/"):])
     github_repos_query = select([github.Repository]).where(sql.or_(*github_repos_query))
     repos = await request.db.fetch_all(query=github_repos_query)
     print(repos)  # demo output, to be removed with the rest of the code
