@@ -39,5 +39,6 @@ async def calc_metrics(request: web.Request, body) -> web.Response:
     for for_set in body._for:
         met.calculated.append(CalculatedMetric(
             _for=for_set,
-            values=[CalculatedMetricValues(date=now, values=[0.5] * len(met.metrics))] * 10))
+            values=[CalculatedMetricValues(date=now, values=[0.5] * len(met.metrics),
+                                           confidence_scores=[75] * len(met.metrics))] * 10))
     return web.json_response(met.to_dict(), dumps=FriendlyJson.dumps)

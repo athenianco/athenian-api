@@ -92,7 +92,7 @@ def deserialize_datetime(string: str) -> datetime.datetime:
         return string
 
 
-def deserialize_model(data: Union[dict, list], klass: T) -> T:
+def deserialize_model(data: Union[dict, list], klass: Class) -> T:
     """Deserializes list or dict to model.
 
     :param data: dict, list.
