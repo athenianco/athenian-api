@@ -4,3 +4,4 @@ databases[postgresql,sqlite]==0.2.6
 xxhash==1.4.3
 numpy==1.17.4
 sentry-sdk==0.13.5
+prometheus_client==0.7.1

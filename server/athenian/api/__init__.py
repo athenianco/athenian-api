@@ -11,6 +11,7 @@ import databases
 import sentry_sdk
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 
+from athenian.api.controllers.status import setup_status
 from athenian.api.metadata import __description__, __package__, __version__
 from athenian.api.slogging import add_logging_args
 from athenian.api.util import FriendlyJson
@@ -51,7 +52,8 @@ class AthenianApp(connexion.AioHttpApp):
         :param db_options: Extra databases.Database() kwargs.
         """
         options = {"swagger_ui": ui}
-        specification_dir = os.path.join(os.path.dirname(__file__), "openapi")
+        rootdir = os.path.dirname(__file__)
+        specification_dir = os.path.join(rootdir, "openapi")
         super().__init__(__package__, specification_dir=specification_dir, options=options)
         api = self.add_api(
             "openapi.yaml",
@@ -59,6 +61,7 @@ class AthenianApp(connexion.AioHttpApp):
             pythonic_params=True,
             pass_context_arg_name="request",
         )
+        setup_status(self.app)
         api.jsonifier.json = FriendlyJson
         self.db = None  # type: Optional[databases.Database]
         self._db_connected_event = asyncio.Event()
