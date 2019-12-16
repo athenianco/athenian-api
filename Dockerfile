@@ -36,8 +36,8 @@ RUN echo "deb https://apt.repos.intel.com/mkl all main" > /etc/apt/sources.list.
 
 # numpy
 RUN echo '[ALL]\n\
-extra_compile_args = -O3 -fopenmp -flto -march=native -ftree-vectorize\n\
-extra_link_args = -O3 -fopenmp -flto -march=native -ftree-vectorize\n\
+extra_compile_args = -O3 -fopenmp -flto -ftree-vectorize -march=haswell -mmmx -msse -msse2 -msse3 -mssse3 -mcx16 -msahf -mmovbe -maes -mpclmul -mpopcnt -mabm -mfma -mbmi -mbmi2 -mavx -mavx2 -msse4.2 -msse4.1 -mlzcnt -mrdrnd -mf16c -mfsgsbase -mfxsr -mxsave -mxsaveopt --param l1-cache-size=32 --param l1-cache-line-size=64 --param l2-cache-size=46080 -mtune=haswell\n\
+extra_link_args = -O3 -fopenmp -flto -ftree-vectorize -march=haswell -mmmx -msse -msse2 -msse3 -mssse3 -mcx16 -msahf -mmovbe -maes -mpclmul -mpopcnt -mabm -mfma -mbmi -mbmi2 -mavx -mavx2 -msse4.2 -msse4.1 -mlzcnt -mrdrnd -mf16c -mfsgsbase -mfxsr -mxsave -mxsaveopt --param l1-cache-size=32 --param l1-cache-line-size=64 --param l2-cache-size=46080 -mtune=haswell \n\
 \n\
 [fftw]\n\
 libraries = fftw3\n\
