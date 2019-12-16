@@ -6,16 +6,20 @@ cache: pip
 before_cache:
   - chown -R travis:travis $HOME/.cache/pip
 
-install:
-  - cd server
-  - pip install -r requirements.txt
-  - pip install -r lint-requirements.txt
-  - pip install -r test-requirements.txt
-  - pip install -e .
-
-script:
-  - flake8
-  - pytest
+matrix:
+  fast_finish: true
+  include:
+    - install:
+        - cd server
+        - pip install -r requirements.txt
+        - pip install -r lint-requirements.txt
+        - pip install -r test-requirements.txt
+        - pip install -e .
+      script:
+        - flake8
+        - pytest
+    - script:
+        - docker build -t athenian/api .
 
 notifications:
   email: false
