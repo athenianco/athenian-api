@@ -21,16 +21,26 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+ENV MKL=2020.0-166
+
 # Intel MKL
 RUN echo "deb https://apt.repos.intel.com/mkl all main" > /etc/apt/sources.list.d/intel-mkl.list && \
     curl -L https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB | \
     apt-key add - && \
     apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends intel-mkl-gnu-c-2019.1-144 && \
-    rm -rf /opt/intel/documentation_2019 && \
+    apt-get install -y --no-install-suggests --no-install-recommends intel-mkl-common-c-$MKL intel-mkl-gnu-rt-$MKL intel-mkl-f95-$MKL && \
+    rm -rf /opt/intel/documentation_2019 /opt/intel/compilers_and_libraries_*/linux/mkl/{bin,tools,examples} && \
     ln -s /opt/intel/compilers_and_libraries_*/linux/mkl /opt/intel/mkl && \
     printf '/opt/intel/mkl/lib/intel64_lin' >> /etc/ld.so.conf.d/mkl.conf && \
     ldconfig && \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so     \
+                    libblas.so-x86_64-linux-gnu      /opt/intel/mkl/lib/intel64/libmkl_rt.so 50 && \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/libblas.so.3   \
+                    libblas.so.3-x86_64-linux-gnu    /opt/intel/mkl/lib/intel64/libmkl_rt.so 50 && \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so   \
+                    liblapack.so-x86_64-linux-gnu    /opt/intel/mkl/lib/intel64/libmkl_rt.so 50 && \
+    update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 \
+                    liblapack.so.3-x86_64-linux-gnu  /opt/intel/mkl/lib/intel64/libmkl_rt.so 50 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
