@@ -18,8 +18,10 @@ matrix:
       script:
         - flake8
         - pytest
-    - script:
+    - install:
         - docker build -t athenian/api .
+      script:
+        - docker run --rm athenian/api --help
 
 notifications:
   email: false
