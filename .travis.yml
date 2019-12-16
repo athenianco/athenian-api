@@ -2,9 +2,13 @@ language: python
 python: 3.7
 sudo: true
 dist: bionic
-cache: pip
+cache:
+  pip: true
+  directories:
+    - $HOME/docker
 before_cache:
   - chown -R travis:travis $HOME/.cache/pip
+  - docker save -o $HOME/docker/images.tar athenian/api:latest
 
 matrix:
   fast_finish: true
@@ -18,8 +22,11 @@ matrix:
       script:
         - flake8
         - pytest
-    - install:
-        - docker build -t athenian/api .
+    - before_install:
+        - docker load -i $HOME/docker/images.tar || true
+        - docker image list
+      install:
+        - docker build --cache-from athenian/api -t athenian/api .
       script:
         - docker run --rm athenian/api --help
 
