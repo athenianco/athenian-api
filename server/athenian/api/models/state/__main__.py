@@ -5,6 +5,7 @@ import jinja2
 
 
 def main():
+    """Initialize the server state DB."""
     url = sys.argv[1]
     root = os.path.dirname(__file__)
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(root))
