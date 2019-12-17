@@ -1,7 +1,7 @@
 import pprint
 import typing
 
-from athenian.api import util
+from athenian.api import serialization
 
 T = typing.TypeVar("T")
 
@@ -20,7 +20,7 @@ class Model:
     @classmethod
     def from_dict(cls: T, dikt: dict) -> T:
         """Returns the dict as a model."""
-        return util.deserialize_model(dikt, cls)
+        return serialization.deserialize_model(dikt, cls)
 
     def to_dict(self) -> dict:
         """Returns the model properties as a dict."""

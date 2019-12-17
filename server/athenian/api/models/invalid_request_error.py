@@ -1,6 +1,6 @@
 # coding: utf-8
 
-from athenian.api import util
+from athenian.api import serialization
 from athenian.api.models.base_model_ import Model
 
 
@@ -30,7 +30,7 @@ class InvalidRequestError(Model):
         :param dikt: A dict.
         :return: The InvalidRequestError of this InvalidRequestError.
         """
-        return util.deserialize_model(dikt, cls)
+        return serialization.deserialize_model(dikt, cls)
 
     @property
     def error(self):

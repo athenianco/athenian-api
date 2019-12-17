@@ -13,8 +13,8 @@ from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 
 from athenian.api.controllers.status import setup_status
 from athenian.api.metadata import __description__, __package__, __version__
+from athenian.api.serialization import FriendlyJson
 from athenian.api.slogging import add_logging_args
-from athenian.api.util import FriendlyJson
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,8 +29,14 @@ def parse_args() -> argparse.Namespace:
     add_logging_args(parser)
     parser.add_argument("--host", default="0.0.0.0", help="HTTP server host.")
     parser.add_argument("--port", type=int, default=8080, help="HTTP server port.")
-    parser.add_argument("--db", default="postgresql://postgres:postgres@0.0.0.0:5432/postgres",
-                        help="DB connection string in SQLAlchemy format.")
+    parser.add_argument("--metadata-db",
+                        default="postgresql://postgres:postgres@0.0.0.0:5432/postgres",
+                        help="Metadata (GitHub events, etc.) DB connection string in SQLAlchemy "
+                             "format. This DB is readonly.")
+    parser.add_argument("--state-db",
+                        default="postgresql://postgres:postgres@0.0.0.0:5432/postgres",
+                        help="Server state (user settings, etc.) DB connection string in "
+                             "SQLAlchemy format. This DB is read/write.")
     parser.add_argument("--ui", action="store_true", help="Enable the REST UI.")
     return parser.parse_args()
 
@@ -43,11 +49,13 @@ class AthenianApp(connexion.AioHttpApp):
     Besides, we simplify the class construction, especially the DB connection.
     """
 
-    def __init__(self, db_conn: str, ui: bool, db_options: Optional[dict] = None):
+    def __init__(self, mdb_conn: str, sdb_conn: str, ui: bool,
+                 mdb_options: Optional[dict] = None, sdb_options: Optional[dict] = None):
         """
         Initialize the underlying connexion -> aiohttp application.
 
-        :param db_conn: SQLAlchemy connection string.
+        :param mdb_conn: SQLAlchemy connection string for the readonly metadata DB.
+        :param sdb_conn: SQLAlchemy connection string for the writeable server state DB.
         :param ui: Value indicating whether to enable the Swagger/OpenAPI UI at host:port/v*/ui.
         :param db_options: Extra databases.Database() kwargs.
         """
@@ -63,18 +71,27 @@ class AthenianApp(connexion.AioHttpApp):
         )
         setup_status(self.app)
         api.jsonifier.json = FriendlyJson
-        self.db = None  # type: Optional[databases.Database]
-        self._db_connected_event = asyncio.Event()
+        self.mdb = self.sdb = None  # type: Optional[databases.Database]
+        self._mdb_connected_event = asyncio.Event()
+        self._sdb_connected_event = asyncio.Event()
 
-        async def connect_to_db():
-            db = databases.Database(db_conn, **(db_options or {}))
+        async def connect_to_mdb():
+            db = databases.Database(mdb_conn, **(mdb_options or {}))
             await db.connect()
-            logging.getLogger(__package__).info("Connected to the DB")
-            self.db = db
-            self._db_connected_event.set()
+            logging.getLogger(__package__).info("Connected to the metadata DB on %s", mdb_conn)
+            self.mdb = db
+            self._mdb_connected_event.set()
 
-        # Schedule the DB connection
-        asyncio.get_event_loop().call_soon(asyncio.ensure_future, connect_to_db())
+        async def connect_to_sdb():
+            db = databases.Database(sdb_conn, **(sdb_options or {}))
+            await db.connect()
+            logging.getLogger(__package__).info("Connected to the server state DB on %s", sdb_conn)
+            self.sdb = db
+            self._sdb_connected_event.set()
+
+        # Schedule the DB connections
+        asyncio.get_event_loop().call_soon(asyncio.ensure_future, connect_to_mdb())
+        asyncio.get_event_loop().call_soon(asyncio.ensure_future, connect_to_sdb())
 
     def create_app(self) -> aiohttp.web.Application:
         """Override the base class method to inject middleware."""
@@ -82,12 +99,17 @@ class AthenianApp(connexion.AioHttpApp):
 
     @aiohttp.web.middleware
     async def with_db(self, request, handler):
-        """Add "db" attribute to every incoming request."""
-        if self.db is None:
-            await self._db_connected_event.wait()
-            assert self.db is not None
-            del self._db_connected_event
-        request.db = self.db
+        """Add "mdb" and "sdb" attributes to every incoming request."""
+        if self.mdb is None:
+            await self._mdb_connected_event.wait()
+            assert self.mdb is not None
+            del self._mdb_connected_event
+        if self.sdb is None:
+            await self._sdb_connected_event.wait()
+            assert self.sdb is not None
+            del self._sdb_connected_event
+        request.mdb = self.mdb
+        request.sdb = self.sdb
         return await handler(request)
 
 
@@ -118,5 +140,5 @@ def main():
     log.info("%s", sys.argv)
     log.info("Version %s", __version__)
     setup_sentry()
-    app = AthenianApp(db_conn=args.db, ui=args.ui)
+    app = AthenianApp(mdb_conn=args.mdb, sdb_conn=args.sdb, ui=args.ui)
     app.run(host=args.host, port=args.port, use_default_access_log=True)

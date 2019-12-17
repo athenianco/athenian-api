@@ -38,7 +38,7 @@ paths:
                 $ref: '#/components/schemas/NoSourceDataError'
           description: No data is available to calculate metrics for the given repositories.
       summary: Calculate metrics.
-      x-openapi-router-controller: athenian.api.controllers.default_controller
+      x-openapi-router-controller: athenian.api.controllers.metrics
       x-codegen-request-body-name: body
 components:
   schemas:

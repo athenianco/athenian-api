@@ -1,6 +1,6 @@
 # coding: utf-8
 
-from athenian.api import util
+from athenian.api import serialization
 from athenian.api.models.base_model_ import Model
 
 
@@ -23,4 +23,4 @@ class RepositorySet(Model):
         :param dikt: A dict.
         :return: The RepositorySet of this RepositorySet.
         """
-        return util.deserialize_model(dikt, cls)
+        return serialization.deserialize_model(dikt, cls)

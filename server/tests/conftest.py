@@ -14,7 +14,7 @@ from .sample_db_data import fill_session
 @pytest.fixture
 def client(loop, aiohttp_client, sqlite_db):
     logging.getLogger("connexion.operation").setLevel("ERROR")
-    app = AthenianApp(db_conn="sqlite:///db.sqlite", ui=False)
+    app = AthenianApp(mdb_conn="sqlite:///db.sqlite", sdb_conn="sqlite://", ui=False)
     return loop.run_until_complete(aiohttp_client(app.app))
 
 

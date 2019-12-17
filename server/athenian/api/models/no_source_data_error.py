@@ -1,6 +1,6 @@
 # coding: utf-8
 
-from athenian.api import util
+from athenian.api import serialization
 from athenian.api.models.base_model_ import Model
 from athenian.api.models.repository_set import RepositorySet
 
@@ -31,7 +31,7 @@ class NoSourceDataError(Model):
         :param dikt: A dict.
         :return: The NoSourceDataError of this NoSourceDataError.
         """
-        return util.deserialize_model(dikt, cls)
+        return serialization.deserialize_model(dikt, cls)
 
     @property
     def error(self):
