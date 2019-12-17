@@ -5,7 +5,7 @@ from pathlib import Path
 import sqlalchemy.orm
 from sqlalchemy.cprocessors import str_to_date, str_to_datetime
 
-from athenian.api.models.db.github import Base
+from athenian.api.models.metadata.github import Base
 
 
 def fill_session(session: sqlalchemy.orm.Session):

@@ -8,7 +8,9 @@ docker build -t athenian/api .
 
 ### Initialization
 
-No special initialization is required.
+```
+docker run -it --rm --entrypoint athenian.api.models.state athenian/api postgres://user:password@host:port/database
+```
 
 ### Environment
 
@@ -30,4 +32,4 @@ No configuration files are required.
 
 ### State
 
-The server is currently stateless. No internal data structures are persisted anywhere.
+The server's state such as user settings, etc., is stored in a SQL database specified with `--state-db`.

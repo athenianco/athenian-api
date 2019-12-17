@@ -7,7 +7,7 @@ from athenian.api import FriendlyJson
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.models import CalculatedMetric, CalculatedMetricValues
 from athenian.api.models.calculated_metrics import CalculatedMetrics
-from athenian.api.models.db import github
+from athenian.api.models.metadata import github
 # from athenian.api.models.invalid_request_error import InvalidRequestError
 from athenian.api.models.metrics_request import MetricsRequest
 # from athenian.api.models.no_source_data_error import NoSourceDataError

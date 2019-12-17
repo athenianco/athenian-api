@@ -6,8 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from athenian.api import AthenianApp
-from athenian.api.models.db import hack_sqlite_arrays
-from athenian.api.models.db.github import Base
+from athenian.api.models.metadata import hack_sqlite_arrays
+from athenian.api.models.metadata.github import Base
 from .sample_db_data import fill_session
 
 
