@@ -45,6 +45,7 @@ matrix:
         - docker image list
         - docker build --cache-from ${GOOGLE_DOCKER_IMAGE} -t ${IMAGE} .
         - make docker-push
+        - docker tag ${IMAGE} ${GOOGLE_DOCKER_IMAGE}
 
 notifications:
   email: false
