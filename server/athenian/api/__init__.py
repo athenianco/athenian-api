@@ -140,5 +140,5 @@ def main():
     log.info("%s", sys.argv)
     log.info("Version %s", __version__)
     setup_sentry()
-    app = AthenianApp(mdb_conn=args.mdb, sdb_conn=args.sdb, ui=args.ui)
+    app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui)
     app.run(host=args.host, port=args.port, use_default_access_log=True)
