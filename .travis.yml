@@ -30,7 +30,7 @@ matrix:
       script:
         - flake8
         - pytest
-    - if: branch != master
+    - if: type = pull_request
       before_install:
         - docker load -i $HOME/docker/images.tar || true
         - docker image list
@@ -42,7 +42,8 @@ matrix:
       if: branch = master AND type != pull_request
       script:
         - docker load -i $HOME/docker/images.tar || true
-        - docker tag ${GOOGLE_DOCKER_IMAGE} ${IMAGE}
+        - docker image list
+        - docker build --cache-from ${GOOGLE_DOCKER_IMAGE} -t ${IMAGE} .
         - make docker-push
 
 notifications:
