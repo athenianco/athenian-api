@@ -9,7 +9,7 @@ docker build -t athenian/api .
 ### Initialization
 
 ```
-docker run -it --rm --entrypoint athenian.api.models.state athenian/api postgres://user:password@host:port/database
+docker run -it --rm --entrypoint python3 athenian/api -m athenian.api.models.state postgres://user:password@host:port/database
 ```
 
 ### Environment
