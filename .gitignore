@@ -1,5 +1,6 @@
 .idea
 
+**/alembic.ini
 server/tests/db.sqlite
 
 # Byte-compiled / optimized / DLL files

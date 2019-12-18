@@ -3,7 +3,7 @@
 from datetime import date
 from typing import List
 
-from athenian.api import util
+from athenian.api import serialization
 from athenian.api.models.base_model_ import Model
 from athenian.api.models.calculated_metric import CalculatedMetric
 from athenian.api.models.granularity import Granularity
@@ -61,7 +61,7 @@ class CalculatedMetrics(Model):
         :param dikt: A dict.
         :return: The CalculatedMetrics of this CalculatedMetrics.
         """
-        return util.deserialize_model(dikt, cls)
+        return serialization.deserialize_model(dikt, cls)
 
     @property
     def calculated(self):
