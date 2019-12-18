@@ -1,9 +1,9 @@
 import databases
-import pandas
+import pandas as pd
 from sqlalchemy.sql import ClauseElement
 
 
-async def read_sql_query(sql: ClauseElement, con: databases.Database) -> pandas.DataFrame:
+async def read_sql_query(sql: ClauseElement, con: databases.Database) -> pd.DataFrame:
     """Read SQL query into a DataFrame.
 
     Returns a DataFrame corresponding to the result set of the query.
@@ -26,5 +26,5 @@ async def read_sql_query(sql: ClauseElement, con: databases.Database) -> pandas.
     """
     data = await con.fetch_all(query=sql)
     columns = data[0].keys() if data else []
-    frame = pandas.DataFrame.from_records(data, columns=columns, coerce_float=True)
+    frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
     return frame
