@@ -11,6 +11,7 @@ import databases
 import sentry_sdk
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 
+from athenian.api.auth import Auth0, auth_is_configured
 from athenian.api.controllers.status import setup_status
 from athenian.api.metadata import __description__, __package__, __version__
 from athenian.api.serialization import FriendlyJson
@@ -74,6 +75,7 @@ class AthenianApp(connexion.AioHttpApp):
         self.mdb = self.sdb = None  # type: Optional[databases.Database]
         self._mdb_connected_event = asyncio.Event()
         self._sdb_connected_event = asyncio.Event()
+        self._auth0 = None
 
         async def connect_to_mdb():
             db = databases.Database(mdb_conn, **(mdb_options or {}))
@@ -93,9 +95,26 @@ class AthenianApp(connexion.AioHttpApp):
         asyncio.get_event_loop().call_soon(asyncio.ensure_future, connect_to_mdb())
         asyncio.get_event_loop().call_soon(asyncio.ensure_future, connect_to_sdb())
 
+    async def close(self):
+        """Free resources associated with the object."""
+        if self._auth0 is not None:
+            await self._auth0.close()
+
     def create_app(self) -> aiohttp.web.Application:
         """Override the base class method to inject middleware."""
-        return aiohttp.web.Application(middlewares=[self.with_db])
+        middlewares = [self.with_db]
+        if not auth_is_configured():
+            # TODO: always require auth, or add a flag to assert that it's enabled
+            logging.getLogger(__package__).warning(
+                "API authentication is disabled; set AUTH0_DOMAIN and AUTH0_AUDIENCE")
+        else:
+            self._auth0 = Auth0(whitelist=[
+                r"/v1/openapi.json",
+                r"/v1/ui*",
+                r"/status*",
+            ])
+            middlewares.insert(0, self._auth0.middleware)
+        return aiohttp.web.Application(middlewares=middlewares)
 
     @aiohttp.web.middleware
     async def with_db(self, request, handler):
@@ -141,4 +160,7 @@ def main():
     log.info("Version %s", __version__)
     setup_sentry()
     app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui)
-    app.run(host=args.host, port=args.port, use_default_access_log=True)
+    try:
+        app.run(host=args.host, port=args.port, use_default_access_log=True)
+    finally:
+        asyncio.get_event_loop().run_until_complete(app.close())
