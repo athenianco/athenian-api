@@ -14,7 +14,7 @@ from athenian.api.models.metrics_request import MetricsRequest
 from athenian.api.typing_utils import AthenianWebRequest
 
 
-async def calc_metrics(request: AthenianWebRequest, body) -> web.Response:
+async def calc_metrics_line(request: AthenianWebRequest, body) -> web.Response:
     """Calculate metrics.
 
     :param request: HTTP request.

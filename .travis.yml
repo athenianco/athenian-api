@@ -35,7 +35,7 @@ matrix:
         - docker load -i $HOME/docker/images.tar || true
         - docker image list
       install:
-        - docker build --cache-from ${GOOGLE_DOCKER_IMAGE} -t ${GOOGLE_DOCKER_IMAGE} .
+        - docker build --cache-from ${GOOGLE_DOCKER_IMAGE}:latest -t ${GOOGLE_DOCKER_IMAGE} .
       script:
         - docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
     - stage: deploy

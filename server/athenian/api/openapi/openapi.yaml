@@ -7,9 +7,9 @@ info:
 servers:
 - url: https://api.athenian.co/v1
 paths:
-  /metrics:
+  /metrics_line:
     post:
-      operationId: calc_metrics
+      operationId: calc_metrics_line
       requestBody:
         content:
           application/json:
