@@ -60,6 +60,12 @@ cd server
 flake8
 ```
 
+Generate a sample SQLite metadata DB:
+
+```
+docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /server/tests/gen_sqlite_db.py
+``` 
+
 ## Prevent file overriding
 
 After the first generation, add edited files to _.openapi-generator-ignore_ to prevent generator to overwrite them. Typically:

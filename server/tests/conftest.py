@@ -1,7 +1,14 @@
 import logging
+import os
 from pathlib import Path
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    class pytest:
+        @staticmethod
+        def fixture(fn):
+            return fn
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -21,7 +28,7 @@ def client(loop, aiohttp_client, sqlite_db):
 @pytest.fixture
 def sqlite_db():
     hack_sqlite_arrays()
-    fn = Path("db.sqlite")
+    fn = Path(os.getenv("DB_DIR", ".")) / "db.sqlite"
     if fn.exists():
         return
     engine = create_engine("sqlite:///%s" % fn, echo=True)
