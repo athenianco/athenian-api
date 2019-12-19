@@ -70,7 +70,13 @@ lapack_libs = mkl_lapack95_lp64' > /root/.numpy-site.cfg && \
     rm -rf /usr/share/doc/*
 
 ADD server/requirements.txt /server/requirements.txt
-RUN pip3 install --no-cache-dir -r /server/requirements.txt
+RUN apt-get update && \
+    apt-get install -y --no-install-suggests --no-install-recommends python3-dev gcc g++ && \
+    pip3 install --no-cache-dir -r /server/requirements.txt && \
+    apt-get remove -y python3-dev gcc g++ && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 ADD server /server
 ADD README.md /
