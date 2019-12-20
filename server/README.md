@@ -81,6 +81,8 @@ docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /se
 docker run --rm -p 8080:8080 -v$(pwd):/io athenian/api --ui --metadata-db=sqlite:///io/db.sqlite --state-db=sqlite://
 ```
 
+And open http://localhost:8080/v1/ui
+
 ## Prevent file overriding
 
 After the first generation, add edited files to _.openapi-generator-ignore_ to prevent generator to overwrite them. Typically:
