@@ -66,6 +66,23 @@ Generate a sample SQLite metadata DB:
 docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /server/tests/gen_sqlite_db.py
 ``` 
 
+## Running the API server locally
+
+Alternatively, you can locally build and run the docker image:
+
+```
+# Build the API image
+docker build -t athenian/api .
+
+# Generate metadata db with fixtures
+docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /server/tests/gen_sqlite_db.py
+
+# Run the API container
+docker run --rm -p 8080:8080 -v$(pwd):/io athenian/api --ui --metadata-db=sqlite:///io/db.sqlite --state-db=sqlite://
+```
+
+And open http://localhost:8080/v1/ui
+
 ## Prevent file overriding
 
 After the first generation, add edited files to _.openapi-generator-ignore_ to prevent generator to overwrite them. Typically:
