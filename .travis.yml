@@ -6,7 +6,7 @@ dist: bionic
 env:
   global:
     - GOOGLE_DOCKER_IMAGE=gcr.io/athenian-1/api
-    - IMAGE=${GOOGLE_DOCKER_IMAGE}:${TRAVIS_BRANCH}-${TRAVIS_COMMIT:0:7}
+    - IMAGE_BRANCH_COMMIT=${GOOGLE_DOCKER_IMAGE}:${TRAVIS_BRANCH}-${TRAVIS_COMMIT:0:7}
 
 cache:
   directories:
@@ -43,9 +43,13 @@ matrix:
       script:
         - docker load -i $HOME/docker/images.tar || true
         - docker image list
-        - docker build --cache-from ${GOOGLE_DOCKER_IMAGE} -t ${IMAGE} .
+        - docker build --cache-from ${GOOGLE_DOCKER_IMAGE} -t ${IMAGE_BRANCH_COMMIT} .
+        - make gcloud-login
+        - IMAGE=${IMAGE_BRANCH_COMMIT}
         - make docker-push
-        - docker tag ${IMAGE} ${GOOGLE_DOCKER_IMAGE}
+        - make pubsub-publish
+        - docker tag ${IMAGE_BRANCH_COMMIT} ${GOOGLE_DOCKER_IMAGE}
+        - IMAGE=${GOOGLE_DOCKER_IMAGE} make docker-push
 
 notifications:
   email: false
