@@ -6,6 +6,7 @@ import sys
 from typing import Optional
 
 import aiohttp.web
+from aiohttp.web_runner import GracefulExit
 import connexion
 import databases
 import sentry_sdk
@@ -50,6 +51,8 @@ class AthenianApp(connexion.AioHttpApp):
     Besides, we simplify the class construction, especially the DB connection.
     """
 
+    log = logging.getLogger(__package__)
+
     def __init__(self, mdb_conn: str, sdb_conn: str, ui: bool,
                  mdb_options: Optional[dict] = None, sdb_options: Optional[dict] = None):
         """
@@ -78,35 +81,46 @@ class AthenianApp(connexion.AioHttpApp):
         self._auth0 = None
 
         async def connect_to_mdb():
-            db = databases.Database(mdb_conn, **(mdb_options or {}))
-            await db.connect()
-            logging.getLogger(__package__).info("Connected to the metadata DB on %s", mdb_conn)
+            try:
+                db = databases.Database(mdb_conn, **(mdb_options or {}))
+                await db.connect()
+            except Exception:
+                self.log.exception("Failed to connect to the metadata DB at %s", mdb_conn)
+                raise GracefulExit() from None
+            self.log.info("Connected to the metadata DB on %s", mdb_conn)
             self.mdb = db
             self._mdb_connected_event.set()
 
         async def connect_to_sdb():
-            db = databases.Database(sdb_conn, **(sdb_options or {}))
-            await db.connect()
-            logging.getLogger(__package__).info("Connected to the server state DB on %s", sdb_conn)
+            try:
+                db = databases.Database(sdb_conn, **(sdb_options or {}))
+                await db.connect()
+            except Exception:
+                self.log.exception("Failed to connect to the state DB at %s", sdb_conn)
+                raise GracefulExit() from None
+            self.log.info("Connected to the server state DB on %s", sdb_conn)
             self.sdb = db
             self._sdb_connected_event.set()
 
+        self.app.on_shutdown.append(self.shutdown)
         # Schedule the DB connections
-        asyncio.get_event_loop().call_soon(asyncio.ensure_future, connect_to_mdb())
-        asyncio.get_event_loop().call_soon(asyncio.ensure_future, connect_to_sdb())
+        loop = asyncio.get_event_loop()
+        loop.call_soon(asyncio.ensure_future, connect_to_mdb())
+        loop.call_soon(asyncio.ensure_future, connect_to_sdb())
 
-    async def close(self):
+    async def shutdown(self, app):
         """Free resources associated with the object."""
         if self._auth0 is not None:
             await self._auth0.close()
+        await self.mdb.disconnect()
+        await self.sdb.disconnect()
 
     def create_app(self) -> aiohttp.web.Application:
         """Override the base class method to inject middleware."""
         middlewares = [self.with_db]
         if not auth_is_configured():
             # TODO: always require auth, or add a flag to assert that it's enabled
-            logging.getLogger(__package__).warning(
-                "API authentication is disabled; set AUTH0_DOMAIN and AUTH0_AUDIENCE")
+            self.log.warning("API authentication is disabled; set AUTH0_DOMAIN and AUTH0_AUDIENCE")
         else:
             self._auth0 = Auth0(whitelist=[
                 r"/v1/openapi.json",
@@ -160,7 +174,4 @@ def main():
     log.info("Version %s", __version__)
     setup_sentry()
     app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui)
-    try:
-        app.run(host=args.host, port=args.port, use_default_access_log=True)
-    finally:
-        asyncio.get_event_loop().run_until_complete(app.close())
+    app.run(host=args.host, port=args.port, use_default_access_log=True)
