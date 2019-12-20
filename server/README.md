@@ -66,9 +66,9 @@ Generate a sample SQLite metadata DB:
 docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /server/tests/gen_sqlite_db.py
 ``` 
 
- ## Running the api locally
+## Running the API server locally
 
-Alternatively, you can locally build and run a docker image of the API:
+Alternatively, you can locally build and run the docker image:
 
 ```
 # Build the API image
