@@ -45,9 +45,8 @@ matrix:
         - docker image list
         - docker build --cache-from ${GOOGLE_DOCKER_IMAGE} -t ${IMAGE_BRANCH_COMMIT} .
         - make gcloud-login
-        - IMAGE=${IMAGE_BRANCH_COMMIT}
-        - make docker-push
-        - make pubsub-publish
+        - IMAGE=${IMAGE_BRANCH_COMMIT} make docker-push
+        - IMAGE=${IMAGE_BRANCH_COMMIT} make pubsub-publish
         - docker tag ${IMAGE_BRANCH_COMMIT} ${GOOGLE_DOCKER_IMAGE}
         - IMAGE=${GOOGLE_DOCKER_IMAGE} make docker-push
 
