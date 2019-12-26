@@ -1,5 +1,10 @@
 # coding: utf-8
 
+from datetime import date
+from typing import List
+
+from dateutil.rrule import DAILY, MONTHLY, rrule, WEEKLY
+
 from athenian.api import serialization
 from athenian.api.models.base_model_ import Model
 
@@ -31,3 +36,16 @@ class Granularity(Model):
         :return: The Granularity of this Granularity.
         """
         return serialization.deserialize_model(dikt, cls)
+
+    def split(self, date_from: date, date_to: date) -> List[date]:
+        """
+        Cut [date_from -> date_to] into evenly sized time intervals.
+
+        Special handling of "month" is required so that each interval spans over one month.
+        """
+        freq = {
+            self.DAY: DAILY,
+            self.WEEK: WEEKLY,
+            self.MONTH: MONTHLY,
+        }[self.to_str()]
+        return [d.date() for d in rrule(freq, dtstart=date_from, until=date_to)]

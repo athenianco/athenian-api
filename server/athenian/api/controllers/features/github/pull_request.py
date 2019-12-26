@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
 
 import numpy as np
@@ -106,36 +106,30 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
     """Batched metrics calculation on sequential time intervals."""
 
     def __init__(self, calcs: Sequence[PullRequestMetricCalculator[T]],
-                 time_from: datetime, time_to: datetime, granularity: timedelta):
+                 time_intervals: Sequence[datetime]):
         """
         Initialize a new instance of `BinnedPullRequestMetricCalculator`.
 
         :param calcs: Metric calculators. Their order matches the order of the results in \
                       `__call__()`.
-        :param time_from: The minimum time border.
-        :param time_to: The maximum time border. The actual value may be at most +granularity \
-                        bigger.
-        :param granularity: Each time interval length.
+        :param time_intervals: Time interval borders. Each interval spans \
+                               `[time_intervals[i], time_intervals[i + 1]]` (the ending is not \
+                               included except for the last interval).
         """
         self.calcs = calcs
-        self.time_from = time_from
-        self.time_to = time_to
-        self.granularity = granularity
+        self.time_intervals = time_intervals
 
-    def __call__(self, items: Iterable[PullRequestTimes],
-                 ) -> List[Tuple[datetime, List[Metric[T]]]]:
+    def __call__(self, items: Iterable[PullRequestTimes]) -> List[Tuple[Metric[T]]]:
         """
         Calculate the binned metrics.
 
-        For each time interval of length `granularity`, stepping from `time_from` to `time_to`,
-        we collect the list of PRs created then and measure the specified metrics.
+        For each time interval we collect the list of PRs created then and measure the specified \
+        metrics.
         """
         items = sorted(items, key=lambda x: x.created)
         if not items:
             return []
-        borders = [self.time_from]
-        while borders[-1] < self.time_to:
-            borders.append(borders[-1] + self.granularity)
+        borders = self.time_intervals
         if items[-1].created.best > borders[-1]:
             raise ValueError("there are PRs created after time_to")
         bins = [[] for _ in items]
@@ -146,11 +140,11 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
             bins[pos].append(item)
         result = []
         calcs = self.calcs
-        for border, bin in zip(borders[1:], bins):
+        for bin in bins:
             for item in bin:
                 for calc in calcs:
                     calc(item)
-            result.append((border, [calc.value() for calc in calcs]))
+            result.append(tuple(calc.value() for calc in calcs))
             for calc in calcs:
                 calc.reset()
         return result
