@@ -145,6 +145,7 @@ class PullRequest(Base, VersionedMixin, BodyMixin, UpdatedMixin, UserMixin, Repo
 
 class Repository(Base, VersionedMixin, UpdatedMixin):
     __tablename__ = "github_repositories_versioned"
+
     allow_merge_commit = Column("allow_merge_commit", Boolean)
     allow_rebase_merge = Column("allow_rebase_merge", Boolean)
     allow_squash_merge = Column("allow_squash_merge", Boolean)

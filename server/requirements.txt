@@ -3,6 +3,7 @@ swagger-ui-bundle==0.0.6
 databases[postgresql,sqlite]==0.2.6
 xxhash==1.4.3
 numpy==1.17.4
+scipy==1.2.1
 sentry-sdk==0.13.5
 prometheus_client==0.7.1
 alembic==1.3.2

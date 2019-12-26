@@ -71,10 +71,11 @@ components:
     MetricID:
       description: Currently supported metric types.
       enum:
-      - pr-time-to-review
-      - pr-time-to-merge
-      - pr-time-to-release
-      - pr-lead-time
+      - pr-wip-time
+      - pr-wait-first-review-time
+      - pr-review-time
+      - pr-merging-time
+      - pr-release-time
       example: pr-lead-time
       type: string
     DeveloperID:
