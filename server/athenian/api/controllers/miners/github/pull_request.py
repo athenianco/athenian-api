@@ -33,14 +33,20 @@ class PullRequestMiner:
         :param developers: PRs must be authored by these user IDs. An empty list means everybody.
         :param db: Metadata db instance.
         """
+        repos_parsed = [r.split("/") for r in repositories]
+        repo_orgs = [r[0] for r in repos_parsed]
+        repo_names = [r[1] for r in repos_parsed]
         filters = [
             PullRequest.created_at >= time_from,
             PullRequest.created_at < time_to,
-            PullRequest.repository_name.in_(repositories),
+            PullRequest.repository_name.in_(repo_names),
+            PullRequest.repository_owner.in_(repo_orgs),  # FIXME(vmarkovtsev): ENG-101 makes this correct # noqa
         ]
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
         prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)), db)
+        if len(prs) == 0:
+            return cls(prs, prs, prs)
         numbers = prs["number"]
         reviews = await read_sql_query(select([PullRequestReview]).where(
             PullRequestReview.pull_request_number.in_(numbers)), db)

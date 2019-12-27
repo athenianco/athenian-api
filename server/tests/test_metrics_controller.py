@@ -33,9 +33,9 @@ async def test_calc_metrics_line(client):
             },
         ],
         "metrics": ["pr-lead-time", "pr-lead-time"],
-        "date_to": "2000-01-23",
-        "date_from": "2020-01-23",
-        "granularity": "day",
+        "date_from": "2000-01-23",
+        "date_to": "2020-01-23",
+        "granularity": "week",
     }
     headers = {
         "Accept": "application/json",

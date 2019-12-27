@@ -166,8 +166,8 @@ components:
         metrics:
         - pr-lead-time
         - pr-wip-time
-        date_to: 2000-01-23
         date_from: 2000-01-23
+        date_to: 2020-01-23
         granularity: day
       properties:
         for:
@@ -250,7 +250,7 @@ components:
         metrics:
         - pr-lead-time
         - pr-wip-time
-        date_to: 2000-01-23
+        date_from: 2000-01-23
         granularity: day
         calculated:
         - values:
@@ -321,7 +321,7 @@ components:
             repositories:
             - github.com/src-d/hercules
             - github.com/athenianco/athenian-api
-        date_from: 2000-01-23
+        date_to: 2020-01-23
       properties:
         calculated:
           description: The values of the requested metrics through time.

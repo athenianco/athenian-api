@@ -34,6 +34,12 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
         filters = _compile_filters(body._for)
     except ResponseError as e:
         return e.response
+    if body.date_to < body.date_from:
+        err = InvalidRequestError(
+            detail="date_from may not be greater than date_to",
+            pointer=".date_from",
+        )
+        raise ResponseError(err, 400)
     time_intervals = Granularity.split(body.granularity, body.date_from, body.date_to)
     for service, (repos, devs) in filters:
         calcs = defaultdict(list)
@@ -42,7 +48,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
             calcs[sentries[m]].append(m)
         results = {}
         for func, metrics in calcs.items():
-            fres = await func(metrics, repos, devs, time_intervals, request.mdb)
+            fres = await func(metrics, time_intervals, repos, devs, request.mdb)
             for i, m in enumerate(metrics):
                 results[m] = [r[i] for r in fres]
         met.calculated.append(CalculatedMetric(
