@@ -60,3 +60,14 @@ class ReleaseTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
         if times.merged.best is not None and times.released.best is not None:
             return times.released.best - times.merged.best
         return None
+
+
+@register("pr-lead-time")
+class LeadTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
+    """Time to appear in a release since starting working on the PR."""
+
+    def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
+        """Do the actual state update. See the design document for more info."""
+        if times.released.value is not None:
+            return times.released.value - times.work_begins.best
+        return None

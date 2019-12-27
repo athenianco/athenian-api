@@ -76,6 +76,7 @@ components:
       - pr-review-time
       - pr-merging-time
       - pr-release-time
+      - pr-lead-time
       example: pr-lead-time
       type: string
     DeveloperID:
@@ -148,7 +149,7 @@ components:
           - github.com/athenianco/athenian-api
         metrics:
         - pr-lead-time
-        - pr-lead-time
+        - pr-wip-time
         date_to: 2000-01-23
         date_from: 2000-01-23
         granularity: day
@@ -232,7 +233,7 @@ components:
       example:
         metrics:
         - pr-lead-time
-        - pr-lead-time
+        - pr-wip-time
         date_to: 2000-01-23
         granularity: day
         calculated:
