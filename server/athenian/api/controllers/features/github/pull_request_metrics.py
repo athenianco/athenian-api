@@ -46,8 +46,8 @@ class MergeTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.approved.best is not None and times.merged.best is not None:
-            return times.merged.best - times.approved.best
+        if times.approved.value is not None and times.merged.value is not None:
+            return times.merged.value - times.approved.value
         return None
 
 
@@ -57,8 +57,8 @@ class ReleaseTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.merged.best is not None and times.released.best is not None:
-            return times.released.best - times.merged.best
+        if times.merged.value is not None and times.released.value is not None:
+            return times.released.value - times.merged.value
         return None
 
 
