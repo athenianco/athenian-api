@@ -23,14 +23,24 @@ class PullRequestMiner:
 
     @classmethod
     async def mine(cls, time_from: datetime, time_to: datetime, repositories: Sequence[str],
-                   db: databases.Database) -> "PullRequestMiner":
-        """Create a new `PullRequestMiner` from the metadata DB according to the specified \
-        filters."""
-        prs = await read_sql_query(select([PullRequest]).where(sql.and_(
-            PullRequest.repository_name.in_(repositories),
+                   developers: Sequence[str], db: databases.Database) -> "PullRequestMiner":
+        """
+        Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
+
+        :param time_from: Fetch PRs created starting from this date.
+        :param time_to: Fetch PRs created ending with this date.
+        :param repositories: PRs must belong to these repositories (prefix excluded).
+        :param developers: PRs must be authored by these user IDs. An empty list means everybody.
+        :param db: Metadata db instance.
+        """
+        filters = [
             PullRequest.created_at >= time_from,
             PullRequest.created_at < time_to,
-        )), db)
+            PullRequest.repository_name.in_(repositories),
+        ]
+        if len(developers) > 0:
+            filters.append(PullRequest.user_login.in_(developers))
+        prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)), db)
         numbers = prs["number"]
         reviews = await read_sql_query(select([PullRequestReview]).where(
             PullRequestReview.pull_request_number.in_(numbers)), db)
@@ -154,9 +164,9 @@ class PullRequestTimesMiner(PullRequestMiner):
             else:
                 approved_at_value = grouped_reviews[
                     grouped_reviews["state"] == ReviewResolution.APPROVED]["submitted_at"].max()
-            approved_at = Fallback(approved_at_value, None)
         else:
-            approved_at = Fallback(None, None)
+            approved_at_value = None
+        approved_at = Fallback(approved_at_value, merged_at)
         last_commit = Fallback(None, created_at)  # FIXME(vmarkovtsev): no commit info
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         closed_at = Fallback(pr["closed_at"], None)

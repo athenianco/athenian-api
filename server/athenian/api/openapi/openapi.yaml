@@ -31,43 +31,60 @@ paths:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
           description: The request was invalid.
-        404:
+        422:
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/NoSourceDataError'
           description: No data is available to calculate metrics for the given repositories.
       summary: Calculate metrics.
-      x-openapi-router-controller: athenian.api.controllers.metrics
+      x-openapi-router-controller: athenian.api.controllers.metrics_controller
       x-codegen-request-body-name: body
 components:
   schemas:
+    GenericError:
+      type: object
+      properties:
+        type:
+          description: URI reference that identifies the problem type (RFC 7807).
+          example: /errors/metrics_line/InvalidRequestError
+          type: string
+        title:
+          description: Short, human-readable summary of the problem type.
+          example: Validation failed
+          type: string
+        status:
+          description: Duplicated HTTP status code.
+          example: 400
+          type: integer
+        detail:
+          description: Human-readable explanation specific to this occurrence of the problem.
+          example: '"pr-slave-time" is not one of [...].'
+          type: string
+        instance:
+          description: URI reference that identifies the specific occurrence of the problem.
+          example: https://sentry.io/athenian/api/?query=2763c4eabd7240f59829ee1a02546293
+          type: string
+      required:
+        - type
     InvalidRequestError:
-      properties:
-        error:
-          description: Why the server thinks the request is invalid.
-          example: 'Unknown granularity value: "year".'
-          type: string
-        pointer:
-          description: Path to the offending request item.
-          example: .granularity
-          type: string
-      required:
-      - error
-      - pointer
-      type: object
+      allOf:
+      - $ref: '#/components/schemas/GenericError'
+      - type: object
+        properties:
+          pointer:
+            description: Path to the offending request item.
+            example: .granularity
+            type: string
     NoSourceDataError:
-      properties:
-        error:
-          description: Why the server cannot fulfill the request.
-          example: No data for some requested repositories.
-          type: string
-        repositories:
-          $ref: '#/components/schemas/RepositorySet'
-      required:
-      - error
-      - repositories
-      type: object
+      allOf:
+      - $ref: '#/components/schemas/GenericError'
+      - type: object
+        properties:
+          repositories:
+            $ref: '#/components/schemas/RepositorySet'
+        required:
+        - repositories
     MetricID:
       description: Currently supported metric types.
       enum:
@@ -109,19 +126,18 @@ components:
       type: array
     ForSet:
       example:
-        developers:
-        - github.com/vmarkovtsev
-        - github.com/mcuadros
         repositories:
         - github.com/src-d/hercules
         - github.com/athenianco/athenian-api
-      properties:
         developers:
-          $ref: '#/components/schemas/DeveloperSet'
+        - github.com/vmarkovtsev
+        - github.com/mcuadros
+      properties:
         repositories:
           $ref: '#/components/schemas/RepositorySet'
+        developers:
+          $ref: '#/components/schemas/DeveloperSet'
       required:
-      - developers
       - repositories
       type: object
     Granularity:
@@ -135,18 +151,18 @@ components:
     MetricsRequest:
       example:
         for:
-        - developers:
-          - github.com/vmarkovtsev
-          - github.com/mcuadros
-          repositories:
+        - repositories:
           - github.com/src-d/hercules
           - github.com/athenianco/athenian-api
-        - developers:
+          developers:
           - github.com/vmarkovtsev
           - github.com/mcuadros
-          repositories:
+        - repositories:
           - github.com/src-d/hercules
           - github.com/athenianco/athenian-api
+          developers:
+          - github.com/vmarkovtsev
+          - github.com/mcuadros
         metrics:
         - pr-lead-time
         - pr-wip-time
@@ -212,12 +228,12 @@ components:
           - 75
           - 75
         for:
-          developers:
-          - github.com/vmarkovtsev
-          - github.com/mcuadros
           repositories:
           - github.com/src-d/hercules
           - github.com/athenianco/athenian-api
+          developers:
+          - github.com/vmarkovtsev
+          - github.com/mcuadros
       properties:
         for:
           $ref: '#/components/schemas/ForSet'
@@ -375,8 +391,7 @@ components:
         confidence_scores:
           description: Confidence score from 0 (no idea) to 100 (very confident). The same order as `metrics`.
           items:
-            format: integer
-            type: number
+            type: integer
           type: array
       required:
       - date
