@@ -91,11 +91,11 @@ class Fallback(Generic[T]):
         return self.__fallback
 
     def __str__(self) -> str:
-        """str()"""
+        """str()."""
         return "Fallback(%s, %s)" % (self.value, self.best)
 
     def __repr__(self) -> str:
-        """repr()"""
+        """repr()."""
         return "Fallback(%r, %r)" % (self.value, self.best)
 
     @property

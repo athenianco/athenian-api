@@ -9,9 +9,8 @@ from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
 
 
-def mean_confidence_interval(
-        data: Sequence[T], may_have_negative_values: bool, confidence=0.95,
-        ) -> Tuple[Optional[T], Optional[T], Optional[T]]:
+def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, confidence=0.95,
+                             ) -> Tuple[Optional[T], Optional[T], Optional[T]]:
     """Calculate the mean value and the confidence interval."""
     if len(data) == 0:
         return None, None, None
@@ -116,6 +115,7 @@ class PullRequestMetricCalculator(Generic[T]):
 
 class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
     """Mean calculator."""
+
     may_have_negative_values: bool
 
     def value(self) -> Metric[T]:
