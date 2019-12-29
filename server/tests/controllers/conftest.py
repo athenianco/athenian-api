@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from athenian.api import AthenianApp
 from athenian.api.models.metadata import hack_sqlite_arrays
 from athenian.api.models.metadata.github import Base
-from .sample_db_data import fill_session
+from tests.sample_db_data import fill_session
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def client(loop, aiohttp_client, sqlite_db):
 @pytest.fixture
 def sqlite_db():
     hack_sqlite_arrays()
-    fn = Path(os.getenv("DB_DIR", ".")) / "db.sqlite"
+    fn = Path(os.getenv("DB_DIR", "..")) / "db.sqlite"
     if fn.exists():
         return
     engine = create_engine("sqlite:///%s" % fn, echo=True)

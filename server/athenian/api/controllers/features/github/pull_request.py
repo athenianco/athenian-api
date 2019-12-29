@@ -19,6 +19,7 @@ def mean_confidence_interval(
     ns = 1_000_000_000
     max_conf_max_ratio = 10
     if timedelta:
+        # thus the precision is 1 second; otherwise there are integer overflows
         arr = np.asarray([d.to_timedelta64() // ns for d in data], dtype=np.int64)
     else:
         arr = np.asarray(data)
@@ -54,24 +55,30 @@ def mean_confidence_interval(
             if conf_max / m > max_conf_max_ratio:
                 conf_max = max_conf_max_ratio * m
     if timedelta:
+        # convert back to pd.Timedelta-s
         m = pd.Timedelta(np.timedelta64(int(m * ns)))
         conf_min = pd.Timedelta(np.timedelta64(int(conf_min * ns)))
         conf_max = pd.Timedelta(np.timedelta64(int(conf_max * ns)))
+    else:
+        dt = type(data[0])
+        m = dt(m)
+        conf_min = dt(conf_min)
+        conf_max = dt(conf_max)
     return m, conf_min, conf_max
 
 
 def median_confidence_interval(data: Sequence[T], confidence=0.95,
                                ) -> Tuple[Optional[T], Optional[T], Optional[T]]:
     """Calculate the median value and the confidence interval."""
+    if len(data) == 0:
+        return None, None, None
     arr = np.asarray(data)
+    # https://onlinecourses.science.psu.edu/stat414/node/316
     arr = np.sort(arr)
-    low_count, up_count = scipy.stats.binom.interval(confidence, arr.shape[0], 0.5, loc=0)
+    low_count, up_count = scipy.stats.binom.interval(confidence, arr.shape[0], 0.5)
     low_count, up_count = int(low_count), int(up_count)
-    # given this: https://onlinecourses.science.psu.edu/stat414/node/316
-    # low_count and up_count both refer to W's value, W follows the binomial distribution.
-    # low_count needs to be decremented, up_count no need to change in python indexing
-    low_count -= 1
-    return np.median(arr), arr[low_count], arr[up_count]
+    dt = type(data[0])
+    return dt(np.median(arr)), dt(arr[low_count]), dt(arr[up_count - 1])
 
 
 class PullRequestMetricCalculator(Generic[T]):

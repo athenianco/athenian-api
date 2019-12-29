@@ -10,7 +10,7 @@ from athenian.api.models.metrics_request import MetricsRequest
 from athenian.api.models.no_source_data_error import NoSourceDataError
 
 
-async def test_calc_metrics_line(client):
+async def test_calc_metrics_line_smoke(client):
     """Test case for calc_metrics
 
     Calculate metrics.
@@ -46,4 +46,3 @@ async def test_calc_metrics_line(client):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    print(body)
