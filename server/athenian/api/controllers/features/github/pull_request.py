@@ -2,21 +2,66 @@ from datetime import datetime
 from typing import Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
 
 import numpy as np
+import pandas as pd
 import scipy.stats
 
 from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
 
 
-def mean_confidence_interval(data, confidence=0.95):
+def mean_confidence_interval(
+        data: Sequence[T], may_have_negative_values: bool, confidence=0.95,
+        ) -> Tuple[Optional[T], Optional[T], Optional[T]]:
     """Calculate the mean value and the confidence interval."""
-    arr = np.asarray(data)
-    m, se = np.mean(arr), scipy.stats.sem(arr)
-    h = se * scipy.stats.t.ppf((1 + confidence) / 2., len(arr) - 1)
-    return m, m - h, m + h
+    if len(data) == 0:
+        return None, None, None
+    timedelta = isinstance(data[0], pd.Timedelta)
+    ns = 1_000_000_000
+    max_conf_max_ratio = 10
+    if timedelta:
+        arr = np.asarray([d.to_timedelta64() // ns for d in data], dtype=np.int64)
+    else:
+        arr = np.asarray(data)
+    if may_have_negative_values:
+        # assume a normal distribution
+        m = np.mean(arr)
+        sem = scipy.stats.sem(arr)
+        if sem != sem:
+            # only one sample, we don't know the stddev so whatever value to indicate a failure
+            conf_min = type(m)(0)
+            conf_max = max_conf_max_ratio * m
+        else:
+            conf_min, conf_max = scipy.stats.t.interval(confidence, len(arr) - 1, loc=m, scale=sem)
+    else:
+        # assume a log-normal distribution
+        assert (arr >= 0).all()
+        arr = arr[arr != 0]
+        m = np.mean(arr)
+        if len(arr) == 1:
+            # only one sample, we don't know the stddev so whatever value to indicate a failure
+            conf_min = type(m)(0)
+            conf_max = max_conf_max_ratio * m
+        else:
+            # modified Cox method
+            # https://doi.org/10.1080/10691898.2005.11910638
+            logarr = np.log(arr)
+            logvar = np.var(logarr, ddof=1)
+            logm = np.mean(logarr)
+            d = np.sqrt(logvar / len(arr) + logvar**2 / (2 * (len(arr) - 1)))
+            conf_min, conf_max = scipy.stats.t.interval(
+                confidence, len(arr) - 1, loc=logm + logvar / 2, scale=d)
+            conf_min, conf_max = np.exp(conf_min), np.exp(conf_max)
+            if conf_max / m > max_conf_max_ratio:
+                conf_max = max_conf_max_ratio * m
+    if timedelta:
+        m = pd.Timedelta(np.timedelta64(int(m * ns)))
+        conf_min = pd.Timedelta(np.timedelta64(int(conf_min * ns)))
+        conf_max = pd.Timedelta(np.timedelta64(int(conf_max * ns)))
+    return m, conf_min, conf_max
 
 
-def median_confidence_interval(data, confidence=0.95):
+def median_confidence_interval(data: Sequence[T], confidence=0.95,
+                               ) -> Tuple[Optional[T], Optional[T], Optional[T]]:
     """Calculate the median value and the confidence interval."""
     arr = np.asarray(data)
     arr = np.sort(arr)
@@ -64,12 +109,14 @@ class PullRequestMetricCalculator(Generic[T]):
 
 class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
     """Mean calculator."""
+    may_have_negative_values: bool
 
     def value(self) -> Metric[T]:
         """Calculate the current metric value."""
         if not self.samples:
             return Metric(False, 0, 0, 0)
-        return Metric(True, *mean_confidence_interval(self.samples))
+        assert self.may_have_negative_values is not None
+        return Metric(True, *mean_confidence_interval(self.samples, self.may_have_negative_values))
 
     def analyze(self, times: PullRequestTimes) -> Optional[T]:
         """Do the actual state update."""
@@ -126,13 +173,13 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
         For each time interval we collect the list of PRs created then and measure the specified \
         metrics.
         """
-        items = sorted(items, key=lambda x: x.created)
+        items = sorted(items, key=lambda x: x.created.best)
         if not items:
             return []
         borders = self.time_intervals
         if items[-1].created.best > borders[-1]:
             raise ValueError("there are PRs created after time_to")
-        bins = [[] for _ in items]
+        bins = [[] for _ in borders]
         pos = 0
         for item in items:
             while item.created.best > borders[pos + 1]:

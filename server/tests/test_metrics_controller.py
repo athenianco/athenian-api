@@ -32,8 +32,8 @@ async def test_calc_metrics_line(client):
                 ],
             },
         ],
-        "metrics": ["pr-lead-time", "pr-lead-time"],
-        "date_from": "2000-01-23",
+        "metrics": ["pr-lead-time", "pr-wip-time"],
+        "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularity": "week",
     }

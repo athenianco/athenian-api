@@ -90,6 +90,14 @@ class Fallback(Generic[T]):
             return self.__fallback.best
         return self.__fallback
 
+    def __str__(self) -> str:
+        """str()"""
+        return "Fallback(%s, %s)" % (self.value, self.best)
+
+    def __repr__(self) -> str:
+        """repr()"""
+        return "Fallback(%r, %r)" % (self.value, self.best)
+
     @property
     def value(self) -> Optional[T]:
         """The primary value."""  # noqa: D401
@@ -159,7 +167,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             Fallback.max(created_at, last_commit_before_first_review),
             first_comment_on_first_review))  # FIXME(vmarkovtsev): no review request info
         if merged_at.value is not None:
-            reviews_before_merge = reviews[reviews["submitted_at"] <= merged_at]
+            reviews_before_merge = reviews[reviews["submitted_at"] <= merged_at.best]
             grouped_reviews = reviews_before_merge \
                 .sort_values(["submitted_at"], ascending=True) \
                 .groupby("user_login", sort=False) \

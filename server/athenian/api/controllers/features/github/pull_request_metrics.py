@@ -10,6 +10,8 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
 class WorkInProgressTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Time of work in progress metric."""
 
+    may_have_negative_values = False
+
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
         if times.first_review_request.best is not None:
@@ -20,6 +22,8 @@ class WorkInProgressTimeCalculator(PullRequestAverageMetricCalculator[timedelta]
 @register("pr-wait-first-review-time")
 class WaitFirstReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Time of waiting for the first review metric."""
+
+    may_have_negative_values = False
 
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
@@ -33,6 +37,8 @@ class WaitFirstReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta
 class ReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Time of the review process metric."""
 
+    may_have_negative_values = False
+
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
         if times.first_review_request.best is not None and times.approved.best is not None:
@@ -43,6 +49,8 @@ class ReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 @register("pr-merging-time")
 class MergeTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Time to merge after finishing the review metric."""
+
+    may_have_negative_values = False
 
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
@@ -55,6 +63,8 @@ class MergeTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 class ReleaseTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Time to appear in a release after merging metric."""
 
+    may_have_negative_values = False
+
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
         if times.merged.value is not None and times.released.value is not None:
@@ -65,6 +75,8 @@ class ReleaseTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 @register("pr-lead-time")
 class LeadTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Time to appear in a release since starting working on the PR."""
+
+    may_have_negative_values = False
 
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
