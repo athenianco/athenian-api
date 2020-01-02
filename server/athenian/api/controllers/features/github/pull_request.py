@@ -62,7 +62,7 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
         m = pd.Timedelta(np.timedelta64(int(m * ns)))
         conf_min = pd.Timedelta(np.timedelta64(int(conf_min * ns)))
         conf_max = pd.Timedelta(np.timedelta64(int(conf_max * ns)))
-        if isinstance(data[0], timedelta):
+        if not isinstance(data[0], pd.Timedelta):
             m = m.to_pytimedelta()
             conf_min = conf_min.to_pytimedelta()
             conf_max = conf_max.to_pytimedelta()
@@ -84,7 +84,7 @@ def median_confidence_interval(data: Sequence[T], confidence=0.95,
     arr = np.sort(arr)
     low_count, up_count = scipy.stats.binom.interval(confidence, arr.shape[0], 0.5)
     low_count, up_count = int(low_count), int(up_count)
-    dt = type(data[0]) if not isinstance(data[0], timedelta) else lambda x: x
+    dt = type(data[0]) if type(data[0]) is not timedelta else lambda x: x
     return dt(np.median(arr)), dt(arr[low_count]), dt(arr[up_count - 1])
 
 
