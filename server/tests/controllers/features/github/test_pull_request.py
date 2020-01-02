@@ -112,47 +112,72 @@ def test_median_confidence_interval_empty():
 
 @pytest.fixture
 def pr_samples():
-    fake = faker.Faker()
+    def generate(n):
+        fake = faker.Faker()
 
-    def random_pr():
-        created_at = fake.date_time_between(start_date="-3y", end_date="-6M")
-        first_commit = fake.date_time_between(start_date="-3y1M", end_date=created_at)
-        last_commit_before_first_review = fake.date_time_between(
-            start_date=created_at, end_date=created_at + timedelta(days=30))
-        first_comment_on_first_review = fake.date_time_between(
-            start_date=last_commit_before_first_review, end_date=timedelta(days=2))
-        first_review_request = fake.date_time_between(
-            start_date=last_commit_before_first_review, end_date=first_comment_on_first_review)
-        first_passed_checks = fake.date_time_between(
-            start_date=created_at, end_date=first_review_request)
-        approved_at = fake.date_time_between(
-            start_date=first_comment_on_first_review + timedelta(days=1),
-            end_date=first_comment_on_first_review + timedelta(days=30))
-        last_commit = fake.date_time_between(
-            start_date=first_comment_on_first_review + timedelta(days=1),
-            end_date=approved_at)
-        last_passed_checks = fake.date_time_between(last_commit, last_commit + timedelta(days=1))
-        merged_at = fake.date_time_between(approved_at, approved_at + timedelta(days=2))
-        closed_at = merged_at
-        released_at = fake.date_time_between(merged_at, merged_at + timedelta(days=30))
-        return PullRequestTimes(
-            created=Fallback(created_at, None),
-            first_commit=Fallback(first_commit, created_at),
-            last_commit_before_first_review=Fallback(last_commit_before_first_review, None),
-            last_commit=Fallback(last_commit, None),
-            merged=Fallback(merged_at, None),
-            first_comment_on_first_review=Fallback(first_comment_on_first_review, None),
-            first_review_request=Fallback(first_review_request, None),
-            approved=Fallback(approved_at, None),
-            first_passed_checks=Fallback(first_passed_checks, None),
-            last_passed_checks=Fallback(last_passed_checks, None),
-            finalized=Fallback(min(max(approved_at, last_passed_checks, last_commit),
-                                   closed_at), None),
-            released=Fallback(released_at, None),
-            closed=Fallback(closed_at, None),
+        def random_pr():
+            created_at = fake.date_time_between(start_date="-3y", end_date="-6M")
+            first_commit = fake.date_time_between(start_date="-3y1M", end_date=created_at)
+            last_commit_before_first_review = fake.date_time_between(
+                start_date=created_at, end_date=created_at + timedelta(days=30))
+            first_comment_on_first_review = fake.date_time_between(
+                start_date=last_commit_before_first_review, end_date=timedelta(days=2))
+            first_review_request = fake.date_time_between(
+                start_date=last_commit_before_first_review, end_date=first_comment_on_first_review)
+            first_passed_checks = fake.date_time_between(
+                start_date=created_at, end_date=first_review_request)
+            approved_at = fake.date_time_between(
+                start_date=first_comment_on_first_review + timedelta(days=1),
+                end_date=first_comment_on_first_review + timedelta(days=30))
+            last_commit = fake.date_time_between(
+                start_date=first_comment_on_first_review + timedelta(days=1),
+                end_date=approved_at)
+            last_passed_checks = fake.date_time_between(
+                last_commit, last_commit + timedelta(days=1))
+            merged_at = fake.date_time_between(approved_at, approved_at + timedelta(days=2))
+            closed_at = merged_at
+            released_at = fake.date_time_between(merged_at, merged_at + timedelta(days=30))
+            return PullRequestTimes(
+                created=Fallback(created_at, None),
+                first_commit=Fallback(first_commit, created_at),
+                last_commit_before_first_review=Fallback(last_commit_before_first_review, None),
+                last_commit=Fallback(last_commit, None),
+                merged=Fallback(merged_at, None),
+                first_comment_on_first_review=Fallback(first_comment_on_first_review, None),
+                first_review_request=Fallback(first_review_request, None),
+                approved=Fallback(approved_at, None),
+                first_passed_checks=Fallback(first_passed_checks, None),
+                last_passed_checks=Fallback(last_passed_checks, None),
+                finalized=Fallback(min(max(approved_at, last_passed_checks, last_commit),
+                                       closed_at), None),
+                released=Fallback(released_at, None),
+                closed=Fallback(closed_at, None),
+            )
+
+        return [random_pr() for _ in range(n)]
+    return generate
+
+
+def ensure_dtype(pr, dtype):
+    if not isinstance(pr.created.value, dtype):
+        pr = PullRequestTimes(
+            created=Fallback(dtype(pr.created.value), None),
+            first_commit=Fallback(dtype(pr.first_commit.value), None),
+            last_commit_before_first_review=Fallback(
+                dtype(pr.last_commit_before_first_review.value), None),
+            last_commit=Fallback(dtype(pr.last_commit.value), None),
+            merged=Fallback(dtype(pr.merged.value), None),
+            first_comment_on_first_review=Fallback(
+                dtype(pr.first_comment_on_first_review.value), None),
+            first_review_request=Fallback(dtype(pr.first_review_request.value), None),
+            approved=Fallback(dtype(pr.approved.value), None),
+            first_passed_checks=Fallback(dtype(pr.first_passed_checks.value), None),
+            last_passed_checks=Fallback(dtype(pr.last_passed_checks.value), None),
+            finalized=Fallback(dtype(pr.finalized.value), None),
+            released=Fallback(dtype(pr.released.value), None),
+            closed=Fallback(dtype(pr.closed.value), None),
         )
-
-    return [random_pr() for _ in range(100)]
+    return pr
 
 
 @pytest.mark.parametrize(
@@ -170,30 +195,19 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
             return times.released.value - times.work_begins.best
 
     calc = LeadTimeCalculator()
-    for pr in pr_samples:
-        if not isinstance(pr.created.value, dtype):
-            pr = PullRequestTimes(
-                created=Fallback(dtype(pr.created.value), None),
-                first_commit=Fallback(dtype(pr.first_commit.value), None),
-                last_commit_before_first_review=Fallback(
-                    dtype(pr.last_commit_before_first_review.value), None),
-                last_commit=Fallback(dtype(pr.last_commit.value), None),
-                merged=Fallback(dtype(pr.merged.value), None),
-                first_comment_on_first_review=Fallback(
-                    dtype(pr.first_comment_on_first_review.value), None),
-                first_review_request=Fallback(dtype(pr.first_review_request.value), None),
-                approved=Fallback(dtype(pr.approved.value), None),
-                first_passed_checks=Fallback(dtype(pr.first_passed_checks.value), None),
-                last_passed_checks=Fallback(dtype(pr.last_passed_checks.value), None),
-                finalized=Fallback(dtype(pr.finalized.value), None),
-                released=Fallback(dtype(pr.released.value), None),
-                closed=Fallback(dtype(pr.closed.value), None),
-            )
-        calc(pr)
+    for pr in pr_samples(100):
+        calc(ensure_dtype(pr, dtype))
     m = calc.value()
+    assert m.exists
     assert isinstance(m.value, timedelta)
     assert isinstance(m.confidence_min, timedelta)
     assert isinstance(m.confidence_max, timedelta)
     assert m.confidence_score() > 50
     assert timedelta() < m.value < timedelta(days=365 * 3 + 32)
     assert m.confidence_min < m.value < m.confidence_max
+    calc.reset()
+    m = calc.value()
+    assert not m.exists
+    assert m.value == 0
+    assert m.confidence_min == 0
+    assert m.confidence_max == 0
