@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
 
 import numpy as np
@@ -14,12 +14,16 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
     """Calculate the mean value and the confidence interval."""
     if len(data) == 0:
         return None, None, None
-    timedelta = isinstance(data[0], pd.Timedelta)
     ns = 1_000_000_000
     max_conf_max_ratio = 10
-    if timedelta:
+    dtype_is_timedelta = isinstance(data[0], (pd.Timedelta, timedelta))
+    if dtype_is_timedelta:
+        # we have to convert the dtype because some ops required by scipy are missing
         # thus the precision is 1 second; otherwise there are integer overflows
-        arr = np.asarray([d.to_timedelta64() // ns for d in data], dtype=np.int64)
+        if isinstance(data[0], pd.Timedelta):
+            arr = np.asarray([d.to_timedelta64() // ns for d in data], dtype=np.int64)
+        else:
+            arr = np.asarray(data, dtype="timedelta64[ns]").astype(np.int64) // ns
     else:
         arr = np.asarray(data)
     if may_have_negative_values:
@@ -53,11 +57,15 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
             conf_min, conf_max = np.exp(conf_min), np.exp(conf_max)
             if conf_max / m > max_conf_max_ratio:
                 conf_max = max_conf_max_ratio * m
-    if timedelta:
-        # convert back to pd.Timedelta-s
+    if dtype_is_timedelta:
+        # convert the dtype back
         m = pd.Timedelta(np.timedelta64(int(m * ns)))
         conf_min = pd.Timedelta(np.timedelta64(int(conf_min * ns)))
         conf_max = pd.Timedelta(np.timedelta64(int(conf_max * ns)))
+        if isinstance(data[0], timedelta):
+            m = m.to_pytimedelta()
+            conf_min = conf_min.to_pytimedelta()
+            conf_max = conf_max.to_pytimedelta()
     else:
         dt = type(data[0])
         m = dt(m)
@@ -76,7 +84,7 @@ def median_confidence_interval(data: Sequence[T], confidence=0.95,
     arr = np.sort(arr)
     low_count, up_count = scipy.stats.binom.interval(confidence, arr.shape[0], 0.5)
     low_count, up_count = int(low_count), int(up_count)
-    dt = type(data[0])
+    dt = type(data[0]) if not isinstance(data[0], timedelta) else lambda x: x
     return dt(np.median(arr)), dt(arr[low_count]), dt(arr[up_count - 1])
 
 

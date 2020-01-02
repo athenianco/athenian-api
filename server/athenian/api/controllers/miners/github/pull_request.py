@@ -122,28 +122,31 @@ class Fallback(Generic[T]):
             return cls(None, None)
 
 
+DT = Union[pd.Timestamp, datetime, None]
+
+
 @dataclass(frozen=True)
 class PullRequestTimes:
     """Various PR update timestamps."""
 
-    created: Fallback[datetime]                                # PR_C
-    first_commit: Fallback[datetime]                           # PR_CC
+    created: Fallback[DT]                                # PR_C
+    first_commit: Fallback[DT]                           # PR_CC
 
     @property
-    def work_begins(self) -> Fallback[datetime]:               # PR_B   noqa: D102
+    def work_begins(self) -> Fallback[DT]:               # PR_B   noqa: D102
         return Fallback.min(self.created, self.first_commit)
 
-    last_commit_before_first_review: Fallback[datetime]        # PR_CFR
-    last_commit: Fallback[datetime]                            # PR_L
-    merged: Fallback[datetime]                                 # PR_M
-    closed: Fallback[datetime]                                 # PR_CL
-    first_comment_on_first_review: Fallback[datetime]          # PR_W
-    first_review_request: Fallback[datetime]                   # PR_S
-    approved: Fallback[datetime]                               # PR_A
-    first_passed_checks: Fallback[datetime]                    # PR_VS
-    last_passed_checks: Fallback[datetime]                     # PR_VF
-    finalized: Fallback[datetime]                              # PR_F
-    released: Fallback[datetime]                               # PR_R
+    last_commit_before_first_review: Fallback[DT]        # PR_CFR
+    last_commit: Fallback[DT]                            # PR_L
+    merged: Fallback[DT]                                 # PR_M
+    closed: Fallback[DT]                                 # PR_CL
+    first_comment_on_first_review: Fallback[DT]          # PR_W
+    first_review_request: Fallback[DT]                   # PR_S
+    approved: Fallback[DT]                               # PR_A
+    first_passed_checks: Fallback[DT]                    # PR_VS
+    last_passed_checks: Fallback[DT]                     # PR_VF
+    finalized: Fallback[DT]                              # PR_F
+    released: Fallback[DT]                               # PR_R
 
 
 class ReviewResolution(Enum):
