@@ -30,6 +30,7 @@ async def calc_pull_request_metrics_line_github(
 
 ENTRIES = {
     "github": {
+        # there will be other metrics in the future, hence **{}
         **{k: calc_pull_request_metrics_line_github for k in pull_request_calculators},
     },
 }  # type: Mapping[str, Mapping[str, calc_metrics_line_func]]

@@ -67,6 +67,7 @@ components:
           type: string
       required:
         - type
+        - title
     InvalidRequestError:
       allOf:
       - $ref: '#/components/schemas/GenericError'
@@ -109,7 +110,7 @@ components:
       example: github.com/src-d/go-git
       type: string
     DeveloperSet:
-      description: A set of developers. The special value \"all\" denotes everybody.
+      description: A set of developers. An empty list disables the filter and includes everybody.
       example:
       - github.com/vmarkovtsev
       - github.com/mcuadros
@@ -117,7 +118,7 @@ components:
         $ref: '#/components/schemas/DeveloperID'
       type: array
     RepositorySet:
-      description: A set of repositories.
+      description: A set of repositories. An empty list results an empty response in contrary to DeveloperSet.
       example:
       - github.com/src-d/hercules
       - github.com/athenianco/athenian-api
@@ -324,7 +325,7 @@ components:
         date_to: 2020-01-23
       properties:
         calculated:
-          description: The values of the requested metrics through time.
+          description: The values of the requested metrics through time. The sequence order is not guaranteed to be the same as in the preceding request.
           items:
             $ref: '#/components/schemas/CalculatedMetric'
           type: array
@@ -377,13 +378,13 @@ components:
             type: number
           type: array
         confidence_mins:
-          description: Confidence interval @ p=0.95, minimum. The same order as `metrics`.
+          description: Confidence interval @ p=0.95, minimum. The same order as `metrics`. It is optional because there can be exact metrics like "count open PRs per month".
           items:
             format: float
             type: number
           type: array
         confidence_maxs:
-          description: Confidence interval @ p=0.95, maximum. The same order as `metrics`.
+          description: Confidence interval @ p=0.95, maximum. The same order as `metrics`. It is optional because there can be exact metrics like "count open PRs per month".
           items:
             format: float
             type: number

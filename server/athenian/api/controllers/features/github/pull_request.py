@@ -29,12 +29,12 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
     if may_have_negative_values:
         # assume a normal distribution
         m = np.mean(arr)
-        sem = scipy.stats.sem(arr)
-        if sem != sem:
+        if len(arr) == 1:
             # only one sample, we don't know the stddev so whatever value to indicate a failure
             conf_min = type(m)(0)
             conf_max = max_conf_max_ratio * m
         else:
+            sem = scipy.stats.sem(arr)
             conf_min, conf_max = scipy.stats.t.interval(confidence, len(arr) - 1, loc=m, scale=sem)
     else:
         # assume a log-normal distribution
@@ -67,6 +67,7 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
             conf_min = conf_min.to_pytimedelta()
             conf_max = conf_max.to_pytimedelta()
     else:
+        # ensure the original dtype (can have been switched to float under the hood)
         dt = type(data[0])
         m = dt(m)
         conf_min = dt(conf_min)
@@ -80,6 +81,7 @@ def median_confidence_interval(data: Sequence[T], confidence=0.95,
     if len(data) == 0:
         return None, None, None
     arr = np.asarray(data)
+    # The following code is based on:
     # https://onlinecourses.science.psu.edu/stat414/node/316
     arr = np.sort(arr)
     low_count, up_count = scipy.stats.binom.interval(confidence, arr.shape[0], 0.5)

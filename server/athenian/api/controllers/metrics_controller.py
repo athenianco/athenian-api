@@ -14,6 +14,11 @@ from athenian.api.models.metrics_request import MetricsRequest
 from athenian.api.typing_utils import AthenianWebRequest
 
 
+#           service                  developers
+Filter = Tuple[str, Tuple[List[str], List[str]]]
+#                        repositories
+
+
 async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics.
 
@@ -23,6 +28,18 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     """
     body = MetricsRequest.from_dict(body)
 
+    """
+    @se7entyse7en:
+    It seems weird to me that the generated class constructor accepts None as param and it
+    doesn't on setters. Probably it would have much more sense to generate a class that doesn't
+    accept the params at all or that it does not default to None. :man_shrugging:
+
+    @vmarkovtsev:
+    This is exactly what I did the other day. That zalando/connexion thingie which glues OpenAPI
+    and asyncio together constructs all the models by calling their __init__ without any args and
+    then setting individual attributes. So we crash somewhere in from_dict() or to_dict() if we
+    make something required.
+    """
     met = CalculatedMetrics()
     met.date_from = body.date_from
     met.date_to = body.date_to
@@ -43,10 +60,12 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     time_intervals = Granularity.split(body.granularity, body.date_from, body.date_to)
     for service, (repos, devs) in filters:
         calcs = defaultdict(list)
+        # for each filter, we find the functions to measure the metrics
         sentries = ENTRIES[service]
         for m in body.metrics:
             calcs[sentries[m]].append(m)
         results = {}
+        # for each metric, we find the function to calculate and call it
         for func, metrics in calcs.items():
             fres = await func(metrics, time_intervals, repos, devs, request.mdb)
             for i, m in enumerate(metrics):
@@ -63,7 +82,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     return response(met)
 
 
-def _compile_filters(for_sets) -> List[Tuple[str, Tuple[List[str], List[str]]]]:
+def _compile_filters(for_sets) -> List[Filter]:
     filters = []
     for i, for_set in enumerate(for_sets):
         repos = []

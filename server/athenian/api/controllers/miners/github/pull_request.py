@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Generic, Optional, Sequence, TypeVar, Union
+from typing import Generator, Generic, Optional, Sequence, Tuple, TypeVar, Union
 
 import databases
 import pandas as pd
@@ -45,16 +45,14 @@ class PullRequestMiner:
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
         prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)), db)
-        if len(prs) == 0:
-            return cls(prs, prs, prs)
-        numbers = prs["number"]
+        numbers = prs["number"] if len(prs) > 0 else set()
         reviews = await read_sql_query(select([PullRequestReview]).where(
             PullRequestReview.pull_request_number.in_(numbers)), db)
         review_comments = await read_sql_query(select([PullRequestComment]).where(
             PullRequestComment.pull_request_number.in_(numbers)), db)
         return cls(prs, reviews, review_comments)
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[Tuple[pd.Series, pd.DataFrame, pd.DataFrame], None, None]:
         """Iterate over the information collected for individual pull requests."""
         for _, pr in self._prs.iterrows():
             reviews = self._reviews[self._reviews["pull_request_number"] == pr["number"]]
@@ -76,8 +74,8 @@ class Fallback(Generic[T]):
 
     def __init__(self, value: Optional[T], fallback: Union[None, T, "Fallback[T]"]):
         """Initialize a new instance of `Fallback`."""
-        if value != value:
-            value = None  # NaN
+        if value != value:  # NaN check
+            value = None
         self.__value = value
         self.__fallback = fallback
 
@@ -161,7 +159,8 @@ class PullRequestTimesMiner(PullRequestMiner):
     """Extract the pull request update timestamps from the metadata DB."""
 
     @classmethod
-    def _compile(cls, pr: pd.Series, reviews: pd.DataFrame, review_comments: pd.DataFrame):
+    def _compile(cls, pr: pd.Series, reviews: pd.DataFrame, review_comments: pd.DataFrame,
+                 ) -> PullRequestTimes:
         created_at = Fallback(pr["created_at"], None)
         merged_at = Fallback(pr["merged_at"], None)
         first_comment_on_first_review = Fallback(review_comments["created_at"].min(), merged_at)
@@ -184,12 +183,13 @@ class PullRequestTimesMiner(PullRequestMiner):
         else:
             approved_at_value = None
         approved_at = Fallback(approved_at_value, merged_at)
+        first_commit = Fallback(None, created_at)  # FIXME(vmarkovtsev): no commit info
         last_commit = Fallback(None, created_at)  # FIXME(vmarkovtsev): no commit info
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         closed_at = Fallback(pr["closed_at"], None)
         return PullRequestTimes(
             created=created_at,
-            first_commit=Fallback(None, created_at),  # FIXME(vmarkovtsev): no commit info
+            first_commit=first_commit,
             last_commit_before_first_review=last_commit_before_first_review,
             last_commit=last_commit,
             merged=merged_at,
@@ -204,7 +204,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             closed=closed_at,
         )
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[PullRequestTimes, None, None]:
         """Iterate over the update timestamps collected for individual pull requests."""
         for pr, reviews, review_comments in super().__iter__():
             yield self._compile(pr, reviews, review_comments)
