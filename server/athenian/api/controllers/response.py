@@ -4,8 +4,8 @@ from aiohttp import web
 from aiohttp.typedefs import LooseHeaders
 
 from athenian.api import FriendlyJson
-from athenian.api.models.base_model_ import Model
-from athenian.api.models.generic_error import GenericError
+from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.generic_error import GenericError
 
 
 def response(model: Model, *,
@@ -21,7 +21,6 @@ def response(model: Model, *,
 class ResponseError(Exception):
     """Generic controller error."""
 
-    def __init__(self, model: GenericError, status: int):
+    def __init__(self, model: GenericError):
         """Initialize a new instance of `ResponseError`."""
-        model.status = status
-        self.response = response(model, status=status)
+        self.response = response(model, status=model.status)
