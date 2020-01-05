@@ -68,6 +68,8 @@ docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /se
 
 You should have two SQLite files in `$(pwd)`: `mdb.sqlite` and `sdb.sqlite`.
 
+Obtain Auth0 credentials for running locally: TODO.
+
 ## Running the API server locally
 
 Alternatively, you can locally build and run the docker image:
