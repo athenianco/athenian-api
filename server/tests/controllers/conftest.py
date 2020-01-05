@@ -52,9 +52,13 @@ class FakeAuth0:
 
 
 @pytest.fixture
-def client(loop, aiohttp_client, metadata_db, state_db):
-    logging.getLogger("connexion.operation").setLevel("ERROR")
-    app = AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, ui=False, auth0_cls=FakeAuth0)
+def app(metadata_db, state_db):
+    logging.getLogger("connexion.operation").setLevel("WARNING")
+    return AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, ui=False, auth0_cls=FakeAuth0)
+
+
+@pytest.fixture
+def client(loop, aiohttp_client, app):
     return loop.run_until_complete(aiohttp_client(app.app))
 
 
@@ -62,10 +66,10 @@ def client(loop, aiohttp_client, metadata_db, state_db):
 def metadata_db():
     hack_sqlite_arrays()
     metadata_db_path = db_dir / "mdb.sqlite"
-    if metadata_db_path.exists():
-        return
     conn_str = "sqlite:///%s" % metadata_db_path
-    engine = create_engine(conn_str, echo=True)
+    if metadata_db_path.exists():
+        return conn_str
+    engine = create_engine(conn_str)
     MetadataBase.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     try:
@@ -79,10 +83,10 @@ def metadata_db():
 @pytest.fixture
 def state_db():
     state_db_path = db_dir / "sdb.sqlite"
-    if state_db_path.exists():
-        return
     conn_str = "sqlite:///%s" % state_db_path
-    engine = create_engine(conn_str, echo=True)
+    if state_db_path.exists():
+        state_db_path.unlink()
+    engine = create_engine(conn_str)
     StateBase.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     try:

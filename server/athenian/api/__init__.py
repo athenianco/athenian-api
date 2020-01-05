@@ -68,6 +68,7 @@ class AthenianApp(connexion.AioHttpApp):
         options = {"swagger_ui": ui}
         rootdir = os.path.dirname(__file__)
         specification_dir = os.path.join(rootdir, "openapi")
+        self._auth0_cls = auth0_cls
         super().__init__(__package__, specification_dir=specification_dir, options=options)
         api = self.add_api(
             "openapi.yaml",
@@ -81,7 +82,6 @@ class AthenianApp(connexion.AioHttpApp):
         self._mdb_connected_event = asyncio.Event()
         self._sdb_connected_event = asyncio.Event()
         self._auth0 = None
-        self._auth0_cls = auth0_cls
 
         async def connect_to_mdb():
             try:
