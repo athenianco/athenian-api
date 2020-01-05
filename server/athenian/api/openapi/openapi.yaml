@@ -43,15 +43,6 @@ paths:
   /reposet/create:
     post:
       operationId: create_reposet
-      parameters:
-      - description: Numeric identifier of the repository set to list.
-        explode: false
-        in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-        style: simple
       requestBody:
         content:
           application/json:
