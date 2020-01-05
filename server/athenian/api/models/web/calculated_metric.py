@@ -3,9 +3,9 @@
 from typing import List
 
 from athenian.api import serialization
-from athenian.api.models.base_model_ import Model
-from athenian.api.models.calculated_metric_values import CalculatedMetricValues
-from athenian.api.models.for_set import ForSet
+from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.calculated_metric_values import CalculatedMetricValues
+from athenian.api.models.web.for_set import ForSet
 
 
 class CalculatedMetric(Model):

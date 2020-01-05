@@ -1,7 +1,7 @@
 # coding: utf-8
 
 from athenian.api import serialization
-from athenian.api.models.base_model_ import Model
+from athenian.api.models.web.base_model_ import Model
 
 
 class MetricID(Model):

@@ -4,10 +4,10 @@ from datetime import date
 from typing import List
 
 from athenian.api import serialization
-from athenian.api.models.base_model_ import Model
-from athenian.api.models.for_set import ForSet
-from athenian.api.models.granularity import Granularity
-from athenian.api.models.metric_id import MetricID
+from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.for_set import ForSet
+from athenian.api.models.web.granularity import Granularity
+from athenian.api.models.web.metric_id import MetricID
 
 
 class MetricsRequest(Model):
