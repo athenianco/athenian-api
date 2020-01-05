@@ -73,7 +73,8 @@ class AthenianApp(connexion.AioHttpApp):
         api = self.add_api(
             "openapi.yaml",
             arguments={"title": __description__},
-            pythonic_params=True,
+            # FIXME(vmarkovtsev): https://github.com/zalando/connexion/issues/1116
+            # pythonic_params=True,
             pass_context_arg_name="request",
         )
         setup_status(self.app)
