@@ -46,7 +46,7 @@ class FakeAuth0:
         """Middleware function compatible with aiohttp."""
         if self._is_whitelisted(request):
             return await handler(request)
-        request.user = User(nickname="vmarkovtsev", name="Vadim Markovtsev",
+        request.user = User(profile="https://github.com/vmarkovtsev", name="Vadim Markovtsev",
                             picture="", updated_at=str(datetime.utcnow()))
         return await handler(request)
 

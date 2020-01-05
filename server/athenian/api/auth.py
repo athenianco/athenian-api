@@ -19,9 +19,9 @@ class AuthError(Exception):
 class User:
     """User profile information."""
 
-    def __init__(self, nickname: str, name: str, picture: str, updated_at: str, **kwargs):
+    def __init__(self, profile: str, name: str, picture: str, updated_at: str, **kwargs):
         """Create a new User object."""
-        self.username = nickname
+        self.username = profile.split("://", 1)[1]
         self.fullname = name
         self.picture = picture
         self.updated = dateutil.parser.parse(updated_at)
