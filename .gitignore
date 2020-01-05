@@ -2,7 +2,7 @@
 /.ci
 
 **/alembic.ini
-server/tests/db.sqlite
+server/tests/*db.sqlite
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
