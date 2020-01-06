@@ -10,7 +10,7 @@ from athenian.api.models.metrics_request import MetricsRequest
 from athenian.api.models.no_source_data_error import NoSourceDataError
 
 
-async def test_calc_metrics_line(client):
+async def test_calc_metrics_line_smoke(client):
     """Test case for calc_metrics
 
     Calculate metrics.
@@ -32,10 +32,10 @@ async def test_calc_metrics_line(client):
                 ],
             },
         ],
-        "metrics": ["pr-lead-time", "pr-lead-time"],
-        "date_to": "2000-01-23",
-        "date_from": "2020-01-23",
-        "granularity": "day",
+        "metrics": ["pr-lead-time", "pr-wip-time"],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularity": "week",
     }
     headers = {
         "Accept": "application/json",
@@ -46,4 +46,3 @@ async def test_calc_metrics_line(client):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    print(body)

@@ -1,0 +1,210 @@
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+from typing import Generator, Generic, Optional, Sequence, Tuple, TypeVar, Union
+
+import databases
+import pandas as pd
+from sqlalchemy import select, sql
+
+from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.models.metadata.github import PullRequest, PullRequestComment, PullRequestReview
+
+
+class PullRequestMiner:
+    """Load all the information related to Pull Requests from the metadata DB. Iterate over it \
+    with individual PR tuples."""
+
+    def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame):
+        """Initialize a new instance of `PullRequestMiner`."""
+        self._prs = prs
+        self._reviews = reviews
+        self._review_comments = review_comments
+
+    @classmethod
+    async def mine(cls, time_from: datetime, time_to: datetime, repositories: Sequence[str],
+                   developers: Sequence[str], db: databases.Database) -> "PullRequestMiner":
+        """
+        Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
+
+        :param time_from: Fetch PRs created starting from this date.
+        :param time_to: Fetch PRs created ending with this date.
+        :param repositories: PRs must belong to these repositories (prefix excluded).
+        :param developers: PRs must be authored by these user IDs. An empty list means everybody.
+        :param db: Metadata db instance.
+        """
+        repos_parsed = [r.split("/") for r in repositories]
+        repo_orgs = [r[0] for r in repos_parsed]
+        repo_names = [r[1] for r in repos_parsed]
+        filters = [
+            PullRequest.created_at >= time_from,
+            PullRequest.created_at < time_to,
+            PullRequest.repository_name.in_(repo_names),
+            PullRequest.repository_owner.in_(repo_orgs),  # FIXME(vmarkovtsev): ENG-101 makes this correct # noqa
+        ]
+        if len(developers) > 0:
+            filters.append(PullRequest.user_login.in_(developers))
+        prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)), db)
+        numbers = prs["number"] if len(prs) > 0 else set()
+        reviews = await read_sql_query(select([PullRequestReview]).where(
+            PullRequestReview.pull_request_number.in_(numbers)), db)
+        review_comments = await read_sql_query(select([PullRequestComment]).where(
+            PullRequestComment.pull_request_number.in_(numbers)), db)
+        return cls(prs, reviews, review_comments)
+
+    def __iter__(self) -> Generator[Tuple[pd.Series, pd.DataFrame, pd.DataFrame], None, None]:
+        """Iterate over the information collected for individual pull requests."""
+        for _, pr in self._prs.iterrows():
+            reviews = self._reviews[self._reviews["pull_request_number"] == pr["number"]]
+            review_comments = self._review_comments[
+                self._review_comments["pull_request_number"] == pr["number"]]
+            yield pr, reviews, review_comments
+
+
+T = TypeVar("T")
+
+
+class Fallback(Generic[T]):
+    """
+    A value with a "plan B".
+
+    The idea is to return the backup in `Fallback.best` if the primary value is absent (None).
+    We can check whether the primary value exists by `Fallback.value is None`.
+    """
+
+    def __init__(self, value: Optional[T], fallback: Union[None, T, "Fallback[T]"]):
+        """Initialize a new instance of `Fallback`."""
+        if value != value:  # NaN check
+            value = None
+        self.__value = value
+        self.__fallback = fallback
+
+    @property
+    def best(self) -> Optional[T]:
+        """The "best effort" value, either the primary or the backup one."""  # noqa: D401
+        if self.__value is not None:
+            return self.__value
+        if isinstance(self.__fallback, Fallback):
+            return self.__fallback.best
+        return self.__fallback
+
+    def __str__(self) -> str:
+        """str()."""
+        return "Fallback(%s, %s)" % (self.value, self.best)
+
+    def __repr__(self) -> str:
+        """repr()."""
+        return "Fallback(%r, %r)" % (self.value, self.best)
+
+    @property
+    def value(self) -> Optional[T]:
+        """The primary value."""  # noqa: D401
+        return self.__value
+
+    @classmethod
+    def max(cls, *args: "Fallback[T]") -> "Fallback[T]":
+        """Calculate the maximum of several Fallback.best-s."""
+        return cls.agg(max, *args)
+
+    @classmethod
+    def min(cls, *args: "Fallback[T]") -> "Fallback[T]":
+        """Calculate the minimum of several Fallback.best-s."""
+        return cls.agg(min, *args)
+
+    @classmethod
+    def agg(cls, func: callable, *args: "Fallback[T]") -> "Fallback[T]":
+        """Calculate an aggregation of several Fallback.best-s."""
+        try:
+            return cls(func(arg.best for arg in args if arg.best is not None), None)
+        except ValueError:
+            return cls(None, None)
+
+
+DT = Union[pd.Timestamp, datetime, None]
+
+
+@dataclass(frozen=True)
+class PullRequestTimes:
+    """Various PR update timestamps."""
+
+    created: Fallback[DT]                                # PR_C
+    first_commit: Fallback[DT]                           # PR_CC
+
+    @property
+    def work_begins(self) -> Fallback[DT]:               # PR_B   noqa: D102
+        return Fallback.min(self.created, self.first_commit)
+
+    last_commit_before_first_review: Fallback[DT]        # PR_CFR
+    last_commit: Fallback[DT]                            # PR_L
+    merged: Fallback[DT]                                 # PR_M
+    closed: Fallback[DT]                                 # PR_CL
+    first_comment_on_first_review: Fallback[DT]          # PR_W
+    first_review_request: Fallback[DT]                   # PR_S
+    approved: Fallback[DT]                               # PR_A
+    first_passed_checks: Fallback[DT]                    # PR_VS
+    last_passed_checks: Fallback[DT]                     # PR_VF
+    finalized: Fallback[DT]                              # PR_F
+    released: Fallback[DT]                               # PR_R
+
+
+class ReviewResolution(Enum):
+    """Possible review "state"-s in the metadata DB."""
+
+    APPROVED = "APPROVED"
+    CHANGES_REQUESTED = "CHANGES_REQUESTED"
+    COMMENTED = "COMMENTED"
+
+
+class PullRequestTimesMiner(PullRequestMiner):
+    """Extract the pull request update timestamps from the metadata DB."""
+
+    @classmethod
+    def _compile(cls, pr: pd.Series, reviews: pd.DataFrame, review_comments: pd.DataFrame,
+                 ) -> PullRequestTimes:
+        created_at = Fallback(pr["created_at"], None)
+        merged_at = Fallback(pr["merged_at"], None)
+        first_comment_on_first_review = Fallback(review_comments["created_at"].min(), merged_at)
+        last_commit_before_first_review = first_comment_on_first_review  # FIXME(vmarkovtsev): no commit timestamps # noqa
+        first_review_request = Fallback(None, Fallback.min(
+            Fallback.max(created_at, last_commit_before_first_review),
+            first_comment_on_first_review))  # FIXME(vmarkovtsev): no review request info
+        if merged_at.value is not None:
+            reviews_before_merge = reviews[reviews["submitted_at"] <= merged_at.best]
+            grouped_reviews = reviews_before_merge \
+                .sort_values(["submitted_at"], ascending=True) \
+                .groupby("user_login", sort=False) \
+                .nth(0)  # the most recent review for each reviewer
+            if (grouped_reviews["state"] == ReviewResolution.CHANGES_REQUESTED).any():
+                # merged with negative reviews
+                approved_at_value = None
+            else:
+                approved_at_value = grouped_reviews[
+                    grouped_reviews["state"] == ReviewResolution.APPROVED]["submitted_at"].max()
+        else:
+            approved_at_value = None
+        approved_at = Fallback(approved_at_value, merged_at)
+        first_commit = Fallback(None, created_at)  # FIXME(vmarkovtsev): no commit info
+        last_commit = Fallback(None, created_at)  # FIXME(vmarkovtsev): no commit info
+        last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
+        closed_at = Fallback(pr["closed_at"], None)
+        return PullRequestTimes(
+            created=created_at,
+            first_commit=first_commit,
+            last_commit_before_first_review=last_commit_before_first_review,
+            last_commit=last_commit,
+            merged=merged_at,
+            first_comment_on_first_review=first_comment_on_first_review,
+            first_review_request=first_review_request,
+            approved=approved_at,
+            first_passed_checks=Fallback(None, None),  # FIXME(vmarkovtsev): no CI info
+            last_passed_checks=last_passed_checks,
+            finalized=Fallback.min(Fallback.max(approved_at, last_passed_checks, last_commit),
+                                   closed_at),
+            released=Fallback(None, None),  # FIXME(vmarkovtsev): no releases
+            closed=closed_at,
+        )
+
+    def __iter__(self) -> Generator[PullRequestTimes, None, None]:
+        """Iterate over the update timestamps collected for individual pull requests."""
+        for pr, reviews, review_comments in super().__iter__():
+            yield self._compile(pr, reviews, review_comments)

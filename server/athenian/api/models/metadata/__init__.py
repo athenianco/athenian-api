@@ -1,3 +1,9 @@
+# Canonical repository URL prefixes.
+PREFIXES = {
+    "github": "github.com/",
+}
+
+
 def hack_sqlite_arrays():
     """Hack SQLite compiler to handle ARRAY fields."""
     from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler

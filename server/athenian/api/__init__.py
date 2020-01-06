@@ -11,9 +11,10 @@ import connexion
 import databases
 import sentry_sdk
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 from athenian.api.auth import Auth0, auth_is_configured
-from athenian.api.controllers.status import setup_status
+from athenian.api.controllers.status_controller import setup_status
 from athenian.api.metadata import __description__, __package__, __version__
 from athenian.api.serialization import FriendlyJson
 from athenian.api.slogging import add_logging_args
@@ -162,7 +163,7 @@ def setup_sentry():
         return
     sentry_sdk.init(
         dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),
-        integrations=[AioHttpIntegration()],
+        integrations=[AioHttpIntegration(), SqlalchemyIntegration()],
     )
 
 
