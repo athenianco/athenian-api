@@ -4,12 +4,20 @@ from sqlalchemy import Column, Integer, JSON, String, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 
 
+# The following two classes compensate the absent ORM layer in databases.Database.
+
 class Refresheable:
+    """Mixin to invoke default() and onupdate() on all the columns."""
+
     class Context:
+        """Pretend to be a fully-featured SQLAlchemy execution context."""
+
         def __init__(self, parameters: dict):
+            """init"""
             self.current_parameters = parameters
 
     def create_defaults(self):
+        """Call default() on all the columns."""
         ctx = self.Context(self.__dict__)
         for k, v in self.__table__.columns.items():
             if getattr(self, k, None) is None and v.default is not None:
@@ -19,6 +27,7 @@ class Refresheable:
                 setattr(self, k, arg)
 
     def refresh(self):
+        """Call onupdate() on all the columns."""
         ctx = self.Context(self.__dict__)
         for k, v in self.__table__.columns.items():
             if v.onupdate is not None:
@@ -26,7 +35,10 @@ class Refresheable:
 
 
 class Explodeable:
+    """Convert the model to a dict."""
+
     def explode(self, with_primary_keys=False):
+        """Return a dict of the model data attributes."""
         return {k: getattr(self, k) for k, v in self.__table__.columns.items()
                 if not v.primary_key or with_primary_keys}
 
