@@ -91,6 +91,12 @@ class Auth0:
         if self._is_whitelisted(request):
             return await handler(request)
 
+        # FIXME(vmarkovtsev): remove the following short circuit when the frontend is ready
+        request.user = User("https://github.com/vmarkovtsev", "Vadim Markovtsev",
+                            "https://avatars1.githubusercontent.com/u/2793551",
+                            "2020-01-08 11:12:04.985028")
+        return await handler(request)
+
         try:
             token = self._get_token_auth_header(request)
             unverified_header = jwt.get_unverified_header(token)
