@@ -3,7 +3,35 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, JSON, String, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 
-Base = declarative_base()
+
+class Refresheable:
+    class Context:
+        def __init__(self, parameters: dict):
+            self.current_parameters = parameters
+
+    def create_defaults(self):
+        ctx = self.Context(self.__dict__)
+        for k, v in self.__table__.columns.items():
+            if getattr(self, k, None) is None and v.default is not None:
+                arg = v.default.arg
+                if callable(arg):
+                    arg = arg(ctx)
+                setattr(self, k, arg)
+
+    def refresh(self):
+        ctx = self.Context(self.__dict__)
+        for k, v in self.__table__.columns.items():
+            if v.onupdate is not None:
+                setattr(self, k, v.onupdate.arg(ctx))
+
+
+class Explodeable:
+    def explode(self, with_primary_keys=False):
+        return {k: getattr(self, k) for k, v in self.__table__.columns.items()
+                if not v.primary_key or with_primary_keys}
+
+
+Base = declarative_base(cls=(Refresheable, Explodeable))
 
 
 class RepositorySet(Base):
@@ -18,7 +46,7 @@ class RepositorySet(Base):
     id = Column("id", Integer(), primary_key=True)
     owner = Column("owner", String(256), nullable=False)
     updated_at = Column("updated_at", TIMESTAMP(), nullable=False, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+                        onupdate=lambda ctx: datetime.utcnow)
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
     updates_count = Column("updates_count", Integer(), nullable=False, default=1,
                            onupdate=lambda ctx: ctx.current_parameters["updates_count"] + 1)
