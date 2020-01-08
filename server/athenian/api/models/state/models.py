@@ -58,7 +58,7 @@ class RepositorySet(Base):
     id = Column("id", Integer(), primary_key=True)
     owner = Column("owner", String(256), nullable=False)
     updated_at = Column("updated_at", TIMESTAMP(), nullable=False, default=datetime.utcnow,
-                        onupdate=lambda ctx: datetime.utcnow)
+                        onupdate=lambda ctx: datetime.utcnow())
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
     updates_count = Column("updates_count", Integer(), nullable=False, default=1,
                            onupdate=lambda ctx: ctx.current_parameters["updates_count"] + 1)
