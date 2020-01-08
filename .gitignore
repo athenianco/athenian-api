@@ -1,4 +1,5 @@
 .idea
+/.ci
 
 **/alembic.ini
 server/tests/db.sqlite
