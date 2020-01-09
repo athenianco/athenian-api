@@ -16,6 +16,9 @@ ENV_FILE ?= .env
 $(ENV_FILE):
 	echo 'SENTRY_PROJECT=' >> $(ENV_FILE)
 	echo 'SENTRY_KEY=' >> $(ENV_FILE)
+	echo >> $(ENV_FILE)
+	echo 'AUTH0_DOMAIN=' >> $(ENV_FILE)
+	echo 'AUTH0_AUDIENCE=' >> $(ENV_FILE)
 
 db.sqlite: $(ENV_FILE)
 	docker run --rm -e DB_DIR=/io -v$(IO_DIR):/io --env-file $(ENV_FILE) --entrypoint python3 $(IMAGE) /server/tests/gen_sqlite_db.py
