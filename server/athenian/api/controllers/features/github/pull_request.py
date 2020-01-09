@@ -190,13 +190,11 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
         For each time interval we collect the list of PRs created then and measure the specified \
         metrics.
         """
-        items = sorted(items, key=lambda x: x.created.best)
-        if not items:
-            return []
         borders = self.time_intervals
-        if items[-1].created.best > borders[-1]:
+        bins = [[] for _ in borders[:-1]]
+        items = sorted(items, key=lambda x: x.created.best)
+        if items and items[-1].created.best > borders[-1]:
             raise ValueError("there are PRs created after time_to")
-        bins = [[] for _ in borders]
         pos = 0
         for item in items:
             while item.created.best > borders[pos + 1]:

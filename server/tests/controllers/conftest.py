@@ -41,6 +41,9 @@ class FakeAuth0:
                 return True
         return False
 
+    async def close(self):
+        pass
+
     @aiohttp.web.middleware
     async def middleware(self, request, handler):
         """Middleware function compatible with aiohttp."""
