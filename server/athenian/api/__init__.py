@@ -69,6 +69,7 @@ class AthenianApp(connexion.AioHttpApp):
         rootdir = os.path.dirname(__file__)
         specification_dir = os.path.join(rootdir, "openapi")
         self._auth0_cls = auth0_cls
+        self._auth0 = None
         super().__init__(__package__, specification_dir=specification_dir, options=options)
         api = self.add_api(
             "openapi.yaml",
@@ -82,7 +83,6 @@ class AthenianApp(connexion.AioHttpApp):
         self.mdb = self.sdb = None  # type: Optional[databases.Database]
         self._mdb_connected_event = asyncio.Event()
         self._sdb_connected_event = asyncio.Event()
-        self._auth0 = None
 
         async def connect_to_mdb():
             try:
@@ -112,10 +112,9 @@ class AthenianApp(connexion.AioHttpApp):
         loop.call_soon(asyncio.ensure_future, connect_to_mdb())
         loop.call_soon(asyncio.ensure_future, connect_to_sdb())
 
-    async def shutdown(self, app):
+    async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
-        if self._auth0 is not None:
-            await self._auth0.close()
+        await self._auth0.close()
         await self.mdb.disconnect()
         await self.sdb.disconnect()
 
