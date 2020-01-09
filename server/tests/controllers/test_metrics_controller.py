@@ -1,6 +1,6 @@
 import pytest
 
-from athenian.api.models.web import MetricID
+from athenian.api.models.web import Granularity, MetricID
 
 
 @pytest.mark.parametrize("metric", MetricID.ALL)
@@ -39,7 +39,8 @@ async def test_calc_metrics_line_smoke(client, metric):
     assert response.status == 200, "Response body is : " + body
 
 
-async def test_calc_metrics_line_all(client):
+@pytest.mark.parametrize("granularity", Granularity.ALL)
+async def test_calc_metrics_line_all(client, granularity):
     """https://athenianco.atlassian.net/browse/ENG-116"""
     body = {
         "for": [
@@ -61,7 +62,7 @@ async def test_calc_metrics_line_all(client):
         "metrics": list(MetricID.ALL),
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
-        "granularity": "week",
+        "granularity": granularity,
     }
     headers = {
         "Accept": "application/json",

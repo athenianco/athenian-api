@@ -18,6 +18,7 @@ class Granularity(Model):
     DAY = "day"
     WEEK = "week"
     MONTH = "month"
+    ALL = {DAY, WEEK, MONTH}
 
     def __init__(self):
         """Granularity - a model defined in OpenAPI"""
