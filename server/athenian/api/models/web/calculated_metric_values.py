@@ -4,7 +4,7 @@ from datetime import date
 from typing import List, Optional
 
 from athenian.api import serialization
-from athenian.api.models.base_model_ import Model
+from athenian.api.models.web.base_model_ import Model
 
 
 class CalculatedMetricValues(Model):

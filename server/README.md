@@ -53,18 +53,22 @@ Install the linters:
 pip install -r lint-requirements.txt
 ```
 
-Validate you changes:
+Validate your changes:
 
 ```
 cd server
 flake8
 ```
 
-Generate a sample SQLite metadata DB:
+Generate sample SQLite metadata and state databases:
 
 ```
 docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /server/tests/gen_sqlite_db.py
 ``` 
+
+You should have two SQLite files in `$(pwd)`: `mdb.sqlite` and `sdb.sqlite`.
+
+Obtain Auth0 credentials for running locally: TODO.
 
 ## Running the API server locally
 

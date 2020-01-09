@@ -5,11 +5,11 @@ from aiohttp import web
 
 from athenian.api.controllers.features.entries import ENTRIES
 from athenian.api.controllers.response import response, ResponseError
-from athenian.api.models import CalculatedMetric, CalculatedMetricValues, ForSet, Granularity
-from athenian.api.models.calculated_metrics import CalculatedMetrics
-from athenian.api.models.invalid_request_error import InvalidRequestError
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metrics_request import MetricsRequest
+from athenian.api.models.web import CalculatedMetric, CalculatedMetrics, CalculatedMetricValues, \
+    ForSet, Granularity
+from athenian.api.models.web.invalid_request_error import InvalidRequestError
+from athenian.api.models.web.metrics_request import MetricsRequest
 # from athenian.api.models.no_source_data_error import NoSourceDataError
 from athenian.api.typing_utils import AthenianWebRequest
 
@@ -52,11 +52,11 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     except ResponseError as e:
         return e.response
     if body.date_to < body.date_from:
-        err = InvalidRequestError(
+        raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
             pointer=".date_from",
-        )
-        raise ResponseError(err, 400)
+            status=400,
+        ))
     time_intervals = Granularity.split(body.granularity, body.date_from, body.date_to)
     for service, (repos, devs) in filters:
         calcs = defaultdict(list)
@@ -94,27 +94,27 @@ def _compile_filters(for_sets) -> List[Filter]:
                     if service is None:
                         service = key
                     elif service != key:
-                        err = InvalidRequestError(
+                        raise ResponseError(InvalidRequestError(
                             detail='mixed providers are not allowed in the same "for" element',
                             pointer=".for[%d].repositories" % i,
-                        )
-                        raise ResponseError(err, 400)
+                            status=400,
+                        ))
                     repos.append(repo[len(prefix):])
         if service is None:
-            err = InvalidRequestError(
+            raise ResponseError(InvalidRequestError(
                 detail='the provider of a "for" element is unsupported or the set is empty',
                 pointer=".for[%d].repositories" % i,
-            )
-            raise ResponseError(err, 400)
+                status=400,
+            ))
         for dev in for_set.developers:
             for key, prefix in PREFIXES.items():
                 if dev.startswith(prefix):
                     if service != key:
-                        err = InvalidRequestError(
+                        raise ResponseError(InvalidRequestError(
                             detail='mixed providers are not allowed in the same "for" element',
                             pointer=".for[%d].developers" % i,
-                        )
-                        raise ResponseError(err, 400)
+                            status=400,
+                        ))
                     devs.append(dev[len(prefix):])
         filters.append((service, (repos, devs)))
     return filters

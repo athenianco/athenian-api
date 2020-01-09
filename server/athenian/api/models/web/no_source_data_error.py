@@ -2,8 +2,8 @@
 from http import HTTPStatus
 from typing import List
 
-from athenian.api.models.generic_error import GenericError
-from athenian.api.models.repository_set import RepositorySet
+from athenian.api.models.web.generic_error import GenericError
+from athenian.api.models.web.repository_set import RepositorySet
 
 
 class NoSourceDataError(GenericError):

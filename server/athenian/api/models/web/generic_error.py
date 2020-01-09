@@ -1,7 +1,10 @@
 # coding: utf-8
 
+from http import HTTPStatus
+from typing import Optional
+
 from athenian.api import serialization
-from athenian.api.models.base_model_ import Model
+from athenian.api.models.web.base_model_ import Model
 
 
 class GenericError(Model):
@@ -13,10 +16,10 @@ class GenericError(Model):
     def __init__(
         self,
         type: str,
-        title: str = None,
-        status: int = None,
-        detail: str = None,
-        instance: str = None,
+        title: Optional[str] = None,
+        status: Optional[int] = None,
+        detail: Optional[str] = None,
+        instance: Optional[str] = None,
     ):
         """GenericError - a model defined in OpenAPI
 
@@ -169,3 +172,27 @@ class GenericError(Model):
         :type instance: str
         """
         self._instance = instance
+
+
+class NotFoundError(GenericError):
+    """HTTP 404."""
+
+    def __init__(self, detail: Optional[str] = None):
+        """Initialize a new instance of NotFoundError.
+
+        :param detail: The details about this error.
+        """
+        super().__init__(type="/errors/NotFoundError", title=HTTPStatus.NOT_FOUND.phrase,
+                         status=404, detail=detail)
+
+
+class ForbiddenError(GenericError):
+    """HTTP 403."""
+
+    def __init__(self, detail: Optional[str] = None):
+        """Initialize a new instance of ForbiddenError.
+
+        :param detail: The details about this error.
+        """
+        super().__init__(type="/errors/ForbiddenError", title=HTTPStatus.FORBIDDEN.phrase,
+                         status=403, detail=detail)

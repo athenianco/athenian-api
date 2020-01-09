@@ -13,7 +13,7 @@ import sentry_sdk
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
-from athenian.api.auth import Auth0, auth_is_configured
+from athenian.api.auth import Auth0
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.metadata import __description__, __package__, __version__
 from athenian.api.serialization import FriendlyJson
@@ -55,7 +55,8 @@ class AthenianApp(connexion.AioHttpApp):
     log = logging.getLogger(__package__)
 
     def __init__(self, mdb_conn: str, sdb_conn: str, ui: bool,
-                 mdb_options: Optional[dict] = None, sdb_options: Optional[dict] = None):
+                 mdb_options: Optional[dict] = None, sdb_options: Optional[dict] = None,
+                 auth0_cls=Auth0):
         """
         Initialize the underlying connexion -> aiohttp application.
 
@@ -67,11 +68,13 @@ class AthenianApp(connexion.AioHttpApp):
         options = {"swagger_ui": ui}
         rootdir = os.path.dirname(__file__)
         specification_dir = os.path.join(rootdir, "openapi")
+        self._auth0_cls = auth0_cls
         super().__init__(__package__, specification_dir=specification_dir, options=options)
         api = self.add_api(
             "openapi.yaml",
             arguments={"title": __description__},
-            pythonic_params=True,
+            # FIXME(vmarkovtsev): https://github.com/zalando/connexion/issues/1116
+            # pythonic_params=True,
             pass_context_arg_name="request",
         )
         setup_status(self.app)
@@ -118,18 +121,13 @@ class AthenianApp(connexion.AioHttpApp):
 
     def create_app(self) -> aiohttp.web.Application:
         """Override the base class method to inject middleware."""
-        middlewares = [self.with_db]
-        if not auth_is_configured():
-            # TODO: always require auth, or add a flag to assert that it's enabled
-            self.log.warning("API authentication is disabled; set AUTH0_DOMAIN and AUTH0_AUDIENCE")
-        else:
-            self._auth0 = Auth0(whitelist=[
-                r"/v1/openapi.json",
-                r"/v1/ui*",
-                r"/status*",
-            ])
-            middlewares.insert(0, self._auth0.middleware)
-        return aiohttp.web.Application(middlewares=middlewares)
+        self._auth0_cls.ensure_static_configuration()
+        self._auth0 = self._auth0_cls(whitelist=[
+            r"/v1/openapi.json",
+            r"/v1/ui*",
+            r"/status*",
+        ])
+        return aiohttp.web.Application(middlewares=[self._auth0.middleware, self.with_db])
 
     @aiohttp.web.middleware
     async def with_db(self, request, handler):

@@ -1,7 +1,7 @@
 # coding: utf-8
 from http import HTTPStatus
 
-from athenian.api.models.generic_error import GenericError
+from athenian.api.models.web.generic_error import GenericError
 
 
 class InvalidRequestError(GenericError):

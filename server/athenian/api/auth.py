@@ -16,28 +16,23 @@ class AuthError(Exception):
         self.status_code = status_code
 
 
-class User():
+class User:
     """User profile information."""
 
-    def __init__(self, nickname: str, name: str, picture: str, updated_at: str, **kwargs):
+    def __init__(self, profile: str, name: str, picture: str, updated_at: str, **kwargs):
         """Create a new User object."""
-        self.username = nickname
+        self.username = profile.split("://", 1)[1]
         self.fullname = name
         self.picture = picture
         self.updated = dateutil.parser.parse(updated_at)
 
 
-AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
-AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
-
-
-def auth_is_configured():
-    """Return true if auth is configured."""
-    return AUTH0_DOMAIN and AUTH0_AUDIENCE
-
-
 class Auth0:
     """Class for Auth0 middleware compatible with aiohttp."""
+
+    AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
+    AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
+    log = logging.getLogger("auth")
 
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, whitelist=tuple()):
         """Create a new Auth0 middleware."""
@@ -49,6 +44,14 @@ class Auth0:
     async def close(self):
         """Free resources associated with the object."""
         await self._session.close()
+
+    @classmethod
+    def ensure_static_configuration(cls):
+        """Check that the authentication is properly configured by the environment variables \
+        and raise an exception if it is not."""
+        if not (cls.AUTH0_DOMAIN and cls.AUTH0_AUDIENCE):
+            cls.log.error("API authentication requires setting AUTH0_DOMAIN and AUTH0_AUDIENCE")
+            raise EnvironmentError("AUTH0_DOMAIN and AUTH0_AUDIENCE must be set")
 
     def _is_whitelisted(self, request: aiohttp.web.Request) -> bool:
         for pattern in self._whitelist:
@@ -88,6 +91,12 @@ class Auth0:
         if self._is_whitelisted(request):
             return await handler(request)
 
+        # FIXME(vmarkovtsev): remove the following short circuit when the frontend is ready
+        request.user = User("https://github.com/vmarkovtsev", "Vadim Markovtsev",
+                            "https://avatars1.githubusercontent.com/u/2793551",
+                            "2020-01-08 11:12:04.985028")
+        return await handler(request)
+
         try:
             token = self._get_token_auth_header(request)
             unverified_header = jwt.get_unverified_header(token)
@@ -100,7 +109,7 @@ class Auth0:
             return aiohttp.web.Response(body="Invalid header."
                                         " Use an RS256 signed JWT Access Token.", status=401)
 
-        # TODO: update periodically instead of pulling it on each request
+        # TODO(dennwc): update periodically instead of pulling it on each request
         jwks_req = await self._session.get("https://%s/.well-known/jwks.json" % self._domain)
         jwks = await jwks_req.json()
 
@@ -132,9 +141,9 @@ class Auth0:
 
         try:
             user = await self._get_user_info(token)
-            logging.getLogger("auth").info("User %s", user.username)
+            self.log.info("User %s", user.username)
         except Exception:
-            return aiohttp.web.Response(body="The token is likely revoked.", status=401)
+            return aiohttp.web.Response(body="Your auth token is likely revoked.", status=401)
 
         request.user = user
         return await handler(request)

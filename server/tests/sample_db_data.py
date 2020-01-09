@@ -6,9 +6,10 @@ import sqlalchemy.orm
 from sqlalchemy.cprocessors import str_to_date, str_to_datetime
 
 from athenian.api.models.metadata.github import Base
+from athenian.api.models.state.models import RepositorySet
 
 
-def fill_session(session: sqlalchemy.orm.Session):
+def fill_metadata_session(session: sqlalchemy.orm.Session):
     models = {}
     for cls in Base._decl_class_registry.values():
         table = getattr(cls, "__table__", None)
@@ -50,3 +51,9 @@ def fill_session(session: sqlalchemy.orm.Session):
                     else:
                         kwargs[k] = columns[k](p)
                 session.add(model(**kwargs))
+
+
+def fill_state_session(session: sqlalchemy.orm.Session):
+    session.add(RepositorySet(
+        owner="github.com/vmarkovtsev",
+        items=["github.com/src-d/go-git", "github.com/athenianco/athenian-api"]))

@@ -40,10 +40,152 @@ paths:
       summary: Calculate metrics.
       x-openapi-router-controller: athenian.api.controllers.metrics_controller
       x-codegen-request-body-name: body
+  /reposet/create:
+    post:
+      operationId: create_reposet
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RepositorySet'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedIdentifier'
+          description: Identifier of the created repository set.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to create a repository set from the specified
+            items.
+      summary: Create a repository set.
+      x-openapi-router-controller: athenian.api.controllers.reposet_controller
+      x-codegen-request-body-name: body
+  /reposet/{id}:
+    delete:
+      operationId: delete_reposet
+      parameters:
+      - description: Numeric identifier of the repository set to list.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Empty object indicates a successful removal.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to delete the specified repository set.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified repository set was not found.
+      summary: Delete a repository set.
+      x-openapi-router-controller: athenian.api.controllers.reposet_controller
+      x-codegen-request-body-name: body
+    get:
+      operationId: get_reposet
+      parameters:
+      - description: Numeric identifier of the repository set to list.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositorySet'
+          description: List of repositories in the specified set.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to list the specified repository set.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified repository set was not found.
+      summary: List a repository set.
+      x-openapi-router-controller: athenian.api.controllers.reposet_controller
+      x-codegen-request-body-name: body
+    put:
+      operationId: update_reposet
+      parameters:
+      - description: Numeric identifier of the repository set to list.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RepositorySet'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Empty object indicates a successful operation.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to update the specified repository set.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified repository set was not found.
+      summary: Update a repository set.
+      x-openapi-router-controller: athenian.api.controllers.reposet_controller
+      x-codegen-request-body-name: body
 components:
   schemas:
-    GenericError:
+    CreatedIdentifier:
+      example:
+        id: 777
+      properties:
+        id:
+          description: Identifier of the created entity.
+          example: 777
+          type: integer
+      required:
+      - id
       type: object
+    GenericError:
       properties:
         type:
           description: URI reference that identifies the problem type (RFC 7807).
@@ -58,16 +200,19 @@ components:
           example: 400
           type: integer
         detail:
-          description: Human-readable explanation specific to this occurrence of the problem.
+          description: Human-readable explanation specific to this occurrence of the
+            problem.
           example: '"pr-slave-time" is not one of [...].'
           type: string
         instance:
-          description: URI reference that identifies the specific occurrence of the problem.
+          description: URI reference that identifies the specific occurrence of the
+            problem.
           example: https://sentry.io/athenian/api/?query=2763c4eabd7240f59829ee1a02546293
           type: string
       required:
-        - type
-        - title
+      - title
+      - type
+      type: object
     InvalidRequestError:
       allOf:
       - $ref: '#/components/schemas/GenericError'
@@ -110,7 +255,8 @@ components:
       example: github.com/src-d/go-git
       type: string
     DeveloperSet:
-      description: A set of developers. An empty list disables the filter and includes everybody.
+      description: A set of developers. An empty list disables the filter and includes
+        everybody.
       example:
       - github.com/vmarkovtsev
       - github.com/mcuadros
@@ -118,7 +264,8 @@ components:
         $ref: '#/components/schemas/DeveloperID'
       type: array
     RepositorySet:
-      description: A set of repositories. An empty list results an empty response in contrary to DeveloperSet.
+      description: A set of repositories. An empty list results an empty response
+        in contrary to DeveloperSet.
       example:
       - github.com/src-d/hercules
       - github.com/athenianco/athenian-api
@@ -147,8 +294,8 @@ components:
       - day
       - week
       - month
-      type: string
       example: day
+      type: string
     MetricsRequest:
       example:
         for:
@@ -325,7 +472,8 @@ components:
         date_to: 2020-01-23
       properties:
         calculated:
-          description: The values of the requested metrics through time. The sequence order is not guaranteed to be the same as in the preceding request.
+          description: The values of the requested metrics through time. The sequence
+            order is not guaranteed to be the same as in the preceding request.
           items:
             $ref: '#/components/schemas/CalculatedMetric'
           type: array
@@ -378,23 +526,28 @@ components:
             type: number
           type: array
         confidence_mins:
-          description: Confidence interval @ p=0.95, minimum. The same order as `metrics`. It is optional because there can be exact metrics like "count open PRs per month".
+          description: Confidence interval @ p=0.95, minimum. The same order as `metrics`.
+            It is optional because there can be exact metrics like "count open PRs
+            per month".
           items:
             format: float
             type: number
           type: array
         confidence_maxs:
-          description: Confidence interval @ p=0.95, maximum. The same order as `metrics`. It is optional because there can be exact metrics like "count open PRs per month".
+          description: Confidence interval @ p=0.95, maximum. The same order as `metrics`.
+            It is optional because there can be exact metrics like "count open PRs
+            per month".
           items:
             format: float
             type: number
           type: array
         confidence_scores:
-          description: Confidence score from 0 (no idea) to 100 (very confident). The same order as `metrics`.
+          description: Confidence score from 0 (no idea) to 100 (very confident).
+            The same order as `metrics`.
           items:
             type: integer
           type: array
       required:
+      - confidence_scores
       - date
       - values
-      - confidence_scores

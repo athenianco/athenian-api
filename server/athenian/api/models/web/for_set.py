@@ -2,9 +2,9 @@
 from typing import List, Optional
 
 from athenian.api import serialization
-from athenian.api.models.base_model_ import Model
-from athenian.api.models.developer_set import DeveloperSet
-from athenian.api.models.repository_set import RepositorySet
+from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.developer_set import DeveloperSet
+from athenian.api.models.web.repository_set import RepositorySet
 
 
 class ForSet(Model):

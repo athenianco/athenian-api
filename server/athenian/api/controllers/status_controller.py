@@ -28,26 +28,37 @@ async def instrument(request, handler):
             __package__, request.method, request.path, code).inc()
 
 
-async def render_status(request):
-    """Endpoint handler to output the current Prometheus state."""
-    resp = aiohttp.web.Response(body=prometheus_client.generate_latest())
-    resp.content_type = prometheus_client.CONTENT_TYPE_LATEST
-    return resp
+class StatusRenderer:
+    """Render the status page with Prometheus."""
+
+    def __init__(self, registry: prometheus_client.CollectorRegistry):
+        """Record the registry where the metrics are maintained."""
+        self._registry = registry
+
+    async def __call__(self, request):
+        """Endpoint handler to output the current Prometheus state."""
+        resp = aiohttp.web.Response(body=prometheus_client.generate_latest(self._registry))
+        resp.content_type = prometheus_client.CONTENT_TYPE_LATEST
+        return resp
 
 
 def setup_status(app):
     """Add /status to serve Prometheus-driven runtime metrics."""
+    registry = prometheus_client.CollectorRegistry(auto_describe=True)
     app["REQUEST_COUNT"] = prometheus_client.Counter(
         "requests_total", "Total Request Count",
         ["app_name", "method", "endpoint", "http_status"],
+        registry=registry,
     )
     app["REQUEST_LATENCY"] = prometheus_client.Histogram(
         "request_latency_seconds", "Request latency",
         ["app_name", "endpoint"],
+        registry=registry,
     )
     app["REQUEST_IN_PROGRESS"] = prometheus_client.Gauge(
         "requests_in_progress_total", "Requests in progress",
         ["app_name", "endpoint", "method"],
+        registry=registry,
     )
     app.middlewares.insert(0, instrument)
-    app.router.add_get("/status", render_status)
+    app.router.add_get("/status", StatusRenderer(registry))
