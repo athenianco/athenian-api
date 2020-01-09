@@ -1,5 +1,6 @@
 import datetime
 from lzma import LZMAFile
+import os
 from pathlib import Path
 
 import sqlalchemy.orm
@@ -15,7 +16,16 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
         table = getattr(cls, "__table__", None)
         if table is not None:
             models[table.fullname] = cls
-    with LZMAFile(Path(__file__).with_name("test_data.sql.xz")) as fin:
+    data_file = os.getenv("DB_DATA")
+    if data_file is None:
+        data_file = Path(__file__).with_name("test_data.sql.xz")
+    else:
+        data_file = Path(data_file)
+    if data_file.suffix == ".xz":
+        opener = lambda: LZMAFile(data_file)
+    else:
+        opener = lambda: open(data_file, "rb")
+    with opener() as fin:
         stdin = False
         for line in fin:
             if not stdin and line.startswith(b"COPY "):
