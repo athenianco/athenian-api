@@ -11,7 +11,6 @@ from athenian.api.models.web import CreatedIdentifier, ForbiddenError, NotFoundE
 async def create_reposet(request: web.Request, body: List[str]) -> web.Response:
     """Create a repository set.
 
-    :param id: Numeric identifier of the repository set to list.
     :param body: List of repositories to group.
     """
     # TODO(vmarkovtsev): get user's repos and check the access
@@ -24,7 +23,7 @@ async def create_reposet(request: web.Request, body: List[str]) -> web.Response:
 async def delete_reposet(request: web.Request, id: int) -> web.Response:
     """Delete a repository set.
 
-    :param id: Numeric identifier of the repository set to list.
+    :param id: Numeric identifier of the repository set to delete.
     :type id: int
     """
     rs = await request.sdb.fetch_one(select([RepositorySet.owner])
@@ -60,7 +59,7 @@ async def get_reposet(request: web.Request, id: int) -> web.Response:
 async def update_reposet(request: web.Request, id: int, body: List[str]) -> web.Response:
     """Update a repository set.
 
-    :param id: Numeric identifier of the repository set to list.
+    :param id: Numeric identifier of the repository set to update.
     :type id: int
     :param body: New list of repositories in the group.
     """

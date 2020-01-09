@@ -62,7 +62,7 @@ class RepositorySet(Base):
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
     updates_count = Column("updates_count", Integer(), nullable=False, default=1,
                            onupdate=lambda ctx: ctx.current_parameters["updates_count"] + 1)
-    items = Column("items", JSON())
+    items = Column("items", JSON(), nullable=False)
     items_count = Column("items_count", Integer(), nullable=False, default=count_items,
                          onupdate=count_items)
 
