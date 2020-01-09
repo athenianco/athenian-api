@@ -18,5 +18,10 @@ class Metric(Generic[T]):
         """Calculate the confidence score from 0 (garbage) to 100 (very confident)."""
         if not self.exists:
             return 0
-        eps = min(100 * (self.confidence_max - self.confidence_min) / self.value, 100)
-        return 100 - int(eps)
+        try:
+            eps = min(100 * (self.confidence_max - self.confidence_min) / self.value, 100)
+            return 100 - int(eps)
+        except ZeroDivisionError:
+            if self.confidence_min == self.confidence_max == self.value:
+                return 100  # everything is zero so no worries
+            return 0  # we really don't know the score in this case

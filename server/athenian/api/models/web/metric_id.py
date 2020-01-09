@@ -19,6 +19,8 @@ class MetricID(Model):
     PR_MERGING_TIME = "pr-merging-time"
     PR_RELEASE_TIME = "pr-release-time"
     PR_LEAD_TIME = "pr-lead-time"
+    ALL = {PR_WIP_TIME, PR_WAIT_FIRST_REVIEW_TIME, PR_REVIEW_TIME, PR_MERGING_TIME,
+           PR_RELEASE_TIME, PR_LEAD_TIME}
 
     def __init__(self):
         """MetricID - a model defined in OpenAPI"""

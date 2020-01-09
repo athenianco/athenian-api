@@ -1,4 +1,10 @@
-async def test_calc_metrics_line_smoke(client):
+import pytest
+
+from athenian.api.models.web import MetricID
+
+
+@pytest.mark.parametrize("metric", MetricID.ALL)
+async def test_calc_metrics_line_smoke(client, metric):
     """Trivial test to prove that at least something is working."""
     body = {
         "for": [
@@ -17,7 +23,7 @@ async def test_calc_metrics_line_smoke(client):
                 ],
             },
         ],
-        "metrics": ["pr-lead-time", "pr-wip-time"],
+        "metrics": [metric],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularity": "week",
@@ -33,7 +39,7 @@ async def test_calc_metrics_line_smoke(client):
     assert response.status == 200, "Response body is : " + body
 
 
-async def test_calc_metrics_line_david_116(client):
+async def test_calc_metrics_line_all(client):
     """https://athenianco.atlassian.net/browse/ENG-116"""
     body = {
         "for": [
@@ -52,7 +58,7 @@ async def test_calc_metrics_line_david_116(client):
                 ],
             },
         ],
-        "metrics": ["pr-lead-time"],
+        "metrics": list(MetricID.ALL),
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularity": "week",
