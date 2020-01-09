@@ -80,6 +80,14 @@ make run-api
 
 And open http://localhost:8080/v1/ui
 
+
+## Configure Sentry
+
+You can set `SENTRY_PROJECT` and `SENTRY_KEY` environment variables to automatically send the local server crashes to Sentry.
+
+If you're running the API with docker (using `make run-api` from above), you should stop the server, add the Sentry values into the `.env` file that will be in the root folder of `athenian-api`, and start the server again (with `make run-api`).
+
+
 ## Prevent file overriding
 
 After the first generation, add edited files to _.openapi-generator-ignore_ to prevent generator to overwrite them. Typically:
