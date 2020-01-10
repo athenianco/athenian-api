@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date
 from enum import Enum
 from typing import Generator, Generic, Optional, Sequence, Tuple, TypeVar, Union
 
@@ -15,14 +15,16 @@ class PullRequestMiner:
     """Load all the information related to Pull Requests from the metadata DB. Iterate over it \
     with individual PR tuples."""
 
-    def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame):
+    def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
+                 max_time: date):
         """Initialize a new instance of `PullRequestMiner`."""
         self._prs = prs
         self._reviews = reviews
         self._review_comments = review_comments
+        self.max_time = max_time
 
     @classmethod
-    async def mine(cls, time_from: datetime, time_to: datetime, repositories: Sequence[str],
+    async def mine(cls, time_from: date, time_to: date, repositories: Sequence[str],
                    developers: Sequence[str], db: databases.Database) -> "PullRequestMiner":
         """
         Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
@@ -50,7 +52,7 @@ class PullRequestMiner:
             PullRequestReview.pull_request_number.in_(numbers)), db)
         review_comments = await read_sql_query(select([PullRequestComment]).where(
             PullRequestComment.pull_request_number.in_(numbers)), db)
-        return cls(prs, reviews, review_comments)
+        return cls(prs, reviews, review_comments, time_to)
 
     def __iter__(self) -> Generator[Tuple[pd.Series, pd.DataFrame, pd.DataFrame], None, None]:
         """Iterate over the information collected for individual pull requests."""
@@ -120,7 +122,7 @@ class Fallback(Generic[T]):
             return cls(None, None)
 
 
-DT = Union[pd.Timestamp, datetime, None]
+DT = Union[pd.Timestamp, date, None]
 
 
 @dataclass(frozen=True)
@@ -146,6 +148,15 @@ class PullRequestTimes:
     finalized: Fallback[DT]                              # PR_F
     released: Fallback[DT]                               # PR_R
 
+    def truncate(self, max_time: date) -> "PullRequestTimes[DT]":
+        """Erase all timestamps that go after the specified date."""
+        kwargs = {}
+        for key, val in vars(self).items():
+            if val.best is not None and val.best > max_time:
+                val = Fallback(None, None)
+            kwargs[key] = val
+        return PullRequestTimes(**kwargs)
+
 
 class ReviewResolution(Enum):
     """Possible review "state"-s in the metadata DB."""
@@ -158,8 +169,7 @@ class ReviewResolution(Enum):
 class PullRequestTimesMiner(PullRequestMiner):
     """Extract the pull request update timestamps from the metadata DB."""
 
-    @classmethod
-    def _compile(cls, pr: pd.Series, reviews: pd.DataFrame, review_comments: pd.DataFrame,
+    def _compile(self, pr: pd.Series, reviews: pd.DataFrame, review_comments: pd.DataFrame,
                  ) -> PullRequestTimes:
         created_at = Fallback(pr["created_at"], None)
         merged_at = Fallback(pr["merged_at"], None)
@@ -203,7 +213,7 @@ class PullRequestTimesMiner(PullRequestMiner):
                                    closed_at),
             released=Fallback(None, None),  # FIXME(vmarkovtsev): no releases
             closed=closed_at,
-        )
+        ).truncate(self.max_time)
 
     def __iter__(self) -> Generator[PullRequestTimes, None, None]:
         """Iterate over the update timestamps collected for individual pull requests."""

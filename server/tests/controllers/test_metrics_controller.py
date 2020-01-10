@@ -65,7 +65,7 @@ async def test_calc_metrics_line_all(client, granularity):
         ],
         "metrics": list(MetricID.ALL),
         "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
+        "date_to": "2019-03-15",
         "granularity": granularity,
     }
     headers = {
