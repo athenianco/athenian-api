@@ -131,7 +131,7 @@ class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
     def value(self) -> Metric[T]:
         """Calculate the current metric value."""
         if not self.samples:
-            return Metric(False, 0, 0, 0)
+            return Metric(False, None, None, None)
         assert self.may_have_negative_values is not None
         return Metric(True, *mean_confidence_interval(self.samples, self.may_have_negative_values))
 
@@ -146,7 +146,7 @@ class PullRequestMedianMetricCalculator(PullRequestMetricCalculator[T]):
     def value(self) -> Metric[T]:
         """Calculate the current metric value."""
         if not self.samples:
-            return Metric(False, 0, 0, 0)
+            return Metric(False, None, None, None)
         return Metric(True, *median_confidence_interval(self.samples))
 
     def analyze(self, times: PullRequestTimes) -> Optional[T]:
