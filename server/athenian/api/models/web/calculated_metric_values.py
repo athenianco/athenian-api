@@ -1,6 +1,6 @@
 # coding: utf-8
 
-from datetime import date
+import datetime
 from typing import List, Optional
 
 from athenian.api import serialization
@@ -10,10 +10,11 @@ from athenian.api.models.web.base_model_ import Model
 class CalculatedMetricValues(Model):
     """Calculated metrics: date, values, confidences."""
 
-    def __init__(self, date: date, values: List[float],
-                 confidence_scores: List[int],
-                 confidence_mins: Optional[List[float]] = None,
-                 confidence_maxs: Optional[List[float]] = None,
+    def __init__(self, date: Optional[datetime.date] = None,
+                 values: Optional[List[object]] = None,
+                 confidence_scores: Optional[List[int]] = None,
+                 confidence_mins: Optional[List[object]] = None,
+                 confidence_maxs: Optional[List[object]] = None,
                  ):
         """Initialize CalculatedMetricValues - a model defined in OpenAPI.
 
@@ -25,21 +26,23 @@ class CalculatedMetricValues(Model):
                                CalculatedMetricValues.
         :param confidence_scores: The confidence scores of this CalculatedMetricValues.
         """
-        self.openapi_types = {"date": date, "values": List[float],
+        self.openapi_types = {"date": datetime.date,
+                              "values": List[object],
                               "confidence_scores": List[int],
-                              "confidence_mins": List[float],
-                              "confidence_maxs": List[float],
+                              "confidence_mins": List[object],
+                              "confidence_maxs": List[object],
                               }
-        self.attribute_map = {"date": "date", "values": "values",
+        self.attribute_map = {"date": "date",
+                              "values": "values",
                               "confidence_scores": "confidence_scores",
                               "confidence_mins": "confidence_mins",
                               "confidence_maxs": "confidence_maxs",
                               }
-        self.date = date
-        self.values = values
-        self.confidence_mins = confidence_mins
-        self.confidence_maxs = confidence_maxs
-        self.confidence_scores = confidence_scores
+        self._date = date
+        self._values = values
+        self._confidence_mins = confidence_mins
+        self._confidence_maxs = confidence_maxs
+        self._confidence_scores = confidence_scores
 
     @classmethod
     def from_dict(cls, dikt: dict) -> "CalculatedMetricValues":
@@ -51,7 +54,7 @@ class CalculatedMetricValues(Model):
         return serialization.deserialize_model(dikt, cls)
 
     @property
-    def date(self) -> date:
+    def date(self) -> datetime.date:
         """Gets the date of this CalculatedMetricValues.
 
         Where you should relate the metric value to on the time axis.
@@ -62,7 +65,7 @@ class CalculatedMetricValues(Model):
         return self._date
 
     @date.setter
-    def date(self, date: date):
+    def date(self, date: datetime.date):
         """Sets the date of this CalculatedMetricValues.
 
         Where you should relate the metric value to on the time axis.
@@ -76,7 +79,7 @@ class CalculatedMetricValues(Model):
         self._date = date
 
     @property
-    def values(self) -> List[float]:
+    def values(self) -> List[object]:
         """Gets the values of this CalculatedMetricValues.
 
         The same order as `metrics`.
@@ -87,13 +90,12 @@ class CalculatedMetricValues(Model):
         return self._values
 
     @values.setter
-    def values(self, values: List[float]):
+    def values(self, values: List[object]):
         """Sets the values of this CalculatedMetricValues.
 
         The same order as `metrics`.
 
         :param values: The values of this CalculatedMetricValues.
-        :type values: List[float]
         """
         if values is None:
             raise ValueError("Invalid value for `values`, must not be `None`")
@@ -101,49 +103,45 @@ class CalculatedMetricValues(Model):
         self._values = values
 
     @property
-    def confidence_mins(self) -> List[float]:
+    def confidence_mins(self) -> List[object]:
         """Gets the left boundaries of the 95% confidence interval of this CalculatedMetricValues.
 
         Confidence interval @ p=0.95, minimum. The same order as `metrics`.
 
         :return: The left boundaries of the 95% confidence interval of this CalculatedMetricValues.
-        :rtype: List[float]
         """
         return self._confidence_mins
 
     @confidence_mins.setter
-    def confidence_mins(self, confidence_mins: List[float]):
+    def confidence_mins(self, confidence_mins: List[object]):
         """Sets the left boundaries of the 95% confidence interval of this CalculatedMetricValues.
 
         Confidence interval @ p=0.95, minimum. he same order as `metrics`.
 
         :param confidence_mins: The left boundaries of the 95% confidence interval of this \
                                CalculatedMetricValues.
-        :type confidence_mins: List[float]
         """
         self._confidence_mins = confidence_mins
 
     @property
-    def confidence_maxs(self) -> List[float]:
+    def confidence_maxs(self) -> List[object]:
         """Gets the right boundaries of the 95% confidence interval of this CalculatedMetricValues.
 
         Confidence interval @ p=0.95, maximum. The same order as `metrics`.
 
         :return: The right boundaries of the 95% confidence interval of this \
                  CalculatedMetricValues.
-        :rtype: List[float]
         """
         return self._confidence_maxs
 
     @confidence_maxs.setter
-    def confidence_maxs(self, confidence_maxs: List[float]):
+    def confidence_maxs(self, confidence_maxs: List[object]):
         """Sets the right boundaries of the 95% confidence interval of this CalculatedMetricValues.
 
         Confidence interval @ p=0.95, maximum. he same order as `metrics`.
 
         :param confidence_maxs: The right boundaries of the 95% confidence interval of this \
                                CalculatedMetricValues.
-        :type confidence_maxs: List[float]
         """
         self._confidence_maxs = confidence_maxs
 

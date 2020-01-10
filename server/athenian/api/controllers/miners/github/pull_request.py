@@ -163,7 +163,8 @@ class PullRequestTimesMiner(PullRequestMiner):
                  ) -> PullRequestTimes:
         created_at = Fallback(pr["created_at"], None)
         merged_at = Fallback(pr["merged_at"], None)
-        first_comment_on_first_review = Fallback(review_comments["created_at"].min(), merged_at)
+        first_comment_on_first_review = Fallback(
+            min(review_comments["created_at"].min(), reviews["submitted_at"].min()), merged_at)
         last_commit_before_first_review = first_comment_on_first_review  # FIXME(vmarkovtsev): no commit timestamps # noqa
         first_review_request = Fallback(None, Fallback.min(
             Fallback.max(created_at, last_commit_before_first_review),

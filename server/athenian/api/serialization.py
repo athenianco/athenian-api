@@ -3,6 +3,8 @@ import json
 import typing
 from typing import Union
 
+from dateutil.parser import parse as parse_datetime
+
 from athenian.api import typing_utils
 
 T = typing.TypeVar("T")
@@ -68,12 +70,7 @@ def deserialize_date(string: str) -> datetime.date:
     :param string: str.
     :return: date.
     """
-    try:
-        from dateutil.parser import parse
-
-        return parse(string).date()
-    except ImportError:
-        return string
+    return parse_datetime(string).date()
 
 
 def deserialize_datetime(string: str) -> datetime.datetime:
@@ -84,12 +81,7 @@ def deserialize_datetime(string: str) -> datetime.datetime:
     :param string: str.
     :return: datetime.
     """
-    try:
-        from dateutil.parser import parse
-
-        return parse(string)
-    except ImportError:
-        return string
+    return parse_datetime(string)
 
 
 def deserialize_model(data: Union[dict, list], klass: Class) -> T:
