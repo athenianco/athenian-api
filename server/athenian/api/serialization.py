@@ -131,9 +131,20 @@ def _deserialize_dict(data: dict, boxed_type) -> dict:
 class FriendlyJson:
     """Allows to serialize datetime.datetime and datetime.date to JSON."""
 
-    @staticmethod
-    def dumps(data, **kwargs):
+    @classmethod
+    def dumps(cls, data, **kwargs):
         """Wrap json.dumps to str() unsupported objects."""
-        return json.dumps(data, default=str, **kwargs)
+        return json.dumps(data, default=cls.serialize, **kwargs)
 
-    loads = json.loads
+    loads = staticmethod(json.loads)
+
+    @staticmethod
+    def serialize(obj):
+        """Format timedeltas and dates according to https://athenianco.atlassian.net/browse/ENG-125"""  # noqa
+        if isinstance(obj, datetime.timedelta):
+            return "%ds" % obj.total_seconds()
+        if isinstance(obj, datetime.datetime):
+            return obj.strftime("%Y-%m-%dT%H:%M:%S")
+        if isinstance(obj, datetime.date):
+            return obj.strftime("%Y-%m-%d")
+        return str(obj)

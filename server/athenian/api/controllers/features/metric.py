@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import timedelta
 from typing import Generic, TypeVar
 
-T = TypeVar("T", float, int, datetime)
+T = TypeVar("T", float, int, timedelta, type(None))
 
 
 @dataclass(frozen=True)

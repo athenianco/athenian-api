@@ -208,6 +208,6 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
     calc.reset()
     m = calc.value()
     assert not m.exists
-    assert m.value == 0
-    assert m.confidence_min == 0
-    assert m.confidence_max == 0
+    assert m.value is None
+    assert m.confidence_min is None
+    assert m.confidence_max is None

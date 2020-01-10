@@ -82,13 +82,19 @@ async def test_calc_metrics_line_all(client, granularity):
         nonzero = 0
         for val in calc.values:
             for t in val.values:
+                if t is None:
+                    continue
                 assert pd.to_timedelta(t) >= timedelta(0), \
                     "Metric: %s\nValues: %s" % (m, val.values)
                 nonzero += pd.to_timedelta(t) > timedelta(0)
             for t in val.confidence_mins:
+                if t is None:
+                    continue
                 assert pd.to_timedelta(t) >= timedelta(0), \
                     "Metric: %s\nConfidence mins: %s" % (m, val.confidence_mins)
             for t in val.confidence_maxs:
+                if t is None:
+                    continue
                 assert pd.to_timedelta(t) >= timedelta(0), \
                     "Metric: %s\nConfidence maxs: %s" % (m, val.confidence_maxs)
             for s in val.confidence_scores:
