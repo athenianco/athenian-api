@@ -79,10 +79,12 @@ async def test_calc_metrics_line_all(client, granularity):
     assert response.status == 200, "Response body is : " + body
     cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
     for m, calc in zip(cm.metrics, cm.calculated):
+        nonzero = 0
         for val in calc.values:
             for t in val.values:
                 assert pd.to_timedelta(t) >= timedelta(0), \
                     "Metric: %s\nValues: %s" % (m, val.values)
+                nonzero += pd.to_timedelta(t) > timedelta(0)
             for t in val.confidence_mins:
                 assert pd.to_timedelta(t) >= timedelta(0), \
                     "Metric: %s\nConfidence mins: %s" % (m, val.confidence_mins)
@@ -92,3 +94,5 @@ async def test_calc_metrics_line_all(client, granularity):
             for s in val.confidence_scores:
                 assert 0 <= s <= 100, \
                     "Metric: %s\nConfidence scores: %s" % (m, val.confidence_scores)
+        if m != "pr-release-time":
+            assert nonzero > 0, str(m)
