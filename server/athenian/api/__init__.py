@@ -7,6 +7,7 @@ from typing import Optional
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
+import aiohttp_cors
 import connexion
 import databases
 import sentry_sdk
@@ -79,6 +80,7 @@ class AthenianApp(connexion.AioHttpApp):
             pass_context_arg_name="request",
         )
         setup_status(self.app)
+        self._enable_cors()
         api.jsonifier.json = FriendlyJson
         self.mdb = self.sdb = None  # type: Optional[databases.Database]
         self._mdb_connected_event = asyncio.Event()
@@ -127,6 +129,18 @@ class AthenianApp(connexion.AioHttpApp):
             r"/status*",
         ])
         return aiohttp.web.Application(middlewares=[self._auth0.middleware, self.with_db])
+
+    def _enable_cors(self) -> None:
+        cors = aiohttp_cors.setup(self.app, defaults={
+            "*": aiohttp_cors.ResourceOptions(
+                allow_credentials=True,
+                expose_headers="*",
+                allow_headers="*",
+                max_age=3600,
+                allow_methods="*",
+            )})
+        for route in self.app.router.routes():
+            cors.add(route)
 
     @aiohttp.web.middleware
     async def with_db(self, request, handler):
