@@ -2,7 +2,7 @@ from typing import Sequence, Union
 
 import databases
 import pandas as pd
-from sqlalchemy import Column
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api.models.metadata.github import Base as MetadataBase
@@ -10,7 +10,8 @@ from athenian.api.models.state.models import Base as StateBase
 
 
 async def read_sql_query(sql: ClauseElement, con: databases.Database,
-                         columns: Union[Sequence[str], Sequence[Column], MetadataBase, StateBase],
+                         columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
+                                        MetadataBase, StateBase],
                          ) -> pd.DataFrame:
     """Read SQL query into a DataFrame.
 
@@ -40,6 +41,6 @@ async def read_sql_query(sql: ClauseElement, con: databases.Database,
         columns = [c.name for c in columns.__table__.columns]
     else:
         if not isinstance(probe, str):
-            columns = [c.name for c in columns]
+            columns = [c.key for c in columns]
     frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
     return frame
