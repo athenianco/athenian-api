@@ -1,9 +1,17 @@
+from typing import Sequence, Union
+
 import databases
 import pandas as pd
+from sqlalchemy import Column
 from sqlalchemy.sql import ClauseElement
 
+from athenian.api.models.metadata.github import Base as MetadataBase
+from athenian.api.models.state.models import Base as StateBase
 
-async def read_sql_query(sql: ClauseElement, con: databases.Database) -> pd.DataFrame:
+
+async def read_sql_query(sql: ClauseElement, con: databases.Database,
+                         columns: Union[Sequence[str], Sequence[Column], MetadataBase, StateBase],
+                         ) -> pd.DataFrame:
     """Read SQL query into a DataFrame.
 
     Returns a DataFrame corresponding to the result set of the query.
@@ -12,8 +20,9 @@ async def read_sql_query(sql: ClauseElement, con: databases.Database) -> pd.Data
 
     Parameters
     ----------
-    sql : SQLAlchemy query object to be executed.
-    con : async SQLAlchemy database engine.
+    sql     : SQLAlchemy query object to be executed.
+    con     : async SQLAlchemy database engine.
+    columns : list of the resulting columns names, column objects or the model if SELECT *
 
     Returns
     -------
@@ -25,6 +34,12 @@ async def read_sql_query(sql: ClauseElement, con: databases.Database) -> pd.Data
     parameter will be converted to UTC.
     """
     data = await con.fetch_all(query=sql)
-    columns = data[0].keys() if data else []
+    try:
+        probe = columns[0]
+    except TypeError:
+        columns = [c.name for c in columns.__table__.columns]
+    else:
+        if not isinstance(probe, str):
+            columns = [c.name for c in columns]
     frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
     return frame

@@ -46,12 +46,13 @@ class PullRequestMiner:
         ]
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
-        prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)), db)
+        prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
+                                   db, PullRequest)
         numbers = prs["number"] if len(prs) > 0 else set()
         reviews = await read_sql_query(select([PullRequestReview]).where(
-            PullRequestReview.pull_request_number.in_(numbers)), db)
+            PullRequestReview.pull_request_number.in_(numbers)), db, PullRequestReview)
         review_comments = await read_sql_query(select([PullRequestComment]).where(
-            PullRequestComment.pull_request_number.in_(numbers)), db)
+            PullRequestComment.pull_request_number.in_(numbers)), db, PullRequestComment)
         return cls(prs, reviews, review_comments, time_to)
 
     def __iter__(self) -> Generator[Tuple[pd.Series, pd.DataFrame, pd.DataFrame], None, None]:
