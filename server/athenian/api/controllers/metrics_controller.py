@@ -26,7 +26,10 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     :param body: Desired metric definitions.
     :type body: dict | bytes
     """
-    body = MetricsRequest.from_dict(body)
+    try:
+        body = MetricsRequest.from_dict(body)
+    except ValueError as e:
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
 
     """
     @se7entyse7en:
@@ -55,7 +58,6 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
         raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
             pointer=".date_from",
-            status=400,
         ))
     time_intervals = Granularity.split(body.granularity, body.date_from, body.date_to)
     for service, (repos, devs) in filters:
@@ -98,14 +100,12 @@ def _compile_filters(for_sets) -> List[Filter]:
                         raise ResponseError(InvalidRequestError(
                             detail='mixed providers are not allowed in the same "for" element',
                             pointer=".for[%d].repositories" % i,
-                            status=400,
                         ))
                     repos.append(repo[len(prefix):])
         if service is None:
             raise ResponseError(InvalidRequestError(
                 detail='the provider of a "for" element is unsupported or the set is empty',
                 pointer=".for[%d].repositories" % i,
-                status=400,
             ))
         for dev in for_set.developers:
             for key, prefix in PREFIXES.items():
@@ -114,7 +114,6 @@ def _compile_filters(for_sets) -> List[Filter]:
                         raise ResponseError(InvalidRequestError(
                             detail='mixed providers are not allowed in the same "for" element',
                             pointer=".for[%d].developers" % i,
-                            status=400,
                         ))
                     devs.append(dev[len(prefix):])
         filters.append((service, (repos, devs)))
