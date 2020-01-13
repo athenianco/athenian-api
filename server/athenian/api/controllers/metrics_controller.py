@@ -1,9 +1,11 @@
 from collections import defaultdict
+from itertools import chain
 from typing import List, Tuple
 
 from aiohttp import web
 
 from athenian.api.controllers.features.entries import ENTRIES
+from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.controllers.response import response, ResponseError
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedMetric, CalculatedMetrics, CalculatedMetricValues, \
@@ -15,8 +17,8 @@ from athenian.api.typing_utils import AthenianWebRequest
 
 
 #           service                  developers
-Filter = Tuple[str, Tuple[List[str], List[str]]]
-#                        repositories
+Filter = Tuple[str, Tuple[List[str], List[str], ForSet]]
+#                        repositories          originals
 
 
 async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -51,7 +53,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     met.calculated = []
 
     try:
-        filters = _compile_filters(body._for)
+        filters = await _compile_filters(body._for, request)
     except ResponseError as e:
         return e.response
     if body.date_to < body.date_from:
@@ -60,7 +62,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
             pointer=".date_from",
         ))
     time_intervals = Granularity.split(body.granularity, body.date_from, body.date_to)
-    for service, (repos, devs) in filters:
+    for service, (repos, devs, for_set) in filters:
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
         sentries = ENTRIES[service]
@@ -74,7 +76,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
             for i, m in enumerate(metrics):
                 results[m] = [r[i] for r in fres]
         met.calculated.append(CalculatedMetric(
-            _for=ForSet(repositories=repos, developers=devs),
+            _for=for_set,
             values=[CalculatedMetricValues(
                 date=d,
                 values=[results[m][i].value for m in met.metrics],
@@ -85,13 +87,15 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     return response(met)
 
 
-def _compile_filters(for_sets) -> List[Filter]:
+async def _compile_filters(for_sets, request: AthenianWebRequest) -> List[Filter]:
     filters = []
     for i, for_set in enumerate(for_sets):
         repos = []
         devs = []
         service = None
-        for repo in for_set.repositories:
+        for repo in chain.from_iterable([
+                await resolve_reposet(r, ".for[%d].repositories" % i, request.sdb, request.user)
+                for r in for_set.repositories]):
             for key, prefix in PREFIXES.items():
                 if repo.startswith(prefix):
                     if service is None:
@@ -116,5 +120,5 @@ def _compile_filters(for_sets) -> List[Filter]:
                             pointer=".for[%d].developers" % i,
                         ))
                     devs.append(dev[len(prefix):])
-        filters.append((service, (repos, devs)))
+        filters.append((service, (repos, devs, for_set)))
     return filters

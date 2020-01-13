@@ -1,11 +1,12 @@
 from typing import List
 
 from aiohttp import web
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, insert, update
 
+from athenian.api.controllers.reposet import fetch_reposet
 from athenian.api.controllers.response import response, ResponseError
 from athenian.api.models.state.models import RepositorySet
-from athenian.api.models.web import CreatedIdentifier, ForbiddenError, NotFoundError
+from athenian.api.models.web import CreatedIdentifier
 
 
 async def create_reposet(request: web.Request, body: List[str]) -> web.Response:
@@ -26,13 +27,10 @@ async def delete_reposet(request: web.Request, id: int) -> web.Response:
     :param id: Numeric identifier of the repository set to delete.
     :type id: int
     """
-    rs = await request.sdb.fetch_one(select([RepositorySet.owner]).where(RepositorySet.id == id))
-    if rs is None or len(rs) == 0:
-        return ResponseError(NotFoundError(
-            detail="Repository set %d does not exist" % id)).response
-    if rs.owner != request.user.username:
-        return ResponseError(ForbiddenError(
-            detail="User %s is not allowed to access %d" % (request.user.username, id))).response
+    try:
+        await fetch_reposet(id, [], request.sdb, request.user)
+    except ResponseError as e:
+        return e.response
     await request.sdb.execute(delete(RepositorySet).where(RepositorySet.id == id))
     return web.Response(status=200)
 
@@ -43,14 +41,10 @@ async def get_reposet(request: web.Request, id: int) -> web.Response:
     :param id: Numeric identifier of the repository set to list.
     :type id: int
     """
-    rs = await request.sdb.fetch_one(select([RepositorySet.items, RepositorySet.owner])
-                                     .where(RepositorySet.id == id))
-    if rs is None or len(rs) == 0:
-        return ResponseError(NotFoundError(
-            detail="Repository set %d does not exist" % id)).response
-    if rs.owner != request.user.username:
-        return ResponseError(ForbiddenError(
-            detail="User %s is not allowed to access %d" % (request.user.username, id))).response
+    try:
+        rs = await fetch_reposet(id, [RepositorySet.items], request.sdb, request.user)
+    except ResponseError as e:
+        return e.response
     # "items" collides with dict.items() so we have to access the list via []
     return web.json_response(rs["items"], status=200)
 
@@ -62,13 +56,10 @@ async def update_reposet(request: web.Request, id: int, body: List[str]) -> web.
     :type id: int
     :param body: New list of repositories in the group.
     """
-    rs = await request.sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == id))
-    if rs is None or len(rs) == 0:
-        return ResponseError(NotFoundError(
-            detail="Repository set %d does not exist" % id)).response
-    if rs.owner != request.user.username:
-        return ResponseError(ForbiddenError(
-            detail="User %s is not allowed to access %d" % (request.user.username, id))).response
+    try:
+        rs = await fetch_reposet(id, [RepositorySet], request.sdb, request.user)
+    except ResponseError as e:
+        return e.response
     rs = RepositorySet(**rs)
     rs.items = body
     rs.refresh()
