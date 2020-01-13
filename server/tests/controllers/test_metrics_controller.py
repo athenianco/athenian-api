@@ -41,6 +41,8 @@ async def test_calc_metrics_line_smoke(client, metric):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
+    cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+    assert len(cm.calculated[0].values) > 0
 
 
 @pytest.mark.parametrize("granularity", Granularity.ALL)
@@ -131,7 +133,7 @@ async def test_calc_metrics_line_empty_devs_tight_date(client, devs, date_from):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
-    assert len(cm.calculated) > 0
+    assert len(cm.calculated[0].values) > 0
 
 
 async def test_calc_metrics_bad_date(client):
@@ -167,3 +169,31 @@ async def test_calc_metrics_bad_date(client):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 400, "Response body is : " + body
+
+
+async def test_calc_metrics_line_reposet(client):
+    """Substitute {id} with the real repos."""
+    body = {
+        "for": [
+            {
+                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "repositories": ["{1}"],
+            },
+        ],
+        "metrics": [MetricID.PR_LEAD_TIME],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularity": "week",
+    }
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+    assert len(cm.calculated[0].values) > 0
+    assert cm.calculated[0]._for.repositories == ["{1}"]

@@ -29,7 +29,10 @@ def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(__package__, epilog="""environment variables:
   SENTRY_KEY            Sentry token: ???@sentry.io
-  SENTRY_PROJECT        Sentry project name.""", formatter_class=Formatter)
+  SENTRY_PROJECT        Sentry project name.
+  AUTH0_DOMAIN          Auth0 domain, usually *.auth0.com
+  AUTH0_AUDIENCE        JWT audience - the backref URL, usually the website address""",
+                                     formatter_class=Formatter)
     add_logging_args(parser)
     parser.add_argument("--host", default="0.0.0.0", help="HTTP server host.")
     parser.add_argument("--port", type=int, default=8080, help="HTTP server port.")
