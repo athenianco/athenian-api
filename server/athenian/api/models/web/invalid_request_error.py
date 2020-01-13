@@ -11,7 +11,7 @@ class InvalidRequestError(GenericError):
         self,
         pointer: str,
         title: str = HTTPStatus.BAD_REQUEST.phrase,
-        status: int = None,
+        status: int = HTTPStatus.BAD_REQUEST,
         detail: str = None,
         instance: str = None,
     ):

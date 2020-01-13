@@ -102,3 +102,68 @@ async def test_calc_metrics_line_all(client, granularity):
                     "Metric: %s\nConfidence scores: %s" % (m, val.confidence_scores)
         if m != "pr-release-time":
             assert nonzero > 0, str(m)
+
+
+@pytest.mark.parametrize(("devs", "date_from"),
+                         ([{"developers": []}, "2019-11-28"], [{}, "2018-09-28"]))
+async def test_calc_metrics_line_empty_devs_tight_date(client, devs, date_from):
+    """https://athenianco.atlassian.net/browse/ENG-126"""
+    body = {
+        "date_from": date_from,
+        "date_to": "2020-01-16",
+        "for": [{
+            **devs,
+            "repositories": [
+                "github.com/src-d/go-git",
+                "github.com/athenianco/athenian-api",
+            ],
+        }],
+        "granularity": "month",
+        "metrics": list(MetricID.ALL),
+    }
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+    assert len(cm.calculated) > 0
+
+
+async def test_calc_metrics_bad_date(client):
+    """What if we specify a date that does not exist?"""
+    body = {
+        "for": [
+            {
+                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "repositories": [
+                    "github.com/src-d/go-git",
+                    "github.com/athenianco/athenian-api",
+                ],
+            },
+            {
+                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "repositories": [
+                    "github.com/src-d/go-git",
+                    "github.com/athenianco/athenian-api",
+                ],
+            },
+        ],
+        "metrics": [MetricID.PR_LEAD_TIME],
+        "date_from": "2015-10-13",
+        "date_to": "2020-02-30",  # 30th of February does not exist
+        "granularity": "week",
+    }
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 400, "Response body is : " + body

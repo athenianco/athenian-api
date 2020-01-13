@@ -26,7 +26,7 @@ class ForSet(Model):
         }
 
         self._repositories = repositories
-        self._developers = developers
+        self._developers = developers or []
 
     @classmethod
     def from_dict(cls, dikt: dict) -> "ForSet":
