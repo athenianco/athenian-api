@@ -1,12 +1,14 @@
 from typing import List
 
 from aiohttp import web
-from sqlalchemy import delete, insert, update
+from sqlalchemy import delete, insert, select, update
 
+from athenian.api import FriendlyJson
 from athenian.api.controllers.reposet import fetch_reposet
 from athenian.api.controllers.response import response, ResponseError
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import CreatedIdentifier
+from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 
 
 async def create_reposet(request: web.Request, body: List[str]) -> web.Response:
@@ -68,3 +70,13 @@ async def update_reposet(request: web.Request, id: int, body: List[str]) -> web.
                               .where(RepositorySet.id == id)
                               .values(rs.explode()))
     return web.json_response(body, status=200)
+
+
+async def list_reposets(request: web.Request) -> web.Response:
+    """List the current user's repository sets."""
+    rss = await request.sdb.fetch_all(
+        select([RepositorySet]).where(RepositorySet.owner == request.user.username))
+    items = [RepositorySetListItem(id=rs.id, created=rs.created_at, updated=rs.updated_at,
+                                   items_count=rs.items_count).to_dict()
+             for rs in rss]
+    return web.json_response(items, status=200, dumps=FriendlyJson.dumps)

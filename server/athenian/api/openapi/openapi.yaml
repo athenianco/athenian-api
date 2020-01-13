@@ -172,6 +172,19 @@ paths:
       summary: Update a repository set.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
+  /reposets:
+    get:
+      operationId: list_reposets
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositorySetList'
+          description: List the repository sets belonging to the current user.
+      summary: List the repository sets belonging to the current user.
+      x-openapi-router-controller: athenian.api.controllers.reposet_controller
+      x-codegen-request-body-name: body
 components:
   schemas:
     CreatedIdentifier:
@@ -274,6 +287,29 @@ components:
       items:
         $ref: '#/components/schemas/RepositoryID'
       type: array
+    RepositorySetList:
+      description: List of repository sets owned by a user.
+      items:
+        $ref: '#/components/schemas/RepositorySetListItem'
+      type: array
+    RepositorySetListItem:
+      description: Element of RepositorySetList.
+      properties:
+        id:
+          description: Repository set identifier.
+          type: integer
+        created:
+          description: Date and time of creation of the repository set.
+          format: date-item
+          type: string
+        updated:
+          description: Date and time of the last change of the repository set.
+          format: date-item
+          type: string
+        items_count:
+          description: Number of repositories in the set.
+          type: integer
+      type: object
     ForSet:
       example:
         repositories:
