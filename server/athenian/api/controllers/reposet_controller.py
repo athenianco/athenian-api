@@ -26,9 +26,8 @@ async def delete_reposet(request: web.Request, id: int) -> web.Response:
     :param id: Numeric identifier of the repository set to delete.
     :type id: int
     """
-    rs = await request.sdb.fetch_one(select([RepositorySet.owner])
-                                     .where(RepositorySet.id == id))
-    if len(rs) == 0:
+    rs = await request.sdb.fetch_one(select([RepositorySet.owner]).where(RepositorySet.id == id))
+    if rs is None or len(rs) == 0:
         return ResponseError(NotFoundError(
             detail="Repository set %d does not exist" % id)).response
     if rs.owner != request.user.username:
@@ -46,7 +45,7 @@ async def get_reposet(request: web.Request, id: int) -> web.Response:
     """
     rs = await request.sdb.fetch_one(select([RepositorySet.items, RepositorySet.owner])
                                      .where(RepositorySet.id == id))
-    if len(rs) == 0:
+    if rs is None or len(rs) == 0:
         return ResponseError(NotFoundError(
             detail="Repository set %d does not exist" % id)).response
     if rs.owner != request.user.username:
@@ -64,7 +63,7 @@ async def update_reposet(request: web.Request, id: int, body: List[str]) -> web.
     :param body: New list of repositories in the group.
     """
     rs = await request.sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == id))
-    if len(rs) == 0:
+    if rs is None or len(rs) == 0:
         return ResponseError(NotFoundError(
             detail="Repository set %d does not exist" % id)).response
     if rs.owner != request.user.username:
