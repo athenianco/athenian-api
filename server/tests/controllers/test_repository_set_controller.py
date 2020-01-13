@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import select
 
 from athenian.api.models.state.models import RepositorySet
@@ -97,3 +99,20 @@ async def test_create_repository_set(client):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     assert body == '{"id": 2}'
+
+
+async def test_list_repository_sets(client):
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    response = await client.request(
+        method="GET", path="/v1/reposets", headers=headers, json={},
+    )
+    body = (await response.read()).decode("utf-8")
+    items = json.loads(body)
+    assert len(items) > 0
+    assert items[0]["id"] == 1
+    assert items[0]["items_count"] == 2
+    assert items[0]["created"] != ""
+    assert items[0]["updated"] != ""
