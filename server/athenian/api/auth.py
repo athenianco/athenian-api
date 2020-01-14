@@ -93,7 +93,7 @@ class Auth0:
             return await handler(request)
 
         # FIXME(vmarkovtsev): remove the following short circuit when the frontend is ready
-        request.user = User("https://github.com/vmarkovtsev", "Vadim Markovtsev",
+        request.user = User("auth0:vmarkovtsev", "vadim@athenian.co", "Vadim Markovtsev",
                             "https://avatars1.githubusercontent.com/u/2793551",
                             "2020-01-08 11:12:04.985028")
         return await handler(request)
