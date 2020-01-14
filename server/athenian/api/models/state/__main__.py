@@ -20,7 +20,10 @@ def main():
     path = os.path.relpath(root)
     with open("alembic.ini", "w") as fout:
         fout.write(t.render(url=url, path=path))
-    os.execlp("alembic", "alembic", "upgrade", "head")
+    args = ["alembic", "alembic", "upgrade", "head"]
+    if os.getenv("OFFLINE"):
+        args.append("--sql")
+    os.execlp(*args)
 
 
 if __name__ == "__main__":
