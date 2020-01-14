@@ -128,8 +128,8 @@ class AthenianApp(connexion.AioHttpApp):
         self._auth0_cls.ensure_static_configuration()
         self._auth0 = self._auth0_cls(whitelist=[
             r"/v1/openapi.json",
-            r"/v1/ui*",
-            r"/status*",
+            r"/v1/ui(/|$)",
+            r"/status/?$",
         ])
         return aiohttp.web.Application(middlewares=[self._auth0.middleware, self.with_db])
 

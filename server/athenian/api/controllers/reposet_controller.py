@@ -17,7 +17,7 @@ async def create_reposet(request: web.Request, body: List[str]) -> web.Response:
     :param body: List of repositories to group.
     """
     # TODO(vmarkovtsev): get user's repos and check the access
-    rs = RepositorySet(owner=request.user.username, items=body)
+    rs = RepositorySet(owner=request.user.id, items=body)
     rs.create_defaults()
     rid = await request.sdb.execute(insert(RepositorySet).values(rs.explode()))
     return response(CreatedIdentifier(rid))
@@ -75,7 +75,7 @@ async def update_reposet(request: web.Request, id: int, body: List[str]) -> web.
 async def list_reposets(request: web.Request) -> web.Response:
     """List the current user's repository sets."""
     rss = await request.sdb.fetch_all(
-        select([RepositorySet]).where(RepositorySet.owner == request.user.username))
+        select([RepositorySet]).where(RepositorySet.owner == request.user.id))
     items = [RepositorySetListItem(id=rs.id, created=rs.created_at, updated=rs.updated_at,
                                    items_count=rs.items_count).to_dict()
              for rs in rss]

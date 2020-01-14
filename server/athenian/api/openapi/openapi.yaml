@@ -5,7 +5,7 @@ info:
   title: Athenian Dashboard API
   version: 1.0.0
 servers:
-- url: https://api.athenian.co/v1
+- url: https://api.owl.athenian.co/v1
 paths:
   /metrics_line:
     post:
@@ -185,6 +185,19 @@ paths:
       summary: List the repository sets belonging to the current user.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
+  /user:
+    get:
+      operationId: get_user
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: Show details about the current user.
+      summary: Show details about the current user.
+      x-openapi-router-controller: athenian.api.controllers.user_controller
+      x-codegen-request-body-name: body
 components:
   schemas:
     CreatedIdentifier:
@@ -309,6 +322,32 @@ components:
         items_count:
           description: Number of repositories in the set.
           type: integer
+      type: object
+    User:
+      description: User details.
+      example:
+        id: 248289761001
+        name: Jane Josephine Doe
+        email: janedoe@exampleco.com
+        picture: http://exampleco.com/janedoe/me.jpg
+        updated: 2020-01-23T12:00:00
+      properties:
+        id:
+          description: Auth0 user identifier.
+          type: string
+        name:
+          description: Full name of the user.
+          type: string
+        email:
+          description: Email of the user.
+          type: string
+        picture:
+          description: Avatar URL of the user.
+          type: string
+        updated:
+          description: Date and time of the last profile update.
+          format: date-item
+          type: string
       type: object
     ForSet:
       example:
