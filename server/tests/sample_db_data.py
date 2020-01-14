@@ -65,5 +65,5 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
 
 def fill_state_session(session: sqlalchemy.orm.Session):
     session.add(RepositorySet(
-        owner="github.com/vmarkovtsev",
+        owner="auth0:vmarkovtsev",
         items=["github.com/src-d/go-git", "github.com/athenianco/athenian-api"]))

@@ -19,10 +19,11 @@ class AuthError(Exception):
 class User:
     """User profile information."""
 
-    def __init__(self, profile: str, name: str, picture: str, updated_at: str, **kwargs):
+    def __init__(self, sub: str, email: str, name: str, picture: str, updated_at: str, **kwargs):
         """Create a new User object."""
-        self.username = profile.split("://", 1)[1]
-        self.fullname = name
+        self.id = sub
+        self.email = email
+        self.name = name
         self.picture = picture
         self.updated = dateutil.parser.parse(updated_at)
 
@@ -141,7 +142,7 @@ class Auth0:
 
         try:
             user = await self._get_user_info(token)
-            self.log.info("User %s", user.username)
+            self.log.info("User %s", vars(user))
         except Exception:
             return aiohttp.web.Response(body="Your auth token is likely revoked.", status=401)
 
