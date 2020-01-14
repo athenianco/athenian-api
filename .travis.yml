@@ -21,7 +21,8 @@ before_cache:
 matrix:
   fast_finish: true
   include:
-    - install:
+    - name: Unit tests and style check
+      install:
         - cd server
         - pip install -r requirements.txt
         - pip install -r lint-requirements.txt
@@ -31,6 +32,7 @@ matrix:
         - flake8
         - pytest
     - if: type = pull_request
+      name: Docker build smoke test
       before_install:
         - docker load -i $HOME/docker/images.tar || true
         - docker image list
