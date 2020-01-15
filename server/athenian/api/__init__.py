@@ -32,7 +32,10 @@ def parse_args() -> argparse.Namespace:
   SENTRY_KEY            Sentry token: ???@sentry.io
   SENTRY_PROJECT        Sentry project name.
   AUTH0_DOMAIN          Auth0 domain, usually *.auth0.com
-  AUTH0_AUDIENCE        JWT audience - the backref URL, usually the website address""",
+  AUTH0_AUDIENCE        JWT audience - the backref URL, usually the website address
+  AUTH0_CLIENT_ID       Client ID of the Auth0 Machine-to-Machine Application
+  AUTH0_CLIENT_SECRET   Client Secret of the Auth0 Machine-to-Machine Application
+  """,
                                      formatter_class=Formatter)
     add_logging_args(parser)
     parser.add_argument("--host", default="0.0.0.0", help="HTTP server host.")

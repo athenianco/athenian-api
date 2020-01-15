@@ -1,8 +1,12 @@
+import asyncio
+from datetime import timedelta
 import logging
 import os
 import re
+from typing import Iterable, List
 
 import aiohttp.web
+from aiohttp.web_runner import GracefulExit
 import dateutil.parser
 from jose import jwt
 
@@ -33,14 +37,30 @@ class Auth0:
 
     AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
     AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
+    AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
+    AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
     log = logging.getLogger("auth")
 
-    def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, whitelist=tuple()):
+    def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
+                 client_secret=AUTH0_CLIENT_SECRET, whitelist=tuple(), loop=None):
         """Create a new Auth0 middleware."""
         self._domain = domain
         self._audience = audience
         self._whitelist = whitelist
         self._session = aiohttp.ClientSession()
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._mgmt_event = asyncio.Event()
+        self._mgmt_token = None  # type: str
+        if loop is None:
+            loop = asyncio.get_event_loop()
+        self._loop = loop
+        loop.call_soon(asyncio.ensure_future, self._acquire_management_token())
+
+    async def mgmt_token(self) -> str:
+        """Return the Auth0 management API token."""
+        await self._mgmt_event.wait()
+        return self._mgmt_token
 
     async def close(self):
         """Free resources associated with the object."""
@@ -50,9 +70,48 @@ class Auth0:
     def ensure_static_configuration(cls):
         """Check that the authentication is properly configured by the environment variables \
         and raise an exception if it is not."""
-        if not (cls.AUTH0_DOMAIN and cls.AUTH0_AUDIENCE):
-            cls.log.error("API authentication requires setting AUTH0_DOMAIN and AUTH0_AUDIENCE")
-            raise EnvironmentError("AUTH0_DOMAIN and AUTH0_AUDIENCE must be set")
+        if not (cls.AUTH0_DOMAIN and cls.AUTH0_AUDIENCE
+                and cls.AUTH0_CLIENT_ID and cls.AUTH0_CLIENT_SECRET):  # noqa: W503
+            cls.log.error("API authentication requires setting AUTH0_DOMAIN, AUTH0_AUDIENCE, "
+                          "AUTH0_CLIENT_ID and AUTH0_CLIENT_SECRET")
+            raise EnvironmentError("AUTH0_DOMAIN, AUTH0_AUDIENCE, AUTH0_CLIENT_ID, "
+                                   "AUTH0_CLIENT_SECRET must be set")
+
+    async def get_users(self, users: Iterable[str]) -> List[User]:
+        """Fetch several users by their IDs."""
+        token = await self.mgmt_token()
+
+        async def get_user(user: str):
+            resp = await self._session.get("https://%s/api/v2/users/%s" % (self._domain, user),
+                                           headers={"Authorization": "Bearer " + token})
+            user = await resp.json()
+            return User(**user)
+
+        return await asyncio.gather([get_user(u) for u in users])
+
+    async def _acquire_management_token(self) -> None:
+        try:
+            resp = await self._session.post("https://%s/oauth/token" % self._domain, headers={
+                "content-type": "application/x-www-form-urlencoded",
+            }, data={
+                "grant_type": "client_credentials",
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+                "audience": self._audience,
+            })
+            data = await resp.json()
+            self._mgmt_token = data["access_token"]
+            self._mgmt_event.set()
+            expires_in = int(data["expires_in"])
+        except Exception as e:
+            self.log.exception("Failed to renew the mgmt Auth0 token")
+            raise GracefulExit() from e
+        self.log.info("Acquired new Auth0 management token %s...%s for the next %s",
+                      self._mgmt_token[:12], self._mgmt_token[-12:], timedelta(seconds=expires_in))
+        expires_in -= 5 * 60  # 5 minutes earlier
+        if expires_in < 0:
+            expires_in = 0
+        self._loop.call_later(expires_in, asyncio.ensure_future, self._acquire_management_token())
 
     def _is_whitelisted(self, request: aiohttp.web.Request) -> bool:
         for pattern in self._whitelist:
