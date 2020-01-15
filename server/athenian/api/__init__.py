@@ -17,6 +17,7 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from athenian.api.auth import Auth0
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.metadata import __description__, __package__, __version__
+from athenian.api.models.state import check_schema_version
 from athenian.api.serialization import FriendlyJson
 from athenian.api.slogging import add_logging_args
 
@@ -67,7 +68,9 @@ class AthenianApp(connexion.AioHttpApp):
         :param mdb_conn: SQLAlchemy connection string for the readonly metadata DB.
         :param sdb_conn: SQLAlchemy connection string for the writeable server state DB.
         :param ui: Value indicating whether to enable the Swagger/OpenAPI UI at host:port/v*/ui.
-        :param db_options: Extra databases.Database() kwargs.
+        :param mdb_options: Extra databases.Database() kwargs for the metadata DB.
+        :param sdb_options: Extra databases.Database() kwargs for the state DB.
+        :param auth0_cls: Injected authorization class, simplifies unit testing.
         """
         options = {"swagger_ui": ui}
         rootdir = os.path.dirname(__file__)
@@ -78,8 +81,6 @@ class AthenianApp(connexion.AioHttpApp):
         api = self.add_api(
             "openapi.yaml",
             arguments={"title": __description__},
-            # FIXME(vmarkovtsev): https://github.com/zalando/connexion/issues/1116
-            # pythonic_params=True,
             pass_context_arg_name="request",
         )
         setup_status(self.app)
@@ -188,5 +189,6 @@ def main():
     log.info("%s", sys.argv)
     log.info("Version %s", __version__)
     setup_sentry()
+    check_schema_version(args.state_db)
     app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui)
     app.run(host=args.host, port=args.port, use_default_access_log=True)
