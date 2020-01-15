@@ -17,7 +17,7 @@ docker run -it --rm --entrypoint python3 athenian/api -m athenian.api.models.sta
 The server requires:
 
 - (optional) `SENTRY_KEY` and `SENTRY_PROJECT` environment variables to enable error logging.
-- `AUTH0_DOMAIN` and `AUTH0_AUDIENCE` environment variables to enable authorization.
+- `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` environment variables to enable authorization.
 - Accessible PostgreSQL endpoint with the metadata.
 - Accessible PostgreSQL endpoint with the server state.
 - Exposing the configured HTTP port outside.
