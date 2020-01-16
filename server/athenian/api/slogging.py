@@ -185,7 +185,7 @@ class StructuredHandler(logging.Handler):
         created = datetime.datetime.fromtimestamp(record.created, timezone)
         obj = {
             "level": record.levelname.lower(),
-            "msg": record.msg % record.args,
+            "msg": self.format(record),
             "source": "%s:%d" % (record.filename, record.lineno),
             "time": format_datetime(created),
             "thread": reduce_thread_id(record.thread),
