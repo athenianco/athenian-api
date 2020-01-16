@@ -55,7 +55,7 @@ class Auth0:
         if loop is None:
             loop = asyncio.get_event_loop()
         self._loop = loop
-        loop.call_soon(asyncio.ensure_future, self._acquire_management_token())
+        self._mgmt_loop = asyncio.ensure_future(self._acquire_management_token_loop())
 
     async def mgmt_token(self) -> str:
         """Return the Auth0 management API token."""
@@ -64,6 +64,7 @@ class Auth0:
 
     async def close(self):
         """Free resources associated with the object."""
+        self._mgmt_loop.cancel()
         await self._session.close()
 
     @classmethod
@@ -89,7 +90,12 @@ class Auth0:
 
         return await asyncio.gather([get_user(u) for u in users])
 
-    async def _acquire_management_token(self) -> None:
+    async def _acquire_management_token_loop(self) -> None:
+        while True:
+            expires_in = await self._acquire_management_token()
+            await asyncio.sleep(expires_in)
+
+    async def _acquire_management_token(self) -> float:
         try:
             resp = await self._session.post("https://%s/oauth/token" % self._domain, headers={
                 "content-type": "application/x-www-form-urlencoded",
@@ -111,7 +117,7 @@ class Auth0:
         expires_in -= 5 * 60  # 5 minutes earlier
         if expires_in < 0:
             expires_in = 0
-        self._loop.call_later(expires_in, asyncio.ensure_future, self._acquire_management_token())
+        return expires_in
 
     def _is_whitelisted(self, request: aiohttp.web.Request) -> bool:
         for pattern in self._whitelist:
