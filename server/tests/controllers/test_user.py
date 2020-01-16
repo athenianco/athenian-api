@@ -17,9 +17,9 @@ async def test_get_user(client):
     updated = items["updated"]
     del items["updated"]
     assert items == {
-        "id": "auth0:vmarkovtsev",
+        "id": "auth0|5e1f6dfb57bc640ea390557b",
         "email": "vadim@athenian.co",
         "name": "Vadim Markovtsev",
-        "picture": ""
+        "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
     }
     assert datetime.utcnow() >= dateutil.parser.parse(updated)
