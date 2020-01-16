@@ -185,6 +185,41 @@ paths:
       summary: List the repository sets belonging to the current user.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
+  /team/{id}:
+    get:
+      operationId: get_team
+      parameters:
+        - description: Numeric identifier of the team to list. The user must belong
+            to that team. To find out which teams the user belongs to, see `/user`.
+          explode: false
+          in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+          description: List the current user's team members.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not have access to this team.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The team was not found.
+      summary: List the current user's team members.
+      x-openapi-router-controller: athenian.api.controllers.user_controller
+      x-codegen-request-body-name: body
   /user:
     get:
       operationId: get_user
@@ -324,7 +359,7 @@ components:
           type: integer
       type: object
     User:
-      description: User details.
+      description: User details. "updated" and "teams" are populated only for the current user.
       example:
         id: 248289761001
         name: Jane Josephine Doe
@@ -348,6 +383,32 @@ components:
           description: Date and time of the last profile update.
           format: date-item
           type: string
+        teams:
+          description: Mapping between team IDs the user is a member of and is_admin flags.
+          example:
+            1: true
+            2: false
+          type: object
+      required:
+        - id
+        - name
+        - email
+        - picture
+      type: object
+    Team:
+      description: Team members. "updated" and "teams" are not populated.
+      properties:
+        admins:
+          items:
+            $ref: '#/components/schemas/User'
+            type: array
+        regulars:
+          items:
+            $ref: '#/components/schemas/User'
+            type: array
+      required:
+        - admins
+        - regulars
       type: object
     ForSet:
       example:

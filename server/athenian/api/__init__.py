@@ -135,7 +135,7 @@ class AthenianApp(connexion.AioHttpApp):
             r"/v1/ui(/|$)",
             r"/status/?$",
         ])
-        return aiohttp.web.Application(middlewares=[self._auth0.middleware, self.with_db])
+        return aiohttp.web.Application(middlewares=[self.with_db, self._auth0.middleware])
 
     def _enable_cors(self) -> None:
         cors = aiohttp_cors.setup(self.app, defaults={

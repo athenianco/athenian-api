@@ -50,7 +50,7 @@ async def fetch_reposet(
     rs = await db.fetch_one(select(columns).where(RepositorySet.id == id))
     if rs is None or len(rs) == 0:
         raise ResponseError(NotFoundError(detail="Repository set %d does not exist" % id))
-    if rs[RepositorySet.owner.key] != user.id:
+    if rs[RepositorySet.owner.key] != user.team_id:
         raise ResponseError(ForbiddenError(
             detail="User %s is not allowed to access %d" % (user.id, id)))
     return RepositorySet(**rs)

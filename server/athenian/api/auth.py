@@ -86,6 +86,7 @@ class Auth0:
             resp = await self._session.get("https://%s/api/v2/users/%s" % (self._domain, user),
                                            headers={"Authorization": "Bearer " + token})
             user = await resp.json()
+
             return User(**user)
 
         return await asyncio.gather([get_user(u) for u in users])
@@ -158,9 +159,7 @@ class Auth0:
             return await handler(request)
 
         # FIXME(vmarkovtsev): remove the following short circuit when the frontend is ready
-        request.user = User(
-            "auth0|5e1f6dfb57bc640ea390557b", "vadim@athenian.co", "Vadim Markovtsev",
-            "https://avatars1.githubusercontent.com/u/2793551", "2020-01-08 11:12:04.985028")
+        request.user = (await self.get_users(["auth0|5e1f6dfb57bc640ea390557b"]))[0]
         return await handler(request)
 
         try:
