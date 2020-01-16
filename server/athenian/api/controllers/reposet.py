@@ -33,7 +33,7 @@ async def resolve_reposet(repo: str, pointer: str, db: databases.Database, user:
             pointer=pointer,
         ))
     rs = await fetch_reposet(set_id, [RepositorySet.items], db, user)
-    return rs["items"]
+    return rs.items
 
 
 async def fetch_reposet(
@@ -50,7 +50,7 @@ async def fetch_reposet(
     rs = await db.fetch_one(select(columns).where(RepositorySet.id == id))
     if rs is None or len(rs) == 0:
         raise ResponseError(NotFoundError(detail="Repository set %d does not exist" % id))
-    if rs.owner != user.id:
+    if rs[RepositorySet.owner.key] != user.id:
         raise ResponseError(ForbiddenError(
             detail="User %s is not allowed to access %d" % (user.id, id)))
-    return rs
+    return RepositorySet(**rs)

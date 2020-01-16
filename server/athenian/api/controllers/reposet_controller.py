@@ -48,7 +48,7 @@ async def get_reposet(request: web.Request, id: int) -> web.Response:
     except ResponseError as e:
         return e.response
     # "items" collides with dict.items() so we have to access the list via []
-    return web.json_response(rs["items"], status=200)
+    return web.json_response(rs.items, status=200)
 
 
 async def update_reposet(request: web.Request, id: int, body: List[str]) -> web.Response:
@@ -62,7 +62,6 @@ async def update_reposet(request: web.Request, id: int, body: List[str]) -> web.
         rs = await fetch_reposet(id, [RepositorySet], request.sdb, request.user)
     except ResponseError as e:
         return e.response
-    rs = RepositorySet(**rs)
     rs.items = body
     rs.refresh()
     # TODO(vmarkovtsev): get user's repos and check the access
@@ -76,7 +75,10 @@ async def list_reposets(request: web.Request) -> web.Response:
     """List the current user's repository sets."""
     rss = await request.sdb.fetch_all(
         select([RepositorySet]).where(RepositorySet.owner == request.user.id))
-    items = [RepositorySetListItem(id=rs.id, created=rs.created_at, updated=rs.updated_at,
-                                   items_count=rs.items_count).to_dict()
-             for rs in rss]
+    items = [RepositorySetListItem(
+        id=rs[RepositorySet.id.key],
+        created=rs[RepositorySet.created_at.key],
+        updated=rs[RepositorySet.updated_at.key],
+        items_count=rs[RepositorySet.items_count.key],
+    ).to_dict() for rs in rss]
     return web.json_response(items, status=200, dumps=FriendlyJson.dumps)
