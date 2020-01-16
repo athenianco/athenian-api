@@ -87,14 +87,18 @@ def check_trailing_dot(func: Callable) -> Callable:
     AssertionError is raised if so.
     """
     @functools.wraps(func)
-    def decorated_with_check_trailing_dot(record: logging.LogRecord):
+    def decorated_with_check_trailing_dot(*args):
+        # we support two signatures: (self, record) and (record)
+        record = args[-1]
         if record.name not in trailing_dot_exceptions:
             msg = record.msg
             if isinstance(msg, str) and msg.endswith(".") and not msg.endswith(".."):
                 raise AssertionError(
                     'Log message is not allowed to have a trailing dot: %s: "%s"' %
                     (record.name, msg))
-        return func(record)
+        args = list(args)
+        args[-1] = record
+        return func(*args)
     return decorated_with_check_trailing_dot
 
 
@@ -244,7 +248,8 @@ def setup(level: Union[str, int], structured: bool, config_path: str = None):
     if not structured:
         handler = root.handlers[0]
         handler.emit = check_trailing_dot(handler.emit)
-        if not sys.stdin.closed and sys.stdout.isatty():
+        # pytest injects DontReadFromInput which does not have "closed"
+        if not getattr(sys.stdin, "closed", False) and sys.stdout.isatty():
             handler.setFormatter(AwesomeFormatter())
     else:
         root.handlers[0] = StructuredHandler(level)
