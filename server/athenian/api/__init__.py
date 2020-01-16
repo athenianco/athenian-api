@@ -118,8 +118,8 @@ class AthenianApp(connexion.AioHttpApp):
         self.app.on_shutdown.append(self.shutdown)
         # Schedule the DB connections
         loop = asyncio.get_event_loop()
-        loop.call_soon(asyncio.ensure_future, connect_to_mdb())
-        loop.call_soon(asyncio.ensure_future, connect_to_sdb())
+        asyncio.ensure_future(connect_to_mdb(), loop=loop)
+        asyncio.ensure_future(connect_to_sdb(), loop=loop)
 
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
