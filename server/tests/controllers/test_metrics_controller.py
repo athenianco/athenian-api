@@ -31,6 +31,7 @@ async def test_calc_metrics_line_smoke(client, metric):
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularity": "week",
+        "team": 1,
     }
     headers = {
         "Accept": "application/json",
@@ -69,6 +70,7 @@ async def test_calc_metrics_line_all(client, granularity):
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
         "granularity": granularity,
+        "team": 1,
     }
     headers = {
         "Accept": "application/json",
@@ -121,6 +123,7 @@ async def test_calc_metrics_line_empty_devs_tight_date(client, devs, date_from):
             ],
         }],
         "granularity": "month",
+        "team": 1,
         "metrics": list(MetricID.ALL),
     }
     headers = {
@@ -136,7 +139,7 @@ async def test_calc_metrics_line_empty_devs_tight_date(client, devs, date_from):
     assert len(cm.calculated[0].values) > 0
 
 
-async def test_calc_metrics_bad_date(client):
+async def test_calc_metrics_line_bad_date(client):
     """What if we specify a date that does not exist?"""
     body = {
         "for": [
@@ -159,6 +162,7 @@ async def test_calc_metrics_bad_date(client):
         "date_from": "2015-10-13",
         "date_to": "2020-02-30",  # 30th of February does not exist
         "granularity": "week",
+        "team": 1,
     }
     headers = {
         "Accept": "application/json",
@@ -169,6 +173,33 @@ async def test_calc_metrics_bad_date(client):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 400, "Response body is : " + body
+
+
+@pytest.mark.parametrize("team", [3, 10])
+async def test_calc_metrics_line_reposet_bad_team(client, team):
+    """What if we specify a team that the user does not belong to or does not exist?"""
+    body = {
+        "for": [
+            {
+                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "repositories": ["{1}"],
+            },
+        ],
+        "metrics": [MetricID.PR_LEAD_TIME],
+        "date_from": "2015-10-13",
+        "date_to": "2020-02-20",
+        "granularity": "week",
+        "team": team,
+    }
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 403, "Response body is : " + body
 
 
 async def test_calc_metrics_line_reposet(client):
@@ -184,6 +215,7 @@ async def test_calc_metrics_line_reposet(client):
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularity": "week",
+        "team": 1,
     }
     headers = {
         "Accept": "application/json",

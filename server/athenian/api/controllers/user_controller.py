@@ -1,21 +1,20 @@
 from aiohttp import web
 from sqlalchemy import select
 
-from athenian.api import FriendlyJson
-from athenian.api.controllers.response import ResponseError
+from athenian.api.controllers.response import ResponseError, response
 from athenian.api.models.state.models import UserTeam
 from athenian.api.models.web import ForbiddenError
+from athenian.api.models.web.team import Team
+from athenian.api.request import AthenianWebRequest
 
 
-async def get_user(request: web.Request) -> web.Response:
+async def get_user(request: AthenianWebRequest) -> web.Response:
     """Return details about the current user."""
-    user = vars(request.user)
-    teams = await request.sdb.fetch_all(select([UserTeam]).where(UserTeam.user_id == user["id"]))
-    user["teams"] = {x[UserTeam.team_id.key]: x[UserTeam.is_admin.key] for x in teams}
-    return web.json_response(user, status=200, dumps=FriendlyJson.dumps)
+    await request.user.load_teams(request.sdb)
+    return response(request.user)
 
 
-async def get_team(request: web.Request, id: int) -> web.Response:
+async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
     """Return details about the current user."""
     user_id = request.user.id
     users = await request.sdb.fetch_all(select([UserTeam]).where(UserTeam.team_id == id))
@@ -25,4 +24,11 @@ async def get_team(request: web.Request, id: int) -> web.Response:
     else:
         return ResponseError(ForbiddenError(
             detail="User %s is not allowed to access team %d" % (user_id, id))).response
-    return web.json_response({}, status=200, dumps=FriendlyJson.dumps)
+    admins = []
+    regulars = []
+    for user in users:
+        l = admins if user[UserTeam.is_admin.key] else regulars
+        l.append(user[UserTeam.user_id.key])
+    users = await request.auth.get_users(regulars + admins)
+    team = Team(regulars=users[:len(regulars)], admins=users[len(regulars):])
+    return response(team)

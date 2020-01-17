@@ -66,11 +66,17 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
 def fill_state_session(session: sqlalchemy.orm.Session):
     session.add(Team(id=1))
     session.add(Team(id=2))
+    session.add(Team(id=3))
     session.add(UserTeam(user_id="auth0|5e1f6dfb57bc640ea390557b", team_id=1, is_admin=True))
     session.add(UserTeam(user_id="auth0|5e1f6dfb57bc640ea390557b", team_id=2, is_admin=False))
+    session.add(UserTeam(user_id="auth0|5e1f6e2e8bfa520ea5290741", team_id=3, is_admin=True))
+    session.add(UserTeam(user_id="auth0|5e1f6e2e8bfa520ea5290741", team_id=1, is_admin=False))
     session.add(RepositorySet(
         owner=1,
         items=["github.com/src-d/go-git", "github.com/athenianco/athenian-api"]))
     session.add(RepositorySet(
         owner=2,
         items=["github.com/src-d/hercules", "github.com/athenianco/athenian-api"]))
+    session.add(RepositorySet(
+        owner=3,
+        items=["github.com/athenianco/athenian-webapp", "github.com/athenianco/athenian-api"]))

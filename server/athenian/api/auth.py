@@ -3,12 +3,13 @@ from datetime import timedelta
 import logging
 import os
 import re
-from typing import Iterable, List
+from typing import Iterable, List, Sequence
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
-import dateutil.parser
 from jose import jwt
+
+from athenian.api.models.web.user import User
 
 
 class AuthError(Exception):
@@ -18,18 +19,6 @@ class AuthError(Exception):
         """Create a new auth error."""
         self.error = error
         self.status_code = status_code
-
-
-class User:
-    """User profile information."""
-
-    def __init__(self, sub: str, email: str, name: str, picture: str, updated_at: str, **kwargs):
-        """Create a new User object."""
-        self.id = sub
-        self.email = email
-        self.name = name
-        self.picture = picture
-        self.updated = dateutil.parser.parse(updated_at)
 
 
 class Auth0:
@@ -42,8 +31,23 @@ class Auth0:
     log = logging.getLogger("auth")
 
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
-                 client_secret=AUTH0_CLIENT_SECRET, whitelist=tuple(), loop=None):
-        """Create a new Auth0 middleware."""
+                 client_secret=AUTH0_CLIENT_SECRET, whitelist: Sequence[str] = tuple(),
+                 lazy_mgmt=False):
+        """
+        Create a new Auth0 middleware.
+
+        See:
+          - https://auth0.com/docs/tokens/guides/get-access-tokens#control-access-token-audience
+          - https://auth0.com/docs/api-auth/tutorials/client-credentials
+
+        :param domain: Auth0 domain.
+        :param audience: JWT audience parameter.
+        :param client_id: Application's Client ID.
+        :param client_secret: Application's Client Secret.
+        :param whitelist: Routes that do not need authorization.
+        :param lazy_mgmt: Value that indicates whether Auth0 Management API token must be \
+                          asynchronously requested at first related method call or at once.
+        """
         self._domain = domain
         self._audience = audience
         self._whitelist = whitelist
@@ -52,20 +56,45 @@ class Auth0:
         self._client_secret = client_secret
         self._mgmt_event = asyncio.Event()
         self._mgmt_token = None  # type: str
-        if loop is None:
-            loop = asyncio.get_event_loop()
-        self._loop = loop
-        self._mgmt_loop = asyncio.ensure_future(self._acquire_management_token_loop())
+        if not lazy_mgmt:
+            self._mgmt_loop = asyncio.ensure_future(self._acquire_management_token_loop())
+        else:
+            self._mgmt_loop = None
 
     async def mgmt_token(self) -> str:
         """Return the Auth0 management API token."""
+        if self._mgmt_loop is None:
+            self._mgmt_loop = asyncio.ensure_future(self._acquire_management_token_loop())
         await self._mgmt_event.wait()
         return self._mgmt_token
 
     async def close(self):
         """Free resources associated with the object."""
-        self._mgmt_loop.cancel()
-        await self._session.close()
+        if self._mgmt_loop is not None:  # this may happen if lazy_mgmt=True
+            self._mgmt_loop.cancel()
+        session = self._session
+        # FIXME(vmarkovtsev): remove this bloody mess when this issue is resolved:
+        # https://github.com/aio-libs/aiohttp/issues/1925#issuecomment-575754386
+        transports = 0
+        all_is_lost = asyncio.Event()
+        for conn in session.connector._conns.values():
+            for handler, _ in conn:
+                proto = getattr(handler.transport, "_ssl_protocol", None)
+                if proto is None:
+                    continue
+                transports += 1
+                orig_lost = proto.connection_lost
+
+                def connection_lost(exc):
+                    orig_lost(exc)
+                    nonlocal transports
+                    transports -= 1
+                    if transports == 0:
+                        all_is_lost.set()
+
+                proto.connection_lost = connection_lost
+        await session.close()
+        await all_is_lost.wait()
 
     @classmethod
     def ensure_static_configuration(cls):
@@ -78,18 +107,30 @@ class Auth0:
             raise EnvironmentError("AUTH0_DOMAIN, AUTH0_AUDIENCE, AUTH0_CLIENT_ID, "
                                    "AUTH0_CLIENT_SECRET must be set")
 
+    @aiohttp.web.middleware
+    async def middleware(self, request, handler):
+        """Middleware function compatible with aiohttp."""
+        request.auth = self
+        if self._is_whitelisted(request):
+            return await handler(request)
+        await self._set_user(request)
+        return await handler(request)
+
     async def get_users(self, users: Iterable[str]) -> List[User]:
         """Fetch several users by their IDs."""
         token = await self.mgmt_token()
 
         async def get_user(user: str):
-            resp = await self._session.get("https://%s/api/v2/users/%s" % (self._domain, user),
-                                           headers={"Authorization": "Bearer " + token})
+            try:
+                resp = await self._session.get("https://%s/api/v2/users/%s" % (self._domain, user),
+                                               headers={"Authorization": "Bearer " + token})
+            except RuntimeError:
+                # our loop is closed and we are doomed
+                return None
             user = await resp.json()
+            return User.from_auth0(**user)
 
-            return User(**user)
-
-        return await asyncio.gather([get_user(u) for u in users])
+        return await asyncio.gather(*[get_user(u) for u in users])
 
     async def _acquire_management_token_loop(self) -> None:
         while True:
@@ -104,7 +145,7 @@ class Auth0:
                 "grant_type": "client_credentials",
                 "client_id": self._client_id,
                 "client_secret": self._client_secret,
-                "audience": self._audience,
+                "audience": "https://%s/api/v2/" % self._domain,
             })
             data = await resp.json()
             self._mgmt_token = data["access_token"]
@@ -150,17 +191,12 @@ class Auth0:
         resp = await self._session.get("https://%s/userinfo" % self._domain,
                                        headers={"Authorization": "Bearer " + token})
         user = await resp.json()
-        return User(**user)
+        return User.from_auth0(**user)
 
-    @aiohttp.web.middleware
-    async def middleware(self, request, handler):
-        """Middleware function compatible with aiohttp."""
-        if self._is_whitelisted(request):
-            return await handler(request)
-
+    async def _set_user(self, request) -> None:
         # FIXME(vmarkovtsev): remove the following short circuit when the frontend is ready
         request.user = (await self.get_users(["auth0|5e1f6dfb57bc640ea390557b"]))[0]
-        return await handler(request)
+        return
 
         try:
             token = self._get_token_auth_header(request)
@@ -177,6 +213,7 @@ class Auth0:
         # TODO(dennwc): update periodically instead of pulling it on each request
         jwks_req = await self._session.get("https://%s/.well-known/jwks.json" % self._domain)
         jwks = await jwks_req.json()
+        jwks_req.close()
 
         # There might be multiple keys, find the one used to sign this request
         rsa_key = None
@@ -206,9 +243,8 @@ class Auth0:
 
         try:
             user = await self._get_user_info(token)
-            self.log.info("User %s", vars(user))
+            self.log.info("User %s", user)
         except Exception:
             return aiohttp.web.Response(body="Your auth token is likely revoked.", status=401)
 
         request.user = user
-        return await handler(request)

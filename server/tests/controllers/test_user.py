@@ -24,3 +24,15 @@ async def test_get_user(client):
         "teams": {"1": True, "2": False},
     }
     assert datetime.utcnow() >= dateutil.parser.parse(updated)
+
+
+async def test_get_team(client):
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    response = await client.request(
+        method="GET", path="/v1/team/1", headers=headers, json={},
+    )
+    body = (await response.read()).decode("utf-8")
+    print(body)

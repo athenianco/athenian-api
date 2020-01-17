@@ -1,10 +1,4 @@
-# coding: utf-8
-
 import sys
-
-from aiohttp import web
-import databases
-
 
 if sys.version_info < (3, 7):
     import typing
@@ -35,10 +29,3 @@ else:
     def is_list(klass):
         """Determine whether klass is a List."""
         return klass.__origin__ == list
-
-
-class AthenianWebRequest(web.Request):
-    """Type hint for any API HTTP request."""
-
-    mdb = None  # type: databases.Database
-    sdb = None  # type: databases.Database

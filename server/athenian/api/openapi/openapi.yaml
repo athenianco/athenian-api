@@ -31,6 +31,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
           description: The request was invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to calculate metrics on behalf of the
+            specified team.
         422:
           content:
             application/json:
@@ -47,7 +54,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RepositorySet'
+              $ref: '#/components/schemas/RepositorySetCreateRequest'
         x-body-name: body
       responses:
         200:
@@ -97,7 +104,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The specified repository set was not found.
-      summary: Delete a repository set.
+      summary: Delete a repository set. The user must be an admin of the team that
+        owns the reposet.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
     get:
@@ -130,7 +138,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The specified repository set was not found.
-      summary: List a repository set.
+      summary: List a repository set. The user must be in the team that owns the reposet.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
     put:
@@ -169,19 +177,41 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The specified repository set was not found.
-      summary: Update a repository set.
+      summary: Update a repository set. The user must be an admin of the team that
+        owns the reposet.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
-  /reposets:
+  /reposets/{id}:
     get:
       operationId: list_reposets
+      parameters:
+      - description: Numeric identifier of the team.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
       responses:
         200:
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/RepositorySetList'
-          description: List the repository sets belonging to the current user.
+          description: List the repository sets belonging to the specified team.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not have access to this team.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The team was not found.
       summary: List the repository sets belonging to the current user.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
@@ -189,15 +219,15 @@ paths:
     get:
       operationId: get_team
       parameters:
-        - description: Numeric identifier of the team to list. The user must belong
-            to that team. To find out which teams the user belongs to, see `/user`.
-          explode: false
-          in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-          style: simple
+      - description: Numeric identifier of the team to list. The user must belong
+          to that team. To find out which teams the user belongs to, see `/user`.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
       responses:
         200:
           content:
@@ -340,6 +370,24 @@ components:
       items:
         $ref: '#/components/schemas/RepositorySetListItem'
       type: array
+    RepositorySetCreateRequest:
+      description: Repository set creation request.
+      example:
+        team: 1
+        items:
+        - github.com/src-d/hercules
+        - github.com/athenianco/athenian-api
+      properties:
+        team:
+          description: Team identifier. That team will own the created repository
+            set. The user must be an admin of the team.
+          type: integer
+        items:
+          $ref: '#/components/schemas/RepositorySet'
+      required:
+      - items
+      - team
+      type: object
     RepositorySetListItem:
       description: Element of RepositorySetList.
       properties:
@@ -359,7 +407,8 @@ components:
           type: integer
       type: object
     User:
-      description: User details. "updated" and "teams" are populated only for the current user.
+      description: User details. "updated" and "teams" are populated only for the
+        current user.
       example:
         id: 248289761001
         name: Jane Josephine Doe
@@ -384,31 +433,55 @@ components:
           format: date-item
           type: string
         teams:
-          description: Mapping between team IDs the user is a member of and is_admin flags.
+          description: Mapping between team IDs the user is a member of and is_admin
+            flags.
           example:
             1: true
             2: false
           type: object
       required:
-        - id
-        - name
-        - email
-        - picture
+      - email
+      - id
+      - name
+      - picture
       type: object
     Team:
       description: Team members. "updated" and "teams" are not populated.
+      example:
+        regulars:
+        - id: 248289761001
+          name: Jane Josephine Doe
+          email: janedoe@exampleco.com
+          picture: http://exampleco.com/janedoe/me.jpg
+          updated: 2020-01-23T12:00:00
+        - id: 248289761001
+          name: Jane Josephine Doe
+          email: janedoe@exampleco.com
+          picture: http://exampleco.com/janedoe/me.jpg
+          updated: 2020-01-23T12:00:00
+        admins:
+        - id: 248289761001
+          name: Jane Josephine Doe
+          email: janedoe@exampleco.com
+          picture: http://exampleco.com/janedoe/me.jpg
+          updated: 2020-01-23T12:00:00
+        - id: 248289761001
+          name: Jane Josephine Doe
+          email: janedoe@exampleco.com
+          picture: http://exampleco.com/janedoe/me.jpg
+          updated: 2020-01-23T12:00:00
       properties:
         admins:
           items:
             $ref: '#/components/schemas/User'
-            type: array
+          type: array
         regulars:
           items:
             $ref: '#/components/schemas/User'
-            type: array
+          type: array
       required:
-        - admins
-        - regulars
+      - admins
+      - regulars
       type: object
     ForSet:
       example:
@@ -455,6 +528,7 @@ components:
         date_from: 2000-01-23
         date_to: 2020-01-23
         granularity: day
+        team: 1
       properties:
         for:
           description: Sets of developers and repositories to calculate the metrics
@@ -477,12 +551,16 @@ components:
           type: string
         granularity:
           $ref: '#/components/schemas/Granularity'
+        team:
+          description: User's team ID.
+          type: integer
       required:
       - date_from
       - date_to
       - for
       - granularity
       - metrics
+      - team
       type: object
     CalculatedMetric:
       example:
