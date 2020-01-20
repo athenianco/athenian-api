@@ -112,7 +112,7 @@ async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, 
                 detail='the provider of a "for" element is unsupported or the set is empty',
                 pointer=".for[%d].repositories" % i,
             ))
-        for dev in for_set.developers:
+        for dev in (for_set.developers or []):
             for key, prefix in PREFIXES.items():
                 if dev.startswith(prefix):
                     if service != key:
