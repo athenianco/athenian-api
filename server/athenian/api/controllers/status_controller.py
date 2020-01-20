@@ -35,7 +35,7 @@ class StatusRenderer:
         """Record the registry where the metrics are maintained."""
         self._registry = registry
 
-    async def __call__(self, request):
+    async def __call__(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
         """Endpoint handler to output the current Prometheus state."""
         resp = aiohttp.web.Response(body=prometheus_client.generate_latest(self._registry))
         resp.content_type = prometheus_client.CONTENT_TYPE_LATEST
@@ -61,4 +61,6 @@ def setup_status(app):
         registry=registry,
     )
     app.middlewares.insert(0, instrument)
-    app.router.add_get("/status", StatusRenderer(registry))
+    # passing StatusRenderer(registry) without __call__ triggers a spurious DeprecationWarning
+    # FIXME(vmarkovtsev): https://github.com/aio-libs/aiohttp/issues/4519
+    app.router.add_get("/status", StatusRenderer(registry).__call__)
