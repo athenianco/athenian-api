@@ -52,7 +52,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     met.calculated = []
 
     try:
-        filters = await _compile_filters(body._for, request, body.team)
+        filters = await _compile_filters(body._for, request, body.account)
     except ResponseError as e:
         return e.response
     if body.date_to < body.date_from:
@@ -86,7 +86,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     return response(met)
 
 
-async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, team: int,
+async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, account: int,
                            ) -> List[Filter]:
     filters = []
     sdb, user = request.sdb, request.user
@@ -95,7 +95,7 @@ async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, 
         devs = []
         service = None
         for repo in chain.from_iterable([
-                await resolve_reposet(r, ".for[%d].repositories" % i, sdb, user, team)
+                await resolve_reposet(r, ".for[%d].repositories" % i, sdb, user, account)
                 for r in for_set.repositories]):
             for key, prefix in PREFIXES.items():
                 if repo.startswith(prefix):

@@ -20,7 +20,7 @@ class MetricsRequest(Model):
         date_from: date = None,
         date_to: date = None,
         granularity: Granularity = None,
-        team: int = None,
+        account: int = None,
     ):
         """MetricsRequest - a model defined in OpenAPI
 
@@ -29,7 +29,7 @@ class MetricsRequest(Model):
         :param date_from: The date_from of this MetricsRequest.
         :param date_to: The date_to of this MetricsRequest.
         :param granularity: The granularity of this MetricsRequest.
-        :param team: The team of this MetricsRequest.
+        :param account: The account of this MetricsRequest.
         """
         self.openapi_types = {
             "_for": List[ForSet],
@@ -37,7 +37,7 @@ class MetricsRequest(Model):
             "date_from": date,
             "date_to": date,
             "granularity": Granularity,
-            "team": int,
+            "account": int,
         }
 
         self.attribute_map = {
@@ -46,7 +46,7 @@ class MetricsRequest(Model):
             "date_from": "date_from",
             "date_to": "date_to",
             "granularity": "granularity",
-            "team": "team",
+            "account": "account",
         }
 
         self.__for = _for
@@ -54,7 +54,7 @@ class MetricsRequest(Model):
         self._date_from = date_from
         self._date_to = date_to
         self._granularity = granularity
-        self._team = team
+        self._account = account
 
     @classmethod
     def from_dict(cls, dikt: dict) -> "MetricsRequest":
@@ -177,20 +177,20 @@ class MetricsRequest(Model):
         self._granularity = granularity
 
     @property
-    def team(self) -> int:
-        """Gets the team of this MetricsRequest.
+    def account(self) -> int:
+        """Gets the account of this MetricsRequest.
 
-        :return: The team of this MetricsRequest.
+        :return: The account of this MetricsRequest.
         """
-        return self._team
+        return self._account
 
-    @team.setter
-    def team(self, team: int):
-        """Sets the team of this MetricsRequest.
+    @account.setter
+    def account(self, account: int):
+        """Sets the account of this MetricsRequest.
 
-        :param team: The team of this MetricsRequest.
+        :param account: The account of this MetricsRequest.
         """
-        if team is None:
-            raise ValueError("Invalid value for `team`, must not be `None`")
+        if account is None:
+            raise ValueError("Invalid value for `account`, must not be `None`")
 
-        self._team = team
+        self._account = account

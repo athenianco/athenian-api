@@ -6,7 +6,7 @@ from sqlalchemy import and_, delete, insert, select, update
 from athenian.api import FriendlyJson
 from athenian.api.controllers.reposet import fetch_reposet
 from athenian.api.controllers.response import response, ResponseError
-from athenian.api.models.state.models import RepositorySet, UserTeam
+from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import CreatedIdentifier, ForbiddenError
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
@@ -20,17 +20,17 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
     """
     body = RepositorySetCreateRequest.from_dict(body)
     user = request.user.id
-    team = body.team
-    status = await request.sdb.fetch_one(select([UserTeam.is_admin]).where(
-        and_(UserTeam.user_id == user, UserTeam.team_id == team)))
+    account = body.account
+    status = await request.sdb.fetch_one(select([UserAccount.is_admin]).where(
+        and_(UserAccount.user_id == user, UserAccount.account_id == account)))
     if status is None:
         return ResponseError(ForbiddenError(
-            detail="User %s is not in the team %d" % (user, team))).response
-    if not status[UserTeam.is_admin.key]:
+            detail="User %s is not in the account %d" % (user, account))).response
+    if not status[UserAccount.is_admin.key]:
         return ResponseError(ForbiddenError(
-            detail="User %s is not an admin of the team %d" % (user, team))).response
+            detail="User %s is not an admin of the account %d" % (user, account))).response
     # TODO(vmarkovtsev): get user's repos and check the access
-    rs = RepositorySet(owner=team, items=body.items)
+    rs = RepositorySet(owner=account, items=body.items)
     rs.create_defaults()
     rid = await request.sdb.execute(insert(RepositorySet).values(rs.explode()))
     return response(CreatedIdentifier(rid))
@@ -92,11 +92,11 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
 
 async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current user's repository sets."""
-    status = await request.sdb.fetch_one(select([UserTeam.is_admin]).where(
-        and_(UserTeam.user_id == request.user.id, UserTeam.team_id == id)))
+    status = await request.sdb.fetch_one(select([UserAccount.is_admin]).where(
+        and_(UserAccount.user_id == request.user.id, UserAccount.account_id == id)))
     if status is None:
         return ResponseError(ForbiddenError(
-            detail="User %s is not in the team %d" % (request.user.id, id))).response
+            detail="User %s is not in the account %d" % (request.user.id, id))).response
     rss = await request.sdb.fetch_all(
         select([RepositorySet]).where(RepositorySet.owner == id))
     items = [RepositorySetListItem(

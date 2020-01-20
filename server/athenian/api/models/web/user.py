@@ -6,7 +6,7 @@ import dateutil.parser
 from sqlalchemy import select
 
 from athenian.api import serialization
-from athenian.api.models.state.models import UserTeam
+from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -20,7 +20,7 @@ class User(Model):
         email: Optional[str] = None,
         picture: Optional[str] = None,
         updated: Optional[datetime] = None,
-        teams: Optional[dict] = None,
+        accounts: Optional[dict] = None,
     ):
         """User - a model defined in OpenAPI
 
@@ -29,7 +29,7 @@ class User(Model):
         :param email: The email of this User.
         :param picture: The picture of this User.
         :param updated: The updated of this User.
-        :param teams: The teams of this User.
+        :param accounts: The accounts of this User.
         """
         self.openapi_types = {
             "id": str,
@@ -37,7 +37,7 @@ class User(Model):
             "email": str,
             "picture": str,
             "updated": str,
-            "teams": object,
+            "accounts": object,
         }
 
         self.attribute_map = {
@@ -46,7 +46,7 @@ class User(Model):
             "email": "email",
             "picture": "picture",
             "updated": "updated",
-            "teams": "teams",
+            "accounts": "accounts",
         }
 
         self._id = id
@@ -54,7 +54,7 @@ class User(Model):
         self._email = email
         self._picture = picture
         self._updated = updated
-        self._teams = teams
+        self._accounts = accounts
 
     @classmethod
     def from_dict(cls, dikt: dict) -> "User":
@@ -79,16 +79,17 @@ class User(Model):
             updated=dateutil.parser.parse(updated_at),
         )
 
-    async def load_teams(self, db: databases.Database) -> "User":
+    async def load_accounts(self, db: databases.Database) -> "User":
         """
-        Fetch the teams membership from the database.
+        Fetch the accounts membership from the database.
 
         :param db: DB to query.
         :return: self
         """
-        teams = await db.fetch_all(
-            select([UserTeam]).where(UserTeam.user_id == self.id))
-        self.teams = {x[UserTeam.team_id.key]: x[UserTeam.is_admin.key] for x in teams}
+        accounts = await db.fetch_all(
+            select([UserAccount]).where(UserAccount.user_id == self.id))
+        self.accounts = {x[UserAccount.account_id.key]: x[UserAccount.is_admin.key]
+                         for x in accounts}
         return self
 
     @property
@@ -205,23 +206,23 @@ class User(Model):
         self._updated = updated
 
     @property
-    def teams(self) -> dict:
-        """Gets the teams of this User.
+    def accounts(self) -> dict:
+        """Gets the accounts of this User.
 
-        Mapping between team IDs the user is a member of and is_admin flags.
+        Mapping between account IDs the user is a member of and is_admin flags.
 
-        :return: The teams of this User.
+        :return: The accounts of this User.
         :rtype: object
         """
-        return self._teams
+        return self._accounts
 
-    @teams.setter
-    def teams(self, teams: dict):
-        """Sets the teams of this User.
+    @accounts.setter
+    def accounts(self, accounts: dict):
+        """Sets the accounts of this User.
 
-        Mapping between team IDs the user is a member of and is_admin flags.
+        Mapping between account IDs the user is a member of and is_admin flags.
 
-        :param teams: The teams of this User.
+        :param accounts: The accounts of this User.
         """
 
-        self._teams = teams
+        self._accounts = accounts

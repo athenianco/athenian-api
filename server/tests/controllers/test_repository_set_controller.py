@@ -36,7 +36,7 @@ async def test_delete_repository_set_404(client, app):
 
 
 @pytest.mark.parametrize("reposet", [2, 3])
-async def test_delete_repository_set_bad_team(client, reposet):
+async def test_delete_repository_set_bad_account(client, reposet):
     body = {}
     headers = {
         "Accept": "application/json",
@@ -79,7 +79,7 @@ async def test_get_repository_set_404(client):
     assert response.status == 404, "Response body is : " + body
 
 
-async def test_get_repository_set_bad_team(client):
+async def test_get_repository_set_bad_account(client):
     body = {}
     headers = {
         "Accept": "application/json",
@@ -120,7 +120,7 @@ async def test_set_repository_set_404(client):
 
 
 @pytest.mark.parametrize("reposet", [2, 3])
-async def test_set_repository_set_bad_team(client, reposet):
+async def test_set_repository_set_bad_account(client, reposet):
     body = ["github.com/vmarkovtsev/hercules"]
     headers = {
         "Accept": "application/json",
@@ -148,9 +148,9 @@ async def test_create_repository_set(client):
     assert body["id"] >= 4
 
 
-@pytest.mark.parametrize("team", [2, 3, 10])
-async def test_create_repository_set_bad_team(client, team):
-    body = RepositorySetCreateRequest(team, ["github.com/vmarkovtsev/hercules"]).to_dict()
+@pytest.mark.parametrize("account", [2, 3, 10])
+async def test_create_repository_set_bad_account(client, account):
+    body = RepositorySetCreateRequest(account, ["github.com/vmarkovtsev/hercules"]).to_dict()
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -162,31 +162,31 @@ async def test_create_repository_set_bad_team(client, team):
     assert response.status == 403, "Response body is : " + body
 
 
-@pytest.mark.parametrize("team", [1, 2])
-async def test_list_repository_sets(client, team):
+@pytest.mark.parametrize("account", [1, 2])
+async def test_list_repository_sets(client, account):
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
     response = await client.request(
-        method="GET", path="/v1/reposets/%d" % team, headers=headers, json={},
+        method="GET", path="/v1/reposets/%d" % account, headers=headers, json={},
     )
     body = (await response.read()).decode("utf-8")
     items = json.loads(body)
     assert len(items) > 0
-    assert items[0]["id"] == team
+    assert items[0]["id"] == account
     assert items[0]["items_count"] == 2
     assert items[0]["created"] != ""
     assert items[0]["updated"] != ""
 
 
-@pytest.mark.parametrize("team", [3, 10])
-async def test_list_repository_sets_bad_team(client, team):
+@pytest.mark.parametrize("account", [3, 10])
+async def test_list_repository_sets_bad_account(client, account):
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
     response = await client.request(
-        method="GET", path="/v1/reposets/%d" % team, headers=headers, json={},
+        method="GET", path="/v1/reposets/%d" % account, headers=headers, json={},
     )
     assert response.status == 403

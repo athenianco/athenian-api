@@ -56,7 +56,7 @@ class RepositorySet(Base):
         return len(ctx.current_parameters["items"])
 
     id = Column("id", Integer(), primary_key=True)
-    owner = Column("owner", Integer(), ForeignKey("teams.id", name="fk_reposet_owner"),
+    owner = Column("owner", Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"),
                    nullable=False)
     updated_at = Column("updated_at", TIMESTAMP(), nullable=False, default=datetime.utcnow,
                         onupdate=lambda ctx: datetime.utcnow())
@@ -70,22 +70,22 @@ class RepositorySet(Base):
     count_items = staticmethod(count_items)
 
 
-class UserTeam(Base):
-    """User<>team many-to-many relations."""
+class UserAccount(Base):
+    """User<>account many-to-many relations."""
 
-    __tablename__ = "user_teams"
+    __tablename__ = "user_accounts"
 
     user_id = Column("user_id", String(256), primary_key=True)
-    team_id = Column("team_id", Integer(), ForeignKey("teams.id", name="fk_user_team"),
-                     nullable=False, primary_key=True)
+    account_id = Column("account_id", Integer(), ForeignKey("accounts.id", name="fk_user_account"),
+                        nullable=False, primary_key=True)
     is_admin = Column("is_admin", Boolean(), nullable=False)
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
 
 
-class Team(Base):
+class Account(Base):
     """Group of users, some are admins and some are regular."""
 
-    __tablename__ = "teams"
+    __tablename__ = "accounts"
 
     id = Column("id", Integer(), primary_key=True)
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)

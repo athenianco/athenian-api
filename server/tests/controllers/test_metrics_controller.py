@@ -31,7 +31,7 @@ async def test_calc_metrics_line_smoke(client, metric):
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularity": "week",
-        "team": 1,
+        "account": 1,
     }
     headers = {
         "Accept": "application/json",
@@ -70,7 +70,7 @@ async def test_calc_metrics_line_all(client, granularity):
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
         "granularity": granularity,
-        "team": 1,
+        "account": 1,
     }
     headers = {
         "Accept": "application/json",
@@ -123,7 +123,7 @@ async def test_calc_metrics_line_empty_devs_tight_date(client, devs, date_from):
             ],
         }],
         "granularity": "month",
-        "team": 1,
+        "account": 1,
         "metrics": list(MetricID.ALL),
     }
     headers = {
@@ -162,7 +162,7 @@ async def test_calc_metrics_line_bad_date(client):
         "date_from": "2015-10-13",
         "date_to": "2020-02-30",  # 30th of February does not exist
         "granularity": "week",
-        "team": 1,
+        "account": 1,
     }
     headers = {
         "Accept": "application/json",
@@ -175,9 +175,9 @@ async def test_calc_metrics_line_bad_date(client):
     assert response.status == 400, "Response body is : " + body
 
 
-@pytest.mark.parametrize("team", [3, 10])
-async def test_calc_metrics_line_reposet_bad_team(client, team):
-    """What if we specify a team that the user does not belong to or does not exist?"""
+@pytest.mark.parametrize("account", [3, 10])
+async def test_calc_metrics_line_reposet_bad_account(client, account):
+    """What if we specify a account that the user does not belong to or does not exist?"""
     body = {
         "for": [
             {
@@ -189,7 +189,7 @@ async def test_calc_metrics_line_reposet_bad_team(client, team):
         "date_from": "2015-10-13",
         "date_to": "2020-02-20",
         "granularity": "week",
-        "team": team,
+        "account": account,
     }
     headers = {
         "Accept": "application/json",
@@ -215,7 +215,7 @@ async def test_calc_metrics_line_reposet(client):
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularity": "week",
-        "team": 1,
+        "account": 1,
     }
     headers = {
         "Accept": "application/json",

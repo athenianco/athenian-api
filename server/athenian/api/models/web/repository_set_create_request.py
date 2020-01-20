@@ -10,17 +10,17 @@ class RepositorySetCreateRequest(Model):
     Do not edit the class manually.
     """
 
-    def __init__(self, team: Optional[int] = None, items: Optional[List[str]] = None):
+    def __init__(self, account: Optional[int] = None, items: Optional[List[str]] = None):
         """RepositorySetCreateRequest - a model defined in OpenAPI
 
-        :param team: The team of this RepositorySetCreateRequest.
+        :param account: The account of this RepositorySetCreateRequest.
         :param items: The items of this RepositorySetCreateRequest.
         """
-        self.openapi_types = {"team": int, "items": List[str]}
+        self.openapi_types = {"account": int, "items": List[str]}
 
-        self.attribute_map = {"team": "team", "items": "items"}
+        self.attribute_map = {"account": "account", "items": "items"}
 
-        self._team = team
+        self._account = account
         self._items = items
 
     @classmethod
@@ -33,27 +33,29 @@ class RepositorySetCreateRequest(Model):
         return serialization.deserialize_model(dikt, cls)
 
     @property
-    def team(self) -> int:
-        """Gets the team of this RepositorySetCreateRequest.
+    def account(self) -> int:
+        """Gets the account of this RepositorySetCreateRequest.
 
-        Team identifier. That team will own the created repository set. The user must be an admin of the team.
+        Account identifier. That account will own the created repository set.
+        The user must be an admin of the account.
 
-        :return: The team of this RepositorySetCreateRequest.
+        :return: The account of this RepositorySetCreateRequest.
         """
-        return self._team
+        return self._account
 
-    @team.setter
-    def team(self, team: int):
-        """Sets the team of this RepositorySetCreateRequest.
+    @account.setter
+    def account(self, account: int):
+        """Sets the account of this RepositorySetCreateRequest.
 
-        Team identifier. That team will own the created repository set. The user must be an admin of the team.
+        Account identifier. That account will own the created repository set.
+        The user must be an admin of the account.
 
-        :param team: The team of this RepositorySetCreateRequest.
+        :param account: The account of this RepositorySetCreateRequest.
         """
-        if team is None:
-            raise ValueError("Invalid value for `team`, must not be `None`")
+        if account is None:
+            raise ValueError("Invalid value for `account`, must not be `None`")
 
-        self._team = team
+        self._account = account
 
     @property
     def items(self) -> List[str]:
