@@ -34,5 +34,8 @@ async def test_get_team(client):
     response = await client.request(
         method="GET", path="/v1/team/1", headers=headers, json={},
     )
-    body = (await response.read()).decode("utf-8")
-    print(body)
+    body = json.loads((await response.read()).decode("utf-8"))
+    assert len(body["admins"]) == 1
+    assert body["admins"][0]["email"] == "vadim@athenian.co"
+    assert len(body["regulars"]) == 1
+    assert body["regulars"][0]["email"] == "eiso@athenian.co"
