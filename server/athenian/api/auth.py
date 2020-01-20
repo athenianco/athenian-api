@@ -94,7 +94,8 @@ class Auth0:
 
                 proto.connection_lost = connection_lost
         await session.close()
-        await all_is_lost.wait()
+        if transports > 0:
+            await all_is_lost.wait()
 
     @classmethod
     def ensure_static_configuration(cls):
