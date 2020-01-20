@@ -202,7 +202,6 @@ class User(Model):
 
         :param updated: The updated of this User.
         """
-
         self._updated = updated
 
     @property
@@ -224,5 +223,4 @@ class User(Model):
 
         :param accounts: The accounts of this User.
         """
-
         self._accounts = accounts

@@ -1,7 +1,7 @@
-from typing import List, Sequence, Type, Union, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple, Type, Union
 
 import databases
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.auth import User
@@ -10,8 +10,8 @@ from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NotFoundError
 
 
-async def resolve_reposet(repo: str, pointer: str, db: databases.Database, user: User, account: int,
-                          ) -> List[str]:
+async def resolve_reposet(repo: str, pointer: str, db: databases.Database, user: User,
+                          account: int) -> List[str]:
     """
     Dereference the repository sets.
 

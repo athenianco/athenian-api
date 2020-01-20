@@ -1,7 +1,7 @@
 from aiohttp import web
 from sqlalchemy import select
 
-from athenian.api.controllers.response import ResponseError, response
+from athenian.api.controllers.response import response, ResponseError
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import ForbiddenError
 from athenian.api.models.web.account import Account
@@ -27,8 +27,8 @@ async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
     admins = []
     regulars = []
     for user in users:
-        l = admins if user[UserAccount.is_admin.key] else regulars
-        l.append(user[UserAccount.user_id.key])
+        role = admins if user[UserAccount.is_admin.key] else regulars
+        role.append(user[UserAccount.user_id.key])
     users = await request.auth.get_users(regulars + admins)
     account = Account(regulars=users[:len(regulars)], admins=users[len(regulars):])
     return response(account)
