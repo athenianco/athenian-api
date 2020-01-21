@@ -1,12 +1,13 @@
-from typing import List, Optional, Sequence, Tuple, Type, Union
+from typing import List, Sequence, Tuple, Type, Union
 
 import databases
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.auth import User
 from athenian.api.controllers.response import ResponseError
-from athenian.api.models.state.models import RepositorySet, UserAccount
+from athenian.api.controllers.user import is_admin
+from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NotFoundError
 
 
@@ -32,13 +33,17 @@ async def resolve_reposet(repo: str, pointer: str, db: databases.Database, user:
             detail="repository set identifier is invalid: %s" % repo,
             pointer=pointer,
         ))
-    rs, _ = await fetch_reposet(set_id, [RepositorySet.items], db, user, account)
+    rs, _ = await fetch_reposet(set_id, [RepositorySet.items], db, user)
+    if rs.owner != account:
+        raise ResponseError(ForbiddenError(
+            detail="User %s is not allowed to reference reposet %d in this query" %
+                   (user.id, set_id)))
     return rs.items
 
 
 async def fetch_reposet(
         id: int, columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
-        db: databases.Database, user: User, account: Optional[int]) -> Tuple[RepositorySet, bool]:
+        db: databases.Database, user: User) -> Tuple[RepositorySet, bool]:
     """
     Retrieve a repository set by ID and check the access for the given user.
 
@@ -55,16 +60,6 @@ async def fetch_reposet(
     rs = await db.fetch_one(select(columns).where(RepositorySet.id == id))
     if rs is None or len(rs) == 0:
         raise ResponseError(NotFoundError(detail="Repository set %d does not exist" % id))
-    if account is None:
-        # if there is no account, suppose the reposet owner
-        account = rs[RepositorySet.owner.key]
-    elif rs[RepositorySet.owner.key] != account:
-        raise ResponseError(ForbiddenError(
-            detail="User %s is not allowed to access %d" % (user.id, id)))
-    # finally check that the user belongs to the account
-    status = await db.fetch_one(select([UserAccount.is_admin]).where(
-        and_(UserAccount.user_id == user.id, UserAccount.account_id == account)))
-    if status is None:
-        raise ResponseError(ForbiddenError(
-            detail="User %s does not belong to account %d" % (user.id, account)))
-    return RepositorySet(**rs), status[UserAccount.is_admin.key]
+    account = rs[RepositorySet.owner.key]
+    adm = await is_admin(db, user.id, account)
+    return RepositorySet(**rs), adm

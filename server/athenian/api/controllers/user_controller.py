@@ -15,7 +15,7 @@ async def get_user(request: AthenianWebRequest) -> web.Response:
 
 
 async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
-    """Return details about the current user."""
+    """Return details about the current account."""
     user_id = request.user.id
     users = await request.sdb.fetch_all(select([UserAccount]).where(UserAccount.account_id == id))
     for user in users:
