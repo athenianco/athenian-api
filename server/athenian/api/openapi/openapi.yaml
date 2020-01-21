@@ -11,15 +11,15 @@ paths:
     get:
       operationId: get_account
       parameters:
-        - description: Numeric identifier of the account to list. The user must belong
-            to that account. To find out which accounts the user belongs to, see `/user`.
-          explode: false
-          in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-          style: simple
+      - description: Numeric identifier of the account to list. The user must belong
+          to that account. To find out which accounts the user belongs to, see `/user`.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
       responses:
         200:
           content:
@@ -58,8 +58,8 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
-          description: Details about the current user.
+                $ref: '#/components/schemas/InvitedUser'
+          description: Details about the new user.
         400:
           content:
             application/json:
@@ -514,6 +514,18 @@ components:
       - id
       - name
       - picture
+      type: object
+    InvitedUser:
+      description: Details about the user who has accepted an invitation.
+      properties:
+        account:
+          description: Joined account ID.
+          type: integer
+        user:
+          $ref: '#/components/schemas/User'
+      required:
+        - account
+        - user
       type: object
     Account:
       description: Account members. "updated" and "accounts" are not populated.

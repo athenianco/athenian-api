@@ -14,6 +14,7 @@ from athenian.api.models.state.models import Account, Invitation, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, NotFoundError
 from athenian.api.models.web.accepted_invitation import AcceptedInvitation
 from athenian.api.models.web.invitation_link import InvitationLink
+from athenian.api.models.web.invited_user import InvitedUser
 from athenian.api.request import AthenianWebRequest
 
 
@@ -129,4 +130,4 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
             values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
             await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
         await request.user.load_accounts(conn)
-    return response(request.user)
+    return response(InvitedUser(account=acc, user=request.user))

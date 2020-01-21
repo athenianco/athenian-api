@@ -83,13 +83,16 @@ async def test_accept_invitation(client):
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
     body = json.loads((await response.read()).decode("utf-8"))
-    del body["updated"]
+    del body["user"]["updated"]
     assert body == {
-        "id": "auth0|5e1f6dfb57bc640ea390557b",
-        "name": "Vadim Markovtsev",
-        "email": "vadim@athenian.co",
-        "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
-        "accounts": {"1": True, "2": False, "3": False},
+        "account": 3,
+        "user": {
+            "id": "auth0|5e1f6dfb57bc640ea390557b",
+            "name": "Vadim Markovtsev",
+            "email": "vadim@athenian.co",
+            "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
+            "accounts": {"1": True, "2": False, "3": False},
+        },
     }
 
 
@@ -105,13 +108,16 @@ async def test_accept_invitation_noop(client, eiso):
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
     body = json.loads((await response.read()).decode("utf-8"))
-    del body["updated"]
+    del body["user"]["updated"]
     assert body == {
-        "id": "auth0|5e1f6e2e8bfa520ea5290741",
-        "name": "Eiso Kant",
-        "email": "eiso@athenian.co",
-        "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
-        "accounts": {"1": False, "3": True},
+        "account": 3,
+        "user": {
+            "id": "auth0|5e1f6e2e8bfa520ea5290741",
+            "name": "Eiso Kant",
+            "email": "eiso@athenian.co",
+            "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
+            "accounts": {"1": False, "3": True},
+        },
     }
 
 
@@ -148,7 +154,9 @@ async def test_accept_invitation_inactive(client, app):
 
 async def test_accept_invitation_admin(client, app):
     iid = await app.sdb.execute(
-        insert(Invitation).values(Invitation(salt=888, account_id=0).create_defaults().explode()))
+        insert(Invitation).values(
+            Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
+            .create_defaults().explode()))
     body = {
         "origin": invitation_controller.prefix + invitation_controller.encode_slug(iid, 888),
     }
@@ -160,11 +168,14 @@ async def test_accept_invitation_admin(client, app):
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
     body = json.loads((await response.read()).decode("utf-8"))
-    del body["updated"]
+    del body["user"]["updated"]
     assert body == {
-        "id": "auth0|5e1f6dfb57bc640ea390557b",
-        "name": "Vadim Markovtsev",
-        "email": "vadim@athenian.co",
-        "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png", # noqa
-        "accounts": {"1": True, "2": False, "4": True},
+        "account": 4,
+        "user": {
+            "id": "auth0|5e1f6dfb57bc640ea390557b",
+            "name": "Vadim Markovtsev",
+            "email": "vadim@athenian.co",
+            "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png", # noqa
+            "accounts": {"1": True, "2": False, "4": True},
+        },
     }
