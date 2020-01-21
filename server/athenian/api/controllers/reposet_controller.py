@@ -30,8 +30,7 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
         return ResponseError(ForbiddenError(
             detail="User %s is not an admin of the account %d" % (user, account))).response
     # TODO(vmarkovtsev): get user's repos and check the access
-    rs = RepositorySet(owner=account, items=body.items)
-    rs.create_defaults()
+    rs = RepositorySet(owner=account, items=body.items).create_defaults()
     rid = await request.sdb.execute(insert(RepositorySet).values(rs.explode()))
     return response(CreatedIdentifier(rid))
 

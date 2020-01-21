@@ -2,23 +2,13 @@ from datetime import datetime, timedelta
 import json
 
 import pytest
-from sqlalchemy import and_, select
+from sqlalchemy import and_, insert, select, update
 
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.state.models import Invitation
 
 
-@pytest.fixture(scope="function")
-def ikey(request) -> None:
-    invitation_controller.ikey = "vadim"
-
-    def nullify():
-        invitation_controller.ikey = None
-
-    request.addfinalizer(nullify)
-
-
-async def test_gen_invitation_new(client, app, ikey):
+async def test_gen_invitation_new(client, app):
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -64,7 +54,7 @@ async def test_gen_invitation_no_member(client):
     assert response.status == 404
 
 
-async def test_gen_invitation_existing(client, eiso, ikey):
+async def test_gen_invitation_existing(client, eiso):
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -81,7 +71,7 @@ async def test_gen_invitation_existing(client, eiso, ikey):
     assert salt == 777
 
 
-async def test_accept_invitation(client, ikey):
+async def test_accept_invitation(client):
     body = {
         "origin": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
     }
@@ -103,7 +93,7 @@ async def test_accept_invitation(client, ikey):
     }
 
 
-async def test_accept_invitation_noop(client, eiso, ikey):
+async def test_accept_invitation_noop(client, eiso):
     body = {
         "origin": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
     }
@@ -126,7 +116,7 @@ async def test_accept_invitation_noop(client, eiso, ikey):
 
 
 @pytest.mark.parametrize("trash", ["0", "0" * 8, "a" * 8])
-async def test_accept_invitation_trash(client, ikey, trash):
+async def test_accept_invitation_trash(client, trash):
     body = {
         "origin": invitation_controller.prefix + "0" * 8,
     }
@@ -138,3 +128,43 @@ async def test_accept_invitation_trash(client, ikey, trash):
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
     assert response.status == 400
+
+
+async def test_accept_invitation_inactive(client, app):
+    await app.sdb.execute(
+        update(Invitation).where(Invitation.id == 1).values({Invitation.is_active.key: False}))
+    body = {
+        "origin": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
+    }
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+    assert response.status == 403
+
+
+async def test_accept_invitation_admin(client, app):
+    iid = await app.sdb.execute(
+        insert(Invitation).values(Invitation(salt=888, account_id=0).create_defaults().explode()))
+    body = {
+        "origin": invitation_controller.prefix + invitation_controller.encode_slug(iid, 888),
+    }
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+    body = json.loads((await response.read()).decode("utf-8"))
+    del body["updated"]
+    assert body == {
+        "id": "auth0|5e1f6dfb57bc640ea390557b",
+        "name": "Vadim Markovtsev",
+        "email": "vadim@athenian.co",
+        "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png", # noqa
+        "accounts": {"1": True, "2": False, "4": True},
+    }

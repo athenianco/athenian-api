@@ -1,16 +1,17 @@
 import base64
 import binascii
+from http import HTTPStatus
 import os
 from random import randint
 import struct
 
 from aiohttp import web
 import pyffx
-from sqlalchemy import and_, insert, select, update
+from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.controllers.response import response, ResponseError
-from athenian.api.models.state.models import Invitation, UserAccount
-from athenian.api.models.web import BadRequestError, ForbiddenError, NotFoundError
+from athenian.api.models.state.models import Account, Invitation, UserAccount
+from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, NotFoundError
 from athenian.api.models.web.accepted_invitation import AcceptedInvitation
 from athenian.api.models.web.invitation_link import InvitationLink
 from athenian.api.request import AthenianWebRequest
@@ -18,6 +19,7 @@ from athenian.api.request import AthenianWebRequest
 
 ikey = os.getenv("ATHENIAN_INVITATION_KEY")
 prefix = "https://app.athenian.co/i/"
+admin_backdoor = (1 << 24) - 1
 
 
 async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
@@ -41,8 +43,7 @@ async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
     else:
         # create a new invitation
         salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
-        inv = Invitation(salt=salt, account_id=id, created_by=request.user.id)
-        inv.create_defaults()
+        inv = Invitation(salt=salt, account_id=id, created_by=request.user.id).create_defaults()
         invitation_id = await sdb.execute(insert(Invitation).values(inv.explode()))
     slug = encode_slug(invitation_id, salt)
     model = InvitationLink(url=prefix + slug)
@@ -92,23 +93,40 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         return bad_req()
     async with sdb.connection() as conn:
         inv = await conn.fetch_one(
-            select([Invitation.account_id, Invitation.accepted])
-            .where(and_(Invitation.id == iid, Invitation.salt == salt, Invitation.is_active)))
+            select([Invitation.account_id, Invitation.accepted, Invitation.is_active])
+            .where(and_(Invitation.id == iid, Invitation.salt == salt)))
         if inv is None:
             return ResponseError(NotFoundError(
-                detail="Invitation was not found or is inactive.")).response
+                detail="Invitation was not found.")).response
+        if not inv[Invitation.is_active.key]:
+            return ResponseError(ForbiddenError(
+                detail="This invitation is disabled.")).response
         acc = inv[Invitation.account_id.key]
-        status = await conn.fetch_one(select([UserAccount.is_admin])
-                                      .where(and_(UserAccount.user_id == request.user.id,
-                                                  UserAccount.account_id == acc)))
+        is_admin = acc == admin_backdoor
+        if is_admin:
+            # create a new account for the admin user
+            acc = await conn.execute(insert(Account).values(Account().create_defaults().explode()))
+            if acc == admin_backdoor:
+                await conn.execute(delete(Account).where(Account.id == acc))
+                return ResponseError(GenericError(
+                    type="/errors/LockedError",
+                    title=HTTPStatus.LOCKED.phrase,
+                    status=HTTPStatus.LOCKED,
+                    detail="Invitation was not found.")).response
+            status = None
+        else:
+            status = await conn.fetch_one(select([UserAccount.is_admin])
+                                          .where(and_(UserAccount.user_id == request.user.id,
+                                                      UserAccount.account_id == acc)))
         if status is None:
-            # create the user<>account record if it does not exist
-            user = UserAccount(user_id=request.user.id, account_id=acc)
-            user.create_defaults()
+            # create the user<>account record
+            user = UserAccount(
+                user_id=request.user.id,
+                account_id=acc,
+                is_admin=is_admin,
+            ).create_defaults()
             await conn.execute(insert(UserAccount).values(user.explode(with_primary_keys=True)))
-            akey = Invitation.accepted.key
-            await conn.execute(update(Invitation)
-                               .where(Invitation.id == iid)
-                               .values(**{akey: inv[akey] + 1}))
+            values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
+            await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
         await request.user.load_accounts(conn)
     return response(request.user)

@@ -1,11 +1,8 @@
-import asyncio
 from datetime import datetime
 import logging
 import os
 from pathlib import Path
-import re
 
-import aiohttp.web
 
 try:
     import pytest
@@ -19,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 
 from athenian.api import AthenianApp
 from athenian.api.auth import Auth0, User
+from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata import hack_sqlite_arrays
 from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.state.models import Base as StateBase
@@ -26,6 +24,7 @@ from tests.sample_db_data import fill_metadata_session, fill_state_session
 
 
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(os.path.dirname(__file__))))
+invitation_controller.ikey = "vadim"
 
 
 class TestAuth0(Auth0):

@@ -66,6 +66,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: Something is wrong with the invitation URL.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Invitation was disabled.
         404:
           content:
             application/json:

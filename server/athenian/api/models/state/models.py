@@ -16,7 +16,7 @@ class Refresheable:
             """init"""
             self.current_parameters = parameters
 
-    def create_defaults(self):
+    def create_defaults(self) -> "Refresheable":
         """Call default() on all the columns."""
         ctx = self.Context(self.__dict__)
         for k, v in self.__table__.columns.items():
@@ -25,13 +25,15 @@ class Refresheable:
                 if callable(arg):
                     arg = arg(ctx)
                 setattr(self, k, arg)
+        return self
 
-    def refresh(self):
+    def refresh(self) -> "Refresheable":
         """Call onupdate() on all the columns."""
         ctx = self.Context(self.__dict__)
         for k, v in self.__table__.columns.items():
             if v.onupdate is not None:
                 setattr(self, k, v.onupdate.arg(ctx))
+        return self
 
 
 class Explodeable:

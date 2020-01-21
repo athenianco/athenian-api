@@ -3,9 +3,9 @@ from typing import Optional
 from aiohttp import web
 from aiohttp.typedefs import LooseHeaders
 
-from athenian.api import FriendlyJson
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.generic_error import GenericError
+from athenian.api.serialization import FriendlyJson
 
 
 def response(model: Model, *,
