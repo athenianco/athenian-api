@@ -12,5 +12,5 @@ async def is_admin(db: databases.Database, user: str, account: int) -> bool:
         and_(UserAccount.user_id == user, UserAccount.account_id == account)))
     if status is None:
         raise ResponseError(ForbiddenError(
-            detail="User %s does not belong to account %d" % (user, account)))
+            detail="User %s does not belong to the account %d" % (user, account)))
     return status[UserAccount.is_admin.key]

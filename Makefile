@@ -21,6 +21,8 @@ $(ENV_FILE):
 	echo 'AUTH0_AUDIENCE=' >> $(ENV_FILE)
 	echo 'AUTH0_CLIENT_ID=' >> $(ENV_FILE)
 	echo 'AUTH0_CLIENT_SECRET=' >> $(ENV_FILE)
+	echo >> $(ENV_FILE)
+	echo 'ATHENIAN_INVITATION_KEY=we-are-the-best' >> $(ENV_FILE)
 
 $(IO_DIR)/%.sqlite: $(ENV_FILE)
 	docker run --rm -e DB_DIR=/io -v$(IO_DIR):/io --env-file $(ENV_FILE) --entrypoint python3 $(IMAGE) /server/tests/gen_sqlite_db.py

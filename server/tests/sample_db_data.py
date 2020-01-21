@@ -7,7 +7,7 @@ import sqlalchemy.orm
 from sqlalchemy.cprocessors import str_to_date, str_to_datetime
 
 from athenian.api.models.metadata.github import Base
-from athenian.api.models.state.models import RepositorySet, Account, UserAccount
+from athenian.api.models.state.models import Account, Invitation, RepositorySet, UserAccount
 
 
 def fill_metadata_session(session: sqlalchemy.orm.Session):
@@ -84,3 +84,4 @@ def fill_state_session(session: sqlalchemy.orm.Session):
     session.add(RepositorySet(
         owner=3,
         items=["github.com/athenianco/athenian-webapp", "github.com/athenianco/athenian-api"]))
+    session.add(Invitation(salt=777, account_id=3, created_by="auth0|5e1f6e2e8bfa520ea5290741"))

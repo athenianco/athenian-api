@@ -15,6 +15,7 @@ from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 from athenian.api.auth import Auth0
+from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.metadata import __description__, __package__, __version__
 from athenian.api.models.state import check_schema_version
@@ -29,12 +30,13 @@ def parse_args() -> argparse.Namespace:
         pass
 
     parser = argparse.ArgumentParser(__package__, epilog="""environment variables:
-  SENTRY_KEY            Sentry token: ???@sentry.io
-  SENTRY_PROJECT        Sentry project name.
-  AUTH0_DOMAIN          Auth0 domain, usually *.auth0.com
-  AUTH0_AUDIENCE        JWT audience - the backref URL, usually the website address
-  AUTH0_CLIENT_ID       Client ID of the Auth0 Machine-to-Machine Application
-  AUTH0_CLIENT_SECRET   Client Secret of the Auth0 Machine-to-Machine Application
+  SENTRY_KEY               Sentry token: ???@sentry.io
+  SENTRY_PROJECT           Sentry project name.
+  AUTH0_DOMAIN             Auth0 domain, usually *.auth0.com
+  AUTH0_AUDIENCE           JWT audience - the backref URL, usually the website address
+  AUTH0_CLIENT_ID          Client ID of the Auth0 Machine-to-Machine Application
+  AUTH0_CLIENT_SECRET      Client Secret of the Auth0 Machine-to-Machine Application
+  ATHENIAN_INVITATION_KEY  Passphrase to encrypt the invitation links
   """,
                                      formatter_class=Formatter)
     add_logging_args(parser)
@@ -81,6 +83,8 @@ class AthenianApp(connexion.AioHttpApp):
         self._auth0_cls = auth0_cls
         self._auth0 = None
         super().__init__(__package__, specification_dir=specification_dir, options=options)
+        if invitation_controller.ikey is None:
+            raise EnvironmentError("ATHENIAN_INVITATION_KEY environment variable must be defined")
         api = self.add_api(
             "openapi.yaml",
             arguments={"title": __description__},

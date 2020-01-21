@@ -174,6 +174,18 @@ class GenericError(Model):
         self._instance = instance
 
 
+class BadRequestError(GenericError):
+    """HTTP 400."""
+
+    def __init__(self, detail: Optional[str] = None):
+        """Initialize a new instance of BadRequestError.
+
+        :param detail: The details about this error.
+        """
+        super().__init__(type="/errors/BadRequest", title=HTTPStatus.BAD_REQUEST.phrase,
+                         status=HTTPStatus.BAD_REQUEST, detail=detail)
+
+
 class NotFoundError(GenericError):
     """HTTP 404."""
 
@@ -183,7 +195,7 @@ class NotFoundError(GenericError):
         :param detail: The details about this error.
         """
         super().__init__(type="/errors/NotFoundError", title=HTTPStatus.NOT_FOUND.phrase,
-                         status=404, detail=detail)
+                         status=HTTPStatus.NOT_FOUND, detail=detail)
 
 
 class ForbiddenError(GenericError):
@@ -195,4 +207,4 @@ class ForbiddenError(GenericError):
         :param detail: The details about this error.
         """
         super().__init__(type="/errors/ForbiddenError", title=HTTPStatus.FORBIDDEN.phrase,
-                         status=403, detail=detail)
+                         status=HTTPStatus.FORBIDDEN, detail=detail)
