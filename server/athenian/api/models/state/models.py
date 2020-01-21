@@ -104,4 +104,4 @@ class Invitation(Base):
     accepted = Column("accepted", Integer(), nullable=False, default=0)
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
     created_by = Column("created_by", String(256), ForeignKey(
-        "user_accounts.user_id", name="fk_invitation_user"), nullable=False)
+        "user_accounts.user_id", name="fk_invitation_user"))

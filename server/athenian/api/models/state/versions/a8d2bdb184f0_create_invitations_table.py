@@ -27,7 +27,7 @@ def upgrade():
         sa.Column("accepted", sa.Integer(), nullable=False, default=0),
         sa.Column("created_at", sa.TIMESTAMP(), nullable=False),
         sa.Column("created_by", sa.String(256), sa.ForeignKey(
-            "user_accounts.user_id", name="fk_invitation_user"), nullable=False),
+            "user_accounts.user_id", name="fk_invitation_user")),
     )
 
 
