@@ -13,8 +13,7 @@ from athenian.api.models.web import CalculatedMetric, CalculatedMetrics, Calcula
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.metrics_request import MetricsRequest
 # from athenian.api.models.no_source_data_error import NoSourceDataError
-from athenian.api.typing_utils import AthenianWebRequest
-
+from athenian.api.request import AthenianWebRequest
 
 #           service                  developers
 Filter = Tuple[str, Tuple[List[str], List[str], ForSet]]
@@ -53,7 +52,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     met.calculated = []
 
     try:
-        filters = await _compile_filters(body._for, request)
+        filters = await _compile_filters(body._for, request, body.account)
     except ResponseError as e:
         return e.response
     if body.date_to < body.date_from:
@@ -87,14 +86,16 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     return response(met)
 
 
-async def _compile_filters(for_sets, request: AthenianWebRequest) -> List[Filter]:
+async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, account: int,
+                           ) -> List[Filter]:
     filters = []
+    sdb, user = request.sdb, request.user
     for i, for_set in enumerate(for_sets):
         repos = []
         devs = []
         service = None
         for repo in chain.from_iterable([
-                await resolve_reposet(r, ".for[%d].repositories" % i, request.sdb, request.user)
+                await resolve_reposet(r, ".for[%d].repositories" % i, sdb, user, account)
                 for r in for_set.repositories]):
             for key, prefix in PREFIXES.items():
                 if repo.startswith(prefix):
@@ -111,7 +112,7 @@ async def _compile_filters(for_sets, request: AthenianWebRequest) -> List[Filter
                 detail='the provider of a "for" element is unsupported or the set is empty',
                 pointer=".for[%d].repositories" % i,
             ))
-        for dev in for_set.developers:
+        for dev in (for_set.developers or []):
             for key, prefix in PREFIXES.items():
                 if dev.startswith(prefix):
                     if service != key:

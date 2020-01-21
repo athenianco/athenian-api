@@ -7,7 +7,7 @@ import sqlalchemy.orm
 from sqlalchemy.cprocessors import str_to_date, str_to_datetime
 
 from athenian.api.models.metadata.github import Base
-from athenian.api.models.state.models import RepositorySet
+from athenian.api.models.state.models import RepositorySet, Account, UserAccount
 
 
 def fill_metadata_session(session: sqlalchemy.orm.Session):
@@ -64,6 +64,23 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
 
 
 def fill_state_session(session: sqlalchemy.orm.Session):
+    session.add(Account(id=1))
+    session.add(Account(id=2))
+    session.add(Account(id=3))
+    session.add(UserAccount(
+        user_id="auth0|5e1f6dfb57bc640ea390557b", account_id=1, is_admin=True))
+    session.add(UserAccount(
+        user_id="auth0|5e1f6dfb57bc640ea390557b", account_id=2, is_admin=False))
+    session.add(UserAccount(
+        user_id="auth0|5e1f6e2e8bfa520ea5290741", account_id=3, is_admin=True))
+    session.add(UserAccount(
+        user_id="auth0|5e1f6e2e8bfa520ea5290741", account_id=1, is_admin=False))
     session.add(RepositorySet(
-        owner="auth0|5e1f6dfb57bc640ea390557b",
+        owner=1,
         items=["github.com/src-d/go-git", "github.com/athenianco/athenian-api"]))
+    session.add(RepositorySet(
+        owner=2,
+        items=["github.com/src-d/hercules", "github.com/athenianco/athenian-api"]))
+    session.add(RepositorySet(
+        owner=3,
+        items=["github.com/athenianco/athenian-webapp", "github.com/athenianco/athenian-api"]))

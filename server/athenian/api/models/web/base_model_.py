@@ -55,6 +55,10 @@ class Model:
         return pprint.pformat(self.to_dict())
 
     def __repr__(self):
+        """For debugging."""
+        return "%s(%s)" % (type(self).__name__, ", ".join("%s=%r" % p for p in vars(self).items()))
+
+    def __str__(self):
         """For `print` and `pprint`."""
         return self.to_str()
 

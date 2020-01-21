@@ -1,4 +1,4 @@
-from typing import List, Sequence, Type, Union
+from typing import List, Sequence, Tuple, Type, Union
 
 import databases
 from sqlalchemy import select
@@ -6,12 +6,13 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.auth import User
 from athenian.api.controllers.response import ResponseError
+from athenian.api.controllers.user import is_admin
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NotFoundError
 
 
 async def resolve_reposet(repo: str, pointer: str, db: databases.Database, user: User,
-                          ) -> List[str]:
+                          account: int) -> List[str]:
     """
     Dereference the repository sets.
 
@@ -32,14 +33,23 @@ async def resolve_reposet(repo: str, pointer: str, db: databases.Database, user:
             detail="repository set identifier is invalid: %s" % repo,
             pointer=pointer,
         ))
-    rs = await fetch_reposet(set_id, [RepositorySet.items], db, user)
+    rs, _ = await fetch_reposet(set_id, [RepositorySet.items], db, user)
+    if rs.owner != account:
+        raise ResponseError(ForbiddenError(
+            detail="User %s is not allowed to reference reposet %d in this query" %
+                   (user.id, set_id)))
     return rs.items
 
 
 async def fetch_reposet(
         id: int, columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
-        db: databases.Database, user: User) -> RepositorySet:
-    """Retrieve a repository set by ID and check the access for the given user."""
+        db: databases.Database, user: User) -> Tuple[RepositorySet, bool]:
+    """
+    Retrieve a repository set by ID and check the access for the given user.
+
+    :return: Loaded RepositorySet and `is_admin` flag that indicates whether the user has \
+             RW access to that set.
+    """
     if not columns or columns[0] is not RepositorySet:
         for col in columns:
             if col is RepositorySet.owner:
@@ -50,7 +60,6 @@ async def fetch_reposet(
     rs = await db.fetch_one(select(columns).where(RepositorySet.id == id))
     if rs is None or len(rs) == 0:
         raise ResponseError(NotFoundError(detail="Repository set %d does not exist" % id))
-    if rs[RepositorySet.owner.key] != user.id:
-        raise ResponseError(ForbiddenError(
-            detail="User %s is not allowed to access %d" % (user.id, id)))
-    return RepositorySet(**rs)
+    account = rs[RepositorySet.owner.key]
+    adm = await is_admin(db, user.id, account)
+    return RepositorySet(**rs), adm

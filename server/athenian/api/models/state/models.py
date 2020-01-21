@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, JSON, String, TIMESTAMP
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, JSON, String, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 
 
@@ -56,7 +56,8 @@ class RepositorySet(Base):
         return len(ctx.current_parameters["items"])
 
     id = Column("id", Integer(), primary_key=True)
-    owner = Column("owner", String(256), nullable=False)
+    owner = Column("owner", Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"),
+                   nullable=False)
     updated_at = Column("updated_at", TIMESTAMP(), nullable=False, default=datetime.utcnow,
                         onupdate=lambda ctx: datetime.utcnow())
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
@@ -67,3 +68,24 @@ class RepositorySet(Base):
                          onupdate=count_items)
 
     count_items = staticmethod(count_items)
+
+
+class UserAccount(Base):
+    """User<>account many-to-many relations."""
+
+    __tablename__ = "user_accounts"
+
+    user_id = Column("user_id", String(256), primary_key=True)
+    account_id = Column("account_id", Integer(), ForeignKey("accounts.id", name="fk_user_account"),
+                        nullable=False, primary_key=True)
+    is_admin = Column("is_admin", Boolean(), nullable=False)
+    created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
+
+
+class Account(Base):
+    """Group of users, some are admins and some are regular."""
+
+    __tablename__ = "accounts"
+
+    id = Column("id", Integer(), primary_key=True)
+    created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)

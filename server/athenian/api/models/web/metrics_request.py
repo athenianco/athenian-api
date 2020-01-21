@@ -20,6 +20,7 @@ class MetricsRequest(Model):
         date_from: date = None,
         date_to: date = None,
         granularity: Granularity = None,
+        account: int = None,
     ):
         """MetricsRequest - a model defined in OpenAPI
 
@@ -28,6 +29,7 @@ class MetricsRequest(Model):
         :param date_from: The date_from of this MetricsRequest.
         :param date_to: The date_to of this MetricsRequest.
         :param granularity: The granularity of this MetricsRequest.
+        :param account: The account of this MetricsRequest.
         """
         self.openapi_types = {
             "_for": List[ForSet],
@@ -35,6 +37,7 @@ class MetricsRequest(Model):
             "date_from": date,
             "date_to": date,
             "granularity": Granularity,
+            "account": int,
         }
 
         self.attribute_map = {
@@ -43,6 +46,7 @@ class MetricsRequest(Model):
             "date_from": "date_from",
             "date_to": "date_to",
             "granularity": "granularity",
+            "account": "account",
         }
 
         self.__for = _for
@@ -50,6 +54,7 @@ class MetricsRequest(Model):
         self._date_from = date_from
         self._date_to = date_to
         self._granularity = granularity
+        self._account = account
 
     @classmethod
     def from_dict(cls, dikt: dict) -> "MetricsRequest":
@@ -61,24 +66,22 @@ class MetricsRequest(Model):
         return serialization.deserialize_model(dikt, cls)
 
     @property
-    def _for(self):
+    def _for(self) -> List[ForSet]:
         """Gets the _for of this MetricsRequest.
 
         Sets of developers and repositories to calculate the metrics for.
 
         :return: The _for of this MetricsRequest.
-        :rtype: List[ForSet]
         """
         return self.__for
 
     @_for.setter
-    def _for(self, _for):
+    def _for(self, _for: List[ForSet]):
         """Sets the _for of this MetricsRequest.
 
         Sets of developers and repositories to calculate the metrics for.
 
         :param _for: The _for of this MetricsRequest.
-        :type _for: List[ForSet]
         """
         if _for is None:
             raise ValueError("Invalid value for `_for`, must not be `None`")
@@ -86,24 +89,22 @@ class MetricsRequest(Model):
         self.__for = _for
 
     @property
-    def metrics(self):
+    def metrics(self) -> List[MetricID]:
         """Gets the metrics of this MetricsRequest.
 
         Requested metric identifiers.
 
         :return: The metrics of this MetricsRequest.
-        :rtype: List[MetricID]
         """
         return self._metrics
 
     @metrics.setter
-    def metrics(self, metrics):
+    def metrics(self, metrics: List[MetricID]):
         """Sets the metrics of this MetricsRequest.
 
         Requested metric identifiers.
 
         :param metrics: The metrics of this MetricsRequest.
-        :type metrics: List[MetricID]
         """
         if metrics is None:
             raise ValueError("Invalid value for `metrics`, must not be `None`")
@@ -111,24 +112,22 @@ class MetricsRequest(Model):
         self._metrics = metrics
 
     @property
-    def date_from(self):
+    def date_from(self) -> date:
         """Gets the date_from of this MetricsRequest.
 
         The date from when to start measuring the metrics.
 
         :return: The date_from of this MetricsRequest.
-        :rtype: date
         """
         return self._date_from
 
     @date_from.setter
-    def date_from(self, date_from):
+    def date_from(self, date_from: date):
         """Sets the date_from of this MetricsRequest.
 
         The date from when to start measuring the metrics.
 
         :param date_from: The date_from of this MetricsRequest.
-        :type date_from: date
         """
         if date_from is None:
             raise ValueError("Invalid value for `date_from`, must not be `None`")
@@ -136,24 +135,22 @@ class MetricsRequest(Model):
         self._date_from = date_from
 
     @property
-    def date_to(self):
+    def date_to(self) -> date:
         """Gets the date_to of this MetricsRequest.
 
         The date up to which to measure the metrics.
 
         :return: The date_to of this MetricsRequest.
-        :rtype: date
         """
         return self._date_to
 
     @date_to.setter
-    def date_to(self, date_to):
+    def date_to(self, date_to: date):
         """Sets the date_to of this MetricsRequest.
 
         The date up to which to measure the metrics.
 
         :param date_to: The date_to of this MetricsRequest.
-        :type date_to: date
         """
         if date_to is None:
             raise ValueError("Invalid value for `date_to`, must not be `None`")
@@ -161,22 +158,39 @@ class MetricsRequest(Model):
         self._date_to = date_to
 
     @property
-    def granularity(self):
+    def granularity(self) -> Granularity:
         """Gets the granularity of this MetricsRequest.
 
         :return: The granularity of this MetricsRequest.
-        :rtype: Granularity
         """
         return self._granularity
 
     @granularity.setter
-    def granularity(self, granularity):
+    def granularity(self, granularity: Granularity):
         """Sets the granularity of this MetricsRequest.
 
         :param granularity: The granularity of this MetricsRequest.
-        :type granularity: Granularity
         """
         if granularity is None:
             raise ValueError("Invalid value for `granularity`, must not be `None`")
 
         self._granularity = granularity
+
+    @property
+    def account(self) -> int:
+        """Gets the account of this MetricsRequest.
+
+        :return: The account of this MetricsRequest.
+        """
+        return self._account
+
+    @account.setter
+    def account(self, account: int):
+        """Sets the account of this MetricsRequest.
+
+        :param account: The account of this MetricsRequest.
+        """
+        if account is None:
+            raise ValueError("Invalid value for `account`, must not be `None`")
+
+        self._account = account
