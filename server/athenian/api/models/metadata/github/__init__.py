@@ -1,14 +1,23 @@
-from sqlalchemy import ARRAY, BigInteger, Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import ARRAY, BigInteger, Boolean, Column, DateTime, Integer, String, Text, \
+    TIMESTAMP, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 
 
-class VersionedMixin:
-    versions = Column("versions", ARRAY(Integer()), index=True)
-    sum256 = Column("sum256", String(64), primary_key=True)
+# -- MIXINS --
+
+
+class IDMixin:
     id = Column("id", BigInteger)
     node_id = Column("node_id", Text)
+    delivery_id = Column("delivery_id", Text, nullable=False)
+
+
+class DeliveryMixin:
+    delivery_id = Column("delivery_id", Text, nullable=False)
+    action = Column("action", Text)
+    timestamp = Column("timestamp", TIMESTAMP(True))
 
 
 class BodyMixin:
@@ -16,8 +25,8 @@ class BodyMixin:
 
 
 class UpdatedMixin:
-    created_at = Column("created_at", DateTime(True))
-    updated_at = Column("updated_at", DateTime(True))
+    created_at = Column("created_at", TIMESTAMP(True))
+    updated_at = Column("updated_at", TIMESTAMP(True))
 
 
 class UserMixin:
@@ -28,30 +37,68 @@ class UserMixin:
 class RepositoryMixin:
     repository_name = Column("repository_name", Text, nullable=False)
     repository_owner = Column("repository_owner", Text, nullable=False)
+    repository_fullname = Column("repository_fullname", Text, nullable=False)
 
 
-"""
-These models were generated from the real DB schema with
-
-sqlacodegen "postgresql://postgres:postgres@0.0.0.0:5432/postgres" --noclasses --nocomments --outfile __init__.py  # noqa
-
-Sadly, the output had to be polished manually, that is:
-
-- Declarative classes instead of imperative table definition.
-- Renames.
-- Mixins to stay DRY.
-"""
+# -- TABLES --
 
 
-class IssueComment(Base, VersionedMixin, BodyMixin, UpdatedMixin, UserMixin, RepositoryMixin):
-    __tablename__ = "github_issue_comments_versioned"
+class Installation(Base, UpdatedMixin):
+    __tablename__ = "github_installations"
+
+    id = Column("id", BigInteger, primary_key=True)
+    delivery_id = Column("delivery_id", Text, nullable=False)
+    app_id = Column("app_id", BigInteger, nullable=False)
+    target_id = Column("target_id", BigInteger, nullable=False)
+    target_type = Column("target_type", Text, nullable=False)
+    html_url = Column("html_url", Text)
+
+
+class InstallationOwner(Base, UpdatedMixin):
+    __tablename__ = "github_installation_owners"
+
+    install_id = Column("install_id", BigInteger,
+                        ForeignKey("github_installations.id", name="fk_github_installation_owner"),
+                        primary_key=True)
+    user_id = Column("user_id", BigInteger, primary_key=True)
+
+
+class InstallationRepo(Base):
+    __tablename__ = "github_installation_repos"
+
+    install_id = Column("install_id", BigInteger,
+                        ForeignKey("github_installations.id", name="fk_github_installation_repo"),
+                        primary_key=True)
+    repo_id = Column("repo_id", BigInteger, primary_key=True)
+    full_name = Column("repo_full_name", Text, nullable=False)
+    updated_at = Column("updated_at", TIMESTAMP, nullable=False)
+
+
+class IssueComment(Base,
+                   BodyMixin,
+                   DeliveryMixin,
+                   IDMixin,
+                   RepositoryMixin,
+                   UpdatedMixin,
+                   UserMixin,
+                   ):
+    __tablename__ = "github_issue_comments"
+
     author_association = Column("author_association", Text)
     htmlurl = Column("htmlurl", Text)
     issue_number = Column("issue_number", BigInteger, nullable=False)
 
 
-class Issue(Base, VersionedMixin, BodyMixin, UpdatedMixin, UserMixin, RepositoryMixin):
-    __tablename__ = "github_issues_versioned"
+class Issue(Base,
+            BodyMixin,
+            DeliveryMixin,
+            IDMixin,
+            RepositoryMixin,
+            UpdatedMixin,
+            UserMixin,
+            ):
+    __tablename__ = "github_issues"
+
     assignees = Column("assignees", ARRAY(Text()), nullable=False)
     closed_at = Column("closed_at", DateTime(True))
     closed_by_id = Column("closed_by_id", BigInteger, nullable=False)
@@ -67,8 +114,12 @@ class Issue(Base, VersionedMixin, BodyMixin, UpdatedMixin, UserMixin, Repository
     title = Column("title", Text)
 
 
-class Organization(Base, VersionedMixin, UpdatedMixin):
-    __tablename__ = "github_organizations_versioned"
+class Organization(Base,
+                   DeliveryMixin,
+                   IDMixin,
+                   UpdatedMixin):
+    __tablename__ = "github_organizations"
+
     avatar_url = Column("avatar_url", Text)
     collaborators = Column("collaborators", BigInteger)
     description = Column("description", Text)
@@ -81,9 +132,16 @@ class Organization(Base, VersionedMixin, UpdatedMixin):
     total_private_repos = Column("total_private_repos", BigInteger)
 
 
-class PullRequestComment(Base, VersionedMixin, BodyMixin, UpdatedMixin, UserMixin,
-                         RepositoryMixin):
-    __tablename__ = "github_pull_request_comments_versioned"
+class PullRequestComment(Base,
+                         BodyMixin,
+                         DeliveryMixin,
+                         IDMixin,
+                         RepositoryMixin,
+                         UpdatedMixin,
+                         UserMixin,
+                         ):
+    __tablename__ = "github_pull_request_comments"
+
     author_association = Column("author_association", Text)
     commit_id = Column("commit_id", Text)
     diff_hunk = Column("diff_hunk", Text)
@@ -97,8 +155,32 @@ class PullRequestComment(Base, VersionedMixin, BodyMixin, UpdatedMixin, UserMixi
     pull_request_review_id = Column("pull_request_review_id", BigInteger)
 
 
-class PullRequestReview(Base, VersionedMixin, BodyMixin, UserMixin, RepositoryMixin):
-    __tablename__ = "github_pull_request_reviews_versioned"
+class PullRequestCommit(Base,
+                        RepositoryMixin,
+                        ):
+    __tablename__ = "github_pull_request_commits"
+
+    pull_request_id = Column("pull_request_id", BigInteger)
+    pull_request_number = Column("pull_request_number", BigInteger)
+    author_login = Column("author_login", Text)
+    author_date = Column("author_date", TIMESTAMP(True))
+    commiter_login = Column("commiter_login", TIMESTAMP(True))
+    commit_date = Column("commit_date", TIMESTAMP(True))
+    sha = Column("sha", Text, nullable=False)
+    additions = Column("additions", Integer)
+    deletions = Column("deletions", Integer)
+    message = Column("message", Text)
+
+
+class PullRequestReview(Base,
+                        BodyMixin,
+                        DeliveryMixin,
+                        IDMixin,
+                        RepositoryMixin,
+                        UserMixin,
+                        ):
+    __tablename__ = "github_pull_request_reviews"
+
     commit_id = Column("commit_id", Text)
     htmlurl = Column("htmlurl", Text)
     pull_request_number = Column("pull_request_number", BigInteger, nullable=False)
@@ -106,8 +188,16 @@ class PullRequestReview(Base, VersionedMixin, BodyMixin, UserMixin, RepositoryMi
     submitted_at = Column("submitted_at", DateTime(True))
 
 
-class PullRequest(Base, VersionedMixin, BodyMixin, UpdatedMixin, UserMixin, RepositoryMixin):
-    __tablename__ = "github_pull_requests_versioned"
+class PullRequest(Base,
+                  BodyMixin,
+                  DeliveryMixin,
+                  IDMixin,
+                  RepositoryMixin,
+                  UpdatedMixin,
+                  UserMixin,
+                  ):
+    __tablename__ = "github_pull_requests"
+
     additions = Column("additions", BigInteger)
     assignees = Column("assignees", ARRAY(Text()), nullable=False)
     author_association = Column("author_association", Text)
@@ -143,8 +233,31 @@ class PullRequest(Base, VersionedMixin, BodyMixin, UpdatedMixin, UserMixin, Repo
     title = Column("title", Text)
 
 
-class Repository(Base, VersionedMixin, UpdatedMixin):
-    __tablename__ = "github_repositories_versioned"
+class PushCommit(Base,
+                 RepositoryMixin):
+    __tablename__ = "github_push_commits"
+
+    delivery_id = Column("delivery_id", Text, nullable=False)
+    timestamp = Column("timestamp", TIMESTAMP(True))
+    id = Column("id", BigInteger)
+    push_id = Column("push_id", Text)
+    message = Column("message", Text)
+    author_login = Column("author_login", Text)
+    url = Column("url", Text)
+    sha = Column("sha", Text, nullable=False)
+    committer_login = Column("committer_login", Text)
+    added = Column("added", ARRAY(Text()))
+    removed = Column("removed", ARRAY(Text()))
+    modified = Column("modified", ARRAY(Text()))
+    pusher_login = Column("pusher_login", Text, nullable=False)
+
+
+class Repository(Base,
+                 DeliveryMixin,
+                 IDMixin,
+                 UpdatedMixin,
+                 ):
+    __tablename__ = "github_repositories"
 
     allow_merge_commit = Column("allow_merge_commit", Boolean)
     allow_rebase_merge = Column("allow_rebase_merge", Boolean)
@@ -175,8 +288,12 @@ class Repository(Base, VersionedMixin, UpdatedMixin):
     watchers_count = Column("watchers_count", BigInteger)
 
 
-class User(Base, VersionedMixin, UpdatedMixin):
-    __tablename__ = "github_users_versioned"
+class User(Base,
+           IDMixin,
+           UpdatedMixin,
+           ):
+    __tablename__ = "github_users"
+
     avatar_url = Column("avatar_url", Text)
     bio = Column("bio", Text)
     company = Column("company", Text)
