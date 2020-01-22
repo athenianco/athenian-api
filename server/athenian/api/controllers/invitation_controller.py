@@ -12,7 +12,7 @@ from sqlalchemy import and_, delete, insert, select, update
 from athenian.api.controllers.response import response, ResponseError
 from athenian.api.models.state.models import Account, Invitation, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, NotFoundError
-from athenian.api.models.web.accepted_invitation import AcceptedInvitation
+from athenian.api.models.web.invitation_check_result import InvitationCheckResult
 from athenian.api.models.web.invitation_link import InvitationLink
 from athenian.api.models.web.invited_user import InvitedUser
 from athenian.api.request import AthenianWebRequest
@@ -82,7 +82,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         return ResponseError(BadRequestError(detail="Invalid invitation URL")).response
 
     sdb = request.sdb
-    url = AcceptedInvitation.from_dict(body).origin
+    url = InvitationLink.from_dict(body).url
     if not url.startswith(prefix):
         return bad_req()
     x = url[len(prefix):].strip("/")
@@ -131,3 +131,30 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
             await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
         await request.user.load_accounts(conn)
     return response(InvitedUser(account=acc, user=request.user))
+
+
+async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Given an invitation URL, get its type (admin or regular account member) and find whether \
+    it is enabled or disabled."""
+    url = InvitationLink.from_dict(body).url
+    result = InvitationCheckResult(valid=False)
+    if not url.startswith(prefix):
+        return response(result)
+    x = url[len(prefix):].strip("/")
+    if len(x) != 8:
+        return response(result)
+    try:
+        iid, salt = decode_slug(x)
+    except binascii.Error:
+        return response(result)
+    inv = await request.sdb.fetch_one(
+        select([Invitation.account_id, Invitation.is_active])
+        .where(and_(Invitation.id == iid, Invitation.salt == salt)))
+    if inv is None:
+        return response(result)
+    result.valid = True
+    result.active = inv[Invitation.is_active.key]
+    types = [InvitationCheckResult.INVITATION_TYPE_REGULAR,
+             InvitationCheckResult.INVITATION_TYPE_ADMIN]
+    result.type = types[inv[Invitation.account_id.key] == admin_backdoor]
+    return response(result)

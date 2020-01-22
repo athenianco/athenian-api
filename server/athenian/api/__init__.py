@@ -135,8 +135,9 @@ class AthenianApp(connexion.AioHttpApp):
         """Override the base class method to inject middleware."""
         self._auth0_cls.ensure_static_configuration()
         self._auth0 = self._auth0_cls(whitelist=[
-            r"/v1/openapi.json",
+            r"/v1/openapi.json$",
             r"/v1/ui(/|$)",
+            r"/v1/invite/check/?$",
             r"/status/?$",
         ])
         return aiohttp.web.Application(middlewares=[self.with_db, self._auth0.middleware])

@@ -49,7 +49,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AcceptedInvitation'
+              $ref: '#/components/schemas/InvitationLink'
         description: Accepted invitation details.
         required: true
         x-body-name: body
@@ -80,6 +80,28 @@ paths:
           description: Invitation was not found.
       summary: Accept the account membership invitation and finish registration. The
         user must be already authorized in Auth0.
+      x-openapi-router-controller: athenian.api.controllers.invitation_controller
+      x-codegen-request-body-name: body
+  /invite/check:
+    post:
+      operationId: check_invitation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationLink'
+        description: Checked invitation details.
+        required: true
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationCheckResult'
+          description: Invitation type, enabled/disabled.
+      summary: Given an invitation URL, get its type (admin or regular account member)
+        and find whether it is enabled or disabled.
       x-openapi-router-controller: athenian.api.controllers.invitation_controller
       x-codegen-request-body-name: body
   /invite/generate/{id}:
@@ -517,6 +539,14 @@ components:
       type: object
     InvitedUser:
       description: Details about the user who has accepted an invitation.
+      example:
+        user:
+          id: 248289761001
+          name: Jane Josephine Doe
+          email: janedoe@exampleco.com
+          picture: http://exampleco.com/janedoe/me.jpg
+          updated: 2020-01-23T12:00:00Z
+        account: 0
       properties:
         account:
           description: Joined account ID.
@@ -524,8 +554,8 @@ components:
         user:
           $ref: '#/components/schemas/User'
       required:
-        - account
-        - user
+      - account
+      - user
       type: object
     Account:
       description: Account members. "updated" and "accounts" are not populated.
@@ -567,26 +597,36 @@ components:
       type: object
     InvitationLink:
       example:
-        url: http://example.com/aeiou
+        url: https://app.athenian.co/i/deadf88d
       properties:
         url:
-          description: Invitation URL. Users are supposed to click it and become regular
-            account members.
+          description: Invitation URL. Users are supposed to click it and become admins
+            or regular account members.
           format: url
           type: string
       required:
       - url
       type: object
-    AcceptedInvitation:
+    InvitationCheckResult:
       example:
-        origin: http://example.com/aeiou
+        active: true
+        type: regular
+        valid: true
       properties:
-        origin:
-          description: Invitation URL.
-          format: url
+        active:
+          description: Value indicating whether the invitation is still enabled.
+          type: boolean
+        type:
+          description: Invited user's account membership status.
+          enum:
+          - admin
+          - regular
           type: string
+        valid:
+          description: Value indicating whether the invitation URL is correctly formed.
+          type: boolean
       required:
-      - origin
+      - valid
       type: object
     ForSet:
       example:
