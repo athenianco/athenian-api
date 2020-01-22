@@ -99,9 +99,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvitationCheckResult'
-          description: Invitation type, enabled/disabled.
+          description: 'Result of checking an invitation URL: invitation type, whether
+            it is correctly formed and is enabled.'
       summary: Given an invitation URL, get its type (admin or regular account member)
-        and find whether it is enabled or disabled.
+        and find whether it is correctly formed and is enabled or disabled.
       x-openapi-router-controller: athenian.api.controllers.invitation_controller
       x-codegen-request-body-name: body
   /invite/generate/{id}:

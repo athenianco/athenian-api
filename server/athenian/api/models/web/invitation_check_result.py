@@ -5,7 +5,8 @@ from athenian.api.models.web.base_model_ import Model
 
 
 class InvitationCheckResult(Model):
-    """Invitation type, enabled/disabled."""
+    """Result of checking an invitation URL: invitation type, whether it is correctly formed \
+    and is enabled."""
 
     INVITATION_TYPE_ADMIN = "admin"
     INVITATION_TYPE_REGULAR = "regular"

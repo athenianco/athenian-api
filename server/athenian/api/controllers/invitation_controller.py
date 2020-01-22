@@ -102,13 +102,14 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         if not inv[Invitation.is_active.key]:
             return ResponseError(ForbiddenError(
                 detail="This invitation is disabled.")).response
-        acc = inv[Invitation.account_id.key]
-        is_admin = acc == admin_backdoor
+        acc_id = inv[Invitation.account_id.key]
+        is_admin = acc_id == admin_backdoor
         if is_admin:
             # create a new account for the admin user
-            acc = await conn.execute(insert(Account).values(Account().create_defaults().explode()))
-            if acc == admin_backdoor:
-                await conn.execute(delete(Account).where(Account.id == acc))
+            acc_id = await conn.execute(
+                insert(Account).values(Account().create_defaults().explode()))
+            if acc_id == admin_backdoor:
+                await conn.execute(delete(Account).where(Account.id == acc_id))
                 return ResponseError(GenericError(
                     type="/errors/LockedError",
                     title=HTTPStatus.LOCKED.phrase,
@@ -118,19 +119,19 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         else:
             status = await conn.fetch_one(select([UserAccount.is_admin])
                                           .where(and_(UserAccount.user_id == request.user.id,
-                                                      UserAccount.account_id == acc)))
+                                                      UserAccount.account_id == acc_id)))
         if status is None:
             # create the user<>account record
             user = UserAccount(
                 user_id=request.user.id,
-                account_id=acc,
+                account_id=acc_id,
                 is_admin=is_admin,
             ).create_defaults()
             await conn.execute(insert(UserAccount).values(user.explode(with_primary_keys=True)))
             values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
             await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
         await request.user.load_accounts(conn)
-    return response(InvitedUser(account=acc, user=request.user))
+    return response(InvitedUser(account=acc_id, user=request.user))
 
 
 async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Response:
