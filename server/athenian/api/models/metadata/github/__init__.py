@@ -9,9 +9,8 @@ Base = declarative_base()
 
 
 class IDMixin:
-    id = Column("id", BigInteger)
+    id = Column("id", BigInteger, primary_key=True)
     node_id = Column("node_id", Text)
-    delivery_id = Column("delivery_id", Text, nullable=False)
 
 
 class DeliveryMixin:
@@ -70,7 +69,7 @@ class InstallationRepo(Base):
                         ForeignKey("github_installations.id", name="fk_github_installation_repo"),
                         primary_key=True)
     repo_id = Column("repo_id", BigInteger, primary_key=True)
-    full_name = Column("repo_full_name", Text, nullable=False)
+    repo_full_name = Column("repo_full_name", Text, nullable=False)
     updated_at = Column("updated_at", TIMESTAMP, nullable=False)
 
 
@@ -166,7 +165,7 @@ class PullRequestCommit(Base,
     author_date = Column("author_date", TIMESTAMP(True))
     commiter_login = Column("commiter_login", TIMESTAMP(True))
     commit_date = Column("commit_date", TIMESTAMP(True))
-    sha = Column("sha", Text, nullable=False)
+    sha = Column("sha", Text, primary_key=True)
     additions = Column("additions", Integer)
     deletions = Column("deletions", Integer)
     message = Column("message", Text)
@@ -204,6 +203,7 @@ class PullRequest(Base,
     base_ref = Column("base_ref", Text, nullable=False)
     base_repository_name = Column("base_repository_name", Text, nullable=False)
     base_repository_owner = Column("base_repository_owner", Text, nullable=False)
+    base_repository_fullname = Column("base_repository_fullname", Text, nullable=False)
     base_sha = Column("base_sha", Text, nullable=False)
     base_user = Column("base_user", Text, nullable=False)
     changed_files = Column("changed_files", BigInteger)
@@ -214,6 +214,7 @@ class PullRequest(Base,
     head_ref = Column("head_ref", Text, nullable=False)
     head_repository_name = Column("head_repository_name", Text, nullable=False)
     head_repository_owner = Column("head_repository_owner", Text, nullable=False)
+    head_repository_fullname = Column("head_repository_fullname", Text, nullable=False)
     head_sha = Column("head_sha", Text, nullable=False)
     head_user = Column("head_user", Text, nullable=False)
     htmlurl = Column("htmlurl", Text)
@@ -244,7 +245,7 @@ class PushCommit(Base,
     message = Column("message", Text)
     author_login = Column("author_login", Text)
     url = Column("url", Text)
-    sha = Column("sha", Text, nullable=False)
+    sha = Column("sha", Text, primary_key=True)
     committer_login = Column("committer_login", Text)
     added = Column("added", ARRAY(Text()))
     removed = Column("removed", ARRAY(Text()))
