@@ -108,7 +108,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
             # create a new account for the admin user
             acc_id = await conn.execute(
                 insert(Account).values(Account().create_defaults().explode()))
-            if acc_id == admin_backdoor:
+            if acc_id >= admin_backdoor:
                 await conn.execute(delete(Account).where(Account.id == acc_id))
                 return ResponseError(GenericError(
                     type="/errors/LockedError",

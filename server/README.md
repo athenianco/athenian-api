@@ -53,6 +53,15 @@ ATHENIAN_INVITATION_KEY=secret python3 -m athenian.api.invite_admin sqlite://
 
 Replace `sqlite://` with the actual DB endpoint and `secret` with the actual passphrase.
 
+Running with real Cloud SQL databases:
+
+```
+cloud_sql_proxy -instances=athenian-1:us-east1:owl-cloud-sql-2f803bb6=tcp:5432
+
+--metadata-db=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/api
+--state-db=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/state
+```
+
 ## Development
 
 Install the linters:

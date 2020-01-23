@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from athenian.api.controllers import invitation_controller
-from athenian.api.models.state.models import Invitation
+from athenian.api.models.state.models import Account, Invitation
 
 
 def main():
@@ -15,6 +15,9 @@ def main():
     engine = create_engine(sys.argv[1])
     session = sessionmaker(bind=engine)()
     salt = randint(0, (1 << 16) - 1)
+    if not session.query(Account).filter(Account.id == invitation_controller.admin_backdoor).all():
+        session.add(Account(id=invitation_controller.admin_backdoor))
+        session.commit()
     try:
         inv = Invitation(salt=salt, account_id=invitation_controller.admin_backdoor)
         session.add(inv)
