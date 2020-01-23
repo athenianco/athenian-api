@@ -8,7 +8,8 @@ import pandas as pd
 from sqlalchemy import select, sql
 
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.models.metadata.github import PullRequest, PullRequestComment, PullRequestReview
+from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
+    PullRequestCommit, PullRequestReview
 
 
 class PullRequestMiner:
@@ -16,11 +17,12 @@ class PullRequestMiner:
     with individual PR tuples."""
 
     def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
-                 max_time: date):
+                 commits: pd.DataFrame, max_time: date):
         """Initialize a new instance of `PullRequestMiner`."""
         self._prs = prs
         self._reviews = reviews
         self._review_comments = review_comments
+        self._commits = commits
         self.max_time = max_time
 
     @classmethod
@@ -35,33 +37,55 @@ class PullRequestMiner:
         :param developers: PRs must be authored by these user IDs. An empty list means everybody.
         :param db: Metadata db instance.
         """
-        repos_parsed = [r.split("/") for r in repositories]
-        repo_orgs = [r[0] for r in repos_parsed]
-        repo_names = [r[1] for r in repos_parsed]
         filters = [
             PullRequest.created_at >= time_from,
             PullRequest.created_at < time_to,
-            PullRequest.repository_name.in_(repo_names),
-            PullRequest.repository_owner.in_(repo_orgs),  # FIXME(vmarkovtsev): ENG-101 makes this correct # noqa
+            PullRequest.repository_fullname.in_(repositories),
         ]
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
-        prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                   db, PullRequest)
-        numbers = prs["number"] if len(prs) > 0 else set()
-        reviews = await read_sql_query(select([PullRequestReview]).where(
-            PullRequestReview.pull_request_number.in_(numbers)), db, PullRequestReview)
-        review_comments = await read_sql_query(select([PullRequestComment]).where(
-            PullRequestComment.pull_request_number.in_(numbers)), db, PullRequestComment)
-        return cls(prs, reviews, review_comments, time_to)
+        with db.connection() as conn:
+            prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
+                                       conn, PullRequest)
+            numbers = prs[PullRequest.number.key] if len(prs) > 0 else set()
+            reviews = await read_sql_query(select([PullRequestReview]).where(
+                sql.and_(PullRequestReview.pull_request_number.in_(numbers),
+                         PullRequestReview.repository_fullname.in_(repositories))),
+                conn, PullRequestReview)
+            review_comments = await read_sql_query(select([PullRequestComment]).where(
+                sql.and_(PullRequestComment.pull_request_number.in_(numbers),
+                         PullRequestComment.repository_fullname.in_(repositories))),
+                conn, PullRequestComment)
+            commits = await read_sql_query(select([PullRequestCommit]).where(
+                sql.and_(PullRequestCommit.pull_request_number.in_(numbers),
+                         PullRequestCommit.repository_fullname.in_(repositories))),
+                conn, PullRequestCommit)
+        return cls(prs, reviews, review_comments, commits, time_to)
 
-    def __iter__(self) -> Generator[Tuple[pd.Series, pd.DataFrame, pd.DataFrame], None, None]:
+    def __iter__(self) -> Generator[Tuple[pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame],
+                                    None, None]:
         """Iterate over the information collected for individual pull requests."""
+        r_repo_key = PullRequest.repository_fullname.key
+        r_pull_request_number_key = PullRequestReview.pull_request_number.key
+        ce_pull_request_number_key = PullRequestComment.pull_request_number.key
+        ce_repo_key = PullRequestComment.repository_fullname.key
+        ci_pull_request_number_key = PullRequestCommit.pull_request_number.key
+        ci_repo_key = PullRequestCommit.repository_fullname.key
+        number_key = PullRequest.number.key
+        repo_key = PullRequest.repository_fullname.key
         for _, pr in self._prs.iterrows():
-            reviews = self._reviews[self._reviews["pull_request_number"] == pr["number"]]
+            pr_number = pr[number_key]
+            pr_repo = pr[repo_key]
+            reviews = self._reviews[
+                (self._reviews[r_pull_request_number_key] == pr_number)
+                & (self._reviews[r_repo_key] == pr_repo)]
             review_comments = self._review_comments[
-                self._review_comments["pull_request_number"] == pr["number"]]
-            yield pr, reviews, review_comments
+                (self._review_comments[ce_pull_request_number_key] == pr_number)
+                & (self._review_comments[ce_repo_key] == pr_repo)]
+            commits = self._commits[
+                (self._commits[ci_pull_request_number_key] == pr_number)
+                & (self._commits[ci_repo_key] == pr_repo)]
+            yield pr, reviews, review_comments, commits
 
 
 T = TypeVar("T")
@@ -171,34 +195,43 @@ class PullRequestTimesMiner(PullRequestMiner):
     """Extract the pull request update timestamps from the metadata DB."""
 
     def _compile(self, pr: pd.Series, reviews: pd.DataFrame, review_comments: pd.DataFrame,
-                 ) -> PullRequestTimes:
-        created_at = Fallback(pr["created_at"], None)
-        merged_at = Fallback(pr["merged_at"], None)
+                 commits: pd.DataFrame) -> PullRequestTimes:
+        created_at = Fallback(pr[PullRequest.created_at.key], None)
+        merged_at = Fallback(pr[PullRequest.merged_at.key], None)
         first_comment_on_first_review = Fallback(
-            min(review_comments["created_at"].min(), reviews["submitted_at"].min()), merged_at)
-        last_commit_before_first_review = first_comment_on_first_review  # FIXME(vmarkovtsev): no commit timestamps # noqa
+            min(review_comments[PullRequestComment.created_at.key].min(),
+                reviews[PullRequestReview.submitted_at.key].min()),
+            merged_at)
+        last_commit_before_first_review = Fallback(
+            commits[commits[PullRequestCommit.commit_date.key]
+                    <= first_comment_on_first_review.best]
+            .max(PullRequestCommit.commit_date.key),
+            first_comment_on_first_review)
         first_review_request = Fallback(None, Fallback.min(
             Fallback.max(created_at, last_commit_before_first_review),
             first_comment_on_first_review))  # FIXME(vmarkovtsev): no review request info
         if merged_at.value is not None:
-            reviews_before_merge = reviews[reviews["submitted_at"] <= merged_at.best]
+            reviews_before_merge = reviews[
+                reviews[PullRequestReview.submitted_at.key] <= merged_at.best]
             grouped_reviews = reviews_before_merge \
-                .sort_values(["submitted_at"], ascending=True) \
-                .groupby("user_login", sort=False) \
+                .sort_values([PullRequestReview.submitted_at.key], ascending=True) \
+                .groupby(PullRequestReview.user_id.key, sort=False) \
                 .nth(0)  # the most recent review for each reviewer
-            if (grouped_reviews["state"] == ReviewResolution.CHANGES_REQUESTED).any():
+            if (grouped_reviews[PullRequestReview.state.key]
+                    == ReviewResolution.CHANGES_REQUESTED).any():
                 # merged with negative reviews
                 approved_at_value = None
             else:
                 approved_at_value = grouped_reviews[
-                    grouped_reviews["state"] == ReviewResolution.APPROVED]["submitted_at"].max()
+                    grouped_reviews[PullRequestReview.state.key]
+                    == ReviewResolution.APPROVED][PullRequestReview.submitted_at.key].max()
         else:
             approved_at_value = None
         approved_at = Fallback(approved_at_value, merged_at)
-        first_commit = Fallback(None, created_at)  # FIXME(vmarkovtsev): no commit info
-        last_commit = Fallback(None, created_at)  # FIXME(vmarkovtsev): no commit info
+        first_commit = Fallback(commits.min(PullRequestCommit.commit_date.key), created_at)
+        last_commit = Fallback(commits.max(PullRequestCommit.commit_date.key), created_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
-        closed_at = Fallback(pr["closed_at"], None)
+        closed_at = Fallback(pr[PullRequest.closed_at.key], None)
         return PullRequestTimes(
             created=created_at,
             first_commit=first_commit,
@@ -218,5 +251,5 @@ class PullRequestTimesMiner(PullRequestMiner):
 
     def __iter__(self) -> Generator[PullRequestTimes, None, None]:
         """Iterate over the update timestamps collected for individual pull requests."""
-        for pr, reviews, review_comments in super().__iter__():
-            yield self._compile(pr, reviews, review_comments)
+        for pr, reviews, review_comments, commits in super().__iter__():
+            yield self._compile(pr, reviews, review_comments, commits)
