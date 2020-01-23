@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import json
+from random import randint
 
 import pytest
 from sqlalchemy import and_, insert, select, update
@@ -260,3 +261,13 @@ async def test_check_invitation_malformed(client):
     )
     body = json.loads((await response.read()).decode("utf-8"))
     assert body == {"valid": False}
+
+
+def test_encode_decode():
+    for _ in range(1000):
+        iid = randint(0, invitation_controller.admin_backdoor + 1)
+        salt = randint(0, 1 << 16)
+        iid_back, salt_back = invitation_controller.decode_slug(invitation_controller.encode_slug(
+            iid, salt))
+        assert iid_back == iid
+        assert salt_back == salt
