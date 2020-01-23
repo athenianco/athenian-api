@@ -7,6 +7,139 @@ info:
 servers:
 - url: https://api.owl.athenian.co/v1
 paths:
+  /account/{id}:
+    get:
+      operationId: get_account
+      parameters:
+      - description: Numeric identifier of the account to list. The user must belong
+          to that account. To find out which accounts the user belongs to, see `/user`.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+          description: List the current user's account members.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not have access to this account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account was not found.
+      summary: List the current user's account members.
+      x-openapi-router-controller: athenian.api.controllers.user_controller
+      x-codegen-request-body-name: body
+  /invite/accept:
+    put:
+      operationId: accept_invitation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationLink'
+        description: Accepted invitation details.
+        required: true
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitedUser'
+          description: Details about the new user.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Something is wrong with the invitation URL.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Invitation was disabled.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Invitation was not found.
+      summary: Accept the account membership invitation and finish registration. The
+        user must be already authorized in Auth0.
+      x-openapi-router-controller: athenian.api.controllers.invitation_controller
+      x-codegen-request-body-name: body
+  /invite/check:
+    post:
+      operationId: check_invitation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationLink'
+        description: Checked invitation details.
+        required: true
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationCheckResult'
+          description: 'Result of checking an invitation URL: invitation type, whether
+            it is correctly formed and is enabled.'
+      summary: Given an invitation URL, get its type (admin or regular account member)
+        and find whether it is correctly formed and is enabled or disabled.
+      x-openapi-router-controller: athenian.api.controllers.invitation_controller
+      x-codegen-request-body-name: body
+  /invite/generate/{id}:
+    get:
+      operationId: gen_invitation
+      parameters:
+      - description: Numeric identifier of the account where to invite new users.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationLink'
+          description: The invitation link has been generated successfully.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to invite for this account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account was not found.
+      summary: Generate an account invitation link for regular users. The caller must
+        be an admin of the specified account.
+      x-openapi-router-controller: athenian.api.controllers.invitation_controller
+      x-codegen-request-body-name: body
   /metrics_line:
     post:
       operationId: calc_metrics_line
@@ -138,7 +271,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The specified repository set was not found.
-      summary: List a repository set. The user must be in the account that owns the reposet.
+      summary: List a repository set. The user must be in the account that owns the
+        reposet.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
     put:
@@ -200,55 +334,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/RepositorySetList'
           description: List the repository sets belonging to the specified account.
-        403:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The user does not have access to this account.
         404:
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: The account was not found.
+          description: The user does not belong to the specified account.
       summary: List the repository sets belonging to the current user.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
-      x-codegen-request-body-name: body
-  /account/{id}:
-    get:
-      operationId: get_account
-      parameters:
-      - description: Numeric identifier of the account to list. The user must belong
-          to that account. To find out which accounts the user belongs to, see `/user`.
-        explode: false
-        in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-        style: simple
-      responses:
-        200:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Account'
-          description: List the current user's account members.
-        403:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The user does not have access to this account.
-        404:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The account was not found.
-      summary: List the current user's account members.
-      x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
   /user:
     get:
@@ -259,7 +352,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
-          description: Show details about the current user.
+          description: Details about the current user.
       summary: Show details about the current user.
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
@@ -379,14 +472,14 @@ components:
         - github.com/athenianco/athenian-api
       properties:
         account:
-          description: Account identifier. That account will own the created
-            repository set. The user must be an admin of the account.
+          description: Account identifier. That account will own the created repository
+            set. The user must be an admin of the account.
           type: integer
         items:
           $ref: '#/components/schemas/RepositorySet'
       required:
-      - items
       - account
+      - items
       type: object
     RepositorySetListItem:
       description: Element of RepositorySetList.
@@ -396,25 +489,25 @@ components:
           type: integer
         created:
           description: Date and time of creation of the repository set.
-          format: date-item
+          format: date-time
           type: string
         updated:
           description: Date and time of the last change of the repository set.
-          format: date-item
+          format: date-time
           type: string
         items_count:
           description: Number of repositories in the set.
           type: integer
       type: object
     User:
-      description: User details. "updated" and "accounts" are populated only
-        for the current user.
+      description: User details. "updated" and "accounts" are populated only for the
+        current user.
       example:
         id: 248289761001
         name: Jane Josephine Doe
         email: janedoe@exampleco.com
         picture: http://exampleco.com/janedoe/me.jpg
-        updated: 2020-01-23T12:00:00
+        updated: 2020-01-23T12:00:00Z
       properties:
         id:
           description: Auth0 user identifier.
@@ -430,7 +523,7 @@ components:
           type: string
         updated:
           description: Date and time of the last profile update.
-          format: date-item
+          format: date-time
           type: string
         accounts:
           description: Mapping between account IDs the user is a member of and is_admin
@@ -445,6 +538,26 @@ components:
       - name
       - picture
       type: object
+    InvitedUser:
+      description: Details about the user who has accepted an invitation.
+      example:
+        user:
+          id: 248289761001
+          name: Jane Josephine Doe
+          email: janedoe@exampleco.com
+          picture: http://exampleco.com/janedoe/me.jpg
+          updated: 2020-01-23T12:00:00Z
+        account: 0
+      properties:
+        account:
+          description: Joined account ID.
+          type: integer
+        user:
+          $ref: '#/components/schemas/User'
+      required:
+      - account
+      - user
+      type: object
     Account:
       description: Account members. "updated" and "accounts" are not populated.
       example:
@@ -453,23 +566,23 @@ components:
           name: Jane Josephine Doe
           email: janedoe@exampleco.com
           picture: http://exampleco.com/janedoe/me.jpg
-          updated: 2020-01-23T12:00:00
+          updated: 2020-01-23T12:00:00Z
         - id: 248289761001
           name: Jane Josephine Doe
           email: janedoe@exampleco.com
           picture: http://exampleco.com/janedoe/me.jpg
-          updated: 2020-01-23T12:00:00
+          updated: 2020-01-23T12:00:00Z
         admins:
         - id: 248289761001
           name: Jane Josephine Doe
           email: janedoe@exampleco.com
           picture: http://exampleco.com/janedoe/me.jpg
-          updated: 2020-01-23T12:00:00
+          updated: 2020-01-23T12:00:00Z
         - id: 248289761001
           name: Jane Josephine Doe
           email: janedoe@exampleco.com
           picture: http://exampleco.com/janedoe/me.jpg
-          updated: 2020-01-23T12:00:00
+          updated: 2020-01-23T12:00:00Z
       properties:
         admins:
           items:
@@ -482,6 +595,39 @@ components:
       required:
       - admins
       - regulars
+      type: object
+    InvitationLink:
+      example:
+        url: https://app.athenian.co/i/deadf88d
+      properties:
+        url:
+          description: Invitation URL. Users are supposed to click it and become admins
+            or regular account members.
+          format: url
+          type: string
+      required:
+      - url
+      type: object
+    InvitationCheckResult:
+      example:
+        active: true
+        type: regular
+        valid: true
+      properties:
+        active:
+          description: Value indicating whether the invitation is still enabled.
+          type: boolean
+        type:
+          description: Invited user's account membership status.
+          enum:
+          - admin
+          - regular
+          type: string
+        valid:
+          description: Value indicating whether the invitation URL is correctly formed.
+          type: boolean
+      required:
+      - valid
       type: object
     ForSet:
       example:
@@ -555,12 +701,12 @@ components:
           description: User's account ID.
           type: integer
       required:
+      - account
       - date_from
       - date_to
       - for
       - granularity
       - metrics
-      - account
       type: object
     CalculatedMetric:
       example:

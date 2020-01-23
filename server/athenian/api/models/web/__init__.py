@@ -4,7 +4,8 @@ from athenian.api.models.web.calculated_metrics import CalculatedMetrics
 from athenian.api.models.web.created_identifier import CreatedIdentifier
 from athenian.api.models.web.developer_set import DeveloperSet
 from athenian.api.models.web.for_set import ForSet
-from athenian.api.models.web.generic_error import ForbiddenError, GenericError, NotFoundError
+from athenian.api.models.web.generic_error import BadRequestError, ForbiddenError, GenericError, \
+    NotFoundError
 from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.metric_id import MetricID

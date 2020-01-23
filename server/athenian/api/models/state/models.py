@@ -16,7 +16,7 @@ class Refresheable:
             """init"""
             self.current_parameters = parameters
 
-    def create_defaults(self):
+    def create_defaults(self) -> "Refresheable":
         """Call default() on all the columns."""
         ctx = self.Context(self.__dict__)
         for k, v in self.__table__.columns.items():
@@ -25,13 +25,15 @@ class Refresheable:
                 if callable(arg):
                     arg = arg(ctx)
                 setattr(self, k, arg)
+        return self
 
-    def refresh(self):
+    def refresh(self) -> "Refresheable":
         """Call onupdate() on all the columns."""
         ctx = self.Context(self.__dict__)
         for k, v in self.__table__.columns.items():
             if v.onupdate is not None:
                 setattr(self, k, v.onupdate.arg(ctx))
+        return self
 
 
 class Explodeable:
@@ -78,7 +80,7 @@ class UserAccount(Base):
     user_id = Column("user_id", String(256), primary_key=True)
     account_id = Column("account_id", Integer(), ForeignKey("accounts.id", name="fk_user_account"),
                         nullable=False, primary_key=True)
-    is_admin = Column("is_admin", Boolean(), nullable=False)
+    is_admin = Column("is_admin", Boolean(), nullable=False, default=False)
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
 
 
@@ -89,3 +91,19 @@ class Account(Base):
 
     id = Column("id", Integer(), primary_key=True)
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
+
+
+class Invitation(Base):
+    """Account invitations, each maps to a URL that invitees should click."""
+
+    __tablename__ = "invitations"
+
+    id = Column("id", Integer(), primary_key=True)
+    salt = Column("salt", Integer(), nullable=False)
+    account_id = Column("account_id", Integer(), ForeignKey(
+        "accounts.id", name="fk_invitation_account"), nullable=False)
+    is_active = Column("is_active", Boolean, nullable=False, default=True)
+    accepted = Column("accepted", Integer(), nullable=False, default=0)
+    created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
+    created_by = Column("created_by", String(256), ForeignKey(
+        "user_accounts.user_id", name="fk_invitation_user"))

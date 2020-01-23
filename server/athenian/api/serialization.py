@@ -144,7 +144,7 @@ class FriendlyJson:
         if isinstance(obj, datetime.timedelta):
             return "%ds" % obj.total_seconds()
         if isinstance(obj, datetime.datetime):
-            return obj.strftime("%Y-%m-%dT%H:%M:%S")
+            return obj.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339
         if isinstance(obj, datetime.date):
             return obj.strftime("%Y-%m-%d")
         return str(obj)

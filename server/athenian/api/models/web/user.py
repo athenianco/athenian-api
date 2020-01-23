@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 
 import databases
 import dateutil.parser
@@ -79,7 +79,8 @@ class User(Model):
             updated=dateutil.parser.parse(updated_at),
         )
 
-    async def load_accounts(self, db: databases.Database) -> "User":
+    async def load_accounts(
+            self, db: Union[databases.core.Connection, databases.Database]) -> "User":
         """
         Fetch the accounts membership from the database.
 

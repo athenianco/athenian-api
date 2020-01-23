@@ -45,6 +45,14 @@ pytest
 
 Prometheus monitoring: `http://localhost:8080/status`.
 
+Generating admin invitations:
+
+```
+ATHENIAN_INVITATION_KEY=secret python3 -m athenian.api.invite_admin sqlite://
+```
+
+Replace `sqlite://` with the actual DB endpoint and `secret` with the actual passphrase.
+
 ## Development
 
 Install the linters:
