@@ -1,9 +1,11 @@
 import asyncio
 from datetime import timedelta
+from http import HTTPStatus
 import logging
 import os
+from random import random
 import re
-from typing import Iterable, List, Sequence
+from typing import List, Optional, Sequence
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
@@ -84,6 +86,7 @@ class Auth0:
                     continue
                 transports += 1
                 orig_lost = proto.connection_lost
+                orig_eof_received = proto.eof_received
 
                 def connection_lost(exc):
                     orig_lost(exc)
@@ -92,7 +95,17 @@ class Auth0:
                     if transports == 0:
                         all_is_lost.set()
 
+                def eof_received():
+                    try:
+                        orig_eof_received()
+                    except AttributeError:
+                        # It may happen that eof_received() is called after
+                        # _app_protocol and _transport are set to None.
+                        # Jeez, asyncio sucks sometimes.
+                        pass
+
                 proto.connection_lost = connection_lost
+                proto.eof_received = eof_received
         await session.close()
         if transports > 0:
             await all_is_lost.wait()
@@ -117,16 +130,28 @@ class Auth0:
         await self._set_user(request)
         return await handler(request)
 
-    async def get_users(self, users: Iterable[str]) -> List[User]:
+    async def get_users(self, users: Sequence[str]) -> List[Optional[User]]:
         """Fetch several users by their IDs."""
         token = await self.mgmt_token()
+        assert len(users) >= 0  # we need __len__
 
-        async def get_user(user: str):
-            try:
-                resp = await self._session.get("https://%s/api/v2/users/%s" % (self._domain, user),
-                                               headers={"Authorization": "Bearer " + token})
-            except RuntimeError:
-                # our loop is closed and we are doomed
+        async def get_user(user: str) -> Optional[User]:
+            for retries in range(1, 31):
+                try:
+                    resp = await self._session.get(
+                        "https://%s/api/v2/users/%s" % (self._domain, user),
+                        headers={"Authorization": "Bearer " + token})
+                    if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
+                        self.log.warning(
+                            "Auth0 Management API rate limit hit while listing %d users, retry %d",
+                            len(users), retries)
+                        await asyncio.sleep(0.5 + random())
+                    else:
+                        break
+                except RuntimeError:
+                    # our loop is closed and we are doomed
+                    return None
+            else:
                 return None
             user = await resp.json()
             return User.from_auth0(**user)

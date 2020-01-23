@@ -39,3 +39,10 @@ async def test_get_account(client):
     assert body["admins"][0]["email"] == "vadim@athenian.co"
     assert len(body["regulars"]) == 1
     assert body["regulars"][0]["email"] == "eiso@athenian.co"
+
+
+async def test_get_users_rate_limit(app, loop):
+    users = await app._auth0.get_users(["auth0|5e1f6dfb57bc640ea390557b"] * 40)
+    await app.shutdown(app)
+    nulls = sum(u is None for u in users)
+    assert nulls == 0
