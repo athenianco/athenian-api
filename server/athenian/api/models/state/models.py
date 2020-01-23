@@ -105,5 +105,4 @@ class Invitation(Base):
     is_active = Column("is_active", Boolean, nullable=False, default=True)
     accepted = Column("accepted", Integer(), nullable=False, default=0)
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
-    created_by = Column("created_by", String(256), ForeignKey(
-        "user_accounts.user_id", name="fk_invitation_user"))
+    created_by = Column("created_by", String(256))
