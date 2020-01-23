@@ -34,6 +34,7 @@ matrix:
       script:
         - flake8
         - pytest
+        - python3 -m athenian.api.models.state sqlite://
     - if: type = pull_request
       name: Docker build smoke test
       before_install:
