@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   license:
-    name: Proprietary until Eiso decides on licensing
+    name: CC-BY-4.0
   title: Athenian Dashboard API
   version: 1.0.0
 servers:
