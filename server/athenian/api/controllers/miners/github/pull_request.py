@@ -44,7 +44,7 @@ class PullRequestMiner:
         ]
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
-        with db.connection() as conn:
+        async with db.connection() as conn:
             prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                        conn, PullRequest)
             numbers = prs[PullRequest.number.key] if len(prs) > 0 else set()
@@ -78,13 +78,13 @@ class PullRequestMiner:
             pr_repo = pr[repo_key]
             reviews = self._reviews[
                 (self._reviews[r_pull_request_number_key] == pr_number)
-                & (self._reviews[r_repo_key] == pr_repo)]
+                & (self._reviews[r_repo_key] == pr_repo)]  # noqa: W503
             review_comments = self._review_comments[
                 (self._review_comments[ce_pull_request_number_key] == pr_number)
-                & (self._review_comments[ce_repo_key] == pr_repo)]
+                & (self._review_comments[ce_repo_key] == pr_repo)]  # noqa: W503
             commits = self._commits[
                 (self._commits[ci_pull_request_number_key] == pr_number)
-                & (self._commits[ci_repo_key] == pr_repo)]
+                & (self._commits[ci_repo_key] == pr_repo)]  # noqa: W503
             yield pr, reviews, review_comments, commits
 
 
@@ -204,8 +204,8 @@ class PullRequestTimesMiner(PullRequestMiner):
             merged_at)
         last_commit_before_first_review = Fallback(
             commits[commits[PullRequestCommit.commit_date.key]
-                    <= first_comment_on_first_review.best]
-            .max(PullRequestCommit.commit_date.key),
+                    <= first_comment_on_first_review.best]  # noqa: W503
+            [PullRequestCommit.commit_date.key].max(),
             first_comment_on_first_review)
         first_review_request = Fallback(None, Fallback.min(
             Fallback.max(created_at, last_commit_before_first_review),
@@ -218,18 +218,18 @@ class PullRequestTimesMiner(PullRequestMiner):
                 .groupby(PullRequestReview.user_id.key, sort=False) \
                 .nth(0)  # the most recent review for each reviewer
             if (grouped_reviews[PullRequestReview.state.key]
-                    == ReviewResolution.CHANGES_REQUESTED).any():
+                    == ReviewResolution.CHANGES_REQUESTED).any():  # noqa: W503
                 # merged with negative reviews
                 approved_at_value = None
             else:
                 approved_at_value = grouped_reviews[
-                    grouped_reviews[PullRequestReview.state.key]
-                    == ReviewResolution.APPROVED][PullRequestReview.submitted_at.key].max()
+                    grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED
+                ][PullRequestReview.submitted_at.key].max()
         else:
             approved_at_value = None
         approved_at = Fallback(approved_at_value, merged_at)
-        first_commit = Fallback(commits.min(PullRequestCommit.commit_date.key), created_at)
-        last_commit = Fallback(commits.max(PullRequestCommit.commit_date.key), created_at)
+        first_commit = Fallback(commits[PullRequestCommit.commit_date.key].min(), created_at)
+        last_commit = Fallback(commits[PullRequestCommit.commit_date.key].max(), created_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         closed_at = Fallback(pr[PullRequest.closed_at.key], None)
         return PullRequestTimes(

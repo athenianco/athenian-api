@@ -1,5 +1,5 @@
-from sqlalchemy import ARRAY, BigInteger, Boolean, Column, DateTime, Integer, String, Text, \
-    TIMESTAMP, ForeignKey
+from sqlalchemy import ARRAY, BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, Text, \
+    TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
