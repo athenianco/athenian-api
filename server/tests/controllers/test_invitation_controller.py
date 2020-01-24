@@ -265,9 +265,13 @@ async def test_check_invitation_malformed(client):
 
 def test_encode_decode():
     for _ in range(1000):
-        iid = randint(0, invitation_controller.admin_backdoor + 1)
-        salt = randint(0, 1 << 16)
-        iid_back, salt_back = invitation_controller.decode_slug(invitation_controller.encode_slug(
-            iid, salt))
+        iid = randint(0, invitation_controller.admin_backdoor)
+        salt = randint(0, (1 << 16) - 1)
+        try:
+            iid_back, salt_back = invitation_controller.decode_slug(invitation_controller.encode_slug(
+                iid, salt))
+        except Exception as e:
+            print(iid, salt)
+            raise e from None
         assert iid_back == iid
         assert salt_back == salt
