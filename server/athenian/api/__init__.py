@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+from http import HTTPStatus
 import logging
 import os
 import sys
@@ -16,9 +17,11 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 from athenian.api.auth import Auth0
 from athenian.api.controllers import invitation_controller
+from athenian.api.controllers.response import ResponseError
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.metadata import __description__, __package__, __version__
 from athenian.api.models.state import check_schema_version
+from athenian.api.models.web import GenericError
 from athenian.api.serialization import FriendlyJson
 from athenian.api.slogging import add_logging_args
 
@@ -80,15 +83,21 @@ class AthenianApp(connexion.AioHttpApp):
         options = {"swagger_ui": ui}
         rootdir = os.path.dirname(__file__)
         specification_dir = os.path.join(rootdir, "openapi")
-        self._auth0_cls = auth0_cls
-        self._auth0 = None
         super().__init__(__package__, specification_dir=specification_dir, options=options)
         if invitation_controller.ikey is None:
             raise EnvironmentError("ATHENIAN_INVITATION_KEY environment variable must be defined")
+        auth0_cls.ensure_static_configuration()
+        self._auth0 = auth0_cls(whitelist=[
+            r"/v1/openapi.json$",
+            r"/v1/ui(/|$)",
+            r"/v1/invite/check/?$",
+            r"/status/?$",
+        ])
         api = self.add_api(
             "openapi.yaml",
             arguments={"title": __description__},
             pass_context_arg_name="request",
+            options={"middlewares": [self.with_db, self._auth0.middleware]},
         )
         setup_status(self.app)
         self._enable_cors()
@@ -131,17 +140,6 @@ class AthenianApp(connexion.AioHttpApp):
         await self.mdb.disconnect()
         await self.sdb.disconnect()
 
-    def create_app(self) -> aiohttp.web.Application:
-        """Override the base class method to inject middleware."""
-        self._auth0_cls.ensure_static_configuration()
-        self._auth0 = self._auth0_cls(whitelist=[
-            r"/v1/openapi.json$",
-            r"/v1/ui(/|$)",
-            r"/v1/invite/check/?$",
-            r"/status/?$",
-        ])
-        return aiohttp.web.Application(middlewares=[self.with_db, self._auth0.middleware])
-
     def _enable_cors(self) -> None:
         cors = aiohttp_cors.setup(self.app, defaults={
             "*": aiohttp_cors.ResourceOptions(
@@ -167,7 +165,15 @@ class AthenianApp(connexion.AioHttpApp):
             del self._sdb_connected_event
         request.mdb = self.mdb
         request.sdb = self.sdb
-        return await handler(request)
+        try:
+            return await handler(request)
+        except ConnectionError as e:
+            return ResponseError(GenericError(
+                type="/errors/InternalConnectivityError",
+                title=HTTPStatus.SERVICE_UNAVAILABLE.phrase,
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
+                detail="%s: %s" % (type(e).__name__, e),
+            )).response
 
 
 def setup_sentry():
