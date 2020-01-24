@@ -132,9 +132,11 @@ class FriendlyJson:
     """Allows to serialize datetime.datetime and datetime.date to JSON."""
 
     @classmethod
-    def dumps(cls, data, **kwargs):
+    def dumps(klass, data, **kwargs):
         """Wrap json.dumps to str() unsupported objects."""
-        return json.dumps(data, default=cls.serialize, **kwargs)
+        if "cls" in kwargs:
+            del kwargs["cls"]
+        return json.dumps(data, default=klass.serialize, **kwargs)
 
     loads = staticmethod(json.loads)
 
@@ -144,6 +146,8 @@ class FriendlyJson:
         if isinstance(obj, datetime.timedelta):
             return "%ds" % obj.total_seconds()
         if isinstance(obj, datetime.datetime):
+            if obj.tzinfo:
+                obj = obj.astimezone(datetime.timezone.utc)
             return obj.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339
         if isinstance(obj, datetime.date):
             return obj.strftime("%Y-%m-%d")
