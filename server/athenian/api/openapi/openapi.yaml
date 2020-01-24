@@ -475,8 +475,6 @@ components:
         properties:
           repositories:
             $ref: '#/components/schemas/RepositorySet'
-        required:
-        - repositories
     MetricID:
       description: Currently supported metric types.
       enum:

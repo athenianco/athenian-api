@@ -1,6 +1,6 @@
 # coding: utf-8
 from http import HTTPStatus
-from typing import List
+from typing import List, Optional
 
 from athenian.api.models.web.generic_error import GenericError
 from athenian.api.models.web.repository_set import RepositorySet
@@ -11,9 +11,9 @@ class NoSourceDataError(GenericError):
 
     def __init__(
         self,
-        repositories: List[str],
+        repositories: Optional[List[str]] = None,
         title: str = HTTPStatus.UNPROCESSABLE_ENTITY.phrase,
-        status: int = None,
+        status: int = HTTPStatus.UNPROCESSABLE_ENTITY,
         detail: str = None,
         instance: str = None,
     ):
@@ -38,22 +38,17 @@ class NoSourceDataError(GenericError):
         self._repositories = repositories
 
     @property
-    def repositories(self):
+    def repositories(self) -> Optional[List[str]]:
         """Gets the repositories of this NoSourceDataError.
 
         :return: The repositories of this NoSourceDataError.
-        :rtype: RepositorySet
         """
         return self._repositories
 
     @repositories.setter
-    def repositories(self, repositories):
+    def repositories(self, repositories: Optional[List[str]]):
         """Sets the repositories of this NoSourceDataError.
 
         :param repositories: The repositories of this NoSourceDataError.
-        :type repositories: RepositorySet
         """
-        if repositories is None:
-            raise ValueError("Invalid value for `repositories`, must not be `None`")
-
         self._repositories = repositories
