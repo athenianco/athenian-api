@@ -34,7 +34,7 @@ async def test_delete_repository_set_bad_account(client, reposet, headers):
         method="DELETE", path="/v1/reposet/%d" % reposet, headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
+    assert response.status == (403 if reposet == 2 else 404), "Response body is : " + body
 
 
 @pytest.mark.parametrize("reposet,checked", [(1, "github.com/src-d/go-git"),
@@ -66,7 +66,7 @@ async def test_get_repository_set_bad_account(client, headers):
         method="GET", path="/v1/reposet/3", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
+    assert response.status == 404, "Response body is : " + body
 
 
 async def test_set_repository_set(client, headers):
@@ -95,7 +95,7 @@ async def test_set_repository_set_bad_account(client, reposet, headers):
         method="PUT", path="/v1/reposet/%d" % reposet, headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
+    assert response.status == (403 if reposet == 2 else 404), "Response body is : " + body
 
 
 async def test_set_repository_set_access_denied(client, headers):
@@ -125,7 +125,7 @@ async def test_create_repository_set_bad_account(client, account, headers):
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
+    assert response.status == (404 if account != 2 else 403), "Response body is : " + body
 
 
 async def test_create_repository_set_access_denied(client, headers):
@@ -156,4 +156,4 @@ async def test_list_repository_sets_bad_account(client, account, headers):
     response = await client.request(
         method="GET", path="/v1/reposets/%d" % account, headers=headers, json={},
     )
-    assert response.status == 403
+    assert response.status == 404

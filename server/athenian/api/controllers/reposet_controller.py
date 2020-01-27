@@ -7,10 +7,9 @@ import databases.core
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api import FriendlyJson
-from athenian.api.controllers.account import get_installation_id
+from athenian.api.controllers.account import get_installation_id, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import fetch_reposet
-from athenian.api.controllers.user import is_admin
 from athenian.api.metadata import __package__
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
@@ -33,7 +32,7 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
     account = body.account
     async with request.sdb.connection() as sdb_conn:
         try:
-            adm = await is_admin(sdb_conn, user, account)
+            adm = await get_user_account_status(user, account, sdb_conn, request.cache)
         except ResponseError as e:
             return e.response
         if not adm:
@@ -55,7 +54,7 @@ async def delete_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     :type id: int
     """
     try:
-        _, is_admin = await fetch_reposet(id, [], request.sdb, request.uid)
+        _, is_admin = await fetch_reposet(id, [], request.uid, request.sdb, request.cache)
     except ResponseError as e:
         return e.response
     if not is_admin:
@@ -72,7 +71,8 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     :type id: int
     """
     try:
-        rs, _ = await fetch_reposet(id, [RepositorySet.items], request.sdb, request.uid)
+        rs, _ = await fetch_reposet(
+            id, [RepositorySet.items], request.uid, request.sdb, request.cache)
     except ResponseError as e:
         return e.response
     # "items" collides with dict.items() so we have to access the list via []
@@ -118,7 +118,8 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
     """
     async with request.sdb.connection() as sdb_conn:
         try:
-            rs, is_admin = await fetch_reposet(id, [RepositorySet], sdb_conn, request.uid)
+            rs, is_admin = await fetch_reposet(
+                id, [RepositorySet], request.uid, sdb_conn, request.cache)
         except ResponseError as e:
             return e.response
         if not is_admin:
@@ -193,7 +194,7 @@ async def load_account_reposets(account: int,
 async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current user's repository sets."""
     try:
-        await is_admin(request.sdb, request.uid, id)
+        await get_user_account_status(request.uid, id, request.sdb, request.cache)
     except ResponseError as e:
         return e.response
     async with request.sdb.connection() as sdb_conn:

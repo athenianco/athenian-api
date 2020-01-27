@@ -1,16 +1,17 @@
 openapi: 3.0.3
 info:
-  description: "Server version: {{ server_version }} built on {{ build_date }} @ [{{ commit }}](https://github.com/athenianco/athenian-api/commit/{{ commit }})"
   contact:
-    name: the admins by email
     email: admin@athenian.co
+    name: the admins by email
+  description: 'Server version: {{ server_version }} built on {{ build_date }} @
+    [{{ commit }}](https://github.com/athenianco/athenian-api/commit/{{ commit }})'
   license:
     name: CC-BY-4.0
-  title: "{{ title }}"
+  title: '{{ title }}'
   version: 1.0.3
 servers:
-- url: "{{ server_url }}/v1"
-  description: "{{ server_description }} - {{ server_url }}"
+- description: '{{ server_description }} - {{ server_url }}'
+  url: '{{ server_url }}/v1'
 paths:
   /account/{id}:
     get:
@@ -343,6 +344,47 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.invitation_controller
       x-codegen-request-body-name: body
+  /invite/progress/{id}:
+    get:
+      operationId: eval_invitation_progress
+      parameters:
+      - description: Numeric identifier of the account which the user has joined.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstallationProgress'
+          description: Status of installing Athenian for the current user and the
+            given account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account does not exist or the user is not its member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The installation has not started yet.
+      security:
+      - bearerAuth: []
+      summary: Return the current Athenian GitHub app installation progress.
+      tags:
+      - registration
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.invitation_controller
   /metrics/code_bypassing_prs:
     post:
       operationId: calc_code_bypassing_prs
@@ -379,10 +421,10 @@ paths:
       - bearerAuth: []
       summary: Measure the amount of code that was pushed outside of pull requests.
       tags:
-        - metrics
-        # {% if False %}
-        - default
-      # {% endif %}
+      - metrics
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.metrics_controller
       x-codegen-request-body-name: body
   /metrics/prs:
@@ -709,10 +751,10 @@ components:
     NoSourceDataError:
       allOf:
       - $ref: '#/components/schemas/GenericError'
-      - type: object
-        properties:
+      - properties:
           repositories:
             $ref: '#/components/schemas/RepositorySet'
+        type: object
     MetricID:
       description: Currently supported metric types.
       enum:
@@ -947,6 +989,76 @@ components:
       required:
       - valid
       type: object
+    InstallationProgress:
+      description: Data fetching progress of the Athenian metadata retrieval app.
+      example:
+        tables:
+        - fetched: 50
+          name: Commit
+          total: 100
+        - fetched: 0
+          name: PullRequest
+          total: 20
+        finished_date: 2020-01-23T04:56:07Z
+        started_date: 2020-01-23T06:56:07Z
+        owner: vmarkovtsev
+        repositories: 30
+      properties:
+        started_date:
+          description: Date and time when the historical data collection began.
+          format: date-time
+          type: string
+        finished_date:
+          description: Date and time when the historical data collection ended.
+          format: date-time
+          nullable: true
+          type: string
+        owner:
+          description: Native user ID of the person who installed the metadata retrieval
+            app.
+          type: string
+        repositories:
+          description: Number of discovered repositories.
+          type: integer
+        tables:
+          example:
+          - fetched: 50
+            name: Commit
+            total: 100
+          - fetched: 0
+            name: PullRequest
+          items:
+            $ref: '#/components/schemas/TableFetchingProgress'
+          type: array
+      required:
+      - finished_date
+      - owner
+      - repositories
+      - started_date
+      - tables
+      type: object
+    TableFetchingProgress:
+      description: Used in InstallationProgress.tables to indicate how much data has
+        been loaded in each DB table.
+      example:
+        fetched: 50
+        name: Commit
+        total: 100
+      properties:
+        fetched:
+          description: How many records have been stored in the DB table so far.
+          type: integer
+        name:
+          description: DB table identifier.
+          type: string
+        total:
+          description: How many records the DB table is expected to have.
+          type: integer
+      required:
+      - fetched
+      - name
+      - total
+      type: object
     ForSet:
       example:
         repositories:
@@ -1025,8 +1137,8 @@ components:
       - metrics
       type: object
     CalculatedMetric:
-      description: Series of calculated metrics for a specific set of
-        repositories and developers.
+      description: Series of calculated metrics for a specific set of repositories
+        and developers.
       example:
         values:
         - date: 2000-01-23
@@ -1440,8 +1552,8 @@ components:
           description: Number of commits in this PR.
           type: integer
         review_requested:
-          description: Value indicating whether somebody requested a review
-            of this PR.
+          description: Value indicating whether somebody requested a review of this
+            PR.
           type: boolean
         review_comments:
           description: Number of review comments this PR received.
@@ -1729,8 +1841,8 @@ components:
       - size_removed
       type: object
     CommitSignature:
-      description: Git commit signature. It is guaranteed that `login` and/or
-        `name`&`email` are present.
+      description: Git commit signature. It is guaranteed that `login` and/or `name`&`email`
+        are present.
       example:
         login: github.com/vmarkovtsev
         name: Vadim Markovtsev
@@ -1807,8 +1919,8 @@ components:
         $ref: '#/components/schemas/CodeBypassingPRsMeasurement'
       type: array
     CodeBypassingPRsMeasurement:
-      description: Statistics about code pushed outside of pull requests in a
-        certain time interval.
+      description: Statistics about code pushed outside of pull requests in a certain
+        time interval.
       example:
         date: 2020-01-23
         bypassed_commits: 1

@@ -73,6 +73,15 @@ class InstallationRepo(Base):
     updated_at = Column(TIMESTAMP, nullable=False)
 
 
+class FetchProgress(Base, UpdatedMixin):
+    __tablename__ = "github_fetch_progress"
+
+    event_id = Column(Text, primary_key=True)
+    node_type = Column(Text, primary_key=True)
+    nodes_processed = Column(BigInteger, default=0)
+    nodes_total = Column(BigInteger, nullable=False)
+
+
 class IssueComment(Base,
                    BodyMixin,
                    DeliveryMixin,

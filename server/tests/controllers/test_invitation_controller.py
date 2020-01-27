@@ -222,3 +222,32 @@ def test_encode_decode():
             raise e from None
         assert iid_back == iid
         assert salt_back == salt
+
+
+async def test_progress_200(client, headers, app, cache):
+    app._cache = cache
+    true_body = {
+        "owner": "676724",
+        "repositories": 19,
+        "tables": [
+            {"fetched": 30, "name": "Commit", "total": 50},
+        ],
+    }
+    for _ in range(2):
+        response = await client.request(
+            method="GET", path="/v1/invite/progress/1", headers=headers, json={},
+        )
+        assert response.status == 200
+        body = json.loads((await response.read()).decode("utf-8"))
+        sd = body["started_date"]
+        assert sd
+        del body["started_date"]
+        assert body == true_body
+
+
+@pytest.mark.parametrize("account, code", [(2, 422), (3, 404)])
+async def test_progress_errors(client, headers, account, code):
+    response = await client.request(
+        method="GET", path="/v1/invite/progress/%d" % account, headers=headers, json={},
+    )
+    assert response.status == code

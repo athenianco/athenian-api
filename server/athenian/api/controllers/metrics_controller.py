@@ -112,7 +112,8 @@ async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, 
             devs = []
             service = None
             for repo in chain.from_iterable(await asyncio.gather(*[
-                    resolve_reposet(r, ".for[%d].repositories[%d]" % (i, j), sdb, user, account)
+                    resolve_reposet(r, ".for[%d].repositories[%d]" % (i, j), user, account, sdb,
+                                    request.cache)
                     for j, r in enumerate(for_set.repositories)])):
                 for key, prefix in PREFIXES.items():
                     if repo.startswith(prefix):
