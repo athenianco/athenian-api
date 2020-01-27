@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import Dict
 
+import databases
 
 try:
     import pytest
@@ -120,3 +121,12 @@ def state_db() -> str:
     finally:
         session.close()
     return conn_str
+
+
+@pytest.fixture(scope="function")
+async def mdb(metadata_db, loop):
+    metadata_db_path = db_dir / "mdb.sqlite"
+    conn_str = "sqlite:///%s" % metadata_db_path
+    db = databases.Database(conn_str)
+    await db.connect()
+    return db

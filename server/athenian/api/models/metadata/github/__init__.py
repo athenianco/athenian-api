@@ -163,7 +163,7 @@ class PullRequestCommit(Base,
     pull_request_number = Column("pull_request_number", BigInteger)
     author_login = Column("author_login", Text)
     author_date = Column("author_date", TIMESTAMP(True))
-    commiter_login = Column("commiter_login", TIMESTAMP(True))
+    commiter_login = Column("commiter_login", Text)
     commit_date = Column("commit_date", TIMESTAMP(True))
     sha = Column("sha", Text, primary_key=True)
     additions = Column("additions", Integer)
