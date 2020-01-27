@@ -14,8 +14,8 @@ class WorkInProgressTimeCalculator(PullRequestMedianMetricCalculator[timedelta])
 
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.first_review_request.best is not None:
-            return times.first_review_request.best - times.work_begins.best
+        if times.first_review_request:
+            return times.first_review_request.best - times.work_began.best
         return None
 
 
@@ -27,8 +27,7 @@ class WaitFirstReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]
 
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.first_comment_on_first_review.best is not None and \
-                times.first_review_request.best is not None:
+        if times.first_comment_on_first_review and times.first_review_request:
             return times.first_comment_on_first_review.best - times.first_review_request.best
         return None
 
@@ -41,7 +40,7 @@ class ReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
 
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.first_review_request.best is not None and times.approved.best is not None:
+        if times.first_review_request and times.approved:
             return times.approved.best - times.first_review_request.best
         return None
 
@@ -81,5 +80,5 @@ class LeadTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
         if times.released.value is not None:
-            return times.released.value - times.work_begins.best
+            return times.released.value - times.work_began.best
         return None

@@ -123,6 +123,10 @@ class Fallback(Generic[T]):
         """repr()."""
         return "Fallback(%r, %r)" % (self.value, self.best)
 
+    def __bool__(self) -> bool:
+        """Return the value indicating whether there is any value, either primary or backup."""
+        return self.best is not None
+
     @property
     def value(self) -> Optional[T]:
         """The primary value."""  # noqa: D401
@@ -154,13 +158,12 @@ DT = Union[pd.Timestamp, date, None]
 class PullRequestTimes:
     """Various PR update timestamps."""
 
-    created: Fallback[DT]                                # PR_C
-    first_commit: Fallback[DT]                           # PR_CC
-
     @property
-    def work_begins(self) -> Fallback[DT]:               # PR_B   noqa: D102
+    def work_began(self) -> Fallback[DT]:  # PR_B   noqa: D102
         return Fallback.min(self.created, self.first_commit)
 
+    created: Fallback[DT]                                # PR_C
+    first_commit: Fallback[DT]                           # PR_CC
     last_commit_before_first_review: Fallback[DT]        # PR_CFR
     last_commit: Fallback[DT]                            # PR_L
     merged: Fallback[DT]                                 # PR_M
@@ -198,15 +201,23 @@ class PullRequestTimesMiner(PullRequestMiner):
                  commits: pd.DataFrame) -> PullRequestTimes:
         created_at = Fallback(pr[PullRequest.created_at.key], None)
         merged_at = Fallback(pr[PullRequest.merged_at.key], None)
+        first_commit = Fallback(commits[PullRequestCommit.commit_date.key].min(), None)
+        last_commit = Fallback(commits[PullRequestCommit.commit_date.key].max(), None)
         first_comment_on_first_review = Fallback(
             min(review_comments[PullRequestComment.created_at.key].min(),
                 reviews[PullRequestReview.submitted_at.key].min()),
             merged_at)
-        last_commit_before_first_review = Fallback(
-            commits[commits[PullRequestCommit.commit_date.key]
-                    <= first_comment_on_first_review.best]  # noqa: W503
-            [PullRequestCommit.commit_date.key].max(),
-            first_comment_on_first_review)
+        if first_comment_on_first_review:
+            last_commit_before_first_review = Fallback(
+                commits[commits[PullRequestCommit.commit_date.key]
+                        <= first_comment_on_first_review.best]  # noqa: W503
+                [PullRequestCommit.commit_date.key].max(),
+                first_comment_on_first_review)
+            # force pushes that were lost
+            first_commit = Fallback.min(first_commit, last_commit_before_first_review)
+            last_commit = Fallback.max(last_commit, first_commit)
+        else:
+            last_commit_before_first_review = last_commit
         first_review_request = Fallback(None, Fallback.min(
             Fallback.max(created_at, last_commit_before_first_review),
             first_comment_on_first_review))  # FIXME(vmarkovtsev): no review request info
@@ -228,10 +239,11 @@ class PullRequestTimesMiner(PullRequestMiner):
         else:
             approved_at_value = None
         approved_at = Fallback(approved_at_value, merged_at)
-        first_commit = Fallback(commits[PullRequestCommit.commit_date.key].min(), created_at)
-        last_commit = Fallback(commits[PullRequestCommit.commit_date.key].max(), created_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         closed_at = Fallback(pr[PullRequest.closed_at.key], None)
+        finalized_at = Fallback.min(
+            Fallback.max(approved_at, last_passed_checks, last_commit, created_at),
+            closed_at)
         return PullRequestTimes(
             created=created_at,
             first_commit=first_commit,
@@ -243,8 +255,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             approved=approved_at,
             first_passed_checks=Fallback(None, None),  # FIXME(vmarkovtsev): no CI info
             last_passed_checks=last_passed_checks,
-            finalized=Fallback.min(Fallback.max(approved_at, last_passed_checks, last_commit),
-                                   closed_at),
+            finalized=finalized_at,
             released=Fallback(None, None),  # FIXME(vmarkovtsev): no releases
             closed=closed_at,
         ).truncate(self.max_time)
