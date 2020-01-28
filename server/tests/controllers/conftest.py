@@ -9,8 +9,11 @@ try:
 except ImportError:
     class pytest:
         @staticmethod
-        def fixture(fn):
-            return fn
+        def fixture(*args, **kwargs):
+            if not kwargs:
+                return args[0]
+            return lambda fn: fn
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
