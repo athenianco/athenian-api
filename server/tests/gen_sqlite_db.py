@@ -1,11 +1,39 @@
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 try:
     import pytest
-    pytest.fixture = lambda fn: fn
+
+    def fixture(*args, **kwargs):
+        if not kwargs:
+            return args[0]
+        return lambda fn: fn
+
+
+    pytest.fixture = fixture
 except ImportError:
     pass
 
-from tests.controllers.conftest import metadata_db, state_db
+from athenian.api.models.state.__main__ import main as migrate_state
+from tests.controllers.conftest import db_dir, metadata_db
+from tests.sample_db_data import fill_state_session
+
+
+def main():
+    metadata_db()
+    state_db_path = db_dir / "sdb.sqlite"
+    if state_db_path.exists():
+        state_db_path.unlink()
+    conn_str = "sqlite:///%s" % state_db_path
+    migrate_state(conn_str, exec=False)
+    engine = create_engine(conn_str)
+    session = sessionmaker(bind=engine)()
+    try:
+        fill_state_session(session)
+        session.commit()
+    finally:
+        session.close()
+
 
 if __name__ == "__main__":
-    metadata_db()
-    state_db()
+    exit(main())

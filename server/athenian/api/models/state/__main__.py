@@ -1,10 +1,11 @@
 import os
+import subprocess
 import sys
 
 import jinja2
 
 
-def main():
+def main(url=None, exec=True):
     """
     Initialize the server state DB.
 
@@ -13,7 +14,6 @@ def main():
 
     As a bonus, you obtain a functional Alembic INI config for any `alembic` commands.
     """
-    url = sys.argv[1]
     root = os.path.dirname(__file__)
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(root))
     t = env.get_template("alembic.ini.jinja2")
@@ -23,8 +23,11 @@ def main():
     args = ["alembic", "alembic", "upgrade", "head"]
     if os.getenv("OFFLINE"):
         args.append("--sql")
-    os.execlp(*args)
+    if exec:
+        os.execlp(*args)
+    else:
+        subprocess.run(" ".join(args[1:]), check=True, shell=True)
 
 
 if __name__ == "__main__":
-    exit(main())
+    exit(main(sys.argv[1]))
