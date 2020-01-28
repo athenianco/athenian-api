@@ -101,6 +101,18 @@ make run-api
 
 And open http://localhost:8080/v1/ui
 
+If you want to run your own API image, use instead:
+```
+# Run the API container
+IMAGE=your_api_image:tag make run-api
+```
+
+You can clean API data, created from `make run-api`, by running:
+```
+make clean
+```
+
+
 
 ## Configure Sentry
 
