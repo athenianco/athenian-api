@@ -9,7 +9,6 @@ try:
             return args[0]
         return lambda fn: fn
 
-
     pytest.fixture = fixture
 except ImportError:
     pass
