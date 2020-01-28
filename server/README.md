@@ -107,7 +107,7 @@ If you want to run your own API image, use instead:
 IMAGE=your_api_image:tag make run-api
 ```
 
-You can clean API data, created from `make run-api`, by running:
+You can erase the API data fixtures created by `make run-api` with:
 ```
 make clean
 ```
