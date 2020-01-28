@@ -1,9 +1,9 @@
 from aiohttp import web
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from athenian.api.controllers.response import response, ResponseError
-from athenian.api.models.state.models import UserAccount
-from athenian.api.models.web import ForbiddenError
+from athenian.api.models.state.models import God, UserAccount
+from athenian.api.models.web import ForbiddenError, NotFoundError
 from athenian.api.models.web.account import Account
 from athenian.api.request import AthenianWebRequest
 
@@ -33,3 +33,23 @@ async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
     account = Account(regulars=[users[k] for k in regulars if k in users],
                       admins=[users[k] for k in admins if k in users])
     return response(account)
+
+
+async def become_user(request: AthenianWebRequest, id: str) -> web.Response:
+    """God mode ability to turn into any user. The current user must be marked internally as \
+    a super admin."""
+    user_id = getattr(request.user, "god_id", None)
+    if user_id is None:
+        return ResponseError(ForbiddenError(
+            detail="User %s is not allowed to mutate" % user_id)).response
+    async with request.sdb.connection() as conn:
+        god = await conn.fetch_one(select([God]).where(God.user_id == user_id))
+        if id and (await conn.fetch_one(
+                select([UserAccount]).where(UserAccount.user_id == id))) is None:
+            return ResponseError(NotFoundError(detail="User %s does not exist" % id)).response
+        god = God(**god).refresh()
+        god.mapped_id = id or None
+        await conn.execute(update([God]).where(God.user_id == user_id).values(god.explode()))
+    user = (await request.auth.get_users([id]))[0]
+    await user.load_accounts(request.sdb)
+    return response(user)

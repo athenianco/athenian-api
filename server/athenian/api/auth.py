@@ -13,7 +13,9 @@ from connexion.exceptions import OAuthProblem
 from connexion.lifecycle import ConnexionRequest
 from connexion.operations import secure
 from jose import jwt
+from sqlalchemy import select
 
+from athenian.api.models.state.models import God
 from athenian.api.models.web.user import User
 
 
@@ -340,3 +342,11 @@ class Auth0:
             raise OAuthProblem(description="invalid claims, please check the audience and issuer")
         except jwt.JWTError:
             raise OAuthProblem(description="Unable to parse the authentication token.")
+
+        god = await request.sdb.fetch_one(select([God.mapped_id]).where(God.user_id == user.id))
+        if god is not None:
+            mapped_id = god[God.mapped_id.key]
+            if mapped_id is not None:
+                user.god_id = user.id
+                user.id = (await self.get_users([mapped_id]))[0]
+                self.log.info("God mode: %s became %s", user.god_id, user.id)
