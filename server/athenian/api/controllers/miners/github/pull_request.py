@@ -162,12 +162,13 @@ class PullRequestTimes:
     created: Fallback[DT]                                # PR_C
     first_commit: Fallback[DT]                           # PR_CC
     last_commit_before_first_review: Fallback[DT]        # PR_CFR
-    last_commit: Fallback[DT]                            # PR_L
+    last_commit: Fallback[DT]                            # PR_LC
     merged: Fallback[DT]                                 # PR_M
     closed: Fallback[DT]                                 # PR_CL
     first_comment_on_first_review: Fallback[DT]          # PR_W
     first_review_request: Fallback[DT]                   # PR_S
     approved: Fallback[DT]                               # PR_A
+    last_review: Fallback[DT]                            # PR_LR
     first_passed_checks: Fallback[DT]                    # PR_VS
     last_passed_checks: Fallback[DT]                     # PR_VF
     finalized: Fallback[DT]                              # PR_F
@@ -198,6 +199,7 @@ class PullRequestTimesMiner(PullRequestMiner):
                  commits: pd.DataFrame) -> PullRequestTimes:
         created_at = Fallback(pr[PullRequest.created_at.key], None)
         merged_at = Fallback(pr[PullRequest.merged_at.key], None)
+        closed_at = Fallback(pr[PullRequest.closed_at.key], None)
         first_commit = Fallback(commits[PullRequestCommit.commit_date.key].min(), None)
         last_commit = Fallback(commits[PullRequestCommit.commit_date.key].max(), None)
         first_comment_on_first_review = Fallback(
@@ -218,6 +220,13 @@ class PullRequestTimesMiner(PullRequestMiner):
         first_review_request = Fallback(None, Fallback.min(
             Fallback.max(created_at, last_commit_before_first_review),
             first_comment_on_first_review))  # FIXME(vmarkovtsev): no review request info
+        if closed_at:
+            last_review = Fallback(
+                reviews[reviews[PullRequestReview.submitted_at.key] <= closed_at.best][
+                    PullRequestReview.submitted_at.key].max(),
+                None)
+        else:
+            last_review = Fallback(reviews[PullRequestReview.submitted_at.key].max(), None)
         if merged_at.value is not None:
             reviews_before_merge = reviews[
                 reviews[PullRequestReview.submitted_at.key] <= merged_at.best]
@@ -237,7 +246,6 @@ class PullRequestTimesMiner(PullRequestMiner):
             approved_at_value = None
         approved_at = Fallback(approved_at_value, merged_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
-        closed_at = Fallback(pr[PullRequest.closed_at.key], None)
         finalized_at = Fallback.min(
             Fallback.max(approved_at, last_passed_checks, last_commit, created_at),
             closed_at)
@@ -249,6 +257,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             merged=merged_at,
             first_comment_on_first_review=first_comment_on_first_review,
             first_review_request=first_review_request,
+            last_review=last_review,
             approved=approved_at,
             first_passed_checks=Fallback(None, None),  # FIXME(vmarkovtsev): no CI info
             last_passed_checks=last_passed_checks,

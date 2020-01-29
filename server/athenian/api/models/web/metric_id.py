@@ -14,13 +14,17 @@ class MetricID(Model):
     allowed enum values
     """
     PR_WIP_TIME = "pr-wip-time"
-    PR_WAIT_FIRST_REVIEW_TIME = "pr-wait-first-review-time"
     PR_REVIEW_TIME = "pr-review-time"
     PR_MERGING_TIME = "pr-merging-time"
     PR_RELEASE_TIME = "pr-release-time"
     PR_LEAD_TIME = "pr-lead-time"
-    ALL = {PR_WIP_TIME, PR_WAIT_FIRST_REVIEW_TIME, PR_REVIEW_TIME, PR_MERGING_TIME,
-           PR_RELEASE_TIME, PR_LEAD_TIME}
+    ALL = {
+        PR_WIP_TIME,
+        PR_REVIEW_TIME,
+        PR_MERGING_TIME,
+        PR_RELEASE_TIME,
+        PR_LEAD_TIME,
+    }
 
     def __init__(self):
         """MetricID - a model defined in OpenAPI"""
