@@ -563,14 +563,18 @@ components:
       description: User details. "updated" and "accounts" are populated only for the
         current user.
       example:
-        id: 248289761001
-        name: Jane Josephine Doe
-        email: janedoe@exampleco.com
-        picture: http://exampleco.com/janedoe/me.jpg
+        id: github|60340680
+        native_id: 60340680
+        name: Groundskeeper Willie
+        email: bot@athenian.co
+        picture: https://avatars0.githubusercontent.com/u/60340680?v=4
         updated: 2020-01-23T12:00:00Z
       properties:
         id:
           description: Auth0 user identifier.
+          type: string
+        native_id:
+          description: Auth backend user identifier.
           type: string
         name:
           description: Full name of the user.
@@ -596,16 +600,18 @@ components:
       - email
       - id
       - name
+      - native_id
       - picture
       type: object
     InvitedUser:
       description: Details about the user who has accepted an invitation.
       example:
         user:
-          id: 248289761001
-          name: Jane Josephine Doe
-          email: janedoe@exampleco.com
-          picture: http://exampleco.com/janedoe/me.jpg
+          id: github|60340680
+          native_id: 60340680
+          name: Groundskeeper Willie
+          email: bot@athenian.co
+          picture: https://avatars0.githubusercontent.com/u/60340680?v=4
           updated: 2020-01-23T12:00:00Z
         account: 0
       properties:
