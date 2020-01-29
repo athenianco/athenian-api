@@ -75,7 +75,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: Requested user does not exist.
-      summary: "God mode" ability to turn into any user. The current user must
+      summary: \"God mode\" ability to turn into any user. The current user must
         be marked internally as a super admin.
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body

@@ -347,6 +347,7 @@ class Auth0:
         if god is not None:
             mapped_id = god[God.mapped_id.key]
             if mapped_id is not None:
-                user.god_id = user.id
-                user.id = (await self.get_users([mapped_id]))[0]
-                self.log.info("God mode: %s became %s", user.god_id, user.id)
+                god_id = user.id
+                user = (await self.get_users([mapped_id]))[0]
+                user.god_id = god_id
+                self.log.info("God mode: %s became %s", god_id, mapped_id)

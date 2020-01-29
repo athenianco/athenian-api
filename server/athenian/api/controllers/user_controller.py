@@ -43,10 +43,10 @@ async def become_user(request: AthenianWebRequest, id: str) -> web.Response:
         return ResponseError(ForbiddenError(
             detail="User %s is not allowed to mutate" % user_id)).response
     async with request.sdb.connection() as conn:
-        god = await conn.fetch_one(select([God]).where(God.user_id == user_id))
         if id and (await conn.fetch_one(
                 select([UserAccount]).where(UserAccount.user_id == id))) is None:
             return ResponseError(NotFoundError(detail="User %s does not exist" % id)).response
+        god = await conn.fetch_one(select([God]).where(God.user_id == user_id))
         god = God(**god).refresh()
         god.mapped_id = id or None
         await conn.execute(update([God]).where(God.user_id == user_id).values(god.explode()))
