@@ -1,5 +1,4 @@
-from sqlalchemy import ARRAY, BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, Text, \
-    TIMESTAMP
+from sqlalchemy import ARRAY, BigInteger, Boolean, Column, ForeignKey, Integer, Text, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
@@ -16,7 +15,7 @@ class IDMixin:
 class DeliveryMixin:
     delivery_id = Column("delivery_id", Text, nullable=False)
     action = Column("action", Text)
-    timestamp = Column("timestamp", TIMESTAMP(True))
+    timestamp = Column("timestamp", TIMESTAMP)
 
 
 class BodyMixin:
@@ -24,8 +23,8 @@ class BodyMixin:
 
 
 class UpdatedMixin:
-    created_at = Column("created_at", TIMESTAMP(True))
-    updated_at = Column("updated_at", TIMESTAMP(True))
+    created_at = Column("created_at", TIMESTAMP)
+    updated_at = Column("updated_at", TIMESTAMP)
 
 
 class UserMixin:
@@ -99,7 +98,7 @@ class Issue(Base,
     __tablename__ = "github_issues"
 
     assignees = Column("assignees", ARRAY(Text()), nullable=False)
-    closed_at = Column("closed_at", DateTime(True))
+    closed_at = Column("closed_at", TIMESTAMP)
     closed_by_id = Column("closed_by_id", BigInteger, nullable=False)
     closed_by_login = Column("closed_by_login", Text, nullable=False)
     comments = Column("comments", BigInteger)
@@ -184,7 +183,7 @@ class PullRequestReview(Base,
     htmlurl = Column("htmlurl", Text)
     pull_request_number = Column("pull_request_number", BigInteger, nullable=False)
     state = Column("state", Text)
-    submitted_at = Column("submitted_at", DateTime(True))
+    submitted_at = Column("submitted_at", TIMESTAMP)
 
 
 class PullRequest(Base,
@@ -207,7 +206,7 @@ class PullRequest(Base,
     base_sha = Column("base_sha", Text, nullable=False)
     base_user = Column("base_user", Text, nullable=False)
     changed_files = Column("changed_files", BigInteger)
-    closed_at = Column("closed_at", DateTime(True))
+    closed_at = Column("closed_at", TIMESTAMP)
     comments = Column("comments", BigInteger)
     commits = Column("commits", BigInteger)
     deletions = Column("deletions", BigInteger)
@@ -223,7 +222,7 @@ class PullRequest(Base,
     merge_commit_sha = Column("merge_commit_sha", Text)
     mergeable = Column("mergeable", Boolean)
     merged = Column("merged", Boolean)
-    merged_at = Column("merged_at", DateTime(True))
+    merged_at = Column("merged_at", TIMESTAMP)
     merged_by_id = Column("merged_by_id", BigInteger, nullable=False)
     merged_by_login = Column("merged_by_login", Text, nullable=False)
     milestone_id = Column("milestone_id", Text, nullable=False)
@@ -239,7 +238,7 @@ class PushCommit(Base,
     __tablename__ = "github_push_commits"
 
     delivery_id = Column("delivery_id", Text, nullable=False)
-    timestamp = Column("timestamp", TIMESTAMP(True))
+    timestamp = Column("timestamp", TIMESTAMP)
     id = Column("id", BigInteger)
     push_id = Column("push_id", Text)
     message = Column("message", Text)
@@ -282,7 +281,7 @@ class Repository(Base,
     owner_login = Column("owner_login", Text, nullable=False)
     owner_type = Column("owner_type", Text, nullable=False)
     private = Column("private", Boolean)
-    pushed_at = Column("pushed_at", DateTime(True))
+    pushed_at = Column("pushed_at", TIMESTAMP)
     sshurl = Column("sshurl", Text)
     stargazers_count = Column("stargazers_count", BigInteger)
     topics = Column("topics", ARRAY(Text()), nullable=False)
