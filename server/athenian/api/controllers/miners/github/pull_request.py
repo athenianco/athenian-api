@@ -8,7 +8,7 @@ import pandas as pd
 from sqlalchemy import select, sql
 
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
+from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview
 
 
@@ -48,44 +48,41 @@ class PullRequestMiner:
             prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                        conn, PullRequest)
             numbers = prs[PullRequest.number.key] if len(prs) > 0 else set()
-            reviews = await read_sql_query(select([PullRequestReview]).where(
-                sql.and_(PullRequestReview.pull_request_number.in_(numbers),
-                         PullRequestReview.repository_fullname.in_(repositories))),
-                conn, PullRequestReview)
-            review_comments = await read_sql_query(select([PullRequestComment]).where(
-                sql.and_(PullRequestComment.pull_request_number.in_(numbers),
-                         PullRequestComment.repository_fullname.in_(repositories))),
-                conn, PullRequestComment)
-            commits = await read_sql_query(select([PullRequestCommit]).where(
-                sql.and_(PullRequestCommit.pull_request_number.in_(numbers),
-                         PullRequestCommit.repository_fullname.in_(repositories))),
-                conn, PullRequestCommit)
+            reviews = await cls._read_filtered_models(
+                conn, PullRequestReview, numbers, repositories)
+            review_comments = await cls._read_filtered_models(
+                conn, PullRequestComment, numbers, repositories)
+            commits = await cls._read_filtered_models(
+                conn, PullRequestCommit, numbers, repositories)
         return cls(prs, reviews, review_comments, commits, time_to)
+
+    @staticmethod
+    async def _read_filtered_models(conn: databases.core.Connection,
+                                    model_cls: Base,
+                                    numbers: Sequence[str],
+                                    repositories: Sequence[str]) -> pd.DataFrame:
+        return await read_sql_query(select([model_cls]).where(
+            sql.and_(model_cls.pull_request_number.in_(numbers),
+                     model_cls.repository_fullname.in_(repositories))),
+            conn, model_cls)
 
     def __iter__(self) -> Generator[Tuple[pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame],
                                     None, None]:
         """Iterate over the information collected for individual pull requests."""
-        r_repo_key = PullRequest.repository_fullname.key
-        r_pull_request_number_key = PullRequestReview.pull_request_number.key
-        ce_pull_request_number_key = PullRequestComment.pull_request_number.key
-        ce_repo_key = PullRequestComment.repository_fullname.key
-        ci_pull_request_number_key = PullRequestCommit.pull_request_number.key
-        ci_repo_key = PullRequestCommit.repository_fullname.key
         number_key = PullRequest.number.key
         repo_key = PullRequest.repository_fullname.key
         for _, pr in self._prs.iterrows():
             pr_number = pr[number_key]
             pr_repo = pr[repo_key]
-            reviews = self._reviews[
-                (self._reviews[r_pull_request_number_key] == pr_number)
-                & (self._reviews[r_repo_key] == pr_repo)]  # noqa: W503
-            review_comments = self._review_comments[
-                (self._review_comments[ce_pull_request_number_key] == pr_number)
-                & (self._review_comments[ce_repo_key] == pr_repo)]  # noqa: W503
-            commits = self._commits[
-                (self._commits[ci_pull_request_number_key] == pr_number)
-                & (self._commits[ci_repo_key] == pr_repo)]  # noqa: W503
-            yield pr, reviews, review_comments, commits
+            items = []
+            for k, model in (("reviews", PullRequestReview),
+                             ("review_comments", PullRequestComment),
+                             ("commits", PullRequestCommit)):
+                attr = getattr(self, "_" + k)
+                items.append(attr[
+                    (attr[model.pull_request_number.key] == pr_number) &  # noqa: W504
+                    (attr[model.repository_fullname.key] == pr_repo)])
+            yield (pr, *items)
 
 
 T = TypeVar("T")
