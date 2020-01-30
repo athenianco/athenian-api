@@ -5,7 +5,7 @@ import logging
 import os
 from random import random
 import re
-from typing import List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
@@ -34,7 +34,7 @@ class Auth0:
 
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
                  client_secret=AUTH0_CLIENT_SECRET, whitelist: Sequence[str] = tuple(),
-                 lazy_mgmt=False):
+                 lazy=False):
         """
         Create a new Auth0 middleware.
 
@@ -47,8 +47,8 @@ class Auth0:
         :param client_id: Application's Client ID.
         :param client_secret: Application's Client Secret.
         :param whitelist: Routes that do not need authorization.
-        :param lazy_mgmt: Value that indicates whether Auth0 Management API token must be \
-                          asynchronously requested at first related method call or at once.
+        :param lazy: Value that indicates whether Auth0 Management API tokens and JWKS data \
+                     must be asynchronously requested at first related method call.
         """
         self._domain = domain
         self._audience = audience
@@ -56,12 +56,25 @@ class Auth0:
         self._session = aiohttp.ClientSession()
         self._client_id = client_id
         self._client_secret = client_secret
+        self._kids_event = asyncio.Event()
+        if not lazy:
+            self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
+        else:
+            self._jwks_loop = None  # type: Optional[asyncio.Future]
+        self._kids: Dict[str, Any] = {}
         self._mgmt_event = asyncio.Event()
-        self._mgmt_token = None  # type: str
-        if not lazy_mgmt:
+        self._mgmt_token = None  # type: Optional[str]
+        if not lazy:
             self._mgmt_loop = asyncio.ensure_future(self._acquire_management_token_loop())
         else:
-            self._mgmt_loop = None
+            self._mgmt_loop = None  # type: Optional[asyncio.Future]
+
+    async def kids(self) -> Dict[str, Any]:
+        """Return the mapping kid -> Auth0 jwks record with that kid."""
+        if self._jwks_loop is None:
+            self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
+        await self._kids_event.wait()
+        return self._kids
 
     async def mgmt_token(self) -> str:
         """Return the Auth0 management API token."""
@@ -72,6 +85,8 @@ class Auth0:
 
     async def close(self):
         """Free resources associated with the object."""
+        if self._jwks_loop is not None:
+            self._jwks_loop.cancel()
         if self._mgmt_loop is not None:  # this may happen if lazy_mgmt=True
             self._mgmt_loop.cancel()
         session = self._session
@@ -127,7 +142,9 @@ class Auth0:
         request.auth = self
         if self._is_whitelisted(request):
             return await handler(request)
-        await self._set_user(request)
+        response = await self._set_user(request)
+        if response is not None:
+            return response
         return await handler(request)
 
     async def get_users(self, users: Sequence[str]) -> List[Optional[User]]:
@@ -158,10 +175,24 @@ class Auth0:
 
         return await asyncio.gather(*[get_user(u) for u in users])
 
+    async def _fetch_jwks_loop(self) -> None:
+        while True:
+            await self._fetch_jwks()
+            await asyncio.sleep(3600)  # 1 hour
+
     async def _acquire_management_token_loop(self) -> None:
         while True:
             expires_in = await self._acquire_management_token()
             await asyncio.sleep(expires_in)
+
+    async def _fetch_jwks(self) -> None:
+        req = await self._session.get("https://%s/.well-known/jwks.json" % self._domain)
+        jwks = await req.json()
+        req.close()
+        self.log.info("Fetched %d JWKS records", len(jwks))
+        self._kids = {key["kid"]: {k: key[k] for k in ("kty", "kid", "use", "n", "e")}
+                      for key in jwks["keys"]}
+        self._kids_event.set()
 
     async def _acquire_management_token(self) -> float:
         try:
@@ -219,7 +250,7 @@ class Auth0:
         user = await resp.json()
         return User.from_auth0(**user)
 
-    async def _set_user(self, request) -> None:
+    async def _set_user(self, request) -> Optional[aiohttp.web.Response]:
         # FIXME(vmarkovtsev): remove the following short circuit when the frontend is ready
         request.user = (await self.get_users(["auth0|5e1f6dfb57bc640ea390557b"]))[0]
         return
@@ -236,18 +267,10 @@ class Auth0:
             return aiohttp.web.Response(body="Invalid header."
                                         " Use an RS256 signed JWT Access Token.", status=401)
 
-        # TODO(dennwc): update periodically instead of pulling it on each request
-        jwks_req = await self._session.get("https://%s/.well-known/jwks.json" % self._domain)
-        jwks = await jwks_req.json()
-        jwks_req.close()
-
-        # There might be multiple keys, find the one used to sign this request
-        rsa_key = None
-        for key in jwks["keys"]:
-            if key["kid"] == unverified_header["kid"]:
-                rsa_key = {k: key[k] for k in ("kty", "kid", "use", "n", "e")}
-
-        if rsa_key is None:
+        kids = await self.kids()
+        try:
+            rsa_key = kids[unverified_header["kid"]]
+        except KeyError:
             return aiohttp.web.Response(body="Unable to find an appropriate key", status=401)
 
         try:

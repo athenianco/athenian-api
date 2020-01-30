@@ -35,7 +35,7 @@ invitation_controller.ikey = "vadim"
 
 class TestAuth0(Auth0):
     def __init__(self, whitelist):
-        super().__init__(whitelist=whitelist, lazy_mgmt=True)
+        super().__init__(whitelist=whitelist, lazy=True)
         self.user = User(
             id="auth0|5e1f6dfb57bc640ea390557b",
             email="vadim@athenian.co",
