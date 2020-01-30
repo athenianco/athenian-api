@@ -10,13 +10,13 @@ from athenian.api.request import AthenianWebRequest
 
 async def get_user(request: AthenianWebRequest) -> web.Response:
     """Return details about the current user."""
-    await request.user.load_accounts(request.sdb)
-    return response(request.user)
+    user = await (await request.user()).load_accounts(request.sdb)
+    return response(user)
 
 
 async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
     """Return details about the current account."""
-    user_id = request.user.id
+    user_id = request.uid()
     users = await request.sdb.fetch_all(select([UserAccount]).where(UserAccount.account_id == id))
     for user in users:
         if user[UserAccount.user_id.key] == user_id:

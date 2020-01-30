@@ -11,4 +11,5 @@ class AthenianWebRequest(web.Request):
     mdb: databases.Database
     sdb: databases.Database
     auth: Auth0
-    user: User
+    user: lambda: User
+    uid: lambda: str

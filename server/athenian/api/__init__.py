@@ -96,18 +96,17 @@ class AthenianApp(connexion.AioHttpApp):
             r"/v1/invite/check/?$",
             r"/status/?$",
         ])
-        api = self.add_api(
-            "openapi.yaml",
-            arguments={"title": __description__},
-            pass_context_arg_name="request",
-            options={"middlewares": [self.with_db, self._auth0.middleware]},
-        )
+        with self._auth0:
+            api = self.add_api(
+                "openapi.yaml",
+                arguments={"title": __description__},
+                pass_context_arg_name="request",
+                options={"middlewares": [self.with_db, self._auth0.middleware]},
+            )
         setup_status(self.app)
         self._enable_cors()
         api.jsonifier.json = FriendlyJson
         self.mdb = self.sdb = None  # type: Optional[databases.Database]
-        self._mdb_connected_event = asyncio.Event()
-        self._sdb_connected_event = asyncio.Event()
 
         async def connect_to_mdb():
             try:
@@ -118,7 +117,6 @@ class AthenianApp(connexion.AioHttpApp):
                 raise GracefulExit() from None
             self.log.info("Connected to the metadata DB on %s", mdb_conn)
             self.mdb = db
-            self._mdb_connected_event.set()
 
         async def connect_to_sdb():
             try:
@@ -129,19 +127,24 @@ class AthenianApp(connexion.AioHttpApp):
                 raise GracefulExit() from None
             self.log.info("Connected to the server state DB on %s", sdb_conn)
             self.sdb = db
-            self._sdb_connected_event.set()
 
         self.app.on_shutdown.append(self.shutdown)
         # Schedule the DB connections
         loop = asyncio.get_event_loop()
-        asyncio.ensure_future(connect_to_mdb(), loop=loop)
-        asyncio.ensure_future(connect_to_sdb(), loop=loop)
+        self._mdb_future = asyncio.ensure_future(connect_to_mdb(), loop=loop)
+        self._sdb_future = asyncio.ensure_future(connect_to_sdb(), loop=loop)
 
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
         await self._auth0.close()
-        await self.mdb.disconnect()
-        await self.sdb.disconnect()
+        if self.mdb is not None:
+            await self.mdb.disconnect()
+        else:
+            self._mdb_future.cancel()
+        if self.sdb is not None:
+            await self.sdb.disconnect()
+        else:
+            self._sdb_future.cancel()
 
     def _enable_cors(self) -> None:
         cors = aiohttp_cors.setup(self.app, defaults={
@@ -159,13 +162,13 @@ class AthenianApp(connexion.AioHttpApp):
     async def with_db(self, request, handler):
         """Add "mdb" and "sdb" attributes to every incoming request."""
         if self.mdb is None:
-            await self._mdb_connected_event.wait()
+            await self._mdb_future
             assert self.mdb is not None
-            del self._mdb_connected_event
+            del self._mdb_future
         if self.sdb is None:
-            await self._sdb_connected_event.wait()
+            await self._sdb_future
             assert self.sdb is not None
-            del self._sdb_connected_event
+            del self._sdb_future
         request.mdb = self.mdb
         request.sdb = self.sdb
         try:

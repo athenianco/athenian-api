@@ -2,11 +2,9 @@ from datetime import datetime
 import logging
 import os
 from pathlib import Path
-import time
 from typing import Dict
 
 
-from jose import jwt
 try:
     import pytest
 except ImportError:
@@ -35,17 +33,15 @@ invitation_controller.ikey = "vadim"
 
 class TestAuth0(Auth0):
     def __init__(self, whitelist):
-        super().__init__(whitelist=whitelist, lazy=True)
-        self.user = User(
+        super().__init__(
+            whitelist=whitelist, default_user="auth0|5e1f6dfb57bc640ea390557b", lazy=True)
+        self._default_user = User(
             id="auth0|5e1f6dfb57bc640ea390557b",
             email="vadim@athenian.co",
             name="Vadim Markovtsev",
             picture="https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
             updated=datetime.utcnow(),
         )
-
-    async def _set_user(self, request) -> None:
-        request.user = self.user
 
 
 @pytest.fixture(scope="function")
@@ -57,26 +53,17 @@ async def eiso(app) -> User:
         picture="https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
         updated=datetime.utcnow(),
     )
-    app._auth0.user = user
+    app._auth0._default_user_id = "auth0|5e1f6e2e8bfa520ea5290741"
+    app._auth0._default_user = user
     return user
 
 
 @pytest.fixture(scope="function")
 def headers() -> Dict[str, str]:
-    timestamp = int(time.time())
-    payload = {
-        "aud": "https://api.owl.athenian.co",
-        "iss": "https://athenian.auth0.com/",
-        "iat": timestamp,
-        "exp": timestamp + 600,
-        "sub": "github|2793551",
-    }
-    token = jwt.encode(payload, "athenian", algorithm="HS256")
     return {
         "Accept": "application/json",
         "Content-Type": "application/json",
         "Origin": "http://localhost",
-        "Authorization": "Bearer " + token,
     }
 
 

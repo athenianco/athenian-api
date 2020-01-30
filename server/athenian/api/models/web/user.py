@@ -66,7 +66,7 @@ class User(Model):
         return serialization.deserialize_model(dikt, cls)
 
     @classmethod
-    def from_auth0(cls, email: str, name: str, picture: str, updated_at: str,
+    def from_auth0(cls, name: str, picture: str, updated_at: str, email: Optional[str] = None,
                    sub: Optional[str] = None, user_id: Optional[str] = None, **_):
         """Create a new User object from Auth0 /userinfo."""
         if sub is None and user_id is None:

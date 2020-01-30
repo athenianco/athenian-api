@@ -4,14 +4,13 @@ import databases
 from sqlalchemy import select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from athenian.api.auth import User
 from athenian.api.controllers.response import ResponseError
 from athenian.api.controllers.user import is_admin
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NotFoundError
 
 
-async def resolve_reposet(repo: str, pointer: str, db: databases.Database, user: User,
+async def resolve_reposet(repo: str, pointer: str, db: databases.Database, uid: str,
                           account: int) -> List[str]:
     """
     Dereference the repository sets.
@@ -33,17 +32,17 @@ async def resolve_reposet(repo: str, pointer: str, db: databases.Database, user:
             detail="repository set identifier is invalid: %s" % repo,
             pointer=pointer,
         ))
-    rs, _ = await fetch_reposet(set_id, [RepositorySet.items], db, user)
+    rs, _ = await fetch_reposet(set_id, [RepositorySet.items], db, uid)
     if rs.owner != account:
         raise ResponseError(ForbiddenError(
             detail="User %s is not allowed to reference reposet %d in this query" %
-                   (user.id, set_id)))
+                   (uid, set_id)))
     return rs.items
 
 
 async def fetch_reposet(
         id: int, columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
-        db: databases.Database, user: User) -> Tuple[RepositorySet, bool]:
+        db: databases.Database, uid: str) -> Tuple[RepositorySet, bool]:
     """
     Retrieve a repository set by ID and check the access for the given user.
 
@@ -61,5 +60,5 @@ async def fetch_reposet(
     if rs is None or len(rs) == 0:
         raise ResponseError(NotFoundError(detail="Repository set %d does not exist" % id))
     account = rs[RepositorySet.owner.key]
-    adm = await is_admin(db, user.id, account)
+    adm = await is_admin(db, uid, account)
     return RepositorySet(**rs), adm
