@@ -8,7 +8,7 @@ from athenian.api.models.web import CalculatedMetrics, Granularity, MetricID
 
 
 @pytest.mark.parametrize("metric", MetricID.ALL)
-async def test_calc_metrics_line_smoke(client, metric):
+async def test_calc_metrics_line_smoke(client, metric, headers):
     """Trivial test to prove that at least something is working."""
     body = {
         "for": [
@@ -33,10 +33,6 @@ async def test_calc_metrics_line_smoke(client, metric):
         "granularity": "week",
         "account": 1,
     }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="POST", path="/v1/metrics_line", headers=headers, json=body,
     )
@@ -47,7 +43,7 @@ async def test_calc_metrics_line_smoke(client, metric):
 
 
 @pytest.mark.parametrize("granularity", Granularity.ALL)
-async def test_calc_metrics_line_all(client, granularity):
+async def test_calc_metrics_line_all(client, granularity, headers):
     """https://athenianco.atlassian.net/browse/ENG-116"""
     body = {
         "for": [
@@ -71,10 +67,6 @@ async def test_calc_metrics_line_all(client, granularity):
         "date_to": "2019-03-15",
         "granularity": granularity,
         "account": 1,
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="POST", path="/v1/metrics_line", headers=headers, json=body,
@@ -110,7 +102,7 @@ async def test_calc_metrics_line_all(client, granularity):
 
 @pytest.mark.parametrize(("devs", "date_from"),
                          ([{"developers": []}, "2019-11-28"], [{}, "2018-09-28"]))
-async def test_calc_metrics_line_empty_devs_tight_date(client, devs, date_from):
+async def test_calc_metrics_line_empty_devs_tight_date(client, devs, date_from, headers):
     """https://athenianco.atlassian.net/browse/ENG-126"""
     body = {
         "date_from": date_from,
@@ -126,10 +118,6 @@ async def test_calc_metrics_line_empty_devs_tight_date(client, devs, date_from):
         "account": 1,
         "metrics": list(MetricID.ALL),
     }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="POST", path="/v1/metrics_line", headers=headers, json=body,
     )
@@ -139,7 +127,7 @@ async def test_calc_metrics_line_empty_devs_tight_date(client, devs, date_from):
     assert len(cm.calculated[0].values) > 0
 
 
-async def test_calc_metrics_line_bad_date(client):
+async def test_calc_metrics_line_bad_date(client, headers):
     """What if we specify a date that does not exist?"""
     body = {
         "for": [
@@ -164,10 +152,6 @@ async def test_calc_metrics_line_bad_date(client):
         "granularity": "week",
         "account": 1,
     }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="POST", path="/v1/metrics_line", headers=headers, json=body,
     )
@@ -176,7 +160,7 @@ async def test_calc_metrics_line_bad_date(client):
 
 
 @pytest.mark.parametrize("account", [3, 10])
-async def test_calc_metrics_line_reposet_bad_account(client, account):
+async def test_calc_metrics_line_reposet_bad_account(client, account, headers):
     """What if we specify a account that the user does not belong to or does not exist?"""
     body = {
         "for": [
@@ -191,10 +175,6 @@ async def test_calc_metrics_line_reposet_bad_account(client, account):
         "granularity": "week",
         "account": account,
     }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="POST", path="/v1/metrics_line", headers=headers, json=body,
     )
@@ -202,7 +182,7 @@ async def test_calc_metrics_line_reposet_bad_account(client, account):
     assert response.status == 403, "Response body is : " + body
 
 
-async def test_calc_metrics_line_reposet(client):
+async def test_calc_metrics_line_reposet(client, headers):
     """Substitute {id} with the real repos."""
     body = {
         "for": [
@@ -216,10 +196,6 @@ async def test_calc_metrics_line_reposet(client):
         "date_to": "2020-01-23",
         "granularity": "week",
         "account": 1,
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="POST", path="/v1/metrics_line", headers=headers, json=body,

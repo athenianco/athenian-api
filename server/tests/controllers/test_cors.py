@@ -1,9 +1,4 @@
-async def test_cors(client):
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "Origin": "http://localhost",
-    }
+async def test_cors(client, headers):
     response = await client.request(
         method="GET", path="/v1/reposet/1", headers=headers, json={},
     )

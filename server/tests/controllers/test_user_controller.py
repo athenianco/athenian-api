@@ -4,11 +4,7 @@ import json
 import dateutil.parser
 
 
-async def test_get_user(client):
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
+async def test_get_user(client, headers):
     response = await client.request(
         method="GET", path="/v1/user", headers=headers, json={},
     )
@@ -26,11 +22,7 @@ async def test_get_user(client):
     assert datetime.utcnow() >= dateutil.parser.parse(updated[:-1])
 
 
-async def test_get_account(client):
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
+async def test_get_account(client, headers):
     response = await client.request(
         method="GET", path="/v1/account/1", headers=headers, json={},
     )
