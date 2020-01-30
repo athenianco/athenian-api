@@ -2,8 +2,11 @@ from datetime import datetime
 import logging
 import os
 from pathlib import Path
+import time
+from typing import Dict
 
 
+from jose import jwt
 try:
     import pytest
 except ImportError:
@@ -56,6 +59,25 @@ async def eiso(app) -> User:
     )
     app._auth0.user = user
     return user
+
+
+@pytest.fixture(scope="function")
+def headers() -> Dict[str, str]:
+    timestamp = int(time.time())
+    payload = {
+        "aud": "https://api.owl.athenian.co",
+        "iss": "https://athenian.auth0.com/",
+        "iat": timestamp,
+        "exp": timestamp + 600,
+        "sub": "github|2793551",
+    }
+    token = jwt.encode(payload, "athenian", algorithm="HS256")
+    return {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Origin": "http://localhost",
+        "Authorization": "Bearer " + token,
+    }
 
 
 @pytest.fixture(scope="function")

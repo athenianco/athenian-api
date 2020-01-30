@@ -9,8 +9,6 @@ servers:
 paths:
   /account/{id}:
     get:
-      security:
-        - bearerAuth: []
       operationId: get_account
       parameters:
       - description: Numeric identifier of the account to list. The user must belong
@@ -41,13 +39,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The account was not found.
+      security:
+      - bearerAuth: []
       summary: List the current user's account members.
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
   /invite/accept:
     put:
-      security:
-        - bearerAuth: []
       operationId: accept_invitation
       requestBody:
         content:
@@ -82,6 +80,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: Invitation was not found.
+      security:
+      - bearerAuth: []
       summary: Accept the account membership invitation and finish registration. The
         user must be already authorized in Auth0.
       x-openapi-router-controller: athenian.api.controllers.invitation_controller
@@ -111,8 +111,6 @@ paths:
       x-codegen-request-body-name: body
   /invite/generate/{id}:
     get:
-      security:
-        - bearerAuth: []
       operationId: gen_invitation
       parameters:
       - description: Numeric identifier of the account where to invite new users.
@@ -142,14 +140,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The account was not found.
+      security:
+      - bearerAuth: []
       summary: Generate an account invitation link for regular users. The caller must
         be an admin of the specified account.
       x-openapi-router-controller: athenian.api.controllers.invitation_controller
       x-codegen-request-body-name: body
   /metrics_line:
     post:
-      security:
-        - bearerAuth: []
       operationId: calc_metrics_line
       requestBody:
         content:
@@ -185,13 +183,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/NoSourceDataError'
           description: No data is available to calculate metrics for the given repositories.
+      security:
+      - bearerAuth: []
       summary: Calculate metrics.
       x-openapi-router-controller: athenian.api.controllers.metrics_controller
       x-codegen-request-body-name: body
   /reposet/create:
     post:
-      security:
-        - bearerAuth: []
       operationId: create_reposet
       requestBody:
         content:
@@ -213,13 +211,13 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: The user is forbidden to create a repository set from the specified
             items.
+      security:
+      - bearerAuth: []
       summary: Create a repository set.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
   /reposet/{id}:
     delete:
-      security:
-        - bearerAuth: []
       operationId: delete_reposet
       parameters:
       - description: Numeric identifier of the repository set to list.
@@ -249,13 +247,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The specified repository set was not found.
+      security:
+      - bearerAuth: []
       summary: Delete a repository set. The user must be an admin of the account that
         owns the reposet.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
     get:
-      security:
-        - bearerAuth: []
       operationId: get_reposet
       parameters:
       - description: Numeric identifier of the repository set to list.
@@ -285,13 +283,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The specified repository set was not found.
+      security:
+      - bearerAuth: []
       summary: List a repository set. The user must be in the account that owns the
         reposet.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
     put:
-      security:
-        - bearerAuth: []
       operationId: update_reposet
       parameters:
       - description: Numeric identifier of the repository set to list.
@@ -327,14 +325,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The specified repository set was not found.
+      security:
+      - bearerAuth: []
       summary: Update a repository set. The user must be an admin of the account that
         owns the reposet.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
   /reposets/{id}:
     get:
-      security:
-        - bearerAuth: []
       operationId: list_reposets
       parameters:
       - description: Numeric identifier of the account.
@@ -358,13 +356,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The user does not belong to the specified account.
+      security:
+      - bearerAuth: []
       summary: List the repository sets belonging to the current user.
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
   /user:
     get:
-      security:
-        - bearerAuth: []
       operationId: get_user
       responses:
         200:
@@ -373,6 +371,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/User'
           description: Details about the current user.
+      security:
+      - bearerAuth: []
       summary: Show details about the current user.
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
@@ -382,6 +382,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      x-bearerInfoFunc: athenian.api.controllers.security_controller.info_from_bearerAuth
   schemas:
     CreatedIdentifier:
       example:

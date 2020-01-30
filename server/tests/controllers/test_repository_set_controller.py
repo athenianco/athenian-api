@@ -7,12 +7,8 @@ from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 
 
-async def test_delete_repository_set(client, app):
+async def test_delete_repository_set(client, app, headers):
     body = {}
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="DELETE", path="/v1/reposet/1", headers=headers, json=body,
     )
@@ -22,12 +18,8 @@ async def test_delete_repository_set(client, app):
     assert rs is None
 
 
-async def test_delete_repository_set_404(client, app):
+async def test_delete_repository_set_404(client, app, headers):
     body = {}
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="DELETE", path="/v1/reposet/10", headers=headers, json=body,
     )
@@ -36,12 +28,8 @@ async def test_delete_repository_set_404(client, app):
 
 
 @pytest.mark.parametrize("reposet", [2, 3])
-async def test_delete_repository_set_bad_account(client, reposet):
+async def test_delete_repository_set_bad_account(client, reposet, headers):
     body = {}
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="DELETE", path="/v1/reposet/%d" % reposet, headers=headers, json=body,
     )
@@ -50,12 +38,8 @@ async def test_delete_repository_set_bad_account(client, reposet):
 
 
 @pytest.mark.parametrize("reposet", [1, 2])
-async def test_get_repository_set(client, reposet):
+async def test_get_repository_set(client, reposet, headers):
     body = {}
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="GET", path="/v1/reposet/%d" % reposet, headers=headers, json=body,
     )
@@ -66,12 +50,8 @@ async def test_get_repository_set(client, reposet):
     assert "github.com/athenianco/athenian-api" in body
 
 
-async def test_get_repository_set_404(client):
+async def test_get_repository_set_404(client, headers):
     body = {}
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="GET", path="/v1/reposet/10", headers=headers, json=body,
     )
@@ -79,12 +59,8 @@ async def test_get_repository_set_404(client):
     assert response.status == 404, "Response body is : " + body
 
 
-async def test_get_repository_set_bad_account(client):
+async def test_get_repository_set_bad_account(client, headers):
     body = {}
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="GET", path="/v1/reposet/3", headers=headers, json=body,
     )
@@ -92,12 +68,8 @@ async def test_get_repository_set_bad_account(client):
     assert response.status == 403, "Response body is : " + body
 
 
-async def test_set_repository_set(client):
+async def test_set_repository_set(client, headers):
     body = ["github.com/vmarkovtsev/hercules"]
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="PUT", path="/v1/reposet/1", headers=headers, json=body,
     )
@@ -106,12 +78,8 @@ async def test_set_repository_set(client):
     assert body == '["github.com/vmarkovtsev/hercules"]'
 
 
-async def test_set_repository_set_404(client):
+async def test_set_repository_set_404(client, headers):
     body = ["github.com/vmarkovtsev/hercules"]
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="PUT", path="/v1/reposet/10", headers=headers, json=body,
     )
@@ -120,12 +88,8 @@ async def test_set_repository_set_404(client):
 
 
 @pytest.mark.parametrize("reposet", [2, 3])
-async def test_set_repository_set_bad_account(client, reposet):
+async def test_set_repository_set_bad_account(client, reposet, headers):
     body = ["github.com/vmarkovtsev/hercules"]
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="PUT", path="/v1/reposet/%d" % reposet, headers=headers, json=body,
     )
@@ -133,12 +97,8 @@ async def test_set_repository_set_bad_account(client, reposet):
     assert response.status == 403, "Response body is : " + body
 
 
-async def test_create_repository_set(client):
+async def test_create_repository_set(client, headers):
     body = RepositorySetCreateRequest(1, ["github.com/vmarkovtsev/hercules"]).to_dict()
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
@@ -149,12 +109,8 @@ async def test_create_repository_set(client):
 
 
 @pytest.mark.parametrize("account", [2, 3, 10])
-async def test_create_repository_set_bad_account(client, account):
+async def test_create_repository_set_bad_account(client, account, headers):
     body = RepositorySetCreateRequest(account, ["github.com/vmarkovtsev/hercules"]).to_dict()
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
@@ -163,11 +119,7 @@ async def test_create_repository_set_bad_account(client, account):
 
 
 @pytest.mark.parametrize("account", [1, 2])
-async def test_list_repository_sets(client, account):
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
+async def test_list_repository_sets(client, account, headers):
     response = await client.request(
         method="GET", path="/v1/reposets/%d" % account, headers=headers, json={},
     )
@@ -181,11 +133,7 @@ async def test_list_repository_sets(client, account):
 
 
 @pytest.mark.parametrize("account", [3, 10])
-async def test_list_repository_sets_bad_account(client, account):
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
+async def test_list_repository_sets_bad_account(client, account, headers):
     response = await client.request(
         method="GET", path="/v1/reposets/%d" % account, headers=headers, json={},
     )

@@ -9,11 +9,7 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.models.state.models import Invitation
 
 
-async def test_gen_invitation_new(client, app):
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
+async def test_gen_invitation_new(client, app, headers):
     response = await client.request(
         method="GET", path="/v1/invite/generate/1", headers=headers, json={},
     )
@@ -33,33 +29,21 @@ async def test_gen_invitation_new(client, app):
     assert inv[Invitation.created_at.key] > datetime.utcnow() - timedelta(minutes=1)
 
 
-async def test_gen_invitation_no_admin(client):
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
+async def test_gen_invitation_no_admin(client, headers):
     response = await client.request(
         method="GET", path="/v1/invite/generate/2", headers=headers, json={},
     )
     assert response.status == 403
 
 
-async def test_gen_invitation_no_member(client):
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
+async def test_gen_invitation_no_member(client, headers):
     response = await client.request(
         method="GET", path="/v1/invite/generate/3", headers=headers, json={},
     )
     assert response.status == 404
 
 
-async def test_gen_invitation_existing(client, eiso):
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
+async def test_gen_invitation_existing(client, eiso, headers):
     response = await client.request(
         method="GET", path="/v1/invite/generate/3", headers=headers, json={},
     )
@@ -72,13 +56,9 @@ async def test_gen_invitation_existing(client, eiso):
     assert salt == 777
 
 
-async def test_accept_invitation(client):
+async def test_accept_invitation(client, headers):
     body = {
         "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -97,13 +77,9 @@ async def test_accept_invitation(client):
     }
 
 
-async def test_accept_invitation_noop(client, eiso):
+async def test_accept_invitation_noop(client, eiso, headers):
     body = {
         "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -123,13 +99,9 @@ async def test_accept_invitation_noop(client, eiso):
 
 
 @pytest.mark.parametrize("trash", ["0", "0" * 8, "a" * 8])
-async def test_accept_invitation_trash(client, trash):
+async def test_accept_invitation_trash(client, trash, headers):
     body = {
         "url": invitation_controller.prefix + "0" * 8,
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -137,15 +109,11 @@ async def test_accept_invitation_trash(client, trash):
     assert response.status == 400
 
 
-async def test_accept_invitation_inactive(client, app):
+async def test_accept_invitation_inactive(client, app, headers):
     await app.sdb.execute(
         update(Invitation).where(Invitation.id == 1).values({Invitation.is_active.key: False}))
     body = {
         "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -153,17 +121,13 @@ async def test_accept_invitation_inactive(client, app):
     assert response.status == 403
 
 
-async def test_accept_invitation_admin(client, app):
+async def test_accept_invitation_admin(client, app, headers):
     iid = await app.sdb.execute(
         insert(Invitation).values(
             Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
             .create_defaults().explode()))
     body = {
         "url": invitation_controller.prefix + invitation_controller.encode_slug(iid, 888),
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -182,13 +146,9 @@ async def test_accept_invitation_admin(client, app):
     }
 
 
-async def test_check_invitation(client):
+async def test_check_invitation(client, headers):
     body = {
         "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
@@ -197,13 +157,9 @@ async def test_check_invitation(client):
     assert body == {"valid": True, "active": True, "type": "regular"}
 
 
-async def test_check_invitation_not_exists(client):
+async def test_check_invitation_not_exists(client, headers):
     body = {
         "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 888),
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
@@ -212,17 +168,13 @@ async def test_check_invitation_not_exists(client):
     assert body == {"valid": False}
 
 
-async def test_check_invitation_admin(client, app):
+async def test_check_invitation_admin(client, app, headers):
     iid = await app.sdb.execute(
         insert(Invitation).values(
             Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
             .create_defaults().explode()))
     body = {
         "url": invitation_controller.prefix + invitation_controller.encode_slug(iid, 888),
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
@@ -231,15 +183,11 @@ async def test_check_invitation_admin(client, app):
     assert body == {"valid": True, "active": True, "type": "admin"}
 
 
-async def test_check_invitation_inactive(client, app):
+async def test_check_invitation_inactive(client, app, headers):
     await app.sdb.execute(
         update(Invitation).where(Invitation.id == 1).values({Invitation.is_active.key: False}))
     body = {
         "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
@@ -248,13 +196,9 @@ async def test_check_invitation_inactive(client, app):
     assert body == {"valid": True, "active": False, "type": "regular"}
 
 
-async def test_check_invitation_malformed(client):
+async def test_check_invitation_malformed(client, headers):
     body = {
         "url": "https://athenian.co",
-    }
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
