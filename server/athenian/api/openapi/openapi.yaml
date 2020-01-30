@@ -9,6 +9,8 @@ servers:
 paths:
   /account/{id}:
     get:
+      security:
+        - bearerAuth: []
       operationId: get_account
       parameters:
       - description: Numeric identifier of the account to list. The user must belong
@@ -44,6 +46,8 @@ paths:
       x-codegen-request-body-name: body
   /invite/accept:
     put:
+      security:
+        - bearerAuth: []
       operationId: accept_invitation
       requestBody:
         content:
@@ -107,6 +111,8 @@ paths:
       x-codegen-request-body-name: body
   /invite/generate/{id}:
     get:
+      security:
+        - bearerAuth: []
       operationId: gen_invitation
       parameters:
       - description: Numeric identifier of the account where to invite new users.
@@ -142,6 +148,8 @@ paths:
       x-codegen-request-body-name: body
   /metrics_line:
     post:
+      security:
+        - bearerAuth: []
       operationId: calc_metrics_line
       requestBody:
         content:
@@ -182,6 +190,8 @@ paths:
       x-codegen-request-body-name: body
   /reposet/create:
     post:
+      security:
+        - bearerAuth: []
       operationId: create_reposet
       requestBody:
         content:
@@ -208,6 +218,8 @@ paths:
       x-codegen-request-body-name: body
   /reposet/{id}:
     delete:
+      security:
+        - bearerAuth: []
       operationId: delete_reposet
       parameters:
       - description: Numeric identifier of the repository set to list.
@@ -242,6 +254,8 @@ paths:
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
     get:
+      security:
+        - bearerAuth: []
       operationId: get_reposet
       parameters:
       - description: Numeric identifier of the repository set to list.
@@ -276,6 +290,8 @@ paths:
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
     put:
+      security:
+        - bearerAuth: []
       operationId: update_reposet
       parameters:
       - description: Numeric identifier of the repository set to list.
@@ -317,6 +333,8 @@ paths:
       x-codegen-request-body-name: body
   /reposets/{id}:
     get:
+      security:
+        - bearerAuth: []
       operationId: list_reposets
       parameters:
       - description: Numeric identifier of the account.
@@ -345,6 +363,8 @@ paths:
       x-codegen-request-body-name: body
   /user:
     get:
+      security:
+        - bearerAuth: []
       operationId: get_user
       responses:
         200:
@@ -357,6 +377,11 @@ paths:
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     CreatedIdentifier:
       example:
