@@ -79,6 +79,18 @@ class User(Model):
             updated=dateutil.parser.parse(updated_at),
         )
 
+    def __hash__(self) -> int:
+        """Hash the object."""
+        return hash(self.id)
+
+    def __eq__(self, other: "User") -> bool:
+        """Check objects for equality."""
+        return self.id == other.id
+
+    def __lt__(self, other: "User") -> bool:
+        """Check whether the object is less than the other."""
+        return self.id < other.id
+
     async def load_accounts(
             self, db: Union[databases.core.Connection, databases.Database]) -> "User":
         """

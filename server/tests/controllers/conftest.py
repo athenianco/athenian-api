@@ -87,6 +87,15 @@ async def app(metadata_db, state_db) -> AthenianApp:
 
 
 @pytest.fixture(scope="function")
+async def xapp(app: AthenianApp, request, loop) -> AthenianApp:
+    def shutdown():
+        loop.run_until_complete(app.shutdown(app))
+
+    request.addfinalizer(shutdown)
+    return app
+
+
+@pytest.fixture(scope="function")
 def client(loop, aiohttp_client, app):
     return loop.run_until_complete(aiohttp_client(app.app))
 

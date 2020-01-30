@@ -152,28 +152,44 @@ class Auth0:
         token = await self.mgmt_token()
         assert len(users) >= 0  # we need __len__
 
-        async def get_user(user: str) -> Optional[User]:
+        async def get_batch(batch: List[str]) -> Optional[List[User]]:
             for retries in range(1, 31):
+                query = "user_id:(%s)" % " ".join('"%s"' % u for u in batch)
                 try:
                     resp = await self._session.get(
-                        "https://%s/api/v2/users/%s" % (self._domain, user),
+                        "https://%s/api/v2/users?q=%s" % (self._domain, query),
                         headers={"Authorization": "Bearer " + token})
-                    if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
-                        self.log.warning(
-                            "Auth0 Management API rate limit hit while listing %d users, retry %d",
-                            len(users), retries)
-                        await asyncio.sleep(0.5 + random())
-                    else:
-                        break
                 except RuntimeError:
                     # our loop is closed and we are doomed
                     return None
-            else:
+                if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
+                    self.log.warning("Auth0 Management API rate limit hit while listing "
+                                     "%d/%d users, retry %d",
+                                     len(batch), len(users), retries)
+                    await asyncio.sleep(0.5 + random())
+                elif resp.status in (HTTPStatus.REQUEST_URI_TOO_LONG, HTTPStatus.BAD_REQUEST):
+                    if len(batch) == 1:
+                        return None
+                    m = len(batch) // 2
+                    self.log.warning("Auth0 Management API /users raised HTTP %d, bisecting "
+                                     "%d/%d -> %d, %d",
+                                     resp.status, len(batch), len(users), m, len(batch) - m)
+                    b1, b2 = await asyncio.gather(get_batch(batch[:m]), get_batch(batch[m:]))
+                    if b1 is None or b2 is None:
+                        return None
+                    return b1 + b2
+                else:
+                    if resp.status >= 400:
+                        self.log.error("Auth0 Management API /users raised HTTP %d", resp.status)
+                    break
+            else:  # for retries in range
                 return None
-            user = await resp.json()
-            return User.from_auth0(**user)
+            if resp.status != HTTPStatus.OK:
+                return None
+            found = await resp.json()
+            return [User.from_auth0(**u) for u in found]
 
-        return await asyncio.gather(*[get_user(u) for u in users])
+        return sorted(set(await get_batch(list(users))))
 
     async def _fetch_jwks_loop(self) -> None:
         while True:
