@@ -23,7 +23,10 @@ from athenian.api.metadata import __description__, __package__, __version__
 from athenian.api.models.state import check_schema_version
 from athenian.api.models.web import GenericError
 from athenian.api.serialization import FriendlyJson
-from athenian.api.slogging import add_logging_args
+from athenian.api.slogging import add_logging_args, trailing_dot_exceptions
+
+
+trailing_dot_exceptions.add("connexion.api.security")
 
 
 def parse_args() -> argparse.Namespace:
