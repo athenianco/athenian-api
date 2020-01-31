@@ -35,10 +35,10 @@ async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
     return response(account)
 
 
-async def become_user(request: AthenianWebRequest, id: str) -> web.Response:
+async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response:
     """God mode ability to turn into any user. The current user must be marked internally as \
     a super admin."""
-    user_id = getattr(request.user, "god_id", None)
+    user_id = getattr(request, "god_id", None)
     if user_id is None:
         return ResponseError(ForbiddenError(
             detail="User %s is not allowed to mutate" % user_id)).response
@@ -49,7 +49,6 @@ async def become_user(request: AthenianWebRequest, id: str) -> web.Response:
         god = await conn.fetch_one(select([God]).where(God.user_id == user_id))
         god = God(**god).refresh()
         god.mapped_id = id or None
-        await conn.execute(update([God]).where(God.user_id == user_id).values(god.explode()))
-    user = (await request.auth.get_users([id]))[0]
-    await user.load_accounts(request.sdb)
+        await conn.execute(update(God).where(God.user_id == user_id).values(god.explode()))
+    user = await (await request.auth.get_user(id or user_id)).load_accounts(request.sdb)
     return response(user)
