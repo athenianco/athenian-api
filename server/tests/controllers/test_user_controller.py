@@ -9,6 +9,7 @@ async def test_get_user(client, headers):
     response = await client.request(
         method="GET", path="/v1/user", headers=headers, json={},
     )
+    assert response.status == 200
     body = (await response.read()).decode("utf-8")
     items = json.loads(body)
     updated = items["updated"]
@@ -37,15 +38,13 @@ async def test_get_account(client, headers):
 async def test_get_users_query_size_limit(xapp):
     users = await xapp._auth0.get_users(
         ["auth0|5e1f6dfb57bc640ea390557b"] * 200 + ["auth0|5e1f6e2e8bfa520ea5290741"] * 200)
-    nulls = sum(u is None for u in users)
-    assert nulls == 0
     assert len(users) == 2
-    assert {u.email for u in users} == {"vadim@athenian.co", "eiso@athenian.co"}
+    assert users["auth0|5e1f6dfb57bc640ea390557b"].email == "vadim@athenian.co"
+    assert users["auth0|5e1f6e2e8bfa520ea5290741"].email == "eiso@athenian.co"
 
 
 async def test_get_users_rate_limit(xapp):
-    users = await asyncio.gather(*[xapp._auth0.get_users(["auth0|5e1f6dfb57bc640ea390557b"])
+    users = await asyncio.gather(*[xapp._auth0.get_user("auth0|5e1f6dfb57bc640ea390557b")
                                    for _ in range(20)])
-    users = [u[0] for u in users]
     for u in users:
         assert u.email == "vadim@athenian.co"

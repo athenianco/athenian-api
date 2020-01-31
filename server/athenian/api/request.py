@@ -12,4 +12,4 @@ class AthenianWebRequest(web.Request):
     sdb: databases.Database
     auth: Auth0
     user: lambda: User
-    uid: lambda: str
+    uid: str

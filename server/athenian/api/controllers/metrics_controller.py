@@ -89,7 +89,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
 async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, account: int,
                            ) -> List[Filter]:
     filters = []
-    sdb, user = request.sdb, request.uid()
+    sdb, user = request.sdb, request.uid
     for i, for_set in enumerate(for_sets):
         repos = []
         devs = []

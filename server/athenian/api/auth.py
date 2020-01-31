@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 from connexion.exceptions import OAuthProblem
+from connexion.lifecycle import ConnexionRequest
 from connexion.operations import secure
 from jose import jwt
 
@@ -68,13 +69,20 @@ class Auth0:
             self._mgmt_loop = None  # type: Optional[asyncio.Future]
 
     def kids_sync(self) -> Dict[str, Any]:
-        """Return the mapping kid -> Auth0 jwks record with that kid."""
+        """Return the mapping kid -> Auth0 jwks record with that kid; no waiting."""
         if self._jwks_loop is None:
             self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
         return self._kids
 
+    async def kids_async(self) -> Dict[str, Any]:
+        """Return the mapping kid -> Auth0 jwks record with that kid; wait until fetched."""
+        if self._jwks_loop is None:
+            self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
+        await self._kids_event.wait()
+        return self._kids
+
     async def mgmt_token(self) -> str:
-        """Return the Auth0 management API token."""
+        """Return the Auth0 management API token; wait until fetched."""
         if self._mgmt_loop is None:
             self._mgmt_loop = asyncio.ensure_future(self._acquire_management_token_loop())
         await self._mgmt_event.wait()
@@ -84,7 +92,7 @@ class Auth0:
         """Return the user of unauthorized, public requests."""
         if self._default_user is not None:
             return self._default_user
-        self._default_user = (await self.get_users([self._default_user_id]))[0]
+        self._default_user = await self.get_user(self._default_user_id)
         return self._default_user
 
     async def close(self):
@@ -140,7 +148,7 @@ class Auth0:
             raise EnvironmentError("AUTH0_DOMAIN, AUTH0_AUDIENCE, AUTH0_CLIENT_ID, "
                                    "AUTH0_CLIENT_SECRET must be set")
 
-    def _verify_authorization_token(self, request: aiohttp.web.Request, token_info_func,
+    def _verify_authorization_token(self, request: ConnexionRequest, token_info_func,
                                     ) -> Optional[Dict[str, Any]]:
         authorization = request.headers.get("Authorization")
         if not authorization:
@@ -158,6 +166,14 @@ class Auth0:
         if token_info is None:
             raise OAuthProblem(description="Provided token is not valid")
 
+        token_info["token"] = token
+        request.context.auth = self
+        request.context.uid = token_info["sub"]
+
+        async def get_user_info():
+            return await self._get_user_info(token)
+
+        request.context.user = get_user_info
         return token_info
 
     def __enter__(self):
@@ -177,21 +193,20 @@ class Auth0:
         secure.verify_bearer = self._verify_bearer
         del self._verify_bearer
 
-    @aiohttp.web.middleware
-    async def middleware(self, request, handler):
-        """Middleware function compatible with aiohttp that bookmarks the instance."""
-        request.auth = self
-        request.uid = lambda: request["user"]
+    async def get_user(self, user: str) -> Optional[User]:
+        """Retrieve a user using Auth0 mgmt API by ID."""
+        users = await self.get_users([user])
+        if len(users) == 0:
+            return None
+        return next(iter(users.values()))
 
-        async def get_user_info():
-            token = request["token_info"]["token"]
-            return await self._get_user_info(token)
+    async def get_users(self, users: Sequence[str]) -> Dict[str, User]:
+        """
+        Retrieve several users using Auth0 mgmt API by ID.
 
-        request.user = get_user_info
-        return await handler(request)
-
-    async def get_users(self, users: Sequence[str]) -> List[Optional[User]]:
-        """Fetch several users by their IDs."""
+        :return: Mapping from user ID to the found user details. Some users may be not found, \
+                 some users may be duplicates.
+        """
         token = await self.mgmt_token()
         assert len(users) >= 0  # we need __len__
 
@@ -232,7 +247,7 @@ class Auth0:
             found = await resp.json()
             return [User.from_auth0(**u) for u in found]
 
-        return sorted(set(await get_batch(list(users))))
+        return {u.id: u for u in set(await get_batch(list(users))) if u is not None}
 
     async def _fetch_jwks_loop(self) -> None:
         while True:
@@ -247,7 +262,6 @@ class Auth0:
     async def _fetch_jwks(self) -> None:
         req = await self._session.get("https://%s/.well-known/jwks.json" % self._domain)
         jwks = await req.json()
-        req.close()
         self.log.info("Fetched %d JWKS records", len(jwks))
         self._kids = {key["kid"]: {k: key[k] for k in ("kty", "kid", "use", "n", "e")}
                       for key in jwks["keys"]}
@@ -284,8 +298,8 @@ class Auth0:
         return False
 
     async def _get_user_info(self, token: str) -> User:
-        # TODO: cache based on decoded claims
-        if token == "gkwillie":
+        # TODO(dennwc): cache based on decoded claims
+        if token == "null":
             return await self.default_user()
         resp = await self._session.get("https://%s/userinfo" % self._domain,
                                        headers={"Authorization": "Bearer " + token})
@@ -295,8 +309,7 @@ class Auth0:
     def extract_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Decode a JWT token and validate it."""
         if token == "null":
-            # gkwillie
-            return {"sub": self._default_user_id, "token": "gkwillie"}
+            return {"sub": self._default_user_id}
         try:
             unverified_header = jwt.get_unverified_header(token)
         except jwt.JWTError:
@@ -308,13 +321,13 @@ class Auth0:
         kids = self.kids_sync()
         if kids is None:
             raise OAuthProblem(
-                description="Server has not fetched Auth0 RSA keys yet, please try again")
+                description="Server has not fetched Auth0 RSA keys yet, please try again.")
         try:
             rsa_key = kids[unverified_header["kid"]]
         except KeyError:
             raise OAuthProblem(description="Unable to find an appropriate Auth0 RSA key")
         try:
-            claims = jwt.decode(
+            return jwt.decode(
                 token,
                 rsa_key,
                 algorithms=["RS256"],
@@ -327,6 +340,3 @@ class Auth0:
             raise OAuthProblem(description="invalid claims, please check the audience and issuer")
         except jwt.JWTError:
             raise OAuthProblem(description="Unable to parse the authentication token.")
-        claims["token"] = token
-        breakpoint()
-        return claims

@@ -101,7 +101,7 @@ class AthenianApp(connexion.AioHttpApp):
                 "openapi.yaml",
                 arguments={"title": __description__},
                 pass_context_arg_name="request",
-                options={"middlewares": [self.with_db, self._auth0.middleware]},
+                options={"middlewares": [self.with_db]},
             )
         setup_status(self.app)
         self._enable_cors()

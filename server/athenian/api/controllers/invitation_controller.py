@@ -28,13 +28,13 @@ async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
     sdb = request.sdb
     status = await sdb.fetch_one(
         select([UserAccount.is_admin])
-        .where(and_(UserAccount.user_id == request.uid(), UserAccount.account_id == id)))
+        .where(and_(UserAccount.user_id == request.uid, UserAccount.account_id == id)))
     if status is None:
         return ResponseError(NotFoundError(
-            detail="User %s is not in the account %d" % (request.uid(), id))).response
+            detail="User %s is not in the account %d" % (request.uid, id))).response
     if not status[UserAccount.is_admin.key]:
         return ResponseError(ForbiddenError(
-            detail="User %s is not an admin of the account %d" % (request.uid(), id))).response
+            detail="User %s is not an admin of the account %d" % (request.uid, id))).response
     existing = await sdb.fetch_one(
         select([Invitation.id, Invitation.salt])
         .where(and_(Invitation.is_active, Invitation.account_id == id)))
@@ -44,7 +44,7 @@ async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
     else:
         # create a new invitation
         salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
-        inv = Invitation(salt=salt, account_id=id, created_by=request.uid()).create_defaults()
+        inv = Invitation(salt=salt, account_id=id, created_by=request.uid).create_defaults()
         invitation_id = await sdb.execute(insert(Invitation).values(inv.explode()))
     slug = encode_slug(invitation_id, salt)
     model = InvitationLink(url=prefix + slug)
@@ -118,12 +118,12 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
             status = None
         else:
             status = await conn.fetch_one(select([UserAccount.is_admin])
-                                          .where(and_(UserAccount.user_id == request.uid(),
+                                          .where(and_(UserAccount.user_id == request.uid,
                                                       UserAccount.account_id == acc_id)))
         if status is None:
             # create the user<>account record
             user = UserAccount(
-                user_id=request.uid(),
+                user_id=request.uid,
                 account_id=acc_id,
                 is_admin=is_admin,
             ).create_defaults()
