@@ -112,7 +112,21 @@ You can erase the API data fixtures created by `make run-api` with:
 make clean
 ```
 
+## Gods
 
+Let's suppose there is a super admin `adim@athenian.co` and a regular user `marvin@athenian.co`.
+
+1. `vadim@athenian.co` logs in as usual.
+2. Call `/v1/become?id=auth0|whatever-belongs-to-marvin@athenian.co`
+3. A new record in the DB appears that maps `vadim@athenian.co` (`God.user_id`) to `marvin@athenian.co` (`God.mapped_id`).
+4. Any subsequent request from `vadim@athenian.co` is first handled as normal, so Auth0 checks whether the user is `vadim@athenian.co`.
+5. However, in the end, we check whether `vadim@athenian.co` is a god. If he is, we look up the mapped ID in the DB.
+6. We query the mgmt Auth0 API to fetch the full profile of the mapped user - `marvin@athenian.co`.
+7. We overwrite the user field of request and additionally set the extra attribute god_id to indicate that the user is a mapped god.
+8. API handlers think that the user is `marvin@athenian.co`.
+9. But `/v1/become` checks user.god_id and if it exists, it is used in the DB god check instead
+of the regular user.id. Thus we don't lose the ability to turn into any other user, including
+the empty string (None, the initial default unmapped state).
 
 ## Configure Sentry
 

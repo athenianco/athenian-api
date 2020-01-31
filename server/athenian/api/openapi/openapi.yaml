@@ -44,6 +44,42 @@ paths:
       summary: List the current user's account members.
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
+  /become:
+    get:
+      operationId: become_user
+      parameters:
+        - description: Numeric identifier of the user to turn into.
+          explode: false
+          in: query
+          name: id
+          schema:
+            type: string
+          style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: Details of the new active user, the same as `/user`.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to mutate.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Requested user does not exist.
+      security:
+      - bearerAuth: []
+      summary: \"God mode\" ability to turn into any user. The current user must
+        be marked internally as a super admin.
+      x-openapi-router-controller: athenian.api.controllers.user_controller
+      x-codegen-request-body-name: body
   /invite/accept:
     put:
       operationId: accept_invitation

@@ -106,3 +106,14 @@ class Invitation(Base):
     accepted = Column("accepted", Integer(), nullable=False, default=0)
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
     created_by = Column("created_by", String(256))
+
+
+class God(Base):
+    """Secret user mappings for chosen ones."""
+
+    __tablename__ = "gods"
+
+    user_id = Column("user_id", String(256), primary_key=True)
+    mapped_id = Column("mapped_id", String(256), nullable=True)
+    updated_at = Column("updated_at", TIMESTAMP(), nullable=False,
+                        default=datetime.utcnow, onupdate=lambda ctx: datetime.utcnow())

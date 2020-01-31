@@ -1,5 +1,6 @@
 import asyncio
 from datetime import timedelta
+import functools
 from http import HTTPStatus
 import logging
 import os
@@ -9,11 +10,15 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
+from connexion.decorators.security import get_authorization_info
 from connexion.exceptions import OAuthProblem
 from connexion.lifecycle import ConnexionRequest
 from connexion.operations import secure
 from jose import jwt
+from multidict import CIMultiDict
+from sqlalchemy import select
 
+from athenian.api.models.state.models import God
 from athenian.api.models.web.user import User
 
 
@@ -68,13 +73,7 @@ class Auth0:
         else:
             self._mgmt_loop = None  # type: Optional[asyncio.Future]
 
-    def kids_sync(self) -> Dict[str, Any]:
-        """Return the mapping kid -> Auth0 jwks record with that kid; no waiting."""
-        if self._jwks_loop is None:
-            self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
-        return self._kids
-
-    async def kids_async(self) -> Dict[str, Any]:
+    async def kids(self) -> Dict[str, Any]:
         """Return the mapping kid -> Auth0 jwks record with that kid; wait until fetched."""
         if self._jwks_loop is None:
             self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
@@ -148,50 +147,30 @@ class Auth0:
             raise EnvironmentError("AUTH0_DOMAIN, AUTH0_AUDIENCE, AUTH0_CLIENT_ID, "
                                    "AUTH0_CLIENT_SECRET must be set")
 
-    def _verify_authorization_token(self, request: ConnexionRequest, token_info_func,
-                                    ) -> Optional[Dict[str, Any]]:
-        authorization = request.headers.get("Authorization")
-        if not authorization:
-            authorization = "Bearer null"
-
-        try:
-            auth_type, token = authorization.split(None, 1)
-        except ValueError:
-            raise OAuthProblem(description="Invalid authorization header")
-
-        if auth_type.lower() != "bearer":
-            raise OAuthProblem(description="Invalid authorization header")
-
-        token_info = token_info_func(self, token)
-        if token_info is None:
-            raise OAuthProblem(description="Provided token is not valid")
-
-        token_info["token"] = token
-        request.context.auth = self
-        request.context.uid = token_info["sub"]
-
-        async def get_user_info():
-            return await self._get_user_info(token)
-
-        request.context.user = get_user_info
-        return token_info
-
     def __enter__(self):
-        """Monkey-patch connexion.operations.secure.verify_bearer()."""
-        self._verify_bearer = secure.verify_bearer
+        """Monkey-patch connexion.operations.secure.verify_security()."""
+        self._verify_security = secure.verify_security
 
-        def verify_bearer(bearer_info_func):
-            def wrapper(request, required_scopes):
-                return self._verify_authorization_token(request, bearer_info_func)
+        def verify_security(auth_funcs, required_scopes, function):
+            @functools.wraps(function)
+            async def wrapper(request: ConnexionRequest):
+                if "Authorization" not in request.headers:
+                    # Otherwise we will never reach self.extract_token and self._set_user
+                    request.headers = CIMultiDict(request.headers)
+                    request.headers["Authorization"] = "Bearer null"
+                token_info = get_authorization_info(auth_funcs, request, required_scopes)
+                # token_info = {"token": <token>} at this point, now do the real work
+                await self._set_user(request.context, token_info["token"])
+                return await function(request)
             return wrapper
 
-        secure.verify_bearer = verify_bearer
+        secure.verify_security = verify_security
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Revert the monkey-patch."""
-        secure.verify_bearer = self._verify_bearer
-        del self._verify_bearer
+        secure.verify_security = self._verify_security
+        del self._verify_security
 
     async def get_user(self, user: str) -> Optional[User]:
         """Retrieve a user using Auth0 mgmt API by ID."""
@@ -306,8 +285,27 @@ class Auth0:
         user = await resp.json()
         return User.from_auth0(**user)
 
-    def extract_token(self, token: str) -> Optional[Dict[str, Any]]:
-        """Decode a JWT token and validate it."""
+    async def _set_user(self, request, token: str) -> None:
+        token_info = await self._extract_token(token)
+        request.auth = self
+        request.uid = token_info["sub"]
+        god = await request.sdb.fetch_one(
+            select([God.mapped_id]).where(God.user_id == request.uid))
+        if god is not None:
+            request.god_id = request.uid
+            mapped_id = god[God.mapped_id.key]
+            if mapped_id is not None:
+                request.uid = mapped_id
+                self.log.info("God mode: %s became %s", request.god_id, mapped_id)
+
+        async def get_user_info():
+            if god is not None and request.god_id is not None:
+                return await self.get_user(request.uid)
+            return await self._get_user_info(token)
+
+        request.user = get_user_info
+
+    async def _extract_token(self, token: str) -> Dict[str, Any]:
         if token == "null":
             return {"sub": self._default_user_id}
         try:
@@ -318,7 +316,7 @@ class Auth0:
             raise OAuthProblem(
                 description="Invalid algorithm. Use an RS256 signed JWT Access Token.")
 
-        kids = self.kids_sync()
+        kids = await self.kids()
         if kids is None:
             raise OAuthProblem(
                 description="Server has not fetched Auth0 RSA keys yet, please try again.")
