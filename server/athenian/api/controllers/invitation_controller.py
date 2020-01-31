@@ -28,13 +28,13 @@ async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
     sdb = request.sdb
     status = await sdb.fetch_one(
         select([UserAccount.is_admin])
-        .where(and_(UserAccount.user_id == request.user.id, UserAccount.account_id == id)))
+        .where(and_(UserAccount.user_id == request.uid, UserAccount.account_id == id)))
     if status is None:
         return ResponseError(NotFoundError(
-            detail="User %s is not in the account %d" % (request.user.id, id))).response
+            detail="User %s is not in the account %d" % (request.uid, id))).response
     if not status[UserAccount.is_admin.key]:
         return ResponseError(ForbiddenError(
-            detail="User %s is not an admin of the account %d" % (request.user.id, id))).response
+            detail="User %s is not an admin of the account %d" % (request.uid, id))).response
     existing = await sdb.fetch_one(
         select([Invitation.id, Invitation.salt])
         .where(and_(Invitation.is_active, Invitation.account_id == id)))
@@ -44,7 +44,7 @@ async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
     else:
         # create a new invitation
         salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
-        inv = Invitation(salt=salt, account_id=id, created_by=request.user.id).create_defaults()
+        inv = Invitation(salt=salt, account_id=id, created_by=request.uid).create_defaults()
         invitation_id = await sdb.execute(insert(Invitation).values(inv.explode()))
     slug = encode_slug(invitation_id, salt)
     model = InvitationLink(url=prefix + slug)
@@ -118,20 +118,20 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
             status = None
         else:
             status = await conn.fetch_one(select([UserAccount.is_admin])
-                                          .where(and_(UserAccount.user_id == request.user.id,
+                                          .where(and_(UserAccount.user_id == request.uid,
                                                       UserAccount.account_id == acc_id)))
         if status is None:
             # create the user<>account record
             user = UserAccount(
-                user_id=request.user.id,
+                user_id=request.uid,
                 account_id=acc_id,
                 is_admin=is_admin,
             ).create_defaults()
             await conn.execute(insert(UserAccount).values(user.explode(with_primary_keys=True)))
             values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
             await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
-        await request.user.load_accounts(conn)
-    return response(InvitedUser(account=acc_id, user=request.user))
+        user = await (await request.user()).load_accounts(conn)
+    return response(InvitedUser(account=acc_id, user=user))
 
 
 async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Response:

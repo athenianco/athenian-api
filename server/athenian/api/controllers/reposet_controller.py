@@ -20,7 +20,7 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
     :param body: List of repositories to group.
     """
     body = RepositorySetCreateRequest.from_dict(body)
-    user = request.user.id
+    user = request.uid
     account = body.account
     try:
         adm = await is_admin(request.sdb, user, account)
@@ -42,12 +42,12 @@ async def delete_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     :type id: int
     """
     try:
-        _, is_admin = await fetch_reposet(id, [], request.sdb, request.user)
+        _, is_admin = await fetch_reposet(id, [], request.sdb, request.uid)
     except ResponseError as e:
         return e.response
     if not is_admin:
         return ResponseError(ForbiddenError(
-            detail="User %s may not modify reposet %d" % (request.user.id, id))).response
+            detail="User %s may not modify reposet %d" % (request.uid, id))).response
     await request.sdb.execute(delete(RepositorySet).where(RepositorySet.id == id))
     return web.Response(status=200)
 
@@ -59,7 +59,7 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     :type id: int
     """
     try:
-        rs, _ = await fetch_reposet(id, [RepositorySet.items], request.sdb, request.user)
+        rs, _ = await fetch_reposet(id, [RepositorySet.items], request.sdb, request.uid)
     except ResponseError as e:
         return e.response
     # "items" collides with dict.items() so we have to access the list via []
@@ -74,12 +74,12 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
     :param body: New list of repositories in the group.
     """
     try:
-        rs, is_admin = await fetch_reposet(id, [RepositorySet], request.sdb, request.user)
+        rs, is_admin = await fetch_reposet(id, [RepositorySet], request.sdb, request.uid)
     except ResponseError as e:
         return e.response
     if not is_admin:
         return ResponseError(ForbiddenError(
-            detail="User %s may not modify reposet %d" % (request.user.id, id))).response
+            detail="User %s may not modify reposet %d" % (request.uid, id))).response
     rs.items = body
     rs.refresh()
     # TODO(vmarkovtsev): get user's repos and check the access
@@ -92,7 +92,7 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
 async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current user's repository sets."""
     try:
-        await is_admin(request.sdb, request.user.id, id)
+        await is_admin(request.sdb, request.uid, id)
     except ResponseError as e:
         return e.response
     rss = await request.sdb.fetch_all(

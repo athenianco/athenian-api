@@ -5,22 +5,16 @@ import logging
 import os
 from random import random
 import re
-from typing import List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
+from connexion.exceptions import OAuthProblem
+from connexion.lifecycle import ConnexionRequest
+from connexion.operations import secure
 from jose import jwt
 
 from athenian.api.models.web.user import User
-
-
-class AuthError(Exception):
-    """Auth error with an HTTP status code."""
-
-    def __init__(self, error, status_code):
-        """Create a new auth error."""
-        self.error = error
-        self.status_code = status_code
 
 
 class Auth0:
@@ -30,11 +24,12 @@ class Auth0:
     AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
     AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
     AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
+    DEFAULT_USER = "github|60340680"
     log = logging.getLogger("auth")
 
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
                  client_secret=AUTH0_CLIENT_SECRET, whitelist: Sequence[str] = tuple(),
-                 lazy_mgmt=False):
+                 default_user=DEFAULT_USER, lazy=False):
         """
         Create a new Auth0 middleware.
 
@@ -47,8 +42,10 @@ class Auth0:
         :param client_id: Application's Client ID.
         :param client_secret: Application's Client Secret.
         :param whitelist: Routes that do not need authorization.
-        :param lazy_mgmt: Value that indicates whether Auth0 Management API token must be \
-                          asynchronously requested at first related method call or at once.
+        :param default_user: Default user ID - the one that's assigned to public, unauthorized \
+                             requests.
+        :param lazy: Value that indicates whether Auth0 Management API tokens and JWKS data \
+                     must be asynchronously requested at first related method call.
         """
         self._domain = domain
         self._audience = audience
@@ -56,22 +53,52 @@ class Auth0:
         self._session = aiohttp.ClientSession()
         self._client_id = client_id
         self._client_secret = client_secret
+        self._default_user_id = default_user
+        self._default_user = None  # type: Optional[User]
+        self._kids_event = asyncio.Event()
+        if not lazy:
+            self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
+        else:
+            self._jwks_loop = None  # type: Optional[asyncio.Future]
+        self._kids: Dict[str, Any] = {}
         self._mgmt_event = asyncio.Event()
-        self._mgmt_token = None  # type: str
-        if not lazy_mgmt:
+        self._mgmt_token = None  # type: Optional[str]
+        if not lazy:
             self._mgmt_loop = asyncio.ensure_future(self._acquire_management_token_loop())
         else:
-            self._mgmt_loop = None
+            self._mgmt_loop = None  # type: Optional[asyncio.Future]
+
+    def kids_sync(self) -> Dict[str, Any]:
+        """Return the mapping kid -> Auth0 jwks record with that kid; no waiting."""
+        if self._jwks_loop is None:
+            self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
+        return self._kids
+
+    async def kids_async(self) -> Dict[str, Any]:
+        """Return the mapping kid -> Auth0 jwks record with that kid; wait until fetched."""
+        if self._jwks_loop is None:
+            self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
+        await self._kids_event.wait()
+        return self._kids
 
     async def mgmt_token(self) -> str:
-        """Return the Auth0 management API token."""
+        """Return the Auth0 management API token; wait until fetched."""
         if self._mgmt_loop is None:
             self._mgmt_loop = asyncio.ensure_future(self._acquire_management_token_loop())
         await self._mgmt_event.wait()
         return self._mgmt_token
 
+    async def default_user(self) -> User:
+        """Return the user of unauthorized, public requests."""
+        if self._default_user is not None:
+            return self._default_user
+        self._default_user = await self.get_user(self._default_user_id)
+        return self._default_user
+
     async def close(self):
         """Free resources associated with the object."""
+        if self._jwks_loop is not None:
+            self._jwks_loop.cancel()
         if self._mgmt_loop is not None:  # this may happen if lazy_mgmt=True
             self._mgmt_loop.cancel()
         session = self._session
@@ -121,47 +148,124 @@ class Auth0:
             raise EnvironmentError("AUTH0_DOMAIN, AUTH0_AUDIENCE, AUTH0_CLIENT_ID, "
                                    "AUTH0_CLIENT_SECRET must be set")
 
-    @aiohttp.web.middleware
-    async def middleware(self, request, handler):
-        """Middleware function compatible with aiohttp."""
-        request.auth = self
-        if self._is_whitelisted(request):
-            return await handler(request)
-        await self._set_user(request)
-        return await handler(request)
+    def _verify_authorization_token(self, request: ConnexionRequest, token_info_func,
+                                    ) -> Optional[Dict[str, Any]]:
+        authorization = request.headers.get("Authorization")
+        if not authorization:
+            authorization = "Bearer null"
 
-    async def get_users(self, users: Sequence[str]) -> List[Optional[User]]:
-        """Fetch several users by their IDs."""
+        try:
+            auth_type, token = authorization.split(None, 1)
+        except ValueError:
+            raise OAuthProblem(description="Invalid authorization header")
+
+        if auth_type.lower() != "bearer":
+            raise OAuthProblem(description="Invalid authorization header")
+
+        token_info = token_info_func(self, token)
+        if token_info is None:
+            raise OAuthProblem(description="Provided token is not valid")
+
+        token_info["token"] = token
+        request.context.auth = self
+        request.context.uid = token_info["sub"]
+
+        async def get_user_info():
+            return await self._get_user_info(token)
+
+        request.context.user = get_user_info
+        return token_info
+
+    def __enter__(self):
+        """Monkey-patch connexion.operations.secure.verify_bearer()."""
+        self._verify_bearer = secure.verify_bearer
+
+        def verify_bearer(bearer_info_func):
+            def wrapper(request, required_scopes):
+                return self._verify_authorization_token(request, bearer_info_func)
+            return wrapper
+
+        secure.verify_bearer = verify_bearer
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Revert the monkey-patch."""
+        secure.verify_bearer = self._verify_bearer
+        del self._verify_bearer
+
+    async def get_user(self, user: str) -> Optional[User]:
+        """Retrieve a user using Auth0 mgmt API by ID."""
+        users = await self.get_users([user])
+        if len(users) == 0:
+            return None
+        return next(iter(users.values()))
+
+    async def get_users(self, users: Sequence[str]) -> Dict[str, User]:
+        """
+        Retrieve several users using Auth0 mgmt API by ID.
+
+        :return: Mapping from user ID to the found user details. Some users may be not found, \
+                 some users may be duplicates.
+        """
         token = await self.mgmt_token()
         assert len(users) >= 0  # we need __len__
 
-        async def get_user(user: str) -> Optional[User]:
+        async def get_batch(batch: List[str]) -> Optional[List[User]]:
             for retries in range(1, 31):
+                query = "user_id:(%s)" % " ".join('"%s"' % u for u in batch)
                 try:
                     resp = await self._session.get(
-                        "https://%s/api/v2/users/%s" % (self._domain, user),
+                        "https://%s/api/v2/users?q=%s" % (self._domain, query),
                         headers={"Authorization": "Bearer " + token})
-                    if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
-                        self.log.warning(
-                            "Auth0 Management API rate limit hit while listing %d users, retry %d",
-                            len(users), retries)
-                        await asyncio.sleep(0.5 + random())
-                    else:
-                        break
                 except RuntimeError:
                     # our loop is closed and we are doomed
                     return None
-            else:
+                if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
+                    self.log.warning("Auth0 Management API rate limit hit while listing "
+                                     "%d/%d users, retry %d",
+                                     len(batch), len(users), retries)
+                    await asyncio.sleep(0.5 + random())
+                elif resp.status in (HTTPStatus.REQUEST_URI_TOO_LONG, HTTPStatus.BAD_REQUEST):
+                    if len(batch) == 1:
+                        return None
+                    m = len(batch) // 2
+                    self.log.warning("Auth0 Management API /users raised HTTP %d, bisecting "
+                                     "%d/%d -> %d, %d",
+                                     resp.status, len(batch), len(users), m, len(batch) - m)
+                    b1, b2 = await asyncio.gather(get_batch(batch[:m]), get_batch(batch[m:]))
+                    if b1 is None or b2 is None:
+                        return None
+                    return b1 + b2
+                else:
+                    if resp.status >= 400:
+                        self.log.error("Auth0 Management API /users raised HTTP %d", resp.status)
+                    break
+            else:  # for retries in range
                 return None
-            user = await resp.json()
-            return User.from_auth0(**user)
+            if resp.status != HTTPStatus.OK:
+                return None
+            found = await resp.json()
+            return [User.from_auth0(**u) for u in found]
 
-        return await asyncio.gather(*[get_user(u) for u in users])
+        return {u.id: u for u in set(await get_batch(list(users))) if u is not None}
+
+    async def _fetch_jwks_loop(self) -> None:
+        while True:
+            await self._fetch_jwks()
+            await asyncio.sleep(3600)  # 1 hour
 
     async def _acquire_management_token_loop(self) -> None:
         while True:
             expires_in = await self._acquire_management_token()
             await asyncio.sleep(expires_in)
+
+    async def _fetch_jwks(self) -> None:
+        req = await self._session.get("https://%s/.well-known/jwks.json" % self._domain)
+        jwks = await req.json()
+        self.log.info("Fetched %d JWKS records", len(jwks))
+        self._kids = {key["kid"]: {k: key[k] for k in ("kty", "kid", "use", "n", "e")}
+                      for key in jwks["keys"]}
+        self._kids_event.set()
 
     async def _acquire_management_token(self) -> float:
         try:
@@ -193,65 +297,37 @@ class Auth0:
                 return True
         return False
 
-    def _get_token_auth_header(self, request: aiohttp.web.Request) -> str:
-        """Obtain the access token from the Authorization Header."""
-        try:
-            auth = request.headers["Authorization"]
-        except KeyError:
-            raise AuthError("Authorization header is expected", 401) from None
-
-        parts = auth.split()
-
-        if parts[0].lower() != "bearer":
-            raise AuthError("Authorization header must start with Bearer", 401)
-        elif len(parts) == 1:
-            raise AuthError("Token not found", 401)
-        elif len(parts) > 2:
-            raise AuthError('Authorization header must be "Bearer <token>"', 401)
-
-        token = parts[1]
-        return token
-
-    async def _get_user_info(self, token):
-        # TODO: cache based on decoded claims
+    async def _get_user_info(self, token: str) -> User:
+        # TODO(dennwc): cache based on decoded claims
+        if token == "null":
+            return await self.default_user()
         resp = await self._session.get("https://%s/userinfo" % self._domain,
                                        headers={"Authorization": "Bearer " + token})
         user = await resp.json()
         return User.from_auth0(**user)
 
-    async def _set_user(self, request) -> None:
-        # FIXME(vmarkovtsev): remove the following short circuit when the frontend is ready
-        request.user = (await self.get_users(["auth0|5e1f6dfb57bc640ea390557b"]))[0]
-        return
-
+    def extract_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Decode a JWT token and validate it."""
+        if token == "null":
+            return {"sub": self._default_user_id}
         try:
-            token = self._get_token_auth_header(request)
             unverified_header = jwt.get_unverified_header(token)
-        except AuthError as e:
-            return aiohttp.web.Response(body=e.error, status=e.status_code)
         except jwt.JWTError:
-            return aiohttp.web.Response(body="Invalid header."
-                                        " Use an RS256 signed JWT Access Token.", status=401)
+            raise OAuthProblem(description="Invalid header. Use an RS256 signed JWT Access Token.")
         if unverified_header["alg"] != "RS256":
-            return aiohttp.web.Response(body="Invalid header."
-                                        " Use an RS256 signed JWT Access Token.", status=401)
+            raise OAuthProblem(
+                description="Invalid algorithm. Use an RS256 signed JWT Access Token.")
 
-        # TODO(dennwc): update periodically instead of pulling it on each request
-        jwks_req = await self._session.get("https://%s/.well-known/jwks.json" % self._domain)
-        jwks = await jwks_req.json()
-        jwks_req.close()
-
-        # There might be multiple keys, find the one used to sign this request
-        rsa_key = None
-        for key in jwks["keys"]:
-            if key["kid"] == unverified_header["kid"]:
-                rsa_key = {k: key[k] for k in ("kty", "kid", "use", "n", "e")}
-
-        if rsa_key is None:
-            return aiohttp.web.Response(body="Unable to find an appropriate key", status=401)
-
+        kids = self.kids_sync()
+        if kids is None:
+            raise OAuthProblem(
+                description="Server has not fetched Auth0 RSA keys yet, please try again.")
         try:
-            jwt.decode(
+            rsa_key = kids[unverified_header["kid"]]
+        except KeyError:
+            raise OAuthProblem(description="Unable to find an appropriate Auth0 RSA key")
+        try:
+            return jwt.decode(
                 token,
                 rsa_key,
                 algorithms=["RS256"],
@@ -259,18 +335,8 @@ class Auth0:
                 issuer="https://%s/" % self._domain,
             )
         except jwt.ExpiredSignatureError:
-            return aiohttp.web.Response(body="token expired", status=401)
+            raise OAuthProblem(description="JWT expired")
         except jwt.JWTClaimsError:
-            return aiohttp.web.Response(
-                body="incorrect claims, please check the audience and issuer", status=401)
-        except Exception:
-            return aiohttp.web.Response(
-                body="Unable to parse the authentication token.", status=401)
-
-        try:
-            user = await self._get_user_info(token)
-            self.log.info("User %s", user)
-        except Exception:
-            return aiohttp.web.Response(body="Your auth token is likely revoked.", status=401)
-
-        request.user = user
+            raise OAuthProblem(description="invalid claims, please check the audience and issuer")
+        except jwt.JWTError:
+            raise OAuthProblem(description="Unable to parse the authentication token.")
