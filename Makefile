@@ -30,6 +30,9 @@ $(IO_DIR)/%.sqlite: $(ENV_FILE)
 .PHONY: run-api
 run-api: $(IO_DIR)/mdb.sqlite $(IO_DIR)/sdb.sqlite
 	docker run --rm -p 8080:8080 -v$(IO_DIR):/io --env-file $(ENV_FILE) $(IMAGE) --ui --metadata-db=sqlite:///io/mdb.sqlite --state-db=sqlite:///io/sdb.sqlite
+.PHONY: invitation-link
+invitation-link: $(IO_DIR)/mdb.sqlite $(IO_DIR)/sdb.sqlite
+	docker run --rm -e DB_DIR=/io -v$(IO_DIR):/io --env-file $(ENV_FILE) --entrypoint python3 $(IMAGE) -m athenian.api.invite_admin sqlite:///io/sdb.sqlite
 
 .PHONY: clean
 clean: fixtures-clean
