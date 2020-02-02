@@ -14,7 +14,7 @@ async def test_gen_invitation_new(client, app, headers):
         method="GET", path="/v1/invite/generate/1", headers=headers, json={},
     )
     body = json.loads((await response.read()).decode("utf-8"))
-    prefix = invitation_controller.prefix
+    prefix = invitation_controller.url_prefix
     assert body["url"].startswith(prefix)
     x = body["url"][len(prefix):]
     iid, salt = invitation_controller.decode_slug(x)
@@ -48,7 +48,7 @@ async def test_gen_invitation_existing(client, eiso, headers):
         method="GET", path="/v1/invite/generate/3", headers=headers, json={},
     )
     body = json.loads((await response.read()).decode("utf-8"))
-    prefix = invitation_controller.prefix
+    prefix = invitation_controller.url_prefix
     assert body["url"].startswith(prefix)
     x = body["url"][len(prefix):]
     iid, salt = invitation_controller.decode_slug(x)
@@ -58,7 +58,7 @@ async def test_gen_invitation_existing(client, eiso, headers):
 
 async def test_accept_invitation(client, headers):
     body = {
-        "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
+        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -80,7 +80,7 @@ async def test_accept_invitation(client, headers):
 
 async def test_accept_invitation_noop(client, eiso, headers):
     body = {
-        "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
+        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -103,7 +103,7 @@ async def test_accept_invitation_noop(client, eiso, headers):
 @pytest.mark.parametrize("trash", ["0", "0" * 8, "a" * 8])
 async def test_accept_invitation_trash(client, trash, headers):
     body = {
-        "url": invitation_controller.prefix + "0" * 8,
+        "url": invitation_controller.url_prefix + "0" * 8,
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -115,7 +115,7 @@ async def test_accept_invitation_inactive(client, app, headers):
     await app.sdb.execute(
         update(Invitation).where(Invitation.id == 1).values({Invitation.is_active.key: False}))
     body = {
-        "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
+        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -129,7 +129,7 @@ async def test_accept_invitation_admin(client, app, headers):
             Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
             .create_defaults().explode()))
     body = {
-        "url": invitation_controller.prefix + invitation_controller.encode_slug(iid, 888),
+        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -151,7 +151,7 @@ async def test_accept_invitation_admin(client, app, headers):
 
 async def test_check_invitation(client, headers):
     body = {
-        "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
+        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
@@ -162,7 +162,7 @@ async def test_check_invitation(client, headers):
 
 async def test_check_invitation_not_exists(client, headers):
     body = {
-        "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 888),
+        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 888),
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
@@ -177,7 +177,7 @@ async def test_check_invitation_admin(client, app, headers):
             Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
             .create_defaults().explode()))
     body = {
-        "url": invitation_controller.prefix + invitation_controller.encode_slug(iid, 888),
+        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
@@ -190,7 +190,7 @@ async def test_check_invitation_inactive(client, app, headers):
     await app.sdb.execute(
         update(Invitation).where(Invitation.id == 1).values({Invitation.is_active.key: False}))
     body = {
-        "url": invitation_controller.prefix + invitation_controller.encode_slug(1, 777),
+        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,

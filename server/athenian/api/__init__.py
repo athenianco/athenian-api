@@ -43,7 +43,9 @@ def parse_args() -> argparse.Namespace:
   AUTH0_CLIENT_ID          Client ID of the Auth0 Machine-to-Machine Application
   AUTH0_CLIENT_SECRET      Client Secret of the Auth0 Machine-to-Machine Application
   ATHENIAN_INVITATION_KEY  Passphrase to encrypt the invitation links
-  """,
+  ATHENIAN_INVITATION_URL_PREFIX
+                           String with which any invitation URL starts, e.g. https://app.athenian.co/i/
+  """,  # noqa
                                      formatter_class=Formatter)
     add_logging_args(parser)
     parser.add_argument("--host", default="0.0.0.0", help="HTTP server host.")
@@ -89,6 +91,9 @@ class AthenianApp(connexion.AioHttpApp):
         super().__init__(__package__, specification_dir=specification_dir, options=options)
         if invitation_controller.ikey is None:
             raise EnvironmentError("ATHENIAN_INVITATION_KEY environment variable must be defined")
+        if invitation_controller.url_prefix is None:
+            raise EnvironmentError(
+                "ATHENIAN_INVITATION_URL_PREFIX environment variable must be defined")
         auth0_cls.ensure_static_configuration()
         self._auth0 = auth0_cls(whitelist=[
             r"/v1/openapi.json$",
