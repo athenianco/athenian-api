@@ -310,20 +310,19 @@ class Auth0:
             return {"sub": self._default_user_id}
         try:
             unverified_header = jwt.get_unverified_header(token)
-        except jwt.JWTError:
-            raise OAuthProblem(description="Invalid header. Use an RS256 signed JWT Access Token.")
+        except jwt.JWTError as e:
+            raise OAuthProblem(
+                description="Invalid header: %s. Use an RS256 signed JWT Access Token." % e)
         if unverified_header["alg"] != "RS256":
             raise OAuthProblem(
-                description="Invalid algorithm. Use an RS256 signed JWT Access Token.")
+                description="Invalid algorithm %s. Use an RS256 signed JWT Access Token." %
+                unverified_header["alg"])
 
         kids = await self.kids()
-        if kids is None:
-            raise OAuthProblem(
-                description="Server has not fetched Auth0 RSA keys yet, please try again.")
         try:
             rsa_key = kids[unverified_header["kid"]]
         except KeyError:
-            raise OAuthProblem(description="Unable to find an appropriate Auth0 RSA key")
+            raise OAuthProblem(description="Unable to find the matching Auth0 RSA public key")
         try:
             return jwt.decode(
                 token,
@@ -332,9 +331,9 @@ class Auth0:
                 audience=self._audience,
                 issuer="https://%s/" % self._domain,
             )
-        except jwt.ExpiredSignatureError:
-            raise OAuthProblem(description="JWT expired")
-        except jwt.JWTClaimsError:
-            raise OAuthProblem(description="invalid claims, please check the audience and issuer")
-        except jwt.JWTError:
-            raise OAuthProblem(description="Unable to parse the authentication token.")
+        except jwt.ExpiredSignatureError as e:
+            raise OAuthProblem(description="JWT expired: %s" % e)
+        except jwt.JWTClaimsError as e:
+            raise OAuthProblem(description="invalid claims: %s" % e)
+        except jwt.JWTError as e:
+            raise OAuthProblem(description="Unable to parse the authentication token: %s" % e)
