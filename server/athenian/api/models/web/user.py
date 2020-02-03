@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import databases
 import dateutil.parser
@@ -72,14 +72,19 @@ class User(Model):
 
     @classmethod
     def from_auth0(cls, name: str, picture: str, updated_at: str, email: Optional[str] = None,
-                   sub: Optional[str] = None, user_id: Optional[str] = None, **_):
+                   sub: Optional[str] = None, user_id: Optional[str] = None,
+                   identities: Optional[List[dict]] = None, **_):
         """Create a new User object from Auth0 /userinfo."""
         if sub is None and user_id is None:
             raise TypeError('Either "sub" or "user_id" must be set to create a User.')
         id = sub or user_id
+        if identities:
+            native_id = identities[0]["user_id"]
+        else:
+            native_id = id.rsplit("|", 1)[1]
         return cls(
             id=id,
-            native_id=id.rsplit("|", 1)[1],  # FIXME(vmarkovtsev): make it more reliable with JWT
+            native_id=native_id,
             email=email,
             name=name,
             picture=picture,
