@@ -9,7 +9,8 @@ from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.state.models import Base as StateBase
 
 
-async def read_sql_query(sql: ClauseElement, con: databases.Database,
+async def read_sql_query(sql: ClauseElement,
+                         con: Union[databases.Database, databases.core.Connection],
                          columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                                         MetadataBase, StateBase],
                          ) -> pd.DataFrame:

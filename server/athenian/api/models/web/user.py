@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import databases
 import dateutil.parser
@@ -16,6 +16,7 @@ class User(Model):
     def __init__(
         self,
         id: Optional[str] = None,
+        native_id: Optional[str] = None,
         name: Optional[str] = None,
         email: Optional[str] = None,
         picture: Optional[str] = None,
@@ -25,6 +26,7 @@ class User(Model):
         """User - a model defined in OpenAPI
 
         :param id: The id of this User.
+        :param native_id: The native_id of this User.
         :param name: The name of this User.
         :param email: The email of this User.
         :param picture: The picture of this User.
@@ -33,6 +35,7 @@ class User(Model):
         """
         self.openapi_types = {
             "id": str,
+            "native_id": str,
             "name": str,
             "email": str,
             "picture": str,
@@ -42,6 +45,7 @@ class User(Model):
 
         self.attribute_map = {
             "id": "id",
+            "native_id": "native_id",
             "name": "name",
             "email": "email",
             "picture": "picture",
@@ -50,6 +54,7 @@ class User(Model):
         }
 
         self._id = id
+        self._native_id = native_id
         self._name = name
         self._email = email
         self._picture = picture
@@ -67,12 +72,19 @@ class User(Model):
 
     @classmethod
     def from_auth0(cls, name: str, picture: str, updated_at: str, email: Optional[str] = None,
-                   sub: Optional[str] = None, user_id: Optional[str] = None, **_):
+                   sub: Optional[str] = None, user_id: Optional[str] = None,
+                   identities: Optional[List[dict]] = None, **_):
         """Create a new User object from Auth0 /userinfo."""
         if sub is None and user_id is None:
             raise TypeError('Either "sub" or "user_id" must be set to create a User.')
+        id = sub or user_id
+        if identities:
+            native_id = identities[0]["user_id"]
+        else:
+            native_id = id.rsplit("|", 1)[1]
         return cls(
-            id=sub or user_id,
+            id=id,
+            native_id=native_id,
             email=email,
             name=name,
             picture=picture,
@@ -127,6 +139,29 @@ class User(Model):
             raise ValueError("Invalid value for `id`, must not be `None`")
 
         self._id = id
+
+    @property
+    def native_id(self) -> str:
+        """Gets the native_id of this User.
+
+        Auth backend user identifier.
+
+        :return: The native_id of this User.
+        """
+        return self._native_id
+
+    @native_id.setter
+    def native_id(self, native_id: str):
+        """Sets the native_id of this User.
+
+        Auth backend user identifier.
+
+        :param native_id: The native_id of this User.
+        """
+        if native_id is None:
+            raise ValueError("Invalid value for `native_id`, must not be `None`")
+
+        self._native_id = native_id
 
     @property
     def name(self) -> str:

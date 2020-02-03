@@ -7,8 +7,9 @@ from athenian.api import FriendlyJson
 from athenian.api.controllers.reposet import fetch_reposet
 from athenian.api.controllers.response import response, ResponseError
 from athenian.api.controllers.user import is_admin
+from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
 from athenian.api.models.state.models import RepositorySet
-from athenian.api.models.web import CreatedIdentifier, ForbiddenError
+from athenian.api.models.web import CreatedIdentifier, ForbiddenError, NoSourceDataError
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.request import AthenianWebRequest
@@ -97,6 +98,22 @@ async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
         return e.response
     rss = await request.sdb.fetch_all(
         select([RepositorySet]).where(RepositorySet.owner == id))
+    if len(rss) == 0:
+        # new account, discover the repos the metadata DB
+        async with request.mdb.connection() as conn:
+            iid = await conn.fetch_val(
+                select([InstallationOwner.install_id])
+                .where(InstallationOwner.user_id == int(request.user.native_id)))
+            if iid is not None:
+                repos = await conn.fetch_all(
+                    select([InstallationRepo.repo_full_name])
+                    .where(InstallationRepo.install_id == iid))
+                rs = RepositorySet(owner=id, items=repos).create_defaults()
+                rs.id = await conn.execute(insert(RepositorySet).values(rs.explode()))
+                rss = [vars(rs)]
+            else:
+                return ResponseError(NoSourceDataError(
+                    detail="Metadata installation has not been registered yet.")).response
     items = [RepositorySetListItem(
         id=rs[RepositorySet.id.key],
         created=rs[RepositorySet.created_at.key],

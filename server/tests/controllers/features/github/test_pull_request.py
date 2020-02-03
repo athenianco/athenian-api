@@ -192,7 +192,7 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
         may_have_negative_values = negative
 
         def analyze(self, times: PullRequestTimes) -> timedelta:
-            return times.released.value - times.work_begins.best
+            return times.released.value - times.work_began.best
 
     calc = LeadTimeCalculator()
     for pr in pr_samples(100):

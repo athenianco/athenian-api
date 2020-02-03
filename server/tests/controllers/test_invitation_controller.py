@@ -70,6 +70,7 @@ async def test_accept_invitation(client, headers):
         "user": {
             "id": "auth0|5e1f6dfb57bc640ea390557b",
             "name": "Vadim Markovtsev",
+            "native_id": "5e1f6dfb57bc640ea390557b",
             "email": "vadim@athenian.co",
             "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
             "accounts": {"1": True, "2": False, "3": False},
@@ -91,6 +92,7 @@ async def test_accept_invitation_noop(client, eiso, headers):
         "user": {
             "id": "auth0|5e1f6e2e8bfa520ea5290741",
             "name": "Eiso Kant",
+            "native_id": "5e1f6e2e8bfa520ea5290741",
             "email": "eiso@athenian.co",
             "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
             "accounts": {"1": False, "3": True},
@@ -139,6 +141,7 @@ async def test_accept_invitation_admin(client, app, headers):
         "user": {
             "id": "auth0|5e1f6dfb57bc640ea390557b",
             "name": "Vadim Markovtsev",
+            "native_id": "5e1f6dfb57bc640ea390557b",
             "email": "vadim@athenian.co",
             "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png", # noqa
             "accounts": {"1": True, "2": False, "4": True},

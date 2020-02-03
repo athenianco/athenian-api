@@ -54,12 +54,19 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                     stdin = False
                     continue
                 kwargs = {}
-                for k, p in zip(keys, line[:-1].split(b"\t")):
+                vals = line[:-1].split(b"\t")
+                for k, p in zip(keys, vals):
                     p = p.replace(b"\\t", b"\t").replace(b"\\n", b"\n").decode()
                     if p == r"\N":
                         kwargs[k] = None
                     else:
-                        kwargs[k] = columns[k](p)
+                        try:
+                            kwargs[k] = columns[k](p)
+                        except Exception as e:
+                            print("%s.%s" % (table, k), p)
+                            for k, p in zip(keys, vals):
+                                print(k, '"%s"' % p.decode())
+                            raise e from None
                 session.add(model(**kwargs))
 
 
