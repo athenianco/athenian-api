@@ -25,7 +25,7 @@ def main():
         else:
             max_id = max_id[0]
         max_id += 1
-        if engine.url.drivername == "postgres":
+        if engine.url.drivername in ("postgres", "postgresql"):
             engine.execute("ALTER SEQUENCE accounts_id_seq RESTART WITH %d;" % max_id)
         elif engine.url.drivername == "sqlite":
             engine.execute("UPDATE sqlite_sequence SET seq=%d WHERE NAME='accounts';" % max_id)
