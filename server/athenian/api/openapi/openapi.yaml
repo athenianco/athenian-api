@@ -48,13 +48,14 @@ paths:
     get:
       operationId: become_user
       parameters:
-        - description: Numeric identifier of the user to turn into.
-          explode: false
-          in: query
-          name: id
-          schema:
-            type: string
-          style: simple
+      - description: Numeric identifier of the user to turn into.
+        explode: false
+        in: query
+        name: id
+        required: false
+        schema:
+          type: string
+        style: simple
       responses:
         200:
           content:
@@ -76,9 +77,63 @@ paths:
           description: Requested user does not exist.
       security:
       - bearerAuth: []
-      summary: \"God mode\" ability to turn into any user. The current user must
-        be marked internally as a super admin.
+      summary: \"God mode\" ability to turn into any user. The current user must be
+        marked internally as a super admin.
       x-openapi-router-controller: athenian.api.controllers.user_controller
+      x-codegen-request-body-name: body
+  /filter/contributors:
+    post:
+      operationId: filter_contributors
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilterItemsRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeveloperSet'
+          description: Repositories that were updated within the given timeframe.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to access the specified account.
+      security:
+      - bearerAuth: []
+      summary: Find developers that made an action within the given timeframe.
+      x-openapi-router-controller: athenian.api.controllers.filter_controller
+      x-codegen-request-body-name: body
+  /filter/repositories:
+    post:
+      operationId: filter_repositories
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilterItemsRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositorySet'
+          description: Repositories that were updated within the given timeframe.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to access the specified account.
+      security:
+      - bearerAuth: []
+      summary: Find repositories that were updated within the given timeframe.
+      x-openapi-router-controller: athenian.api.controllers.filter_controller
       x-codegen-request-body-name: body
   /invite/accept:
     put:
@@ -753,17 +808,17 @@ components:
             $ref: '#/components/schemas/MetricID'
           type: array
         date_from:
-          description: The date from when to start measuring the metrics.
+          description: Date from when to start measuring the metrics.
           format: date
           type: string
         date_to:
-          description: The date up to which to measure the metrics.
+          description: Date up to which to measure the metrics.
           format: date
           type: string
         granularity:
           $ref: '#/components/schemas/Granularity'
         account:
-          description: User's account ID.
+          description: Session account ID.
           type: integer
       required:
       - account
@@ -978,3 +1033,29 @@ components:
       - confidence_scores
       - date
       - values
+    FilterItemsRequest:
+      example:
+        account: 1
+        date_from: 2000-01-23
+        date_to: 2020-05-23
+        in:
+        - '{1}'
+      properties:
+        account:
+          description: Session account ID.
+          type: integer
+        date_from:
+          description: Updates must be later than or equal to this date.
+          format: date
+          type: string
+        date_to:
+          description: Updates must be earlier than or equal to this date.
+          format: date
+          type: string
+        in:
+          $ref: '#/components/schemas/RepositorySet'
+      required:
+      - account
+      - date_from
+      - date_to
+      type: object

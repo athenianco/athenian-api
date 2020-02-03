@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from itertools import chain
 from typing import List, Tuple
@@ -94,9 +95,9 @@ async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, 
         repos = []
         devs = []
         service = None
-        for repo in chain.from_iterable([
-                await resolve_reposet(r, ".for[%d].repositories" % i, sdb, user, account)
-                for r in for_set.repositories]):
+        for repo in chain.from_iterable(await asyncio.gather(*[
+                resolve_reposet(r, ".for[%d].repositories[%d]" % (i, j), sdb, user, account)
+                for j, r in enumerate(for_set.repositories)])):
             for key, prefix in PREFIXES.items():
                 if repo.startswith(prefix):
                     if service is None:
