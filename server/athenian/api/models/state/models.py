@@ -52,6 +52,7 @@ class RepositorySet(Base):
     """A group of repositories identified by an integer."""
 
     __tablename__ = "repository_sets"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     def count_items(ctx):
         """Return the number of repositories in a set."""
@@ -88,6 +89,7 @@ class Account(Base):
     """Group of users, some are admins and some are regular."""
 
     __tablename__ = "accounts"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column("id", Integer(), primary_key=True)
     created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
@@ -97,6 +99,7 @@ class Invitation(Base):
     """Account invitations, each maps to a URL that invitees should click."""
 
     __tablename__ = "invitations"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column("id", Integer(), primary_key=True)
     salt = Column("salt", Integer(), nullable=False)

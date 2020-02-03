@@ -27,6 +27,7 @@ def upgrade():
         sa.Column("accepted", sa.Integer(), nullable=False, default=0),
         sa.Column("created_at", sa.TIMESTAMP(), nullable=False),
         sa.Column("created_by", sa.String(256)),
+        sqlite_autoincrement=True,
     )
 
 

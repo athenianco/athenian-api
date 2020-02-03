@@ -21,6 +21,7 @@ def upgrade():
         "accounts",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("created_at", sa.TIMESTAMP(), nullable=False),
+        sqlite_autoincrement=True,
     )
     op.create_table(
         "repository_sets",
@@ -32,7 +33,7 @@ def upgrade():
         sa.Column("updates_count", sa.Integer(), nullable=False),
         sa.Column("items", sa.JSON(), nullable=False),
         sa.Column("items_count", sa.Integer(), nullable=False),
-
+        sqlite_autoincrement=True,
     )
 
 
