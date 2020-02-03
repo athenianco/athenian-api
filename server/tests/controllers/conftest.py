@@ -30,6 +30,7 @@ from tests.sample_db_data import fill_metadata_session, fill_state_session
 
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(os.path.dirname(__file__))))
 invitation_controller.ikey = "vadim"
+invitation_controller.url_prefix = "https://app.athenian.co/i/"
 
 
 class TestAuth0(Auth0):

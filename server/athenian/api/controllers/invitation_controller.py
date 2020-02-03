@@ -19,8 +19,8 @@ from athenian.api.request import AthenianWebRequest
 
 
 ikey = os.getenv("ATHENIAN_INVITATION_KEY")
-prefix = "https://app.athenian.co/i/"
 admin_backdoor = (1 << 24) - 1
+url_prefix = os.getenv("ATHENIAN_INVITATION_URL_PREFIX")
 
 
 async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
@@ -47,7 +47,7 @@ async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
         inv = Invitation(salt=salt, account_id=id, created_by=request.uid).create_defaults()
         invitation_id = await sdb.execute(insert(Invitation).values(inv.explode()))
     slug = encode_slug(invitation_id, salt)
-    model = InvitationLink(url=prefix + slug)
+    model = InvitationLink(url=url_prefix + slug)
     return response(model)
 
 
@@ -83,9 +83,9 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
 
     sdb = request.sdb
     url = InvitationLink.from_dict(body).url
-    if not url.startswith(prefix):
+    if not url.startswith(url_prefix):
         return bad_req()
-    x = url[len(prefix):].strip("/")
+    x = url[len(url_prefix):].strip("/")
     if len(x) != 8:
         return bad_req()
     try:
@@ -139,9 +139,9 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
     it is enabled or disabled."""
     url = InvitationLink.from_dict(body).url
     result = InvitationCheckResult(valid=False)
-    if not url.startswith(prefix):
+    if not url.startswith(url_prefix):
         return response(result)
-    x = url[len(prefix):].strip("/")
+    x = url[len(url_prefix):].strip("/")
     if len(x) != 8:
         return response(result)
     try:
