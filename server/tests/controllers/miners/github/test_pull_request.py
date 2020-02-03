@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
+from athenian.api.controllers.miners.github.pull_request import PullRequestMiner,\
     PullRequestTimesMiner
 
 

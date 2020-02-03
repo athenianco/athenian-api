@@ -479,7 +479,6 @@ components:
       description: Currently supported metric types.
       enum:
       - pr-wip-time
-      - pr-wait-first-review-time
       - pr-review-time
       - pr-merging-time
       - pr-release-time

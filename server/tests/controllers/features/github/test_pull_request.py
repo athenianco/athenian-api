@@ -136,6 +136,7 @@ def pr_samples():
                 last_commit, last_commit + timedelta(days=1))
             merged_at = fake.date_time_between(approved_at, approved_at + timedelta(days=2))
             closed_at = merged_at
+            last_review = fake.date_time_between(approved_at, closed_at)
             released_at = fake.date_time_between(merged_at, merged_at + timedelta(days=30))
             return PullRequestTimes(
                 created=Fallback(created_at, None),
@@ -145,6 +146,7 @@ def pr_samples():
                 merged=Fallback(merged_at, None),
                 first_comment_on_first_review=Fallback(first_comment_on_first_review, None),
                 first_review_request=Fallback(first_review_request, None),
+                last_review=Fallback(last_review, None),
                 approved=Fallback(approved_at, None),
                 first_passed_checks=Fallback(first_passed_checks, None),
                 last_passed_checks=Fallback(last_passed_checks, None),
@@ -160,23 +162,7 @@ def pr_samples():
 
 def ensure_dtype(pr, dtype):
     if not isinstance(pr.created.value, dtype):
-        pr = PullRequestTimes(
-            created=Fallback(dtype(pr.created.value), None),
-            first_commit=Fallback(dtype(pr.first_commit.value), None),
-            last_commit_before_first_review=Fallback(
-                dtype(pr.last_commit_before_first_review.value), None),
-            last_commit=Fallback(dtype(pr.last_commit.value), None),
-            merged=Fallback(dtype(pr.merged.value), None),
-            first_comment_on_first_review=Fallback(
-                dtype(pr.first_comment_on_first_review.value), None),
-            first_review_request=Fallback(dtype(pr.first_review_request.value), None),
-            approved=Fallback(dtype(pr.approved.value), None),
-            first_passed_checks=Fallback(dtype(pr.first_passed_checks.value), None),
-            last_passed_checks=Fallback(dtype(pr.last_passed_checks.value), None),
-            finalized=Fallback(dtype(pr.finalized.value), None),
-            released=Fallback(dtype(pr.released.value), None),
-            closed=Fallback(dtype(pr.closed.value), None),
-        )
+        pr = PullRequestTimes(**{k: Fallback(dtype(v.value), None) for k, v in vars(pr).items()})
     return pr
 
 

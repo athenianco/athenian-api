@@ -19,19 +19,6 @@ class WorkInProgressTimeCalculator(PullRequestMedianMetricCalculator[timedelta])
         return None
 
 
-@register("pr-wait-first-review-time")
-class WaitFirstReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
-    """Time of waiting for the first review metric."""
-
-    may_have_negative_values = False
-
-    def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
-        """Do the actual state update. See the design document for more info."""
-        if times.first_comment_on_first_review and times.first_review_request:
-            return times.first_comment_on_first_review.best - times.first_review_request.best
-        return None
-
-
 @register("pr-review-time")
 class ReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     """Time of the review process metric."""
@@ -40,8 +27,11 @@ class ReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
 
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.first_review_request and times.approved:
-            return times.approved.best - times.first_review_request.best
+        if times.first_review_request and times.closed:
+            if times.approved:
+                return times.approved.best - times.first_review_request.best
+            elif times.last_review:
+                return times.last_review.best - times.first_review_request.best
         return None
 
 
@@ -53,8 +43,10 @@ class MergeTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
 
     def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.approved.value is not None and times.merged.value is not None:
-            return times.merged.value - times.approved.value
+        if times.approved and times.closed:
+            # closed may mean either merged or not merged; both cases count though the latter
+            # is embarrassing
+            return times.closed.best - times.approved.best
         return None
 
 
