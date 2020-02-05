@@ -269,7 +269,7 @@ class Repository(Base,
     disabled = Column("disabled", Boolean)
     fork = Column("fork", Boolean)
     forks_count = Column("forks_count", BigInteger)
-    full_name = Column("full_name", Text)
+    fullname = Column("fullname", Text)
     has_issues = Column("has_issues", Boolean)
     has_wiki = Column("has_wiki", Boolean)
     homepage = Column("homepage", Text)
