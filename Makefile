@@ -24,6 +24,7 @@ $(ENV_FILE):
 	echo 'AUTH0_CLIENT_ID=' >> $(ENV_FILE)
 	echo 'AUTH0_CLIENT_SECRET=' >> $(ENV_FILE)
 	echo >> $(ENV_FILE)
+	echo 'ATHENIAN_DEFAULT_USER=github|60340680' >> $(ENV_FILE)
 	echo 'ATHENIAN_INVITATION_KEY=we-are-the-best' >> $(ENV_FILE)
 	echo 'ATHENIAN_INVITATION_URL_PREFIX=http://localhost:3000/i/' >> $(ENV_FILE)
 
@@ -35,8 +36,12 @@ run-api: $(IO_DIR)/mdb.sqlite $(IO_DIR)/sdb.sqlite
 	docker run $(DOCKER_RUN_EXTRA_ARGS) --rm -p 8080:8080 -v$(IO_DIR):/io --env-file $(ENV_FILE) $(IMAGE) --ui --metadata-db=sqlite:///io/mdb.sqlite --state-db=sqlite:///io/sdb.sqlite
 
 .PHONY: invitation-link
-invitation-link: $(IO_DIR)/mdb.sqlite $(IO_DIR)/sdb.sqlite
+invitation-link: $(IO_DIR)/sdb.sqlite
 	docker run --rm -e DB_DIR=/io -v$(IO_DIR):/io --env-file $(ENV_FILE) --entrypoint python3 $(IMAGE) -m athenian.api.invite_admin sqlite:///io/sdb.sqlite
+
+.PHONY: gkwillie
+gkwillie: $(IO_DIR)/sdb.sqlite
+	docker run --rm -e DB_DIR=/io -v$(IO_DIR):/io --env-file $(ENV_FILE) --entrypoint python3 $(IMAGE) -m athenian.api.create_default_user sqlite:///io/sdb.sqlite
 
 .PHONY: clean
 clean: fixtures-clean

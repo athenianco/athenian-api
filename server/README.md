@@ -112,6 +112,20 @@ You can erase the API data fixtures created by `make run-api` with:
 make clean
 ```
 
+## @gkwillie
+
+The following creates the default user in the state DB:
+
+```
+make gkwillie
+```
+
+or
+
+```
+python3 -m athenian.api.create_default_user postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/state
+```
+
 ## Gods
 
 Let's suppose there is a super admin `adim@athenian.co` and a regular user `marvin@athenian.co`.
