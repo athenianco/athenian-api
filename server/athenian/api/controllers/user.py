@@ -1,9 +1,9 @@
 import databases
 from sqlalchemy import and_, select
 
-from athenian.api.controllers.response import ResponseError
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import ForbiddenError
+from athenian.api.response import ResponseError
 
 
 async def is_admin(db: databases.Database, user: str, account: int) -> bool:

@@ -16,7 +16,7 @@ except ImportError:
     pass
 
 from athenian.api.models.state.__main__ import main as migrate_state
-from tests.controllers.conftest import db_dir, metadata_db
+from tests.conftest import db_dir, metadata_db
 from tests.sample_db_data import fill_state_session
 
 

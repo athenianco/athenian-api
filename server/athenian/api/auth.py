@@ -19,7 +19,9 @@ from multidict import CIMultiDict
 from sqlalchemy import select
 
 from athenian.api.models.state.models import God
+from athenian.api.models.web import GenericError
 from athenian.api.models.web.user import User
+from athenian.api.response import ResponseError
 
 
 class Auth0:
@@ -29,7 +31,7 @@ class Auth0:
     AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
     AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
     AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
-    DEFAULT_USER = "github|60340680"
+    DEFAULT_USER = os.getenv("ATHENIAN_DEFAULT_USER", "github|60340680")
     log = logging.getLogger("auth")
 
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
@@ -92,6 +94,9 @@ class Auth0:
         if self._default_user is not None:
             return self._default_user
         self._default_user = await self.get_user(self._default_user_id)
+        if self._default_user is None:
+            raise GracefulExit("Failed to fetch the default user (%s) details. "
+                               "Try changing ATHENIAN_DEFAULT_USER." % self._default_user_id)
         return self._default_user
 
     async def close(self):
@@ -284,6 +289,10 @@ class Auth0:
         resp = await self._session.get("https://%s/userinfo" % self._domain,
                                        headers={"Authorization": "Bearer " + token})
         user = await resp.json()
+        if resp.status != 200:
+            raise ResponseError(GenericError(
+                "/errors/Auth0", title=user["name"], status=resp.status,
+                detail=user["description"]))
         return User.from_auth0(**user)
 
     async def _set_user(self, request, token: str) -> None:

@@ -1,11 +1,11 @@
 from aiohttp import web
 from sqlalchemy import select, update
 
-from athenian.api.controllers.response import response, ResponseError
 from athenian.api.models.state.models import God, UserAccount
 from athenian.api.models.web import ForbiddenError, NotFoundError
 from athenian.api.models.web.account import Account
 from athenian.api.request import AthenianWebRequest
+from athenian.api.response import response, ResponseError
 
 
 async def get_user(request: AthenianWebRequest) -> web.Response:

@@ -4,10 +4,10 @@ import databases
 from sqlalchemy import select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from athenian.api.controllers.response import ResponseError
 from athenian.api.controllers.user import is_admin
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NotFoundError
+from athenian.api.response import ResponseError
 
 
 async def resolve_reposet(repo: str, pointer: str, db: databases.Database, uid: str,
