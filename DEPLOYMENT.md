@@ -18,7 +18,9 @@ The server requires:
 
 - (optional) `SENTRY_KEY` and `SENTRY_PROJECT` environment variables to enable error logging.
 - `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` environment variables to enable authorization.
+- `ATHENIAN_DEFAULT_USER` environment variable that points to the Auth0 user ID used for unauthorized public requests.
 - `ATHENIAN_INVITATION_KEY` environment variable with the passphrase for encrypting invitation URLs.
+- `ATHENIAN_INVITATION_URL_PREFIX` environment variable which specifies the invitation URL beginning.
 - Accessible PostgreSQL endpoint with the metadata.
 - Accessible PostgreSQL endpoint with the server state.
 - Exposing the configured HTTP port outside.
