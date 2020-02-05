@@ -9,13 +9,13 @@ from aiohttp import web
 import pyffx
 from sqlalchemy import and_, delete, insert, select, update
 
-from athenian.api.controllers.response import response, ResponseError
 from athenian.api.models.state.models import Account, Invitation, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, NotFoundError
 from athenian.api.models.web.invitation_check_result import InvitationCheckResult
 from athenian.api.models.web.invitation_link import InvitationLink
 from athenian.api.models.web.invited_user import InvitedUser
 from athenian.api.request import AthenianWebRequest
+from athenian.api.response import response, ResponseError
 
 
 ikey = os.getenv("ATHENIAN_INVITATION_KEY")

@@ -28,7 +28,7 @@ from athenian.api.models.state.models import Base as StateBase
 from tests.sample_db_data import fill_metadata_session, fill_state_session
 
 
-db_dir = Path(os.getenv("DB_DIR", os.path.dirname(os.path.dirname(__file__))))
+db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 invitation_controller.ikey = "vadim"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
 

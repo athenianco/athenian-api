@@ -17,11 +17,11 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 from athenian.api.auth import Auth0
 from athenian.api.controllers import invitation_controller
-from athenian.api.controllers.response import ResponseError
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.metadata import __description__, __package__, __version__
 from athenian.api.models.state import check_schema_version
 from athenian.api.models.web import GenericError
+from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
 from athenian.api.slogging import add_logging_args, trailing_dot_exceptions
 
@@ -42,6 +42,7 @@ def parse_args() -> argparse.Namespace:
   AUTH0_AUDIENCE           JWT audience - the backref URL, usually the website address
   AUTH0_CLIENT_ID          Client ID of the Auth0 Machine-to-Machine Application
   AUTH0_CLIENT_SECRET      Client Secret of the Auth0 Machine-to-Machine Application
+  ATHENIAN_DEFAULT_USER    Default user ID that is assigned to public requests
   ATHENIAN_INVITATION_KEY  Passphrase to encrypt the invitation links
   ATHENIAN_INVITATION_URL_PREFIX
                            String with which any invitation URL starts, e.g. https://app.athenian.co/i/
@@ -150,6 +151,11 @@ class AthenianApp(connexion.AioHttpApp):
             await self.sdb.disconnect()
         else:
             self._sdb_future.cancel()
+
+    @property
+    def auth0(self):
+        """Return the own Auth0 class instance."""
+        return self._auth0
 
     def _enable_cors(self) -> None:
         cors = aiohttp_cors.setup(self.app, defaults={

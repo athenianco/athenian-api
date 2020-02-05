@@ -6,7 +6,6 @@ from aiohttp import web
 
 from athenian.api.controllers.features.entries import ENTRIES
 from athenian.api.controllers.reposet import resolve_reposet
-from athenian.api.controllers.response import response, ResponseError
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedMetric, CalculatedMetrics, CalculatedMetricValues, \
     ForSet, Granularity
@@ -14,6 +13,7 @@ from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.metrics_request import MetricsRequest
 # from athenian.api.models.no_source_data_error import NoSourceDataError
 from athenian.api.request import AthenianWebRequest
+from athenian.api.response import response, ResponseError
 
 #           service                  developers
 Filter = Tuple[str, Tuple[List[str], List[str], ForSet]]

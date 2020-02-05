@@ -5,7 +5,6 @@ from sqlalchemy import delete, insert, select, update
 
 from athenian.api import FriendlyJson
 from athenian.api.controllers.reposet import fetch_reposet
-from athenian.api.controllers.response import response, ResponseError
 from athenian.api.controllers.user import is_admin
 from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
 from athenian.api.models.state.models import RepositorySet
@@ -13,6 +12,7 @@ from athenian.api.models.web import CreatedIdentifier, ForbiddenError, NoSourceD
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.request import AthenianWebRequest
+from athenian.api.response import response, ResponseError
 
 
 async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Response:
