@@ -189,7 +189,7 @@ class Auth0:
         token = await self.mgmt_token()
         assert len(users) >= 0  # we need __len__
 
-        async def get_batch(batch: List[str]) -> Optional[List[User]]:
+        async def get_batch(batch: List[str]) -> List[User]:
             for retries in range(1, 31):
                 query = "user_id:(%s)" % " ".join('"%s"' % u for u in batch)
                 try:
@@ -198,7 +198,7 @@ class Auth0:
                         headers={"Authorization": "Bearer " + token})
                 except RuntimeError:
                     # our loop is closed and we are doomed
-                    return None
+                    return []
                 if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
                     self.log.warning("Auth0 Management API rate limit hit while listing "
                                      "%d/%d users, retry %d",
@@ -206,27 +206,28 @@ class Auth0:
                     await asyncio.sleep(0.5 + random())
                 elif resp.status in (HTTPStatus.REQUEST_URI_TOO_LONG, HTTPStatus.BAD_REQUEST):
                     if len(batch) == 1:
-                        return None
+                        return []
                     m = len(batch) // 2
                     self.log.warning("Auth0 Management API /users raised HTTP %d, bisecting "
                                      "%d/%d -> %d, %d",
                                      resp.status, len(batch), len(users), m, len(batch) - m)
                     b1, b2 = await asyncio.gather(get_batch(batch[:m]), get_batch(batch[m:]))
                     if b1 is None or b2 is None:
-                        return None
+                        return []
                     return b1 + b2
                 else:
                     if resp.status >= 400:
-                        self.log.error("Auth0 Management API /users raised HTTP %d", resp.status)
+                        self.log.error("Auth0 Management API /users raised HTTP %d: %s",
+                                       resp.status, await resp.json())
                     break
             else:  # for retries in range
-                return None
+                return []
             if resp.status != HTTPStatus.OK:
-                return None
+                return []
             found = await resp.json()
             return [User.from_auth0(**u) for u in found]
 
-        return {u.id: u for u in set(await get_batch(list(users))) if u is not None}
+        return {u.id: u for u in await get_batch(list(users))}
 
     async def _fetch_jwks_loop(self) -> None:
         while True:
