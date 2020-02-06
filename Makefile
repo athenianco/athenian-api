@@ -30,6 +30,7 @@ $(ENV_FILE):
 
 $(IO_DIR)/%.sqlite: $(ENV_FILE)
 	docker run --rm -e DB_DIR=/io -v$(IO_DIR):/io --env-file $(ENV_FILE) --entrypoint python3 $(IMAGE) /server/tests/gen_sqlite_db.py
+	@touch $@
 
 .PHONY: run-api
 run-api: $(IO_DIR)/mdb.sqlite $(IO_DIR)/sdb.sqlite
