@@ -6,6 +6,7 @@ from random import randint
 import struct
 
 from aiohttp import web
+import databases.core
 import pyffx
 from sqlalchemy import and_, delete, insert, select, update
 
@@ -106,8 +107,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         is_admin = acc_id == admin_backdoor
         if is_admin:
             # create a new account for the admin user
-            acc_id = await conn.execute(
-                insert(Account).values(Account().create_defaults().explode()))
+            acc_id = await _create_new_account(conn)
             if acc_id >= admin_backdoor:
                 await conn.execute(delete(Account).where(Account.id == acc_id))
                 return ResponseError(GenericError(
@@ -132,6 +132,10 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
             await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
         user = await (await request.user()).load_accounts(conn)
     return response(InvitedUser(account=acc_id, user=user))
+
+
+async def _create_new_account(conn: databases.core.Connection) -> int:
+    return await conn.execute(insert(Account).values(Account().create_defaults().explode()))
 
 
 async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Response:

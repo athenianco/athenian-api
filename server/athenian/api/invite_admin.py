@@ -10,11 +10,11 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.models.state.models import Account, Invitation
 
 
-def main():
+def main(conn_str: str) -> None:
     """Add an admin invitation DB record and print the invitation URL."""
     if invitation_controller.ikey is None:
         raise EnvironmentError("ATHENIAN_INVITATION_KEY environment variable must be defined")
-    engine = create_engine(sys.argv[1])
+    engine = create_engine(conn_str)
     session = sessionmaker(bind=engine)()
     salt = randint(0, (1 << 16) - 1)
     admin_backdoor = invitation_controller.admin_backdoor
@@ -28,9 +28,11 @@ def main():
             max_id = max_id[0]
         max_id += 1
         if engine.url.drivername in ("postgres", "postgresql"):
-            engine.execute("ALTER SEQUENCE accounts_id_seq RESTART WITH %d;" % max_id)
+            session.execute("ALTER SEQUENCE accounts_id_seq RESTART WITH %d;" % max_id)
         elif engine.url.drivername == "sqlite":
-            engine.execute("UPDATE sqlite_sequence SET seq=%d WHERE NAME='accounts';" % max_id)
+            pass
+            # This will not help, unfortunately.
+            # session.execute("UPDATE sqlite_sequence SET seq=%d WHERE name='accounts';" % max_id)
         else:
             raise NotImplementedError(
                 "Cannot reset the primary key counter for " + engine.url.drivername)
@@ -47,4 +49,4 @@ def main():
 
 
 if __name__ == "__main__":
-    exit(main())
+    exit(main(sys.argv[1]))

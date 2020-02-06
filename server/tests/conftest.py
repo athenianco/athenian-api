@@ -16,7 +16,7 @@ except ImportError:
                 return args[0]
             return lambda fn: fn
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, insert, func, select
 from sqlalchemy.orm import sessionmaker
 
 from athenian.api import AthenianApp
@@ -24,7 +24,7 @@ from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata import hack_sqlite_arrays
 from athenian.api.models.metadata.github import Base as MetadataBase
-from athenian.api.models.state.models import Base as StateBase
+from athenian.api.models.state.models import Base as StateBase, Account
 from tests.sample_db_data import fill_metadata_session, fill_state_session
 
 
@@ -139,3 +139,14 @@ async def mdb(metadata_db, loop):
     db = databases.Database(conn_str)
     await db.connect()
     return db
+
+
+async def create_new_account(conn: databases.core.Connection) -> int:
+    acc = Account().create_defaults()
+    max_id = (await conn.fetch_one(
+        select([func.max(Account.id)])
+        .where(Account.id < invitation_controller.admin_backdoor)))[0]
+    acc.id = max_id + 1
+    return await conn.execute(insert(Account).values(acc.explode(with_primary_keys=True)))
+
+invitation_controller._create_new_account = create_new_account
