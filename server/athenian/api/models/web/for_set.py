@@ -38,20 +38,18 @@ class ForSet(Model):
         return serialization.deserialize_model(dikt, cls)
 
     @property
-    def repositories(self):
+    def repositories(self) -> List[str]:
         """Gets the repositories of this ForSet.
 
         :return: The repositories of this ForSet.
-        :rtype: RepositorySet
         """
         return self._repositories
 
     @repositories.setter
-    def repositories(self, repositories):
+    def repositories(self, repositories: List[str]):
         """Sets the repositories of this ForSet.
 
         :param repositories: The repositories of this ForSet.
-        :type repositories: RepositorySet
         """
         if repositories is None:
             raise ValueError("Invalid value for `repositories`, must not be `None`")

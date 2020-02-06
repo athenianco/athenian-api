@@ -10,8 +10,12 @@ from athenian.api.models.web import ForbiddenError, InvalidRequestError, NotFoun
 from athenian.api.response import ResponseError
 
 
-async def resolve_reposet(repo: str, pointer: str, db: databases.Database, uid: str,
-                          account: int) -> List[str]:
+async def resolve_reposet(repo: str,
+                          pointer: str,
+                          db: Union[databases.core.Connection, databases.Database],
+                          uid: str,
+                          account: int,
+                          ) -> List[str]:
     """
     Dereference the repository sets.
 

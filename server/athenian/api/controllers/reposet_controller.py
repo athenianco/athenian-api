@@ -103,7 +103,7 @@ async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
         async with request.mdb.connection() as conn:
             iid = await conn.fetch_val(
                 select([InstallationOwner.install_id])
-                .where(InstallationOwner.user_id == int(request.user.native_id)))
+                .where(InstallationOwner.user_id == int(request.native_uid)))
             if iid is not None:
                 repos = await conn.fetch_all(
                     select([InstallationRepo.repo_full_name])

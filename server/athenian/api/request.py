@@ -13,3 +13,4 @@ class AthenianWebRequest(web.Request):
     auth: Auth0
     user: lambda: User
     uid: str
+    native_uid: str

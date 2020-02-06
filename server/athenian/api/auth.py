@@ -299,6 +299,7 @@ class Auth0:
         token_info = await self._extract_token(token)
         request.auth = self
         request.uid = token_info["sub"]
+        request.native_uid = request.uid.rsplit("|", 1)[1]
         god = await request.sdb.fetch_one(
             select([God.mapped_id]).where(God.user_id == request.uid))
         if god is not None:
