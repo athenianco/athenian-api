@@ -34,7 +34,7 @@ matrix:
       script:
         - set -e
         - echo "Check that you changed __version__"
-        - git diff $TRAVIS_BRANCH...HEAD athenian/api/metadata.py | grep __version__
+        - git diff $TRAVIS_COMMIT_RANGE athenian/api/metadata.py | grep __version__
         - flake8
         - pytest
         - python3 -m athenian.api.models.state sqlite://

@@ -8,7 +8,7 @@ import struct
 from aiohttp import web
 import databases.core
 import pyffx
-from sqlalchemy import and_, delete, insert, select, update
+from sqlalchemy import and_, delete, func, insert, select, update
 
 from athenian.api.models.state.models import Account, Invitation, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, NotFoundError
@@ -107,7 +107,9 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         is_admin = acc_id == admin_backdoor
         if is_admin:
             # create a new account for the admin user
-            acc_id = await _create_new_account(conn)
+            create_new_account = _create_new_account_slow if sdb.url.dialect == "sqlite" else \
+                _create_new_account_fast
+            acc_id = await create_new_account(conn)
             if acc_id >= admin_backdoor:
                 await conn.execute(delete(Account).where(Account.id == acc_id))
                 return ResponseError(GenericError(
@@ -134,8 +136,25 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
     return response(InvitedUser(account=acc_id, user=user))
 
 
-async def _create_new_account(conn: databases.core.Connection) -> int:
+async def _create_new_account_fast(conn: databases.core.Connection) -> int:
+    """Create a new account.
+
+    Should be used for PostgreSQL.
+    """
     return await conn.execute(insert(Account).values(Account().create_defaults().explode()))
+
+
+async def _create_new_account_slow(conn: databases.core.Connection) -> int:
+    """Create a new account without relying on autoincrement.
+
+    SQLite does not allow resetting the primary key sequence, so we have to increment the ID
+    by hand.
+    """
+    acc = Account().create_defaults()
+    max_id = (await conn.fetch_one(select([func.max(Account.id)])
+                                   .where(Account.id < admin_backdoor)))[0]
+    acc.id = max_id + 1
+    return await conn.execute(insert(Account).values(acc.explode(with_primary_keys=True)))
 
 
 async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Response:

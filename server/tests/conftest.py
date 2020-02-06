@@ -139,14 +139,3 @@ async def mdb(metadata_db, loop):
     db = databases.Database(conn_str)
     await db.connect()
     return db
-
-
-async def create_new_account(conn: databases.core.Connection) -> int:
-    acc = Account().create_defaults()
-    max_id = (await conn.fetch_one(
-        select([func.max(Account.id)])
-        .where(Account.id < invitation_controller.admin_backdoor)))[0]
-    acc.id = max_id + 1
-    return await conn.execute(insert(Account).values(acc.explode(with_primary_keys=True)))
-
-invitation_controller._create_new_account = create_new_account
