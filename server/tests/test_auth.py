@@ -1,14 +1,19 @@
 from aiohttp.web_runner import GracefulExit
 import pytest
 
-from athenian.api import AthenianApp
+from athenian.api import AthenianApp, Auth0
 
 
-async def test_default_user(metadata_db, state_db, loop):
-    app = AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, ui=False)
-    user = await app.auth0.default_user()
+class DefaultAuth0(Auth0):
+    def __init__(self, whitelist):
+        super().__init__(whitelist=whitelist, default_user="github|60340680")
+
+
+async def test_default_user(loop):
+    auth0 = Auth0(default_user="github|60340680")
+    user = await auth0.default_user()
     assert user.name == "Groundskeeper Willie"
-    app.auth0._default_user = None
-    app.auth0._default_user_id = "abracadabra"
+    auth0._default_user = None
+    auth0._default_user_id = "abracadabra"
     with pytest.raises(GracefulExit):
-        await app.auth0.default_user()
+        await auth0.default_user()

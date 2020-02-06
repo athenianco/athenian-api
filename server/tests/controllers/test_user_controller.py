@@ -25,6 +25,23 @@ async def test_get_user(client, headers):
     assert datetime.utcnow() >= dateutil.parser.parse(updated[:-1])
 
 
+async def test_get_default_user(client, headers, gkwillie):
+    response = await client.request(
+        method="GET", path="/v1/user", headers=headers, json={},
+    )
+    assert response.status == 200
+    body = (await response.read()).decode("utf-8")
+    items = json.loads(body)
+    del items["updated"]
+    assert items == {
+        "id": "github|60340680",
+        "name": "Groundskeeper Willie",
+        "native_id": "60340680",
+        "picture": "https://avatars0.githubusercontent.com/u/60340680?v=4",
+        "accounts": {},
+    }
+
+
 async def test_get_account(client, headers):
     response = await client.request(
         method="GET", path="/v1/account/1", headers=headers, json={},
