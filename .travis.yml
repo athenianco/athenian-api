@@ -32,9 +32,13 @@ matrix:
         - pip install -r test-requirements.txt
         - pip install -e .
       script:
+        - set -e
+        - echo "Check that you changed __version__"
+        - git diff $TRAVIS_BRANCH...HEAD athenian/api/metadata.py | grep __version__
         - flake8
         - pytest
         - python3 -m athenian.api.models.state sqlite://
+        - set +e
     - if: type = pull_request
       name: Docker build smoke test
       before_install:
