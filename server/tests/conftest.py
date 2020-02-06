@@ -63,6 +63,12 @@ async def eiso(app) -> User:
 
 
 @pytest.fixture(scope="function")
+async def gkwillie(app) -> User:
+    app._auth0._default_user_id = "github|60340680"
+    app._auth0._default_user = None
+
+
+@pytest.fixture(scope="function")
 def headers() -> Dict[str, str]:
     return {
         "Accept": "application/json",

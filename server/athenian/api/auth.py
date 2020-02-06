@@ -31,7 +31,7 @@ class Auth0:
     AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
     AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
     AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
-    DEFAULT_USER = os.getenv("ATHENIAN_DEFAULT_USER", "github|60340680")
+    DEFAULT_USER = os.getenv("ATHENIAN_DEFAULT_USER")
     log = logging.getLogger("auth")
 
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
@@ -60,6 +60,8 @@ class Auth0:
         self._session = aiohttp.ClientSession()
         self._client_id = client_id
         self._client_secret = client_secret
+        if not default_user:
+            raise EnvironmentError("Auth0 default user is not set. Specify ATHENIAN_DEFAULT_USER.")
         self._default_user_id = default_user
         self._default_user = None  # type: Optional[User]
         self._kids_event = asyncio.Event()
