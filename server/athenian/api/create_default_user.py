@@ -16,7 +16,11 @@ def main():
     acc = Account()
     session.add(acc)
     session.flush()
-    session.add(UserAccount(Auth0.DEFAULT_USER, acc.id, False))
+    session.add(UserAccount(
+        user_id=Auth0.DEFAULT_USER,
+        account_id=acc.id,
+        is_admin=False,
+    ))
     session.add(RepositorySet(owner=acc.id, items=[
         "github.com/athenianco/athenian-api",
         "github.com/athenianco/metadata",
