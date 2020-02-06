@@ -112,6 +112,7 @@ def metadata_db() -> str:
         session.commit()
     finally:
         session.close()
+    os.chmod(metadata_db_path, 0o666)
     return conn_str
 
 
@@ -129,6 +130,7 @@ def state_db() -> str:
         session.commit()
     finally:
         session.close()
+    os.chmod(state_db_path, 0o666)
     return conn_str
 
 

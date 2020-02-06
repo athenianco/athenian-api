@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -45,6 +46,7 @@ def main():
             session.commit()
         finally:
             session.close()
+    os.chmod(state_db_path, 0o666)
 
 
 if __name__ == "__main__":
