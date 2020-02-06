@@ -1,8 +1,10 @@
 import argparse
 import asyncio
+import getpass
 from http import HTTPStatus
 import logging
 import os
+import socket
 import sys
 from typing import Optional
 
@@ -219,6 +221,7 @@ def main():
     log = logging.getLogger(__package__)
     log.info("%s", sys.argv)
     log.info("Version %s", __version__)
+    log.info("%s@%s", getpass.getuser(), socket.getfqdn())
     setup_sentry()
     check_schema_version(args.state_db, log)
     app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui)
