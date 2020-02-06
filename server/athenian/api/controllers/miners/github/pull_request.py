@@ -203,8 +203,8 @@ class PullRequestTimesMiner(PullRequestMiner):
         first_commit = Fallback(commits[PullRequestCommit.commit_date.key].min(), None)
         last_commit = Fallback(commits[PullRequestCommit.commit_date.key].max(), None)
         first_comment_on_first_review = Fallback(
-            min(review_comments[PullRequestComment.created_at.key].min(),
-                reviews[PullRequestReview.submitted_at.key].min()),
+            dtmin(review_comments[PullRequestComment.created_at.key].min(),
+                  reviews[PullRequestReview.submitted_at.key].min()),
             merged_at)
         if first_comment_on_first_review:
             last_commit_before_first_review = Fallback(
@@ -227,7 +227,7 @@ class PullRequestTimesMiner(PullRequestMiner):
                 None)
         else:
             last_review = Fallback(reviews[PullRequestReview.submitted_at.key].max(), None)
-        if merged_at.value is not None:
+        if merged_at:
             reviews_before_merge = reviews[
                 reviews[PullRequestReview.submitted_at.key] <= merged_at.best]
             grouped_reviews = reviews_before_merge \
@@ -270,3 +270,14 @@ class PullRequestTimesMiner(PullRequestMiner):
         """Iterate over the update timestamps collected for individual pull requests."""
         for pr, reviews, review_comments, commits in super().__iter__():
             yield self._compile(pr, reviews, review_comments, commits)
+
+
+def dtmin(first: Union[DT, float], second: Union[DT, float]) -> DT:
+    """Find the minimum of two dates handling NaNs gracefully."""
+    if first != first and second != second:
+        return None
+    if first != first:
+        return second
+    if second != second:
+        return first
+    return min(first, second)
