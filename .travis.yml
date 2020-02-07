@@ -24,7 +24,8 @@ before_cache:
 matrix:
   fast_finish: true
   include:
-    - name: Unit tests and style check
+    - if: commit_message !~ /Bump version/
+      name: Unit tests and style check
       install:
         - cd server
         - pip install -r requirements.txt
@@ -33,13 +34,11 @@ matrix:
         - pip install -e .
       script:
         - set -e
-        - echo "Check that you changed __version__"
-        - git diff $TRAVIS_COMMIT_RANGE athenian/api/metadata.py | grep __version__
         - flake8
         - pytest
         - python3 -m athenian.api.models.state sqlite://
         - set +e
-    - if: type = pull_request
+    - if: type = pull_request AND commit_message !~ /Bump version/
       name: Docker build smoke test
       before_install:
         - docker load -i $HOME/docker/images.tar || true
@@ -48,8 +47,21 @@ matrix:
         - docker build --cache-from ${GOOGLE_DOCKER_IMAGE}:latest --build-arg COMMIT=$TRAVIS_COMMIT -t ${GOOGLE_DOCKER_IMAGE} .
       script:
         - docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
+    - if: branch = master AND type != pull_request AND commit_message !~ /Bump version/
+      name: Bump the version
+      install:
+        - set -e
+        - git config --global user.name "Groundskeeper Willie"
+        - git config --global user.email "bot@athenian.co"
+        - pip install bump2version
+        - version_file=server/athenian/api/metadata.py
+        - current_version=$(grep __version__ $version_file | cut -d\" -f2)
+        - bumpversion --current-version $current_version --commit patch $version_file
+        - git remote add gkwillie https://gkwillie:${GKWILLIE_TOKEN}@github.com/$TRAVIS_REPO_SLUG
+        - git push gkwillie HEAD:master
+        - set +e
     - stage: deploy
-      if: branch = master AND type != pull_request
+      if: branch = master AND type != pull_request AND commit_message ~ /Bump version/
       script:
         - docker load -i $HOME/docker/images.tar || true
         - docker image list
