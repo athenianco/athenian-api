@@ -17,10 +17,11 @@ import sentry_sdk
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
+from athenian.api import metadata
 from athenian.api.auth import Auth0
 from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
-from athenian.api.metadata import __description__, __package__, __version__
+from athenian.api.metadata import __package__
 from athenian.api.models.state import check_schema_version
 from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
@@ -110,7 +111,7 @@ class AthenianApp(connexion.AioHttpApp):
         with self._auth0:
             api = self.add_api(
                 "openapi.yaml",
-                arguments={"title": __description__},
+                arguments={"title": metadata.__description__},
                 pass_context_arg_name="request",
                 options={"middlewares": [self.with_db]},
             )
@@ -198,8 +199,20 @@ class AthenianApp(connexion.AioHttpApp):
             )).response
 
 
-def setup_sentry():
-    """Inspect SENTRY_* environment variables and initialize Sentry SDK accordingly."""
+def setup_context(log: logging.Logger) -> None:
+    """Log general info about the running process and configure Sentry."""
+    log.info("%s", sys.argv)
+    log.info("Version %s", metadata.__version__)
+    commit = getattr(metadata, "__commit__", None)
+    if commit is not None:
+        log.info("Commit: %s", commit)
+    build_date = getattr(metadata, "__date__", None)
+    if build_date is not None:
+        log.info("Image built on %s", build_date)
+    username = getpass.getuser()
+    hostname = socket.getfqdn()
+    log.info("%s@%s", username, hostname)
+
     sentry_key, sentry_project = os.getenv("SENTRY_KEY"), os.getenv("SENTRY_PROJECT")
 
     def warn(env_name):
@@ -216,16 +229,21 @@ def setup_sentry():
         dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),
         integrations=[AioHttpIntegration(), SqlalchemyIntegration()],
     )
+    with sentry_sdk.configure_scope() as scope:
+        scope.set_tag("version", metadata.__version__)
+        scope.set_tag("username", username)
+        scope.set_tag("hostname", hostname)
+        if commit is not None:
+            scope.set_tag("commit", commit)
+        if build_date is not None:
+            scope.set_tag("build_date", build_date)
 
 
 def main():
     """Server entry point."""
     args = parse_args()
     log = logging.getLogger(__package__)
-    log.info("%s", sys.argv)
-    log.info("Version %s", __version__)
-    log.info("%s@%s", getpass.getuser(), socket.getfqdn())
-    setup_sentry()
+    setup_context(log)
     check_schema_version(args.state_db, log)
     app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui)
     app.run(host=args.host, port=args.port, use_default_access_log=True)
