@@ -97,8 +97,10 @@ class Auth0:
             return self._default_user
         self._default_user = await self.get_user(self._default_user_id)
         if self._default_user is None:
-            raise GracefulExit("Failed to fetch the default user (%s) details. "
-                               "Try changing ATHENIAN_DEFAULT_USER." % self._default_user_id)
+            message = "Failed to fetch the default user (%s) details. " \
+                      "Try changing ATHENIAN_DEFAULT_USER." % self._default_user_id
+            self.log.error(message)
+            raise GracefulExit(message)
         return self._default_user
 
     async def close(self):
