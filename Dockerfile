@@ -81,7 +81,8 @@ RUN apt-get update && \
 ADD server /server
 ADD README.md /
 RUN pip3 install -e /server
-RUN echo "__commit__ = \"$TRAVIS_COMMIT\"" >>/server/athenian/api/metadata.py && \
+ARG COMMIT
+RUN echo "__commit__ = \"$COMMIT\"" >>/server/athenian/api/metadata.py && \
     echo "__date__ = \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"" >>/server/athenian/api/metadata.py
 
 ENTRYPOINT ["python3", "-m", "athenian.api"]
