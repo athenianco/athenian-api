@@ -42,7 +42,7 @@ async def test_calc_metrics_line_smoke(client, metric, headers):
     assert len(cm.calculated[0].values) > 0
 
 
-@pytest.mark.parametrize("granularity", Granularity.ALL)
+@pytest.mark.parametrize("granularity", ["day", "week", "month"])
 async def test_calc_metrics_line_all(client, granularity, headers):
     """https://athenianco.atlassian.net/browse/ENG-116"""
     body = {

@@ -1,12 +1,9 @@
-# coding: utf-8
-
 from datetime import date
 from typing import List
 
 from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set import ForSet
-from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.metric_id import MetricID
 
 
@@ -19,7 +16,7 @@ class MetricsRequest(Model):
         metrics: List[MetricID] = None,
         date_from: date = None,
         date_to: date = None,
-        granularity: Granularity = None,
+        granularity: str = None,
         account: int = None,
     ):
         """MetricsRequest - a model defined in OpenAPI
@@ -36,7 +33,7 @@ class MetricsRequest(Model):
             "metrics": List[MetricID],
             "date_from": date,
             "date_to": date,
-            "granularity": Granularity,
+            "granularity": str,
             "account": int,
         }
 
@@ -158,7 +155,7 @@ class MetricsRequest(Model):
         self._date_to = date_to
 
     @property
-    def granularity(self) -> Granularity:
+    def granularity(self) -> str:
         """Gets the granularity of this MetricsRequest.
 
         :return: The granularity of this MetricsRequest.
@@ -166,7 +163,7 @@ class MetricsRequest(Model):
         return self._granularity
 
     @granularity.setter
-    def granularity(self, granularity: Granularity):
+    def granularity(self, granularity: str):
         """Sets the granularity of this MetricsRequest.
 
         :param granularity: The granularity of this MetricsRequest.
