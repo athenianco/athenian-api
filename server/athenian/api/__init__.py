@@ -28,7 +28,10 @@ from athenian.api.serialization import FriendlyJson
 from athenian.api.slogging import add_logging_args, trailing_dot_exceptions
 
 
-trailing_dot_exceptions.add("connexion.api.security")
+trailing_dot_exceptions.update((
+    "connexion.api.security",
+    "connexion.apis.aiohttp_api",
+))
 
 
 def parse_args() -> argparse.Namespace:
