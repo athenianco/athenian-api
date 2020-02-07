@@ -286,15 +286,20 @@ class Auth0:
 
     async def _get_user_info(self, token: str) -> User:
         # TODO(dennwc): cache based on decoded claims
+        # TODO(vmarkovtsev): ENG-208 allows to query memcached here
         if token == "null":
             return await self.default_user()
         resp = await self._session.get("https://%s/userinfo" % self._domain,
                                        headers={"Authorization": "Bearer " + token})
-        user = await resp.json()
+        try:
+            user = await resp.json()
+        except aiohttp.ContentTypeError:
+            raise ResponseError(GenericError(
+                "/errors/Auth0", title=resp.reason, status=resp.status, detail=await resp.text()))
         if resp.status != 200:
             raise ResponseError(GenericError(
-                "/errors/Auth0", title=user["name"], status=resp.status,
-                detail=user["description"]))
+                "/errors/Auth0", title=resp.reason, status=resp.status,
+                detail=user.get("description", str(user))))
         return User.from_auth0(**user)
 
     async def _set_user(self, request, token: str) -> None:
