@@ -65,6 +65,8 @@ def parse_args() -> argparse.Namespace:
                         default="postgresql://postgres:postgres@0.0.0.0:5432/postgres",
                         help="Server state (user settings, etc.) DB connection string in "
                              "SQLAlchemy format. This DB is read/write.")
+    parser.add_argument("--memcached", default="0.0.0.0:11211",
+                        help="memcached (users profiles, preprocessed metadata cache) address")
     parser.add_argument("--ui", action="store_true", help="Enable the REST UI.")
     return parser.parse_args()
 
