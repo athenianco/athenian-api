@@ -766,12 +766,9 @@ components:
       - repositories
       type: object
     Granularity:
-      description: How often the metrics are reported.
-      enum:
-      - day
-      - week
-      - month
-      example: day
+      description: 'How often the metrics are reported. The value must satisfy the
+        following regular expression: (^([1-9]\d* )?(day|week|month|year)$'
+      example: 2 week
       type: string
     MetricsRequest:
       example:

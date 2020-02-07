@@ -57,11 +57,17 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     except ResponseError as e:
         return e.response
     if body.date_to < body.date_from:
-        raise ResponseError(InvalidRequestError(
+        return ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
             pointer=".date_from",
-        ))
-    time_intervals = Granularity.split(body.granularity, body.date_from, body.date_to)
+        )).response
+    try:
+        time_intervals = Granularity.split(body.granularity, body.date_from, body.date_to)
+    except ValueError:
+        return ResponseError(InvalidRequestError(
+            detail="granularity value is invalid",
+            pointer=".granularity",
+        )).response
     for service, (repos, devs, for_set) in filters:
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
