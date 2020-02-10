@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
-from typing import Generator, Generic, Optional, Sequence, Tuple, TypeVar, Union
+import io
+from typing import Dict, Generator, Generic, List, Mapping, Optional, Sequence, Set, TypeVar, \
+    Union
 
 import aiomcache
 import databases
@@ -9,8 +11,21 @@ import pandas as pd
 from sqlalchemy import select, sql
 
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
-    PullRequestCommit, PullRequestReview
+from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
+    PullRequestListItem, Stage
+from athenian.api.models.metadata.github import Base, IssueComment, PullRequest, \
+    PullRequestComment, PullRequestCommit, PullRequestReview
+
+
+@dataclass(frozen=True)
+class MinedPullRequest:
+    """All the relevant information we are able to load from the metadata DB about a PR."""
+
+    pr: pd.Series
+    reviews: pd.DataFrame
+    review_comments: pd.DataFrame
+    comments: pd.DataFrame
+    commits: pd.DataFrame
 
 
 class PullRequestMiner:
@@ -20,13 +35,13 @@ class PullRequestMiner:
     CACHE_TTL = 5 * 60
 
     def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
-                 commits: pd.DataFrame, max_time: date):
+                 comments: pd.DataFrame, commits: pd.DataFrame):
         """Initialize a new instance of `PullRequestMiner`."""
         self._prs = prs
         self._reviews = reviews
         self._review_comments = review_comments
+        self._comments = comments
         self._commits = commits
-        self.max_time = max_time
 
     @classmethod
     async def mine(cls, time_from: date, time_to: date, repositories: Sequence[str],
@@ -40,22 +55,27 @@ class PullRequestMiner:
         :param repositories: PRs must belong to these repositories (prefix excluded).
         :param developers: PRs must be authored by these user IDs. An empty list means everybody.
         :param db: Metadata db instance.
+        :param cache: memcached client to cache the collected data.
         """
-        key = None
+        cache_key = None
         if cache is not None:
-            key = ("%d\0%d\0%s\0%s" % (
+            cache_key = ("PullRequestMiner|%d|%d|%s|%s" % (
                 time_from.toordinal(),
                 time_to.toordinal(),
                 ",".join(sorted(repositories)),
                 ",".join(sorted(developers)),
             )).encode()
-            serialized = await cache.get(key)
+            serialized = await cache.get(cache_key)
             if serialized is not None:
-                prs, reviews, review_comments, commits = cls._deserialize_from_cache(serialized)
-                return cls(prs, reviews, review_comments, commits, time_to)
+                prs, reviews, review_comments, comments, commits = \
+                    cls._deserialize_from_cache(serialized)
+                return cls(prs, reviews, review_comments, comments, commits)
         filters = [
-            PullRequest.created_at >= time_from,
-            PullRequest.created_at < time_to,
+            sql.or_(sql.and_(PullRequest.updated_at >= time_from,
+                             PullRequest.updated_at < time_to),
+                    sql.and_(sql.or_(PullRequest.closed_at.is_(None),
+                                     PullRequest.closed_at > time_from),
+                             PullRequest.created_at < time_to)),
             PullRequest.repository_fullname.in_(repositories),
         ]
         if len(developers) > 0:
@@ -68,12 +88,16 @@ class PullRequestMiner:
                 conn, PullRequestReview, numbers, repositories)
             review_comments = await cls._read_filtered_models(
                 conn, PullRequestComment, numbers, repositories)
+            comments = await cls._read_filtered_models(
+                conn, IssueComment, numbers, repositories)
             commits = await cls._read_filtered_models(
                 conn, PullRequestCommit, numbers, repositories)
         if cache is not None:
-            await cache.set(key, cls._serialize_for_cache(prs, reviews, review_comments, commits),
-                            exptime=cls.CACHE_TTL)
-        return cls(prs, reviews, review_comments, commits, time_to)
+            await cache.set(
+                cache_key,
+                cls._serialize_for_cache(prs, reviews, review_comments, comments, commits),
+                exptime=cls.CACHE_TTL)
+        return cls(prs, reviews, review_comments, comments, commits)
 
     @staticmethod
     async def _read_filtered_models(conn: databases.core.Connection,
@@ -85,9 +109,8 @@ class PullRequestMiner:
                      model_cls.repository_fullname.in_(repositories))),
             conn, model_cls)
 
-    def __iter__(self) -> Generator[Tuple[pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame],
-                                    None, None]:
-        """Iterate over the information collected for individual pull requests."""
+    def __iter__(self) -> Generator[MinedPullRequest, None, None]:
+        """Iterate over the individual pull requests."""
         number_key = PullRequest.number.key
         repo_key = PullRequest.repository_fullname.key
         for _, pr in self._prs.iterrows():
@@ -96,12 +119,13 @@ class PullRequestMiner:
             items = []
             for k, model in (("reviews", PullRequestReview),
                              ("review_comments", PullRequestComment),
+                             ("comments", IssueComment),
                              ("commits", PullRequestCommit)):
                 attr = getattr(self, "_" + k)
                 items.append(attr[
                     (attr[model.pull_request_number.key] == pr_number) &  # noqa: W504
                     (attr[model.repository_fullname.key] == pr_repo)])
-            yield (pr, *items)
+            yield MinedPullRequest(pr, *items)
 
     @classmethod
     def _serialize_for_cache(cls, *dfs: pd.DataFrame) -> memoryview:
@@ -208,15 +232,6 @@ class PullRequestTimes:
     finalized: Fallback[DT]                              # PR_F
     released: Fallback[DT]                               # PR_R
 
-    def truncate(self, max_time: date) -> "PullRequestTimes[DT]":
-        """Erase all timestamps that go after the specified date."""
-        kwargs = {}
-        for key, val in vars(self).items():
-            if val.best is not None and val.best > max_time:
-                val = Fallback(None, None)
-            kwargs[key] = val
-        return PullRequestTimes(**kwargs)
-
 
 class ReviewResolution(Enum):
     """Possible review "state"-s in the metadata DB."""
@@ -229,21 +244,20 @@ class ReviewResolution(Enum):
 class PullRequestTimesMiner(PullRequestMiner):
     """Extract the pull request update timestamps from the metadata DB."""
 
-    def _compile(self, pr: pd.Series, reviews: pd.DataFrame, review_comments: pd.DataFrame,
-                 commits: pd.DataFrame) -> PullRequestTimes:
-        created_at = Fallback(pr[PullRequest.created_at.key], None)
-        merged_at = Fallback(pr[PullRequest.merged_at.key], None)
-        closed_at = Fallback(pr[PullRequest.closed_at.key], None)
-        first_commit = Fallback(commits[PullRequestCommit.commit_date.key].min(), None)
-        last_commit = Fallback(commits[PullRequestCommit.commit_date.key].max(), None)
+    def _compile(self, pr: MinedPullRequest) -> PullRequestTimes:
+        created_at = Fallback(pr.pr[PullRequest.created_at.key], None)
+        merged_at = Fallback(pr.pr[PullRequest.merged_at.key], None)
+        closed_at = Fallback(pr.pr[PullRequest.closed_at.key], None)
+        first_commit = Fallback(pr.commits[PullRequestCommit.commit_date.key].min(), None)
+        last_commit = Fallback(pr.commits[PullRequestCommit.commit_date.key].max(), None)
         first_comment_on_first_review = Fallback(
-            dtmin(review_comments[PullRequestComment.created_at.key].min(),
-                  reviews[PullRequestReview.submitted_at.key].min()),
+            dtmin(pr.review_comments[PullRequestComment.created_at.key].min(),
+                  pr.reviews[PullRequestReview.submitted_at.key].min()),
             merged_at)
         if first_comment_on_first_review:
             last_commit_before_first_review = Fallback(
-                commits[commits[PullRequestCommit.commit_date.key]
-                        <= first_comment_on_first_review.best]  # noqa: W503
+                pr.commits[pr.commits[PullRequestCommit.commit_date.key]
+                           <= first_comment_on_first_review.best]  # noqa: W503
                 [PullRequestCommit.commit_date.key].max(),
                 first_comment_on_first_review)
             # force pushes that were lost
@@ -256,14 +270,14 @@ class PullRequestTimesMiner(PullRequestMiner):
             first_comment_on_first_review))  # FIXME(vmarkovtsev): no review request info
         if closed_at:
             last_review = Fallback(
-                reviews[reviews[PullRequestReview.submitted_at.key] <= closed_at.best][
+                pr.reviews[pr.reviews[PullRequestReview.submitted_at.key] <= closed_at.best][
                     PullRequestReview.submitted_at.key].max(),
                 None)
         else:
-            last_review = Fallback(reviews[PullRequestReview.submitted_at.key].max(), None)
+            last_review = Fallback(pr.reviews[PullRequestReview.submitted_at.key].max(), None)
         if merged_at:
-            reviews_before_merge = reviews[
-                reviews[PullRequestReview.submitted_at.key] <= merged_at.best]
+            reviews_before_merge = pr.reviews[
+                pr.reviews[PullRequestReview.submitted_at.key] <= merged_at.best]
             grouped_reviews = reviews_before_merge \
                 .sort_values([PullRequestReview.submitted_at.key], ascending=True) \
                 .groupby(PullRequestReview.user_id.key, sort=False) \
@@ -298,12 +312,12 @@ class PullRequestTimesMiner(PullRequestMiner):
             finalized=finalized_at,
             released=Fallback(None, None),  # FIXME(vmarkovtsev): no releases
             closed=closed_at,
-        ).truncate(self.max_time)
+        )
 
     def __iter__(self) -> Generator[PullRequestTimes, None, None]:
-        """Iterate over the update timestamps collected for individual pull requests."""
-        for pr, reviews, review_comments, commits in super().__iter__():
-            yield self._compile(pr, reviews, review_comments, commits)
+        """Iterate over the individual pull requests."""
+        for pr in super().__iter__():
+            yield self._compile(pr)
 
 
 def dtmin(first: Union[DT, float], second: Union[DT, float]) -> DT:
@@ -315,3 +329,90 @@ def dtmin(first: Union[DT, float], second: Union[DT, float]) -> DT:
     if second != second:
         return first
     return min(first, second)
+
+
+class PullRequestListMiner(PullRequestTimesMiner):
+    """Collect various PR metadata for displaying PRs on the frontend."""
+
+    def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
+                 comments: pd.DataFrame, commits: pd.DataFrame):
+        """Initialize a new instance of `PullRequestListMiner`."""
+        super().__init__(prs, reviews, review_comments, comments, commits)
+        self._stages = set()
+        self._participants = {}
+
+    @property
+    def stages(self) -> Set[Stage]:
+        """Return the required PR stages."""
+        return self._stages
+
+    @stages.setter
+    def stages(self, value: Sequence[Stage]):
+        """Set the required PR stages."""
+        self._stages = set(value)
+
+    @property
+    def participants(self) -> Dict[ParticipationKind, Set[str]]:
+        """Return the required PR participants."""
+        return self._participants
+
+    @participants.setter
+    def participants(self, value: Mapping[ParticipationKind, Sequence[str]]):
+        """Set the required PR participants."""
+        self._participants = {k: set(v) for k, v in value.items()}
+
+    def _match_participants(self, yours: Mapping[ParticipationKind, Set[str]]) -> bool:
+        """Check the PR particpants for compatibility with self.participants.
+
+        :return: True whether the PR satisifes the particpants filter, otherwise False.
+        """
+        for k, v in self.participants:
+            if not yours[k].intersection(v):
+                return False
+        return True
+
+    def _compile(self, pr: MinedPullRequest) -> Optional[PullRequestListItem]:
+        prefix = "github.com/"
+        participants = {
+            ParticipationKind.AUTHOR: {prefix + pr.pr[PullRequest.user_login.key]},
+            ParticipationKind.REVIEWER: {
+                (prefix + u) for u in pr.reviews[PullRequestReview.user_login.key]},
+            ParticipationKind.COMMENTER: {
+                (prefix + u) for u in pr.comments[IssueComment.user_login.key]},
+            ParticipationKind.COMMIT_COMMITTER: {
+                (prefix + u) for u in pr.commits[PullRequestCommit.commiter_login] if u},
+            ParticipationKind.COMMIT_AUTHOR: {
+                (prefix + u) for u in pr.commits[PullRequestCommit.author_login] if u},
+        }
+        if not self._match_participants(participants):
+            return None
+        times = super()._compile(pr)
+        if times.closed:
+            # FIXME(vmarkovtsev): no releases data, we don't know if this is actually true
+            stage = Stage.RELEASE
+        elif times.approved:
+            stage = Stage.MERGE
+        elif times.first_review_request:
+            stage = Stage.REVIEW
+        else:
+            stage = Stage.WIP
+        if stage not in self.stages:
+            return None
+        return PullRequestListItem(
+            repository=prefix + pr.pr[PullRequest.repository_fullname.key],
+            title=pr.pr[PullRequest.title.key],
+            size_added=pr.pr[PullRequest.additions.key],
+            size_removed=pr.pr[PullRequest.deletions.key],
+            files_changed=pr.pr[PullRequest.changed_files.key],
+            created=pr.pr[PullRequest.created_at.key],
+            updated=pr.pr[PullRequest.updated_at.key],
+            stage=stage,
+            participants=participants,
+        )
+
+    def __iter__(self) -> Generator[PullRequestListItem, None, None]:
+        """Iterate over the individual pull requests."""
+        for pr in PullRequestMiner.__iter__(self):
+            item = self._compile(pr)
+            if item is not None:
+                yield item

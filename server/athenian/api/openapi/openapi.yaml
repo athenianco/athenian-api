@@ -108,6 +108,31 @@ paths:
       summary: Find developers that made an action within the given timeframe.
       x-openapi-router-controller: athenian.api.controllers.filter_controller
       x-codegen-request-body-name: body
+  /filter/pull_requests:
+    post:
+      operationId: filter_prs
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilterPullRequestsRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PullRequestSet'
+          description: List of pull requests satisfying the specified filters.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to access the specified account
+            or reposets.
+      summary: List pull requests that satisfy the query.
+      x-openapi-router-controller: athenian.api.controllers.filter_controller
   /filter/repositories:
     post:
       operationId: filter_repositories
@@ -129,7 +154,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified account.
+          description: Current user is not allowed to access the specified account
+            or reposets.
       security:
       - bearerAuth: []
       summary: Find repositories that were updated within the given timeframe.
@@ -1031,6 +1057,7 @@ components:
       - date
       - values
     FilterItemsRequest:
+      description: PR filters for /filter/pull_requests.
       example:
         account: 1
         date_from: 2000-01-23
@@ -1055,4 +1082,155 @@ components:
       - account
       - date_from
       - date_to
+      type: object
+    FilterPullRequestsRequest:
+      example:
+        account: 1
+        date_from: 2000-01-23
+        date_to: 2020-05-23
+        in:
+        - '{1}'
+        stages:
+        - wip
+      properties:
+        account:
+          description: Session account ID.
+          type: integer
+        date_from:
+          description: PRs must be updated later than or equal to this date.
+          format: date
+          type: string
+        date_to:
+          description: PRs must be updated earlier than or equal to this date.
+          format: date
+          type: string
+        in:
+          $ref: '#/components/schemas/RepositorySet'
+        stages:
+          items:
+            $ref: '#/components/schemas/PullRequestPipelineStage'
+          type: array
+        with:
+          $ref: '#/components/schemas/PullRequestWith'
+      required:
+      - account
+      - date_from
+      - date_to
+      - stages
+      type: object
+    PullRequestPipelineStage:
+      description: One of the four possible PR states of the modelled lifecycle.
+      enum:
+      - wip
+      - review
+      - merge
+      - release
+      example: wip
+      type: string
+    PullRequestSet:
+      description: List of pull requests.
+      items:
+        $ref: '#/components/schemas/PullRequest'
+      type: array
+    PullRequest:
+      description: Details of a pull request.
+      example:
+        # https://github.com/src-d/go-git/pull/1152
+        repository: github.com/src-d/go-git
+        title: 'Fix an edge case when fetching remotes with unrelated incomplete history.
+          Fixes #1151'
+        size_added: 37
+        size_removed: 1
+        files_changed: 2
+        created: 2019-05-17T01:14:00Z
+        updated: 2019-09-18T10:49:00Z
+        stage: wip
+        participants:
+        - id: github.com/NonLogicalDev
+          status: author
+        - id: github.com/mcuadros
+          status: commenter
+      properties:
+        repository:
+          description: PR is/was open in this repository.
+          type: string
+        title:
+          description: Title of the PR.
+          type: string
+        size_added:
+          description: Overall number of lines added.
+          type: integer
+        size_removed:
+          description: Overall number of lines removed.
+          type: integer
+        files_changed:
+          description: Number of files changed in this PR.
+          type: integer
+        created:
+          description: When this PR was created.
+          format: date-time
+          type: string
+        updated:
+          description: When this PR was last updated.
+          format: date-time
+          type: string
+        stage:
+          $ref: '#/components/schemas/PullRequestPipelineStage'
+        participants:
+          description: List of developers related to this PR, always including the
+            author.
+          items:
+            $ref: '#/components/schemas/PullRequestParticipant'
+          type: array
+      required:
+      - created
+      - files_changed
+      - participants
+      - repository
+      - size_added
+      - size_removed
+      - title
+      - updated
+      - stage
+      type: object
+    PullRequestParticipant:
+      description: Developer and their role in the PR.
+      properties:
+        id:
+          description: Person identifier.
+          example: github.com/vmarkovtsev
+          type: string
+        status:
+          items:
+            enum:
+            - author
+            - reviewer
+            - commit_author
+            - commit_committer
+            - commenter
+            type: string
+          type: array
+      required:
+      - id
+      - status
+    PullRequestWith:
+      description: 'Triage PRs by various developer participation. The aggregation is AND between
+        the participation kinds and OR within each. For example, if our request is
+        {"author": ["github.com/vmarkovtsev"], "reviewer": ["github.com/gkwillie", "github.com/mcuadros"]}
+        then the matched PRs will have @vmarkovtsev as the author and either @gkwillie or @mcuadros
+        as the reviewers.'
+      example:
+        author:
+        - github.com/vmarkovtsev
+      properties:
+        author:
+          $ref: '#/components/schemas/DeveloperSet'
+        reviewer:
+          $ref: '#/components/schemas/DeveloperSet'
+        commit_author:
+          $ref: '#/components/schemas/DeveloperSet'
+        commit_committer:
+          $ref: '#/components/schemas/DeveloperSet'
+        commenter:
+          $ref: '#/components/schemas/DeveloperSet'
       type: object

@@ -1,5 +1,6 @@
 from sqlalchemy import ARRAY, BigInteger, Boolean, Column, ForeignKey, Integer, Text, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import synonym
 
 Base = declarative_base()
 
@@ -85,6 +86,10 @@ class IssueComment(Base,
     author_association = Column("author_association", Text)
     htmlurl = Column("htmlurl", Text)
     issue_number = Column("issue_number", BigInteger, nullable=False)
+    pull_request_number = synonym("issue_number")
+
+
+IssueComment.pull_request_number.key = "issue_number"
 
 
 class Issue(Base,

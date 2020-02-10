@@ -1,5 +1,6 @@
 import asyncio
-from itertools import chain
+from itertools import chain, groupby
+from operator import itemgetter
 from typing import List, Union
 
 from aiohttp import web
@@ -7,6 +8,9 @@ import databases.core
 from sqlalchemy import and_, distinct, or_, select
 
 from athenian.api import FriendlyJson, ResponseError
+from athenian.api.controllers.features.entries import PR_ENTRIES
+from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
+    PullRequestListItem, Stage
 from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.controllers.reposet_controller import load_account_reposets
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
@@ -14,6 +18,8 @@ from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, 
 from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError
 from athenian.api.models.web.filter_items_request import FilterItemsRequest
+from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
+from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
 from athenian.api.request import AthenianWebRequest
 
 
@@ -95,7 +101,7 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
 
 async def _resolve_repos(sdb_conn: Union[databases.core.Connection, databases.Database],
                          mdb_conn: Union[databases.core.Connection, databases.Database],
-                         filt: FilterItemsRequest,
+                         filt: Union[FilterItemsRequest, FilterPullRequestsRequest],
                          uid: str,
                          native_uid: str,
                          ) -> List[str]:
@@ -115,3 +121,29 @@ async def _resolve_repos(sdb_conn: Union[databases.core.Connection, databases.Da
     prefix = "github.com/"
     repos = [r[r.startswith(prefix) and len(prefix):] for r in repos]
     return repos
+
+
+async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
+    """List pull requests that satisfy the query."""
+    filt = FilterPullRequestsRequest.from_dict(body)
+    try:
+        repos = await _resolve_repos(request.sdb, filt, request.uid)
+    except ResponseError as e:
+        return e.response
+    stages = set(getattr(Stage, s.upper()) for s in filt.stages)
+    participants = {getattr(ParticipationKind, k.upper()): v
+                    for k, v in body.get("with", {}).items()}
+    prs = PR_ENTRIES["github"](filt.date_from, filt.date_to, repos, stages, participants,
+                               request.mdb, request.cache)
+    web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
+    return web.json_response(web_prs, dumps=FriendlyJson.dumps)
+
+
+def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
+    props = vars(pr).copy()
+    props["stage"] = pr.stage.name.lower()
+    props["participants"] = sorted([k, list(vals)] for k, vals in groupby(chain.from_iterable(
+        [(pid, pk.name.lower()) for pid in pids] for pk, pids in pr.participants.items()),
+        itemgetter(0),
+    ))
+    return WebPullRequest(**props)

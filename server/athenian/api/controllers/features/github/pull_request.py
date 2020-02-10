@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
 
 import numpy as np
@@ -104,9 +104,15 @@ class PullRequestMetricCalculator(Generic[T]):
         """Initialize a new `PullRequestMetricCalculator` instance."""
         self.samples = []
 
-    def __call__(self, times: PullRequestTimes):
-        """Supply another pull request timestamps to update the state."""
-        sample = self.analyze(times)
+    def __call__(self, times: PullRequestTimes, min_time: datetime, max_time: datetime):
+        """Supply another pull request timestamps to update the state.
+
+        :param min_time: Start of the considered time interval. It is needed to discard samples \
+                         with both ends less than the minimum time.
+        :param max_time: Finish of the considered time interval. It is needed to discard samples \
+                         with both ends greater than the maximum time.
+        """
+        sample = self.analyze(times, min_time, max_time)
         if sample is not None:
             self.samples.append(sample)
 
@@ -118,7 +124,8 @@ class PullRequestMetricCalculator(Generic[T]):
         """Calculate the current metric value."""
         raise NotImplementedError
 
-    def analyze(self, times: PullRequestTimes) -> Optional[T]:
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[T]:
         """Do the actual state update."""
         raise NotImplementedError
 
@@ -135,7 +142,8 @@ class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
         assert self.may_have_negative_values is not None
         return Metric(True, *mean_confidence_interval(self.samples, self.may_have_negative_values))
 
-    def analyze(self, times: PullRequestTimes) -> Optional[T]:
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[T]:
         """Do the actual state update."""
         raise NotImplementedError
 
@@ -149,7 +157,8 @@ class PullRequestMedianMetricCalculator(PullRequestMetricCalculator[T]):
             return Metric(False, None, None, None)
         return Metric(True, *median_confidence_interval(self.samples))
 
-    def analyze(self, times: PullRequestTimes) -> Optional[T]:
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[T]:
         """Do the actual state update."""
         raise NotImplementedError
 
@@ -170,7 +179,7 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
     """Batched metrics calculation on sequential time intervals."""
 
     def __init__(self, calcs: Sequence[PullRequestMetricCalculator[T]],
-                 time_intervals: Sequence[datetime]):
+                 time_intervals: Sequence[date]):
         """
         Initialize a new instance of `BinnedPullRequestMetricCalculator`.
 
@@ -181,31 +190,37 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
                                included except for the last interval).
         """
         self.calcs = calcs
-        self.time_intervals = time_intervals
+        self.time_intervals = [datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
+                               for d in time_intervals]
 
     def __call__(self, items: Iterable[PullRequestTimes]) -> List[Tuple[Metric[T]]]:
         """
         Calculate the binned metrics.
 
-        For each time interval we collect the list of PRs created then and measure the specified \
-        metrics.
+        For each time interval we collect the list of PRs that are relevant and measure \
+        the specified metrics.
         """
         borders = self.time_intervals
+        calcs = self.calcs
         bins = [[] for _ in borders[:-1]]
         items = sorted(items, key=lambda x: x.created.best)
-        if items and items[-1].created.best > borders[-1]:
-            raise ValueError("there are PRs created after time_to")
         pos = 0
         for item in items:
             while item.created.best > borders[pos + 1]:
                 pos += 1
-            bins[pos].append(item)
+            if item.closed:
+                span = pos
+                while span < len(bins) and item.closed.best > borders[span]:
+                    bins[span].append(item)
+                    span += 1
+            else:
+                for span in range(pos, len(bins)):
+                    bins[span].append(item)
         result = []
-        calcs = self.calcs
-        for bin in bins:
+        for bin, time_from, time_to in zip(bins, borders, borders[1:]):
             for item in bin:
                 for calc in calcs:
-                    calc(item)
+                    calc(item, time_from, time_to)
             result.append(tuple(calc.value() for calc in calcs))
             for calc in calcs:
                 calc.reset()
