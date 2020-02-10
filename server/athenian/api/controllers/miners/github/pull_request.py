@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from typing import Generator, Generic, Optional, Sequence, Tuple, TypeVar, Union
 
+import aiomcache
 import databases
 import pandas as pd
 from sqlalchemy import select, sql
@@ -16,6 +17,8 @@ class PullRequestMiner:
     """Load all the information related to Pull Requests from the metadata DB. Iterate over it \
     with individual PR tuples."""
 
+    CACHE_TTL = 5 * 60
+
     def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
                  commits: pd.DataFrame, max_time: date):
         """Initialize a new instance of `PullRequestMiner`."""
@@ -27,7 +30,8 @@ class PullRequestMiner:
 
     @classmethod
     async def mine(cls, time_from: date, time_to: date, repositories: Sequence[str],
-                   developers: Sequence[str], db: databases.Database) -> "PullRequestMiner":
+                   developers: Sequence[str], db: databases.Database,
+                   cache: Optional[aiomcache.Client]) -> "PullRequestMiner":
         """
         Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
 
@@ -37,6 +41,18 @@ class PullRequestMiner:
         :param developers: PRs must be authored by these user IDs. An empty list means everybody.
         :param db: Metadata db instance.
         """
+        key = None
+        if cache is not None:
+            key = ("%d\0%d\0%s\0%s" % (
+                time_from.toordinal(),
+                time_to.toordinal(),
+                ",".join(sorted(repositories)),
+                ",".join(sorted(developers)),
+            )).encode()
+            serialized = await cache.get(key)
+            if serialized is not None:
+                prs, reviews, review_comments, commits = cls._deserialize_from_cache(serialized)
+                return cls(prs, reviews, review_comments, commits, time_to)
         filters = [
             PullRequest.created_at >= time_from,
             PullRequest.created_at < time_to,
@@ -54,6 +70,9 @@ class PullRequestMiner:
                 conn, PullRequestComment, numbers, repositories)
             commits = await cls._read_filtered_models(
                 conn, PullRequestCommit, numbers, repositories)
+        if cache is not None:
+            await cache.set(key, cls._serialize_for_cache(prs, reviews, review_comments, commits),
+                            exptime=cls.CACHE_TTL)
         return cls(prs, reviews, review_comments, commits, time_to)
 
     @staticmethod
@@ -83,6 +102,21 @@ class PullRequestMiner:
                     (attr[model.pull_request_number.key] == pr_number) &  # noqa: W504
                     (attr[model.repository_fullname.key] == pr_repo)])
             yield (pr, *items)
+
+    @classmethod
+    def _serialize_for_cache(cls, *dfs: pd.DataFrame) -> memoryview:
+        buf = io.BytesIO()
+        for df in dfs:
+            df.to_feather(buf)
+        return buf.getbuffer()
+
+    @classmethod
+    def _deserialize_from_cache(cls, data: bytes) -> List[pd.DataFrame]:
+        buf = io.BytesIO(data)
+        dfs = []
+        while buf.tell() < len(data):
+            dfs.append(pd.read_feather(buf))
+        return dfs
 
 
 T = TypeVar("T")
@@ -148,7 +182,7 @@ class Fallback(Generic[T]):
             return cls(None, None)
 
 
-DT = Union[pd.Timestamp, date, None]
+DT = Union[pd.Timestamp, datetime, None]
 
 
 @dataclass(frozen=True)

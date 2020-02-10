@@ -77,7 +77,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
         results = {}
         # for each metric, we find the function to calculate and call it
         for func, metrics in calcs.items():
-            fres = await func(metrics, time_intervals, repos, devs, request.mdb)
+            fres = await func(metrics, time_intervals, repos, devs, request.mdb, request.cache)
             assert len(fres) == len(time_intervals) - 1
             for i, m in enumerate(metrics):
                 results[m] = [r[i] for r in fres]
