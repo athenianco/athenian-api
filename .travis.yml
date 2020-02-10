@@ -60,8 +60,9 @@ matrix:
         - git remote add gkwillie https://gkwillie:${GKWILLIE_TOKEN}@github.com/$TRAVIS_REPO_SLUG
         - git push gkwillie HEAD:master
         - set +e
+      script: skip
     - stage: deploy
-      if: branch = master AND type != pull_request AND commit_message ~ /Bump version/
+      if: branch = master AND type != pull_request AND commit_message =~ /^Bump version/
       script:
         - docker load -i $HOME/docker/images.tar || true
         - docker image list

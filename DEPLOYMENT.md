@@ -35,6 +35,8 @@ docker run -it --rm athenian/api --help
 
 No configuration files are required.
 
+`--memcached` may be specified to cache user profiles, computed auxiliaries, etc. It is optional.
+
 ### State
 
 The server's state such as user settings, etc., is stored in a SQL database specified with `--state-db`.

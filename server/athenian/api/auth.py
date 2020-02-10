@@ -2,6 +2,7 @@ import asyncio
 from datetime import timedelta
 import functools
 from http import HTTPStatus
+import json
 import logging
 import os
 from random import random
@@ -10,6 +11,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
+import aiomcache
 from connexion.decorators.security import get_authorization_info
 from connexion.exceptions import OAuthProblem
 from connexion.lifecycle import ConnexionRequest
@@ -32,11 +34,12 @@ class Auth0:
     AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
     AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
     DEFAULT_USER = os.getenv("ATHENIAN_DEFAULT_USER")
+    USERINFO_CACHE_TTL = 60  # seconds
     log = logging.getLogger("auth")
 
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
                  client_secret=AUTH0_CLIENT_SECRET, whitelist: Sequence[str] = tuple(),
-                 default_user=DEFAULT_USER, lazy=False):
+                 default_user=DEFAULT_USER, cache: Optional[aiomcache.Client] = None, lazy=False):
         """
         Create a new Auth0 middleware.
 
@@ -51,6 +54,7 @@ class Auth0:
         :param whitelist: Routes that do not need authorization.
         :param default_user: Default user ID - the one that's assigned to public, unauthorized \
                              requests.
+        :param cache: memcached client to cache the user profiles.
         :param lazy: Value that indicates whether Auth0 Management API tokens and JWKS data \
                      must be asynchronously requested at first related method call.
         """
@@ -58,6 +62,7 @@ class Auth0:
         self._audience = audience
         self._whitelist = whitelist
         self._session = aiohttp.ClientSession()
+        self._cache = cache
         self._client_id = client_id
         self._client_secret = client_secret
         if not default_user:
@@ -287,21 +292,29 @@ class Auth0:
         return False
 
     async def _get_user_info(self, token: str) -> User:
-        # TODO(dennwc): cache based on decoded claims
-        # TODO(vmarkovtsev): ENG-208 allows to query memcached here
         if token == "null":
             return await self.default_user()
-        resp = await self._session.get("https://%s/userinfo" % self._domain,
-                                       headers={"Authorization": "Bearer " + token})
-        try:
-            user = await resp.json()
-        except aiohttp.ContentTypeError:
-            raise ResponseError(GenericError(
-                "/errors/Auth0", title=resp.reason, status=resp.status, detail=await resp.text()))
-        if resp.status != 200:
-            raise ResponseError(GenericError(
-                "/errors/Auth0", title=resp.reason, status=resp.status,
-                detail=user.get("description", str(user))))
+        user = None
+        if self._cache is not None:
+            value = await self._cache.get(token.encode())
+            if value is not None:
+                user = json.loads(value.decode())
+        if user is None:
+            resp = await self._session.get("https://%s/userinfo" % self._domain,
+                                           headers={"Authorization": "Bearer " + token})
+            try:
+                user = await resp.json()
+            except aiohttp.ContentTypeError:
+                raise ResponseError(GenericError(
+                    "/errors/Auth0", title=resp.reason, status=resp.status,
+                    detail=await resp.text()))
+            if resp.status != 200:
+                raise ResponseError(GenericError(
+                    "/errors/Auth0", title=resp.reason, status=resp.status,
+                    detail=user.get("description", str(user))))
+            if self._cache is not None:
+                await self._cache.set(token.encode(), json.dumps(user).encode(),
+                                      exptime=self.USERINFO_CACHE_TTL)
         return User.from_auth0(**user)
 
     async def _set_user(self, request, token: str) -> None:

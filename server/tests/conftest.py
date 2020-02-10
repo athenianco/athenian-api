@@ -34,7 +34,7 @@ invitation_controller.url_prefix = "https://app.athenian.co/i/"
 
 
 class TestAuth0(Auth0):
-    def __init__(self, whitelist):
+    def __init__(self, whitelist, cache=None):
         super().__init__(
             whitelist=whitelist, default_user="auth0|5e1f6dfb57bc640ea390557b", lazy=True)
         self._default_user = User(
