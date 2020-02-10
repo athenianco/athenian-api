@@ -264,6 +264,6 @@ def main():
     log = logging.getLogger(__package__)
     setup_context(log)
     check_schema_version(args.state_db, log)
-    cache = create_memcached(args.memcached)
+    cache = create_memcached(args.memcached, log)
     app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui, cache=cache)
     app.run(host=args.host, port=args.port, use_default_access_log=True)
