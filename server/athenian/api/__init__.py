@@ -11,6 +11,7 @@ from typing import Optional
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
+import aiomcache
 import connexion
 import databases
 import sentry_sdk
@@ -65,8 +66,9 @@ def parse_args() -> argparse.Namespace:
                         default="postgresql://postgres:postgres@0.0.0.0:5432/postgres",
                         help="Server state (user settings, etc.) DB connection string in "
                              "SQLAlchemy format. This DB is read/write.")
-    parser.add_argument("--memcached", default="0.0.0.0:11211",
-                        help="memcached (users profiles, preprocessed metadata cache) address")
+    parser.add_argument("--memcached", required=False,
+                        help="memcached (users profiles, preprocessed metadata cache) address, "
+                             "for example, 0.0.0.0:11211")
     parser.add_argument("--ui", action="store_true", help="Enable the REST UI.")
     return parser.parse_args()
 
@@ -83,7 +85,7 @@ class AthenianApp(connexion.AioHttpApp):
 
     def __init__(self, mdb_conn: str, sdb_conn: str, ui: bool,
                  mdb_options: Optional[dict] = None, sdb_options: Optional[dict] = None,
-                 auth0_cls=Auth0):
+                 auth0_cls=Auth0, cache: Optional[aiomcache.Client] = None):
         """
         Initialize the underlying connexion -> aiohttp application.
 
@@ -93,6 +95,7 @@ class AthenianApp(connexion.AioHttpApp):
         :param mdb_options: Extra databases.Database() kwargs for the metadata DB.
         :param sdb_options: Extra databases.Database() kwargs for the state DB.
         :param auth0_cls: Injected authorization class, simplifies unit testing.
+        :param cache: memcached client for caching auxiliary data.
         """
         options = {"swagger_ui": ui}
         rootdir = os.path.dirname(__file__)
@@ -109,7 +112,7 @@ class AthenianApp(connexion.AioHttpApp):
             r"/v1/ui(/|$)",
             r"/v1/invite/check/?$",
             r"/status/?$",
-        ])
+        ], cache=cache)
         with self._auth0:
             api = self.add_api(
                 "openapi.yaml",
@@ -120,6 +123,7 @@ class AthenianApp(connexion.AioHttpApp):
         setup_status(self.app)
         self._enable_cors()
         api.jsonifier.json = FriendlyJson
+        self._cache = cache
         self.mdb = self.sdb = None  # type: Optional[databases.Database]
 
         async def connect_to_mdb():
@@ -159,6 +163,8 @@ class AthenianApp(connexion.AioHttpApp):
             await self.sdb.disconnect()
         else:
             self._sdb_future.cancel()
+        if self._cache is not None:
+            await self._cache.close()
 
     @property
     def auth0(self):
@@ -190,6 +196,7 @@ class AthenianApp(connexion.AioHttpApp):
             del self._sdb_future
         request.mdb = self.mdb
         request.sdb = self.sdb
+        request.cache = self._cache
         try:
             return await handler(request)
         except ConnectionError as e:
@@ -241,11 +248,22 @@ def setup_context(log: logging.Logger) -> None:
             scope.set_tag("build_date", build_date)
 
 
+def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Client]:
+    """Create the memcached client, if possible."""
+    if not addr:
+        return None
+    host, port = addr.split(":")
+    port = int(port)
+    log.info("memcached: %s", addr)
+    return aiomcache.Client(host, port)
+
+
 def main():
     """Server entry point."""
     args = parse_args()
     log = logging.getLogger(__package__)
     setup_context(log)
     check_schema_version(args.state_db, log)
-    app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui)
+    cache = create_memcached(args.memcached)
+    app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui, cache=cache)
     app.run(host=args.host, port=args.port, use_default_access_log=True)
