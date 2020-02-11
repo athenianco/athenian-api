@@ -213,10 +213,10 @@ def setup_context(log: logging.Logger) -> None:
     log.info("%s", sys.argv)
     log.info("Version %s", metadata.__version__)
     commit = getattr(metadata, "__commit__", None)
-    if commit is not None:
+    if commit:
         log.info("Commit: %s", commit)
     build_date = getattr(metadata, "__date__", None)
-    if build_date is not None:
+    if build_date:
         log.info("Image built on %s", build_date)
     username = getpass.getuser()
     hostname = socket.getfqdn()
