@@ -1,7 +1,7 @@
 import os
 import subprocess
 import sys
-from threading import Thread, Condition
+from threading import Condition, Thread
 
 from athenian.api.models.state.__main__ import main as migrate
 from tests.conftest import db_dir

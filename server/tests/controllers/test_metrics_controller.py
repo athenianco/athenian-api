@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from athenian.api import FriendlyJson
-from athenian.api.models.web import CalculatedMetrics, Granularity, MetricID
+from athenian.api.models.web import CalculatedMetrics, MetricID
 
 
 @pytest.mark.parametrize("metric", MetricID.ALL)

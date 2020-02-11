@@ -215,8 +215,8 @@ def test_encode_decode():
         iid = randint(0, invitation_controller.admin_backdoor)
         salt = randint(0, (1 << 16) - 1)
         try:
-            iid_back, salt_back = invitation_controller.decode_slug(invitation_controller.encode_slug(
-                iid, salt))
+            iid_back, salt_back = invitation_controller.decode_slug(
+                invitation_controller.encode_slug(iid, salt))
         except Exception as e:
             print(iid, salt)
             raise e from None

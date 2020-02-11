@@ -1,12 +1,12 @@
 [flake8]
 ignore=D100,D104,D301
 max-line-length=99
-exclude=tests
 inline-quotes="
 import-order-style=appnexus
-application-package-names=athenian.api
+application-package-names=athenian.api,tests
 per-file-ignores=
     setup.py:D
+    tests/*:D
     athenian/api/models/web/__init__.py:F401
     athenian/api/models/*.py:D400,D401,D403
     athenian/api/models/metadata/github/__init__.py:D101

@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Dict
 
 import databases
-
 try:
     import pytest
 except ImportError:
@@ -15,8 +14,7 @@ except ImportError:
             if not kwargs:
                 return args[0]
             return lambda fn: fn
-
-from sqlalchemy import create_engine, insert, func, select
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from athenian.api import AthenianApp
@@ -24,7 +22,7 @@ from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata import hack_sqlite_arrays
 from athenian.api.models.metadata.github import Base as MetadataBase
-from athenian.api.models.state.models import Base as StateBase, Account
+from athenian.api.models.state.models import Base as StateBase
 from tests.sample_db_data import fill_metadata_session, fill_state_session
 
 
@@ -80,7 +78,7 @@ def headers() -> Dict[str, str]:
 @pytest.fixture(scope="function")
 async def app(metadata_db, state_db) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
-    return AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, ui=False,  auth0_cls=TestAuth0)
+    return AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, ui=False, auth0_cls=TestAuth0)
 
 
 @pytest.fixture(scope="function")

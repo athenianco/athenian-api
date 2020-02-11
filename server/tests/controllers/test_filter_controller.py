@@ -90,7 +90,7 @@ async def test_filter_contributors(client, headers):
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "account": 1,
-        "in": ["github.com/src-d/go-git"]
+        "in": ["github.com/src-d/go-git"],
     }
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
