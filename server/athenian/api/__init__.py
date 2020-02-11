@@ -234,7 +234,10 @@ def setup_context(log: logging.Logger) -> None:
     if not sentry_project:
         warn("SENTRY_PROJECT")
         return
+    sentry_env = os.getenv("SENTRY_ENV", "development")
+    log.info("Sentry: https://[secure]@sentry.io/%s#%s" % (sentry_project, sentry_env))
     sentry_sdk.init(
+        environment=sentry_env,
         dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),
         integrations=[AioHttpIntegration(), SqlalchemyIntegration()],
     )
