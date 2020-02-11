@@ -3,4 +3,4 @@
 from athenian.api import main
 
 if __name__ == "__main__":
-    main()
+    exit(main() is None)  # "1" for an error, "0" for a normal return

@@ -26,6 +26,8 @@ matrix:
   include:
     - if: commit_message !~ /Bump version/
       name: Unit tests and style check
+      services:
+        - memcached
       install:
         - cd server
         - pip install -r requirements.txt
@@ -36,7 +38,6 @@ matrix:
         - set -e
         - flake8
         - pytest
-        - python3 -m athenian.api.models.state sqlite://
         - set +e
     - if: type = pull_request AND commit_message !~ /Bump version/
       name: Docker build smoke test
