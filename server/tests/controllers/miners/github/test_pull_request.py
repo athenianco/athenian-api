@@ -14,7 +14,7 @@ async def test_pr_miner_iter(mdb):
         mdb,
     )
     with_data = defaultdict(int)
-    for pr, reviews, review_comments, commits in miner:
+    for _, reviews, review_comments, commits in miner:
         with_data["reviews"] += len(reviews) > 0
         with_data["review_comments"] += len(review_comments) > 0
         with_data["commits"] += len(commits) > 0
@@ -38,8 +38,7 @@ def validate_pull_request_times(prt: PullRequestTimes):
         assert prt.last_commit_before_first_review.best >= prt.first_commit.best
         assert prt.last_commit_before_first_review.best <= prt.last_commit.best
     if prt.first_comment_on_first_review:
-        assert prt.last_commit_before_first_review.best <= \
-               prt.first_comment_on_first_review.best
+        assert prt.last_commit_before_first_review.best <= prt.first_comment_on_first_review.best
     if prt.approved:
         assert prt.first_comment_on_first_review.best <= prt.approved.best
         assert prt.first_review_request.best <= prt.approved.best

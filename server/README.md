@@ -126,6 +126,8 @@ or
 python3 -m athenian.api.create_default_user postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/state
 ```
 
+You need to set `ATHENIAN_DEFAULT_USER` to the Auth0 ID of the default user. @gkwillie's `github|60340680`.
+
 ## Gods
 
 Let's suppose there is a super admin `adim@athenian.co` and a regular user `marvin@athenian.co`.
@@ -148,6 +150,8 @@ You can set `SENTRY_PROJECT` and `SENTRY_KEY` environment variables to automatic
 
 If you're running the API with docker (using `make run-api` from above), you should stop the server, add the Sentry values into the `.env` file that will be in the root folder of `athenian-api`, and start the server again (with `make run-api`).
 
+`SENTRY_ENV` sets the [environment](https://docs.sentry.io/enriching-error-data/environments/?platform=python).
+That should be touched only for the real deployments.
 
 ## Prevent file overriding
 

@@ -7,8 +7,8 @@ import pytest
 
 from athenian.api.controllers.features.github.pull_request import calculators
 from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestTimes
-import athenian.api.controllers.features.github.pull_request_metrics as _
-from .test_pull_request import ensure_dtype, pr_samples
+import athenian.api.controllers.features.github.pull_request_metrics as _  # noqa
+from tests.controllers.features.github.test_pull_request import ensure_dtype, pr_samples  # noqa
 
 
 def random_dropout(pr, prob):
@@ -25,7 +25,7 @@ def random_dropout(pr, prob):
 @pytest.mark.parametrize("cls, dtypes",
                          itertools.product(calculators.values(),
                                            ((datetime, timedelta), (pd.Timestamp, pd.Timedelta))))
-def test_pull_request_metrics_stability(pr_samples, cls, dtypes):
+def test_pull_request_metrics_stability(pr_samples, cls, dtypes):  # noqa: F811
     calc = cls()
     for pr in pr_samples(1000):
         pr = random_dropout(ensure_dtype(pr, dtypes[0]), 0.5)

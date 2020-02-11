@@ -3,8 +3,8 @@ from lzma import LZMAFile
 import os
 from pathlib import Path
 
-import sqlalchemy.orm
 from sqlalchemy.cprocessors import str_to_date, str_to_datetime
+import sqlalchemy.orm
 
 from athenian.api.models.metadata.github import Base
 from athenian.api.models.state.models import Account, God, Invitation, RepositorySet, UserAccount
@@ -22,9 +22,9 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
     else:
         data_file = Path(data_file)
     if data_file.suffix == ".xz":
-        opener = lambda: LZMAFile(data_file)
+        opener = lambda: LZMAFile(data_file)  # noqa:E731
     else:
-        opener = lambda: open(data_file, "rb")
+        opener = lambda: open(data_file, "rb")  # noqa:E731
     with opener() as fin:
         stdin = False
         for line in fin:
@@ -43,9 +43,9 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                     elif pt is datetime.datetime:
                         ctor = str_to_datetime
                     elif pt is bool:
-                        ctor = lambda x: x == "t"
+                        ctor = lambda x: x == "t"  # noqa:E731
                     else:
-                        ctor = lambda x: x
+                        ctor = lambda x: x  # noqa:E731
                     columns[c.name] = ctor
                 keys = [p.strip(b'(),"').decode() for p in parts[1:-2]]
                 continue

@@ -70,7 +70,8 @@ async def test_get_users_rate_limit(xapp):
 
 async def test_become(client, headers):
     response = await client.request(
-        method="GET", path="/v1/become?id=auth0|5e1f6e2e8bfa520ea5290741", headers=headers, json={},
+        method="GET", path="/v1/become?id=auth0|5e1f6e2e8bfa520ea5290741", headers=headers,
+        json={},
     )
     body1 = json.loads((await response.read()).decode("utf-8"))
     response = await client.request(

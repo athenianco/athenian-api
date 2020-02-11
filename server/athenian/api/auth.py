@@ -61,7 +61,6 @@ class Auth0:
         self._domain = domain
         self._audience = audience
         self._whitelist = whitelist
-        self._session = aiohttp.ClientSession()
         self._cache = cache
         self._client_id = client_id
         self._client_secret = client_secret
@@ -69,6 +68,7 @@ class Auth0:
             raise EnvironmentError("Auth0 default user is not set. Specify ATHENIAN_DEFAULT_USER.")
         self._default_user_id = default_user
         self._default_user = None  # type: Optional[User]
+        self._session = aiohttp.ClientSession()
         self._kids_event = asyncio.Event()
         if not lazy:
             self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
