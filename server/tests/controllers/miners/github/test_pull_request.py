@@ -1,5 +1,9 @@
 from collections import defaultdict
+import dataclasses
 from datetime import date, timedelta
+
+import pandas as pd
+from pandas.testing import assert_frame_equal, assert_series_equal
 
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
     PullRequestTimes, PullRequestTimesMiner
@@ -12,16 +16,46 @@ async def test_pr_miner_iter(mdb):
         ["src-d/go-git"],
         [],
         mdb,
+        None,
     )
     with_data = defaultdict(int)
-    for _, reviews, review_comments, commits in miner:
-        with_data["reviews"] += len(reviews) > 0
-        with_data["review_comments"] += len(review_comments) > 0
-        with_data["commits"] += len(commits) > 0
+    for pr in miner:
+        with_data["reviews"] += len(pr.reviews) > 0
+        with_data["review_comments"] += len(pr.review_comments) > 0
+        with_data["comments"] += len(pr.comments) > 0
+        with_data["commits"] += len(pr.commits) > 0
     assert with_data["reviews"] > 0
     assert with_data["review_comments"] > 0
+    assert with_data["comments"] > 0
     assert with_data["commits"] > 0
-    print(dict(with_data))
+
+
+async def test_pr_miner_iter_cache(mdb, cache):
+    miner = await PullRequestMiner.mine(
+        date.today() - timedelta(days=10 * 365),
+        date.today(),
+        ["src-d/go-git"],
+        [],
+        mdb,
+        cache,
+    )
+    assert len(cache.mem) == 1
+    first_data = list(miner)
+    miner = await PullRequestMiner.mine(
+        date.today() - timedelta(days=10 * 365),
+        date.today(),
+        ["src-d/go-git"],
+        [],
+        None,
+        cache,
+    )
+    second_data = list(miner)
+    for first, second in zip(first_data, second_data):
+        for fv, sv in zip(dataclasses.astuple(first), dataclasses.astuple(second)):
+            if isinstance(fv, pd.Series):
+                assert_series_equal(fv, sv)
+            else:
+                assert_frame_equal(fv, sv)
 
 
 def validate_pull_request_times(prt: PullRequestTimes):
@@ -53,6 +87,7 @@ async def test_pr_times_miner(mdb):
         ["src-d/go-git"],
         [],
         mdb,
+        None,
     )
     for prt in miner:
         validate_pull_request_times(prt)
@@ -65,6 +100,7 @@ async def test_pr_times_miner_empty_review_comments(mdb):
         ["src-d/go-git"],
         [],
         mdb,
+        None,
     )
     miner._review_comments = miner._review_comments.iloc[0:0]
     for prt in miner:
@@ -78,6 +114,7 @@ async def test_pr_times_miner_empty_commits(mdb):
         ["src-d/go-git"],
         [],
         mdb,
+        None,
     )
     miner._commits = miner._commits.iloc[0:0]
     for prt in miner:
@@ -91,6 +128,7 @@ async def test_pr_times_miner_bug_less_timestamp_float(mdb):
         ["src-d/go-git"],
         [],
         mdb,
+        None,
     )
     prts = list(miner)
     assert len(prts) > 0

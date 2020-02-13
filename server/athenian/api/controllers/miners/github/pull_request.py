@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 import io
 import math
+import struct
 from typing import Dict, Generator, Generic, List, Mapping, Optional, Sequence, Set, TypeVar, \
     Union
 
@@ -84,6 +85,7 @@ class PullRequestMiner:
         async with db.connection() as conn:
             prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                        conn, PullRequest)
+            prs.replace(datetime(1, 1, 1, tzinfo=timezone.utc), math.nan, inplace=True)
             numbers = prs[PullRequest.number.key] if len(prs) > 0 else set()
             reviews = await cls._read_filtered_models(
                 conn, PullRequestReview, numbers, repositories)
@@ -115,7 +117,6 @@ class PullRequestMiner:
         number_key = PullRequest.number.key
         repo_key = PullRequest.repository_fullname.key
         for _, pr in self._prs.iterrows():
-            pr.replace(datetime(1, 1, 1, tzinfo=timezone.utc), math.nan, inplace=True)
             pr_number = pr[number_key]
             pr_repo = pr[repo_key]
             items = []
@@ -131,16 +132,24 @@ class PullRequestMiner:
 
     @classmethod
     def _serialize_for_cache(cls, *dfs: pd.DataFrame) -> memoryview:
+        assert len(dfs) < 256
         buf = io.BytesIO()
+        offsets = []
         for df in dfs:
             df.to_feather(buf)
+            offsets.append(buf.tell())
+        buf.write(struct.pack("!" + "I" * len(offsets), *offsets))
+        buf.write(struct.pack("!B", len(offsets)))
         return buf.getbuffer()
 
     @classmethod
     def _deserialize_from_cache(cls, data: bytes) -> List[pd.DataFrame]:
-        buf = io.BytesIO(data)
+        data = memoryview(data)
+        size = struct.unpack("!B", data[-1:])[0]
+        offsets = (0,) + struct.unpack("!" + "I" * size, data[-size * 4 - 1:-1])
         dfs = []
-        while buf.tell() < len(data):
+        for beg, end in zip(offsets, offsets[1:]):
+            buf = io.BytesIO(data[beg:end])
             dfs.append(pd.read_feather(buf))
         return dfs
 

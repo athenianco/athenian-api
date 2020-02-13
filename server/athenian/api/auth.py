@@ -304,7 +304,7 @@ class Auth0:
         user = None
         cache_key = None
         if self._cache is not None:
-            cache_key = b"_get_user_info|" + token.encode()
+            cache_key = b"Auth0._get_user_info|" + token.encode()
             value = await self._cache.get(cache_key)
             if value is not None:
                 user = json.loads(value.decode())
