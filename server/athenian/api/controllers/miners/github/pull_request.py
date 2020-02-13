@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 import io
+import math
 from typing import Dict, Generator, Generic, List, Mapping, Optional, Sequence, Set, TypeVar, \
     Union
 
@@ -114,6 +115,7 @@ class PullRequestMiner:
         number_key = PullRequest.number.key
         repo_key = PullRequest.repository_fullname.key
         for _, pr in self._prs.iterrows():
+            pr.replace(datetime(1, 1, 1, tzinfo=timezone.utc), math.nan, inplace=True)
             pr_number = pr[number_key]
             pr_repo = pr[repo_key]
             items = []
