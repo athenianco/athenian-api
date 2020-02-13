@@ -53,7 +53,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
     users = set(r[0] for r in chain.from_iterable(rows[:singles]))
     for r in chain.from_iterable(rows[singles:]):
         users.update(r)  # r[0] and r[1]
-    users = ["github.com/" + u for u in sorted(users)]
+    users = ["github.com/" + u for u in sorted(users) if u]
     return web.json_response(users, dumps=FriendlyJson.dumps)
 
 
