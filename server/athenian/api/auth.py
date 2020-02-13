@@ -204,6 +204,7 @@ class Auth0:
         assert len(users) >= 0  # we need __len__
 
         async def get_batch(batch: List[str]) -> List[User]:
+            nonlocal token
             for retries in range(1, 31):
                 query = "user_id:(%s)" % " ".join('"%s"' % u for u in batch)
                 try:
@@ -229,6 +230,12 @@ class Auth0:
                     if b1 is None or b2 is None:
                         return []
                     return b1 + b2
+                elif resp.status == HTTPStatus.UNAUTHORIZED:
+                    # force refresh the token
+                    self._mgmt_loop.cancel()
+                    self._mgmt_loop = None
+                    self._mgmt_token = None
+                    token = await self.mgmt_token()
                 else:
                     if resp.status >= 400:
                         self.log.error("Auth0 Management API /users raised HTTP %d: %s",
