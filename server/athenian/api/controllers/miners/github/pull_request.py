@@ -389,9 +389,9 @@ class PullRequestListMiner(PullRequestTimesMiner):
             ParticipationKind.COMMENTER: {
                 (prefix + u) for u in pr.comments[IssueComment.user_login.key]},
             ParticipationKind.COMMIT_COMMITTER: {
-                (prefix + u) for u in pr.commits[PullRequestCommit.commiter_login] if u},
+                (prefix + u) for u in pr.commits[PullRequestCommit.commiter_login.key] if u},
             ParticipationKind.COMMIT_AUTHOR: {
-                (prefix + u) for u in pr.commits[PullRequestCommit.author_login] if u},
+                (prefix + u) for u in pr.commits[PullRequestCommit.author_login.key] if u},
         }
         if not self._match_participants(participants):
             return None

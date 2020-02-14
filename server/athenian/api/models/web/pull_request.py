@@ -4,6 +4,7 @@ from typing import List
 from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
+from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
 
 
 class PullRequest(Model):
@@ -18,6 +19,7 @@ class PullRequest(Model):
         files_changed: int = None,
         created: datetime = None,
         updated: datetime = None,
+        stage: str = None,
         participants: List[PullRequestParticipant] = None,
     ):
         """PullRequest - a model defined in OpenAPI
@@ -29,6 +31,7 @@ class PullRequest(Model):
         :param files_changed: The files_changed of this PullRequest.
         :param created: The created of this PullRequest.
         :param updated: The updated of this PullRequest.
+        :param stage: The stage of this PullRequest.
         :param participants: The participants of this PullRequest.
         """
         self.openapi_types = {
@@ -39,6 +42,7 @@ class PullRequest(Model):
             "files_changed": int,
             "created": datetime,
             "updated": datetime,
+            "stage": str,
             "participants": List[PullRequestParticipant],
         }
 
@@ -50,6 +54,7 @@ class PullRequest(Model):
             "files_changed": "files_changed",
             "created": "created",
             "updated": "updated",
+            "stage": "stage",
             "participants": "participants",
         }
 
@@ -60,6 +65,7 @@ class PullRequest(Model):
         self._files_changed = files_changed
         self._created = created
         self._updated = updated
+        self._stage = stage
         self._participants = participants
 
     @classmethod
@@ -236,6 +242,27 @@ class PullRequest(Model):
             raise ValueError("Invalid value for `updated`, must not be `None`")
 
         self._updated = updated
+
+    @property
+    def stage(self) -> str:
+        """
+        Gets the modelled pipeline stage of this PullRequest.
+
+        :return: The stage of this PullRequest.
+        """
+        return self._stage
+
+    @stage.setter
+    def stage(self, stage: str):
+        """
+        Sets the modelled pipeline stage of this PullRequest.
+
+        :param stage: The stage of this PullRequest.
+        """
+        if stage not in PullRequestPipelineStage.ALL:
+            raise ValueError("Invalid stage: %s" % stage)
+
+        self._stage = stage
 
     @property
     def participants(self) -> List[PullRequestParticipant]:

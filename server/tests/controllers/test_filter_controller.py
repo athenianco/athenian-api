@@ -1,5 +1,10 @@
 import json
 
+import pytest
+
+from athenian.api.controllers.miners.pull_request_list_item import Stage
+from tests.conftest import FakeCache
+
 
 async def test_filter_repositories_no_repos(client, headers):
     body = {
@@ -132,4 +137,23 @@ async def test_filter_contributors_bad_account(client, headers):
     }
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
+    assert response.status == 200
+
+
+@pytest.fixture(scope="module")
+def filter_prs_single_stage_cache():
+    return FakeCache()
+
+
+@pytest.mark.parametrize("stage", [k.name.lower() for k in Stage])
+async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_single_stage_cache):
+    app._cache = filter_prs_single_stage_cache
+    body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "account": 1,
+        "stages": [stage],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     assert response.status == 200

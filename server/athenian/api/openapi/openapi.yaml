@@ -131,6 +131,8 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: Current user is not allowed to access the specified account
             or reposets.
+      security:
+      - bearerAuth: []
       summary: List pull requests that satisfy the query.
       x-openapi-router-controller: athenian.api.controllers.filter_controller
   /filter/repositories:

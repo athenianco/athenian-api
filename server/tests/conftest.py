@@ -53,6 +53,9 @@ class FakeCache:
         self.mem[key] = value, time.time(), exptime
         return True
 
+    async def close(self):
+        pass
+
 
 @pytest.fixture(scope="function")
 def cache():

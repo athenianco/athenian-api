@@ -3,13 +3,14 @@ from typing import List, Optional
 
 from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
 from athenian.api.models.web.pull_request_with import PullRequestWith
 
 
 class FilterPullRequestsRequest(Model):
     """PR filters for /filter/pull_requests."""
 
-    def _in_it__(
+    def __init__(
         self,
         account: Optional[int] = None,
         date_from: Optional[date] = None,
@@ -160,6 +161,10 @@ class FilterPullRequestsRequest(Model):
 
         :param stages: The stages of this FilterPullRequestsRequest.
         """
+        for stage in stages:
+            if stage not in PullRequestPipelineStage.ALL:
+                raise ValueError("Invalid stage: %s" % stage)
+
         self._stages = stages
 
     @property

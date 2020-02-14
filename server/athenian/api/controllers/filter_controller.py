@@ -133,8 +133,8 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     stages = set(getattr(Stage, s.upper()) for s in filt.stages)
     participants = {getattr(ParticipationKind, k.upper()): v
                     for k, v in body.get("with", {}).items()}
-    prs = PR_ENTRIES["github"](filt.date_from, filt.date_to, repos, stages, participants,
-                               request.mdb, request.cache)
+    prs = await PR_ENTRIES["github"](
+        filt.date_from, filt.date_to, repos, stages, participants, request.mdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     return web.json_response(web_prs, dumps=FriendlyJson.dumps)
 
