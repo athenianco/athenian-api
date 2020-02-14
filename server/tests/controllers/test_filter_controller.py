@@ -3,6 +3,7 @@ import json
 import pytest
 
 from athenian.api.controllers.miners.pull_request_list_item import Stage
+from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from tests.conftest import FakeCache
 
 
@@ -147,6 +148,8 @@ def filter_prs_single_stage_cache():
 
 @pytest.mark.parametrize("stage", [k.name.lower() for k in Stage])
 async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_single_stage_cache):
+    if stage == "gold":
+        pytest.skip("no releases data")
     app._cache = filter_prs_single_stage_cache
     body = {
         "date_from": "2015-10-13",
@@ -157,3 +160,15 @@ async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_s
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     assert response.status == 200
+    prs = json.loads((await response.read()).decode("utf-8"))
+    assert len(prs) > 0
+    for pr in prs:
+        assert pr["stage"] == stage
+        participants = pr["participants"]
+        assert len(participants) > 0
+        authors = 0
+        for p in participants:
+            for s in p["status"]:
+                authors += s == PullRequestParticipant.STATUS_AUTHOR
+                assert s in PullRequestParticipant.STATUSES
+        assert authors == 1

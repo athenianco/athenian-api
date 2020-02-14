@@ -12,6 +12,8 @@ class PullRequestParticipant(Model):
     STATUS_COMMIT_AUTHOR = "commit-author"
     STATUS_COMMIT_COMMITTER = "commit-committer"
     STATUS_COMMENTER = "commenter"
+    STATUSES = {STATUS_AUTHOR, STATUS_REVIEWER, STATUS_COMMIT_AUTHOR, STATUS_COMMIT_COMMITTER,
+                STATUS_COMMENTER}
 
     def __init__(self, id: Optional[str] = None, status: Optional[List[str]] = None):
         """PullRequestParticipant - a model defined in OpenAPI
@@ -34,6 +36,10 @@ class PullRequestParticipant(Model):
         :return: The PullRequestParticipant of this PullRequestParticipant.
         """
         return serialization.deserialize_model(dikt, cls)
+
+    def __lt__(self, other: "PullRequestParticipant") -> bool:
+        """Compute self < other."""
+        return self.id < other.id
 
     @property
     def id(self) -> str:
@@ -72,16 +78,9 @@ class PullRequestParticipant(Model):
 
         :param status: The status of this PullRequestParticipant.
         """
-        allowed_values = {
-            self.STATUS_AUTHOR,
-            self.STATUS_REVIEWER,
-            self.STATUS_COMMIT_AUTHOR,
-            self.STATUS_COMMIT_COMMITTER,
-            self.STATUS_COMMENTER,
-        }
         for v in status:
-            if v not in allowed_values:
+            if v not in self.STATUSES:
                 raise ValueError(
-                    "Invalid value for `status` (%s), must be one of %s" % (v, allowed_values))
+                    "Invalid value for `status` (%s), must be one of %s" % (v, self.STATUSES))
 
         self._status = status

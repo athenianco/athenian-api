@@ -23,6 +23,7 @@ class Stage(Enum):
     REVIEW = 2
     MERGE = 3
     RELEASE = 4
+    GOLD = 5
 
 
 @dataclass(frozen=True)

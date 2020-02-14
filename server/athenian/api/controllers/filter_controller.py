@@ -20,6 +20,7 @@ from athenian.api.models.web import ForbiddenError
 from athenian.api.models.web.filter_items_request import FilterItemsRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
 from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
+from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.request import AthenianWebRequest
 
 
@@ -136,15 +137,17 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
                     for k, v in body.get("with", {}).items()}
     prs = await PR_ENTRIES["github"](
         filt.date_from, filt.date_to, repos, stages, participants, request.mdb, request.cache)
-    web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
+    web_prs = [m.to_dict() for m in sorted(_web_pr_from_struct(pr) for pr in prs)]
     return web.json_response(web_prs, dumps=FriendlyJson.dumps)
 
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
     props = vars(pr).copy()
     props["stage"] = pr.stage.name.lower()
-    props["participants"] = sorted([k, list(vals)] for k, vals in groupby(chain.from_iterable(
-        [(pid, pk.name.lower()) for pid in pids] for pk, pids in pr.participants.items()),
-        itemgetter(0),
-    ))
+    props["participants"] = sorted(
+        PullRequestParticipant(k, [v[1] for v in vals]) for k, vals in groupby(chain.from_iterable(
+            [(pid, pk.name.lower()) for pid in pids] for pk, pids in pr.participants.items()),
+            key=itemgetter(0),
+        )
+    )
     return WebPullRequest(**props)
