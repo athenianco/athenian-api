@@ -51,10 +51,14 @@ class MergeTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.approved and times.closed and min_time < times.closed.best < max_time:
-            # closed may mean either merged or not merged; both cases count though the latter
-            # is embarrassing
-            return times.closed.best - times.approved.best
+        if times.closed and min_time < times.closed.best < max_time:
+            # closed may mean either merged or not merged
+            if times.approved:
+                return times.closed.best - times.approved.best
+            elif times.last_review:
+                return times.closed.best - times.last_review.best
+            elif times.last_commit:
+                return times.closed.best - times.last_commit.best
         return None
 
 
