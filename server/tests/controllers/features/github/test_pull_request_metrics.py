@@ -27,7 +27,9 @@ def random_dropout(pr, prob):
                                            ((datetime, timedelta), (pd.Timestamp, pd.Timedelta))))
 def test_pull_request_metrics_stability(pr_samples, cls, dtypes):  # noqa: F811
     calc = cls()
+    time_from = datetime.utcnow() - timedelta(days=10000)
+    time_to = datetime.utcnow()
     for pr in pr_samples(1000):
         pr = random_dropout(ensure_dtype(pr, dtypes[0]), 0.5)
-        r = calc.analyze(pr)
+        r = calc.analyze(pr, time_from, time_to)
         assert (r is None) or ((isinstance(r, dtypes[1])) and r > dtypes[1](0)), str(pr)

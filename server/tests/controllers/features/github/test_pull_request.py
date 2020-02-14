@@ -177,12 +177,13 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
     class LeadTimeCalculator(cls):
         may_have_negative_values = negative
 
-        def analyze(self, times: PullRequestTimes) -> timedelta:
+        def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                    ) -> timedelta:
             return times.released.value - times.work_began.best
 
     calc = LeadTimeCalculator()
     for pr in pr_samples(100):
-        calc(ensure_dtype(pr, dtype))
+        calc(ensure_dtype(pr, dtype), datetime.now(), datetime.now())
     m = calc.value()
     assert m.exists
     assert isinstance(m.value, timedelta)

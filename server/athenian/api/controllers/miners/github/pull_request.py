@@ -1,8 +1,7 @@
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from enum import Enum
 import io
-import math
 import struct
 from typing import Dict, Generator, Generic, List, Mapping, Optional, Sequence, Set, TypeVar, \
     Union
@@ -85,7 +84,6 @@ class PullRequestMiner:
         async with db.connection() as conn:
             prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                        conn, PullRequest)
-            prs.replace(datetime(1, 1, 1, tzinfo=timezone.utc), math.nan, inplace=True)
             numbers = prs[PullRequest.number.key] if len(prs) > 0 else set()
             reviews = await cls._read_filtered_models(
                 conn, PullRequestReview, numbers, repositories)
