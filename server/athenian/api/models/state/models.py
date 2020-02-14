@@ -58,17 +58,15 @@ class RepositorySet(Base):
         """Return the number of repositories in a set."""
         return len(ctx.current_parameters["items"])
 
-    id = Column("id", Integer(), primary_key=True)
-    owner = Column("owner", Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"),
-                   nullable=False)
-    updated_at = Column("updated_at", TIMESTAMP(), nullable=False, default=datetime.utcnow,
+    id = Column(Integer(), primary_key=True)
+    owner = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"), nullable=False)
+    updated_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow,
                         onupdate=lambda ctx: datetime.utcnow())
-    created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
-    updates_count = Column("updates_count", Integer(), nullable=False, default=1,
+    created_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow)
+    updates_count = Column(Integer(), nullable=False, default=1,
                            onupdate=lambda ctx: ctx.current_parameters["updates_count"] + 1)
-    items = Column("items", JSON(), nullable=False)
-    items_count = Column("items_count", Integer(), nullable=False, default=count_items,
-                         onupdate=count_items)
+    items = Column(JSON(), nullable=False)
+    items_count = Column(Integer(), nullable=False, default=count_items, onupdate=count_items)
 
     count_items = staticmethod(count_items)
 
@@ -78,11 +76,11 @@ class UserAccount(Base):
 
     __tablename__ = "user_accounts"
 
-    user_id = Column("user_id", String(256), primary_key=True)
-    account_id = Column("account_id", Integer(), ForeignKey("accounts.id", name="fk_user_account"),
+    user_id = Column(String(256), primary_key=True)
+    account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_user_account"),
                         nullable=False, primary_key=True)
-    is_admin = Column("is_admin", Boolean(), nullable=False, default=False)
-    created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
+    is_admin = Column(Boolean(), nullable=False, default=False)
+    created_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow)
 
 
 class Account(Base):
@@ -91,8 +89,8 @@ class Account(Base):
     __tablename__ = "accounts"
     __table_args__ = {"sqlite_autoincrement": True}
 
-    id = Column("id", Integer(), primary_key=True)
-    created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
+    id = Column(Integer(), primary_key=True)
+    created_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow)
 
 
 class Invitation(Base):
@@ -101,14 +99,14 @@ class Invitation(Base):
     __tablename__ = "invitations"
     __table_args__ = {"sqlite_autoincrement": True}
 
-    id = Column("id", Integer(), primary_key=True)
-    salt = Column("salt", Integer(), nullable=False)
-    account_id = Column("account_id", Integer(), ForeignKey(
+    id = Column(Integer(), primary_key=True)
+    salt = Column(Integer(), nullable=False)
+    account_id = Column(Integer(), ForeignKey(
         "accounts.id", name="fk_invitation_account"), nullable=False)
-    is_active = Column("is_active", Boolean, nullable=False, default=True)
-    accepted = Column("accepted", Integer(), nullable=False, default=0)
-    created_at = Column("created_at", TIMESTAMP(), nullable=False, default=datetime.utcnow)
-    created_by = Column("created_by", String(256))
+    is_active = Column(Boolean, nullable=False, default=True)
+    accepted = Column(Integer(), nullable=False, default=0)
+    created_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow)
+    created_by = Column(String(256))
 
 
 class God(Base):
@@ -116,7 +114,7 @@ class God(Base):
 
     __tablename__ = "gods"
 
-    user_id = Column("user_id", String(256), primary_key=True)
-    mapped_id = Column("mapped_id", String(256), nullable=True)
-    updated_at = Column("updated_at", TIMESTAMP(), nullable=False,
-                        default=datetime.utcnow, onupdate=lambda ctx: datetime.utcnow())
+    user_id = Column(String(256), primary_key=True)
+    mapped_id = Column(String(256), nullable=True)
+    updated_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow,
+                        onupdate=lambda ctx: datetime.utcnow())
