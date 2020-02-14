@@ -31,6 +31,7 @@ class PullRequestListItem:
     """General PR properties used to list PRs on the frontend."""
 
     repository: str
+    number: int
     title: str
     size_added: int
     size_removed: int

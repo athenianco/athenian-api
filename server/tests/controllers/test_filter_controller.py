@@ -163,11 +163,19 @@ async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_s
     prs = json.loads((await response.read()).decode("utf-8"))
     assert len(prs) > 0
     for pr in prs:
+        assert pr["repository"].startswith("github.com/"), str(pr)
+        assert pr["number"] > 0
+        assert pr["title"]
+        assert pr["size_added"] + pr["size_removed"] >= 0, str(pr)
+        assert pr["files_changed"] >= 0, str(pr)
+        assert pr["created"], str(pr)
+        assert pr["updated"], str(pr)
         assert pr["stage"] == stage
         participants = pr["participants"]
         assert len(participants) > 0
         authors = 0
         for p in participants:
+            assert p["id"].startswith("github.com/")
             for s in p["status"]:
                 authors += s == PullRequestParticipant.STATUS_AUTHOR
                 assert s in PullRequestParticipant.STATUSES

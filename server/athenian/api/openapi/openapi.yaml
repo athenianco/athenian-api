@@ -1140,6 +1140,7 @@ components:
       example:
         # https://github.com/src-d/go-git/pull/1152
         repository: github.com/src-d/go-git
+        number: 1152
         title: 'Fix an edge case when fetching remotes with unrelated incomplete history.
           Fixes #1151'
         size_added: 37
@@ -1157,6 +1158,9 @@ components:
         repository:
           description: PR is/was open in this repository.
           type: string
+        number:
+          description: PR number.
+          type: integer
         title:
           description: Title of the PR.
           type: string
@@ -1188,6 +1192,7 @@ components:
       required:
       - created
       - files_changed
+      - number
       - participants
       - repository
       - size_added

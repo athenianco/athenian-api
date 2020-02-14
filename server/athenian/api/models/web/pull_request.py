@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
@@ -12,15 +12,16 @@ class PullRequest(Model):
 
     def __init__(
         self,
-        repository: str = None,
-        title: str = None,
-        size_added: int = None,
-        size_removed: int = None,
-        files_changed: int = None,
-        created: datetime = None,
-        updated: datetime = None,
-        stage: str = None,
-        participants: List[PullRequestParticipant] = None,
+        repository: Optional[str] = None,
+        number: Optional[int] = None,
+        title: Optional[str] = None,
+        size_added: Optional[int] = None,
+        size_removed: Optional[int] = None,
+        files_changed: Optional[int] = None,
+        created: Optional[datetime] = None,
+        updated: Optional[datetime] = None,
+        stage: Optional[str] = None,
+        participants: Optional[List[PullRequestParticipant]] = None,
     ):
         """PullRequest - a model defined in OpenAPI
 
@@ -36,6 +37,7 @@ class PullRequest(Model):
         """
         self.openapi_types = {
             "repository": str,
+            "number": int,
             "title": str,
             "size_added": int,
             "size_removed": int,
@@ -48,6 +50,7 @@ class PullRequest(Model):
 
         self.attribute_map = {
             "repository": "repository",
+            "number": "number",
             "title": "title",
             "size_added": "size_added",
             "size_removed": "size_removed",
@@ -59,6 +62,7 @@ class PullRequest(Model):
         }
 
         self._repository = repository
+        self._number = number
         self._title = title
         self._size_added = size_added
         self._size_removed = size_removed
@@ -104,6 +108,29 @@ class PullRequest(Model):
             raise ValueError("Invalid value for `repository`, must not be `None`")
 
         self._repository = repository
+
+    @property
+    def number(self) -> int:
+        """Gets the number of this PullRequest.
+
+        PR number.
+
+        :return: The number of this PullRequest.
+        """
+        return self._number
+
+    @number.setter
+    def number(self, number: int):
+        """Sets the number of this PullRequest.
+
+        PR number.
+
+        :param number: The number of this PullRequest.
+        """
+        if number is None:
+            raise ValueError("Invalid value for `number`, must not be `None`")
+
+        self._number = number
 
     @property
     def title(self) -> str:

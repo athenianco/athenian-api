@@ -411,6 +411,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
             return None
         return PullRequestListItem(
             repository=prefix + pr.pr[PullRequest.repository_fullname.key],
+            number=pr.pr[PullRequest.number.key],
             title=pr.pr[PullRequest.title.key],
             size_added=pr.pr[PullRequest.additions.key],
             size_removed=pr.pr[PullRequest.deletions.key],
