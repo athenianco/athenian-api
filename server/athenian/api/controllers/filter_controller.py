@@ -111,13 +111,13 @@ async def _resolve_repos(sdb_conn: Union[databases.core.Connection, databases.Da
     if status is None:
         raise ResponseError(ForbiddenError(
             detail="User %s is forbidden to access account %d" % (uid, filt.account)))
-    if not filt._in:
+    if not filt.in_:
         rss = await load_account_reposets(
             sdb_conn, mdb_conn, filt.account, native_uid, [RepositorySet.id])
-        filt._in = ["{%d}" % rss[0][RepositorySet.id.key]]
+        filt.in_ = ["{%d}" % rss[0][RepositorySet.id.key]]
     repos = set(chain.from_iterable(
         await asyncio.gather(*[resolve_reposet(r, ".in[%d]" % i, sdb_conn, uid, filt.account)
-                               for i, r in enumerate(filt._in)])))
+                               for i, r in enumerate(filt.in_)])))
     prefix = "github.com/"
     repos = [r[r.startswith(prefix) and len(prefix):] for r in repos]
     return repos
@@ -127,7 +127,8 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """List pull requests that satisfy the query."""
     filt = FilterPullRequestsRequest.from_dict(body)
     try:
-        repos = await _resolve_repos(request.sdb, filt, request.uid)
+        repos = await _resolve_repos(
+            request.sdb, request.mdb, filt, request.uid, request.native_uid)
     except ResponseError as e:
         return e.response
     stages = set(getattr(Stage, s.upper()) for s in filt.stages)

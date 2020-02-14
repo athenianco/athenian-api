@@ -15,43 +15,43 @@ class FilterPullRequestsRequest(Model):
         account: Optional[int] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
-        _in: Optional[List[str]] = None,
+        in_: Optional[List[str]] = None,
         stages: Optional[List[str]] = None,
-        _with: Optional[PullRequestWith] = None,
+        with_: Optional[PullRequestWith] = None,
     ):
         """FilterPullRequestsRequest - a model defined in OpenAPI
 
         :param account: The account of this FilterPullRequestsRequest.
         :param date_from: The date_from of this FilterPullRequestsRequest.
         :param date_to: The date_to of this FilterPullRequestsRequest.
-        :param _in: The _in of this FilterPullRequestsRequest.
+        :param in_: The in_ of this FilterPullRequestsRequest.
         :param stages: The stages of this FilterPullRequestsRequest.
-        :param _with: The _with of this FilterPullRequestsRequest.
+        :param with_: The with_ of this FilterPullRequestsRequest.
         """
         self.openapi_types = {
             "account": int,
             "date_from": date,
             "date_to": date,
-            "_in": List[str],
+            "in_": List[str],
             "stages": List[str],
-            "_with": PullRequestWith,
+            "with_": PullRequestWith,
         }
 
         self.attribute_map = {
             "account": "account",
             "date_from": "date_from",
             "date_to": "date_to",
-            "_in": "in",
+            "in_": "in",
             "stages": "stages",
-            "_with": "with",
+            "with_": "with",
         }
 
         self._account = account
         self._date_from = date_from
         self._date_to = date_to
-        self._in_ = _in
+        self._in_ = in_
         self._stages = stages
-        self._with_ = _with
+        self._with_ = with_
 
     @classmethod
     def from_dict(cls, dikt: dict) -> "FilterPullRequestsRequest":
@@ -132,20 +132,20 @@ class FilterPullRequestsRequest(Model):
         self._date_to = date_to
 
     @property
-    def _in(self) -> List[str]:
-        """Gets the _in of this FilterPullRequestsRequest.
+    def in_(self) -> List[str]:
+        """Gets the in_ of this FilterPullRequestsRequest.
 
-        :return: The _in of this FilterPullRequestsRequest.
+        :return: The in_ of this FilterPullRequestsRequest.
         """
         return self._in_
 
-    @_in.setter
-    def _in(self, _in: List[str]):
-        """Sets the _in of this FilterPullRequestsRequest.
+    @in_.setter
+    def in_(self, in_: List[str]):
+        """Sets the in_ of this FilterPullRequestsRequest.
 
-        :param _in: The _in of this FilterPullRequestsRequest.
+        :param in_: The in_ of this FilterPullRequestsRequest.
         """
-        self._in_ = _in
+        self._in_ = in_
 
     @property
     def stages(self) -> List[str]:
@@ -168,17 +168,17 @@ class FilterPullRequestsRequest(Model):
         self._stages = stages
 
     @property
-    def _with(self) -> Optional[PullRequestWith]:
-        """Gets the _with of this FilterPullRequestsRequest.
+    def with_(self) -> Optional[PullRequestWith]:
+        """Gets the with_ of this FilterPullRequestsRequest.
 
-        :return: The _with of this FilterPullRequestsRequest.
+        :return: The with_ of this FilterPullRequestsRequest.
         """
         return self._with_
 
-    @_with.setter
-    def _with(self, _with: PullRequestWith):
-        """Sets the _with of this FilterPullRequestsRequest.
+    @with_.setter
+    def with_(self, with_: PullRequestWith):
+        """Sets the with_ of this FilterPullRequestsRequest.
 
-        :param _with: The _with of this FilterPullRequestsRequest.
+        :param with_: The with_ of this FilterPullRequestsRequest.
         """
-        self._with_ = _with
+        self._with_ = with_
