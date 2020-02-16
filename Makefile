@@ -1,5 +1,6 @@
 # Package configuration
 PROJECT = athenian-api
+SERVICE_NAME = api
 IMAGE ?= athenian/api:dev
 
 CI_REPOSITORY ?= https://github.com/athenianco/ci
