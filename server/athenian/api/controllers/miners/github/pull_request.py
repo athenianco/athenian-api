@@ -395,6 +395,9 @@ class PullRequestListMiner(PullRequestTimesMiner):
             ParticipationKind.COMMIT_AUTHOR: {
                 (prefix + u) for u in pr.commits[PullRequestCommit.author_login.key] if u},
         }
+        merged_by = pr.pr[PullRequest.merged_by_login.key]
+        if merged_by:
+            participants[ParticipationKind.MERGER] = {prefix + merged_by}
         if not self._match_participants(participants):
             return None
         times = super()._compile(pr)

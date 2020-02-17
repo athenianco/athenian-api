@@ -1216,6 +1216,7 @@ components:
             - commit_author
             - commit_committer
             - commenter
+            - merger
             type: string
           type: array
       required:
@@ -1240,5 +1241,7 @@ components:
         commit_committer:
           $ref: '#/components/schemas/DeveloperSet'
         commenter:
+          $ref: '#/components/schemas/DeveloperSet'
+        merger:
           $ref: '#/components/schemas/DeveloperSet'
       type: object

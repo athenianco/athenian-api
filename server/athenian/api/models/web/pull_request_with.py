@@ -14,6 +14,7 @@ class PullRequestWith(Model):
         commit_author: Optional[List[str]] = None,
         commit_committer: Optional[List[str]] = None,
         commenter: Optional[List[str]] = None,
+        merger: Optional[List[str]] = None,
     ):
         """PullRequestWith - a model defined in OpenAPI
 
@@ -22,6 +23,7 @@ class PullRequestWith(Model):
         :param commit_author: The commit_author of this PullRequestWith.
         :param commit_committer: The commit_committer of this PullRequestWith.
         :param commenter: The commenter of this PullRequestWith.
+        :param merger: The merger of this PullRequestWith.
         """
         self.openapi_types = {
             "author": List[str],
@@ -29,6 +31,7 @@ class PullRequestWith(Model):
             "commit_author": List[str],
             "commit_committer": List[str],
             "commenter": List[str],
+            "merger": List[str],
         }
 
         self.attribute_map = {
@@ -37,6 +40,7 @@ class PullRequestWith(Model):
             "commit_author": "commit-author",
             "commit_committer": "commit-committer",
             "commenter": "commenter",
+            "merger": "merger",
         }
 
         self._author = author
@@ -44,6 +48,7 @@ class PullRequestWith(Model):
         self._commit_author = commit_author
         self._commit_committer = commit_committer
         self._commenter = commenter
+        self._merger = merger
 
     @classmethod
     def from_dict(cls, dikt: dict) -> "PullRequestWith":
@@ -133,3 +138,19 @@ class PullRequestWith(Model):
         :param commenter: The commenter of this PullRequestWith.
         """
         self._commenter = commenter
+
+    @property
+    def merger(self) -> Optional[List[str]]:
+        """Gets the merger of this PullRequestWith.
+
+        :return: The merger of this PullRequestWith.
+        """
+        return self._merger
+
+    @merger.setter
+    def merger(self, merger: Optional[List[str]]):
+        """Sets the merger of this PullRequestWith.
+
+        :param merger: The merger of this PullRequestWith.
+        """
+        self._merger = merger

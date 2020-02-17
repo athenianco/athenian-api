@@ -14,6 +14,7 @@ class ParticipationKind(Enum):
     COMMENTER = 3
     COMMIT_AUTHOR = 4
     COMMIT_COMMITTER = 5
+    MERGER = 6
 
 
 class Stage(Enum):

@@ -1,3 +1,4 @@
+from collections import defaultdict
 import json
 
 import pytest
@@ -162,6 +163,7 @@ async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_s
     assert response.status == 200
     prs = json.loads((await response.read()).decode("utf-8"))
     assert len(prs) > 0
+    statuses = defaultdict(int)
     for pr in prs:
         assert pr["repository"].startswith("github.com/"), str(pr)
         assert pr["number"] > 0
@@ -177,6 +179,16 @@ async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_s
         for p in participants:
             assert p["id"].startswith("github.com/")
             for s in p["status"]:
+                statuses[s] += 1
                 authors += s == PullRequestParticipant.STATUS_AUTHOR
                 assert s in PullRequestParticipant.STATUSES
         assert authors == 1
+    if stage == "wip":
+        # FIXME(vmarkovtsev): uncomment this when ENG-176 is resolved
+        # assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
+        # assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0
+        pass
+    elif stage == "review":
+        assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
+    elif stage in ("merge", "release"):
+        assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
