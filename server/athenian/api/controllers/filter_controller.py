@@ -8,6 +8,7 @@ from sqlalchemy import and_, distinct, or_, select
 
 from athenian.api import FriendlyJson, ResponseError
 from athenian.api.controllers.reposet import resolve_reposet
+from athenian.api.controllers.reposet_controller import load_account_reposets
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
     PullRequestReview, PushCommit
 from athenian.api.models.state.models import RepositorySet, UserAccount
@@ -19,11 +20,11 @@ from athenian.api.request import AthenianWebRequest
 async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find developers that made an action within the given timeframe."""
     filt = FilterItemsRequest.from_dict(body)
-    try:
-        repos = await _resolve_repos(request.sdb, filt, request.uid)
-    except ResponseError as e:
-        return e.response
     async with request.mdb.connection() as conn:
+        try:
+            repos = await _resolve_repos(request.sdb, conn, filt, request.uid, request.native_uid)
+        except ResponseError as e:
+            return e.response
         u_pr = conn.fetch_all(
             select([distinct(PullRequest.user_login)])
             .where(and_(PullRequest.repository_fullname.in_(repos), or_(
@@ -60,11 +61,11 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
 async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find repositories that were updated within the given timeframe."""
     filt = FilterItemsRequest.from_dict(body)
-    try:
-        repos = await _resolve_repos(request.sdb, filt, request.uid)
-    except ResponseError as e:
-        return e.response
     async with request.mdb.connection() as conn:
+        try:
+            repos = await _resolve_repos(request.sdb, conn, filt, request.uid, request.native_uid)
+        except ResponseError as e:
+            return e.response
         r_pr = conn.fetch_all(
             select([distinct(PullRequest.repository_fullname)])
             .where(and_(PullRequest.repository_fullname.in_(repos), or_(
@@ -92,24 +93,24 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
     return web.json_response(repos, dumps=FriendlyJson.dumps)
 
 
-async def _resolve_repos(conn: Union[databases.core.Connection, databases.Database],
+async def _resolve_repos(sdb_conn: Union[databases.core.Connection, databases.Database],
+                         mdb_conn: Union[databases.core.Connection, databases.Database],
                          filt: FilterItemsRequest,
                          uid: str,
+                         native_uid: str,
                          ) -> List[str]:
-    status = await conn.fetch_one(
+    status = await sdb_conn.fetch_one(
         select([UserAccount.is_admin]).where(and_(UserAccount.user_id == uid,
                                                   UserAccount.account_id == filt.account)))
     if status is None:
         raise ResponseError(ForbiddenError(
             detail="User %s is forbidden to access account %d" % (uid, filt.account)))
     if not filt._in:
-        earliest_rs = await conn.fetch_one(
-            select([RepositorySet.id])
-            .where(RepositorySet.owner == filt.account)
-            .order_by(RepositorySet.created_at))
-        filt._in = ["{%d}" % earliest_rs[RepositorySet.id.key]]
+        rss = await load_account_reposets(
+            sdb_conn, mdb_conn, filt.account, native_uid, [RepositorySet.id])
+        filt._in = ["{%d}" % rss[0][RepositorySet.id.key]]
     repos = set(chain.from_iterable(
-        await asyncio.gather(*[resolve_reposet(r, ".in[%d]" % i, conn, uid, filt.account)
+        await asyncio.gather(*[resolve_reposet(r, ".in[%d]" % i, sdb_conn, uid, filt.account)
                                for i, r in enumerate(filt._in)])))
     prefix = "github.com/"
     repos = [r[r.startswith(prefix) and len(prefix):] for r in repos]
