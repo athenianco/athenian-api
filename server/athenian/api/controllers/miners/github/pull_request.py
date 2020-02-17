@@ -12,6 +12,7 @@ import pandas as pd
 from sqlalchemy import select, sql
 
 from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.cache import gen_cache_key
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
     PullRequestListItem, Stage
 from athenian.api.models.metadata.github import Base, IssueComment, PullRequest, \
@@ -60,12 +61,13 @@ class PullRequestMiner:
         """
         cache_key = None
         if cache is not None:
-            cache_key = ("PullRequestMiner|%d|%d|%s|%s" % (
+            cache_key = gen_cache_key(
+                "PullRequestMiner|%d|%d|%s|%s",
                 time_from.toordinal(),
                 time_to.toordinal(),
                 ",".join(sorted(repositories)),
                 ",".join(sorted(developers)),
-            )).encode()
+            )
             serialized = await cache.get(cache_key)
             if serialized is not None:
                 prs, reviews, review_comments, comments, commits = \

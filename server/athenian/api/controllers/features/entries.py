@@ -5,6 +5,7 @@ from typing import List, Mapping, Optional, Sequence, Tuple
 import aiomcache
 from databases import Database
 
+from athenian.api.cache import gen_cache_key
 from athenian.api.controllers.features.github.pull_request import \
     BinnedPullRequestMetricCalculator, calculators as pull_request_calculators
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
@@ -31,10 +32,11 @@ async def calc_pull_request_metrics_line_github(
     """Calculate pull request metrics on GitHub data."""
     cache_key = None
     if cache is not None:
-        cache_key = ("calc_pull_request_metrics_line_github|%s|%s|%s|%s" % (
+        cache_key = gen_cache_key(
+            "calc_pull_request_metrics_line_github|%s|%s|%s|%s",
             ",".join(sorted(metrics)), ",".join(str(dt.timestamp()) for dt in time_intervals),
             ",".join(sorted(repos)), ",".join(sorted(developers)),
-        )).encode()
+        )
         serialized = await cache.get(cache_key)
         if serialized is not None:
             return pickle.loads(serialized)
@@ -66,11 +68,12 @@ async def filter_pull_requests_github(
     """Filter GitHub pull requests according to the specified criteria."""
     cache_key = None
     if cache is not None:
-        cache_key = ("filter_pull_requests_github|%d|%d|%s|%s|%s" % (
+        cache_key = gen_cache_key(
+            "filter_pull_requests_github|%d|%d|%s|%s|%s",
             time_from.toordinal(), time_to.toordinal(), ",".join(sorted(repos)),
             ",".join(s.name.lower() for s in sorted(set(stages))),
             str(sorted((k.name.lower(), sorted(set(v))) for k, v in participants.items())),
-        )).encode()
+        )
         serialized = await cache.get(cache_key)
         if serialized is not None:
             return pickle.loads(serialized)
