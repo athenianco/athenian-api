@@ -101,11 +101,7 @@ class AthenianApp(connexion.AioHttpApp):
         rootdir = os.path.dirname(__file__)
         specification_dir = os.path.join(rootdir, "openapi")
         super().__init__(__package__, specification_dir=specification_dir, options=options)
-        if invitation_controller.ikey is None:
-            raise EnvironmentError("ATHENIAN_INVITATION_KEY environment variable must be defined")
-        if invitation_controller.url_prefix is None:
-            raise EnvironmentError(
-                "ATHENIAN_INVITATION_URL_PREFIX environment variable must be defined")
+        invitation_controller.validate_env()
         auth0_cls.ensure_static_configuration()
         self._auth0 = auth0_cls(whitelist=[
             r"/v1/openapi.json$",
