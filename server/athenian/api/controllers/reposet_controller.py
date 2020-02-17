@@ -1,11 +1,14 @@
-from typing import List
+import logging
+from typing import List, Mapping, Union
 
 from aiohttp import web
+import databases.core
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api import FriendlyJson
 from athenian.api.controllers.reposet import fetch_reposet
 from athenian.api.controllers.user import is_admin
+from athenian.api.metadata import __package__
 from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import CreatedIdentifier, ForbiddenError, NoSourceDataError
@@ -90,30 +93,60 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
     return web.json_response(body, status=200)
 
 
+async def load_account_reposets(sdb_conn: Union[databases.Database, databases.core.Connection],
+                                mdb_conn: Union[databases.Database, databases.core.Connection],
+                                account: int, native_uid: str, fields: list) -> List[Mapping]:
+    """
+    Load the account's repository sets and create one if no exists.
+
+    :param sdb_conn: Connection to the state DB.
+    :param mdb_conn: Connection to the metadata DB, needed only if no reposet exists.
+    :param account: Owner of the loaded reposets.
+    :param native_uid: Native user ID, needed only if no reposet exists.
+    :param fields: Which columns to fetch for each RepositorySet.
+    :return: List of DB rows or __dict__-s representing the loaded RepositorySets.
+    """
+    rss = await sdb_conn.fetch_all(select(fields)
+                                   .where(RepositorySet.owner == account)
+                                   .order_by(RepositorySet.created_at))
+    if rss:
+        return rss
+
+    async def create_new_reposet(_mdb_conn: databases.core.Connection):
+        # a new account, discover their repos from the installation and create the first reposet
+        iid = await _mdb_conn.fetch_val(select([InstallationOwner.install_id])
+                                        .where(InstallationOwner.user_id == int(native_uid)))
+        if iid is None:
+            raise ResponseError(NoSourceDataError(
+                detail="Metadata installation has not been registered yet."))
+        repos = await _mdb_conn.fetch_all(select([InstallationRepo.repo_full_name])
+                                          .where(InstallationRepo.install_id == iid))
+        rs = RepositorySet(owner=account, items=repos).create_defaults()
+        rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
+        logging.getLogger(__package__).info(
+            "Created the first reposet %d for account %d with %d repos on behalf of %s",
+            rs.id, account, len(repos), native_uid,
+        )
+        return [vars(rs)]
+
+    if isinstance(mdb_conn, databases.Database):
+        async with mdb_conn.connection() as _mdb_conn:
+            return await create_new_reposet(_mdb_conn)
+    return await create_new_reposet(mdb_conn)
+
+
 async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current user's repository sets."""
     try:
         await is_admin(request.sdb, request.uid, id)
     except ResponseError as e:
         return e.response
-    rss = await request.sdb.fetch_all(
-        select([RepositorySet]).where(RepositorySet.owner == id))
-    if len(rss) == 0:
-        # new account, discover the repos the metadata DB
-        async with request.mdb.connection() as conn:
-            iid = await conn.fetch_val(
-                select([InstallationOwner.install_id])
-                .where(InstallationOwner.user_id == int(request.native_uid)))
-            if iid is not None:
-                repos = await conn.fetch_all(
-                    select([InstallationRepo.repo_full_name])
-                    .where(InstallationRepo.install_id == iid))
-                rs = RepositorySet(owner=id, items=repos).create_defaults()
-                rs.id = await conn.execute(insert(RepositorySet).values(rs.explode()))
-                rss = [vars(rs)]
-            else:
-                return ResponseError(NoSourceDataError(
-                    detail="Metadata installation has not been registered yet.")).response
+    async with request.sdb.connection() as sdb_conn:
+        try:
+            rss = await load_account_reposets(
+                sdb_conn, request.mdb, id, request.native_uid, [RepositorySet])
+        except ResponseError as e:
+            return e.response
     items = [RepositorySetListItem(
         id=rs[RepositorySet.id.key],
         created=rs[RepositorySet.created_at.key],
