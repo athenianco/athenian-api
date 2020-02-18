@@ -133,6 +133,8 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     except ResponseError as e:
         return e.response
     stages = set(getattr(Stage, s.upper()) for s in filt.stages)
+    if not stages:
+        stages = set(Stage)
     participants = {getattr(ParticipationKind, k.upper()): v
                     for k, v in body.get("with", {}).items()}
     prs = await PR_ENTRIES["github"](

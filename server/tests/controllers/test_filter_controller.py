@@ -1,10 +1,13 @@
 from collections import defaultdict
 import json
+from typing import Set
 
+from aiohttp import ClientResponse
 import pytest
 
 from athenian.api.controllers.miners.pull_request_list_item import Stage
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
+from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
 from tests.conftest import FakeCache
 
 
@@ -160,6 +163,22 @@ async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_s
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    await validate_prs_response(response, {stage})
+
+
+async def test_filter_prs_all_stages(client, headers):
+    body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "account": 1,
+        "stages": [],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    await validate_prs_response(response, PullRequestPipelineStage.ALL)
+
+
+async def validate_prs_response(response: ClientResponse, stages: Set[str]):
     assert response.status == 200
     prs = json.loads((await response.read()).decode("utf-8"))
     assert len(prs) > 0
@@ -172,7 +191,7 @@ async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_s
         assert pr["files_changed"] >= 0, str(pr)
         assert pr["created"], str(pr)
         assert pr["updated"], str(pr)
-        assert pr["stage"] == stage
+        assert pr["stage"] in stages
         participants = pr["participants"]
         assert len(participants) > 0
         authors = 0
@@ -183,12 +202,12 @@ async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_s
                 authors += s == PullRequestParticipant.STATUS_AUTHOR
                 assert s in PullRequestParticipant.STATUSES
         assert authors == 1
-    if stage == "wip":
+    if "wip" in stages:
         # FIXME(vmarkovtsev): uncomment this when ENG-176 is resolved
         # assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
         # assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0
         pass
-    elif stage == "review":
+    elif "review" in stages:
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-    elif stage in ("merge", "release"):
+    elif "merge" in stages or "release" in stages:
         assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
