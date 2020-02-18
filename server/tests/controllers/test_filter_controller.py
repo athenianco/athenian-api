@@ -84,7 +84,7 @@ async def test_filter_contributors_no_repos(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     contribs = json.loads((await response.read()).decode("utf-8"))
-    assert len(contribs) == 166
+    assert len(contribs) == 179
     assert len(set(contribs)) == len(contribs)
     assert all(c.startswith("github.com/") for c in contribs)
     assert "github.com/mcuadros" in contribs
@@ -105,7 +105,7 @@ async def test_filter_contributors(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     contribs = json.loads((await response.read()).decode("utf-8"))
-    assert len(contribs) == 166
+    assert len(contribs) == 179
     assert len(set(contribs)) == len(contribs)
     assert all(c.startswith("github.com/") for c in contribs)
     assert "github.com/mcuadros" in contribs
@@ -176,6 +176,10 @@ async def test_filter_prs_all_stages(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     await validate_prs_response(response, PullRequestPipelineStage.ALL)
+    del body["stages"]
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    await validate_prs_response(response, PullRequestPipelineStage.ALL)
 
 
 async def validate_prs_response(response: ClientResponse, stages: Set[str]):
@@ -203,10 +207,8 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
                 assert s in PullRequestParticipant.STATUSES
         assert authors == 1
     if "wip" in stages:
-        # FIXME(vmarkovtsev): uncomment this when ENG-176 is resolved
-        # assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
-        # assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0
-        pass
+        assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
+        assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0
     elif "review" in stages:
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
     elif "merge" in stages or "release" in stages:

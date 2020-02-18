@@ -1059,7 +1059,7 @@ components:
       - date
       - values
     FilterItemsRequest:
-      description: PR filters for /filter/pull_requests.
+      description: PR filters for /filter/contributors and /filter/repositories.
       example:
         account: 1
         date_from: 2000-01-23
@@ -1088,6 +1088,7 @@ components:
       - date_to
       type: object
     FilterPullRequestsRequest:
+      description: Filters for /filter/pull_requests.
       example:
         account: 1
         date_from: 2000-01-23
@@ -1123,7 +1124,6 @@ components:
       - account
       - date_from
       - date_to
-      - stages
       type: object
     PullRequestPipelineStage:
       description: One of the four possible PR states of the modelled lifecycle.

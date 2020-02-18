@@ -132,7 +132,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
             request.sdb, request.mdb, filt, request.uid, request.native_uid)
     except ResponseError as e:
         return e.response
-    stages = set(getattr(Stage, s.upper()) for s in filt.stages)
+    stages = set(getattr(Stage, s.upper()) for s in filt.stages) if filt.stages else None
     if not stages:
         stages = set(Stage)
     participants = {getattr(ParticipationKind, k.upper()): v

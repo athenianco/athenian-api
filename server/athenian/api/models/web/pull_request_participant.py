@@ -9,8 +9,8 @@ class PullRequestParticipant(Model):
 
     STATUS_AUTHOR = "author"
     STATUS_REVIEWER = "reviewer"
-    STATUS_COMMIT_AUTHOR = "commit-author"
-    STATUS_COMMIT_COMMITTER = "commit-committer"
+    STATUS_COMMIT_AUTHOR = "commit_author"
+    STATUS_COMMIT_COMMITTER = "commit_committer"
     STATUS_COMMENTER = "commenter"
     STATUS_MERGER = "merger"
     STATUSES = {STATUS_AUTHOR, STATUS_REVIEWER, STATUS_COMMIT_AUTHOR, STATUS_COMMIT_COMMITTER,

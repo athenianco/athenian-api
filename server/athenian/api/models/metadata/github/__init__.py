@@ -163,11 +163,15 @@ class PullRequestCommit(Base,
                         ):
     __tablename__ = "github_pull_request_commits"
 
-    pull_request_id = Column(BigInteger)
+    pull_request_id = Column(BigInteger, primary_key=True)
     pull_request_number = Column(BigInteger)
     author_login = Column(Text)
+    author_email = Column(Text)
+    author_name = Column(Text)
     author_date = Column(TIMESTAMP(True))
     commiter_login = Column(Text)
+    commiter_email = Column(Text)
+    commiter_name = Column(Text)
     commit_date = Column(TIMESTAMP(True))
     sha = Column(Text, primary_key=True)
     additions = Column(Integer)
