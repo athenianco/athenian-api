@@ -13,33 +13,33 @@ class FilterItemsRequest(Model):
         account: Optional[int] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
-        _in: Optional[List[str]] = None,
+        in_: Optional[List[str]] = None,
     ):
         """FilterItemsRequest - a model defined in OpenAPI
 
         :param account: The account of this FilterItemsRequest.
         :param date_from: The date_from of this FilterItemsRequest.
         :param date_to: The date_to of this FilterItemsRequest.
-        :param _in: The in of this FilterItemsRequest.
+        :param in_: The in of this FilterItemsRequest.
         """
         self.openapi_types = {
             "account": int,
             "date_from": date,
             "date_to": date,
-            "_in": List[str],
+            "in_": List[str],
         }
 
         self.attribute_map = {
             "account": "account",
             "date_from": "date_from",
             "date_to": "date_to",
-            "_in": "in",
+            "in_": "in",
         }
 
         self._account = account
         self._date_from = date_from
         self._date_to = date_to
-        self._in_ = _in
+        self._in_ = in_
 
     @classmethod
     def from_dict(cls, dikt: dict) -> "FilterItemsRequest":
@@ -120,17 +120,17 @@ class FilterItemsRequest(Model):
         self._date_to = date_to
 
     @property
-    def _in(self) -> List[str]:
-        """Gets the _in of this FilterItemsRequest.
+    def in_(self) -> List[str]:
+        """Gets the in_ of this FilterItemsRequest.
 
-        :return: The _in of this FilterItemsRequest.
+        :return: The in_ of this FilterItemsRequest.
         """
         return self._in_
 
-    @_in.setter
-    def _in(self, _in: List[str]):
-        """Sets the _in of this FilterItemsRequest.
+    @in_.setter
+    def in_(self, in_: List[str]):
+        """Sets the in_ of this FilterItemsRequest.
 
-        :param _in: The _in of this FilterItemsRequest.
+        :param in_: The in_ of this FilterItemsRequest.
         """
-        self._in_ = _in
+        self._in_ = in_

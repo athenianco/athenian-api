@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 
 from athenian.api.controllers.features.github.pull_request import \
@@ -12,9 +12,10 @@ class WorkInProgressTimeCalculator(PullRequestMedianMetricCalculator[timedelta])
 
     may_have_negative_values = False
 
-    def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.first_review_request:
+        if times.first_review_request and min_time < times.first_review_request.best < max_time:
             return times.first_review_request.best - times.work_began.best
         return None
 
@@ -25,13 +26,19 @@ class ReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
 
     may_have_negative_values = False
 
-    def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.first_review_request and times.closed:
+        # We cannot be sure that the approvals finished unless the PR is closed.
+        if times.first_review_request and times.closed and (
+                (times.approved    and min_time < times.approved.best    < max_time) or  # noqa
+                (times.last_review and min_time < times.last_review.best < max_time)):
             if times.approved:
                 return times.approved.best - times.first_review_request.best
             elif times.last_review:
                 return times.last_review.best - times.first_review_request.best
+            else:
+                assert False  # noqa
         return None
 
 
@@ -41,12 +48,17 @@ class MergeTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
 
     may_have_negative_values = False
 
-    def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.approved and times.closed:
-            # closed may mean either merged or not merged; both cases count though the latter
-            # is embarrassing
-            return times.closed.best - times.approved.best
+        if times.closed and min_time < times.closed.best < max_time:
+            # closed may mean either merged or not merged
+            if times.approved:
+                return times.closed.best - times.approved.best
+            elif times.last_review:
+                return times.closed.best - times.last_review.best
+            elif times.last_commit:
+                return times.closed.best - times.last_commit.best
         return None
 
 
@@ -56,10 +68,11 @@ class ReleaseTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
 
     may_have_negative_values = False
 
-    def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.merged.value is not None and times.released.value is not None:
-            return times.released.value - times.merged.value
+        if times.merged and times.released and min_time < times.released.best < max_time:
+            return times.released.best - times.merged.best
         return None
 
 
@@ -69,8 +82,9 @@ class LeadTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
 
     may_have_negative_values = False
 
-    def analyze(self, times: PullRequestTimes) -> Optional[timedelta]:
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[timedelta]:
         """Do the actual state update. See the design document for more info."""
-        if times.released.value is not None:
-            return times.released.value - times.work_began.best
+        if times.released and min_time < times.released.best < max_time:
+            return times.released.best - times.work_began.best
         return None

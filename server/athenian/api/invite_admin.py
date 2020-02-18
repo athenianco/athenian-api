@@ -12,8 +12,7 @@ from athenian.api.models.state.models import Account, Invitation
 
 def main(conn_str: str) -> None:
     """Add an admin invitation DB record and print the invitation URL."""
-    if invitation_controller.ikey is None:
-        raise EnvironmentError("ATHENIAN_INVITATION_KEY environment variable must be defined")
+    invitation_controller.validate_env()
     engine = create_engine(conn_str)
     session = sessionmaker(bind=engine)()
     salt = randint(0, (1 << 16) - 1)

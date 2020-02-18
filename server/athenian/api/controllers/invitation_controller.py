@@ -24,6 +24,14 @@ admin_backdoor = (1 << 24) - 1
 url_prefix = os.getenv("ATHENIAN_INVITATION_URL_PREFIX")
 
 
+def validate_env():
+    """Check that the required global parameters are set."""
+    if ikey is None:
+        raise EnvironmentError("ATHENIAN_INVITATION_KEY environment variable must be set")
+    if url_prefix is None:
+        raise EnvironmentError("ATHENIAN_INVITATION_URL_PREFIX environment variable must be set")
+
+
 async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
     """Generate a new regular member invitation URL."""
     sdb = request.sdb

@@ -2,7 +2,8 @@ from datetime import datetime
 import logging
 import os
 from pathlib import Path
-from typing import Dict
+import time
+from typing import Dict, Optional, Union
 
 import databases
 try:
@@ -29,6 +30,36 @@ from tests.sample_db_data import fill_metadata_session, fill_state_session
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 invitation_controller.ikey = "vadim"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
+
+
+class FakeCache:
+    def __init__(self):
+        self.mem = {}
+
+    async def get(self, key: bytes, default: Optional[bytes] = None) -> Optional[bytes]:
+        assert isinstance(key, bytes)
+        assert default is None or isinstance(default, bytes)
+        if key not in self.mem:
+            return default
+        value, start, exp = self.mem[key]
+        if exp < 0 or 0 < exp < time.time() - start:
+            return default
+        return value
+
+    async def set(self, key: bytes, value: Union[bytes, memoryview], exptime: int = 0) -> bool:
+        assert isinstance(key, bytes)
+        assert isinstance(value, (bytes, memoryview))
+        assert isinstance(exptime, int)
+        self.mem[key] = value, time.time(), exptime
+        return True
+
+    async def close(self):
+        pass
+
+
+@pytest.fixture(scope="function")
+def cache():
+    return FakeCache()
 
 
 class TestAuth0(Auth0):

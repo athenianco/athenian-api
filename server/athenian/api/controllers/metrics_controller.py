@@ -5,7 +5,7 @@ from typing import List, Tuple
 
 from aiohttp import web
 
-from athenian.api.controllers.features.entries import ENTRIES
+from athenian.api.controllers.features.entries import METRIC_ENTRIES
 from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedMetric, CalculatedMetrics, CalculatedMetricValues, \
@@ -71,13 +71,13 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     for service, (repos, devs, for_set) in filters:
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
-        sentries = ENTRIES[service]
+        sentries = METRIC_ENTRIES[service]
         for m in body.metrics:
             calcs[sentries[m]].append(m)
         results = {}
         # for each metric, we find the function to calculate and call it
         for func, metrics in calcs.items():
-            fres = await func(metrics, time_intervals, repos, devs, request.mdb)
+            fres = await func(metrics, time_intervals, repos, devs, request.mdb, request.cache)
             assert len(fres) == len(time_intervals) - 1
             for i, m in enumerate(metrics):
                 results[m] = [r[i] for r in fres]

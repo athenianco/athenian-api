@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import List
 
 from athenian.api import serialization
@@ -129,6 +129,8 @@ class MetricsRequest(Model):
         if date_from is None:
             raise ValueError("Invalid value for `date_from`, must not be `None`")
 
+        if isinstance(date_from, datetime):
+            date_from = date_from.date()
         self._date_from = date_from
 
     @property
@@ -152,6 +154,8 @@ class MetricsRequest(Model):
         if date_to is None:
             raise ValueError("Invalid value for `date_to`, must not be `None`")
 
+        if isinstance(date_to, datetime):
+            date_to = date_to.date()
         self._date_to = date_to
 
     @property

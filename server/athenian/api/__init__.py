@@ -101,11 +101,7 @@ class AthenianApp(connexion.AioHttpApp):
         rootdir = os.path.dirname(__file__)
         specification_dir = os.path.join(rootdir, "openapi")
         super().__init__(__package__, specification_dir=specification_dir, options=options)
-        if invitation_controller.ikey is None:
-            raise EnvironmentError("ATHENIAN_INVITATION_KEY environment variable must be defined")
-        if invitation_controller.url_prefix is None:
-            raise EnvironmentError(
-                "ATHENIAN_INVITATION_URL_PREFIX environment variable must be defined")
+        invitation_controller.validate_env()
         auth0_cls.ensure_static_configuration()
         self._auth0 = auth0_cls(whitelist=[
             r"/v1/openapi.json$",
@@ -213,10 +209,10 @@ def setup_context(log: logging.Logger) -> None:
     log.info("%s", sys.argv)
     log.info("Version %s", metadata.__version__)
     commit = getattr(metadata, "__commit__", None)
-    if commit is not None:
+    if commit:
         log.info("Commit: %s", commit)
     build_date = getattr(metadata, "__date__", None)
-    if build_date is not None:
+    if build_date:
         log.info("Image built on %s", build_date)
     username = getpass.getuser()
     hostname = socket.getfqdn()

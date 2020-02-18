@@ -20,6 +20,7 @@ from jose import jwt
 from multidict import CIMultiDict
 from sqlalchemy import select
 
+from athenian.api.cache import gen_cache_key
 from athenian.api.models.state.models import God
 from athenian.api.models.web import GenericError
 from athenian.api.models.web.user import User
@@ -302,8 +303,10 @@ class Auth0:
         if token == "null":
             return await self.default_user()
         user = None
+        cache_key = None
         if self._cache is not None:
-            value = await self._cache.get(token.encode())
+            cache_key = gen_cache_key("Auth0._get_user_info|" + token)
+            value = await self._cache.get(cache_key)
             if value is not None:
                 user = json.loads(value.decode())
         if user is None:
@@ -320,7 +323,7 @@ class Auth0:
                     "/errors/Auth0", title=resp.reason, status=resp.status,
                     detail=user.get("description", str(user))))
             if self._cache is not None:
-                await self._cache.set(token.encode(), json.dumps(user).encode(),
+                await self._cache.set(cache_key, json.dumps(user).encode(),
                                       exptime=self.USERINFO_CACHE_TTL)
         return User.from_auth0(**user)
 
