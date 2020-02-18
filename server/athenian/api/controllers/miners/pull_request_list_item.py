@@ -1,12 +1,11 @@
 from dataclasses import dataclass
-from datetime import datetime
-from enum import Enum
-from typing import Mapping, Sequence, Union
+from enum import IntEnum
+from typing import Mapping, Sequence
 
 import pandas as pd
 
 
-class ParticipationKind(Enum):
+class ParticipationKind(IntEnum):
     """The way the developer relates to a pull request."""
 
     AUTHOR = 1
@@ -17,7 +16,7 @@ class ParticipationKind(Enum):
     MERGER = 6
 
 
-class Stage(Enum):
+class Stage(IntEnum):
     """Modelled evolution pipeline stage."""
 
     WIP = 1
@@ -37,7 +36,7 @@ class PullRequestListItem:
     size_added: int
     size_removed: int
     files_changed: int
-    created: Union[pd.Timestamp, datetime]
-    updated: Union[pd.Timestamp, datetime]
+    created: pd.Timestamp
+    updated: pd.Timestamp
     stage: Stage
     participants: Mapping[ParticipationKind, Sequence[str]]

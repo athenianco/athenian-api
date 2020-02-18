@@ -1,6 +1,6 @@
 import asyncio
-from itertools import chain, groupby
-from operator import itemgetter
+from collections import defaultdict
+from itertools import chain
 from typing import List, Union
 
 from aiohttp import web
@@ -144,10 +144,10 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
     props = vars(pr).copy()
     props["stage"] = pr.stage.name.lower()
-    props["participants"] = sorted(
-        PullRequestParticipant(k, [v[1] for v in vals]) for k, vals in groupby(chain.from_iterable(
-            [(pid, pk.name.lower()) for pid in pids] for pk, pids in pr.participants.items()),
-            key=itemgetter(0),
-        )
-    )
+    participants = defaultdict(list)
+    for pk, pids in sorted(pr.participants.items()):
+        pkweb = pk.name.lower()
+        for pid in pids:
+            participants[pid].append(pkweb)
+    props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
     return WebPullRequest(**props)

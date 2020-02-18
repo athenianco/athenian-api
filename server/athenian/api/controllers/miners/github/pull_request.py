@@ -375,7 +375,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
     def _match_participants(self, yours: Mapping[ParticipationKind, Set[str]]) -> bool:
         """Check the PR particpants for compatibility with self.participants.
 
-        :return: True whether the PR satisifes the particpants filter, otherwise False.
+        :return: True whether the PR satisfies the participants filter, otherwise False.
         """
         for k, v in self.participants:
             if not yours[k].intersection(v):
@@ -383,6 +383,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
         return True
 
     def _compile(self, pr: MinedPullRequest) -> Optional[PullRequestListItem]:
+        """Match the PR to the required participants and stages."""
         prefix = "github.com/"
         participants = {
             ParticipationKind.AUTHOR: {prefix + pr.pr[PullRequest.user_login.key]},

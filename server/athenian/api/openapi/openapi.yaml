@@ -1072,10 +1072,12 @@ components:
           type: integer
         date_from:
           description: Updates must be later than or equal to this date.
+            An update is any action that influences the stage assignment.
           format: date
           type: string
         date_to:
           description: Updates must be earlier than or equal to this date.
+            An update is any action that influences the stage assignment.
           format: date
           type: string
         in:
@@ -1094,6 +1096,9 @@ components:
         - '{1}'
         stages:
         - wip
+        with:
+          author:
+          - github.com/vmarkovtsev
       properties:
         account:
           description: Session account ID.
@@ -1127,6 +1132,7 @@ components:
       - review
       - merge
       - release
+      # PR afterlife - PRs that were released and nothing ever-ever happens to them
       - gold
       example: wip
       type: string
