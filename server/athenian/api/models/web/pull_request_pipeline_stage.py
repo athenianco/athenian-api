@@ -15,8 +15,8 @@ class PullRequestPipelineStage(Model):
     REVIEW = "review"
     MERGE = "merge"
     RELEASE = "release"
-    GOLD = "gold"
-    ALL = {WIP, REVIEW, MERGE, RELEASE, GOLD}
+    DONE = "done"
+    ALL = {WIP, REVIEW, MERGE, RELEASE, DONE}
 
     def __init__(self):
         """PullRequestPipelineStage - a model defined in OpenAPI."""

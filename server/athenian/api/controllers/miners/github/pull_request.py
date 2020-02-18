@@ -403,7 +403,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
             return None
         times = super()._compile(pr)
         if times.released:
-            stage = Stage.GOLD
+            stage = Stage.DONE
         elif times.closed:
             # FIXME(vmarkovtsev): no releases data, we don't know if this is actually true
             stage = Stage.RELEASE

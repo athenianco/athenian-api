@@ -152,7 +152,7 @@ def filter_prs_single_stage_cache():
 
 @pytest.mark.parametrize("stage", [k.name.lower() for k in Stage])
 async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_single_stage_cache):
-    if stage == "gold":
+    if stage == PullRequestPipelineStage.DONE:
         pytest.skip("no releases data")
     app._cache = filter_prs_single_stage_cache
     body = {
@@ -213,3 +213,15 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
     elif "merge" in stages or "release" in stages:
         assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
+
+
+async def test_filter_prs_bad_account(client, headers):
+    body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "account": 3,
+        "stages": [],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    assert response.status == 403
