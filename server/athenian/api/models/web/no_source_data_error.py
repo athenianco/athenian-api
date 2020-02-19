@@ -1,9 +1,7 @@
-# coding: utf-8
 from http import HTTPStatus
 from typing import List, Optional
 
 from athenian.api.models.web.generic_error import GenericError
-from athenian.api.models.web.repository_set import RepositorySet
 
 
 class NoSourceDataError(GenericError):
@@ -28,7 +26,7 @@ class NoSourceDataError(GenericError):
         super().__init__(type="/errors/NoSourceDataError", title=title, status=status,
                          detail=detail, instance=instance)
         self.openapi_types.update({
-            "repositories": RepositorySet,
+            "repositories": List[str],
         })
 
         self.attribute_map.update({
