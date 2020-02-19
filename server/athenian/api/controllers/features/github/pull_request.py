@@ -163,6 +163,20 @@ class PullRequestMedianMetricCalculator(PullRequestMetricCalculator[T]):
         raise NotImplementedError
 
 
+class PullRequestSumMetricCalculator(PullRequestMetricCalculator[T]):
+    """Sum calculator."""
+
+    def value(self) -> Metric[T]:
+        """Calculate the current metric value."""
+        val = sum(self.samples)
+        return Metric(bool(self.samples), val, val, val)
+
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[T]:
+        """Do the actual state update."""
+        raise NotImplementedError
+
+
 calculators: Dict[str, Type[PullRequestMetricCalculator]] = {}
 
 

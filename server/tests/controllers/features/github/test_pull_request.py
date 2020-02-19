@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import itertools
 
 import faker
@@ -116,28 +116,37 @@ def pr_samples():
         fake = faker.Faker()
 
         def random_pr():
-            created_at = fake.date_time_between(start_date="-3y", end_date="-6M")
-            first_commit = fake.date_time_between(start_date="-3y1M", end_date=created_at)
+            created_at = fake.date_time_between(
+                start_date="-3y", end_date="-6M", tzinfo=timezone.utc)
+            first_commit = fake.date_time_between(
+                start_date="-3y1M", end_date=created_at, tzinfo=timezone.utc)
             last_commit_before_first_review = fake.date_time_between(
-                start_date=created_at, end_date=created_at + timedelta(days=30))
+                start_date=created_at, end_date=created_at + timedelta(days=30),
+                tzinfo=timezone.utc)
             first_comment_on_first_review = fake.date_time_between(
-                start_date=last_commit_before_first_review, end_date=timedelta(days=2))
+                start_date=last_commit_before_first_review, end_date=timedelta(days=2),
+                tzinfo=timezone.utc)
             first_review_request = fake.date_time_between(
-                start_date=last_commit_before_first_review, end_date=first_comment_on_first_review)
+                start_date=last_commit_before_first_review, end_date=first_comment_on_first_review,
+                tzinfo=timezone.utc)
             first_passed_checks = fake.date_time_between(
-                start_date=created_at, end_date=first_review_request)
+                start_date=created_at, end_date=first_review_request, tzinfo=timezone.utc)
             approved_at = fake.date_time_between(
                 start_date=first_comment_on_first_review + timedelta(days=1),
-                end_date=first_comment_on_first_review + timedelta(days=30))
+                end_date=first_comment_on_first_review + timedelta(days=30),
+                tzinfo=timezone.utc)
             last_commit = fake.date_time_between(
                 start_date=first_comment_on_first_review + timedelta(days=1),
-                end_date=approved_at)
+                end_date=approved_at,
+                tzinfo=timezone.utc)
             last_passed_checks = fake.date_time_between(
-                last_commit, last_commit + timedelta(days=1))
-            merged_at = fake.date_time_between(approved_at, approved_at + timedelta(days=2))
+                last_commit, last_commit + timedelta(days=1), tzinfo=timezone.utc)
+            merged_at = fake.date_time_between(
+                approved_at, approved_at + timedelta(days=2), tzinfo=timezone.utc)
             closed_at = merged_at
-            last_review = fake.date_time_between(approved_at, closed_at)
-            released_at = fake.date_time_between(merged_at, merged_at + timedelta(days=30))
+            last_review = fake.date_time_between(approved_at, closed_at, tzinfo=timezone.utc)
+            released_at = fake.date_time_between(
+                merged_at, merged_at + timedelta(days=30), tzinfo=timezone.utc)
             return PullRequestTimes(
                 created=Fallback(created_at, None),
                 first_commit=Fallback(first_commit, created_at),
