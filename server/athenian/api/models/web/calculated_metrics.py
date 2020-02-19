@@ -1,9 +1,6 @@
-# coding: utf-8
-
 from datetime import date
 from typing import List
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_metric import CalculatedMetric
 from athenian.api.models.web.granularity import Granularity
@@ -50,15 +47,6 @@ class CalculatedMetrics(Model):
         self._date_from = date_from
         self._date_to = date_to
         self._granularity = granularity
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "CalculatedMetrics":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The CalculatedMetrics of this CalculatedMetrics.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def calculated(self):

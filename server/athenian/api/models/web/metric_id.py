@@ -1,6 +1,3 @@
-# coding: utf-8
-
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -31,12 +28,3 @@ class MetricID(Model):
         self.openapi_types = {}
 
         self.attribute_map = {}
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "MetricID":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The MetricID of this MetricID.
-        """
-        return serialization.deserialize_model(dikt, cls)

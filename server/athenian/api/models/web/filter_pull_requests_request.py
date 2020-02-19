@@ -1,7 +1,6 @@
 from datetime import date
 from typing import List, Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
 from athenian.api.models.web.pull_request_with import PullRequestWith
@@ -52,15 +51,6 @@ class FilterPullRequestsRequest(Model):
         self._in_ = in_
         self._stages = stages
         self._with_ = with_
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "FilterPullRequestsRequest":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The FilterPullRequestsRequest of this FilterPullRequestsRequest.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def account(self) -> int:

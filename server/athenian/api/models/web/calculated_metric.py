@@ -1,8 +1,5 @@
-# coding: utf-8
-
 from typing import List
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_metric_values import CalculatedMetricValues
 from athenian.api.models.web.for_set import ForSet
@@ -25,15 +22,6 @@ class CalculatedMetric(Model):
 
         self.__for = _for
         self._values = values
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "CalculatedMetric":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The CalculatedMetric of this CalculatedMetric.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def _for(self):

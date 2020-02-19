@@ -1,6 +1,5 @@
 from typing import List, Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -28,15 +27,6 @@ class PullRequestParticipant(Model):
 
         self._id = id
         self._status = status
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "PullRequestParticipant":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The PullRequestParticipant of this PullRequestParticipant.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     def __lt__(self, other: "PullRequestParticipant") -> bool:
         """Compute self < other."""

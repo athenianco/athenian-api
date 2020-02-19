@@ -5,7 +5,6 @@ import databases
 import dateutil.parser
 from sqlalchemy import select
 
-from athenian.api import serialization
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web.base_model_ import Model
 
@@ -60,15 +59,6 @@ class User(Model):
         self._picture = picture
         self._updated = updated
         self._accounts = accounts
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "User":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The User of this User.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @classmethod
     def from_auth0(cls, name: str, picture: str, updated_at: str, email: Optional[str] = None,

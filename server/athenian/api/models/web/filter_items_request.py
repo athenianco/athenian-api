@@ -1,7 +1,6 @@
 from datetime import date
 from typing import List, Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -40,15 +39,6 @@ class FilterItemsRequest(Model):
         self._date_from = date_from
         self._date_to = date_to
         self._in_ = in_
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "FilterItemsRequest":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The FilterItemsRequest of this FilterItemsRequest.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def account(self) -> int:

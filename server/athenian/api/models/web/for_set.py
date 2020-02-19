@@ -1,6 +1,5 @@
 from typing import List, Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -26,15 +25,6 @@ class ForSet(Model):
 
         self._repositories = repositories
         self._developers = developers or []
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "ForSet":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The ForSet of this ForSet.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def repositories(self) -> List[str]:

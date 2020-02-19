@@ -1,4 +1,3 @@
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.user import User
 
@@ -21,15 +20,6 @@ class InvitedUser(Model):
 
         self._account = account
         self._user = user
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "InvitedUser":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The InvitedUser of this InvitedUser.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def account(self) -> int:

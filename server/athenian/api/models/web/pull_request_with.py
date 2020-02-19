@@ -1,6 +1,5 @@
 from typing import List, Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -49,15 +48,6 @@ class PullRequestWith(Model):
         self._commit_committer = commit_committer
         self._commenter = commenter
         self._merger = merger
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "PullRequestWith":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The PullRequestWith of this PullRequestWith.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def author(self) -> Optional[List[str]]:

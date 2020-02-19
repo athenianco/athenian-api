@@ -1,8 +1,5 @@
-# coding: utf-8
-
 from typing import Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -24,15 +21,6 @@ class CreatedIdentifier(Model):
             "id": "id",
         }
         self._id = id
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "CreatedIdentifier":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The CreatedIdentifier of this CreatedIdentifier.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def id(self):

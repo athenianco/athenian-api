@@ -1,4 +1,3 @@
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -18,15 +17,6 @@ class InvitationLink(Model):
         self.attribute_map = {"url": "url"}
 
         self._url = url
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "InvitationLink":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The InvitationLink of this InvitationLink.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def url(self) -> str:

@@ -1,6 +1,5 @@
 from typing import List, Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -22,15 +21,6 @@ class RepositorySetCreateRequest(Model):
 
         self._account = account
         self._items = items
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "RepositorySetCreateRequest":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The RepositorySetCreateRequest of this RepositorySetCreateRequest.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def account(self) -> int:

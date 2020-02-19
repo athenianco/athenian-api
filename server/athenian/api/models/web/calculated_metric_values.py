@@ -1,9 +1,6 @@
-# coding: utf-8
-
 import datetime
 from typing import List, Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -43,15 +40,6 @@ class CalculatedMetricValues(Model):
         self._confidence_mins = confidence_mins
         self._confidence_maxs = confidence_maxs
         self._confidence_scores = confidence_scores
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "CalculatedMetricValues":
-        """Returns the dict as a model.
-
-        :param dikt: A dict.
-        :return: The CalculatedMetric_values of this CalculatedMetricValues.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def date(self) -> datetime.date:
