@@ -21,10 +21,15 @@ before_cache:
   - chown -R travis:travis $HOME/.cache/pip
   - docker save -o $HOME/docker/images.tar ${GOOGLE_DOCKER_IMAGE}:latest
 
+stages:
+  - main
+  - bump-version
+
 matrix:
   fast_finish: true
   include:
     - if: commit_message !~ /Bump version/
+      stage: main
       name: Unit tests and style check
       services:
         - memcached
@@ -39,7 +44,8 @@ matrix:
         - flake8
         - pytest
         - set +e
-    - if: type = pull_request AND commit_message !~ /Bump version/
+    - if: commit_message !~ /Bump version/
+      stage: main
       name: Docker build smoke test
       before_install:
         - docker load -i $HOME/docker/images.tar || true
@@ -49,6 +55,7 @@ matrix:
       script:
         - docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
     - if: branch = master AND type != pull_request AND commit_message !~ /Bump version/
+      stage: bump-version
       name: Bump the version
       install:
         - set -e
@@ -62,12 +69,14 @@ matrix:
         - git push --tags gkwillie HEAD:master
         - set +e
       script: skip
-    - stage: deploy
-      if: branch IN (master, production) AND type != pull_request AND commit_message =~ /^Bump version/
+    - if: branch IN (master, production) AND type != pull_request AND commit_message =~ /^Bump version/
+      stage: main
+      name: Deploy
       script:
+        - set -e
         - version_file=server/athenian/api/metadata.py
         - current_version=$(grep __version__ $version_file | cut -d\" -f2)
-        - IMAGE=${IMAGE_BRANCH_COMMIT}-$current_version
+        - export IMAGE=${IMAGE_BRANCH_COMMIT}-$current_version
         - make gcloud-login
         - if [ "${TRAVIS_BRANCH}" = "production" ]; then make pubsub-publish; exit; fi
         - docker load -i $HOME/docker/images.tar || true
@@ -77,6 +86,7 @@ matrix:
         - make pubsub-publish
         - docker tag $IMAGE ${GOOGLE_DOCKER_IMAGE}
         - IMAGE=${GOOGLE_DOCKER_IMAGE} make docker-push
+        - set +e
 
 notifications:
   email: false
