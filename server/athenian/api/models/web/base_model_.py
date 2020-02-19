@@ -18,7 +18,7 @@ class Model:
     attribute_map = {}
 
     @classmethod
-    def from_dict(cls: T, dikt: dict) -> T:
+    def from_dict(cls, dikt: dict) -> T:
         """Returns the dict as a model."""
         return serialization.deserialize_model(dikt, cls)
 

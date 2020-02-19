@@ -7,21 +7,24 @@ from aiohttp import web
 import databases.core
 from sqlalchemy import and_, distinct, or_, select
 
-from athenian.api import FriendlyJson, ResponseError
 from athenian.api.controllers.features.entries import PR_ENTRIES
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
     PullRequestListItem, Stage
 from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.controllers.reposet_controller import load_account_reposets
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
-    PullRequestReview, PushCommit
+    PullRequestReview, PushCommit, User
 from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError
 from athenian.api.models.web.filter_items_request import FilterItemsRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
 from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
+from athenian.api.models.web.pull_request_set import PullRequestSet
+from athenian.api.models.web.pull_request_set_include import PullRequestSetInclude
+from athenian.api.models.web.pull_request_set_include_user import PullRequestSetIncludeUser
 from athenian.api.request import AthenianWebRequest
+from athenian.api.response import FriendlyJson, response, ResponseError
 
 
 async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -139,8 +142,16 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
                     for k, v in body.get("with", {}).items()}
     prs = await PR_ENTRIES["github"](
         filt.date_from, filt.date_to, repos, stages, participants, request.mdb, request.cache)
-    web_prs = [m.to_dict() for m in sorted(_web_pr_from_struct(pr) for pr in prs)]
-    return web.json_response(web_prs, dumps=FriendlyJson.dumps)
+    web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
+    users = {u.split("/", 1)[1] for u in
+             chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs)}
+    avatars = await request.mdb.fetch_all(
+        select([User.login, User.avatar_url]).where(User.login.in_(users)))
+    model = PullRequestSet(include=PullRequestSetInclude(users={
+        "github.com/" + r[User.login.key]: PullRequestSetIncludeUser(avatar=r[User.avatar_url.key])
+        for r in avatars
+    }), data=web_prs)
+    return response(model)
 
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
