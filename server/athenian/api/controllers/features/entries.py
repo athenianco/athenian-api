@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date
 import pickle
 from typing import List, Mapping, Optional, Sequence, Tuple
 
@@ -18,7 +18,7 @@ from athenian.api.models.web.pull_request_participant import PullRequestParticip
 
 
 async def calc_metrics_line_func(
-        metrics: Sequence[str], time_intervals: Sequence[datetime], repos: Sequence[str],
+        metrics: Sequence[str], time_intervals: Sequence[date], repos: Sequence[str],
         developers: Sequence[str], db: Database, cache: Optional[aiomcache.Client],
 ) -> List[Tuple[Metric]]:
     """All the metric calculators must follow this call signature."""
@@ -26,7 +26,7 @@ async def calc_metrics_line_func(
 
 
 async def calc_pull_request_metrics_line_github(
-        metrics: Sequence[str], time_intervals: Sequence[datetime], repos: Sequence[str],
+        metrics: Sequence[str], time_intervals: Sequence[date], repos: Sequence[str],
         developers: Sequence[str], db: Database, cache: Optional[aiomcache.Client],
 ) -> List[Tuple[Metric]]:
     """Calculate pull request metrics on GitHub data."""
@@ -34,7 +34,7 @@ async def calc_pull_request_metrics_line_github(
     if cache is not None:
         cache_key = gen_cache_key(
             "calc_pull_request_metrics_line_github|%s|%s|%s|%s",
-            ",".join(sorted(metrics)), ",".join(str(dt.timestamp()) for dt in time_intervals),
+            ",".join(sorted(metrics)), ",".join(str(dt.toordinal()) for dt in time_intervals),
             ",".join(sorted(repos)), ",".join(sorted(developers)),
         )
         serialized = await cache.get(cache_key)
