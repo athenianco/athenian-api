@@ -566,6 +566,11 @@ components:
       - pr-merging-time
       - pr-release-time
       - pr-lead-time
+      - pr-flow-ratio
+      - pr-opened
+      - pr-merged
+      - pr-closed
+      - pr-wait-first-review
       example: pr-lead-time
       type: string
     DeveloperID:

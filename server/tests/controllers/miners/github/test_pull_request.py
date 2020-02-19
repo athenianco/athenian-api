@@ -73,6 +73,7 @@ def validate_pull_request_times(prt: PullRequestTimes):
         assert prt.last_commit_before_first_review.best <= prt.last_commit.best
     if prt.first_comment_on_first_review:
         assert prt.last_commit_before_first_review.best <= prt.first_comment_on_first_review.best
+        assert prt.first_review_request.best <= prt.first_comment_on_first_review.best
     if prt.approved:
         assert prt.first_comment_on_first_review.best <= prt.approved.best
         assert prt.first_review_request.best <= prt.approved.best
