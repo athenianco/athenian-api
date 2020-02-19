@@ -4,7 +4,6 @@ from typing import List
 
 from dateutil.rrule import DAILY, MONTHLY, rrule, WEEKLY, YEARLY
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -18,15 +17,6 @@ class Granularity(Model):
         self.openapi_types = {}
 
         self.attribute_map = {}
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "Granularity":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The Granularity of this Granularity.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @classmethod
     def split(cls, value: str, date_from: date, date_to: date) -> List[date]:

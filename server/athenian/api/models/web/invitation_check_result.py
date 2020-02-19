@@ -1,6 +1,5 @@
 from typing import Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -26,15 +25,6 @@ class InvitationCheckResult(Model):
         self._active = active
         self._type = type
         self._valid = valid
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "InvitationCheckResult":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The InvitationCheckResult of this InvitationCheckResult.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def active(self) -> Optional[bool]:

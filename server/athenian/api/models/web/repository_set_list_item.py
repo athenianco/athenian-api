@@ -1,9 +1,6 @@
-# coding: utf-8
-
 from datetime import datetime
 from typing import Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -45,15 +42,6 @@ class RepositorySetListItem(Model):
         self._created = created
         self._updated = updated
         self._items_count = items_count
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "RepositorySetListItem":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The RepositorySetListItem of this RepositorySetListItem.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def id(self) -> int:

@@ -1,4 +1,3 @@
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -23,12 +22,3 @@ class PullRequestPipelineStage(Model):
         self.openapi_types = {}
 
         self.attribute_map = {}
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "PullRequestPipelineStage":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The PullRequestPipelineStage of this PullRequestPipelineStage.
-        """
-        return serialization.deserialize_model(dikt, cls)

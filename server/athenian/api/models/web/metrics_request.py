@@ -1,7 +1,6 @@
 from datetime import date, datetime
 from typing import List
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.metric_id import MetricID
@@ -52,15 +51,6 @@ class MetricsRequest(Model):
         self._date_to = date_to
         self._granularity = granularity
         self._account = account
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "MetricsRequest":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The MetricsRequest of this MetricsRequest.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def _for(self) -> List[ForSet]:

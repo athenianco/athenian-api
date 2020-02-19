@@ -5,7 +5,7 @@ info:
   title: Athenian Dashboard API
   version: 1.0.0
 servers:
-- url: https://api.owl.athenian.co/v1
+- url: https://api.athenian.co/v1
 paths:
   /account/{id}:
     get:
@@ -625,6 +625,11 @@ components:
       type: object
     RepositorySetListItem:
       description: Element of RepositorySetList.
+      example:
+        items_count: 6
+        created: 2020-01-23T04:56:07.000+00:00
+        id: 1
+        updated: 2020-01-23T04:56:07.000+00:00
       properties:
         id:
           description: Repository set identifier.
@@ -1071,13 +1076,13 @@ components:
           description: Session account ID.
           type: integer
         date_from:
-          description: Updates must be later than or equal to this date.
-            An update is any action that influences the stage assignment.
+          description: Updates must be later than or equal to this date. An update
+            is any action that influences the stage assignment.
           format: date
           type: string
         date_to:
-          description: Updates must be earlier than or equal to this date.
-            An update is any action that influences the stage assignment.
+          description: Updates must be earlier than or equal to this date. An update
+            is any action that influences the stage assignment.
           format: date
           type: string
         in:
@@ -1136,10 +1141,64 @@ components:
       example: wip
       type: string
     PullRequestSet:
-      description: List of pull requests.
-      items:
-        $ref: '#/components/schemas/PullRequest'
-      type: array
+      description: List of pull requests together with the participant profile pictures.
+      example:
+        include:
+          users:
+            key:
+              avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+        data:
+        - repository: github.com/src-d/go-git
+          number: 1152
+          title: 'Fix an edge case when fetching remotes with unrelated incomplete
+            history. Fixes #1151'
+          size_added: 37
+          size_removed: 1
+          files_changed: 2
+          created: 2019-05-17T01:14:00Z
+          updated: 2019-09-18T10:49:00Z
+          stage: wip
+          participants:
+          - id: github.com/NonLogicalDev
+            status: author
+          - id: github.com/mcuadros
+            status: commenter
+      properties:
+        include:
+          $ref: '#/components/schemas/PullRequestSet_include'
+        data:
+          description: List of matched pull requests.
+          items:
+            $ref: '#/components/schemas/PullRequest'
+          type: array
+      required:
+      - data
+      - include
+      type: object
+    PullRequestSet_include_user:
+      description: User traits such as the avatar URL.
+      example:
+        avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+      properties:
+        avatar:
+          format: url
+          type: string
+      required:
+      - avatar
+    PullRequestSet_include:
+      example:
+        users:
+          github.com/gkwillie:
+            avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+      properties:
+        users:
+          additionalProperties:
+            $ref: '#/components/schemas/PullRequestSet_include_user'
+          description: Mapping user login -> user details. The users are mentioned
+            in PRs in "PullRequestSet.data".
+          type: object
+      required:
+      - users
     PullRequest:
       description: Details of a pull request.
       example:
@@ -1202,9 +1261,9 @@ components:
       - repository
       - size_added
       - size_removed
+      - stage
       - title
       - updated
-      - stage
       type: object
     PullRequestParticipant:
       description: Developer and their role in the PR.

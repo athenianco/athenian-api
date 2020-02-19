@@ -184,10 +184,13 @@ async def test_filter_prs_all_stages(client, headers):
 
 async def validate_prs_response(response: ClientResponse, stages: Set[str]):
     assert response.status == 200
-    prs = json.loads((await response.read()).decode("utf-8"))
-    assert len(prs) > 0
+    obj = json.loads((await response.read()).decode("utf-8"))
+    users = obj["include"]["users"]
+    assert len(users) > 0
+    assert len(obj["data"]) > 0
     statuses = defaultdict(int)
-    for pr in prs:
+    mentioned_users = set()
+    for pr in obj["data"]:
         assert pr["repository"].startswith("github.com/"), str(pr)
         assert pr["number"] > 0
         assert pr["title"]
@@ -201,11 +204,13 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
         authors = 0
         for p in participants:
             assert p["id"].startswith("github.com/")
+            mentioned_users.add(p["id"])
             for s in p["status"]:
                 statuses[s] += 1
                 authors += s == PullRequestParticipant.STATUS_AUTHOR
                 assert s in PullRequestParticipant.STATUSES
         assert authors == 1
+    assert not (set(users) - mentioned_users)
     if "wip" in stages:
         assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
         assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0

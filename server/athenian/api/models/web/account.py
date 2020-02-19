@@ -1,6 +1,5 @@
 from typing import List, Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.user import User
 
@@ -20,15 +19,6 @@ class Account(Model):
 
         self._admins = admins
         self._regulars = regulars
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "Account":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The Account of this Account.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def admins(self) -> List[User]:

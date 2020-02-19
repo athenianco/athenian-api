@@ -1,9 +1,6 @@
-# coding: utf-8
-
 from http import HTTPStatus
 from typing import Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -50,15 +47,6 @@ class GenericError(Model):
         self._status = status
         self._detail = detail
         self._instance = instance
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "GenericError":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The GenericError of this GenericError.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     @property
     def type(self):

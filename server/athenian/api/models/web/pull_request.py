@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import List, Optional
 
-from athenian.api import serialization
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
@@ -71,15 +70,6 @@ class PullRequest(Model):
         self._updated = updated
         self._stage = stage
         self._participants = participants
-
-    @classmethod
-    def from_dict(cls, dikt: dict) -> "PullRequest":
-        """Returns the dict as a model
-
-        :param dikt: A dict.
-        :return: The PullRequest of this PullRequest.
-        """
-        return serialization.deserialize_model(dikt, cls)
 
     def __lt__(self, other: "PullRequest") -> bool:
         """Compute self < other."""
