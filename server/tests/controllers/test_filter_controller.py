@@ -75,11 +75,13 @@ async def test_filter_repositories_bad_account(client, headers):
     assert response.status == 200
 
 
-async def test_filter_contributors_no_repos(client, headers):
+@pytest.mark.parametrize("in_", [{}, {"in": []}])
+async def test_filter_contributors_no_repos(client, headers, in_):
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "account": 1,
+        **in_,
     }
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
