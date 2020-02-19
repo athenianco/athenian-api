@@ -57,29 +57,26 @@ matrix:
         - pip install bump2version
         - version_file=server/athenian/api/metadata.py
         - current_version=$(grep __version__ $version_file | cut -d\" -f2)
-        - bumpversion --current-version $current_version --commit patch $version_file
+        - bumpversion --tag --current-version $current_version --commit patch $version_file
         - git remote add gkwillie https://gkwillie:${GKWILLIE_TOKEN}@github.com/$TRAVIS_REPO_SLUG
-        - git push gkwillie HEAD:master
+        - git push --tags gkwillie HEAD:master
         - set +e
       script: skip
     - stage: deploy
       if: branch IN (master, production) AND type != pull_request AND commit_message =~ /^Bump version/
-      script: |
-        VERSION_FILE=server/athenian/api/metadata.py
-        CURRENT_VERSION=$(grep __version__ $version_file | cut -d\" -f2)
-        IMAGE=${IMAGE_BRANCH_COMMIT}-${CURRENT_VERSION}
-        make gcloud-login
-        if [ "${TRAVIS_BRANCH}" = "production" ]; then
-            make pubsub-publish
-            exit 0
-        fi
-        docker load -i $HOME/docker/images.tar || true
-        docker image list
-        docker build --cache-from ${GOOGLE_DOCKER_IMAGE} --build-arg COMMIT=$TRAVIS_COMMIT -t ${IMAGE} .
-        make docker-push
-        make pubsub-publish
-        docker tag ${IMAGE} ${GOOGLE_DOCKER_IMAGE}
-        IMAGE=${GOOGLE_DOCKER_IMAGE} make docker-push
+      script:
+        - version_file=server/athenian/api/metadata.py
+        - current_version=$(grep __version__ $version_file | cut -d\" -f2)
+        - IMAGE=${IMAGE_BRANCH_COMMIT}-$current_version
+        - make gcloud-login
+        - if [ "${TRAVIS_BRANCH}" = "production" ]; then make pubsub-publish; exit; fi
+        - docker load -i $HOME/docker/images.tar || true
+        - docker image list
+        - docker build --cache-from ${GOOGLE_DOCKER_IMAGE} --build-arg COMMIT=$TRAVIS_COMMIT -t $IMAGE .
+        - make docker-push
+        - make pubsub-publish
+        - docker tag $IMAGE ${GOOGLE_DOCKER_IMAGE}
+        - IMAGE=${GOOGLE_DOCKER_IMAGE} make docker-push
 
 notifications:
   email: false
