@@ -1,16 +1,18 @@
 import logging
-from typing import List, Mapping, Union
+from typing import List, Mapping, Optional, Union
 
 from aiohttp import web
+import aiomcache
 import databases.core
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api import FriendlyJson
+from athenian.api.controllers.account import get_installation_id
 from athenian.api.controllers.reposet import fetch_reposet
 from athenian.api.controllers.user import is_admin
 from athenian.api.metadata import __package__
 from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
-from athenian.api.models.state.models import RepositorySet
+from athenian.api.models.state.models import Account, RepositorySet
 from athenian.api.models.web import CreatedIdentifier, ForbiddenError, NoSourceDataError
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
@@ -93,14 +95,19 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
     return web.json_response(body, status=200)
 
 
-async def load_account_reposets(sdb_conn: Union[databases.Database, databases.core.Connection],
+async def load_account_reposets(account: int,
+                                native_uid: str,
+                                fields: list,
+                                sdb_conn: Union[databases.Database, databases.core.Connection],
                                 mdb_conn: Union[databases.Database, databases.core.Connection],
-                                account: int, native_uid: str, fields: list) -> List[Mapping]:
+                                cache: Optional[aiomcache.Client],
+                                ) -> List[Mapping]:
     """
     Load the account's repository sets and create one if no exists.
 
     :param sdb_conn: Connection to the state DB.
     :param mdb_conn: Connection to the metadata DB, needed only if no reposet exists.
+    :param cache: memcached Client.
     :param account: Owner of the loaded reposets.
     :param native_uid: Native user ID, needed only if no reposet exists.
     :param fields: Which columns to fetch for each RepositorySet.
@@ -114,13 +121,20 @@ async def load_account_reposets(sdb_conn: Union[databases.Database, databases.co
 
     async def create_new_reposet(_mdb_conn: databases.core.Connection):
         # a new account, discover their repos from the installation and create the first reposet
-        iid = await _mdb_conn.fetch_val(select([InstallationOwner.install_id])
-                                        .where(InstallationOwner.user_id == int(native_uid)))
+        iid = await get_installation_id(account, sdb_conn, cache)
         if iid is None:
-            raise ResponseError(NoSourceDataError(
-                detail="Metadata installation has not been registered yet."))
+            iid = await _mdb_conn.fetch_val(select([InstallationOwner.install_id])
+                                            .where(InstallationOwner.user_id == int(native_uid))
+                                            .order_by(InstallationOwner.created_at.desc()))
+            if iid is None:
+                raise ResponseError(NoSourceDataError(
+                    detail="The metadata installation has not registered yet."))
+            await sdb_conn.execute(update(Account)
+                                   .where(Account.id == account)
+                                   .values({Account.installation_id.key: iid}))
         repos = await _mdb_conn.fetch_all(select([InstallationRepo.repo_full_name])
                                           .where(InstallationRepo.install_id == iid))
+        repos = [("github.com/" + r[InstallationRepo.repo_full_name.key]) for r in repos]
         rs = RepositorySet(owner=account, items=repos).create_defaults()
         rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
         logging.getLogger(__package__).info(
@@ -144,7 +158,7 @@ async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
     async with request.sdb.connection() as sdb_conn:
         try:
             rss = await load_account_reposets(
-                sdb_conn, request.mdb, id, request.native_uid, [RepositorySet])
+                id, request.native_uid, [RepositorySet], sdb_conn, request.mdb, request.cache)
         except ResponseError as e:
             return e.response
     items = [RepositorySetListItem(

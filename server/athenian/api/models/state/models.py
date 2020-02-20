@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, JSON, String, TIMESTAMP
+from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, Integer, JSON, String, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 
 
@@ -90,6 +90,7 @@ class Account(Base):
     __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(Integer(), primary_key=True)
+    installation_id = Column(BigInteger(), unique=True, nullable=True)
     created_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow)
 
 

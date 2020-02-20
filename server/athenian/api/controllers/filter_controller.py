@@ -1,9 +1,10 @@
 import asyncio
 from collections import defaultdict
 from itertools import chain
-from typing import List, Union
+from typing import List, Optional, Union
 
 from aiohttp import web
+import aiomcache
 import databases.core
 from sqlalchemy import and_, distinct, or_, select
 
@@ -32,7 +33,8 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
     filt = FilterItemsRequest.from_dict(body)
     async with request.mdb.connection() as conn:
         try:
-            repos = await _resolve_repos(request.sdb, conn, filt, request.uid, request.native_uid)
+            repos = await _resolve_repos(
+                filt, request.uid, request.native_uid, request.sdb, conn, request.cache)
         except ResponseError as e:
             return e.response
         u_pr = conn.fetch_all(
@@ -73,7 +75,8 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
     filt = FilterItemsRequest.from_dict(body)
     async with request.mdb.connection() as conn:
         try:
-            repos = await _resolve_repos(request.sdb, conn, filt, request.uid, request.native_uid)
+            repos = await _resolve_repos(
+                filt, request.uid, request.native_uid, request.sdb, conn, request.cache)
         except ResponseError as e:
             return e.response
         r_pr = conn.fetch_all(
@@ -103,11 +106,12 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
     return web.json_response(repos, dumps=FriendlyJson.dumps)
 
 
-async def _resolve_repos(sdb_conn: Union[databases.core.Connection, databases.Database],
-                         mdb_conn: Union[databases.core.Connection, databases.Database],
-                         filt: Union[FilterItemsRequest, FilterPullRequestsRequest],
+async def _resolve_repos(filt: Union[FilterItemsRequest, FilterPullRequestsRequest],
                          uid: str,
                          native_uid: str,
+                         sdb_conn: Union[databases.core.Connection, databases.Database],
+                         mdb_conn: Union[databases.core.Connection, databases.Database],
+                         cache: Optional[aiomcache.Client],
                          ) -> List[str]:
     status = await sdb_conn.fetch_one(
         select([UserAccount.is_admin]).where(and_(UserAccount.user_id == uid,
@@ -117,7 +121,7 @@ async def _resolve_repos(sdb_conn: Union[databases.core.Connection, databases.Da
             detail="User %s is forbidden to access account %d" % (uid, filt.account)))
     if not filt.in_:
         rss = await load_account_reposets(
-            sdb_conn, mdb_conn, filt.account, native_uid, [RepositorySet.id])
+            filt.account, native_uid, [RepositorySet.id], sdb_conn, mdb_conn, cache)
         filt.in_ = ["{%d}" % rss[0][RepositorySet.id.key]]
     repos = set(chain.from_iterable(
         await asyncio.gather(*[resolve_reposet(r, ".in[%d]" % i, sdb_conn, uid, filt.account)
@@ -132,7 +136,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     filt = FilterPullRequestsRequest.from_dict(body)
     try:
         repos = await _resolve_repos(
-            request.sdb, request.mdb, filt, request.uid, request.native_uid)
+            filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
     except ResponseError as e:
         return e.response
     stages = set(getattr(Stage, s.upper()) for s in filt.stages) if filt.stages else None

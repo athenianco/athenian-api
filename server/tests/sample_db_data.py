@@ -71,7 +71,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
 
 
 def fill_state_session(session: sqlalchemy.orm.Session):
-    session.add(Account(id=1))
+    session.add(Account(id=1, installation_id=6366825))
     session.add(Account(id=2))
     session.add(Account(id=3))
     session.add(UserAccount(

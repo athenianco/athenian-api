@@ -170,3 +170,12 @@ async def mdb(metadata_db, loop):
     db = databases.Database(conn_str)
     await db.connect()
     return db
+
+
+@pytest.fixture(scope="function")
+async def sdb(state_db, loop):
+    state_db_path = db_dir / "sdb.sqlite"
+    conn_str = "sqlite:///%s" % state_db_path
+    db = databases.Database(conn_str)
+    await db.connect()
+    return db
