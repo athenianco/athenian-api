@@ -38,5 +38,8 @@ class PullRequestListItem:
     files_changed: int
     created: pd.Timestamp
     updated: pd.Timestamp
+    review_requested: bool
+    review_comments: int
+    merged: bool
     stage: Stage
     participants: Mapping[ParticipationKind, Sequence[str]]

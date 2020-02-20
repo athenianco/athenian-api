@@ -1250,6 +1250,15 @@ components:
           description: When this PR was last updated.
           format: date-time
           type: string
+        review_requested:
+          description: Value indicating whether the author of this PR requested a review.
+          type: boolean
+        review_comments:
+          description: Number of review comments this PR received.
+          type: integer
+        merged:
+          description: Value indicating whether this PR was merged.
+          type: boolean
         stage:
           $ref: '#/components/schemas/PullRequestPipelineStage'
         participants:
