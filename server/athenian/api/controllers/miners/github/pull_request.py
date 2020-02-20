@@ -428,6 +428,8 @@ class PullRequestListMiner(PullRequestTimesMiner):
             files_changed=pr.pr[PullRequest.changed_files.key],
             created=pr.pr[PullRequest.created_at.key],
             updated=pr.pr[PullRequest.updated_at.key],
+            comments=len(pr.comments),
+            commits=len(pr.commits),
             review_requested=False,  # FIXME(vmarkovtsev): no review request info
             review_comments=len(pr.review_comments),
             merged=bool(times.merged),
