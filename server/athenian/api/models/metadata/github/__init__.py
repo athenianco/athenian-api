@@ -177,6 +177,10 @@ class PullRequestCommit(Base,
     additions = Column(Integer)
     deletions = Column(Integer)
     message = Column(Text)
+    created_at = synonym("commit_date")
+
+
+PullRequestCommit.created_at.key = "commit_date"
 
 
 class PullRequestReview(Base,
@@ -193,6 +197,10 @@ class PullRequestReview(Base,
     pull_request_number = Column(BigInteger, nullable=False)
     state = Column(Text)
     submitted_at = Column(TIMESTAMP)
+    created_at = synonym("submitted_at")
+
+
+PullRequestReview.created_at.key = "submitted_at"
 
 
 class PullRequest(Base,

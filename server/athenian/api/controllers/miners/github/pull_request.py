@@ -88,13 +88,13 @@ class PullRequestMiner:
                                        conn, PullRequest)
             numbers = prs[PullRequest.number.key] if len(prs) > 0 else set()
             reviews = await cls._read_filtered_models(
-                conn, PullRequestReview, numbers, repositories)
+                conn, PullRequestReview, numbers, repositories, time_to)
             review_comments = await cls._read_filtered_models(
-                conn, PullRequestComment, numbers, repositories)
+                conn, PullRequestComment, numbers, repositories, time_to)
             comments = await cls._read_filtered_models(
-                conn, IssueComment, numbers, repositories)
+                conn, IssueComment, numbers, repositories, time_to)
             commits = await cls._read_filtered_models(
-                conn, PullRequestCommit, numbers, repositories)
+                conn, PullRequestCommit, numbers, repositories, time_to)
         if cache is not None:
             await cache.set(
                 cache_key,
@@ -106,10 +106,14 @@ class PullRequestMiner:
     async def _read_filtered_models(conn: databases.core.Connection,
                                     model_cls: Base,
                                     numbers: Sequence[str],
-                                    repositories: Sequence[str]) -> pd.DataFrame:
+                                    repositories: Sequence[str],
+                                    time_to: date,
+                                    ) -> pd.DataFrame:
+        time_to = datetime.combine(time_to, datetime.min.time())
         return await read_sql_query(select([model_cls]).where(
             sql.and_(model_cls.pull_request_number.in_(numbers),
-                     model_cls.repository_fullname.in_(repositories))),
+                     model_cls.repository_fullname.in_(repositories),
+                     model_cls.created_at < time_to)),
             conn, model_cls)
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
@@ -424,6 +428,11 @@ class PullRequestListMiner(PullRequestTimesMiner):
             files_changed=pr.pr[PullRequest.changed_files.key],
             created=pr.pr[PullRequest.created_at.key],
             updated=pr.pr[PullRequest.updated_at.key],
+            comments=len(pr.comments),
+            commits=len(pr.commits),
+            review_requested=False,  # FIXME(vmarkovtsev): no review request info
+            review_comments=len(pr.review_comments),
+            merged=bool(times.merged),
             stage=stage,
             participants=participants,
         )

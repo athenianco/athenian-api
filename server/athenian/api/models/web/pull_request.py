@@ -19,6 +19,11 @@ class PullRequest(Model):
         files_changed: Optional[int] = None,
         created: Optional[datetime] = None,
         updated: Optional[datetime] = None,
+        comments: Optional[int] = None,
+        commits: Optional[int] = None,
+        review_requested: Optional[bool] = None,
+        review_comments: Optional[int] = None,
+        merged: Optional[bool] = None,
         stage: Optional[str] = None,
         participants: Optional[List[PullRequestParticipant]] = None,
     ):
@@ -31,6 +36,11 @@ class PullRequest(Model):
         :param files_changed: The files_changed of this PullRequest.
         :param created: The created of this PullRequest.
         :param updated: The updated of this PullRequest.
+        :param comments: The comments of this PullRequest.
+        :param commits: The commits of this PullRequest.
+        :param review_requested: The review_requested of this PullRequest.
+        :param review_comments: The review_comments of this PullRequest.
+        :param merged: The merged of this PullRequest.
         :param stage: The stage of this PullRequest.
         :param participants: The participants of this PullRequest.
         """
@@ -43,6 +53,11 @@ class PullRequest(Model):
             "files_changed": int,
             "created": datetime,
             "updated": datetime,
+            "comments": int,
+            "commits": int,
+            "review_requested": bool,
+            "review_comments": int,
+            "merged": bool,
             "stage": str,
             "participants": List[PullRequestParticipant],
         }
@@ -56,6 +71,11 @@ class PullRequest(Model):
             "files_changed": "files_changed",
             "created": "created",
             "updated": "updated",
+            "comments": "comments",
+            "commits": "commits",
+            "review_requested": "review_requested",
+            "review_comments": "review_comments",
+            "merged": "merged",
             "stage": "stage",
             "participants": "participants",
         }
@@ -68,6 +88,11 @@ class PullRequest(Model):
         self._files_changed = files_changed
         self._created = created
         self._updated = updated
+        self._comments = comments
+        self._commits = commits
+        self._review_requested = review_requested
+        self._review_comments = review_comments
+        self._merged = merged
         self._stage = stage
         self._participants = participants
 
@@ -259,6 +284,121 @@ class PullRequest(Model):
             raise ValueError("Invalid value for `updated`, must not be `None`")
 
         self._updated = updated
+
+    @property
+    def comments(self) -> int:
+        """Gets the comments of this PullRequest.
+
+        Number of *regular* (not review) comments in this PR.
+
+        :return: The comments of this PullRequest.
+        """
+        return self._comments
+
+    @comments.setter
+    def comments(self, comments: int):
+        """Sets the comments of this PullRequest.
+
+        Number of *regular* (not review) comments in this PR.
+
+        :param comments: The updated of this PullRequest.
+        """
+        if comments is None:
+            raise ValueError("Invalid value for `comments`, must not be `None`")
+
+        self._comments = comments
+
+    @property
+    def commits(self) -> int:
+        """Gets the commits of this PullRequest.
+
+        Number of commits in this PR.
+
+        :return: The commits of this PullRequest.
+        """
+        return self._commits
+
+    @commits.setter
+    def commits(self, commits: int):
+        """Sets the commits of this PullRequest.
+
+        Number of commits in this PR.
+
+        :param commits: The updated of this PullRequest.
+        """
+        if commits is None:
+            raise ValueError("Invalid value for `commits`, must not be `None`")
+
+        self._commits = commits
+
+    @property
+    def review_requested(self) -> bool:
+        """Gets the review_requested of this PullRequest.
+
+        Value indicating whether the author of this PR requested a review.
+
+        :return: The review_requested of this PullRequest.
+        """
+        return self._review_requested
+
+    @review_requested.setter
+    def review_requested(self, review_requested: bool):
+        """Sets the review_requested of this PullRequest.
+
+        Value indicating whether the author of this PR requested a review.
+
+        :param review_requested: The updated of this PullRequest.
+        """
+        if review_requested is None:
+            raise ValueError("Invalid value for `review_requested`, must not be `None`")
+
+        self._review_requested = review_requested
+
+    @property
+    def review_comments(self) -> int:
+        """Gets the review_comments of this PullRequest.
+
+        Value indicating whether this PR received at least one review.
+
+        :return: The review_comments of this PullRequest.
+        """
+        return self._review_comments
+
+    @review_comments.setter
+    def review_comments(self, review_comments: int):
+        """Sets the review_comments of this PullRequest.
+
+        Value indicating whether this PR received at least one review.
+
+        :param review_comments: The updated of this PullRequest.
+        """
+        if review_comments is None:
+            raise ValueError("Invalid value for `review_comments`, must not be `None`")
+
+        self._review_comments = review_comments
+
+    @property
+    def merged(self) -> bool:
+        """Gets the merged of this PullRequest.
+
+        Value indicating whether this PR was merged.
+
+        :return: The merged of this PullRequest.
+        """
+        return self._merged
+
+    @merged.setter
+    def merged(self, merged: bool):
+        """Sets the merged of this PullRequest.
+
+        Value indicating whether this PR was merged.
+
+        :param merged: The updated of this PullRequest.
+        """
+        if merged is None:
+            raise ValueError("Invalid value for `merged`, must not be `None`")
+
+        self._merged = merged
 
     @property
     def stage(self) -> str:

@@ -192,6 +192,11 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
     assert len(obj["data"]) > 0
     statuses = defaultdict(int)
     mentioned_users = set()
+    comments = 0
+    commits = 0
+    review_requested = False
+    review_comments = 0
+    merged = False
     for pr in obj["data"]:
         assert pr["repository"].startswith("github.com/"), str(pr)
         assert pr["number"] > 0
@@ -201,6 +206,11 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
         assert pr["created"], str(pr)
         assert pr["updated"], str(pr)
         assert pr["stage"] in stages
+        comments += pr["comments"]
+        commits += pr["commits"]
+        review_requested |= pr["review_requested"]
+        review_comments += pr["review_comments"]
+        merged |= pr["merged"]
         participants = pr["participants"]
         assert len(participants) > 0
         authors = 0
@@ -213,13 +223,23 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
                 assert s in PullRequestParticipant.STATUSES
         assert authors == 1
     assert not (set(users) - mentioned_users)
-    if "wip" in stages:
+    assert commits > 0
+    if PullRequestPipelineStage.WIP in stages:
         assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
         assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0
-    elif "review" in stages:
+    elif PullRequestPipelineStage.REVIEW in stages:
+        # assert review_requested  # FIXME(vmarkovtsev): no review request data
+        assert comments > 0
+        assert review_comments > 0
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-    elif "merge" in stages or "release" in stages:
+    elif PullRequestPipelineStage.MERGE in stages or PullRequestPipelineStage.RELEASE in stages:
+        assert comments > 0
+        assert review_comments > 0
         assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
+    elif PullRequestPipelineStage.DONE in stages:
+        assert comments > 0
+        assert review_comments > 0
+        assert merged
 
 
 async def test_filter_prs_bad_account(client, headers):
