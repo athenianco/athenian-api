@@ -45,9 +45,12 @@ paths:
           description: The account was not found.
       security:
       - bearerAuth: []
+      summary: List the current user's account members.
       tags:
       - user
-      summary: List the current user's account members.
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
   /become:
@@ -83,10 +86,13 @@ paths:
           description: Requested user does not exist.
       security:
       - bearerAuth: []
-      tags:
-      - user
       summary: \"God mode\" ability to turn into any user. The current user must be
         marked internally as a super admin.
+      tags:
+      - user
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
   /filter/contributors:
@@ -113,9 +119,12 @@ paths:
           description: Current user is not allowed to access the specified account.
       security:
       - bearerAuth: []
+      summary: Find developers that made an action within the given timeframe.
       tags:
       - filter
-      summary: Find developers that made an action within the given timeframe.
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
       x-codegen-request-body-name: body
   /filter/pull_requests:
@@ -143,9 +152,12 @@ paths:
             or reposets.
       security:
       - bearerAuth: []
+      summary: List pull requests that satisfy the query.
       tags:
       - filter
-      summary: List pull requests that satisfy the query.
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
   /filter/repositories:
     post:
@@ -172,9 +184,12 @@ paths:
             or reposets.
       security:
       - bearerAuth: []
+      summary: Find repositories that were updated within the given timeframe.
       tags:
       - filter
-      summary: Find repositories that were updated within the given timeframe.
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
       x-codegen-request-body-name: body
   /invite/accept:
@@ -215,10 +230,13 @@ paths:
           description: Invitation was not found.
       security:
       - bearerAuth: []
-      tags:
-      - registration
       summary: Accept the account membership invitation and finish registration. The
         user must be already authorized in Auth0.
+      tags:
+      - registration
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.invitation_controller
       x-codegen-request-body-name: body
   /invite/check:
@@ -244,6 +262,9 @@ paths:
         and find whether it is correctly formed and is enabled or disabled.
       tags:
       - registration
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.invitation_controller
       x-codegen-request-body-name: body
   /invite/generate/{id}:
@@ -279,10 +300,13 @@ paths:
           description: The account was not found.
       security:
       - bearerAuth: []
-      tags:
-      - registration
       summary: Generate an account invitation link for regular users. The caller must
         be an admin of the specified account.
+      tags:
+      - registration
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.invitation_controller
       x-codegen-request-body-name: body
   /metrics_line:
@@ -324,9 +348,12 @@ paths:
           description: No data is available to calculate metrics for the given repositories.
       security:
       - bearerAuth: []
+      summary: Calculate metrics.
       tags:
       - metrics
-      summary: Calculate metrics.
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.metrics_controller
       x-codegen-request-body-name: body
   /reposet/create:
@@ -354,9 +381,12 @@ paths:
             items.
       security:
       - bearerAuth: []
+      summary: Create a repository set.
       tags:
       - reposet
-      summary: Create a repository set.
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
   /reposet/{id}:
@@ -392,10 +422,13 @@ paths:
           description: The specified repository set was not found.
       security:
       - bearerAuth: []
-      tags:
-      - reposet
       summary: Delete a repository set. The user must be an admin of the account that
         owns the reposet.
+      tags:
+      - reposet
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
     get:
@@ -430,10 +463,13 @@ paths:
           description: The specified repository set was not found.
       security:
       - bearerAuth: []
-      tags:
-      - reposet
       summary: List a repository set. The user must be in the account that owns the
         reposet.
+      tags:
+      - reposet
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
     put:
@@ -474,10 +510,13 @@ paths:
           description: The specified repository set was not found.
       security:
       - bearerAuth: []
-      tags:
-      - reposet
       summary: Update a repository set. The user must be an admin of the account that
         owns the reposet.
+      tags:
+      - reposet
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
   /reposets/{id}:
@@ -507,9 +546,12 @@ paths:
           description: The user does not belong to the specified account.
       security:
       - bearerAuth: []
+      summary: List the repository sets belonging to the current user.
       tags:
       - reposet
-      summary: List the repository sets belonging to the current user.
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
   /user:
@@ -524,9 +566,12 @@ paths:
           description: Details about the current user.
       security:
       - bearerAuth: []
+      summary: Show details about the current user.
       tags:
       - user
-      summary: Show details about the current user.
+# {% if False %}
+      - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
 components:
