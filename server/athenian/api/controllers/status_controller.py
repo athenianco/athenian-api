@@ -3,6 +3,7 @@ import time
 import aiohttp.web
 import prometheus_client
 
+from athenian.api import metadata
 from athenian.api.metadata import __package__
 
 
@@ -60,6 +61,11 @@ def setup_status(app):
         ["app_name", "endpoint", "method"],
         registry=registry,
     )
+    prometheus_client.Info("server", "API server version", registry=registry).info({
+        "version": metadata.__version__,
+        "commit": getattr(metadata, "__commit__", "null"),
+        "build_date": getattr(metadata, "__date__", "null"),
+    })
     app.middlewares.insert(0, instrument)
     # passing StatusRenderer(registry) without __call__ triggers a spurious DeprecationWarning
     # FIXME(vmarkovtsev): https://github.com/aio-libs/aiohttp/issues/4519
