@@ -1217,6 +1217,12 @@ components:
         files_changed: 2
         created: 2019-05-17T01:14:00Z
         updated: 2019-09-18T10:49:00Z
+        closed: null
+        merged: false
+        comments: 1
+        commits: 2
+        review_comments: 0
+        review_requested: false
         stage: wip
         participants:
         - id: github.com/NonLogicalDev
@@ -1250,6 +1256,11 @@ components:
           description: When this PR was last updated.
           format: date-time
           type: string
+        closed:
+          description: When this PR was last closed.
+          format: date-time
+          nullable: true
+          type: string
         comments:
           description: Number of *regular* (not review) comments in this PR.
           type: integer
@@ -1274,6 +1285,7 @@ components:
             $ref: '#/components/schemas/PullRequestParticipant'
           type: array
       required:
+      - closed
       - comments
       - commits
       - created

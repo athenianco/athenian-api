@@ -19,6 +19,7 @@ class PullRequest(Model):
         files_changed: Optional[int] = None,
         created: Optional[datetime] = None,
         updated: Optional[datetime] = None,
+        closed: Optional[datetime] = None,
         comments: Optional[int] = None,
         commits: Optional[int] = None,
         review_requested: Optional[bool] = None,
@@ -36,6 +37,7 @@ class PullRequest(Model):
         :param files_changed: The files_changed of this PullRequest.
         :param created: The created of this PullRequest.
         :param updated: The updated of this PullRequest.
+        :param closed: The closed of this PullRequest.
         :param comments: The comments of this PullRequest.
         :param commits: The commits of this PullRequest.
         :param review_requested: The review_requested of this PullRequest.
@@ -53,6 +55,7 @@ class PullRequest(Model):
             "files_changed": int,
             "created": datetime,
             "updated": datetime,
+            "closed": datetime,
             "comments": int,
             "commits": int,
             "review_requested": bool,
@@ -71,6 +74,7 @@ class PullRequest(Model):
             "files_changed": "files_changed",
             "created": "created",
             "updated": "updated",
+            "closed": "closed",
             "comments": "comments",
             "commits": "commits",
             "review_requested": "review_requested",
@@ -88,6 +92,7 @@ class PullRequest(Model):
         self._files_changed = files_changed
         self._created = created
         self._updated = updated
+        self._closed = closed
         self._comments = comments
         self._commits = commits
         self._review_requested = review_requested
@@ -286,6 +291,26 @@ class PullRequest(Model):
         self._updated = updated
 
     @property
+    def closed(self) -> Optional[datetime]:
+        """Gets the closed of this PullRequest.
+
+        When this PR was closed.
+
+        :return: The closed of this PullRequest.
+        """
+        return self._closed
+
+    @closed.setter
+    def closed(self, closed: Optional[datetime]):
+        """Sets the closed of this PullRequest.
+
+        When this PR was closed.
+
+        :param closed: The closed of this PullRequest.
+        """
+        self._closed = closed
+
+    @property
     def comments(self) -> int:
         """Gets the comments of this PullRequest.
 
@@ -301,7 +326,7 @@ class PullRequest(Model):
 
         Number of *regular* (not review) comments in this PR.
 
-        :param comments: The updated of this PullRequest.
+        :param comments: The comments of this PullRequest.
         """
         if comments is None:
             raise ValueError("Invalid value for `comments`, must not be `None`")

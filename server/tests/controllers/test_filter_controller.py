@@ -205,6 +205,8 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
         assert pr["files_changed"] >= 0, str(pr)
         assert pr["created"], str(pr)
         assert pr["updated"], str(pr)
+        if pr["merged"]:
+            assert pr["closed"], str(pr)
         assert pr["stage"] in stages
         comments += pr["comments"]
         commits += pr["commits"]
@@ -234,7 +236,7 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
     elif PullRequestPipelineStage.MERGE in stages or PullRequestPipelineStage.RELEASE in stages:
         assert comments > 0
-        assert review_comments > 0
+        assert review_comments >= 0
         assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
     elif PullRequestPipelineStage.DONE in stages:
         assert comments > 0
