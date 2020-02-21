@@ -381,7 +381,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
 
         :return: True whether the PR satisfies the participants filter, otherwise False.
         """
-        for k, v in self.participants:
+        for k, v in self.participants.items():
             if not yours[k].intersection(v):
                 return False
         return True
