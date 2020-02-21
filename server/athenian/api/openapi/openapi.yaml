@@ -1,8 +1,12 @@
-openapi: 3.0.0
+openapi: 3.0.3
 info:
+  description: "Server version: {{ server_version }} built on {{ build_date }} @ {{ commit }}"
+  contact:
+    name: the admins by email
+    email: admin@athenian.co
   license:
     name: CC-BY-4.0
-  title: Athenian Dashboard API
+  title: "{{ title }}"
   version: 1.0.0
 servers:
 - url: https://api.athenian.co/v1
