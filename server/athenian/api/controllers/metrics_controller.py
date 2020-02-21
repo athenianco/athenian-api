@@ -1,11 +1,12 @@
 import asyncio
 from collections import defaultdict
 from itertools import chain
-from typing import List, Tuple
+from typing import List, Set, Tuple
 
 from aiohttp import web
 
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
+from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedMetric, CalculatedMetrics, CalculatedMetricValues, \
@@ -17,8 +18,8 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import response, ResponseError
 
 #           service                  developers
-Filter = Tuple[str, Tuple[List[str], List[str], ForSet]]
-#                        repositories          originals
+Filter = Tuple[str, Tuple[Set[str], List[str], ForSet]]
+#                       repositories          originals
 
 
 async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -97,36 +98,49 @@ async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, 
                            ) -> List[Filter]:
     filters = []
     sdb, user = request.sdb, request.uid
-    for i, for_set in enumerate(for_sets):
-        repos = []
-        devs = []
-        service = None
-        for repo in chain.from_iterable(await asyncio.gather(*[
-                resolve_reposet(r, ".for[%d].repositories[%d]" % (i, j), sdb, user, account)
-                for j, r in enumerate(for_set.repositories)])):
-            for key, prefix in PREFIXES.items():
-                if repo.startswith(prefix):
-                    if service is None:
-                        service = key
-                    elif service != key:
-                        raise ResponseError(InvalidRequestError(
-                            detail='mixed providers are not allowed in the same "for" element',
-                            pointer=".for[%d].repositories" % i,
-                        ))
-                    repos.append(repo[len(prefix):])
-        if service is None:
-            raise ResponseError(InvalidRequestError(
-                detail='the provider of a "for" element is unsupported or the set is empty',
-                pointer=".for[%d].repositories" % i,
-            ))
-        for dev in (for_set.developers or []):
-            for key, prefix in PREFIXES.items():
-                if dev.startswith(prefix):
-                    if service != key:
-                        raise ResponseError(InvalidRequestError(
-                            detail='mixed providers are not allowed in the same "for" element',
-                            pointer=".for[%d].developers" % i,
-                        ))
-                    devs.append(dev[len(prefix):])
-        filters.append((service, (repos, devs, for_set)))
+    checkers = {}
+    async with sdb.connection() as sdb_conn:
+        for i, for_set in enumerate(for_sets):
+            repos = set()
+            devs = []
+            service = None
+            for repo in chain.from_iterable(await asyncio.gather(*[
+                    resolve_reposet(r, ".for[%d].repositories[%d]" % (i, j), sdb, user, account)
+                    for j, r in enumerate(for_set.repositories)])):
+                for key, prefix in PREFIXES.items():
+                    if repo.startswith(prefix):
+                        if service is None:
+                            service = key
+                        elif service != key:
+                            raise ResponseError(InvalidRequestError(
+                                detail='mixed providers are not allowed in the same "for" element',
+                                pointer=".for[%d].repositories" % i,
+                            ))
+                        repos.add(repo[len(prefix):])
+            if service is None:
+                raise ResponseError(InvalidRequestError(
+                    detail='the provider of a "for" element is unsupported or the set is empty',
+                    pointer=".for[%d].repositories" % i,
+                ))
+            checker = checkers.get(service)
+            if checker is None:
+                checker = await access_classes[service](
+                    account, sdb_conn, request.mdb, request.cache).load()
+                checkers[service] = checker
+            denied = checker.check(repos)
+            if denied:
+                raise ResponseError(InvalidRequestError(
+                    detail="the following repositories are access denied: %s" % denied,
+                    pointer=".for[%d].repositories" % i,
+                ))
+            for dev in (for_set.developers or []):
+                for key, prefix in PREFIXES.items():
+                    if dev.startswith(prefix):
+                        if service != key:
+                            raise ResponseError(InvalidRequestError(
+                                detail='mixed providers are not allowed in the same "for" element',
+                                pointer=".for[%d].developers" % i,
+                            ))
+                        devs.append(dev[len(prefix):])
+            filters.append((service, (repos, devs, for_set)))
     return filters

@@ -45,8 +45,11 @@ async def resolve_reposet(repo: str,
 
 
 async def fetch_reposet(
-        id: int, columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
-        db: databases.Database, uid: str) -> Tuple[RepositorySet, bool]:
+    id: int,
+    columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
+    sdb: Union[databases.Database, databases.core.Connection],
+    uid: str,
+) -> Tuple[RepositorySet, bool]:
     """
     Retrieve a repository set by ID and check the access for the given user.
 
@@ -60,9 +63,9 @@ async def fetch_reposet(
         else:
             columns = list(columns)
             columns.append(RepositorySet.owner)
-    rs = await db.fetch_one(select(columns).where(RepositorySet.id == id))
+    rs = await sdb.fetch_one(select(columns).where(RepositorySet.id == id))
     if rs is None or len(rs) == 0:
         raise ResponseError(NotFoundError(detail="Repository set %d does not exist" % id))
     account = rs[RepositorySet.owner.key]
-    adm = await is_admin(db, uid, account)
+    adm = await is_admin(sdb, uid, account)
     return RepositorySet(**rs), adm

@@ -1,16 +1,15 @@
 import marshal
-from typing import Optional, Set, Union
+from typing import Set
 
-import aiomcache
-import databases.core
 from sqlalchemy import select
 
 from athenian.api.cache import gen_cache_key
 from athenian.api.controllers.account import get_installation_id
+from athenian.api.controllers.miners.access import AccessChecker
 from athenian.api.models.metadata.github import InstallationRepo
 
 
-class AccessChecker:
+class GitHubAccessChecker(AccessChecker):
     """
     Stateful repository access checker.
 
@@ -18,27 +17,7 @@ class AccessChecker:
     the checked set.
     """
 
-    CACHE_TTL = 60 * 60  # 1 hour
-
-    def __init__(self,
-                 account: int,
-                 sdb_conn: Union[databases.Database, databases.core.Connection],
-                 mdb_conn: Union[databases.Database, databases.core.Connection],
-                 cache: Optional[aiomcache.Client],
-                 cache_ttl=CACHE_TTL):
-        """
-        Initialize a new instance of AccessChecker.
-
-        You need to await load() to prepare for check()-ing.
-        """
-        self.account = account
-        self.sdb = sdb_conn
-        self.mdb = mdb_conn
-        self.cache = cache
-        self.cache_ttl = cache_ttl
-        self._installed_repos = set()
-
-    async def load(self) -> None:
+    async def load(self) -> "AccessChecker":
         """Fetch the list of accessible repositories."""
         iid = await get_installation_id(self.account, self.sdb, self.cache)
         cache_key = None
@@ -58,6 +37,7 @@ class AccessChecker:
                 await self.cache.set(cache_key, marshal.dumps(installed_repos),
                                      exptime=self.cache_ttl)
         self._installed_repos = installed_repos
+        return self
 
     async def check(self, repos: Set[str]) -> Set[str]:
         """Return repositories which do not belong to the metadata installation."""
