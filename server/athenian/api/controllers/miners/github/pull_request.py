@@ -293,20 +293,20 @@ class PullRequestTimesMiner(PullRequestMiner):
         if merged_at:
             reviews_before_merge = pr.reviews[
                 pr.reviews[PullRequestReview.submitted_at.key] <= merged_at.best]
-            grouped_reviews = reviews_before_merge \
-                .sort_values([PullRequestReview.submitted_at.key], ascending=True) \
-                .groupby(PullRequestReview.user_id.key, sort=False) \
-                .nth(0)  # the most recent review for each reviewer
-            if (grouped_reviews[PullRequestReview.state.key]
-                    == ReviewResolution.CHANGES_REQUESTED).any():  # noqa: W503
-                # merged with negative reviews
-                approved_at_value = None
-            else:
-                approved_at_value = grouped_reviews[
-                    grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED
-                ][PullRequestReview.submitted_at.key].max()
         else:
+            reviews_before_merge = pr.reviews
+        grouped_reviews = reviews_before_merge \
+            .sort_values([PullRequestReview.submitted_at.key], ascending=True) \
+            .groupby(PullRequestReview.user_id.key, sort=False) \
+            .nth(0)  # the most recent review for each reviewer
+        if (grouped_reviews[PullRequestReview.state.key]
+                == ReviewResolution.CHANGES_REQUESTED.name).any():  # noqa: W503
+            # merged with negative reviews
             approved_at_value = None
+        else:
+            approved_at_value = grouped_reviews[
+                grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED.name
+            ][PullRequestReview.submitted_at.key].max()
         approved_at = Fallback(approved_at_value, merged_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         finalized_at = Fallback.min(
@@ -430,6 +430,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
             files_changed=pr.pr[PullRequest.changed_files.key],
             created=pr.pr[PullRequest.created_at.key],
             updated=pr.pr[PullRequest.updated_at.key],
+            closed=times.closed.best,
             comments=len(pr.comments),
             commits=len(pr.commits),
             review_requested=False,  # FIXME(vmarkovtsev): no review request info

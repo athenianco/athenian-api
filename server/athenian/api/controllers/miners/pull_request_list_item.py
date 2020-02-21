@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Mapping, Sequence
+from typing import Mapping, Optional, Sequence
 
 import pandas as pd
 
@@ -38,6 +38,7 @@ class PullRequestListItem:
     files_changed: int
     created: pd.Timestamp
     updated: pd.Timestamp
+    closed: Optional[pd.Timestamp]
     comments: int
     commits: int
     review_requested: bool
