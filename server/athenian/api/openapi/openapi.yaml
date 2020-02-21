@@ -1312,10 +1312,10 @@ components:
       - id
       - status
     PullRequestWith:
-      description: 'Triage PRs by various developer participation. The aggregation is AND between
-        the participation kinds and OR within each. For example, if our request is
+      description: 'Triage PRs by various developer participation. The aggregation is OR between
+        the participation groups and OR within each group. For example, if our request is
         {"author": ["github.com/vmarkovtsev"], "reviewer": ["github.com/gkwillie", "github.com/mcuadros"]}
-        then the matched PRs will have @vmarkovtsev as the author and either @gkwillie or @mcuadros
+        then the matched PRs will have @vmarkovtsev as the author or either @gkwillie or @mcuadros
         as the reviewers.'
       example:
         author:

@@ -381,10 +381,12 @@ class PullRequestListMiner(PullRequestTimesMiner):
 
         :return: True whether the PR satisfies the participants filter, otherwise False.
         """
+        if not self.participants:
+            return True
         for k, v in self.participants.items():
-            if not yours[k].intersection(v):
-                return False
-        return True
+            if yours[k].intersection(v):
+                return True
+        return False
 
     def _compile(self, pr: MinedPullRequest) -> Optional[PullRequestListItem]:
         """Match the PR to the required participants and stages."""
