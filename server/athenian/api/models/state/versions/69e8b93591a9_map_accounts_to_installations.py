@@ -19,7 +19,7 @@ depends_on = None
 def upgrade():
     with op.batch_alter_table("accounts") as bop:
         bop.add_column(sa.Column("installation_id", sa.BigInteger(), nullable=True))
-        bop.create_unique_constraint("uq_installation_id", "installation_id")
+        bop.create_unique_constraint("uq_installation_id", ["installation_id"])
 
 
 def downgrade():
