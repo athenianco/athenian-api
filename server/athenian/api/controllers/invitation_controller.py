@@ -4,8 +4,10 @@ from http import HTTPStatus
 import os
 from random import randint
 import struct
+from typing import Union
 
 from aiohttp import web
+import aiosqlite.core
 import databases.core
 import pyffx
 from sqlalchemy import and_, delete, func, insert, select, update
@@ -115,8 +117,6 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         is_admin = acc_id == admin_backdoor
         if is_admin:
             # create a new account for the admin user
-            create_new_account = _create_new_account_slow if sdb.url.dialect == "sqlite" else \
-                _create_new_account_fast
             acc_id = await create_new_account(conn)
             if acc_id >= admin_backdoor:
                 await conn.execute(delete(Account).where(Account.id == acc_id))
@@ -144,7 +144,19 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
     return response(InvitedUser(account=acc_id, user=user))
 
 
-async def _create_new_account_fast(conn: databases.core.Connection) -> int:
+async def create_new_account(conn: Union[databases.Database, databases.core.Connection]) -> int:
+    """Create a new account."""
+    if isinstance(conn, databases.Database):
+        slow = conn.url.dialect == "sqlite"
+    else:
+        slow = isinstance(conn.raw_connection, aiosqlite.core.Connection)
+    if slow:
+        return await _create_new_account_slow(conn)
+    return await _create_new_account_fast(conn)
+
+
+async def _create_new_account_fast(
+        conn: Union[databases.Database, databases.core.Connection]) -> int:
     """Create a new account.
 
     Should be used for PostgreSQL.
@@ -152,7 +164,8 @@ async def _create_new_account_fast(conn: databases.core.Connection) -> int:
     return await conn.execute(insert(Account).values(Account().create_defaults().explode()))
 
 
-async def _create_new_account_slow(conn: databases.core.Connection) -> int:
+async def _create_new_account_slow(
+        conn: Union[databases.Database, databases.core.Connection]) -> int:
     """Create a new account without relying on autoincrement.
 
     SQLite does not allow resetting the primary key sequence, so we have to increment the ID
