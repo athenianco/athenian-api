@@ -9,6 +9,7 @@ import sys
 from typing import Optional
 
 import aiohttp.web
+from aiohttp.web_exceptions import HTTPFound
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
@@ -122,6 +123,11 @@ class AthenianApp(connexion.AioHttpApp):
                 options={"middlewares": [self.with_db]},
             )
         setup_status(self.app)
+        if ui:
+            def index_redirect(_):
+                raise HTTPFound("/v1/ui/")
+
+            self.app.router.add_get("/", index_redirect)
         self._enable_cors()
         api.jsonifier.json = FriendlyJson
         self._cache = cache
