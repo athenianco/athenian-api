@@ -46,7 +46,7 @@ async def calc_pull_request_metrics_line_github(
     binned = BinnedPullRequestMetricCalculator(calcs, time_intervals)
     result = binned(miner)
     if cache is not None:
-        await cache.set(cache_key, pickle.dumps(result),
+        await cache.set(cache_key, pickle.dumps(result, protocol=-1),
                         exptime=PullRequestTimesMiner.CACHE_TTL)
     return result
 
@@ -84,12 +84,8 @@ async def filter_pull_requests_github(
     miner.participants = participants
     items = list(miner)
     if cache is not None:
-        try:
-            await cache.set(cache_key, pickle.dumps(items, protocol=-1),
-                            exptime=PullRequestListMiner.CACHE_TTL)
-        except ValueError:
-            breakpoint()
-            print(items)
+        await cache.set(cache_key, pickle.dumps(items, protocol=-1),
+                        exptime=PullRequestListMiner.CACHE_TTL)
     return items
 
 
