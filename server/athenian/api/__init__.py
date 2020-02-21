@@ -112,7 +112,12 @@ class AthenianApp(connexion.AioHttpApp):
         with self._auth0:
             api = self.add_api(
                 "openapi.yaml",
-                arguments={"title": metadata.__description__},
+                arguments={
+                    "title": metadata.__description__,
+                    "server_version": metadata.__version__,
+                    "commit": getattr(metadata, "__commit__", "N/A"),
+                    "build_date": getattr(metadata, "__date__", "N/A"),
+                },
                 pass_context_arg_name="request",
                 options={"middlewares": [self.with_db]},
             )
