@@ -269,3 +269,24 @@ async def test_filter_prs_access_denied(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     assert response.status == 403
+
+
+async def test_filter_prs_david_bug(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2019-02-22",
+        "date_to": "2020-02-22",
+        "in": ["github.com/src-d/go-git"],
+        "stages": ["wip", "review", "merge", "release"],
+        "with": {
+            "author": ["github.com/Junnplus"],
+            "reviewer": ["github.com/Junnplus"],
+            "commit_author": ["github.com/Junnplus"],
+            "commit_committer": ["github.com/Junnplus"],
+            "commenter": ["github.com/Junnplus"],
+            "merger": ["github.com/Junnplus"],
+        },
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    assert response.status == 200

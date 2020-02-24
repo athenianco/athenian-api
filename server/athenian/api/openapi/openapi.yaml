@@ -9,7 +9,8 @@ info:
   title: "{{ title }}"
   version: 1.0.0
 servers:
-- url: {{ server_url }}/v1
+- url: "{{ server_url }}/v1"
+  description: "{{ server_description }} on {{ server_url }}"
 paths:
   /account/{id}:
     get:

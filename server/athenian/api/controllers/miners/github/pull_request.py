@@ -384,7 +384,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
         if not self.participants:
             return True
         for k, v in self.participants.items():
-            if yours[k].intersection(v):
+            if yours.get(k, set()).intersection(v):
                 return True
         return False
 
