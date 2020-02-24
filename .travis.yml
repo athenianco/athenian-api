@@ -63,7 +63,7 @@ matrix:
         - pip install bump2version
       script:
         - set -e
-        - if git diff --name-only HEAD...$TRAVIS_BRANCH | grep openapi.yaml; then
+        - if git diff --name-only $TRAVIS_BRANCH...HEAD | grep openapi.yaml; then
             version_file=spec/openapi.yaml;
             current_version=$(grep -m1 '^  version:' $version_file | cut -d" " -f4);
             bumpversion --current-version $current_version patch $version_file;
