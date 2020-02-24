@@ -16,14 +16,12 @@ async def test_calc_metrics_line_smoke(client, metric, headers):
                 "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
                 "repositories": [
                     "github.com/src-d/go-git",
-                    "github.com/athenianco/athenian-api",
                 ],
             },
             {
                 "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
                 "repositories": [
                     "github.com/src-d/go-git",
-                    "github.com/athenianco/athenian-api",
                 ],
             },
         ],
@@ -51,14 +49,12 @@ async def test_calc_metrics_line_all(client, granularity, headers):
                 "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
                 "repositories": [
                     "github.com/src-d/go-git",
-                    "github.com/athenianco/athenian-api",
                 ],
             },
             {
                 "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
                 "repositories": [
                     "github.com/src-d/go-git",
-                    "github.com/athenianco/athenian-api",
                 ],
             },
         ],
@@ -100,6 +96,31 @@ async def test_calc_metrics_line_all(client, granularity, headers):
             assert nonzero > 0, str(m)
 
 
+async def test_calc_metrics_line_access_denied(client, headers):
+    """https://athenianco.atlassian.net/browse/ENG-116"""
+    body = {
+        "for": [
+            {
+                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "repositories": [
+                    "github.com/src-d/go-git",
+                    "github.com/athenianco/athenian-api",
+                ],
+            },
+        ],
+        "metrics": list(MetricID.ALL),
+        "date_from": "2015-10-13",
+        "date_to": "2019-03-15",
+        "granularity": "month",
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 403, "Response body is : " + body
+
+
 @pytest.mark.parametrize(("devs", "date_from"),
                          ([{"developers": []}, "2019-11-28"], [{}, "2018-09-28"]))
 async def test_calc_metrics_line_empty_devs_tight_date(client, devs, date_from, headers):
@@ -111,7 +132,6 @@ async def test_calc_metrics_line_empty_devs_tight_date(client, devs, date_from, 
             **devs,
             "repositories": [
                 "github.com/src-d/go-git",
-                "github.com/athenianco/athenian-api",
             ],
         }],
         "granularity": "month",
@@ -135,14 +155,12 @@ async def test_calc_metrics_line_bad_date(client, headers):
                 "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
                 "repositories": [
                     "github.com/src-d/go-git",
-                    "github.com/athenianco/athenian-api",
                 ],
             },
             {
                 "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
                 "repositories": [
                     "github.com/src-d/go-git",
-                    "github.com/athenianco/athenian-api",
                 ],
             },
         ],

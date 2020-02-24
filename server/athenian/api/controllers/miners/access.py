@@ -32,5 +32,8 @@ class AccessChecker:
         raise NotImplementedError
 
     async def check(self, repos: Set[str]) -> Set[str]:
-        """Return repositories which do not belong to the metadata installation."""
+        """Return repositories which do not belong to the metadata installation.
+
+        The names must be *without* the service prefix.
+        """
         raise NotImplementedError

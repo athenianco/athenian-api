@@ -1,5 +1,6 @@
 import asyncio
 from collections import defaultdict
+from http import HTTPStatus
 from itertools import chain
 from typing import List, Set, Tuple
 
@@ -127,11 +128,13 @@ async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, 
                 checker = await access_classes[service](
                     account, sdb_conn, request.mdb, request.cache).load()
                 checkers[service] = checker
-            denied = checker.check(repos)
+            denied = await checker.check(repos)
             if denied:
                 raise ResponseError(InvalidRequestError(
-                    detail="the following repositories are access denied: %s" % denied,
+                    detail="the following repositories are access denied for %s: %s" %
+                           (service, denied),
                     pointer=".for[%d].repositories" % i,
+                    status=HTTPStatus.FORBIDDEN,
                 ))
             for dev in (for_set.developers or []):
                 for key, prefix in PREFIXES.items():

@@ -32,7 +32,7 @@ class GitHubAccessChecker(AccessChecker):
                 select([InstallationRepo.repo_full_name])
                 .where(InstallationRepo.install_id == iid))
             key = InstallationRepo.repo_full_name.key
-            installed_repos = {("github.com/" + r[key]) for r in installed_repos_db}
+            installed_repos = {r[key] for r in installed_repos_db}
             if self.cache is not None:
                 await self.cache.set(cache_key, marshal.dumps(installed_repos),
                                      exptime=self.cache_ttl)
@@ -40,6 +40,9 @@ class GitHubAccessChecker(AccessChecker):
         return self
 
     async def check(self, repos: Set[str]) -> Set[str]:
-        """Return repositories which do not belong to the metadata installation."""
+        """Return repositories which do not belong to the metadata installation.
+
+        The names must be *without* the service prefix.
+        """
         assert isinstance(repos, set)
         return repos - self._installed_repos

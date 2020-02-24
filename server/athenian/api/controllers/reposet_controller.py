@@ -1,5 +1,5 @@
 import logging
-from typing import List, Mapping, Optional, Set, Union
+from typing import List, Mapping, Optional, Union
 
 from aiohttp import web
 import aiomcache
@@ -43,7 +43,7 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
             items = await _check_reposet(request, sdb_conn, body.account, body.items)
         except ResponseError as e:
             return e.response
-        rs = RepositorySet(owner=account, items=sorted(items)).create_defaults()
+        rs = RepositorySet(owner=account, items=items).create_defaults()
         rid = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
         return response(CreatedIdentifier(rid))
 
@@ -83,9 +83,9 @@ async def _check_reposet(request: AthenianWebRequest,
                          sdb_conn: Optional[databases.core.Connection],
                          account: int,
                          body: List[str],
-                         ) -> Set[str]:
+                         ) -> List[str]:
     service = None
-    body = set(body)
+    repos = set()
     for repo in body:
         for key, prefix in PREFIXES.items():
             if repo.startswith(prefix):
@@ -95,17 +95,18 @@ async def _check_reposet(request: AthenianWebRequest,
                     raise ResponseError(BadRequestError(
                         detail="mixed services: %s, %s" % (service, key),
                     ))
+                repos.add(repo[len(prefix):])
     if service is None:
         raise ResponseError(BadRequestError(
             detail="repository prefixes do not match to any supported service",
         ))
     checker = await access_classes[service](account, sdb_conn, request.mdb, request.cache).load()
-    denied = checker.check(body)
+    denied = await checker.check(repos)
     if denied:
         raise ResponseError(ForbiddenError(
-            detail="the following repositories are access denied: %s" % body,
+            detail="the following repositories are access denied for %s: %s" % (service, denied),
         ))
-    return body
+    return sorted(set(body))
 
 
 async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) -> web.Response:
@@ -127,7 +128,7 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
             body = await _check_reposet(request, sdb_conn, id, body)
         except ResponseError as e:
             return e.response
-        rs.items = sorted(body)
+        rs.items = body
         rs.refresh()
         await sdb_conn.execute(update(RepositorySet)
                                .where(RepositorySet.id == id)
