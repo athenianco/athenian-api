@@ -200,6 +200,8 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
     review_comments = 0
     merged = False
     for pr in obj["data"]:
+        if pr["number"] == 639:
+            assert pr["stage"] == "done"
         assert pr["repository"].startswith("github.com/"), str(pr)
         assert pr["number"] > 0
         assert pr["title"]
