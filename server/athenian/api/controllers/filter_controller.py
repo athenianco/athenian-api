@@ -18,7 +18,7 @@ from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, 
     PullRequestReview, PushCommit, User
 from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError
-from athenian.api.models.web.filter_items_request import FilterItemsRequest
+from athenian.api.models.web.filter_contribs_or_repos_request import FilterContribsOrReposRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
 from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
@@ -31,7 +31,7 @@ from athenian.api.response import FriendlyJson, response, ResponseError
 
 async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find developers that made an action within the given timeframe."""
-    filt = FilterItemsRequest.from_dict(body)
+    filt = FilterContribsOrReposRequest.from_dict(body)
     async with request.mdb.connection() as conn:
         try:
             repos = await _resolve_repos(
@@ -73,7 +73,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
 
 async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find repositories that were updated within the given timeframe."""
-    filt = FilterItemsRequest.from_dict(body)
+    filt = FilterContribsOrReposRequest.from_dict(body)
     async with request.mdb.connection() as conn:
         try:
             repos = await _resolve_repos(
@@ -107,7 +107,7 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
     return web.json_response(repos, dumps=FriendlyJson.dumps)
 
 
-async def _resolve_repos(filt: Union[FilterItemsRequest, FilterPullRequestsRequest],
+async def _resolve_repos(filt: Union[FilterContribsOrReposRequest, FilterPullRequestsRequest],
                          uid: str,
                          native_uid: str,
                          sdb_conn: Union[databases.core.Connection, databases.Database],
