@@ -7,7 +7,7 @@ info:
   license:
     name: CC-BY-4.0
   title: "{{ title }}"
-  version: 1.0.0
+  version: 1.0.1
 servers:
 - url: "{{ server_url }}/v1"
   description: "{{ server_description }} - {{ server_url }}"
