@@ -9,6 +9,7 @@ import databases.core
 from sqlalchemy import and_, distinct, or_, select
 
 from athenian.api.controllers.features.entries import PR_ENTRIES
+from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
     PullRequestListItem, Stage
 from athenian.api.controllers.reposet import resolve_reposet
@@ -119,15 +120,25 @@ async def _resolve_repos(filt: Union[FilterItemsRequest, FilterPullRequestsReque
     if status is None:
         raise ResponseError(ForbiddenError(
             detail="User %s is forbidden to access account %d" % (uid, filt.account)))
+    check_access = True
     if not filt.in_:
         rss = await load_account_reposets(
             filt.account, native_uid, [RepositorySet.id], sdb_conn, mdb_conn, cache)
         filt.in_ = ["{%d}" % rss[0][RepositorySet.id.key]]
+        check_access = False
     repos = set(chain.from_iterable(
         await asyncio.gather(*[resolve_reposet(r, ".in[%d]" % i, sdb_conn, uid, filt.account)
                                for i, r in enumerate(filt.in_)])))
     prefix = "github.com/"
     repos = [r[r.startswith(prefix) and len(prefix):] for r in repos]
+    if check_access:
+        checker = await access_classes["github"](filt.account, sdb_conn, mdb_conn, cache).load()
+        denied = await checker.check(set(repos))
+        if denied:
+            raise ResponseError(ForbiddenError(
+                detail="the following repositories are access denied for %s: %s" %
+                       ("github.com/", denied),
+            ))
     return repos
 
 
