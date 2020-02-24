@@ -58,17 +58,22 @@ matrix:
       stage: bump-version
       name: Bump the version
       install:
-        - set -e
         - git config --global user.name "Groundskeeper Willie"
         - git config --global user.email "bot@athenian.co"
         - pip install bump2version
+      script:
+        - set -e
+        - if git diff --name-only HEAD...$TRAVIS_BRANCH | grep openapi.yaml; then
+            version_file=spec/openapi.yaml;
+            current_version=$(grep -m1 '^  version:' $version_file | cut -d" " -f4);
+            bumpversion --current-version $current_version patch $version_file;
+          fi
         - version_file=server/athenian/api/metadata.py
         - current_version=$(grep __version__ $version_file | cut -d\" -f2)
-        - bumpversion --tag --current-version $current_version --commit patch $version_file
+        - bumpversion --tag --current-version $current_version --commit --allow-dirty --commit-args="-a" patch $version_file
         - git remote add gkwillie https://gkwillie:${GKWILLIE_TOKEN}@github.com/$TRAVIS_REPO_SLUG
         - git push --tags gkwillie HEAD:master
         - set +e
-      script: skip
     - if: branch IN (master, production) AND type != pull_request AND commit_message =~ /^Bump version/
       stage: main
       name: Deploy
