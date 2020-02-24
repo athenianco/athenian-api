@@ -103,7 +103,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/FilterItemsRequest'
+              $ref: '#/components/schemas/FilterContribsOrReposRequest'
         x-body-name: body
       responses:
         200:
@@ -167,7 +167,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/FilterItemsRequest'
+              $ref: '#/components/schemas/FilterContribsOrReposRequest'
         x-body-name: body
       responses:
         200:
@@ -984,7 +984,7 @@ components:
           $ref: '#/components/schemas/ForSet'
         values:
           items:
-            $ref: '#/components/schemas/CalculatedMetric_values'
+            $ref: '#/components/schemas/CalculatedMetricValues'
           type: array
       required:
       - for
@@ -1096,7 +1096,7 @@ components:
       - granularity
       - metrics
       type: object
-    CalculatedMetric_values:
+    CalculatedMetricValues:
       example:
         date: 2000-01-23
         values:
@@ -1148,7 +1148,7 @@ components:
       - confidence_scores
       - date
       - values
-    FilterItemsRequest:
+    FilterContribsOrReposRequest:
       description: PR filters for /filter/contributors and /filter/repositories.
       example:
         account: 1
