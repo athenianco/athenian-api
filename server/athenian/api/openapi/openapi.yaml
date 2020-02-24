@@ -10,7 +10,7 @@ info:
   version: 1.0.0
 servers:
 - url: "{{ server_url }}/v1"
-  description: "{{ server_description }} on {{ server_url }}"
+  description: "{{ server_description }} - {{ server_url }}"
 paths:
   /account/{id}:
     get:

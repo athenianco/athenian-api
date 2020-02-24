@@ -37,7 +37,7 @@ def test_pull_request_metrics_timedelta_stability(pr_samples, cls, dtypes):  # n
     for pr in pr_samples(1000):
         pr = random_dropout(ensure_dtype(pr, dtypes[0]), 0.5)
         r = calc.analyze(pr, time_from, time_to)
-        assert (r is None) or ((isinstance(r, dtypes[1])) and r > dtypes[1](0)), str(pr)
+        assert (r is None) or ((isinstance(r, dtypes[1])) and r >= dtypes[1](0)), str(pr)
 
 
 @pytest.mark.parametrize("cls, peak_attr",
