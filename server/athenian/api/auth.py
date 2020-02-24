@@ -109,8 +109,18 @@ class Auth0:
             raise GracefulExit(message)
         return self._default_user
 
+    @property
+    def domain(self):
+        """Return the assigned Auth0 domain, e.g. "athenian.auth0.com"."""
+        return self._domain
+
+    @property
+    def audience(self):
+        """Return the assigned Auth0 audience URL, e.g. "https://api.athenian.co"."""
+        return self._audience
+
     async def close(self):
-        """Free resources associated with the object."""
+        """Free resources and close connections associated with the object."""
         if self._jwks_loop is not None:
             self._jwks_loop.cancel()
         if self._mgmt_loop is not None:  # this may happen if lazy_mgmt=True

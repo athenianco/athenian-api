@@ -8,12 +8,15 @@ from sqlalchemy import delete, insert, select, update
 
 from athenian.api import FriendlyJson
 from athenian.api.controllers.account import get_installation_id
+from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import fetch_reposet
 from athenian.api.controllers.user import is_admin
 from athenian.api.metadata import __package__
+from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
 from athenian.api.models.state.models import Account, RepositorySet
-from athenian.api.models.web import CreatedIdentifier, ForbiddenError, NoSourceDataError
+from athenian.api.models.web import BadRequestError, CreatedIdentifier, ForbiddenError, \
+    NoSourceDataError
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.request import AthenianWebRequest
@@ -28,17 +31,21 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
     body = RepositorySetCreateRequest.from_dict(body)
     user = request.uid
     account = body.account
-    try:
-        adm = await is_admin(request.sdb, user, account)
-    except ResponseError as e:
-        return e.response
-    if not adm:
-        return ResponseError(ForbiddenError(
-            detail="User %s is not an admin of the account %d" % (user, account))).response
-    # TODO(vmarkovtsev): get user's repos and check the access
-    rs = RepositorySet(owner=account, items=body.items).create_defaults()
-    rid = await request.sdb.execute(insert(RepositorySet).values(rs.explode()))
-    return response(CreatedIdentifier(rid))
+    async with request.sdb.connection() as sdb_conn:
+        try:
+            adm = await is_admin(sdb_conn, user, account)
+        except ResponseError as e:
+            return e.response
+        if not adm:
+            return ResponseError(ForbiddenError(
+                detail="User %s is not an admin of the account %d" % (user, account))).response
+        try:
+            items = await _check_reposet(request, sdb_conn, body.account, body.items)
+        except ResponseError as e:
+            return e.response
+        rs = RepositorySet(owner=account, items=items).create_defaults()
+        rid = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
+        return response(CreatedIdentifier(rid))
 
 
 async def delete_reposet(request: AthenianWebRequest, id: int) -> web.Response:
@@ -72,6 +79,36 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     return web.json_response(rs.items, status=200)
 
 
+async def _check_reposet(request: AthenianWebRequest,
+                         sdb_conn: Optional[databases.core.Connection],
+                         account: int,
+                         body: List[str],
+                         ) -> List[str]:
+    service = None
+    repos = set()
+    for repo in body:
+        for key, prefix in PREFIXES.items():
+            if repo.startswith(prefix):
+                if service is None:
+                    service = key
+                elif service != key:
+                    raise ResponseError(BadRequestError(
+                        detail="mixed services: %s, %s" % (service, key),
+                    ))
+                repos.add(repo[len(prefix):])
+    if service is None:
+        raise ResponseError(BadRequestError(
+            detail="repository prefixes do not match to any supported service",
+        ))
+    checker = await access_classes[service](account, sdb_conn, request.mdb, request.cache).load()
+    denied = await checker.check(repos)
+    if denied:
+        raise ResponseError(ForbiddenError(
+            detail="the following repositories are access denied for %s: %s" % (service, denied),
+        ))
+    return sorted(set(body))
+
+
 async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) -> web.Response:
     """Update a repository set.
 
@@ -79,20 +116,24 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
     :type id: int
     :param body: New list of repositories in the group.
     """
-    try:
-        rs, is_admin = await fetch_reposet(id, [RepositorySet], request.sdb, request.uid)
-    except ResponseError as e:
-        return e.response
-    if not is_admin:
-        return ResponseError(ForbiddenError(
-            detail="User %s may not modify reposet %d" % (request.uid, id))).response
-    rs.items = body
-    rs.refresh()
-    # TODO(vmarkovtsev): get user's repos and check the access
-    await request.sdb.execute(update(RepositorySet)
-                              .where(RepositorySet.id == id)
-                              .values(rs.explode()))
-    return web.json_response(body, status=200)
+    async with request.sdb.connection() as sdb_conn:
+        try:
+            rs, is_admin = await fetch_reposet(id, [RepositorySet], sdb_conn, request.uid)
+        except ResponseError as e:
+            return e.response
+        if not is_admin:
+            return ResponseError(ForbiddenError(
+                detail="User %s may not modify reposet %d" % (request.uid, id))).response
+        try:
+            body = await _check_reposet(request, sdb_conn, id, body)
+        except ResponseError as e:
+            return e.response
+        rs.items = body
+        rs.refresh()
+        await sdb_conn.execute(update(RepositorySet)
+                               .where(RepositorySet.id == id)
+                               .values(rs.explode()))
+        return web.json_response(body, status=200)
 
 
 async def load_account_reposets(account: int,

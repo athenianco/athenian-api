@@ -37,8 +37,9 @@ async def test_delete_repository_set_bad_account(client, reposet, headers):
     assert response.status == 403, "Response body is : " + body
 
 
-@pytest.mark.parametrize("reposet", [1, 2])
-async def test_get_repository_set(client, reposet, headers):
+@pytest.mark.parametrize("reposet,checked", [(1, "github.com/src-d/go-git"),
+                                             (2, "github.com/src-d/hercules")])
+async def test_get_repository_set(client, reposet, headers, checked):
     body = {}
     response = await client.request(
         method="GET", path="/v1/reposet/%d" % reposet, headers=headers, json=body,
@@ -47,7 +48,7 @@ async def test_get_repository_set(client, reposet, headers):
     assert response.status == 200, "Response body is : " + body
     body = json.loads(body)
     assert len(body) == 2
-    assert "github.com/athenianco/athenian-api" in body
+    assert checked in body or checked in body
 
 
 async def test_get_repository_set_404(client, headers):
@@ -69,17 +70,17 @@ async def test_get_repository_set_bad_account(client, headers):
 
 
 async def test_set_repository_set(client, headers):
-    body = ["github.com/vmarkovtsev/hercules"]
+    body = ["github.com/src-d/hercules"]
     response = await client.request(
         method="PUT", path="/v1/reposet/1", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    assert body == '["github.com/vmarkovtsev/hercules"]'
+    assert body == '["github.com/src-d/hercules"]'
 
 
 async def test_set_repository_set_404(client, headers):
-    body = ["github.com/vmarkovtsev/hercules"]
+    body = ["github.com/src-d/hercules"]
     response = await client.request(
         method="PUT", path="/v1/reposet/10", headers=headers, json=body,
     )
@@ -89,7 +90,7 @@ async def test_set_repository_set_404(client, headers):
 
 @pytest.mark.parametrize("reposet", [2, 3])
 async def test_set_repository_set_bad_account(client, reposet, headers):
-    body = ["github.com/vmarkovtsev/hercules"]
+    body = ["github.com/src-d/hercules"]
     response = await client.request(
         method="PUT", path="/v1/reposet/%d" % reposet, headers=headers, json=body,
     )
@@ -97,8 +98,17 @@ async def test_set_repository_set_bad_account(client, reposet, headers):
     assert response.status == 403, "Response body is : " + body
 
 
+async def test_set_repository_set_access_denied(client, headers):
+    body = ["github.com/athenianco/athenian-api"]
+    response = await client.request(
+        method="PUT", path="/v1/reposet/1", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 403, "Response body is : " + body
+
+
 async def test_create_repository_set(client, headers):
-    body = RepositorySetCreateRequest(1, ["github.com/vmarkovtsev/hercules"]).to_dict()
+    body = RepositorySetCreateRequest(1, ["github.com/src-d/hercules"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
@@ -110,7 +120,16 @@ async def test_create_repository_set(client, headers):
 
 @pytest.mark.parametrize("account", [2, 3, 10])
 async def test_create_repository_set_bad_account(client, account, headers):
-    body = RepositorySetCreateRequest(account, ["github.com/vmarkovtsev/hercules"]).to_dict()
+    body = RepositorySetCreateRequest(account, ["github.com/src-d/hercules"]).to_dict()
+    response = await client.request(
+        method="POST", path="/v1/reposet/create", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 403, "Response body is : " + body
+
+
+async def test_create_repository_set_access_denied(client, headers):
+    body = RepositorySetCreateRequest(1, ["github.com/athenianco/athenian-api"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )

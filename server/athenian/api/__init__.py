@@ -9,6 +9,7 @@ import sys
 from typing import Optional
 
 import aiohttp.web
+from aiohttp.web_exceptions import HTTPFound
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
@@ -114,6 +115,7 @@ class AthenianApp(connexion.AioHttpApp):
                 "openapi.yaml",
                 arguments={
                     "title": metadata.__description__,
+                    "server_url": self._auth0.audience,
                     "server_version": metadata.__version__,
                     "commit": getattr(metadata, "__commit__", "N/A"),
                     "build_date": getattr(metadata, "__date__", "N/A"),
@@ -122,6 +124,11 @@ class AthenianApp(connexion.AioHttpApp):
                 options={"middlewares": [self.with_db]},
             )
         setup_status(self.app)
+        if ui:
+            def index_redirect(_):
+                raise HTTPFound("/v1/ui/")
+
+            self.app.router.add_get("/", index_redirect)
         self._enable_cors()
         api.jsonifier.json = FriendlyJson
         self._cache = cache
