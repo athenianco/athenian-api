@@ -115,6 +115,7 @@ class AthenianApp(connexion.AioHttpApp):
                 "openapi.yaml",
                 arguments={
                     "title": metadata.__description__,
+                    "server_url": self._auth0.audience,
                     "server_version": metadata.__version__,
                     "commit": getattr(metadata, "__commit__", "N/A"),
                     "build_date": getattr(metadata, "__date__", "N/A"),

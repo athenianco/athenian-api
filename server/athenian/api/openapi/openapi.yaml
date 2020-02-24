@@ -9,7 +9,7 @@ info:
   title: "{{ title }}"
   version: 1.0.0
 servers:
-- url: https://api.athenian.co/v1
+- url: {{ server_url }}/v1
 paths:
   /account/{id}:
     get:
