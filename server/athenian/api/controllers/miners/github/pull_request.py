@@ -408,9 +408,9 @@ class PullRequestListMiner(PullRequestTimesMiner):
         if not self._match_participants(participants):
             return None
         times = super()._compile(pr)
-        if times.released:
+        if times.released or (times.closed and not times.merged):
             stage = Stage.DONE
-        elif times.closed:
+        elif times.merged:
             # FIXME(vmarkovtsev): no releases data, we don't know if this is actually true
             stage = Stage.RELEASE
         elif times.approved:
