@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  description: "Server version: {{ server_version }} built on {{ build_date }} @ {{ commit }}"
+  description: "Server version: {{ server_version }} built on {{ build_date }} @ [{{ commit }}](https://github.com/athenianco/athenian-api/commit/{{ commit }})"
   contact:
     name: the admins by email
     email: admin@athenian.co
