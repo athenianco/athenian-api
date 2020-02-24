@@ -14,6 +14,7 @@ from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
 import connexion
+from connexion.spec import OpenAPISpecification
 import databases
 import sentry_sdk
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
@@ -74,6 +75,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+class ExactServersAioHttpApi(connexion.AioHttpApi):
+    """Hacked connexion internals to provide the server description from the original spec."""
+
+    def _spec_for_prefix(self, request) -> OpenAPISpecification:
+        spec = super()._spec_for_prefix(request)
+        spec["servers"][0]["description"] = self.specification["servers"][0]["description"]
+        return spec
+
+
 class AthenianApp(connexion.AioHttpApp):
     """
     Athenian API application.
@@ -102,6 +112,7 @@ class AthenianApp(connexion.AioHttpApp):
         rootdir = os.path.dirname(__file__)
         specification_dir = os.path.join(rootdir, "openapi")
         super().__init__(__package__, specification_dir=specification_dir, options=options)
+        self.api_cls = ExactServersAioHttpApi
         invitation_controller.validate_env()
         auth0_cls.ensure_static_configuration()
         self._auth0 = auth0_cls(whitelist=[
@@ -115,7 +126,8 @@ class AthenianApp(connexion.AioHttpApp):
                 "openapi.yaml",
                 arguments={
                     "title": metadata.__description__,
-                    "server_url": self._auth0.audience,
+                    "server_url": self._auth0.audience.rstrip("/"),
+                    "server_description": os.getenv("SENTRY_ENV", "development"),
                     "server_version": metadata.__version__,
                     "commit": getattr(metadata, "__commit__", "N/A"),
                     "build_date": getattr(metadata, "__date__", "N/A"),
@@ -179,18 +191,6 @@ class AthenianApp(connexion.AioHttpApp):
         """Return the own Auth0 class instance."""
         return self._auth0
 
-    def _enable_cors(self) -> None:
-        cors = aiohttp_cors.setup(self.app, defaults={
-            "*": aiohttp_cors.ResourceOptions(
-                allow_credentials=True,
-                expose_headers="*",
-                allow_headers="*",
-                max_age=3600,
-                allow_methods="*",
-            )})
-        for route in self.app.router.routes():
-            cors.add(route)
-
     @aiohttp.web.middleware
     async def with_db(self, request, handler):
         """Add "mdb" and "sdb" attributes to every incoming request."""
@@ -214,6 +214,18 @@ class AthenianApp(connexion.AioHttpApp):
                 status=HTTPStatus.SERVICE_UNAVAILABLE,
                 detail="%s: %s" % (type(e).__name__, e),
             )).response
+
+    def _enable_cors(self) -> None:
+        cors = aiohttp_cors.setup(self.app, defaults={
+            "*": aiohttp_cors.ResourceOptions(
+                allow_credentials=True,
+                expose_headers="*",
+                allow_headers="*",
+                max_age=3600,
+                allow_methods="*",
+            )})
+        for route in self.app.router.routes():
+            cors.add(route)
 
 
 def setup_context(log: logging.Logger) -> None:
