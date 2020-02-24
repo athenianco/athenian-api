@@ -1069,7 +1069,7 @@ components:
         date_to: 2020-01-23
       properties:
         calculated:
-          description: The values of the requested metrics through time. The sequence
+          description: Values of the requested metrics through time. The sequence
             order is not guaranteed to be the same as in the preceding request.
           items:
             $ref: '#/components/schemas/CalculatedMetric'
@@ -1117,26 +1117,35 @@ components:
           format: date
           type: string
         values:
-          description: The same order as `metrics`.
+          description: Calculated metric values in the same order as `metrics`.
           items:
-            format: float
-            type: number
+            oneOf:
+            - type: integer
+            - format: float
+              type: number
+            - type: string
           type: array
         confidence_mins:
           description: Confidence interval @ p=0.95, minimum. The same order as `metrics`.
             It is optional because there can be exact metrics like "count open PRs
             per month".
           items:
-            format: float
-            type: number
+            oneOf:
+            - type: integer
+            - format: float
+              type: number
+            - type: string
           type: array
         confidence_maxs:
           description: Confidence interval @ p=0.95, maximum. The same order as `metrics`.
             It is optional because there can be exact metrics like "count open PRs
             per month".
           items:
-            format: float
-            type: number
+            oneOf:
+            - type: integer
+            - format: float
+              type: number
+            - type: string
           type: array
         confidence_scores:
           description: Confidence score from 0 (no idea) to 100 (very confident).
