@@ -1,8 +1,8 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.included_native_users import IncludedNativeUsers
 from athenian.api.models.web.pull_request import PullRequest
-from athenian.api.models.web.pull_request_set_include import PullRequestSetInclude
 
 
 class PullRequestSet(Model):
@@ -10,7 +10,7 @@ class PullRequestSet(Model):
 
     def __init__(
         self,
-        include: Optional[PullRequestSetInclude] = None,
+        include: Optional[IncludedNativeUsers] = None,
         data: Optional[List[PullRequest]] = None,
     ):
         """PullRequestSet - a model defined in OpenAPI
@@ -19,7 +19,7 @@ class PullRequestSet(Model):
         :param data: The data of this PullRequestSet.
         """
         self.openapi_types = {
-            "include": PullRequestSetInclude,
+            "include": IncludedNativeUsers,
             "data": List[PullRequest],
         }
 
@@ -29,7 +29,7 @@ class PullRequestSet(Model):
         self._data = data
 
     @property
-    def include(self) -> PullRequestSetInclude:
+    def include(self) -> IncludedNativeUsers:
         """Gets the include of this PullRequestSet.
 
         :return: The include of this PullRequestSet.
@@ -37,7 +37,7 @@ class PullRequestSet(Model):
         return self._include
 
     @include.setter
-    def include(self, include: PullRequestSetInclude):
+    def include(self, include: IncludedNativeUsers):
         """Sets the include of this PullRequestSet.
 
         :param include: The include of this PullRequestSet.

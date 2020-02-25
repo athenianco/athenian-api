@@ -32,7 +32,7 @@ async def test_calc_metrics_prs_smoke(client, metric, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -70,7 +70,7 @@ async def test_calc_metrics_prs_all_time(client, granularity, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -135,7 +135,7 @@ async def test_calc_metrics_prs_access_denied(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 403, "Response body is : " + body
@@ -159,7 +159,7 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
         "metrics": list(MetricID.ALL),
     }
     response = await client.request(
-        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -191,7 +191,7 @@ async def test_calc_metrics_prs_bad_date(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 400, "Response body is : " + body
@@ -214,7 +214,7 @@ async def test_calc_metrics_prs_reposet_bad_account(client, account, headers):
         "account": account,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 403, "Response body is : " + body
@@ -236,13 +236,13 @@ async def test_calc_metrics_prs_reposet(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
     assert len(cm.calculated[0].values) > 0
-    assert cm.calculated[0]._for.repositories == ["{1}"]
+    assert cm.calculated[0].for_.repositories == ["{1}"]
 
 
 @pytest.mark.parametrize("metric", [MetricID.PR_WIP_COUNT,
@@ -270,7 +270,7 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     assert response.status == 200
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
@@ -304,6 +304,6 @@ async def test_calc_metrics_prs_index_error(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     assert response.status == 200

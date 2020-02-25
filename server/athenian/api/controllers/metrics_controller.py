@@ -13,7 +13,7 @@ from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedMetric, CalculatedMetrics, CalculatedMetricValues, \
     ForSet, Granularity
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
-from athenian.api.models.web.metrics_request import MetricsRequest
+from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 # from athenian.api.models.no_source_data_error import NoSourceDataError
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import response, ResponseError
@@ -23,15 +23,15 @@ Filter = Tuple[str, Tuple[Set[str], List[str], ForSet]]
 #                       repositories          originals
 
 
-async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Response:
-    """Calculate metrics.
+async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Calculate linear metrics over PRs.
 
     :param request: HTTP request.
     :param body: Desired metric definitions.
     :type body: dict | bytes
     """
     try:
-        body = MetricsRequest.from_dict(body)
+        body = PullRequestMetricsRequest.from_dict(body)
     except ValueError as e:
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
 
@@ -55,7 +55,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
     met.calculated = []
 
     try:
-        filters = await _compile_filters(body._for, request, body.account)
+        filters = await _compile_filters(body.for_, request, body.account)
     except ResponseError as e:
         return e.response
     if body.date_to < body.date_from:
@@ -84,7 +84,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
             for i, m in enumerate(metrics):
                 results[m] = [r[i] for r in fres]
         cm = CalculatedMetric(
-            _for=for_set,
+            for_=for_set,
             values=[CalculatedMetricValues(
                 date=d,
                 values=[results[m][i].value for m in met.metrics],
@@ -153,3 +153,8 @@ async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, 
                         devs.append(dev[len(prefix):])
             filters.append((service, (repos, devs, for_set)))
     return filters
+
+
+async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Measure the amount of code that was pushed outside of pull requests."""
+    return None

@@ -77,7 +77,7 @@ class CalculatedMetrics(Model):
     def metrics(self):
         """Gets the metrics of this CalculatedMetrics.
 
-        Repeats `MetricsRequest.metrics`.
+        Repeats `PullRequestMetricsRequest.metrics`.
 
         :return: The metrics of this CalculatedMetrics.
         :rtype: List[MetricID]
@@ -88,7 +88,7 @@ class CalculatedMetrics(Model):
     def metrics(self, metrics):
         """Sets the metrics of this CalculatedMetrics.
 
-        Repeats `MetricsRequest.metrics`.
+        Repeats `PullRequestMetricsRequest.metrics`.
 
         :param metrics: The metrics of this CalculatedMetrics.
         :type metrics: List[MetricID]
@@ -102,7 +102,7 @@ class CalculatedMetrics(Model):
     def date_from(self):
         """Gets the date_from of this CalculatedMetrics.
 
-        Repeats `MetricsRequest.date_from`.
+        Repeats `PullRequestMetricsRequest.date_from`.
 
         :return: The date_from of this CalculatedMetrics.
         :rtype: date
@@ -113,7 +113,7 @@ class CalculatedMetrics(Model):
     def date_from(self, date_from):
         """Sets the date_from of this CalculatedMetrics.
 
-        Repeats `MetricsRequest.date_from`.
+        Repeats `PullRequestMetricsRequest.date_from`.
 
         :param date_from: The date_from of this CalculatedMetrics.
         :type date_from: date
@@ -127,7 +127,7 @@ class CalculatedMetrics(Model):
     def date_to(self):
         """Gets the date_to of this CalculatedMetrics.
 
-        Repeats `MetricsRequest.date_to`.
+        Repeats `PullRequestMetricsRequest.date_to`.
 
         :return: The date_to of this CalculatedMetrics.
         :rtype: date
@@ -138,7 +138,7 @@ class CalculatedMetrics(Model):
     def date_to(self, date_to):
         """Sets the date_to of this CalculatedMetrics.
 
-        Repeats `MetricsRequest.date_to`.
+        Repeats `PullRequestMetricsRequest.date_to`.
 
         :param date_to: The date_to of this CalculatedMetrics.
         :type date_to: date
