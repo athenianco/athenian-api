@@ -83,6 +83,13 @@ class ExactServersAioHttpApi(connexion.AioHttpApi):
         spec["servers"][0]["description"] = self.specification["servers"][0]["description"]
         return spec
 
+    def _set_base_path(self, base_path):
+        if base_path is not None:
+            self.base_path = base_path
+        else:
+            self.base_path = self.specification.base_path
+        self._api_name = connexion.AioHttpApi.normalize_string(self.base_path)
+
 
 class AthenianApp(connexion.AioHttpApp):
     """
