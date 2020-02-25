@@ -124,6 +124,7 @@ class AthenianApp(connexion.AioHttpApp):
         with self._auth0:
             api = self.add_api(
                 "openapi.yaml",
+                base_path="/v1",
                 arguments={
                     "title": metadata.__description__,
                     "server_url": self._auth0.audience.rstrip("/"),
