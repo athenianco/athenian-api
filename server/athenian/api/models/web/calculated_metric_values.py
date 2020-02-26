@@ -48,7 +48,6 @@ class CalculatedMetricValues(Model):
         Where you should relate the metric value to on the time axis.
 
         :return: The date of this CalculatedMetricValues.
-        :rtype: date
         """
         return self._date
 
@@ -59,7 +58,6 @@ class CalculatedMetricValues(Model):
         Where you should relate the metric value to on the time axis.
 
         :param date: The date of this CalculatedMetricValues.
-        :type date: date
         """
         if date is None:
             raise ValueError("Invalid value for `date`, must not be `None`")
@@ -73,7 +71,6 @@ class CalculatedMetricValues(Model):
         The same order as `metrics`.
 
         :return: The values of this CalculatedMetricValues.
-        :rtype: List[float]
         """
         return self._values
 
@@ -140,7 +137,6 @@ class CalculatedMetricValues(Model):
         The same order as `metrics`.
 
         :return: The values of this CalculatedMetricValues.
-        :rtype: List[int]
         """
         return self._confidence_scores
 
@@ -151,9 +147,5 @@ class CalculatedMetricValues(Model):
         Confidence score from 0 (no idea) to 100 (very confident). The same order as `metrics`.
 
         :param confidence_scores: The confidence scores of this CalculatedMetricValues.
-        :type confidence_scores: List[int]
         """
-        if confidence_scores is None:
-            raise ValueError("Invalid value for `confidence_scores`, must not be `None`")
-
         self._confidence_scores = confidence_scores

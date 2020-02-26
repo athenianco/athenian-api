@@ -7,8 +7,9 @@ import pytest
 
 from athenian.api.controllers.features.github.pull_request import BinnedPullRequestMetricCalculator
 from athenian.api.controllers.features.github.pull_request_metrics import ClosedCalculator, \
-    FlowRatioCalculator, LeadTimeCalculator, MergedCalculator, MergeTimeCalculator, \
-    OpenedCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
+    FlowRatioCalculator, LeadCounter, LeadTimeCalculator, MergedCalculator, MergingCounter, \
+    MergingTimeCalculator, OpenedCalculator, ReleaseCounter, ReleaseTimeCalculator, \
+    ReviewCounter, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, WorkInProgressCounter, \
     WorkInProgressTimeCalculator
 from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestTimes
 from athenian.api.models.web import Granularity
@@ -27,7 +28,7 @@ def random_dropout(pr, prob):
 
 
 @pytest.mark.parametrize("cls, dtypes", itertools.product(
-    [WorkInProgressTimeCalculator, ReviewTimeCalculator, MergeTimeCalculator,
+    [WorkInProgressTimeCalculator, ReviewTimeCalculator, MergingTimeCalculator,
      ReleaseTimeCalculator, LeadTimeCalculator, WaitFirstReviewTimeCalculator,
      ], ((datetime, timedelta), (pd.Timestamp, pd.Timedelta))))
 def test_pull_request_metrics_timedelta_stability(pr_samples, cls, dtypes):  # noqa: F811
@@ -43,7 +44,7 @@ def test_pull_request_metrics_timedelta_stability(pr_samples, cls, dtypes):  # n
 @pytest.mark.parametrize("cls, peak_attr",
                          [(WorkInProgressTimeCalculator, "first_review_request"),
                           (ReviewTimeCalculator, "approved,last_review"),
-                          (MergeTimeCalculator, "closed"),
+                          (MergingTimeCalculator, "closed"),
                           (ReleaseTimeCalculator, "released"),
                           (LeadTimeCalculator, "released"),
                           (WaitFirstReviewTimeCalculator, "first_comment_on_first_review"),
@@ -76,7 +77,8 @@ def test_pull_request_metrics_float_binned(pr_samples, cls):  # noqa: F811
     for m in result:
         assert m[0].exists
         assert m[0].value > 1
-        assert m[0].confidence_min == m[0].confidence_max == m[0].value
+        assert m[0].confidence_min is None
+        assert m[0].confidence_max is None
 
 
 def test_pull_request_opened_no(pr_samples):  # noqa: F811
@@ -112,7 +114,8 @@ def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
     m = calc.value()
     assert m.exists
     assert 0 < m.value < 1
-    assert m.confidence_min == m.confidence_max == m.value
+    assert m.confidence_min is None
+    assert m.confidence_max is None
 
 
 def test_pull_request_flow_ratio_no_closed():
@@ -131,3 +134,29 @@ def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
     m = calc.value()
     assert m.exists
     assert m.value == 0
+
+
+@pytest.mark.parametrize("cls",
+                         [WorkInProgressCounter,
+                          ReviewCounter,
+                          MergingCounter,
+                          ReleaseCounter,
+                          LeadCounter,
+                          ])
+def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
+    calc = cls()
+    nones = nonones = 0
+    for pr in pr_samples(1000):
+        time_to = datetime.now(tz=timezone.utc)
+        time_from = time_to - timedelta(days=10000)
+        delta = calc.analyze(pr, time_from, time_to)
+        assert isinstance(delta, int)
+        if calc.calc.analyze(pr, time_from, time_to) is not None:
+            assert delta == 1
+            nonones += 1
+        else:
+            assert delta == 0
+            nones += 1
+    if cls is not WorkInProgressCounter:
+        assert nones > 0
+    assert nonones > 0

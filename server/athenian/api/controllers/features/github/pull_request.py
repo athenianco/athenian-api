@@ -10,10 +10,9 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
 
 
 def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, confidence=0.95,
-                             ) -> Tuple[Optional[T], Optional[T], Optional[T]]:
+                             ) -> Tuple[T, T, T]:
     """Calculate the mean value and the confidence interval."""
-    if len(data) == 0:
-        return None, None, None
+    assert len(data) > 0
     ns = 1_000_000_000
     max_conf_max_ratio = 10
     dtype_is_timedelta = isinstance(data[0], (pd.Timedelta, timedelta))
@@ -75,11 +74,9 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
     return m, conf_min, conf_max
 
 
-def median_confidence_interval(data: Sequence[T], confidence=0.95,
-                               ) -> Tuple[Optional[T], Optional[T], Optional[T]]:
+def median_confidence_interval(data: Sequence[T], confidence=0.95) -> Tuple[T, T, T]:
     """Calculate the median value and the confidence interval."""
-    if len(data) == 0:
-        return None, None, None
+    assert len(data) > 0
     arr = np.asarray(data)
     # The following code is based on:
     # https://onlinecourses.science.psu.edu/stat414/node/316
@@ -126,7 +123,7 @@ class PullRequestMetricCalculator(Generic[T]):
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[T]:
-        """Do the actual state update."""
+        """Calculate the actual state update."""
         raise NotImplementedError
 
 
@@ -144,7 +141,7 @@ class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[T]:
-        """Do the actual state update."""
+        """Calculate the actual state update."""
         raise NotImplementedError
 
 
@@ -159,7 +156,7 @@ class PullRequestMedianMetricCalculator(PullRequestMetricCalculator[T]):
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[T]:
-        """Do the actual state update."""
+        """Calculate the actual state update."""
         raise NotImplementedError
 
 
@@ -168,13 +165,29 @@ class PullRequestSumMetricCalculator(PullRequestMetricCalculator[T]):
 
     def value(self) -> Metric[T]:
         """Calculate the current metric value."""
-        val = sum(self.samples)
-        return Metric(bool(self.samples), val, val, val)
+        exists = bool(self.samples)
+        return Metric(exists, sum(self.samples) if exists else None, None, None)
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[T]:
-        """Do the actual state update."""
+        """Calculate the actual state update."""
         raise NotImplementedError
+
+
+class PullRequestCounter(PullRequestSumMetricCalculator[int]):
+    """Count the number of PRs that were used to calculate the specified metric."""
+
+    calc_cls: Type[PullRequestMetricCalculator[T]]  # Metric class
+
+    def __init__(self):
+        """Initialize a new instance of PullRequestCounter."""
+        super().__init__()
+        self.calc = self.calc_cls()
+
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[int]:
+        """Calculate the actual state update."""
+        return int(self.calc.analyze(times, min_time, max_time) is not None)
 
 
 calculators: Dict[str, Type[PullRequestMetricCalculator]] = {}
