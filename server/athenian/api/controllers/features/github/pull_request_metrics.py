@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from athenian.api.controllers.features.github.pull_request import \
-    PullRequestMedianMetricCalculator, PullRequestMetricCalculator, \
+    PullRequestCounter, PullRequestMedianMetricCalculator, PullRequestMetricCalculator, \
     PullRequestSumMetricCalculator, register
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
@@ -17,10 +17,17 @@ class WorkInProgressTimeCalculator(PullRequestMedianMetricCalculator[timedelta])
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[timedelta]:
-        """Do the actual state update. See the design document for more info."""
+        """Calculate the actual state update."""
         if times.first_review_request and min_time < times.first_review_request.best < max_time:
             return times.first_review_request.best - times.work_began.best
         return None
+
+
+@register(MetricID.PR_WIP_COUNT)
+class WorkInProgressCounter(PullRequestCounter):
+    """Count the number of PRs that were used to calculate PR_WIP_TIME."""
+
+    calc_cls = WorkInProgressTimeCalculator
 
 
 @register(MetricID.PR_REVIEW_TIME)
@@ -31,7 +38,7 @@ class ReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[timedelta]:
-        """Do the actual state update. See the design document for more info."""
+        """Calculate the actual state update."""
         # We cannot be sure that the approvals finished unless the PR is closed.
         if times.first_review_request and times.closed and (
                 (times.approved    and min_time < times.approved.best    < max_time) or  # noqa
@@ -45,15 +52,22 @@ class ReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
         return None
 
 
+@register(MetricID.PR_REVIEW_COUNT)
+class ReviewCounter(PullRequestCounter):
+    """Count the number of PRs that were used to calculate PR_REVIEW_TIME."""
+
+    calc_cls = ReviewTimeCalculator
+
+
 @register(MetricID.PR_MERGING_TIME)
-class MergeTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
+class MergingTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     """Time to merge after finishing the review metric."""
 
     may_have_negative_values = False
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[timedelta]:
-        """Do the actual state update. See the design document for more info."""
+        """Calculate the actual state update."""
         if times.closed and min_time < times.closed.best < max_time:
             # closed may mean either merged or not merged
             if times.approved:
@@ -65,6 +79,13 @@ class MergeTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
         return None
 
 
+@register(MetricID.PR_MERGING_COUNT)
+class MergingCounter(PullRequestCounter):
+    """Count the number of PRs that were used to calculate PR_MERGING_TIME."""
+
+    calc_cls = MergingTimeCalculator
+
+
 @register(MetricID.PR_RELEASE_TIME)
 class ReleaseTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     """Time to appear in a release after merging metric."""
@@ -73,10 +94,17 @@ class ReleaseTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[timedelta]:
-        """Do the actual state update. See the design document for more info."""
+        """Calculate the actual state update."""
         if times.merged and times.released and min_time < times.released.best < max_time:
             return times.released.best - times.merged.best
         return None
+
+
+@register(MetricID.PR_RELEASE_COUNT)
+class ReleaseCounter(PullRequestCounter):
+    """Count the number of PRs that were used to calculate PR_RELEASE_TIME."""
+
+    calc_cls = ReleaseTimeCalculator
 
 
 @register(MetricID.PR_LEAD_TIME)
@@ -87,13 +115,20 @@ class LeadTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[timedelta]:
-        """Do the actual state update. See the design document for more info."""
+        """Calculate the actual state update."""
         if times.released and min_time < times.released.best < max_time:
             return times.released.best - times.work_began.best
         return None
 
 
-@register(MetricID.PR_WAIT_FIRST_REVIEW)
+@register(MetricID.PR_LEAD_COUNT)
+class LeadCounter(PullRequestCounter):
+    """Count the number of PRs that were used to calculate PR_LEAD_TIME."""
+
+    calc_cls = LeadTimeCalculator
+
+
+@register(MetricID.PR_WAIT_FIRST_REVIEW_TIME)
 class WaitFirstReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     """Elapsed time between requesting the review for the first time and getting it."""
 
@@ -101,7 +136,7 @@ class WaitFirstReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[timedelta]:
-        """Do the actual state update. See the design document for more info."""
+        """Calculate the actual state update."""
         if times.first_review_request and times.first_comment_on_first_review and \
                 min_time < times.first_comment_on_first_review.best < max_time:
             return times.first_comment_on_first_review.best - times.first_review_request.best
@@ -114,7 +149,7 @@ class OpenedCalculator(PullRequestSumMetricCalculator[int]):
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[int]:
-        """Do the actual state update. See the design document for more info."""
+        """Calculate the actual state update."""
         if times.created.best < max_time and ((not times.closed) or times.closed.best > max_time):
             return 1
         return None
@@ -126,7 +161,7 @@ class MergedCalculator(PullRequestSumMetricCalculator[int]):
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[int]:
-        """Do the actual state update. See the design document for more info."""
+        """Calculate the actual state update."""
         if times.merged and min_time < times.merged.best < max_time:
             return 1
         return None
@@ -138,7 +173,7 @@ class ClosedCalculator(PullRequestSumMetricCalculator[int]):
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[int]:
-        """Do the actual state update. See the design document for more info."""
+        """Calculate the actual state update."""
         if times.closed and min_time < times.closed.best < max_time:
             return 1
         return None
@@ -159,15 +194,15 @@ class FlowRatioCalculator(PullRequestMetricCalculator[float]):
         opened = self._opened.value()
         closed = self._closed.value()
         if not closed.exists:
-            return Metric(False, 0, 0, 0)
+            return Metric(False, None, None, None)
         if not opened.exists:
-            return Metric(True, 0, 0, 0)  # yes, it is True, not False as above
+            return Metric(True, 0, None, None)  # yes, it is True, not False as above
         val = opened.value / closed.value
-        return Metric(True, val, val, val)
+        return Metric(True, val, None, None)
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[float]:
-        """Do the actual state update."""
+        """Calculate the actual state update."""
         self._opened(times, min_time, max_time)
         self._closed(times, min_time, max_time)
         return None

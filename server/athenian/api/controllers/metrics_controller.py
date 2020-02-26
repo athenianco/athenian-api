@@ -83,7 +83,7 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
             assert len(fres) == len(time_intervals) - 1
             for i, m in enumerate(metrics):
                 results[m] = [r[i] for r in fres]
-        met.calculated.append(CalculatedMetric(
+        cm = CalculatedMetric(
             _for=for_set,
             values=[CalculatedMetricValues(
                 date=d,
@@ -91,7 +91,13 @@ async def calc_metrics_line(request: AthenianWebRequest, body: dict) -> web.Resp
                 confidence_mins=[results[m][i].confidence_min for m in met.metrics],
                 confidence_maxs=[results[m][i].confidence_max for m in met.metrics],
                 confidence_scores=[results[m][i].confidence_score() for m in met.metrics],
-            ) for i, d in enumerate(time_intervals[1:])]))
+            ) for i, d in enumerate(time_intervals[1:])])
+        for v in cm.values:
+            if sum(1 for c in v.confidence_scores if c is not None) == 0:
+                v.confidence_mins = None
+                v.confidence_maxs = None
+                v.confidence_scores = None
+        met.calculated.append(cm)
     return response(met)
 
 

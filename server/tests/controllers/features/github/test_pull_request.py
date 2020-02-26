@@ -66,10 +66,8 @@ def test_mean_confidence_interval_timedelta_negative(square_centered_samples):
 
 
 def test_mean_confidence_interval_empty():
-    mean, conf_min, conf_max = mean_confidence_interval([], True)
-    assert mean is None
-    assert conf_min is None
-    assert conf_max is None
+    with pytest.raises(AssertionError):
+        mean_confidence_interval([], True)
 
 
 def test_mean_confidence_interval_negative_list(square_centered_samples):
@@ -104,10 +102,8 @@ def test_median_confidence_interval_timedelta(square_centered_samples):
 
 
 def test_median_confidence_interval_empty():
-    mean, conf_min, conf_max = median_confidence_interval([])
-    assert mean is None
-    assert conf_min is None
-    assert conf_max is None
+    with pytest.raises(AssertionError):
+        median_confidence_interval([])
 
 
 @pytest.fixture

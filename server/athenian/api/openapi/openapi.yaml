@@ -642,10 +642,15 @@ components:
       description: Currently supported metric types.
       enum:
       - pr-wip-time
+      - pr-wip-count
       - pr-review-time
+      - pr-review-count
       - pr-merging-time
+      - pr-merging-count
       - pr-release-time
+      - pr-release-count
       - pr-lead-time
+      - pr-lead-count
       - pr-flow-ratio
       - pr-opened
       - pr-merged
@@ -1154,7 +1159,6 @@ components:
             type: integer
           type: array
       required:
-      - confidence_scores
       - date
       - values
     FilterContribsOrReposRequest:
