@@ -283,3 +283,27 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric):
         if val is not None:
             s += val
     assert s > 0
+
+
+async def test_calc_metrics_prs_index_error(client, headers):
+    body = {
+        "for": [
+            {
+                "developers": [],
+                "repositories": ["github.com/src-d/go-git"],
+            },
+        ],
+        "metrics": [MetricID.PR_WIP_TIME,
+                    MetricID.PR_REVIEW_TIME,
+                    MetricID.PR_MERGING_TIME,
+                    MetricID.PR_RELEASE_TIME,
+                    MetricID.PR_LEAD_TIME],
+        "date_from": "2019-02-25",
+        "date_to": "2019-02-28",
+        "granularity": "week",
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics_line", headers=headers, json=body,
+    )
+    assert response.status == 200

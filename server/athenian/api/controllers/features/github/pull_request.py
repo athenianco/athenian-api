@@ -233,7 +233,7 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
         items = sorted(items, key=lambda x: x.created.best)
         pos = 0
         for item in items:
-            while item.created.best > borders[pos + 1]:
+            while pos < len(borders) - 1 and item.created.best > borders[pos + 1]:
                 pos += 1
             if item.closed:
                 span = pos
