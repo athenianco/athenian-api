@@ -30,6 +30,7 @@ from tests.sample_db_data import fill_metadata_session, fill_state_session
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 invitation_controller.ikey = "vadim"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
+override_mdb = os.getenv("OVERRIDE_MDB")
 
 
 class FakeCache:
@@ -128,6 +129,8 @@ def client(loop, aiohttp_client, app):
 
 @pytest.fixture(scope="module")
 def metadata_db() -> str:
+    if override_mdb:
+        return override_mdb
     hack_sqlite_arrays()
     metadata_db_path = db_dir / "mdb.sqlite"
     conn_str = "sqlite:///%s" % metadata_db_path
@@ -165,9 +168,7 @@ def state_db() -> str:
 
 @pytest.fixture(scope="function")
 async def mdb(metadata_db, loop):
-    metadata_db_path = db_dir / "mdb.sqlite"
-    conn_str = "sqlite:///%s" % metadata_db_path
-    db = databases.Database(conn_str)
+    db = databases.Database(metadata_db)
     await db.connect()
     return db
 

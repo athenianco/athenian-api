@@ -58,7 +58,7 @@ Running with real Cloud SQL databases:
 ```
 cloud_sql_proxy -instances=athenian-1:us-east1:owl-cloud-sql-2f803bb6=tcp:5432
 
---metadata-db=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/api
+--metadata-db=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/metadata
 --state-db=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/state
 ```
 
@@ -75,6 +75,7 @@ Validate your changes:
 ```
 cd server
 flake8
+pytest -s
 ```
 
 Generate sample SQLite metadata and state databases:
@@ -85,7 +86,19 @@ docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /se
 
 You should have two SQLite files in `$(pwd)`: `mdb.sqlite` and `sdb.sqlite`.
 
-Obtain Auth0 credentials for running locally: TODO.
+Obtain Auth0 credentials for running locally: [webapp docs](https://github.com/athenianco/athenian-webapp/blob/master/docs/CONTRIBUTING.md#auth0-and-github-app-local-testing).
+
+### Running tests against a real metadata DB
+
+```
+export AUTH0_DOMAIN=...
+export AUTH0_AUDIENCE=...
+export AUTH0_CLIENT_ID=...
+export AUTH0_CLIENT_SECRET=...
+export OVERRIDE_MDB=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/db_name
+cd server
+pytest -s
+```
 
 ## Running the API server locally
 
