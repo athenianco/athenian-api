@@ -20,11 +20,11 @@ from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError
 from athenian.api.models.web.filter_contribs_or_repos_request import FilterContribsOrReposRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
+from athenian.api.models.web.included_native_user import IncludedNativeUser
+from athenian.api.models.web.included_native_users import IncludedNativeUsers
 from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_set import PullRequestSet
-from athenian.api.models.web.pull_request_set_include import PullRequestSetInclude
-from athenian.api.models.web.pull_request_set_include_user import PullRequestSetIncludeUser
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import FriendlyJson, response, ResponseError
 
@@ -162,8 +162,8 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
              chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs)}
     avatars = await request.mdb.fetch_all(
         select([User.login, User.avatar_url]).where(User.login.in_(users)))
-    model = PullRequestSet(include=PullRequestSetInclude(users={
-        "github.com/" + r[User.login.key]: PullRequestSetIncludeUser(avatar=r[User.avatar_url.key])
+    model = PullRequestSet(include=IncludedNativeUsers(users={
+        "github.com/" + r[User.login.key]: IncludedNativeUser(avatar=r[User.avatar_url.key])
         for r in avatars
     }), data=web_prs)
     return response(model)
@@ -179,3 +179,9 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
             participants[pid].append(pkweb)
     props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
     return WebPullRequest(**props)
+
+
+async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Find commits that match the specified query and group them with the required time \
+    granularity."""
+    return None

@@ -96,6 +96,39 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
+  /filter/commits:
+    post:
+      operationId: filter_commits
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilterCommitsRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommitsGroupedByTime'
+          description: Commits that satisfy the specified filters grouped by date.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to access the specified account.
+      security:
+      - bearerAuth: []
+      summary: Find commits that match the specified query and group them with the
+        required time granularity.
+      tags:
+        - filter
+# {% if False %}
+        - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.filter_controller
+      x-codegen-request-body-name: body
   /filter/contributors:
     post:
       operationId: filter_contributors
@@ -310,14 +343,56 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.invitation_controller
       x-codegen-request-body-name: body
-  /metrics_line:
+  /metrics/code_bypassing_prs:
     post:
-      operationId: calc_metrics_line
+      operationId: calc_code_bypassing_prs
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MetricsRequest'
+              $ref: '#/components/schemas/CommitFilter'
+        description: Query for measuring the amount of code that was pushed outside
+          of pull requests.
+        required: true
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeasuredCodeBypassingPRs'
+          description: Calculated metrics.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to access the specified repositories
+            on behalf of the specified account.
+      security:
+      - bearerAuth: []
+      summary: Measure the amount of code that was pushed outside of pull requests.
+      tags:
+        - metrics
+        # {% if False %}
+        - default
+      # {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.metrics_controller
+      x-codegen-request-body-name: body
+  /metrics/prs:
+    post:
+      operationId: calc_metrics_pr_linear
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PullRequestMetricsRequest'
         description: Desired metric definitions.
         required: true
         x-body-name: body
@@ -349,7 +424,7 @@ paths:
           description: No data is available to calculate metrics for the given repositories.
       security:
       - bearerAuth: []
-      summary: Calculate metrics.
+      summary: Calculate linear metrics over PRs.
       tags:
       - metrics
 # {% if False %}
@@ -598,7 +673,7 @@ components:
       properties:
         type:
           description: URI reference that identifies the problem type (RFC 7807).
-          example: /errors/metrics_line/InvalidRequestError
+          example: /errors/metrics/pr_linear/InvalidRequestError
           type: string
         title:
           description: Short, human-readable summary of the problem type.
@@ -893,7 +968,8 @@ components:
         following regular expression: (^([1-9]\d* )?(day|week|month|year)$'
       example: 2 week
       type: string
-    MetricsRequest:
+    PullRequestMetricsRequest:
+      description: Request for calculating metrics on top of pull requests data.
       example:
         for:
         - repositories:
@@ -949,6 +1025,8 @@ components:
       - metrics
       type: object
     CalculatedMetric:
+      description: Series of calculated metrics for a specific set of
+        repositories and developers.
       example:
         values:
         - date: 2000-01-23
@@ -1080,16 +1158,16 @@ components:
             $ref: '#/components/schemas/CalculatedMetric'
           type: array
         metrics:
-          description: Repeats `MetricsRequest.metrics`.
+          description: Repeats `PullRequestMetricsRequest.metrics`.
           items:
             $ref: '#/components/schemas/MetricID'
           type: array
         date_from:
-          description: Repeats `MetricsRequest.date_from`.
+          description: Repeats `PullRequestMetricsRequest.date_from`.
           format: date
           type: string
         date_to:
-          description: Repeats `MetricsRequest.date_to`.
+          description: Repeats `PullRequestMetricsRequest.date_to`.
           format: date
           type: string
         granularity:
@@ -1263,7 +1341,7 @@ components:
             status: commenter
       properties:
         include:
-          $ref: '#/components/schemas/PullRequestSet_include'
+          $ref: '#/components/schemas/IncludedNativeUsers'
         data:
           description: List of matched pull requests.
           items:
@@ -1273,7 +1351,7 @@ components:
       - data
       - include
       type: object
-    PullRequestSet_include_user:
+    IncludedNativeUser:
       description: User traits such as the avatar URL.
       example:
         avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
@@ -1283,7 +1361,7 @@ components:
           type: string
       required:
       - avatar
-    PullRequestSet_include:
+    IncludedNativeUsers:
       example:
         users:
           github.com/gkwillie:
@@ -1291,9 +1369,10 @@ components:
       properties:
         users:
           additionalProperties:
-            $ref: '#/components/schemas/PullRequestSet_include_user'
-          description: Mapping user login -> user details. The users are mentioned
-            in PRs in "PullRequestSet.data".
+            $ref: '#/components/schemas/IncludedNativeUser'
+          description: Mapping user native (e.g., GitHub) login ID -> user details.
+            The users are mentioned in the PRs from "PullRequestSet.data" or in the
+            commits from "FilterCommitsRequest.data".
           type: object
       required:
       - users
@@ -1361,7 +1440,8 @@ components:
           description: Number of commits in this PR.
           type: integer
         review_requested:
-          description: Value indicating whether the author of this PR requested a review.
+          description: Value indicating whether somebody requested a review
+            of this PR.
           type: boolean
         review_comments:
           description: Number of review comments this PR received.
@@ -1438,4 +1518,327 @@ components:
           $ref: '#/components/schemas/DeveloperSet'
         merger:
           $ref: '#/components/schemas/DeveloperSet'
+      type: object
+    FilterCommitsRequest:
+      description: Filter for listing commits.
+      example:
+        account: 1
+        date_from: 2000-01-23
+        date_to: 2020-05-23
+        in:
+        - '{1}'
+      allOf:
+      - $ref: '#/components/schemas/CommitFilter'
+      - properties:
+          property:
+            description: Main trait of the commits - the core of the filter.
+            enum:
+            - bypassing_prs
+            type: string
+        required:
+        - property
+        type: object
+    CommitsGroupedByTime:
+      description: Lists of commits grouped by date.
+      example:
+        include:
+          users:
+            github.com/gkwillie:
+              avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+        data:
+        - date: 2000-01-23
+          commits:
+          - repository: github.com/athenianco/athenian-api
+            hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
+            author:
+              login: github.com/gkwillie
+              name: Groundskeeper Willie
+              email: bot@athenian.co
+              timestamp: 2020-02-25T14:27:21Z
+            committer:
+              login: github.com/gkwillie
+              name: Groundskeeper Willie
+              email: bot@athenian.co
+              timestamp: 2020-02-25T14:27:21Z
+            message: 'Bump version: 0.0.42 → 0.0.43'
+            size_added: 1
+            size_removed: 1
+            files_changed: 1
+          - repository: github.com/athenianco/athenian-api
+            hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
+            author:
+              login: github.com/gkwillie
+              name: Groundskeeper Willie
+              email: bot@athenian.co
+              timestamp: 2020-02-25T14:27:21Z
+            committer:
+              login: github.com/gkwillie
+              name: Groundskeeper Willie
+              email: bot@athenian.co
+              timestamp: 2020-02-25T14:27:21Z
+            message: 'Bump version: 0.0.42 → 0.0.43'
+            size_added: 1
+            size_removed: 1
+            files_changed: 1
+        - date: 2000-01-23
+          commits:
+          - repository: github.com/athenianco/athenian-api
+            hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
+            author:
+              login: github.com/gkwillie
+              name: Groundskeeper Willie
+              email: bot@athenian.co
+              timestamp: 2020-02-25T14:27:21Z
+            committer:
+              login: github.com/gkwillie
+              name: Groundskeeper Willie
+              email: bot@athenian.co
+              timestamp: 2020-02-25T14:27:21Z
+            message: 'Bump version: 0.0.42 → 0.0.43'
+            size_added: 1
+            size_removed: 1
+            files_changed: 1
+          - repository: github.com/athenianco/athenian-api
+            hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
+            author:
+              login: github.com/gkwillie
+              name: Groundskeeper Willie
+              email: bot@athenian.co
+              timestamp: 2020-02-25T14:27:21Z
+            committer:
+              login: github.com/gkwillie
+              name: Groundskeeper Willie
+              email: bot@athenian.co
+              timestamp: 2020-02-25T14:27:21Z
+            message: 'Bump version: 0.0.42 → 0.0.43'
+            size_added: 1
+            size_removed: 1
+            files_changed: 1
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/CommitGroupForFilterCommitsRequest'
+          type: array
+        include:
+          $ref: '#/components/schemas/IncludedNativeUsers'
+      required:
+      - data
+      - include
+      type: object
+    CommitGroupForFilterCommitsRequest:
+      description: List of commits that were committed starting from a specific time
+        and ending at +granularity.
+      example:
+        date: 2000-01-23
+        commits:
+        - repository: github.com/athenianco/athenian-api
+          hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
+          author:
+            login: github.com/gkwillie
+            name: Groundskeeper Willie
+            email: bot@athenian.co
+            timestamp: 2020-02-25T14:27:21Z
+          committer:
+            login: github.com/gkwillie
+            name: Groundskeeper Willie
+            email: bot@athenian.co
+            timestamp: 2020-02-25T14:27:21Z
+          message: 'Bump version: 0.0.42 → 0.0.43'
+          size_added: 1
+          size_removed: 1
+          files_changed: 1
+        - repository: github.com/athenianco/athenian-api
+          hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
+          author:
+            login: github.com/gkwillie
+            name: Groundskeeper Willie
+            email: bot@athenian.co
+            timestamp: 2020-02-25T14:27:21Z
+          committer:
+            login: github.com/gkwillie
+            name: Groundskeeper Willie
+            email: bot@athenian.co
+            timestamp: 2020-02-25T14:27:21Z
+          message: 'Bump version: 0.0.42 → 0.0.43'
+          size_added: 1
+          size_removed: 1
+          files_changed: 1
+      properties:
+        date:
+          description: Commits were pushed beginning with this date. They were not
+            pushed later than +granularity.
+          format: date
+          type: string
+        commits:
+          items:
+            $ref: '#/components/schemas/Commit'
+          type: array
+      required:
+      - commits
+      - date
+      type: object
+    Commit:
+      description: Information about a commit.
+      example:
+        repository: github.com/athenianco/athenian-api
+        hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
+        author:
+          login: github.com/gkwillie
+          name: Groundskeeper Willie
+          email: bot@athenian.co
+          timestamp: 2020-02-25T14:27:21Z
+        committer:
+          login: github.com/gkwillie
+          name: Groundskeeper Willie
+          email: bot@athenian.co
+          timestamp: 2020-02-25T14:27:21Z
+        message: 'Bump version: 0.0.42 → 0.0.43'
+        size_added: 1
+        size_removed: 1
+        files_changed: 1
+      properties:
+        repository:
+          $ref: '#/components/schemas/RepositoryID'
+        hash:
+          description: Git commit hash.
+          type: string
+        author:
+          $ref: '#/components/schemas/CommitSignature'
+        committer:
+          $ref: '#/components/schemas/CommitSignature'
+        message:
+          description: Commit message.
+          type: string
+        size_added:
+          description: Overall number of lines added.
+          type: integer
+        size_removed:
+          description: Overall number of lines removed.
+          type: integer
+        files_changed:
+          description: Number of files changed in this PR.
+          type: integer
+      required:
+      - author
+      - committer
+      - files_changed
+      - hash
+      - message
+      - repository
+      - size_added
+      - size_removed
+      type: object
+    CommitSignature:
+      description: Git commit signature. It is guaranteed that `login` and/or
+        `name`&`email` are present.
+      example:
+        login: github.com/vmarkovtsev
+        name: Vadim Markovtsev
+        email: vadim@athenian.co
+        timestamp: 2020-02-25T14:27:21Z
+      properties:
+        login:
+          $ref: '#/components/schemas/DeveloperID'
+        name:
+          description: Git signature name.
+          type: string
+        email:
+          description: Git signature email.
+          type: string
+        timestamp:
+          description: When the corresponding action happened.
+          format: date-time
+          type: string
+      required:
+      - timestamp
+      type: object
+    CommitFilter:
+      description: Filter for committed code.
+      example:
+        account: 1
+        date_from: 2020-01-01
+        date_to: 2020-03-01
+        granularity: day
+        in:
+        - '{1}'
+        with_author:
+        - github.com/vmarkovtsev
+      properties:
+        account:
+          description: Session account ID.
+          type: integer
+        date_from:
+          description: Commits must be made later than or equal to this date.
+          format: date
+          type: string
+        date_to:
+          description: Commits must be made earlier than or equal to this date.
+          format: date
+          type: string
+        granularity:
+          $ref: '#/components/schemas/Granularity'
+        in:
+          $ref: '#/components/schemas/RepositorySet'
+        with_author:
+          $ref: '#/components/schemas/DeveloperSet'
+        with_committer:
+          $ref: '#/components/schemas/DeveloperSet'
+      required:
+      - account
+      - date_from
+      - date_to
+      - granularity
+      - in
+      type: object
+    MeasuredCodeBypassingPRs:
+      description: Statistics about code pushed outside of pull requests.
+      example:
+      - date: 2020-01-23
+        bypassed_commits: 1
+        bypassed_lines: 20
+        total_commits: 2
+        total_lines: 50
+      - date: 2020-01-24
+        bypassed_commits: 2
+        bypassed_lines: 30
+        total_commits: 3
+        total_lines: 60
+      items:
+        $ref: '#/components/schemas/CodeBypassingPRsMeasurement'
+      type: array
+    CodeBypassingPRsMeasurement:
+      description: Statistics about code pushed outside of pull requests in a
+        certain time interval.
+      example:
+        date: 2020-01-23
+        bypassed_commits: 1
+        bypassed_lines: 20
+        total_commits: 2
+        total_lines: 50
+      properties:
+        date:
+          description: Commits were pushed beginning with this date. They were not
+            pushed later than +granularity.
+          format: date
+          type: string
+        bypassed_commits:
+          description: Number of commits that bypassed PRs in the time interval.
+          type: integer
+        bypassed_lines:
+          description: Number of changed (added + removed) lines that bypassed PRs
+            in the time interval.
+          type: integer
+        total_commits:
+          description: Overall number of commits in the time interval.
+          type: integer
+        total_lines:
+          description: Overall number of changed (added + removed) lines in the time
+            interval.
+          type: integer
+      required:
+      - bypassed_commits
+      - bypassed_lines
+      - date
+      - total_commits
+      - total_lines
       type: object
