@@ -3,8 +3,7 @@ from datetime import date, datetime
 from enum import Enum
 import io
 import struct
-from typing import Dict, Generator, Generic, List, Mapping, Optional, Sequence, Set, TypeVar, \
-    Union
+from typing import Dict, Generator, Generic, List, Mapping, Optional, Sequence, Set, TypeVar, Union
 
 import aiomcache
 import databases
@@ -12,7 +11,7 @@ import pandas as pd
 from sqlalchemy import select, sql
 
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.cache import gen_cache_key
+from athenian.api.cache import cached
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
     PullRequestListItem, Stage
 from athenian.api.models.metadata.github import Base, IssueComment, PullRequest, \
@@ -45,34 +44,42 @@ class PullRequestMiner:
         self._comments = comments
         self._commits = commits
 
-    @classmethod
-    async def mine(cls, time_from: date, time_to: date, repositories: Sequence[str],
-                   developers: Sequence[str], db: databases.Database,
-                   cache: Optional[aiomcache.Client]) -> "PullRequestMiner":
-        """
-        Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
+    def _serialize_for_cache(dfs: List[pd.DataFrame]) -> memoryview:
+        assert len(dfs) < 256
+        buf = io.BytesIO()
+        offsets = []
+        for df in dfs:
+            df.to_feather(buf)
+            offsets.append(buf.tell())
+        buf.write(struct.pack("!" + "I" * len(offsets), *offsets))
+        buf.write(struct.pack("!B", len(offsets)))
+        return buf.getbuffer()
 
-        :param time_from: Fetch PRs created starting from this date.
-        :param time_to: Fetch PRs created ending with this date.
-        :param repositories: PRs must belong to these repositories (prefix excluded).
-        :param developers: PRs must be authored by these user IDs. An empty list means everybody.
-        :param db: Metadata db instance.
-        :param cache: memcached client to cache the collected data.
-        """
-        cache_key = None
-        if cache is not None:
-            cache_key = gen_cache_key(
-                "PullRequestMiner|%d|%d|%s|%s",
-                time_from.toordinal(),
-                time_to.toordinal(),
-                ",".join(sorted(repositories)),
-                ",".join(sorted(developers)),
-            )
-            serialized = await cache.get(cache_key)
-            if serialized is not None:
-                prs, reviews, review_comments, comments, commits = \
-                    cls._deserialize_from_cache(serialized)
-                return cls(prs, reviews, review_comments, comments, commits)
+    def _deserialize_from_cache(data: bytes) -> List[pd.DataFrame]:
+        data = memoryview(data)
+        size = struct.unpack("!B", data[-1:])[0]
+        offsets = (0,) + struct.unpack("!" + "I" * size, data[-size * 4 - 1:-1])
+        dfs = []
+        for beg, end in zip(offsets, offsets[1:]):
+            buf = io.BytesIO(data[beg:end])
+            dfs.append(pd.read_feather(buf))
+        return dfs
+
+    @classmethod
+    @cached(
+        exptime=lambda cls, **_: cls.CACHE_TTL,
+        serialize=_serialize_for_cache,
+        deserialize=_deserialize_from_cache,
+        key=lambda time_from, time_to, repositories, developers, **_: (
+            time_from.toordinal(),
+            time_to.toordinal(),
+            ",".join(sorted(repositories)),
+            ",".join(sorted(developers)),
+        ),
+    )
+    async def _mine(cls, time_from: date, time_to: date, repositories: Sequence[str],
+                    developers: Sequence[str], db: databases.Database,
+                    cache: Optional[aiomcache.Client]) -> List[pd.DataFrame]:
         filters = [
             sql.or_(sql.and_(PullRequest.updated_at >= time_from,
                              PullRequest.updated_at < time_to),
@@ -95,12 +102,27 @@ class PullRequestMiner:
                 conn, IssueComment, numbers, repositories, time_to)
             commits = await cls._read_filtered_models(
                 conn, PullRequestCommit, numbers, repositories, time_to)
-        if cache is not None:
-            await cache.set(
-                cache_key,
-                cls._serialize_for_cache(prs, reviews, review_comments, comments, commits),
-                exptime=cls.CACHE_TTL)
-        return cls(prs, reviews, review_comments, comments, commits)
+        return [prs, reviews, review_comments, comments, commits]
+
+    _serialize_for_cache = staticmethod(_serialize_for_cache)
+    _deserialize_from_cache = staticmethod(_deserialize_from_cache)
+
+    @classmethod
+    async def mine(cls, time_from: date, time_to: date, repositories: Sequence[str],
+                   developers: Sequence[str], db: databases.Database,
+                   cache: Optional[aiomcache.Client]) -> "PullRequestMiner":
+        """
+        Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
+
+        :param time_from: Fetch PRs created starting from this date.
+        :param time_to: Fetch PRs created ending with this date.
+        :param repositories: PRs must belong to these repositories (prefix excluded).
+        :param developers: PRs must be authored by these user IDs. An empty list means everybody.
+        :param db: Metadata db instance.
+        :param cache: memcached client to cache the collected data.
+        """
+        dfs = await cls._mine(time_from, time_to, repositories, developers, db, cache)
+        return cls(*dfs)
 
     @staticmethod
     async def _read_filtered_models(conn: databases.core.Connection,
@@ -133,29 +155,6 @@ class PullRequestMiner:
                     (attr[model.pull_request_number.key] == pr_number) &  # noqa: W504
                     (attr[model.repository_fullname.key] == pr_repo)])
             yield MinedPullRequest(pr, *items)
-
-    @classmethod
-    def _serialize_for_cache(cls, *dfs: pd.DataFrame) -> memoryview:
-        assert len(dfs) < 256
-        buf = io.BytesIO()
-        offsets = []
-        for df in dfs:
-            df.to_feather(buf)
-            offsets.append(buf.tell())
-        buf.write(struct.pack("!" + "I" * len(offsets), *offsets))
-        buf.write(struct.pack("!B", len(offsets)))
-        return buf.getbuffer()
-
-    @classmethod
-    def _deserialize_from_cache(cls, data: bytes) -> List[pd.DataFrame]:
-        data = memoryview(data)
-        size = struct.unpack("!B", data[-1:])[0]
-        offsets = (0,) + struct.unpack("!" + "I" * size, data[-size * 4 - 1:-1])
-        dfs = []
-        for beg, end in zip(offsets, offsets[1:]):
-            buf = io.BytesIO(data[beg:end])
-            dfs.append(pd.read_feather(buf))
-        return dfs
 
 
 T = TypeVar("T")

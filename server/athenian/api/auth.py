@@ -2,9 +2,9 @@ import asyncio
 from datetime import timedelta
 import functools
 from http import HTTPStatus
-import json
 import logging
 import os
+import pickle
 from random import random
 import re
 from typing import Any, Dict, List, Optional, Sequence
@@ -20,7 +20,7 @@ from jose import jwt
 from multidict import CIMultiDict
 from sqlalchemy import select
 
-from athenian.api.cache import gen_cache_key
+from athenian.api.cache import cached
 from athenian.api.models.state.models import God
 from athenian.api.models.web import GenericError
 from athenian.api.models.web.user import User
@@ -312,29 +312,28 @@ class Auth0:
     async def _get_user_info(self, token: str) -> User:
         if token == "null":
             return await self.default_user()
-        user = None
-        cache_key = None
-        if self._cache is not None:
-            cache_key = gen_cache_key("Auth0._get_user_info|" + token)
-            value = await self._cache.get(cache_key)
-            if value is not None:
-                user = json.loads(value.decode())
-        if user is None:
-            resp = await self._session.get("https://%s/userinfo" % self._domain,
-                                           headers={"Authorization": "Bearer " + token})
-            try:
-                user = await resp.json()
-            except aiohttp.ContentTypeError:
-                raise ResponseError(GenericError(
-                    "/errors/Auth0", title=resp.reason, status=resp.status,
-                    detail=await resp.text()))
-            if resp.status != 200:
-                raise ResponseError(GenericError(
-                    "/errors/Auth0", title=resp.reason, status=resp.status,
-                    detail=user.get("description", str(user))))
-            if self._cache is not None:
-                await self._cache.set(cache_key, json.dumps(user).encode(),
-                                      exptime=self.USERINFO_CACHE_TTL)
+        return await self._get_user_info_cached(token)
+
+    @cached(
+        exptime=lambda self, **_: self.USERINFO_CACHE_TTL,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda token, **_: (token,),
+        cache=lambda self, **_: self._cache,
+    )
+    async def _get_user_info_cached(self, token: str) -> User:
+        resp = await self._session.get("https://%s/userinfo" % self._domain,
+                                       headers={"Authorization": "Bearer " + token})
+        try:
+            user = await resp.json()
+        except aiohttp.ContentTypeError:
+            raise ResponseError(GenericError(
+                "/errors/Auth0", title=resp.reason, status=resp.status,
+                detail=await resp.text()))
+        if resp.status != 200:
+            raise ResponseError(GenericError(
+                "/errors/Auth0", title=resp.reason, status=resp.status,
+                detail=user.get("description", str(user))))
         return User.from_auth0(**user)
 
     async def _set_user(self, request, token: str) -> None:
