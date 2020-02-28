@@ -3,8 +3,10 @@ import json
 from typing import Set
 
 from aiohttp import ClientResponse
+from prometheus_client import CollectorRegistry
 import pytest
 
+from athenian.api import setup_cache_metrics
 from athenian.api.controllers.miners.pull_request_list_item import Stage
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
@@ -151,7 +153,9 @@ async def test_filter_contributors_bad_account(client, headers):
 
 @pytest.fixture(scope="module")
 def filter_prs_single_stage_cache():
-    return FakeCache()
+    fc = FakeCache()
+    setup_cache_metrics(fc, CollectorRegistry(auto_describe=True))
+    return fc
 
 
 @pytest.mark.parametrize("stage", [k.name.lower() for k in Stage])

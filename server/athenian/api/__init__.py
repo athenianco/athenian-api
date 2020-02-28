@@ -4,6 +4,7 @@ import getpass
 from http import HTTPStatus
 import logging
 import os
+from pathlib import Path
 import socket
 import sys
 from typing import Optional
@@ -22,6 +23,7 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 from athenian.api import metadata
 from athenian.api.auth import Auth0
+from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.metadata import __package__
@@ -116,8 +118,7 @@ class AthenianApp(connexion.AioHttpApp):
         :param cache: memcached client for caching auxiliary data.
         """
         options = {"swagger_ui": ui}
-        rootdir = os.path.dirname(__file__)
-        specification_dir = os.path.join(rootdir, "openapi")
+        specification_dir = str(Path(__file__).parent / "openapi")
         super().__init__(__package__, specification_dir=specification_dir, options=options)
         self.api_cls = ExactServersAioHttpApi
         invitation_controller.validate_env()
@@ -143,14 +144,15 @@ class AthenianApp(connexion.AioHttpApp):
                 pass_context_arg_name="request",
                 options={"middlewares": [self.with_db]},
             )
-        setup_status(self.app)
+        api.jsonifier.json = FriendlyJson
+        prometheus_registry = setup_status(self.app)
+        setup_cache_metrics(cache, prometheus_registry)
         if ui:
             def index_redirect(_):
                 raise HTTPFound("/v1/ui/")
 
             self.app.router.add_get("/", index_redirect)
         self._enable_cors()
-        api.jsonifier.json = FriendlyJson
         self._cache = cache
         self.mdb = self.sdb = None  # type: Optional[databases.Database]
 
@@ -176,9 +178,8 @@ class AthenianApp(connexion.AioHttpApp):
 
         self.app.on_shutdown.append(self.shutdown)
         # Schedule the DB connections
-        loop = asyncio.get_event_loop()
-        self._mdb_future = asyncio.ensure_future(connect_to_mdb(), loop=loop)
-        self._sdb_future = asyncio.ensure_future(connect_to_sdb(), loop=loop)
+        self._mdb_future = asyncio.ensure_future(connect_to_mdb())
+        self._sdb_future = asyncio.ensure_future(connect_to_sdb())
 
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
