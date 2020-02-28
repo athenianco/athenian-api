@@ -1,9 +1,11 @@
 import functools
 import inspect
 import pickle
+import time
 from typing import Any, ByteString, Callable, Coroutine, Optional, Tuple, Union
 
 import aiomcache
+from prometheus_client import CollectorRegistry, Counter, Histogram
 from xxhash import xxh64_hexdigest
 
 
@@ -55,25 +57,29 @@ def cached(exptime: Union[int, Callable[..., int]],
 
         # no functool.wraps() shit here! It discards the coroutine status and aiohttp notices that
         async def wrapped_cached(*args, **kwargs):
+            start_time = time.time()
             args_dict = inspect.signature(func).bind(*args, **kwargs).arguments
             client = discover_cache(**args_dict)
-            cache_key = None
+            cache_key = full_name = None
             if client is not None:
                 props = key(**args_dict)
                 assert isinstance(props, tuple), "key() must return a tuple"
-                cache_key = _gen_cache_key(
-                    "%s.%s|%s",
-                    func.__module__,
-                    func.__qualname__,
-                    "|".join([str(p) for p in props]),
-                )
+                full_name = func.__module__ + "." + func.__qualname__
+                cache_key = _gen_cache_key(full_name + "|" + "|".join([str(p) for p in props]))
                 buffer = await client.get(cache_key)
                 if buffer is not None:
-                    return deserialize(buffer)
+                    result = deserialize(buffer)
+                    client.metrics["hits"].labels(__package__, full_name).inc()
+                    client.metrics["hit_latency"].labels(__package__, full_name).observe(
+                        time.time() - start_time)
+                    return result
             result = await func(*args, **kwargs)
             if client is not None:
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
                 await client.set(cache_key, serialize(result), exptime=t)
+                client.metrics["misses"].labels(__package__, full_name).inc()
+                client.metrics["miss_latency"].labels(__package__, full_name).observe(
+                    time.time() - start_time)
             return result
 
         wrapped_cached.__name__ = func.__name__
@@ -85,3 +91,31 @@ def cached(exptime: Union[int, Callable[..., int]],
         return wrapped_cached
 
     return wrapper_cached
+
+
+def setup_cache_metrics(cache: Optional[aiomcache.Client], registry: CollectorRegistry):
+    """Initialize the Prometheus metrics for tracking the cache interoperability."""
+    if cache is None:
+        return
+    cache.metrics = {
+        "hits": Counter(
+            "cache_hits", "Number of times the cache was useful",
+            ["app_name", "func"],
+            registry=registry,
+        ),
+        "misses": Counter(
+            "cache_misses", "Number of times the cache was useless",
+            ["app_name", "func"],
+            registry=registry,
+        ),
+        "hit_latency": Histogram(
+            "cache_hit_latency", "Elapsed time to retrieve items from the cache",
+            ["app_name", "func"],
+            registry=registry,
+        ),
+        "miss_latency": Histogram(
+            "cache_miss_latency", "Elapsed time to retrieve items bypassing the cache",
+            ["app_name", "func"],
+            registry=registry,
+        ),
+    }

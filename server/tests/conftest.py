@@ -6,6 +6,7 @@ import time
 from typing import Dict, Optional, Union
 
 import databases
+from prometheus_client import CollectorRegistry
 try:
     import pytest
 except ImportError:
@@ -18,7 +19,7 @@ except ImportError:
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from athenian.api import AthenianApp
+from athenian.api import AthenianApp, setup_cache_metrics
 from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata import hack_sqlite_arrays
@@ -60,7 +61,9 @@ class FakeCache:
 
 @pytest.fixture(scope="function")
 def cache():
-    return FakeCache()
+    fc = FakeCache()
+    setup_cache_metrics(fc, CollectorRegistry(auto_describe=True))
+    return fc
 
 
 class TestAuth0(Auth0):
