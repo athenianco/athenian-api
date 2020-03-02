@@ -166,6 +166,8 @@ If you're running the API with docker (using `make run-api` from above), you sho
 `SENTRY_ENV` sets the [environment](https://docs.sentry.io/enriching-error-data/environments/?platform=python).
 That should be touched only for the real deployments.
 
+Optionally, specify `ATHENIAN_DEV_ID` to identify yourself in Sentry reports.
+
 ## Prevent file overriding
 
 After the first generation, add edited files to _.openapi-generator-ignore_ to prevent generator to overwrite them. Typically:

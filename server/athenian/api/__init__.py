@@ -250,6 +250,9 @@ def setup_context(log: logging.Logger) -> None:
     username = getpass.getuser()
     hostname = socket.getfqdn()
     log.info("%s@%s", username, hostname)
+    dev_id = os.getenv("ATHENIAN_DEV_ID")
+    if dev_id:
+        log.info("Developer: %s", dev_id)
 
     sentry_key, sentry_project = os.getenv("SENTRY_KEY"), os.getenv("SENTRY_PROJECT")
 
@@ -274,6 +277,8 @@ def setup_context(log: logging.Logger) -> None:
         scope.set_tag("version", metadata.__version__)
         scope.set_tag("username", username)
         scope.set_tag("hostname", hostname)
+        if dev_id:
+            scope.set_tag("developer", dev_id)
         if commit is not None:
             scope.set_tag("commit", commit)
         if build_date is not None:
