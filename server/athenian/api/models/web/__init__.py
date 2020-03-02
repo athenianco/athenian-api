@@ -19,6 +19,7 @@ from athenian.api.models.web.generic_error import BadRequestError, ForbiddenErro
 from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
+from athenian.api.models.web.installation_progress import InstallationProgress
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.invitation_check_result import InvitationCheckResult
 from athenian.api.models.web.invitation_link import InvitationLink
@@ -33,4 +34,5 @@ from athenian.api.models.web.pull_request_set import PullRequestSet
 from athenian.api.models.web.pull_request_with import PullRequestWith
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
+from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
 from athenian.api.models.web.user import User

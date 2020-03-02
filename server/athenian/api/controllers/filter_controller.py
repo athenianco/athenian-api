@@ -127,8 +127,9 @@ async def _resolve_repos(filt: Union[FilterContribsOrReposRequest, FilterPullReq
         filt.in_ = ["{%d}" % rss[0][RepositorySet.id.key]]
         check_access = False
     repos = set(chain.from_iterable(
-        await asyncio.gather(*[resolve_reposet(r, ".in[%d]" % i, sdb_conn, uid, filt.account)
-                               for i, r in enumerate(filt.in_)])))
+        await asyncio.gather(*[
+            resolve_reposet(r, ".in[%d]" % i, uid, filt.account, sdb_conn, cache)
+            for i, r in enumerate(filt.in_)])))
     prefix = "github.com/"
     repos = [r[r.startswith(prefix) and len(prefix):] for r in repos]
     if check_access:

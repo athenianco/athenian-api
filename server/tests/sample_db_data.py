@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy.cprocessors import str_to_date, str_to_datetime
 import sqlalchemy.orm
 
-from athenian.api.models.metadata.github import Base
+from athenian.api.models.metadata.github import Base, FetchProgress
 from athenian.api.models.state.models import Account, God, Invitation, RepositorySet, UserAccount
 
 
@@ -68,6 +68,11 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                                 print(k, '"%s"' % p.decode())
                             raise e from None
                 session.add(model(**kwargs))
+    session.add(FetchProgress(event_id="39b81c80-3d1b-11ea-9da9-a5e20c8127d5",
+                              node_type="Commit",
+                              nodes_processed=30,
+                              nodes_total=50,
+                              created_at=datetime.datetime.now()))
 
 
 def fill_state_session(session: sqlalchemy.orm.Session):

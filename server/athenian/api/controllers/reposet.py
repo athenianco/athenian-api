@@ -1,10 +1,11 @@
-from typing import List, Sequence, Tuple, Type, Union
+from typing import List, Optional, Sequence, Tuple, Type, Union
 
+import aiomcache
 import databases
 from sqlalchemy import select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from athenian.api.controllers.user import is_admin
+from athenian.api.controllers.account import get_user_account_status
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NotFoundError
 from athenian.api.response import ResponseError
@@ -12,9 +13,10 @@ from athenian.api.response import ResponseError
 
 async def resolve_reposet(repo: str,
                           pointer: str,
-                          db: Union[databases.core.Connection, databases.Database],
                           uid: str,
                           account: int,
+                          db: Union[databases.core.Connection, databases.Database],
+                          cache: Optional[aiomcache.Client],
                           ) -> List[str]:
     """
     Dereference the repository sets.
@@ -36,7 +38,7 @@ async def resolve_reposet(repo: str,
             detail="repository set identifier is invalid: %s" % repo,
             pointer=pointer,
         ))
-    rs, _ = await fetch_reposet(set_id, [RepositorySet.items], db, uid)
+    rs, _ = await fetch_reposet(set_id, [RepositorySet.items], uid, db, cache)
     if rs.owner != account:
         raise ResponseError(ForbiddenError(
             detail="User %s is not allowed to reference reposet %d in this query" %
@@ -47,8 +49,9 @@ async def resolve_reposet(repo: str,
 async def fetch_reposet(
     id: int,
     columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
-    sdb: Union[databases.Database, databases.core.Connection],
     uid: str,
+    sdb: Union[databases.Database, databases.core.Connection],
+    cache: Optional[aiomcache.Client],
 ) -> Tuple[RepositorySet, bool]:
     """
     Retrieve a repository set by ID and check the access for the given user.
@@ -67,5 +70,5 @@ async def fetch_reposet(
     if rs is None or len(rs) == 0:
         raise ResponseError(NotFoundError(detail="Repository set %d does not exist" % id))
     account = rs[RepositorySet.owner.key]
-    adm = await is_admin(sdb, uid, account)
+    adm = await get_user_account_status(uid, account, sdb, cache)
     return RepositorySet(**rs), adm

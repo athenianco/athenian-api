@@ -4,19 +4,27 @@ from http import HTTPStatus
 import os
 from random import randint
 import struct
-from typing import Union
+from typing import Optional, Tuple, Union
 
 from aiohttp import web
+import aiomcache
 import aiosqlite.core
 import databases.core
 import pyffx
 from sqlalchemy import and_, delete, func, insert, select, update
 
+from athenian.api.cache import cached
+from athenian.api.controllers.account import get_installation_id, get_user_account_status
+from athenian.api.models.metadata.github import FetchProgress, Installation, InstallationOwner, \
+    InstallationRepo
 from athenian.api.models.state.models import Account, Invitation, UserAccount
-from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, NotFoundError
+from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
+    NoSourceDataError, NotFoundError
+from athenian.api.models.web.installation_progress import InstallationProgress
 from athenian.api.models.web.invitation_check_result import InvitationCheckResult
 from athenian.api.models.web.invitation_link import InvitationLink
 from athenian.api.models.web.invited_user import InvitedUser
+from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import response, ResponseError
 
@@ -203,3 +211,78 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
              InvitationCheckResult.INVITATION_TYPE_ADMIN]
     result.type = types[inv[Invitation.account_id.key] == admin_backdoor]
     return response(result)
+
+
+@cached(
+    exptime=24 * 3600,  # 1 day
+    serialize=lambda t: (struct.pack("!q", t[0]) + t[1].encode()),
+    deserialize=lambda buf: (struct.unpack("!q", buf[:8])[0], buf[8:].decode()),
+    key=lambda account, **_: (account,),
+)
+async def get_installation_delivery_id(account: int,
+                                       sdb_conn: databases.core.Connection,
+                                       mdb_conn: databases.core.Connection,
+                                       cache: Optional[aiomcache.Client]) -> Tuple[int, str]:
+    """Load the app installation and delivery IDs for the given account."""
+    installation_id = await get_installation_id(account, sdb_conn, cache)
+    did = await mdb_conn.fetch_val(
+        select([Installation.delivery_id]).where(Installation.id == installation_id))
+    if did is None:
+        raise ResponseError(NoSourceDataError(detail="The installation has not started yet."))
+    return installation_id, did
+
+
+@cached(
+    exptime=365 * 24 * 3600,  # 1 year
+    serialize=lambda s: s.encode(),
+    deserialize=lambda b: b.decode(),
+    key=lambda installation_id, **_: (installation_id,),
+)
+async def get_installation_owner(installation_id: int,
+                                 mdb_conn: databases.core.Connection,
+                                 cache: Optional[aiomcache.Client],
+                                 ) -> str:
+    """Load the native user ID who installed the app."""
+    user_id = await mdb_conn.fetch_val(
+        select([InstallationOwner.user_id])
+        .where(InstallationOwner.install_id == installation_id))
+    if user_id is None:
+        raise ResponseError(NoSourceDataError(detail="The installation has not started yet."))
+    return str(user_id)
+
+
+async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
+    """Return the current Athenian GitHub app installation progress."""
+    async with request.sdb.connection() as sdb_conn:
+        try:
+            await get_user_account_status(request.uid, id, sdb_conn, request.cache)
+        except ResponseError as e:
+            return e.response
+        async with request.mdb.connection() as mdb_conn:
+            try:
+                installation_id, delivery_id = await get_installation_delivery_id(
+                    id, sdb_conn, mdb_conn, request.cache)
+                owner = await get_installation_owner(installation_id, mdb_conn, request.cache)
+            except ResponseError as e:
+                return e.response
+            # we don't cache this because the number of repos can dynamically change
+            repositories = await mdb_conn.fetch_val(
+                select([func.count(InstallationRepo.repo_id)])
+                .where(InstallationRepo.install_id == installation_id))
+            rows = await mdb_conn.fetch_all(
+                select([FetchProgress]).where(FetchProgress.event_id == delivery_id))
+            tables = [TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.key],
+                                            name=r[FetchProgress.node_type.key],
+                                            total=r[FetchProgress.nodes_total.key])
+                      for r in rows]
+            started_date = min(r[FetchProgress.created_at.key] for r in rows)
+            if any(t.fetched < t.total for t in tables):
+                finished_date = None
+            else:
+                finished_date = max(r[FetchProgress.updated_at.key] for r in rows)
+            model = InstallationProgress(started_date=started_date,
+                                         finished_date=finished_date,
+                                         owner=owner,
+                                         repositories=repositories,
+                                         tables=tables)
+            return response(model)
