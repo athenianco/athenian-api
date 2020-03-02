@@ -28,7 +28,14 @@ $(ENV_FILE):
 	echo 'ATHENIAN_DEFAULT_USER=github|60340680' >> $(ENV_FILE)
 	echo 'ATHENIAN_INVITATION_KEY=we-are-the-best' >> $(ENV_FILE)
 	echo 'ATHENIAN_INVITATION_URL_PREFIX=http://localhost:3000/i/' >> $(ENV_FILE)
+	echo 'ATHENIAN_DEV_ID=' >> $(ENV_FILE)
 
+# Why do we touch?
+# When you edit .env, it triggers rebuilding $(IO_DIR)/%.sqlite.
+# mdb.sqlite is not rewritten if it already exists.
+# Hence mdb.sqlite date is always older than .env.
+# Hence $(IO_DIR)/%.sqlite is triggered every time.
+# To avoid this, we touch the .sqlite file to bump its date after .env's.
 $(IO_DIR)/%.sqlite: $(ENV_FILE)
 	docker run --rm -e DB_DIR=/io -v$(IO_DIR):/io --env-file $(ENV_FILE) --entrypoint python3 $(IMAGE) /server/tests/gen_sqlite_db.py
 	@touch $@
