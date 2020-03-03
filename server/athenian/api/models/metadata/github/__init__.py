@@ -95,11 +95,11 @@ class IssueComment(Base,
 
     author_association = Column(Text)
     htmlurl = Column(Text)
-    issue_number = Column(BigInteger, nullable=False)
-    pull_request_number = synonym("issue_number")
+    issue_node_id = Column(Text, nullable=False)
+    pull_request = synonym("issue_node_id")
 
 
-IssueComment.pull_request_number.key = "issue_number"
+IssueComment.pull_request.key = "issue_node_id"
 
 
 class Issue(Base,
@@ -164,7 +164,7 @@ class PullRequestComment(Base,
     original_position = Column(BigInteger)
     path = Column(Text)
     position = Column(BigInteger)
-    pull_request_number = Column(BigInteger, nullable=False)
+    pull_request = Column(Text, nullable=False)
     pull_request_review_id = Column(BigInteger)
 
 
@@ -173,8 +173,7 @@ class PullRequestCommit(Base,
                         ):
     __tablename__ = "github_pull_request_commits"
 
-    pull_request_id = Column(BigInteger, primary_key=True)
-    pull_request_number = Column(BigInteger)
+    pull_request = Column(Text, primary_key=True)
     author_login = Column(Text)
     author_email = Column(Text)
     author_name = Column(Text)
@@ -204,13 +203,23 @@ class PullRequestReview(Base,
 
     commit_id = Column(Text)
     htmlurl = Column(Text)
-    pull_request_number = Column(BigInteger, nullable=False)
+    pull_request = Column(Text, nullable=False)
     state = Column(Text)
     submitted_at = Column(TIMESTAMP)
     created_at = synonym("submitted_at")
 
 
 PullRequestReview.created_at.key = "submitted_at"
+
+
+class PullRequestReviewRequest(Base):
+    __tablename__ = "github_node_review_requested_event"
+
+    id = Column(Text, primary_key=True)
+    actor = Column(Text, nullable=False)
+    created_at = Column(TIMESTAMP)
+    pull_request = Column(Text, nullable=False)
+    requested_reviewer = Column(Text, nullable=False)
 
 
 class PullRequest(Base,

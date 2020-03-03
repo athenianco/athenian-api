@@ -238,15 +238,17 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
         assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
         assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0
     elif PullRequestPipelineStage.REVIEW in stages:
-        # assert review_requested  # FIXME(vmarkovtsev): no review request data
+        assert review_requested
         assert comments > 0
         assert review_comments > 0
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
     elif PullRequestPipelineStage.MERGE in stages or PullRequestPipelineStage.RELEASE in stages:
+        assert review_requested
         assert comments > 0
         assert review_comments >= 0
         assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
     elif PullRequestPipelineStage.DONE in stages:
+        assert review_requested
         assert comments > 0
         assert review_comments > 0
         assert merged

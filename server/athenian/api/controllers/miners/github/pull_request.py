@@ -15,7 +15,7 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
     PullRequestListItem, Stage
 from athenian.api.models.metadata.github import Base, IssueComment, PullRequest, \
-    PullRequestComment, PullRequestCommit, PullRequestReview
+    PullRequestComment, PullRequestCommit, PullRequestReview, PullRequestReviewRequest
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,7 @@ class MinedPullRequest:
     pr: pd.Series
     reviews: pd.DataFrame
     review_comments: pd.DataFrame
+    review_requests: pd.DataFrame
     comments: pd.DataFrame
     commits: pd.DataFrame
 
@@ -36,11 +37,12 @@ class PullRequestMiner:
     CACHE_TTL = 5 * 60
 
     def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
-                 comments: pd.DataFrame, commits: pd.DataFrame):
+                 review_requests: pd.DataFrame, comments: pd.DataFrame, commits: pd.DataFrame):
         """Initialize a new instance of `PullRequestMiner`."""
         self._prs = prs
         self._reviews = reviews
         self._review_comments = review_comments
+        self._review_requests = review_requests
         self._comments = comments
         self._commits = commits
 
@@ -59,15 +61,8 @@ class PullRequestMiner:
         data = memoryview(data)
         size = struct.unpack("!B", data[-1:])[0]
         offsets = (0,) + struct.unpack("!" + "I" * size, data[-size * 4 - 1:-1])
-        dfs = []
-        for beg, end in zip(offsets, offsets[1:]):
-            buf = io.BytesIO(data[beg:end])
-            df = pd.read_feather(buf)
-            try:
-                dfs.append(df.set_index(["node_id"]))
-            except KeyError:
-                # FIXME(vmarkovtsev): this should be rewritten after review requests
-                dfs.append(df.set_index(["pull_request_id", "sha"]))
+        dfs = [pd.read_feather(io.BytesIO(data[beg:end])).set_index(["pull_request", "node_id"])
+               for beg, end in zip(offsets, offsets[1:])]
         return dfs
 
     @classmethod
@@ -96,19 +91,20 @@ class PullRequestMiner:
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
         async with db.connection() as conn:
-            prs = (await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                        conn, PullRequest)).set_index(["node_id"])
-            # FIXME(vmarkovtsev): this should be rewritten after review requests
-            numbers = prs[PullRequest.number.key] if len(prs) > 0 else set()
+            prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
+                                       conn, PullRequest)
+            node_ids = prs[PullRequest.node_id.key] if len(prs) > 0 else set()
             reviews = await cls._read_filtered_models(
-                conn, PullRequestReview, numbers, repositories, time_to)
+                conn, PullRequestReview, node_ids, time_to)
             review_comments = await cls._read_filtered_models(
-                conn, PullRequestComment, numbers, repositories, time_to)
+                conn, PullRequestComment, node_ids, time_to)
+            review_requests = await cls._read_filtered_models(
+                conn, PullRequestReviewRequest, node_ids, time_to)
             comments = await cls._read_filtered_models(
-                conn, IssueComment, numbers, repositories, time_to)
+                conn, IssueComment, node_ids, time_to)
             commits = await cls._read_filtered_models(
-                conn, PullRequestCommit, numbers, repositories, time_to)
-        return [prs, reviews, review_comments, comments, commits]
+                conn, PullRequestCommit, node_ids, time_to)
+        return [prs, reviews, review_comments, review_requests, comments, commits]
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
     _deserialize_from_cache = staticmethod(_deserialize_from_cache)
@@ -133,38 +129,26 @@ class PullRequestMiner:
     @staticmethod
     async def _read_filtered_models(conn: databases.core.Connection,
                                     model_cls: Base,
-                                    numbers: Sequence[str],
-                                    repositories: Sequence[str],
+                                    node_ids: Sequence[str],
                                     time_to: date,
                                     ) -> pd.DataFrame:
         time_to = datetime.combine(time_to, datetime.min.time())
-        df = await read_sql_query(select([model_cls]).where(
-            sql.and_(model_cls.pull_request_number.in_(numbers),
-                     model_cls.repository_fullname.in_(repositories),
+        return await read_sql_query(select([model_cls]).where(
+            sql.and_(model_cls.pull_request.in_(node_ids),
                      model_cls.created_at < time_to)),
-            conn, model_cls)
-        try:
-            return df.set_index(["node_id"])
-        except KeyError:
-            # FIXME(vmarkovtsev): this should be rewritten after review requests
-            return df.set_index(["pull_request_id", "sha"])
+            conn, model_cls, index=("pull_request", "node_id"))
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
-        number_key = PullRequest.number.key
-        repo_key = PullRequest.repository_fullname.key
+        node_id_key = PullRequest.node_id.key
         for _, pr in self._prs.iterrows():
-            pr_number = pr[number_key]
-            pr_repo = pr[repo_key]
-            items = []
-            for k, model in (("reviews", PullRequestReview),
-                             ("review_comments", PullRequestComment),
-                             ("comments", IssueComment),
-                             ("commits", PullRequestCommit)):
-                attr = getattr(self, "_" + k)
-                items.append(attr[
-                    (attr[model.pull_request_number.key] == pr_number) &  # noqa: W504
-                    (attr[model.repository_fullname.key] == pr_repo)])
+            pr_node_id = pr[node_id_key]
+            items = [getattr(self, "_" + k).loc[pr_node_id]
+                     for k, model in (("reviews", PullRequestReview),
+                                      ("review_comments", PullRequestComment),
+                                      ("review_requests", PullRequestReviewRequest),
+                                      ("comments", IssueComment),
+                                      ("commits", PullRequestCommit))]
             yield MinedPullRequest(pr, *items)
 
 
@@ -294,9 +278,14 @@ class PullRequestTimesMiner(PullRequestMiner):
             last_commit = Fallback.max(last_commit, first_commit)
         else:
             last_commit_before_first_review = last_commit
-        first_review_request = Fallback(None, Fallback.min(
+        first_review_request_backup = Fallback.min(
             Fallback.max(created_at, last_commit_before_first_review),
-            first_comment_on_first_review))  # FIXME(vmarkovtsev): no review request info
+            first_comment_on_first_review)
+        first_review_request = pr.review_requests[PullRequestReviewRequest.created_at.key].min()
+        if first_review_request_backup and first_review_request > first_review_request_backup.best:
+            first_review_request = Fallback(None, first_review_request_backup)
+        else:
+            first_review_request = Fallback(first_review_request, first_review_request_backup)
         if closed_at:
             last_review = Fallback(
                 pr.reviews[pr.reviews[PullRequestReview.submitted_at.key] <= closed_at.best][
@@ -439,7 +428,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
             closed=times.closed.best,
             comments=len(pr.comments),
             commits=len(pr.commits),
-            review_requested=False,  # FIXME(vmarkovtsev): no review request info
+            review_requested=len(pr.review_requests) > 0,
             review_comments=len(pr.review_comments),
             merged=bool(times.merged),
             stage=stage,

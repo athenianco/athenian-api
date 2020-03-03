@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Sequence, Union
+from typing import Optional, Sequence, Union
 
 import databases
 import pandas as pd
@@ -14,6 +14,7 @@ async def read_sql_query(sql: ClauseElement,
                          con: Union[databases.Database, databases.core.Connection],
                          columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                                         MetadataBase, StateBase],
+                         index: Optional[Union[str, Sequence[str]]] = None,
                          ) -> pd.DataFrame:
     """Read SQL query into a DataFrame.
 
@@ -26,6 +27,7 @@ async def read_sql_query(sql: ClauseElement,
     sql     : SQLAlchemy query object to be executed.
     con     : async SQLAlchemy database engine.
     columns : list of the resulting columns names, column objects or the model if SELECT *
+    index   : Name(s) of the index column(s).
 
     Returns
     -------
@@ -44,7 +46,7 @@ async def read_sql_query(sql: ClauseElement,
     else:
         if not isinstance(probe, str):
             columns = [c.key for c in columns]
-    frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
+    frame = pd.DataFrame.from_records(data, index=index, columns=columns, coerce_float=True)
     for col in frame.select_dtypes(include=[object]):
         frame[col].replace(datetime(1, 1, 1, tzinfo=timezone.utc), pd.NaT, inplace=True)
         frame[col].replace(datetime(1, 1, 1), pd.NaT, inplace=True)
