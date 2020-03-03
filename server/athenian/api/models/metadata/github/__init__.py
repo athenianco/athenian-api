@@ -60,6 +60,7 @@ class InstallationOwner(Base, UpdatedMixin):
                         ForeignKey("github_installations.id", name="fk_github_installation_owner"),
                         primary_key=True)
     user_id = Column(BigInteger, primary_key=True)
+    user_login = Column(Text, nullable=False)
 
 
 class InstallationRepo(Base):
