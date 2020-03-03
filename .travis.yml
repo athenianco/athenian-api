@@ -69,10 +69,12 @@ matrix:
             version_file=spec/openapi.yaml;
             current_version=$(grep -m1 '^  version:' $version_file | cut -d" " -f4);
             bumpversion --current-version $current_version patch $version_file;
+            spec_bump=$(grep -m1 '^  version:' $version_file | cut -d" " -f4);
           fi
         - version_file=server/athenian/api/metadata.py
         - current_version=$(grep __version__ $version_file | cut -d\" -f2)
         - bumpversion --tag --current-version $current_version --commit --allow-dirty --commit-args="-a" patch $version_file
+        - if [ ! -z "$spec_bump" ]; then git tag "spec-$spec_bump"; fi
         - git remote add gkwillie https://gkwillie:${GKWILLIE_TOKEN}@github.com/$TRAVIS_REPO_SLUG
         - git push --tags gkwillie HEAD:master
         - set +e
