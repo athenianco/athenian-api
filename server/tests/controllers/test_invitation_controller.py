@@ -227,7 +227,7 @@ def test_encode_decode():
 async def test_progress_200(client, headers, app, cache):
     app._cache = cache
     true_body = {
-        "owner": "676724",
+        "owner": "vmarkovtsev",
         "repositories": 19,
         "tables": [
             {"fetched": 30, "name": "Commit", "total": 50},

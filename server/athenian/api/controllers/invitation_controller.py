@@ -243,12 +243,12 @@ async def get_installation_owner(installation_id: int,
                                  cache: Optional[aiomcache.Client],
                                  ) -> str:
     """Load the native user ID who installed the app."""
-    user_id = await mdb_conn.fetch_val(
-        select([InstallationOwner.user_id])
+    user_login = await mdb_conn.fetch_val(
+        select([InstallationOwner.user_login])
         .where(InstallationOwner.install_id == installation_id))
-    if user_id is None:
+    if user_login is None:
         raise ResponseError(NoSourceDataError(detail="The installation has not started yet."))
-    return str(user_id)
+    return user_login
 
 
 async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
