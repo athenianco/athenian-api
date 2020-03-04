@@ -155,8 +155,6 @@ def pr_samples():
                 approved=Fallback(approved_at, None),
                 first_passed_checks=Fallback(first_passed_checks, None),
                 last_passed_checks=Fallback(last_passed_checks, None),
-                finalized=Fallback(min(max(approved_at, last_passed_checks, last_commit),
-                                       closed_at), None),
                 released=Fallback(released_at, None),
                 closed=Fallback(closed_at, None),
             )

@@ -69,8 +69,8 @@ def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa
 
 @pytest.mark.parametrize("cls", [OpenedCalculator, MergedCalculator, ClosedCalculator])
 def test_pull_request_metrics_float_binned(pr_samples, cls):  # noqa: F811
-    time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
-    time_to = datetime.now(tz=timezone.utc)
+    time_from = datetime.now(tz=timezone.utc) - timedelta(days=365 * 3 // 2)
+    time_to = datetime.now(tz=timezone.utc) - timedelta(days=365 // 2)
     time_intervals = Granularity.split("month", time_from, time_to)
     binned = BinnedPullRequestMetricCalculator([cls()], time_intervals)
     result = binned(pr_samples(1000))

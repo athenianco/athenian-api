@@ -254,7 +254,6 @@ class PullRequestTimes:
     last_review: Fallback[DT]                            # PR_LR
     first_passed_checks: Fallback[DT]                    # PR_VS
     last_passed_checks: Fallback[DT]                     # PR_VF
-    finalized: Fallback[DT]                              # PR_F
     released: Fallback[DT]                               # PR_R
 
 
@@ -275,15 +274,20 @@ class PullRequestTimesMiner(PullRequestMiner):
         closed_at = Fallback(pr.pr[PullRequest.closed_at.key], None)
         first_commit = Fallback(pr.commits[PullRequestCommit.commit_date.key].min(), None)
         last_commit = Fallback(pr.commits[PullRequestCommit.commit_date.key].max(), None)
-        first_comment_on_first_review = Fallback(
-            dtmin(pr.review_comments[PullRequestComment.created_at.key].min(),
-                  pr.reviews[PullRequestReview.submitted_at.key].min()),
-            merged_at)
+        first_comment = dtmin(
+            pr.review_comments[PullRequestComment.created_at.key].min(),
+            pr.reviews[PullRequestReview.submitted_at.key].min(),
+            pr.comments[pr.comments[PullRequestComment.user_id.key]
+                        != pr.pr[PullRequest.user_id.key]]  # noqa: W503
+                [PullRequestComment.created_at.key].min())
+        if closed_at and first_comment is not None and first_comment > closed_at.best:
+            first_comment = None
+        first_comment_on_first_review = Fallback(first_comment, merged_at)
         if first_comment_on_first_review:
             last_commit_before_first_review = Fallback(
                 pr.commits[pr.commits[PullRequestCommit.commit_date.key]
                            <= first_comment_on_first_review.best]  # noqa: W503
-                [PullRequestCommit.commit_date.key].max(),
+                    [PullRequestCommit.commit_date.key].max(),
                 first_comment_on_first_review)
             # force pushes that were lost
             first_commit = Fallback.min(first_commit, last_commit_before_first_review)
@@ -319,9 +323,6 @@ class PullRequestTimesMiner(PullRequestMiner):
             ][PullRequestReview.submitted_at.key].max()
         approved_at = Fallback(approved_at_value, merged_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
-        finalized_at = Fallback.min(
-            Fallback.max(approved_at, last_passed_checks, last_commit, created_at),
-            closed_at)
         return PullRequestTimes(
             created=created_at,
             first_commit=first_commit,
@@ -334,7 +335,6 @@ class PullRequestTimesMiner(PullRequestMiner):
             approved=approved_at,
             first_passed_checks=Fallback(None, None),  # FIXME(vmarkovtsev): no CI info
             last_passed_checks=last_passed_checks,
-            finalized=finalized_at,
             released=Fallback(None, None),  # FIXME(vmarkovtsev): no releases
             closed=closed_at,
         )
@@ -345,15 +345,11 @@ class PullRequestTimesMiner(PullRequestMiner):
             yield self._compile(pr)
 
 
-def dtmin(first: Union[DT, float], second: Union[DT, float]) -> DT:
-    """Find the minimum of two dates handling NaNs gracefully."""
-    if first != first and second != second:
+def dtmin(*args: Union[DT, float]) -> DT:
+    """Find the minimum of several dates handling NaNs gracefully."""
+    if all((arg != arg) for arg in args):
         return None
-    if first != first:
-        return second
-    if second != second:
-        return first
-    return min(first, second)
+    return min(arg for arg in args if arg == arg)
 
 
 class PullRequestListMiner(PullRequestTimesMiner):

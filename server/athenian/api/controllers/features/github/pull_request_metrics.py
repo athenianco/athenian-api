@@ -41,9 +41,10 @@ class ReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
         """Calculate the actual state update."""
         # We cannot be sure that the approvals finished unless the PR is closed.
         if times.first_review_request and times.closed and (
-                (times.approved    and min_time < times.approved.best    < max_time) or  # noqa
+                (times.approved.value is not None and min_time < times.approved.best < max_time)
+                or  # noqa
                 (times.last_review and min_time < times.last_review.best < max_time)):
-            if times.approved:
+            if times.approved.value:
                 return times.approved.best - times.first_review_request.best
             elif times.last_review:
                 return times.last_review.best - times.first_review_request.best
@@ -150,7 +151,7 @@ class OpenedCalculator(PullRequestSumMetricCalculator[int]):
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[int]:
         """Calculate the actual state update."""
-        if times.created.best < max_time and ((not times.closed) or times.closed.best > max_time):
+        if times.created.best > min_time:
             return 1
         return None
 
