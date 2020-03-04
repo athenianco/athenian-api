@@ -1,4 +1,5 @@
 from datetime import timedelta
+import itertools
 
 import pandas as pd
 import pytest
@@ -7,37 +8,43 @@ from athenian.api import FriendlyJson
 from athenian.api.models.web import CalculatedMetrics, MetricID
 
 
-@pytest.mark.parametrize("metric", MetricID.ALL)
-async def test_calc_metrics_prs_smoke(client, metric, headers):
+@pytest.mark.parametrize("metric, cached",
+                         itertools.chain(itertools.zip_longest(MetricID.ALL, [], fillvalue=False),
+                                         [(MetricID.PR_WIP_TIME, True)]))
+async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, cache):
     """Trivial test to prove that at least something is working."""
-    body = {
-        "for": [
-            {
-                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
-                "repositories": [
-                    "github.com/src-d/go-git",
-                ],
-            },
-            {
-                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
-                "repositories": [
-                    "github.com/src-d/go-git",
-                ],
-            },
-        ],
-        "metrics": [metric],
-        "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
-        "granularity": "week",
-        "account": 1,
-    }
-    response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + body
-    cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
-    assert len(cm.calculated[0].values) > 0
+    if cached:
+        app._cache = cache
+    repeats = 1 if not cached else 2
+    for _ in range(repeats):
+        body = {
+            "for": [
+                {
+                    "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                    "repositories": [
+                        "github.com/src-d/go-git",
+                    ],
+                },
+                {
+                    "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                    "repositories": [
+                        "github.com/src-d/go-git",
+                    ],
+                },
+            ],
+            "metrics": [metric],
+            "date_from": "2015-10-13",
+            "date_to": "2020-01-23",
+            "granularity": "week",
+            "account": 1,
+        }
+        response = await client.request(
+            method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        )
+        body = (await response.read()).decode("utf-8")
+        assert response.status == 200, "Response body is : " + body
+        cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+        assert len(cm.calculated[0].values) > 0
 
 
 @pytest.mark.parametrize("granularity", ["day", "week", "month"])
