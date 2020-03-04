@@ -48,6 +48,13 @@ matrix:
         - set +e
     - if: commit_message !~ /Bump version/
       stage: main
+      name: Auto generated js client tests
+      script:
+        - docker run --rm -v `pwd`:/local --user `id -u`:`id -g` openapitools/openapi-generator-cli generate --input-spec=/local/spec/openapi.yaml --generator-name=javascript --output=/local/js-client
+        - npm --prefix js-client install
+        - npm --prefix js-client test
+    - if: commit_message !~ /Bump version/
+      stage: main
       name: Docker build smoke test
       before_install:
         - docker load -i $HOME/docker/images.tar || true
