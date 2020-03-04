@@ -1,3 +1,5 @@
+MAKEFLAGS += --no-builtin-rules
+
 # Package configuration
 PROJECT = athenian-api
 SERVICE_NAME = api

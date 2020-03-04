@@ -276,7 +276,6 @@ def setup_context(log: logging.Logger) -> None:
     with sentry_sdk.configure_scope() as scope:
         scope.set_tag("version", metadata.__version__)
         scope.set_tag("username", username)
-        scope.set_tag("hostname", hostname)
         if dev_id:
             scope.set_tag("developer", dev_id)
         if commit is not None:

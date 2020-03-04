@@ -58,7 +58,7 @@ async def test_pr_miner_iter_cache(mdb, cache):
             if isinstance(fv, pd.Series):
                 assert_series_equal(fv, sv)
             else:
-                assert_frame_equal(fv, sv)
+                assert_frame_equal(fv.reset_index(), sv.reset_index())
 
 
 def validate_pull_request_times(prt: PullRequestTimes):

@@ -49,7 +49,7 @@ class PullRequestMiner:
         buf = io.BytesIO()
         offsets = []
         for df in dfs:
-            df.to_feather(buf)
+            df.reset_index().to_feather(buf)
             offsets.append(buf.tell())
         buf.write(struct.pack("!" + "I" * len(offsets), *offsets))
         buf.write(struct.pack("!B", len(offsets)))
@@ -62,7 +62,12 @@ class PullRequestMiner:
         dfs = []
         for beg, end in zip(offsets, offsets[1:]):
             buf = io.BytesIO(data[beg:end])
-            dfs.append(pd.read_feather(buf))
+            df = pd.read_feather(buf)
+            try:
+                dfs.append(df.set_index(["node_id"]))
+            except KeyError:
+                # FIXME(vmarkovtsev): this should be rewritten after review requests
+                dfs.append(df.set_index(["pull_request_id", "sha"]))
         return dfs
 
     @classmethod
@@ -91,8 +96,9 @@ class PullRequestMiner:
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
         async with db.connection() as conn:
-            prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                       conn, PullRequest)
+            prs = (await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
+                                        conn, PullRequest)).set_index(["node_id"])
+            # FIXME(vmarkovtsev): this should be rewritten after review requests
             numbers = prs[PullRequest.number.key] if len(prs) > 0 else set()
             reviews = await cls._read_filtered_models(
                 conn, PullRequestReview, numbers, repositories, time_to)
@@ -132,11 +138,16 @@ class PullRequestMiner:
                                     time_to: date,
                                     ) -> pd.DataFrame:
         time_to = datetime.combine(time_to, datetime.min.time())
-        return await read_sql_query(select([model_cls]).where(
+        df = await read_sql_query(select([model_cls]).where(
             sql.and_(model_cls.pull_request_number.in_(numbers),
                      model_cls.repository_fullname.in_(repositories),
                      model_cls.created_at < time_to)),
             conn, model_cls)
+        try:
+            return df.set_index(["node_id"])
+        except KeyError:
+            # FIXME(vmarkovtsev): this should be rewritten after review requests
+            return df.set_index(["pull_request_id", "sha"])
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
