@@ -1,5 +1,6 @@
 import functools
 import inspect
+import logging
 import pickle
 import time
 from typing import Any, ByteString, Callable, Coroutine, Optional, Tuple, Union
@@ -10,6 +11,7 @@ from xxhash import xxh64_hexdigest
 
 
 pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
+max_exptime = 30 * 24 * 3600  # 30 days according to the docs
 
 
 def _gen_cache_key(fmt: str, *args) -> bytes:
@@ -69,6 +71,8 @@ def cached(exptime: Union[int, Callable[..., int]],
                 buffer = await client.get(cache_key)
                 if buffer is not None:
                     result = deserialize(buffer)
+                    t = exptime(result=result, **args_dict) if callable(exptime) else exptime
+                    await client.touch(cache_key, t)
                     client.metrics["hits"].labels(__package__, full_name).inc()
                     client.metrics["hit_latency"].labels(__package__, full_name).observe(
                         time.time() - start_time)
@@ -76,7 +80,13 @@ def cached(exptime: Union[int, Callable[..., int]],
             result = await func(*args, **kwargs)
             if client is not None:
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
-                await client.set(cache_key, serialize(result), exptime=t)
+                payload = serialize(result)
+                try:
+                    await client.set(cache_key, payload, exptime=t)
+                except aiomcache.exceptions.ClientException as e:
+                    logging.getLogger("aiomcache").exception(
+                        "Failed to put %d bytes in memcached", len(payload))
+                    raise e from None
                 client.metrics["misses"].labels(__package__, full_name).inc()
                 client.metrics["miss_latency"].labels(__package__, full_name).observe(
                     time.time() - start_time)

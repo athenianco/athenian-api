@@ -5,11 +5,13 @@ from typing import List
 
 import pandas as pd
 from pandas.testing import assert_frame_equal, assert_series_equal
+import pytest
 
 from athenian.api.controllers.miners.github.pull_request import PullRequestListMiner, \
     PullRequestMiner, PullRequestTimes, PullRequestTimesMiner
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
     PullRequestListItem, Stage
+from tests.conftest import has_memcached
 
 
 async def test_pr_miner_iter(mdb):
@@ -33,7 +35,10 @@ async def test_pr_miner_iter(mdb):
     assert with_data["commits"] > 0
 
 
-async def test_pr_miner_iter_cache(mdb, cache):
+@pytest.mark.parametrize("with_memcached", [False] + ([True] if has_memcached else []))
+async def test_pr_miner_iter_cache(mdb, cache, memcached, with_memcached):
+    if with_memcached:
+        cache = memcached
     miner = await PullRequestMiner.mine(
         date.today() - timedelta(days=10 * 365),
         date.today(),
@@ -42,7 +47,8 @@ async def test_pr_miner_iter_cache(mdb, cache):
         mdb,
         cache,
     )
-    assert len(cache.mem) == 1
+    if not with_memcached:
+        assert len(cache.mem) == 1
     first_data = list(miner)
     miner = await PullRequestMiner.mine(
         date.today() - timedelta(days=10 * 365),

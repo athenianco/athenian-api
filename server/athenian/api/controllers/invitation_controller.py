@@ -13,7 +13,7 @@ import databases.core
 import pyffx
 from sqlalchemy import and_, delete, func, insert, select, update
 
-from athenian.api.cache import cached
+from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_installation_id, get_user_account_status
 from athenian.api.models.metadata.github import FetchProgress, Installation, InstallationOwner, \
     InstallationRepo
@@ -233,7 +233,7 @@ async def get_installation_delivery_id(account: int,
 
 
 @cached(
-    exptime=365 * 24 * 3600,  # 1 year
+    exptime=max_exptime,
     serialize=lambda s: s.encode(),
     deserialize=lambda b: b.decode(),
     key=lambda installation_id, **_: (installation_id,),
