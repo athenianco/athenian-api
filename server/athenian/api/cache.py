@@ -1,5 +1,6 @@
 import functools
 import inspect
+import logging
 import pickle
 import time
 from typing import Any, ByteString, Callable, Coroutine, Optional, Tuple, Union
@@ -8,8 +9,11 @@ import aiomcache
 from prometheus_client import CollectorRegistry, Counter, Histogram
 from xxhash import xxh64_hexdigest
 
+from athenian.api.metadata import __package__, __version__
+
 
 pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
+max_exptime = 30 * 24 * 3600  # 30 days according to the docs
 
 
 def _gen_cache_key(fmt: str, *args) -> bytes:
@@ -69,17 +73,30 @@ def cached(exptime: Union[int, Callable[..., int]],
                 buffer = await client.get(cache_key)
                 if buffer is not None:
                     result = deserialize(buffer)
-                    client.metrics["hits"].labels(__package__, full_name).inc()
-                    client.metrics["hit_latency"].labels(__package__, full_name).observe(
-                        time.time() - start_time)
+                    t = exptime(result=result, **args_dict) if callable(exptime) else exptime
+                    await client.touch(cache_key, t)
+                    client.metrics["hits"].labels(__package__, __version__, full_name).inc()
+                    client.metrics["hit_latency"] \
+                        .labels(__package__, __version__, full_name) \
+                        .observe(time.time() - start_time)
                     return result
             result = await func(*args, **kwargs)
             if client is not None:
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
-                await client.set(cache_key, serialize(result), exptime=t)
-                client.metrics["misses"].labels(__package__, full_name).inc()
-                client.metrics["miss_latency"].labels(__package__, full_name).observe(
-                    time.time() - start_time)
+                payload = serialize(result)
+                try:
+                    await client.set(cache_key, payload, exptime=t)
+                except aiomcache.exceptions.ClientException as e:
+                    logging.getLogger("aiomcache").exception(
+                        "Failed to put %d bytes in memcached", len(payload))
+                    raise e from None
+                client.metrics["misses"].labels(__package__, __version__, full_name).inc()
+                client.metrics["miss_latency"] \
+                    .labels(__package__, __version__, full_name) \
+                    .observe(time.time() - start_time)
+                client.metrics["size"] \
+                    .labels(__package__, __version__, full_name) \
+                    .observe(len(payload))
             return result
 
         wrapped_cached.__name__ = func.__name__
@@ -100,22 +117,27 @@ def setup_cache_metrics(cache: Optional[aiomcache.Client], registry: CollectorRe
     cache.metrics = {
         "hits": Counter(
             "cache_hits", "Number of times the cache was useful",
-            ["app_name", "func"],
+            ["app_name", "version", "func"],
             registry=registry,
         ),
         "misses": Counter(
             "cache_misses", "Number of times the cache was useless",
-            ["app_name", "func"],
+            ["app_name", "version", "func"],
             registry=registry,
         ),
         "hit_latency": Histogram(
             "cache_hit_latency", "Elapsed time to retrieve items from the cache",
-            ["app_name", "func"],
+            ["app_name", "version", "func"],
             registry=registry,
         ),
         "miss_latency": Histogram(
             "cache_miss_latency", "Elapsed time to retrieve items bypassing the cache",
-            ["app_name", "func"],
+            ["app_name", "version", "func"],
+            registry=registry,
+        ),
+        "size": Histogram(
+            "cache_size", "Cached object size",
+            ["app_name", "version", "func"],
             registry=registry,
         ),
     }

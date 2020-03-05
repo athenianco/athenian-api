@@ -5,7 +5,7 @@ import aiomcache
 import databases.core
 from sqlalchemy import and_, select
 
-from athenian.api.cache import cached
+from athenian.api.cache import cached, max_exptime
 from athenian.api.models.state.models import Account, UserAccount
 from athenian.api.models.web import NoSourceDataError, NotFoundError
 from athenian.api.response import ResponseError
@@ -13,7 +13,7 @@ from athenian.api.response import ResponseError
 
 @cached(
     # the TTL is huge because this relation will never change and is requested frequently
-    exptime=365 * 24 * 3600,
+    exptime=max_exptime,
     serialize=lambda iid: struct.pack("!q", iid),
     deserialize=lambda buf: struct.unpack("!q", buf)[0],
     key=lambda account, **_: (account,),

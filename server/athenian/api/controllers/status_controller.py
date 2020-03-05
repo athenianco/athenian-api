@@ -4,29 +4,33 @@ import aiohttp.web
 import prometheus_client
 
 from athenian.api import metadata
-from athenian.api.metadata import __package__
+from athenian.api.metadata import __package__, __version__
 
 
 @aiohttp.web.middleware
 async def instrument(request, handler):
     """Middleware to count requests and record the elapsed time."""
     start_time = time.time()
-    request.app["request_in_progress"].labels(
-        __package__, request.path, request.method).inc()
+    request.app["request_in_progress"] \
+        .labels(__package__, __version__, request.path, request.method) \
+        .inc()
     try:
         response = await handler(request)
         return response
     finally:
-        request.app["request_latency"].labels(
-            __package__, request.path).observe(time.time() - start_time)
-        request.app["request_in_progress"].labels(
-            __package__, request.path, request.method).dec()
+        request.app["request_latency"] \
+            .labels(__package__, __version__, request.path) \
+            .observe(time.time() - start_time)
+        request.app["request_in_progress"] \
+            .labels(__package__, __version__, request.path, request.method) \
+            .dec()
         try:
             code = response.status
         except NameError:
             code = 500
-        request.app["request_count"].labels(
-            __package__, request.method, request.path, code).inc()
+        request.app["request_count"] \
+            .labels(__package__, __version__, request.method, request.path, code) \
+            .inc()
 
 
 class StatusRenderer:
@@ -48,17 +52,17 @@ def setup_status(app) -> prometheus_client.CollectorRegistry:
     registry = prometheus_client.CollectorRegistry(auto_describe=True)
     app["request_count"] = prometheus_client.Counter(
         "requests_total", "Total Request Count",
-        ["app_name", "method", "endpoint", "http_status"],
+        ["app_name", "version", "method", "endpoint", "http_status"],
         registry=registry,
     )
     app["request_latency"] = prometheus_client.Histogram(
         "request_latency_seconds", "Request latency",
-        ["app_name", "endpoint"],
+        ["app_name", "version", "endpoint"],
         registry=registry,
     )
     app["request_in_progress"] = prometheus_client.Gauge(
         "requests_in_progress_total", "Requests in progress",
-        ["app_name", "endpoint", "method"],
+        ["app_name", "version", "endpoint", "method"],
         registry=registry,
     )
     prometheus_client.Info("server", "API server version", registry=registry).info({

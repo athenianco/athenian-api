@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 import logging
 import os
@@ -19,7 +20,7 @@ except ImportError:
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from athenian.api import AthenianApp, setup_cache_metrics
+from athenian.api import AthenianApp, create_memcached, setup_cache_metrics
 from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata import hack_sqlite_arrays
@@ -58,12 +59,55 @@ class FakeCache:
     async def close(self):
         pass
 
+    async def touch(self, key: bytes, exptime: int):
+        pass
+
 
 @pytest.fixture(scope="function")
 def cache():
     fc = FakeCache()
     setup_cache_metrics(fc, CollectorRegistry(auto_describe=True))
     return fc
+
+
+@pytest.fixture(scope="function")
+def memcached(loop, request):
+    client = create_memcached("0.0.0.0:11211", logging.getLogger("pytest"))
+    trash = []
+    set = client.set
+
+    async def tracked_set(key, value, exptime=0):
+        trash.append(key)
+        return await set(key, value, exptime=exptime)
+
+    client.set = tracked_set
+
+    def shutdown():
+        async def delete_trash():
+            for key in trash:
+                await client.delete(key)
+
+        loop.run_until_complete(delete_trash())
+
+    request.addfinalizer(shutdown)
+    setup_cache_metrics(client, CollectorRegistry(auto_describe=True))
+    return client
+
+
+def check_memcached():
+    client = create_memcached("0.0.0.0:11211", logging.getLogger("pytest"))
+
+    async def probe():
+        try:
+            await client.get(b"0")
+            return True
+        except ConnectionRefusedError:
+            return False
+
+    return asyncio.get_event_loop().run_until_complete(probe())
+
+
+has_memcached = check_memcached()
 
 
 class TestAuth0(Auth0):
