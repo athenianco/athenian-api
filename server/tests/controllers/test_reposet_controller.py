@@ -157,3 +157,17 @@ async def test_list_repository_sets_bad_account(client, account, headers):
         method="GET", path="/v1/reposets/%d" % account, headers=headers, json={},
     )
     assert response.status == 404
+
+
+async def test_list_repository_sets_installation(client, sdb, headers):
+    await sdb.execute(RepositorySet.__table__.delete())
+    response = await client.request(
+        method="GET", path="/v1/reposets/1", headers=headers, json={},
+    )
+    body = (await response.read()).decode("utf-8")
+    items = json.loads(body)
+    assert len(items) == 1
+    assert items[0]["id"] == 4
+    assert items[0]["items_count"] == 19
+    assert items[0]["created"] != ""
+    assert items[0]["updated"] != ""
