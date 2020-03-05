@@ -163,8 +163,9 @@ async def load_account_reposets(account: int,
 
     async def create_new_reposet(_mdb_conn: databases.core.Connection):
         # a new account, discover their repos from the installation and create the first reposet
-        iid = await get_installation_id(account, sdb_conn, cache)
-        if iid is None:
+        try:
+            iid = await get_installation_id(account, sdb_conn, cache)
+        except ResponseError:
             iid = await _mdb_conn.fetch_val(select([InstallationOwner.install_id])
                                             .where(InstallationOwner.user_id == int(native_uid))
                                             .order_by(InstallationOwner.created_at.desc()))
