@@ -1,16 +1,24 @@
 #!/usr/bin/python3
-
+import argparse
 from random import randint
-import sys
 
-from sqlalchemy import create_engine, func
+from sqlalchemy import and_, create_engine, func
 from sqlalchemy.orm import sessionmaker
 
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.state.models import Account, Invitation
 
 
-def main(conn_str: str) -> None:
+def parse_args():
+    """Parse the cmdline arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("conn_str", help="SQLAlchemy connection string")
+    parser.add_argument("--force-new", action="store_true",
+                        help="Always generate a new invitation.")
+    return parser.parse_args()
+
+
+def main(conn_str: str, force_new: bool = False) -> None:
     """Add an admin invitation DB record and print the invitation URL."""
     invitation_controller.validate_env()
     engine = create_engine(conn_str)
@@ -35,10 +43,21 @@ def main(conn_str: str) -> None:
         else:
             raise NotImplementedError(
                 "Cannot reset the primary key counter for " + engine.url.drivername)
+    if not force_new:
+        issued = session.query(Invitation) \
+            .filter(and_(Invitation.account_id == admin_backdoor,
+                         Invitation.is_active)) \
+            .order_by(Invitation.created_by) \
+            .all()
+    else:
+        issued = []
     try:
-        inv = Invitation(salt=salt, account_id=admin_backdoor)
-        session.add(inv)
-        session.flush()
+        if not issued:
+            inv = Invitation(salt=salt, account_id=admin_backdoor)
+            session.add(inv)
+            session.flush()
+        else:
+            inv = issued[-1]
         url_prefix = invitation_controller.url_prefix
         encode_slug = invitation_controller.encode_slug
         print(url_prefix + encode_slug(inv.id, inv.salt))
@@ -48,4 +67,4 @@ def main(conn_str: str) -> None:
 
 
 if __name__ == "__main__":
-    exit(main(sys.argv[1]))
+    exit(main(**vars(parse_args())))
