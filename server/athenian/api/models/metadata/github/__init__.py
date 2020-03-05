@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import ARRAY, BigInteger, Boolean, Column, ForeignKey, Integer, Text, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import synonym
@@ -11,6 +13,12 @@ Base = declarative_base()
 class IDMixin:
     id = Column(BigInteger, primary_key=True)
     node_id = Column(Text)
+
+
+class IDMixinNG:
+    id = Column(Text, primary_key=True)
+    discovered_at = Column(TIMESTAMP, default=datetime.utcnow)
+    fetched_at = Column(TIMESTAMP, default=datetime.utcnow)
 
 
 class DeliveryMixin:
@@ -212,10 +220,11 @@ class PullRequestReview(Base,
 PullRequestReview.created_at.key = "submitted_at"
 
 
-class PullRequestReviewRequest(Base):
+class PullRequestReviewRequest(Base,
+                               IDMixinNG,
+                               ):
     __tablename__ = "github_node_review_requested_event"
 
-    id = Column(Text, primary_key=True)
     actor = Column(Text, nullable=False)
     created_at = Column(TIMESTAMP)
     pull_request = Column(Text, nullable=False)
@@ -264,6 +273,7 @@ class PullRequest(Base,
     milestone_id = Column(Text, nullable=False)
     milestone_title = Column(Text, nullable=False)
     number = Column(BigInteger)
+    released_as = Column(Text, ForeignKey("github_node_release.id"))
     review_comments = Column(BigInteger)
     state = Column(Text)
     title = Column(Text)
@@ -348,3 +358,22 @@ class User(Base,
     public_gists = Column(BigInteger)
     public_repos = Column(BigInteger)
     total_private_repos = Column(BigInteger)
+
+
+class Release(Base,
+              IDMixinNG,
+              UpdatedMixin,
+              ):
+    __tablename__ = "github_node_release"
+
+    author = Column(Text)
+    description = Column(Text)
+    description_html = Column(Text)
+    is_draft = Column(Boolean)
+    is_prerelease = Column(Boolean)
+    name = Column(Text)
+    published_at = Column(TIMESTAMP)
+    resource_path = Column(Text)
+    tag = Column(Text)
+    tag_name = Column(Text)
+    url = Column(Text)

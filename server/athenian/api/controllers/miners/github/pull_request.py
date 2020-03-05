@@ -9,18 +9,25 @@ import aiomcache
 import databases
 import pandas as pd
 from sqlalchemy import select, sql
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
     PullRequestListItem, Stage
 from athenian.api.models.metadata.github import Base, IssueComment, PullRequest, \
-    PullRequestComment, PullRequestCommit, PullRequestReview, PullRequestReviewRequest
+    PullRequestComment, PullRequestCommit, PullRequestReview, PullRequestReviewRequest, Release
 
 
 @dataclass(frozen=True)
 class MinedPullRequest:
-    """All the relevant information we are able to load from the metadata DB about a PR."""
+    """All the relevant information we are able to load from the metadata DB about a PR.
+
+    All the DataFrame-s have a two-layered index:
+    1. pull request id
+    2. own id
+    The artificial first index layer makes it is faster to select data belonging to a certain PR.
+    """
 
     pr: pd.Series
     reviews: pd.DataFrame
@@ -28,6 +35,7 @@ class MinedPullRequest:
     review_requests: pd.DataFrame
     comments: pd.DataFrame
     commits: pd.DataFrame
+    releases: pd.DataFrame
 
 
 class PullRequestMiner:
@@ -37,7 +45,8 @@ class PullRequestMiner:
     CACHE_TTL = 5 * 60
 
     def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
-                 review_requests: pd.DataFrame, comments: pd.DataFrame, commits: pd.DataFrame):
+                 review_requests: pd.DataFrame, comments: pd.DataFrame, commits: pd.DataFrame,
+                 releases: pd.DataFrame):
         """Initialize a new instance of `PullRequestMiner`."""
         self._prs = prs
         self._reviews = reviews
@@ -45,6 +54,7 @@ class PullRequestMiner:
         self._review_requests = review_requests
         self._comments = comments
         self._commits = commits
+        self._releases = releases
 
     def _serialize_for_cache(dfs: List[pd.DataFrame]) -> memoryview:
         assert len(dfs) < 256
@@ -94,6 +104,7 @@ class PullRequestMiner:
             prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                        conn, PullRequest)
             node_ids = prs[PullRequest.node_id.key] if len(prs) > 0 else set()
+            # TODO(vmarkovtsev): carefully select the columns that must be fetched
             reviews = await cls._read_filtered_models(
                 conn, PullRequestReview, node_ids, time_to)
             review_comments = await cls._read_filtered_models(
@@ -101,10 +112,20 @@ class PullRequestMiner:
             review_requests = await cls._read_filtered_models(
                 conn, PullRequestReviewRequest, node_ids, time_to)
             comments = await cls._read_filtered_models(
-                conn, IssueComment, node_ids, time_to)
+                conn, IssueComment, node_ids, time_to, columns=[IssueComment.created_at])
             commits = await cls._read_filtered_models(
                 conn, PullRequestCommit, node_ids, time_to)
-        return [prs, reviews, review_comments, review_requests, comments, commits]
+            releases = await read_sql_query(
+                select([PullRequest.node_id, Release.id, Release.created_at, Release.author])
+                .where(sql.and_(PullRequest.released_as == Release.id,
+                                PullRequest.node_id.in_(node_ids),
+                                Release.created_at < time_to)),
+                conn,
+                columns=[PullRequest.node_id.key, Release.id.key, Release.created_at.key,
+                         Release.author.key],
+                index=(PullRequest.node_id.key, Release.id.key),
+            )
+        return [prs, reviews, review_comments, review_requests, comments, commits, releases]
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
     _deserialize_from_cache = staticmethod(_deserialize_from_cache)
@@ -131,25 +152,27 @@ class PullRequestMiner:
                                     model_cls: Base,
                                     node_ids: Sequence[str],
                                     time_to: date,
+                                    columns: Optional[List[InstrumentedAttribute]] = None,
                                     ) -> pd.DataFrame:
         time_to = datetime.combine(time_to, datetime.min.time())
+        if columns is None:
+            columns = model_cls
+        else:
+            columns = [model_cls.pull_request, model_cls.node_id] + columns
         return await read_sql_query(select([model_cls]).where(
             sql.and_(model_cls.pull_request.in_(node_ids),
                      model_cls.created_at < time_to)),
-            conn, model_cls, index=("pull_request", "node_id"))
+            conn, columns, index=("pull_request", "node_id"))
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
         node_id_key = PullRequest.node_id.key
         for _, pr in self._prs.iterrows():
             pr_node_id = pr[node_id_key]
-            items = [getattr(self, "_" + k).loc[pr_node_id]
-                     for k, model in (("reviews", PullRequestReview),
-                                      ("review_comments", PullRequestComment),
-                                      ("review_requests", PullRequestReviewRequest),
-                                      ("comments", IssueComment),
-                                      ("commits", PullRequestCommit))]
-            yield MinedPullRequest(pr, *items)
+            items = {k: getattr(self, "_" + k).loc[pr_node_id]
+                     for k in MinedPullRequest.__dataclass_fields__
+                     if k != "pr"}
+            yield MinedPullRequest(pr, **items)
 
 
 T = TypeVar("T")
@@ -312,6 +335,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             ][PullRequestReview.submitted_at.key].max()
         approved_at = Fallback(approved_at_value, merged_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
+        released_at = pr.releases[Release.created_at.key].min()  # may be None or NaT - that's fine
         return PullRequestTimes(
             created=created_at,
             first_commit=first_commit,
@@ -324,7 +348,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             approved=approved_at,
             first_passed_checks=Fallback(None, None),  # FIXME(vmarkovtsev): no CI info
             last_passed_checks=last_passed_checks,
-            released=Fallback(None, None),  # FIXME(vmarkovtsev): no releases
+            released=Fallback(released_at, None),
             closed=closed_at,
         )
 
@@ -407,6 +431,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
             stage = Stage.DONE
         elif times.merged:
             # FIXME(vmarkovtsev): no releases data, we don't know if this is actually true
+            # What the hell did you mean Vadim??? - Vadim from the future.
             stage = Stage.RELEASE
         elif times.approved:
             stage = Stage.MERGE
