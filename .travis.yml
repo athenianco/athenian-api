@@ -31,9 +31,10 @@ matrix:
     - if: commit_message !~ /Bump version/
       stage: main
       name: Unit tests and style check
-      services:
-        - memcached
       install:
+        - sudo sed -i 's/-m 64/-m 128/g' /etc/memcached.conf
+        - sudo sed -i 's/-I 1m/-I 64m/g' /etc/memcached.conf
+        - sudo systemctl start memcached
         - cd server
         - pip install -r requirements.txt
         - pip install -r lint-requirements.txt
