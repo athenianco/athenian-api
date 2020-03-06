@@ -11,6 +11,8 @@ from athenian.api.models.state.models import Account, RepositorySet, UserAccount
 
 def main():
     """Make sure that /user and /reposets work without authorization."""
+    if not Auth0.DEFAULT_USER:
+        raise EnvironmentError("Auth0 default user is not set. Specify ATHENIAN_DEFAULT_USER.")
     engine = create_engine(sys.argv[1])
     session = sessionmaker(bind=engine)()
     acc = Account()
