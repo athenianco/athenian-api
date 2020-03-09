@@ -1,9 +1,7 @@
 from datetime import datetime, timezone
-import math
 from typing import Sequence, Union
 
 import databases
-from numpy import datetime64
 import pandas as pd
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
@@ -47,8 +45,11 @@ async def read_sql_query(sql: ClauseElement,
         if not isinstance(probe, str):
             columns = [c.key for c in columns]
     frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
-    frame.replace(datetime(1, 1, 1, tzinfo=timezone.utc), math.nan, inplace=True)
-    for col in frame.select_dtypes(include=[datetime64]):
+    for col in frame.select_dtypes(include=[object]):
+        frame[col].replace(datetime(1, 1, 1, tzinfo=timezone.utc), pd.NaT, inplace=True)
+        frame[col].replace(datetime(1, 1, 1), pd.NaT, inplace=True)
+    for col in frame.select_dtypes(include=["datetime"]):
+        frame[col].replace(0, pd.NaT, inplace=True)
         try:
             frame[col] = frame[col].dt.tz_localize(timezone.utc)
         except TypeError:
