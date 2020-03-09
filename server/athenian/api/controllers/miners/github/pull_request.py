@@ -115,6 +115,11 @@ class PullRequestMiner:
                 conn, IssueComment, node_ids, time_to, columns=[IssueComment.created_at])
             commits = await cls._read_filtered_models(
                 conn, PullRequestCommit, node_ids, time_to)
+            releases = pd.DataFrame(columns=[
+                PullRequest.node_id.key, Release.id.key, Release.created_at.key,
+                Release.author.key])
+            # TODO(vmarkovtsev): load releases in pain and sweat
+            """
             releases = await read_sql_query(
                 select([PullRequest.node_id, Release.id, Release.created_at, Release.author])
                 .where(sql.and_(PullRequest.released_as == Release.id,
@@ -125,6 +130,7 @@ class PullRequestMiner:
                          Release.author.key],
                 index=(PullRequest.node_id.key, Release.id.key),
             )
+            """
         return [prs, reviews, review_comments, review_requests, comments, commits, releases]
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
@@ -417,7 +423,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
             ParticipationKind.COMMENTER: {
                 (prefix + u) for u in pr.comments[IssueComment.user_login.key]},
             ParticipationKind.COMMIT_COMMITTER: {
-                (prefix + u) for u in pr.commits[PullRequestCommit.commiter_login.key] if u},
+                (prefix + u) for u in pr.commits[PullRequestCommit.committer_login.key] if u},
             ParticipationKind.COMMIT_AUTHOR: {
                 (prefix + u) for u in pr.commits[PullRequestCommit.author_login.key] if u},
         }

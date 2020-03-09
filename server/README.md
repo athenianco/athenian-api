@@ -62,6 +62,12 @@ cloud_sql_proxy -instances=athenian-1:us-east1:owl-cloud-sql-2f803bb6=tcp:5432
 --state-db=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/state
 ```
 
+Validating the metadata schema:
+
+```
+python3 -m athenian.api.models.metadata.github postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/metadata
+```
+
 ## Development
 
 Install the linters:
@@ -76,6 +82,12 @@ Validate your changes:
 cd server
 flake8
 pytest -s
+```
+
+Generate metadata SQL dump suitable for unit tests:
+
+```
+python3 server/tests/mdb_transfer.py postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/metadata >test_data.sql
 ```
 
 Generate sample SQLite metadata and state databases:

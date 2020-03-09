@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import dateutil.parser
 from sqlalchemy import ARRAY, BigInteger, Boolean, Column, ForeignKey, Integer, Text, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import synonym
@@ -19,12 +20,6 @@ class IDMixinNG:
     id = Column(Text, primary_key=True)
     discovered_at = Column(TIMESTAMP, default=datetime.utcnow)
     fetched_at = Column(TIMESTAMP, default=datetime.utcnow)
-
-
-class DeliveryMixin:
-    delivery_id = Column(Text, nullable=False)
-    action = Column(Text)
-    timestamp = Column(TIMESTAMP)
 
 
 class BodyMixin:
@@ -72,7 +67,7 @@ class InstallationOwner(Base, UpdatedMixin):
 
 
 class InstallationRepo(Base):
-    __tablename__ = "github_installation_repos"
+    __tablename__ = "github_installation_repos_compat"
 
     install_id = Column(BigInteger,
                         ForeignKey("github_installations.id", name="fk_github_installation_repo"),
@@ -93,75 +88,28 @@ class FetchProgress(Base, UpdatedMixin):
 
 class IssueComment(Base,
                    BodyMixin,
-                   DeliveryMixin,
                    IDMixin,
-                   RepositoryMixin,
                    UpdatedMixin,
                    UserMixin,
                    ):
-    __tablename__ = "github_issue_comments"
+    __tablename__ = "github_issue_comments_compat"
 
     author_association = Column(Text)
-    htmlurl = Column(Text)
+    html_url = Column(Text)
     issue_node_id = Column(Text, nullable=False)
-    pull_request = synonym("issue_node_id")
+    pull_request_node_id = synonym("issue_node_id")
 
 
-IssueComment.pull_request.key = "issue_node_id"
-
-
-class Issue(Base,
-            BodyMixin,
-            DeliveryMixin,
-            IDMixin,
-            RepositoryMixin,
-            UpdatedMixin,
-            UserMixin,
-            ):
-    __tablename__ = "github_issues"
-
-    assignees = Column(ARRAY(Text()), nullable=False)
-    closed_at = Column(TIMESTAMP)
-    closed_by_id = Column(BigInteger, nullable=False)
-    closed_by_login = Column(Text, nullable=False)
-    comments = Column(BigInteger)
-    htmlurl = Column(Text)
-    labels = Column(ARRAY(Text()), nullable=False)
-    locked = Column(Boolean)
-    milestone_id = Column(Text, nullable=False)
-    milestone_title = Column(Text, nullable=False)
-    number = Column(BigInteger)
-    state = Column(Text)
-    title = Column(Text)
-
-
-class Organization(Base,
-                   DeliveryMixin,
-                   IDMixin,
-                   UpdatedMixin):
-    __tablename__ = "github_organizations"
-
-    avatar_url = Column(Text)
-    collaborators = Column(BigInteger)
-    description = Column(Text)
-    email = Column(Text)
-    htmlurl = Column(Text)
-    login = Column(Text)
-    name = Column(Text)
-    owned_private_repos = Column(BigInteger)
-    public_repos = Column(BigInteger)
-    total_private_repos = Column(BigInteger)
+IssueComment.pull_request_node_id.key = "issue_node_id"
 
 
 class PullRequestComment(Base,
                          BodyMixin,
-                         DeliveryMixin,
                          IDMixin,
-                         RepositoryMixin,
                          UpdatedMixin,
                          UserMixin,
                          ):
-    __tablename__ = "github_pull_request_comments"
+    __tablename__ = "github_pull_request_comments_compat"
 
     author_association = Column(Text)
     commit_id = Column(Text)
@@ -172,29 +120,46 @@ class PullRequestComment(Base,
     original_position = Column(BigInteger)
     path = Column(Text)
     position = Column(BigInteger)
-    pull_request = Column(Text, nullable=False)
+    pull_request_node_id = Column(Text, nullable=False)
     pull_request_review_id = Column(BigInteger)
 
 
 class PullRequestCommit(Base,
-                        RepositoryMixin,
                         ):
-    __tablename__ = "github_pull_request_commits"
+    __tablename__ = "github_pull_request_commits_compat"
 
-    pull_request = Column(Text, primary_key=True)
     author_login = Column(Text)
     author_email = Column(Text)
     author_name = Column(Text)
-    author_date = Column(TIMESTAMP(True))
-    commiter_login = Column(Text)
-    commiter_email = Column(Text)
-    commiter_name = Column(Text)
-    commit_date = Column(TIMESTAMP(True))
+    author_date = Column(Text)
+    committer_login = Column(Text)
+    committer_email = Column(Text)
+    committer_name = Column(Text)
+    commit_date = Column(Text)
+    pull_request_node_id = Column(Text, primary_key=True)
     sha = Column(Text, primary_key=True)
     additions = Column(Integer)
     deletions = Column(Integer)
     message = Column(Text)
     created_at = synonym("commit_date")
+
+    def parse_author_date(self):
+        """Deserialize the date when the commit was authored.
+
+        We have to store the timestamp in the original, string representation because PostgreSQL
+        always discards the time zone. The time zone is important here because we are interested
+        in the *local* time.
+        """
+        return dateutil.parser.parse(self.author_date)
+
+    def parse_commit_date(self):
+        """Deserialize the date when the commit was pushed.
+
+        We have to store the timestamp in the original, string representation because PostgreSQL
+        always discards the time zone. The time zone is important here because we are interested
+        in the *local* time.
+        """
+        return dateutil.parser.parse(self.commit_date)
 
 
 PullRequestCommit.created_at.key = "commit_date"
@@ -202,16 +167,14 @@ PullRequestCommit.created_at.key = "commit_date"
 
 class PullRequestReview(Base,
                         BodyMixin,
-                        DeliveryMixin,
                         IDMixin,
-                        RepositoryMixin,
                         UserMixin,
                         ):
-    __tablename__ = "github_pull_request_reviews"
+    __tablename__ = "github_pull_request_reviews_compat"
 
     commit_id = Column(Text)
     htmlurl = Column(Text)
-    pull_request = Column(Text, nullable=False)
+    pull_request_node_id = Column(Text, nullable=False)
     state = Column(Text)
     submitted_at = Column(TIMESTAMP)
     created_at = synonym("submitted_at")
@@ -228,21 +191,24 @@ class PullRequestReviewRequest(Base,
     actor = Column(Text, nullable=False)
     created_at = Column(TIMESTAMP)
     pull_request = Column(Text, nullable=False)
+    pull_request_node_id = synonym("pull_request")
     requested_reviewer = Column(Text, nullable=False)
+
+
+PullRequestReviewRequest.pull_request_node_id.key = "pull_request"
 
 
 class PullRequest(Base,
                   BodyMixin,
-                  DeliveryMixin,
                   IDMixin,
                   RepositoryMixin,
                   UpdatedMixin,
                   UserMixin,
                   ):
-    __tablename__ = "github_pull_requests"
+    __tablename__ = "github_pull_requests_compat"
 
     additions = Column(BigInteger)
-    assignees = Column(ARRAY(Text()), nullable=False)
+    assignees = Column(ARRAY(BigInteger), nullable=False)
     author_association = Column(Text)
     base_ref = Column(Text, nullable=False)
     base_repository_name = Column(Text, nullable=False)
@@ -265,7 +231,7 @@ class PullRequest(Base,
     labels = Column(ARRAY(Text()), nullable=False)
     maintainer_can_modify = Column(Boolean)
     merge_commit_sha = Column(Text)
-    mergeable = Column(Boolean)
+    mergeable = Column(Text)
     merged = Column(Boolean)
     merged_at = Column(TIMESTAMP)
     merged_by_id = Column(BigInteger, nullable=False)
@@ -273,7 +239,6 @@ class PullRequest(Base,
     milestone_id = Column(Text, nullable=False)
     milestone_title = Column(Text, nullable=False)
     number = Column(BigInteger)
-    released_as = Column(Text, ForeignKey("github_node_release.id"))
     review_comments = Column(BigInteger)
     state = Column(Text)
     title = Column(Text)
@@ -281,83 +246,57 @@ class PullRequest(Base,
 
 class PushCommit(Base,
                  RepositoryMixin):
-    __tablename__ = "github_push_commits"
+    __tablename__ = "github_push_commits_compat"
 
-    delivery_id = Column(Text, nullable=False)
     timestamp = Column(TIMESTAMP)
     id = Column(BigInteger)
-    push_id = Column(Text)
     message = Column(Text)
     author_login = Column(Text)
     url = Column(Text)
     sha = Column(Text, primary_key=True)
     committer_login = Column(Text)
-    added = Column(ARRAY(Text()))
-    removed = Column(ARRAY(Text()))
-    modified = Column(ARRAY(Text()))
+    added = Column(BigInteger)
+    removed = Column(BigInteger)
+    modified = Column(BigInteger)
     pusher_login = Column(Text, nullable=False)
 
 
 class Repository(Base,
-                 DeliveryMixin,
                  IDMixin,
                  UpdatedMixin,
                  ):
-    __tablename__ = "github_repositories"
+    __tablename__ = "github_repositories_v2_compat"
 
-    allow_merge_commit = Column(Boolean)
-    allow_rebase_merge = Column(Boolean)
-    allow_squash_merge = Column(Boolean)
     archived = Column(Boolean)
-    clone_url = Column(Text)
     default_branch = Column(Text)
     description = Column(Text)
     disabled = Column(Boolean)
     fork = Column(Boolean)
-    forks_count = Column(BigInteger)
-    fullname = Column(Text)
-    has_issues = Column(Boolean)
-    has_wiki = Column(Boolean)
-    homepage = Column(Text)
-    htmlurl = Column(Text)
+    full_name = Column(Text)
+    html_url = Column(Text)
     language = Column(Text)
     name = Column(Text)
-    open_issues_count = Column(BigInteger)
-    owner_id = Column(BigInteger, nullable=False)
-    owner_login = Column(Text, nullable=False)
-    owner_type = Column(Text, nullable=False)
+    owner = Column(BigInteger, nullable=False)
     private = Column(Boolean)
     pushed_at = Column(TIMESTAMP)
-    sshurl = Column(Text)
-    stargazers_count = Column(BigInteger)
-    topics = Column(ARRAY(Text()), nullable=False)
-    watchers_count = Column(BigInteger)
+    ssh_url = Column(Text)
 
 
 class User(Base,
            IDMixin,
            UpdatedMixin,
            ):
-    __tablename__ = "github_users"
+    __tablename__ = "github_users_v2_compat"
 
     avatar_url = Column(Text)
-    bio = Column(Text)
     company = Column(Text)
     email = Column(Text)
-    followers = Column(BigInteger)
-    following = Column(BigInteger)
-    hireable = Column(Boolean)
-    htmlurl = Column(Text)
+    url = Column(Text)
+    blog = Column(Text)
     location = Column(Text)
     login = Column(Text)
     name = Column(Text)
-    organization_id = Column(BigInteger)
-    organization_login = Column(Text)
-    owned_private_repos = Column(BigInteger)
-    private_gists = Column(BigInteger)
-    public_gists = Column(BigInteger)
-    public_repos = Column(BigInteger)
-    total_private_repos = Column(BigInteger)
+    login = Column(Text)
 
 
 class Release(Base,

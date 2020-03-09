@@ -46,11 +46,11 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
                         PullRequest.updated_at.between(filt.date_from, filt.date_to),
                         ))))
         u_pr_commits = conn.fetch_all(
-            select([PullRequestCommit.author_login, PullRequestCommit.commiter_login])
+            select([PullRequestCommit.author_login, PullRequestCommit.committer_login])
             .where(and_(PullRequestCommit.repository_fullname.in_(repos),
                         PullRequestCommit.commit_date.between(filt.date_from, filt.date_to),
                         ))
-            .distinct(PullRequestCommit.author_login, PullRequestCommit.commiter_login))
+            .distinct(PullRequestCommit.author_login, PullRequestCommit.committer_login))
         u_push_commits = conn.fetch_all(
             select([PushCommit.author_login, PushCommit.committer_login])
             .where(and_(PushCommit.repository_fullname.in_(repos),
