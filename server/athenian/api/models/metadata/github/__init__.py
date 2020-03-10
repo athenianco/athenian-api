@@ -13,7 +13,7 @@ Base = declarative_base()
 
 class IDMixin:
     id = Column(BigInteger, primary_key=True)
-    node_id = Column(Text)
+    node_id = Column(Text, nullable=False)
 
 
 class IDMixinNG:
@@ -124,10 +124,10 @@ class PullRequestComment(Base,
     pull_request_review_id = Column(BigInteger)
 
 
-class PullRequestCommit(Base,
-                        ):
+class PullRequestCommit(Base):
     __tablename__ = "github_pull_request_commits_compat"
 
+    node_id = Column(Text, nullable=False)
     author_login = Column(Text)
     author_email = Column(Text)
     author_name = Column(Text)
@@ -192,7 +192,8 @@ class PullRequestReviewRequest(Base,
     created_at = Column(TIMESTAMP)
     pull_request = Column(Text, nullable=False)
     pull_request_node_id = synonym("pull_request")
-    requested_reviewer = Column(Text, nullable=False)
+    # FIXME(vmarkovtsev): set nullable=False when ENG-303 is resolved
+    requested_reviewer = Column(Text, nullable=True)
 
 
 PullRequestReviewRequest.pull_request_node_id.key = "pull_request"
@@ -208,7 +209,7 @@ class PullRequest(Base,
     __tablename__ = "github_pull_requests_compat"
 
     additions = Column(BigInteger)
-    assignees = Column(ARRAY(BigInteger), nullable=False)
+    assignees = Column(ARRAY(BigInteger))
     author_association = Column(Text)
     base_ref = Column(Text, nullable=False)
     base_repository_name = Column(Text, nullable=False)
@@ -222,13 +223,15 @@ class PullRequest(Base,
     commits = Column(BigInteger)
     deletions = Column(BigInteger)
     head_ref = Column(Text, nullable=False)
-    head_repository_name = Column(Text, nullable=False)
-    head_repository_owner = Column(Text, nullable=False)
-    head_repository_fullname = Column(Text, nullable=False)
+    # These are nullable because the head repository can be deleted by the owner.
+    head_repository_name = Column(Text)
+    head_repository_owner = Column(Text)
+    head_repository_fullname = Column(Text)
+    head_user = Column(Text)
+    # head_sha is always not null.
     head_sha = Column(Text, nullable=False)
-    head_user = Column(Text, nullable=False)
     htmlurl = Column(Text)
-    labels = Column(ARRAY(Text()), nullable=False)
+    labels = Column(ARRAY(Text()))
     maintainer_can_modify = Column(Boolean)
     merge_commit_sha = Column(Text)
     mergeable = Column(Text)
@@ -258,7 +261,7 @@ class PushCommit(Base,
     added = Column(BigInteger)
     removed = Column(BigInteger)
     modified = Column(BigInteger)
-    pusher_login = Column(Text, nullable=False)
+    pusher_login = Column(Text)
 
 
 class Repository(Base,

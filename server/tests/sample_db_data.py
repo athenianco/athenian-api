@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy.cprocessors import str_to_date, str_to_datetime
 import sqlalchemy.orm
 
-from athenian.api.models.metadata.github import Base, FetchProgress, PullRequestReviewRequest
+from athenian.api.models.metadata.github import Base
 from athenian.api.models.state.models import Account, God, Invitation, RepositorySet, UserAccount
 
 
@@ -52,6 +52,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
             if stdin:
                 if line == b"\\.\n":
                     stdin = False
+                    session.flush()
                     continue
                 kwargs = {}
                 vals = line[:-1].split(b"\t")
@@ -68,18 +69,6 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                                 print(k, '"%s"' % p.decode())
                             raise e from None
                 session.add(model(**kwargs))
-    session.add(FetchProgress(event_id="39b81c80-3d1b-11ea-9da9-a5e20c8127d5",
-                              node_type="Commit",
-                              nodes_processed=30,
-                              nodes_total=50,
-                              created_at=datetime.datetime.now()))
-    session.add(PullRequestReviewRequest(
-        id="whatever",
-        actor="smola",
-        created_at=datetime.datetime(year=2018, month=10, day=30, hour=12, minute=11, second=0),
-        pull_request="MDExOlB1bGxSZXF1ZXN0MjI2ODk2OTIx",
-        requested_reviewer="mcuadros",
-    ))
 
 
 def fill_state_session(session: sqlalchemy.orm.Session):
