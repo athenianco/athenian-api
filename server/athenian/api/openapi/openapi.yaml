@@ -1431,7 +1431,7 @@ components:
       - review
       - merge
       - release
-      - done  # PR afterlife - PRs that were released and nothing ever happens to them
+      - done  # PR afterlife - PRs that were released or rejected and nothing ever happens to them
       example: wip
       type: string
     PullRequestSet:
