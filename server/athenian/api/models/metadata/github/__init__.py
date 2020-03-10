@@ -2,7 +2,7 @@ from datetime import datetime
 
 import dateutil.parser
 from sqlalchemy import ARRAY, BigInteger, Boolean, Column, ForeignKey, Integer, Text, TIMESTAMP
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import synonym
 
 Base = declarative_base()
@@ -20,6 +20,11 @@ class IDMixinNG:
     id = Column(Text, primary_key=True)
     discovered_at = Column(TIMESTAMP, default=datetime.utcnow)
     fetched_at = Column(TIMESTAMP, default=datetime.utcnow)
+
+    @declared_attr
+    def node_id(self):
+        """Return 'id' as 'node_id'."""
+        return synonym("id")
 
 
 class BodyMixin:
@@ -86,23 +91,6 @@ class FetchProgress(Base, UpdatedMixin):
     nodes_total = Column(BigInteger, nullable=False)
 
 
-class IssueComment(Base,
-                   BodyMixin,
-                   IDMixin,
-                   UpdatedMixin,
-                   UserMixin,
-                   ):
-    __tablename__ = "github_issue_comments_compat"
-
-    author_association = Column(Text)
-    html_url = Column(Text)
-    issue_node_id = Column(Text, nullable=False)
-    pull_request_node_id = synonym("issue_node_id")
-
-
-IssueComment.pull_request_node_id.key = "issue_node_id"
-
-
 class PullRequestComment(Base,
                          BodyMixin,
                          IDMixin,
@@ -110,6 +98,19 @@ class PullRequestComment(Base,
                          UserMixin,
                          ):
     __tablename__ = "github_pull_request_comments_compat"
+
+    author_association = Column(Text)
+    html_url = Column(Text)
+    pull_request_node_id = Column(Text, nullable=False)
+
+
+class PullRequestReviewComment(Base,
+                               BodyMixin,
+                               IDMixin,
+                               UpdatedMixin,
+                               UserMixin,
+                               ):
+    __tablename__ = "github_pull_request_review_comments_compat"
 
     author_association = Column(Text)
     commit_id = Column(Text)
@@ -197,6 +198,7 @@ class PullRequestReviewRequest(Base,
 
 
 PullRequestReviewRequest.pull_request_node_id.key = "pull_request"
+PullRequestReviewRequest.node_id.key = "id"
 
 
 class PullRequest(Base,

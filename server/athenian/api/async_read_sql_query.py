@@ -46,7 +46,9 @@ async def read_sql_query(sql: ClauseElement,
     else:
         if not isinstance(probe, str):
             columns = [c.key for c in columns]
-    frame = pd.DataFrame.from_records(data, index=index, columns=columns, coerce_float=True)
+    frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
+    if index is not None:
+        frame.set_index(index, inplace=True)
     for col in frame.select_dtypes(include=[object]):
         frame[col].replace(datetime(1, 1, 1, tzinfo=timezone.utc), pd.NaT, inplace=True)
         frame[col].replace(datetime(1, 1, 1), pd.NaT, inplace=True)
