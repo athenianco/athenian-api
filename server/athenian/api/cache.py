@@ -58,11 +58,12 @@ def cached(exptime: Union[int, Callable[..., int]],
         else:
             def discover_cache(**kwargs):
                 return cache
+        signature = inspect.signature(func)
 
         # no functool.wraps() shit here! It discards the coroutine status and aiohttp notices that
         async def wrapped_cached(*args, **kwargs):
             start_time = time.time()
-            args_dict = inspect.signature(func).bind(*args, **kwargs).arguments
+            args_dict = signature.bind(*args, **kwargs).arguments
             client = discover_cache(**args_dict)
             cache_key = full_name = None
             if client is not None:

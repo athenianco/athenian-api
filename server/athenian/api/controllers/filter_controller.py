@@ -29,7 +29,7 @@ from athenian.api.request import acquire_conn_type, AthenianWebRequest, with_con
 from athenian.api.response import FriendlyJson, response, ResponseError
 
 
-@with_conn_pool("mdb")
+@with_conn_pool(lambda request, **_: request.mdb, "acquire_mdb_conn")
 async def filter_contributors(request: AthenianWebRequest,
                               body: dict,
                               acquire_mdb_conn: acquire_conn_type,
@@ -79,7 +79,7 @@ async def filter_contributors(request: AthenianWebRequest,
     return web.json_response(users, dumps=FriendlyJson.dumps)
 
 
-@with_conn_pool("mdb")
+@with_conn_pool(lambda request, **_: request.mdb, "acquire_mdb_conn")
 async def filter_repositories(request: AthenianWebRequest,
                               body: dict,
                               acquire_mdb_conn: acquire_conn_type,
