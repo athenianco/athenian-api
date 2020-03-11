@@ -1,4 +1,6 @@
+import asyncio
 import inspect
+import logging
 from typing import Callable, Coroutine, Optional
 
 from aiohttp import web
@@ -47,8 +49,14 @@ def with_conn_pool(db_getter: Callable[..., databases.Database], name="acquire_c
             try:
                 return await func(*args, **kwargs, **pool_kwargs)
             finally:
-                for conn in pool:
-                    await conn.__aexit__(None, None, None)
+                errors = await asyncio.gather(
+                    *[conn.__aexit__(None, None, None) for conn in pool],
+                    return_exceptions=True)
+                if any(errors):
+                    logging.getLogger("athenian.api.with_conn_pool").error(
+                        "Failed to release %d/%d connections: %s",
+                        sum(1 for e in errors if e is not None),
+                        len(pool), "; ".join("%s: %s" % (type(e).__name__, e) for e in errors))
 
         wrapped_with_conn_pool.__name__ = func.__name__
         wrapped_with_conn_pool.__qualname__ = func.__qualname__
