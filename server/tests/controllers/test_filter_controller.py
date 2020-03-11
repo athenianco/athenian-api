@@ -89,7 +89,7 @@ async def test_filter_contributors_no_repos(client, headers, in_):
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     contribs = json.loads((await response.read()).decode("utf-8"))
-    assert len(contribs) == 179
+    assert len(contribs) == 178
     assert len(set(contribs)) == len(contribs)
     assert all(c.startswith("github.com/") for c in contribs)
     assert "github.com/mcuadros" in contribs
@@ -111,7 +111,7 @@ async def test_filter_contributors(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     contribs = json.loads((await response.read()).decode("utf-8"))
-    assert len(contribs) == 179
+    assert len(contribs) == 178
     assert len(set(contribs)) == len(contribs)
     assert all(c.startswith("github.com/") for c in contribs)
     assert "github.com/mcuadros" in contribs
@@ -204,8 +204,6 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
     review_comments = 0
     merged = False
     for pr in obj["data"]:
-        if pr["number"] == 639:
-            assert pr["stage"] == "done"
         assert pr["repository"].startswith("github.com/"), str(pr)
         assert pr["number"] > 0
         assert pr["title"]
@@ -231,14 +229,15 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
                 statuses[s] += 1
                 authors += s == PullRequestParticipant.STATUS_AUTHOR
                 assert s in PullRequestParticipant.STATUSES
-        assert authors == 1
+        if pr["number"] != 749:
+            # the author of 749 is deleted on GitHub
+            assert authors == 1
     assert not (set(users) - mentioned_users)
     assert commits > 0
     if PullRequestPipelineStage.WIP in stages:
         assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
         assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0
     elif PullRequestPipelineStage.REVIEW in stages:
-        assert review_requested
         assert comments > 0
         assert review_comments > 0
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
@@ -246,12 +245,13 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
         assert review_requested
         assert comments > 0
         assert review_comments >= 0
-        assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
+        assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
     elif PullRequestPipelineStage.DONE in stages:
         assert review_requested
         assert comments > 0
         assert review_comments > 0
         assert merged
+        assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
 
 
 async def test_filter_prs_bad_account(client, headers):

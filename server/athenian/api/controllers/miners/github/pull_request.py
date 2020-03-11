@@ -111,7 +111,7 @@ class PullRequestMiner:
                     sql.and_(sql.or_(PullRequest.closed_at.is_(None),
                                      PullRequest.closed_at > time_from),
                              PullRequest.created_at < time_to)),
-            PullRequest.repository_fullname.in_(repositories),
+            PullRequest.repository_full_name.in_(repositories),
         ]
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
@@ -444,12 +444,13 @@ class PullRequestListMiner(PullRequestTimesMiner):
     def _compile(self, pr: MinedPullRequest) -> Optional[PullRequestListItem]:
         """Match the PR to the required participants and stages."""
         prefix = "github.com/"
+        author = pr.pr[PullRequest.user_login.key]
         participants = {
-            ParticipationKind.AUTHOR: {prefix + pr.pr[PullRequest.user_login.key]},
+            ParticipationKind.AUTHOR: {prefix + author} if author else set(),
             ParticipationKind.REVIEWER: {
-                (prefix + u) for u in pr.reviews[PullRequestReview.user_login.key]},
+                (prefix + u) for u in pr.reviews[PullRequestReview.user_login.key] if u},
             ParticipationKind.COMMENTER: {
-                (prefix + u) for u in pr.comments[PullRequestComment.user_login.key]},
+                (prefix + u) for u in pr.comments[PullRequestComment.user_login.key] if u},
             ParticipationKind.COMMIT_COMMITTER: {
                 (prefix + u) for u in pr.commits[PullRequestCommit.committer_login.key] if u},
             ParticipationKind.COMMIT_AUTHOR: {
@@ -476,7 +477,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
         if stage not in self.stages:
             return None
         return PullRequestListItem(
-            repository=prefix + pr.pr[PullRequest.repository_fullname.key],
+            repository=prefix + pr.pr[PullRequest.repository_full_name.key],
             number=pr.pr[PullRequest.number.key],
             title=pr.pr[PullRequest.title.key],
             size_added=pr.pr[PullRequest.additions.key],

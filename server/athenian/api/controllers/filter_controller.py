@@ -40,26 +40,26 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
             return e.response
         u_pr = conn.fetch_all(
             select([distinct(PullRequest.user_login)])
-            .where(and_(PullRequest.repository_fullname.in_(repos), or_(
+            .where(and_(PullRequest.repository_full_name.in_(repos), or_(
                         PullRequest.created_at.between(filt.date_from, filt.date_to),
                         PullRequest.closed_at.between(filt.date_from, filt.date_to),
                         PullRequest.updated_at.between(filt.date_from, filt.date_to),
                         ))))
         u_pr_commits = conn.fetch_all(
             select([PullRequestCommit.author_login, PullRequestCommit.committer_login])
-            .where(and_(PullRequestCommit.repository_fullname.in_(repos),
+            .where(and_(PullRequestCommit.repository_full_name.in_(repos),
                         PullRequestCommit.commit_date.between(filt.date_from, filt.date_to),
                         ))
             .distinct(PullRequestCommit.author_login, PullRequestCommit.committer_login))
         u_push_commits = conn.fetch_all(
             select([PushCommit.author_login, PushCommit.committer_login])
-            .where(and_(PushCommit.repository_fullname.in_(repos),
+            .where(and_(PushCommit.repository_full_name.in_(repos),
                         PushCommit.timestamp.between(filt.date_from, filt.date_to),
                         ))
             .distinct(PushCommit.author_login, PushCommit.committer_login))
         u_reviews = conn.fetch_all(
             select([distinct(PullRequestReview.user_login)])
-            .where(and_(PullRequestReview.repository_fullname.in_(repos),
+            .where(and_(PullRequestReview.repository_full_name.in_(repos),
                         PullRequestReview.submitted_at.between(filt.date_from, filt.date_to),
                         )))
         rows = await asyncio.gather(u_pr, u_reviews, u_pr_commits, u_push_commits)
@@ -67,7 +67,11 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
     users = set(r[0] for r in chain.from_iterable(rows[:singles]))
     for r in chain.from_iterable(rows[singles:]):
         users.update(r)  # r[0] and r[1]
-    users = ["github.com/" + u for u in sorted(users) if u]
+    try:
+        users.remove(None)
+    except KeyError:
+        pass
+    users = ["github.com/" + u for u in sorted(users)]
     return web.json_response(users, dumps=FriendlyJson.dumps)
 
 
@@ -81,25 +85,25 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
         except ResponseError as e:
             return e.response
         r_pr = conn.fetch_all(
-            select([distinct(PullRequest.repository_fullname)])
-            .where(and_(PullRequest.repository_fullname.in_(repos), or_(
+            select([distinct(PullRequest.repository_full_name)])
+            .where(and_(PullRequest.repository_full_name.in_(repos), or_(
                         PullRequest.created_at.between(filt.date_from, filt.date_to),
                         PullRequest.closed_at.between(filt.date_from, filt.date_to),
                         PullRequest.updated_at.between(filt.date_from, filt.date_to),
                         ))))
         r_pr_commits = conn.fetch_all(
-            select([distinct(PullRequestCommit.repository_fullname)])
-            .where(and_(PullRequestCommit.repository_fullname.in_(repos),
+            select([distinct(PullRequestCommit.repository_full_name)])
+            .where(and_(PullRequestCommit.repository_full_name.in_(repos),
                         PullRequestCommit.commit_date.between(filt.date_from, filt.date_to),
                         )))
         r_push_commits = conn.fetch_all(
-            select([distinct(PushCommit.repository_fullname)])
-            .where(and_(PushCommit.repository_fullname.in_(repos),
+            select([distinct(PushCommit.repository_full_name)])
+            .where(and_(PushCommit.repository_full_name.in_(repos),
                         PushCommit.timestamp.between(filt.date_from, filt.date_to),
                         )))
         r_reviews = conn.fetch_all(
-            select([distinct(PullRequestReview.repository_fullname)])
-            .where(and_(PullRequestReview.repository_fullname.in_(repos),
+            select([distinct(PullRequestReview.repository_full_name)])
+            .where(and_(PullRequestReview.repository_full_name.in_(repos),
                         PullRequestReview.submitted_at.between(filt.date_from, filt.date_to),
                         )))
         repos = sorted({"github.com/" + r[0] for r in chain.from_iterable(await asyncio.gather(

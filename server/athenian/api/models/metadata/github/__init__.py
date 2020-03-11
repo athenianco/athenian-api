@@ -37,14 +37,14 @@ class UpdatedMixin:
 
 
 class UserMixin:
-    user_id = Column(BigInteger, nullable=False)
-    user_login = Column(Text, nullable=False)
+    user_id = Column(BigInteger)
+    user_login = Column(Text)
 
 
 class RepositoryMixin:
     repository_name = Column(Text, nullable=False)
     repository_owner = Column(Text, nullable=False)
-    repository_fullname = Column(Text, nullable=False)
+    repository_full_name = Column(Text, nullable=False)
 
 
 # -- TABLES --
@@ -142,6 +142,7 @@ class PullRequestCommit(Base):
     additions = Column(Integer)
     deletions = Column(Integer)
     message = Column(Text)
+    repository_full_name = Column(Text)
     created_at = synonym("commit_date")
 
     def parse_author_date(self):
@@ -178,6 +179,7 @@ class PullRequestReview(Base,
     pull_request_node_id = Column(Text, nullable=False)
     state = Column(Text)
     submitted_at = Column(TIMESTAMP)
+    repository_full_name = Column(Text)
     created_at = synonym("submitted_at")
 
 
@@ -216,7 +218,7 @@ class PullRequest(Base,
     base_ref = Column(Text, nullable=False)
     base_repository_name = Column(Text, nullable=False)
     base_repository_owner = Column(Text, nullable=False)
-    base_repository_fullname = Column(Text, nullable=False)
+    base_repository_full_name = Column(Text, nullable=False)
     base_sha = Column(Text, nullable=False)
     base_user = Column(Text, nullable=False)
     changed_files = Column(BigInteger)
@@ -228,7 +230,7 @@ class PullRequest(Base,
     # These are nullable because the head repository can be deleted by the owner.
     head_repository_name = Column(Text)
     head_repository_owner = Column(Text)
-    head_repository_fullname = Column(Text)
+    head_repository_full_name = Column(Text)
     head_user = Column(Text)
     # head_sha is always not null.
     head_sha = Column(Text, nullable=False)
@@ -239,8 +241,8 @@ class PullRequest(Base,
     mergeable = Column(Text)
     merged = Column(Boolean)
     merged_at = Column(TIMESTAMP)
-    merged_by_id = Column(BigInteger, nullable=False)
-    merged_by_login = Column(Text, nullable=False)
+    merged_by_id = Column(BigInteger)
+    merged_by_login = Column(Text)
     milestone_id = Column(Text, nullable=False)
     milestone_title = Column(Text, nullable=False)
     number = Column(BigInteger)
