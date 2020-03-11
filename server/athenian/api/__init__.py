@@ -166,7 +166,9 @@ class AthenianApp(connexion.AioHttpApp):
             try:
                 db = databases.Database(mdb_conn, **(mdb_options or {}))
                 await db.connect()
-            except Exception:
+            except Exception as e:
+                if isinstance(e, asyncio.CancelledError):
+                    return
                 self.log.exception("Failed to connect to the metadata DB at %s", mdb_conn)
                 raise GracefulExit() from None
             self.log.info("Connected to the metadata DB on %s", mdb_conn)
@@ -176,7 +178,9 @@ class AthenianApp(connexion.AioHttpApp):
             try:
                 db = databases.Database(sdb_conn, **(sdb_options or {}))
                 await db.connect()
-            except Exception:
+            except Exception as e:
+                if isinstance(e, asyncio.CancelledError):
+                    return
                 self.log.exception("Failed to connect to the state DB at %s", sdb_conn)
                 raise GracefulExit() from None
             self.log.info("Connected to the server state DB on %s", sdb_conn)
@@ -190,14 +194,18 @@ class AthenianApp(connexion.AioHttpApp):
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
         await self._auth0.close()
+        try:
+            self._mdb_future.cancel()
+        except AttributeError:
+            pass
         if self.mdb is not None:
             await self.mdb.disconnect()
-        else:
-            self._mdb_future.cancel()
+        try:
+            self._sdb_future.cancel()
+        except AttributeError:
+            pass
         if self.sdb is not None:
             await self.sdb.disconnect()
-        else:
-            self._sdb_future.cancel()
         if self._cache is not None:
             await self._cache.close()
 
