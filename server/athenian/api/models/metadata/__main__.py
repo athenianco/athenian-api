@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from athenian.api.models.metadata.github import Base
 
 
-def main():
+def main() -> int:
     """Try to fetch one example of each model in the metadata schema from a real DB instance."""
     engine = create_engine(sys.argv[1])
     print("Checking the metadata schema...", flush=True)
@@ -34,6 +34,7 @@ def main():
         print("%s / %s\n" % (model.__name__, model.__tablename__), file=sys.stderr)
         print(exc, file=sys.stderr)
         print(file=sys.stderr)
+    return int(bool(errors))
 
 
 if __name__ == "__main__":

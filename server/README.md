@@ -65,7 +65,7 @@ cloud_sql_proxy -instances=athenian-1:us-east1:owl-cloud-sql-2f803bb6=tcp:5432
 Validating the metadata schema:
 
 ```
-python3 -m athenian.api.models.metadata.github postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/metadata
+python3 -m athenian.api.models.metadata postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/metadata
 ```
 
 ## Development
