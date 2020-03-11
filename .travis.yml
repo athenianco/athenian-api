@@ -77,6 +77,7 @@ matrix:
         - pip install bump2version
       script:
         - set -e
+        - git pull --no-edit origin master
         - if git diff --name-only HEAD^...HEAD | grep openapi.yaml; then
             version_file=spec/openapi.yaml;
             current_version=$(grep -m1 '^  version:' $version_file | cut -d" " -f4);
