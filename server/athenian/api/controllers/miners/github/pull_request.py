@@ -134,7 +134,7 @@ class PullRequestMiner:
                 conn, PullRequestCommit, node_ids, time_to)
             for field in (PullRequestCommit.author_date, PullRequestCommit.commit_date):
                 commits[field.key] = pd.to_datetime(
-                    commits[field.key], infer_datetime_format=True, cache=False)
+                    commits[field.key], infer_datetime_format=True, utc=True, cache=False)
             # delete from here
             releases = pd.DataFrame(columns=[
                 "pull_request_node_id", "node_id", Release.created_at.key, Release.author.key])
@@ -339,7 +339,8 @@ class PullRequestTimesMiner(PullRequestMiner):
             Fallback.max(created_at, last_commit_before_first_review),
             first_comment_on_first_review)
         first_review_request = pr.review_requests[PullRequestReviewRequest.created_at.key].min()
-        if first_review_request_backup and first_review_request > first_review_request_backup.best:
+        if first_review_request_backup and first_review_request == first_review_request and \
+                first_review_request > first_review_request_backup.best:
             first_review_request = Fallback(None, first_review_request_backup)
         else:
             first_review_request = Fallback(first_review_request, first_review_request_backup)

@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+from datetime import timezone
 import getpass
 from http import HTTPStatus
 import logging
@@ -17,6 +18,7 @@ import aiomcache
 import connexion
 from connexion.spec import OpenAPISpecification
 import databases
+import pytz
 import sentry_sdk
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
@@ -38,6 +40,10 @@ trailing_dot_exceptions.update((
     "connexion.api.security",
     "connexion.apis.aiohttp_api",
 ))
+
+
+# Workaround https://github.com/pandas-dev/pandas/issues/32619
+pytz.UTC = pytz.utc = timezone.utc
 
 
 def parse_args() -> argparse.Namespace:
