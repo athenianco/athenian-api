@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 from typing import Optional, Sequence, Union
 
 import databases
@@ -38,7 +39,11 @@ async def read_sql_query(sql: ClauseElement,
     Any datetime values with time zone information parsed via the `parse_dates`
     parameter will be converted to UTC.
     """
-    data = await con.fetch_all(query=sql)
+    try:
+        data = await con.fetch_all(query=sql)
+    except Exception as e:
+        logging.getLogger("athenian.api.read_sql_query").error("%s", str(sql))
+        raise e from None
     try:
         probe = columns[0]
     except TypeError:

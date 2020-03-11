@@ -1,6 +1,5 @@
 import asyncio
 import inspect
-import logging
 from typing import Callable, Coroutine, Optional
 
 from aiohttp import web
@@ -21,6 +20,20 @@ class AthenianWebRequest(web.Request):
     user: lambda: User
     uid: str
     native_uid: str
+
+
+class GatheredError(Exception):
+    """Several exceptions joined together."""
+
+    def __init__(self, message: str, *errors: Exception):
+        """
+        Initialize a new instance of GatheredError.
+
+        :param message: Summary of the errors.
+        :param errors: Upstream exceptions.
+        """
+        self.message = message
+        self.args = errors
 
 
 def with_conn_pool(db_getter: Callable[..., databases.Database], name="acquire_conn"):
@@ -53,10 +66,8 @@ def with_conn_pool(db_getter: Callable[..., databases.Database], name="acquire_c
                     *[conn.__aexit__(None, None, None) for conn in pool],
                     return_exceptions=True)
                 if any(errors):
-                    logging.getLogger("athenian.api.with_conn_pool").error(
-                        "Failed to release %d/%d connections: %s",
-                        sum(1 for e in errors if e is not None),
-                        len(pool), "; ".join("%s: %s" % (type(e).__name__, e) for e in errors))
+                    raise GatheredError("Hit errors while releasing %d connections." % len(pool),
+                                        *[e for e in errors if e is not None])
 
         wrapped_with_conn_pool.__name__ = func.__name__
         wrapped_with_conn_pool.__qualname__ = func.__qualname__
