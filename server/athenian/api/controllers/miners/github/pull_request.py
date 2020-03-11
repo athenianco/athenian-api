@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
@@ -18,6 +19,7 @@ from athenian.api.controllers.miners.pull_request_list_item import Participation
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
+from athenian.api.request import acquire_conn_type, with_conn_pool
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,7 @@ class PullRequestMiner:
         return dfs
 
     @classmethod
+    @with_conn_pool(lambda db, **_: db)
     @cached(
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=_serialize_for_cache,
@@ -104,7 +107,8 @@ class PullRequestMiner:
     )
     async def _mine(cls, time_from: date, time_to: date, repositories: Sequence[str],
                     developers: Sequence[str], db: databases.Database,
-                    cache: Optional[aiomcache.Client]) -> List[pd.DataFrame]:
+                    cache: Optional[aiomcache.Client], acquire_conn: acquire_conn_type,
+                    ) -> List[pd.DataFrame]:
         filters = [
             sql.or_(sql.and_(PullRequest.updated_at >= time_from,
                              PullRequest.updated_at < time_to),
@@ -115,44 +119,47 @@ class PullRequestMiner:
         ]
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
-        async with db.connection() as conn:
-            prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                       conn, PullRequest, index="id")
-            node_ids = prs[PullRequest.node_id.key] if len(prs) > 0 else set()
-            # TODO(vmarkovtsev): carefully select the columns that must be fetched
-            reviews = await cls._read_filtered_models(
-                conn, PullRequestReview, node_ids, time_to)
-            review_comments = await cls._read_filtered_models(
-                conn, PullRequestReviewComment, node_ids, time_to)
-            review_requests = await cls._read_filtered_models(
-                conn, PullRequestReviewRequest, node_ids, time_to)
-            comments = await cls._read_filtered_models(
-                conn, PullRequestComment, node_ids, time_to,
-                columns=[PullRequestComment.created_at, PullRequestComment.user_id,
-                         PullRequestComment.user_login])
-            commits = await cls._read_filtered_models(
-                conn, PullRequestCommit, node_ids, time_to)
-            for field in (PullRequestCommit.author_date, PullRequestCommit.commit_date):
-                commits[field.key] = pd.to_datetime(
-                    commits[field.key], infer_datetime_format=True, utc=True, cache=False)
-            # delete from here
-            releases = pd.DataFrame(columns=[
-                "pull_request_node_id", "node_id", Release.created_at.key, Release.author.key])
-            releases.set_index(["pull_request_node_id", "node_id"], inplace=True)
-            # delete till here
-            # TODO(vmarkovtsev): load releases in pain and sweat
-            """
-            releases = await read_sql_query(
-                select([PullRequest.node_id, Release.id, Release.created_at, Release.author])
-                .where(sql.and_(PullRequest.released_as == Release.id,
-                                PullRequest.node_id.in_(node_ids),
-                                Release.created_at < time_to)),
-                conn,
-                columns=[PullRequest.node_id.key, Release.id.key, Release.created_at.key,
-                         Release.author.key],
-                index=(PullRequest.node_id.key, Release.id.key),
-            )
-            """
+        conn0 = await acquire_conn()
+        prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
+                                   conn0, PullRequest, index="id")
+        node_ids = prs[PullRequest.node_id.key] if len(prs) > 0 else set()
+        # TODO(vmarkovtsev): carefully select the columns that must be fetched
+        future_reviews = cls._read_filtered_models(
+            conn0, PullRequestReview, node_ids, time_to)
+        future_review_comments = cls._read_filtered_models(
+            await acquire_conn(), PullRequestReviewComment, node_ids, time_to)
+        future_review_requests = cls._read_filtered_models(
+            await acquire_conn(), PullRequestReviewRequest, node_ids, time_to)
+        future_comments = cls._read_filtered_models(
+            await acquire_conn(), PullRequestComment, node_ids, time_to,
+            columns=[PullRequestComment.created_at, PullRequestComment.user_id,
+                     PullRequestComment.user_login])
+        future_commits = cls._read_filtered_models(
+            await acquire_conn(), PullRequestCommit, node_ids, time_to)
+        reviews, review_comments, review_requests, comments, commits = await asyncio.gather(
+            future_reviews, future_review_comments, future_review_requests, future_comments,
+            future_commits)
+        for field in (PullRequestCommit.author_date, PullRequestCommit.commit_date):
+            commits[field.key] = pd.to_datetime(
+                commits[field.key], infer_datetime_format=True, utc=True, cache=False)
+        # delete from here
+        releases = pd.DataFrame(columns=[
+            "pull_request_node_id", "node_id", Release.created_at.key, Release.author.key])
+        releases.set_index(["pull_request_node_id", "node_id"], inplace=True)
+        # delete till here
+        # TODO(vmarkovtsev): load releases in pain and sweat
+        """
+        releases = await read_sql_query(
+            select([PullRequest.node_id, Release.id, Release.created_at, Release.author])
+            .where(sql.and_(PullRequest.released_as == Release.id,
+                            PullRequest.node_id.in_(node_ids),
+                            Release.created_at < time_to)),
+            conn,
+            columns=[PullRequest.node_id.key, Release.id.key, Release.created_at.key,
+                     Release.author.key],
+            index=(PullRequest.node_id.key, Release.id.key),
+        )
+        """
         return [prs, reviews, review_comments, review_requests, comments, commits, releases]
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
