@@ -9,24 +9,34 @@ import aiomcache
 import databases
 import pandas as pd
 from sqlalchemy import select, sql
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
     PullRequestListItem, Stage
-from athenian.api.models.metadata.github import Base, IssueComment, PullRequest, \
-    PullRequestComment, PullRequestCommit, PullRequestReview
+from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
+    PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
+    Release
 
 
 @dataclass(frozen=True)
 class MinedPullRequest:
-    """All the relevant information we are able to load from the metadata DB about a PR."""
+    """All the relevant information we are able to load from the metadata DB about a PR.
+
+    All the DataFrame-s have a two-layered index:
+    1. pull request id
+    2. own id
+    The artificial first index layer makes it is faster to select data belonging to a certain PR.
+    """
 
     pr: pd.Series
     reviews: pd.DataFrame
     review_comments: pd.DataFrame
+    review_requests: pd.DataFrame
     comments: pd.DataFrame
     commits: pd.DataFrame
+    releases: pd.DataFrame
 
 
 class PullRequestMiner:
@@ -36,20 +46,28 @@ class PullRequestMiner:
     CACHE_TTL = 5 * 60
 
     def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
-                 comments: pd.DataFrame, commits: pd.DataFrame):
+                 review_requests: pd.DataFrame, comments: pd.DataFrame, commits: pd.DataFrame,
+                 releases: pd.DataFrame):
         """Initialize a new instance of `PullRequestMiner`."""
         self._prs = prs
         self._reviews = reviews
         self._review_comments = review_comments
+        self._review_requests = review_requests
         self._comments = comments
         self._commits = commits
+        self._releases = releases
 
     def _serialize_for_cache(dfs: List[pd.DataFrame]) -> memoryview:
         assert len(dfs) < 256
         buf = io.BytesIO()
+        buf.close = lambda: None  # disable closing the buffer in to_pickle()
         offsets = []
         for df in dfs:
-            df.reset_index().to_feather(buf)
+            # pickle works 2-3x faster for both serialization and deserialization on our data
+            df.to_pickle(buf)
+            # tracking of the offsets is not really needed for pickles, but is required by feather
+            # we don't use feather *yet* due to https://github.com/pandas-dev/pandas/issues/32587
+            # FIXME(vmarkovtsev): ^^^
             offsets.append(buf.tell())
         buf.write(struct.pack("!" + "I" * len(offsets), *offsets))
         buf.write(struct.pack("!B", len(offsets)))
@@ -61,13 +79,15 @@ class PullRequestMiner:
         offsets = (0,) + struct.unpack("!" + "I" * size, data[-size * 4 - 1:-1])
         dfs = []
         for beg, end in zip(offsets, offsets[1:]):
-            buf = io.BytesIO(data[beg:end])
-            df = pd.read_feather(buf)
-            try:
-                dfs.append(df.set_index(["node_id"]))
-            except KeyError:
-                # FIXME(vmarkovtsev): this should be rewritten after review requests
-                dfs.append(df.set_index(["pull_request_id", "sha"]))
+            df = pd.read_pickle(io.BytesIO(data[beg:end]))
+            # The following code recovers the index if it was discarded.
+            """
+            if "pull_request_node_id" in df.columns:
+                df.set_index(["pull_request_node_id", "node_id"], inplace=True)
+            else:
+                df.set_index("id", inplace=True)
+            """
+            dfs.append(df)
         return dfs
 
     @classmethod
@@ -91,24 +111,49 @@ class PullRequestMiner:
                     sql.and_(sql.or_(PullRequest.closed_at.is_(None),
                                      PullRequest.closed_at > time_from),
                              PullRequest.created_at < time_to)),
-            PullRequest.repository_fullname.in_(repositories),
+            PullRequest.repository_full_name.in_(repositories),
         ]
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
         async with db.connection() as conn:
-            prs = (await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                        conn, PullRequest)).set_index(["node_id"])
-            # FIXME(vmarkovtsev): this should be rewritten after review requests
-            numbers = prs[PullRequest.number.key] if len(prs) > 0 else set()
+            prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
+                                       conn, PullRequest, index="id")
+            node_ids = prs[PullRequest.node_id.key] if len(prs) > 0 else set()
+            # TODO(vmarkovtsev): carefully select the columns that must be fetched
             reviews = await cls._read_filtered_models(
-                conn, PullRequestReview, numbers, repositories, time_to)
+                conn, PullRequestReview, node_ids, time_to)
             review_comments = await cls._read_filtered_models(
-                conn, PullRequestComment, numbers, repositories, time_to)
+                conn, PullRequestReviewComment, node_ids, time_to)
+            review_requests = await cls._read_filtered_models(
+                conn, PullRequestReviewRequest, node_ids, time_to)
             comments = await cls._read_filtered_models(
-                conn, IssueComment, numbers, repositories, time_to)
+                conn, PullRequestComment, node_ids, time_to,
+                columns=[PullRequestComment.created_at, PullRequestComment.user_id,
+                         PullRequestComment.user_login])
             commits = await cls._read_filtered_models(
-                conn, PullRequestCommit, numbers, repositories, time_to)
-        return [prs, reviews, review_comments, comments, commits]
+                conn, PullRequestCommit, node_ids, time_to)
+            for field in (PullRequestCommit.author_date, PullRequestCommit.commit_date):
+                commits[field.key] = pd.to_datetime(
+                    commits[field.key], infer_datetime_format=True, utc=True, cache=False)
+            # delete from here
+            releases = pd.DataFrame(columns=[
+                "pull_request_node_id", "node_id", Release.created_at.key, Release.author.key])
+            releases.set_index(["pull_request_node_id", "node_id"], inplace=True)
+            # delete till here
+            # TODO(vmarkovtsev): load releases in pain and sweat
+            """
+            releases = await read_sql_query(
+                select([PullRequest.node_id, Release.id, Release.created_at, Release.author])
+                .where(sql.and_(PullRequest.released_as == Release.id,
+                                PullRequest.node_id.in_(node_ids),
+                                Release.created_at < time_to)),
+                conn,
+                columns=[PullRequest.node_id.key, Release.id.key, Release.created_at.key,
+                         Release.author.key],
+                index=(PullRequest.node_id.key, Release.id.key),
+            )
+            """
+        return [prs, reviews, review_comments, review_requests, comments, commits, releases]
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
     _deserialize_from_cache = staticmethod(_deserialize_from_cache)
@@ -133,39 +178,35 @@ class PullRequestMiner:
     @staticmethod
     async def _read_filtered_models(conn: databases.core.Connection,
                                     model_cls: Base,
-                                    numbers: Sequence[str],
-                                    repositories: Sequence[str],
+                                    node_ids: Sequence[str],
                                     time_to: date,
+                                    columns: Optional[List[InstrumentedAttribute]] = None,
                                     ) -> pd.DataFrame:
         time_to = datetime.combine(time_to, datetime.min.time())
         df = await read_sql_query(select([model_cls]).where(
-            sql.and_(model_cls.pull_request_number.in_(numbers),
-                     model_cls.repository_fullname.in_(repositories),
+            sql.and_(model_cls.pull_request_node_id.in_(node_ids),
                      model_cls.created_at < time_to)),
-            conn, model_cls)
-        try:
-            return df.set_index(["node_id"])
-        except KeyError:
-            # FIXME(vmarkovtsev): this should be rewritten after review requests
-            return df.set_index(["pull_request_id", "sha"])
+            conn, model_cls, index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
+        if columns is not None:
+            df = df[[c.name for c in columns]]
+        df.rename_axis(["pull_request_node_id", "node_id"], inplace=True)
+        return df
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
-        number_key = PullRequest.number.key
-        repo_key = PullRequest.repository_fullname.key
+        node_id_key = PullRequest.node_id.key
         for _, pr in self._prs.iterrows():
-            pr_number = pr[number_key]
-            pr_repo = pr[repo_key]
-            items = []
-            for k, model in (("reviews", PullRequestReview),
-                             ("review_comments", PullRequestComment),
-                             ("comments", IssueComment),
-                             ("commits", PullRequestCommit)):
-                attr = getattr(self, "_" + k)
-                items.append(attr[
-                    (attr[model.pull_request_number.key] == pr_number) &  # noqa: W504
-                    (attr[model.repository_fullname.key] == pr_repo)])
-            yield MinedPullRequest(pr, *items)
+            pr_node_id = pr[node_id_key]
+            items = {}
+            for k in MinedPullRequest.__dataclass_fields__:
+                if k == "pr":
+                    continue
+                df = getattr(self, "_" + k)
+                try:
+                    items[k] = df.loc[pr_node_id]
+                except KeyError:
+                    items[k] = df.iloc[:0].copy()
+            yield MinedPullRequest(pr, **items)
 
 
 T = TypeVar("T")
@@ -275,11 +316,11 @@ class PullRequestTimesMiner(PullRequestMiner):
         first_commit = Fallback(pr.commits[PullRequestCommit.commit_date.key].min(), None)
         last_commit = Fallback(pr.commits[PullRequestCommit.commit_date.key].max(), None)
         first_comment = dtmin(
-            pr.review_comments[PullRequestComment.created_at.key].min(),
+            pr.review_comments[PullRequestReviewComment.created_at.key].min(),
             pr.reviews[PullRequestReview.submitted_at.key].min(),
-            pr.comments[pr.comments[PullRequestComment.user_id.key]
+            pr.comments[pr.comments[PullRequestReviewComment.user_id.key]
                         != pr.pr[PullRequest.user_id.key]]  # noqa: W503
-                [PullRequestComment.created_at.key].min())
+                [PullRequestReviewComment.created_at.key].min())
         if closed_at and first_comment is not None and first_comment > closed_at.best:
             first_comment = None
         first_comment_on_first_review = Fallback(first_comment, merged_at)
@@ -294,9 +335,15 @@ class PullRequestTimesMiner(PullRequestMiner):
             last_commit = Fallback.max(last_commit, first_commit)
         else:
             last_commit_before_first_review = last_commit
-        first_review_request = Fallback(None, Fallback.min(
+        first_review_request_backup = Fallback.min(
             Fallback.max(created_at, last_commit_before_first_review),
-            first_comment_on_first_review))  # FIXME(vmarkovtsev): no review request info
+            first_comment_on_first_review)
+        first_review_request = pr.review_requests[PullRequestReviewRequest.created_at.key].min()
+        if first_review_request_backup and first_review_request == first_review_request and \
+                first_review_request > first_review_request_backup.best:
+            first_review_request = Fallback(None, first_review_request_backup)
+        else:
+            first_review_request = Fallback(first_review_request, first_review_request_backup)
         if closed_at:
             last_review = Fallback(
                 pr.reviews[pr.reviews[PullRequestReview.submitted_at.key] <= closed_at.best][
@@ -323,6 +370,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             ][PullRequestReview.submitted_at.key].max()
         approved_at = Fallback(approved_at_value, merged_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
+        released_at = pr.releases[Release.created_at.key].min()  # may be None or NaT - that's fine
         return PullRequestTimes(
             created=created_at,
             first_commit=first_commit,
@@ -335,7 +383,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             approved=approved_at,
             first_passed_checks=Fallback(None, None),  # FIXME(vmarkovtsev): no CI info
             last_passed_checks=last_passed_checks,
-            released=Fallback(None, None),  # FIXME(vmarkovtsev): no releases
+            released=Fallback(released_at, None),
             closed=closed_at,
         )
 
@@ -355,10 +403,9 @@ def dtmin(*args: Union[DT, float]) -> DT:
 class PullRequestListMiner(PullRequestTimesMiner):
     """Collect various PR metadata for displaying PRs on the frontend."""
 
-    def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
-                 comments: pd.DataFrame, commits: pd.DataFrame):
+    def __init__(self, *args, **kwargs):
         """Initialize a new instance of `PullRequestListMiner`."""
-        super().__init__(prs, reviews, review_comments, comments, commits)
+        super().__init__(*args, **kwargs)
         self._stages = set()
         self._participants = {}
 
@@ -397,14 +444,15 @@ class PullRequestListMiner(PullRequestTimesMiner):
     def _compile(self, pr: MinedPullRequest) -> Optional[PullRequestListItem]:
         """Match the PR to the required participants and stages."""
         prefix = "github.com/"
+        author = pr.pr[PullRequest.user_login.key]
         participants = {
-            ParticipationKind.AUTHOR: {prefix + pr.pr[PullRequest.user_login.key]},
+            ParticipationKind.AUTHOR: {prefix + author} if author else set(),
             ParticipationKind.REVIEWER: {
-                (prefix + u) for u in pr.reviews[PullRequestReview.user_login.key]},
+                (prefix + u) for u in pr.reviews[PullRequestReview.user_login.key] if u},
             ParticipationKind.COMMENTER: {
-                (prefix + u) for u in pr.comments[IssueComment.user_login.key]},
+                (prefix + u) for u in pr.comments[PullRequestComment.user_login.key] if u},
             ParticipationKind.COMMIT_COMMITTER: {
-                (prefix + u) for u in pr.commits[PullRequestCommit.commiter_login.key] if u},
+                (prefix + u) for u in pr.commits[PullRequestCommit.committer_login.key] if u},
             ParticipationKind.COMMIT_AUTHOR: {
                 (prefix + u) for u in pr.commits[PullRequestCommit.author_login.key] if u},
         }
@@ -418,6 +466,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
             stage = Stage.DONE
         elif times.merged:
             # FIXME(vmarkovtsev): no releases data, we don't know if this is actually true
+            # What the hell did you mean Vadim??? - Vadim from the future.
             stage = Stage.RELEASE
         elif times.approved:
             stage = Stage.MERGE
@@ -428,7 +477,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
         if stage not in self.stages:
             return None
         return PullRequestListItem(
-            repository=prefix + pr.pr[PullRequest.repository_fullname.key],
+            repository=prefix + pr.pr[PullRequest.repository_full_name.key],
             number=pr.pr[PullRequest.number.key],
             title=pr.pr[PullRequest.title.key],
             size_added=pr.pr[PullRequest.additions.key],
@@ -439,7 +488,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
             closed=times.closed.best,
             comments=len(pr.comments),
             commits=len(pr.commits),
-            review_requested=False,  # FIXME(vmarkovtsev): no review request info
+            review_requested=len(pr.review_requests) > 0,
             review_comments=len(pr.review_comments),
             merged=bool(times.merged),
             stage=stage,

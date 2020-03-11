@@ -227,11 +227,51 @@ def test_encode_decode():
 async def test_progress_200(client, headers, app, cache):
     app._cache = cache
     true_body = {
-        "owner": "vmarkovtsev",
-        "repositories": 19,
-        "tables": [
-            {"fetched": 30, "name": "Commit", "total": 50},
-        ],
+        "started_date": "2020-03-10T09:53:41Z", "finished_date": "2020-03-10T14:46:29Z",
+        "owner": "vmarkovtsev", "repositories": 19,
+        "tables": [{"fetched": 44, "name": "AssignedEvent", "total": 44},
+                   {"fetched": 5, "name": "BaseRefChangedEvent", "total": 5},
+                   {"fetched": 40, "name": "BaseRefForcePushedEvent", "total": 40},
+                   {"fetched": 1, "name": "Bot", "total": 1},
+                   {"fetched": 1089, "name": "ClosedEvent", "total": 1089},
+                   {"fetched": 1, "name": "CommentDeletedEvent", "total": 1},
+                   {"fetched": 3308, "name": "Commit", "total": 3308},
+                   {"fetched": 654, "name": "CrossReferencedEvent", "total": 654},
+                   {"fetched": 8, "name": "DemilestonedEvent", "total": 8},
+                   {"fetched": 233, "name": "HeadRefDeletedEvent", "total": 233},
+                   {"fetched": 662, "name": "HeadRefForcePushedEvent", "total": 662},
+                   {"fetched": 1, "name": "HeadRefRestoredEvent", "total": 1},
+                   {"fetched": 607, "name": "Issue", "total": 607},
+                   {"fetched": 2661, "name": "IssueComment", "total": 2661},
+                   {"fetched": 561, "name": "LabeledEvent", "total": 561},
+                   {"fetched": 1, "name": "Language", "total": 1},
+                   {"fetched": 1, "name": "License", "total": 1},
+                   {"fetched": 1042, "name": "MentionedEvent", "total": 1042},
+                   {"fetched": 554, "name": "MergedEvent", "total": 554},
+                   {"fetched": 47, "name": "MilestonedEvent", "total": 47},
+                   {"fetched": 14, "name": "Organization", "total": 14},
+                   {"fetched": 682, "name": "PullRequest", "total": 682},
+                   {"fetched": 2369, "name": "PullRequestCommit", "total": 2369},
+                   {"fetched": 16, "name": "PullRequestCommitCommentThread", "total": 16},
+                   {"fetched": 1352, "name": "PullRequestReview", "total": 1352},
+                   {"fetched": 1786, "name": "PullRequestReviewComment", "total": 1786},
+                   {"fetched": 1095, "name": "PullRequestReviewThread", "total": 1095},
+                   {"fetched": 864, "name": "Reaction", "total": 864},
+                   {"fetched": 1, "name": "ReadyForReviewEvent", "total": 1},
+                   {"fetched": 54, "name": "Ref", "total": 54},
+                   {"fetched": 1244, "name": "ReferencedEvent", "total": 1244},
+                   {"fetched": 53, "name": "Release", "total": 53},
+                   {"fetched": 228, "name": "RenamedTitleEvent", "total": 228},
+                   {"fetched": 24, "name": "ReopenedEvent", "total": 24},
+                   {"fetched": 288, "name": "Repository", "total": 288},
+                   {"fetched": 8, "name": "ReviewDismissedEvent", "total": 8},
+                   {"fetched": 9, "name": "ReviewRequestRemovedEvent", "total": 9},
+                   {"fetched": 439, "name": "ReviewRequestedEvent", "total": 439},
+                   {"fetched": 1045, "name": "SubscribedEvent", "total": 1045},
+                   {"fetched": 4, "name": "UnassignedEvent", "total": 4},
+                   {"fetched": 32, "name": "UnlabeledEvent", "total": 32},
+                   {"fetched": 1, "name": "UnsubscribedEvent", "total": 1},
+                   {"fetched": 910, "name": "User", "total": 910}],
     }
     for _ in range(2):
         response = await client.request(
@@ -239,9 +279,6 @@ async def test_progress_200(client, headers, app, cache):
         )
         assert response.status == 200
         body = json.loads((await response.read()).decode("utf-8"))
-        sd = body["started_date"]
-        assert sd
-        del body["started_date"]
         assert body == true_body
 
 
