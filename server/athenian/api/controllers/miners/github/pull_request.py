@@ -19,7 +19,6 @@ from athenian.api.controllers.miners.pull_request_list_item import Participation
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
-from athenian.api.request import acquire_conn_type, with_conn_pool
 
 
 @dataclass(frozen=True)
@@ -93,7 +92,6 @@ class PullRequestMiner:
         return dfs
 
     @classmethod
-    @with_conn_pool(lambda db, **_: db)
     @cached(
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=_serialize_for_cache,
@@ -107,7 +105,7 @@ class PullRequestMiner:
     )
     async def _mine(cls, time_from: date, time_to: date, repositories: Sequence[str],
                     developers: Sequence[str], db: databases.Database,
-                    cache: Optional[aiomcache.Client], acquire_conn: acquire_conn_type,
+                    cache: Optional[aiomcache.Client],
                     ) -> List[pd.DataFrame]:
         filters = [
             sql.or_(sql.and_(PullRequest.updated_at >= time_from,
@@ -119,28 +117,41 @@ class PullRequestMiner:
         ]
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
-        conn0 = await acquire_conn()
         prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                   conn0, PullRequest, index="id")
+                                   db, PullRequest, index="id")
         node_ids = prs[PullRequest.node_id.key] if len(prs) > 0 else set()
-        # TODO(vmarkovtsev): carefully select the columns that must be fetched
-        future_reviews = cls._read_filtered_models(
-            conn0, PullRequestReview, node_ids, time_to)
-        future_review_comments = cls._read_filtered_models(
-            await acquire_conn(), PullRequestReviewComment, node_ids, time_to)
-        future_review_requests = cls._read_filtered_models(
-            await acquire_conn(), PullRequestReviewRequest, node_ids, time_to)
-        future_comments = cls._read_filtered_models(
-            await acquire_conn(), PullRequestComment, node_ids, time_to,
-            columns=[PullRequestComment.created_at, PullRequestComment.user_id,
-                     PullRequestComment.user_login])
-        future_commits = cls._read_filtered_models(
-            await acquire_conn(), PullRequestCommit, node_ids, time_to,
-            columns=[PullRequestCommit.authored_date, PullRequestCommit.committed_date,
-                     PullRequestCommit.author_login, PullRequestCommit.committer_login])
+
+        async def fetch_reviews():
+            return await cls._read_filtered_models(
+                db, PullRequestReview, node_ids, time_to,
+                columns=[PullRequestReview.submitted_at, PullRequestReview.user_id,
+                         PullRequestReview.state, PullRequestReview.user_login])
+
+        async def fetch_review_comments():
+            return await cls._read_filtered_models(
+                db, PullRequestReviewComment, node_ids, time_to,
+                columns=[PullRequestReviewComment.created_at, PullRequestReviewComment.user_id])
+
+        async def fetch_review_requests():
+            return await cls._read_filtered_models(
+                db, PullRequestReviewRequest, node_ids, time_to,
+                columns=[PullRequestReviewRequest.created_at])
+
+        async def fetch_comments():
+            return await cls._read_filtered_models(
+                db, PullRequestComment, node_ids, time_to,
+                columns=[PullRequestComment.created_at, PullRequestComment.user_id,
+                         PullRequestComment.user_login])
+
+        async def fetch_commits():
+            return await cls._read_filtered_models(
+                db, PullRequestCommit, node_ids, time_to,
+                columns=[PullRequestCommit.authored_date, PullRequestCommit.committed_date,
+                         PullRequestCommit.author_login, PullRequestCommit.committer_login])
+
         reviews, review_comments, review_requests, comments, commits = await asyncio.gather(
-            future_reviews, future_review_comments, future_review_requests, future_comments,
-            future_commits)
+            fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
+            fetch_commits())
         # delete from here
         releases = pd.DataFrame(columns=[
             "pull_request_node_id", "node_id", Release.created_at.key, Release.author.key])
@@ -182,19 +193,21 @@ class PullRequestMiner:
         return cls(*dfs)
 
     @staticmethod
-    async def _read_filtered_models(conn: databases.core.Connection,
+    async def _read_filtered_models(conn: Union[databases.core.Connection, databases.Database],
                                     model_cls: Base,
                                     node_ids: Sequence[str],
                                     time_to: date,
                                     columns: Optional[List[InstrumentedAttribute]] = None,
                                     ) -> pd.DataFrame:
         time_to = datetime.combine(time_to, datetime.min.time())
-        df = await read_sql_query(select([model_cls]).where(
+        if columns is not None:
+            columns = [model_cls.pull_request_node_id, model_cls.node_id] + columns
+        df = await read_sql_query(select(columns or [model_cls]).where(
             sql.and_(model_cls.pull_request_node_id.in_(node_ids),
                      model_cls.created_at < time_to)),
-            conn, model_cls, index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
-        if columns is not None:
-            df = df[[c.name for c in columns]]
+            con=conn,
+            columns=columns or model_cls,
+            index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
         df.rename_axis(["pull_request_node_id", "node_id"], inplace=True)
         return df
 
