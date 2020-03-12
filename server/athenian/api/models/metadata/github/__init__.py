@@ -133,17 +133,19 @@ class PullRequestCommit(Base):
     author_email = Column(Text)
     author_name = Column(Text)
     author_date = Column(Text)
+    authored_date = Column(TIMESTAMP)
     committer_login = Column(Text)
     committer_email = Column(Text)
     committer_name = Column(Text)
     commit_date = Column(Text)
+    committed_date = Column(TIMESTAMP)
     pull_request_node_id = Column(Text, primary_key=True)
     sha = Column(Text, primary_key=True)
     additions = Column(Integer)
     deletions = Column(Integer)
     message = Column(Text)
     repository_full_name = Column(Text)
-    created_at = synonym("commit_date")
+    created_at = synonym("committed_date")
 
     def parse_author_date(self):
         """Deserialize the date when the commit was authored.
@@ -164,7 +166,7 @@ class PullRequestCommit(Base):
         return dateutil.parser.parse(self.commit_date)
 
 
-PullRequestCommit.created_at.key = "commit_date"
+PullRequestCommit.created_at.key = "committed_date"
 
 
 class PullRequestReview(Base,
