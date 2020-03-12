@@ -135,13 +135,12 @@ class PullRequestMiner:
             columns=[PullRequestComment.created_at, PullRequestComment.user_id,
                      PullRequestComment.user_login])
         future_commits = cls._read_filtered_models(
-            await acquire_conn(), PullRequestCommit, node_ids, time_to)
+            await acquire_conn(), PullRequestCommit, node_ids, time_to,
+            columns=[PullRequestCommit.authored_date, PullRequestCommit.committed_date,
+                     PullRequestCommit.author_login, PullRequestCommit.committer_login])
         reviews, review_comments, review_requests, comments, commits = await asyncio.gather(
             future_reviews, future_review_comments, future_review_requests, future_comments,
             future_commits)
-        for field in (PullRequestCommit.author_date, PullRequestCommit.commit_date):
-            commits[field.key] = pd.to_datetime(
-                commits[field.key], infer_datetime_format=True, utc=True, cache=False)
         # delete from here
         releases = pd.DataFrame(columns=[
             "pull_request_node_id", "node_id", Release.created_at.key, Release.author.key])
@@ -320,8 +319,8 @@ class PullRequestTimesMiner(PullRequestMiner):
         created_at = Fallback(pr.pr[PullRequest.created_at.key], None)
         merged_at = Fallback(pr.pr[PullRequest.merged_at.key], None)
         closed_at = Fallback(pr.pr[PullRequest.closed_at.key], None)
-        first_commit = Fallback(pr.commits[PullRequestCommit.commit_date.key].min(), None)
-        last_commit = Fallback(pr.commits[PullRequestCommit.commit_date.key].max(), None)
+        first_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].min(), None)
+        last_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].max(), None)
         first_comment = dtmin(
             pr.review_comments[PullRequestReviewComment.created_at.key].min(),
             pr.reviews[PullRequestReview.submitted_at.key].min(),
@@ -333,9 +332,9 @@ class PullRequestTimesMiner(PullRequestMiner):
         first_comment_on_first_review = Fallback(first_comment, merged_at)
         if first_comment_on_first_review:
             last_commit_before_first_review = Fallback(
-                pr.commits[pr.commits[PullRequestCommit.commit_date.key]
+                pr.commits[pr.commits[PullRequestCommit.committed_date.key]
                            <= first_comment_on_first_review.best]  # noqa: W503
-                    [PullRequestCommit.commit_date.key].max(),
+                    [PullRequestCommit.committed_date.key].max(),
                 first_comment_on_first_review)
             # force pushes that were lost
             first_commit = Fallback.min(first_commit, last_commit_before_first_review)
