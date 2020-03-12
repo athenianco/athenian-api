@@ -120,16 +120,22 @@ class PullRequestMiner:
         prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                    db, PullRequest, index="id")
         node_ids = prs[PullRequest.node_id.key] if len(prs) > 0 else set()
-        # TODO(vmarkovtsev): carefully select the columns that must be fetched
 
         async def fetch_reviews():
-            return await cls._read_filtered_models(db, PullRequestReview, node_ids, time_to)
+            return await cls._read_filtered_models(
+                db, PullRequestReview, node_ids, time_to,
+                columns=[PullRequestReview.submitted_at, PullRequestReview.user_id,
+                         PullRequestReview.state, PullRequestReview.user_login])
 
         async def fetch_review_comments():
-            return await cls._read_filtered_models(db, PullRequestReviewComment, node_ids, time_to)
+            return await cls._read_filtered_models(
+                db, PullRequestReviewComment, node_ids, time_to,
+                columns=[PullRequestReviewComment.created_at, PullRequestReviewComment.user_id])
 
         async def fetch_review_requests():
-            return await cls._read_filtered_models(db, PullRequestReviewRequest, node_ids, time_to)
+            return await cls._read_filtered_models(
+                db, PullRequestReviewRequest, node_ids, time_to,
+                columns=[PullRequestReviewRequest.created_at])
 
         async def fetch_comments():
             return await cls._read_filtered_models(
@@ -194,12 +200,14 @@ class PullRequestMiner:
                                     columns: Optional[List[InstrumentedAttribute]] = None,
                                     ) -> pd.DataFrame:
         time_to = datetime.combine(time_to, datetime.min.time())
-        df = await read_sql_query(select([model_cls]).where(
+        if columns is not None:
+            columns = [model_cls.pull_request_node_id, model_cls.node_id] + columns
+        df = await read_sql_query(select(columns or [model_cls]).where(
             sql.and_(model_cls.pull_request_node_id.in_(node_ids),
                      model_cls.created_at < time_to)),
-            conn, model_cls, index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
-        if columns is not None:
-            df = df[[c.name for c in columns]]
+            con=conn,
+            columns=columns or model_cls,
+            index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
         df.rename_axis(["pull_request_node_id", "node_id"], inplace=True)
         return df
 
