@@ -25,48 +25,55 @@ from athenian.api.models.web.included_native_users import IncludedNativeUsers
 from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_set import PullRequestSet
-from athenian.api.request import acquire_conn_type, AthenianWebRequest, with_conn_pool
+from athenian.api.request import AthenianWebRequest
 from athenian.api.response import FriendlyJson, response, ResponseError
 
 
-@with_conn_pool(lambda request, **_: request.mdb, "acquire_mdb_conn")
 async def filter_contributors(request: AthenianWebRequest,
                               body: dict,
-                              acquire_mdb_conn: acquire_conn_type,
                               ) -> web.Response:
     """Find developers that made an action within the given timeframe."""
     filt = FilterContribsOrReposRequest.from_dict(body)
-    conn0 = await acquire_mdb_conn()
     try:
         repos = await _resolve_repos(
-            filt, request.uid, request.native_uid, request.sdb, conn0, request.cache)
+            filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
     except ResponseError as e:
         return e.response
-    u_pr = conn0.fetch_all(
-        select([distinct(PullRequest.user_login)])
-        .where(and_(PullRequest.repository_full_name.in_(repos), or_(
-                    PullRequest.created_at.between(filt.date_from, filt.date_to),
-                    PullRequest.closed_at.between(filt.date_from, filt.date_to),
-                    PullRequest.updated_at.between(filt.date_from, filt.date_to),
-                    ))))
-    u_pr_commits = (await acquire_mdb_conn()).fetch_all(
-        select([PullRequestCommit.author_login, PullRequestCommit.committer_login])
-        .where(and_(PullRequestCommit.repository_full_name.in_(repos),
-                    PullRequestCommit.commit_date.between(filt.date_from, filt.date_to),
-                    ))
-        .distinct(PullRequestCommit.author_login, PullRequestCommit.committer_login))
-    u_push_commits = (await acquire_mdb_conn()).fetch_all(
-        select([PushCommit.author_login, PushCommit.committer_login])
-        .where(and_(PushCommit.repository_full_name.in_(repos),
-                    PushCommit.timestamp.between(filt.date_from, filt.date_to),
-                    ))
-        .distinct(PushCommit.author_login, PushCommit.committer_login))
-    u_reviews = (await acquire_mdb_conn()).fetch_all(
-        select([distinct(PullRequestReview.user_login)])
-        .where(and_(PullRequestReview.repository_full_name.in_(repos),
-                    PullRequestReview.submitted_at.between(filt.date_from, filt.date_to),
-                    )))
-    rows = await asyncio.gather(u_pr, u_reviews, u_pr_commits, u_push_commits)
+
+    async def fetch_prs():
+        return await request.mdb.fetch_all(
+            select([distinct(PullRequest.user_login)])
+            .where(and_(PullRequest.repository_full_name.in_(repos), or_(
+                        PullRequest.created_at.between(filt.date_from, filt.date_to),
+                        PullRequest.closed_at.between(filt.date_from, filt.date_to),
+                        PullRequest.updated_at.between(filt.date_from, filt.date_to),
+                        ))))
+
+    async def fetch_pr_commits():
+        return await request.mdb.fetch_all(
+            select([PullRequestCommit.author_login, PullRequestCommit.committer_login])
+            .where(and_(PullRequestCommit.repository_full_name.in_(repos),
+                        PullRequestCommit.committed_date.between(filt.date_from, filt.date_to),
+                        ))
+            .distinct(PullRequestCommit.author_login, PullRequestCommit.committer_login))
+
+    async def fetch_push_commits():
+        return await request.mdb.fetch_all(
+            select([PushCommit.author_login, PushCommit.committer_login])
+            .where(and_(PushCommit.repository_full_name.in_(repos),
+                        PushCommit.timestamp.between(filt.date_from, filt.date_to),
+                        ))
+            .distinct(PushCommit.author_login, PushCommit.committer_login))
+
+    async def fetch_reviews():
+        return await request.mdb.fetch_all(
+            select([distinct(PullRequestReview.user_login)])
+            .where(and_(PullRequestReview.repository_full_name.in_(repos),
+                        PullRequestReview.submitted_at.between(filt.date_from, filt.date_to),
+                        )))
+
+    rows = await asyncio.gather(
+        fetch_prs(), fetch_pr_commits(), fetch_push_commits(), fetch_reviews())
     singles = 2
     users = set(r[0] for r in chain.from_iterable(rows[:singles]))
     for r in chain.from_iterable(rows[singles:]):
@@ -79,43 +86,49 @@ async def filter_contributors(request: AthenianWebRequest,
     return web.json_response(users, dumps=FriendlyJson.dumps)
 
 
-@with_conn_pool(lambda request, **_: request.mdb, "acquire_mdb_conn")
 async def filter_repositories(request: AthenianWebRequest,
                               body: dict,
-                              acquire_mdb_conn: acquire_conn_type,
                               ) -> web.Response:
     """Find repositories that were updated within the given timeframe."""
     filt = FilterContribsOrReposRequest.from_dict(body)
-    conn0 = await acquire_mdb_conn()
     try:
         repos = await _resolve_repos(
-            filt, request.uid, request.native_uid, request.sdb, conn0, request.cache)
+            filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
     except ResponseError as e:
         return e.response
-    r_pr = conn0.fetch_all(
-        select([distinct(PullRequest.repository_full_name)])
-        .where(and_(PullRequest.repository_full_name.in_(repos), or_(
-                    PullRequest.created_at.between(filt.date_from, filt.date_to),
-                    PullRequest.closed_at.between(filt.date_from, filt.date_to),
-                    PullRequest.updated_at.between(filt.date_from, filt.date_to),
-                    ))))
-    r_pr_commits = (await acquire_mdb_conn()).fetch_all(
-        select([distinct(PullRequestCommit.repository_full_name)])
-        .where(and_(PullRequestCommit.repository_full_name.in_(repos),
-                    PullRequestCommit.commit_date.between(filt.date_from, filt.date_to),
-                    )))
-    r_push_commits = (await acquire_mdb_conn()).fetch_all(
-        select([distinct(PushCommit.repository_full_name)])
-        .where(and_(PushCommit.repository_full_name.in_(repos),
-                    PushCommit.timestamp.between(filt.date_from, filt.date_to),
-                    )))
-    r_reviews = (await acquire_mdb_conn()).fetch_all(
-        select([distinct(PullRequestReview.repository_full_name)])
-        .where(and_(PullRequestReview.repository_full_name.in_(repos),
-                    PullRequestReview.submitted_at.between(filt.date_from, filt.date_to),
-                    )))
+
+    async def fetch_prs():
+        return await request.mdb.fetch_all(
+            select([distinct(PullRequest.repository_full_name)])
+            .where(and_(PullRequest.repository_full_name.in_(repos), or_(
+                        PullRequest.created_at.between(filt.date_from, filt.date_to),
+                        PullRequest.closed_at.between(filt.date_from, filt.date_to),
+                        PullRequest.updated_at.between(filt.date_from, filt.date_to),
+                        ))))
+
+    async def fetch_pr_commits():
+        return await request.mdb.fetch_all(
+            select([distinct(PullRequestCommit.repository_full_name)])
+            .where(and_(PullRequestCommit.repository_full_name.in_(repos),
+                        PullRequestCommit.committed_date.between(filt.date_from, filt.date_to),
+                        )))
+
+    async def fetch_push_commits():
+        return await request.mdb.fetch_all(
+            select([distinct(PushCommit.repository_full_name)])
+            .where(and_(PushCommit.repository_full_name.in_(repos),
+                        PushCommit.timestamp.between(filt.date_from, filt.date_to),
+                        )))
+
+    async def fetch_reviews():
+        return await request.mdb.fetch_all(
+            select([distinct(PullRequestReview.repository_full_name)])
+            .where(and_(PullRequestReview.repository_full_name.in_(repos),
+                        PullRequestReview.submitted_at.between(filt.date_from, filt.date_to),
+                        )))
+
     repos = sorted({"github.com/" + r[0] for r in chain.from_iterable(await asyncio.gather(
-        r_pr, r_pr_commits, r_push_commits, r_reviews))})
+        fetch_prs(), fetch_pr_commits(), fetch_push_commits(), fetch_reviews()))})
     return web.json_response(repos, dumps=FriendlyJson.dumps)
 
 
