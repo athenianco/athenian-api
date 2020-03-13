@@ -9,8 +9,8 @@ import pytest
 
 from athenian.api.controllers.miners.github.pull_request import PullRequestListMiner, \
     PullRequestMiner, PullRequestTimes, PullRequestTimesMiner
-from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
-    PullRequestListItem, Stage
+from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
+    PullRequestListItem
 from tests.conftest import has_memcached
 
 
@@ -78,16 +78,27 @@ def validate_pull_request_times(prt: PullRequestTimes):
             assert prt.closed.best >= v.best
     if prt.first_commit:
         assert prt.last_commit.best >= prt.first_commit.best
+    else:
+        assert not prt.last_commit
+    if prt.first_comment_on_first_review:
         assert prt.last_commit_before_first_review.best >= prt.first_commit.best
         assert prt.last_commit_before_first_review.best <= prt.last_commit.best
-    if prt.first_comment_on_first_review:
         assert prt.last_commit_before_first_review.best <= prt.first_comment_on_first_review.best
         assert prt.first_review_request.best <= prt.first_comment_on_first_review.best
+        if prt.last_review:
+            # There may be a regular comment that counts for `first_comment_on_first_review`
+            # but no actual review submission.
+            assert prt.last_review.best >= prt.first_comment_on_first_review.best
+        assert prt.first_review_request.best <= prt.first_comment_on_first_review.best
+    else:
+        assert not prt.last_review
+        assert not prt.last_commit_before_first_review
     if prt.approved:
         assert prt.first_comment_on_first_review.best <= prt.approved.best
         assert prt.first_review_request.best <= prt.approved.best
         if prt.merged:
             assert prt.approved.best <= prt.merged.best
+            assert prt.closed
 
 
 async def test_pr_times_miner(mdb):
@@ -168,7 +179,7 @@ async def test_pr_list_miner_match_participants(mdb):
         mdb,
         None,
     )
-    miner.stages = set(Stage)
+    miner.properties = set(Property)
     miner.participants = {ParticipationKind.AUTHOR: ["github.com/mcuadros", "github.com/smola"],
                           ParticipationKind.COMMENTER: ["github.com/mcuadros"]}
     prs = list(miner)  # type: List[PullRequestListItem]
@@ -195,6 +206,6 @@ async def test_pr_list_miner_no_participants(mdb):
         mdb,
         None,
     )
-    miner.stages = set(Stage)
+    miner.properties = set(Property)
     prs = list(miner)
     assert prs

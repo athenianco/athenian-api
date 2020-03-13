@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 import io
 import struct
@@ -14,8 +14,9 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
-from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
-    PullRequestListItem, Stage
+from athenian.api.controllers.miners.github.hardcoded import BOTS
+from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
+    PullRequestListItem
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
@@ -119,6 +120,7 @@ class PullRequestMiner:
             filters.append(PullRequest.user_login.in_(developers))
         prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                    db, PullRequest, index="id")
+        cls.truncate_timestamps(prs, time_to)
         node_ids = prs[PullRequest.node_id.key] if len(prs) > 0 else set()
 
         async def fetch_reviews():
@@ -149,9 +151,11 @@ class PullRequestMiner:
                 columns=[PullRequestCommit.authored_date, PullRequestCommit.committed_date,
                          PullRequestCommit.author_login, PullRequestCommit.committer_login])
 
-        reviews, review_comments, review_requests, comments, commits = await asyncio.gather(
-            fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
-            fetch_commits())
+        dfs = await asyncio.gather(fetch_reviews(), fetch_review_comments(),
+                                   fetch_review_requests(), fetch_comments(), fetch_commits())
+        for df in dfs:
+            cls.truncate_timestamps(df, time_to)
+        reviews, review_comments, review_requests, comments, commits = dfs
         # delete from here
         releases = pd.DataFrame(columns=[
             "pull_request_node_id", "node_id", Release.created_at.key, Release.author.key])
@@ -210,6 +214,19 @@ class PullRequestMiner:
             index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
         df.rename_axis(["pull_request_node_id", "node_id"], inplace=True)
         return df
+
+    @staticmethod
+    def truncate_timestamps(df: pd.DataFrame, upto: date):
+        """Set all the timestamps after `upto` to NaT to avoid "future leakages"."""
+        upto = datetime(upto.year, upto.month, upto.day,
+                        tzinfo=timezone.utc)
+        for col in df.select_dtypes(include=[object]):
+            try:
+                df[col][df[col] > upto] = pd.NaT
+            except TypeError:
+                continue
+        for col in df.select_dtypes(include=["datetime"]):
+            df[col][df[col] > upto] = pd.NaT
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
@@ -334,12 +351,14 @@ class PullRequestTimesMiner(PullRequestMiner):
         closed_at = Fallback(pr.pr[PullRequest.closed_at.key], None)
         first_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].min(), None)
         last_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].max(), None)
+        authored_comments = pr.comments[PullRequestReviewComment.user_id.key]
         first_comment = dtmin(
             pr.review_comments[PullRequestReviewComment.created_at.key].min(),
             pr.reviews[PullRequestReview.submitted_at.key].min(),
-            pr.comments[pr.comments[PullRequestReviewComment.user_id.key]
-                        != pr.pr[PullRequest.user_id.key]]  # noqa: W503
-                [PullRequestReviewComment.created_at.key].min())
+            pr.comments[
+                (authored_comments != pr.pr[PullRequest.user_id.key])
+                & ~authored_comments.isin(BOTS)  # noqa: W503
+            ][PullRequestReviewComment.created_at.key].min())
         if closed_at and first_comment is not None and first_comment > closed_at.best:
             first_comment = None
         first_comment_on_first_review = Fallback(first_comment, merged_at)
@@ -352,15 +371,17 @@ class PullRequestTimesMiner(PullRequestMiner):
             # force pushes that were lost
             first_commit = Fallback.min(first_commit, last_commit_before_first_review)
             last_commit = Fallback.max(last_commit, first_commit)
+            first_review_request_backup = Fallback.min(
+                Fallback.max(created_at, last_commit_before_first_review),
+                first_comment_on_first_review)
         else:
-            last_commit_before_first_review = last_commit
-        first_review_request_backup = Fallback.min(
-            Fallback.max(created_at, last_commit_before_first_review),
-            first_comment_on_first_review)
+            last_commit_before_first_review = Fallback(None, None)
+            first_review_request_backup = None
         first_review_request = pr.review_requests[PullRequestReviewRequest.created_at.key].min()
         if first_review_request_backup and first_review_request == first_review_request and \
-                first_review_request > first_review_request_backup.best:
-            first_review_request = Fallback(None, first_review_request_backup)
+                first_review_request > first_comment_on_first_review.best:
+            # we cannot request a review after we received a review
+            first_review_request = Fallback(first_review_request_backup.best, None)
         else:
             first_review_request = Fallback(first_review_request, first_review_request_backup)
         if closed_at:
@@ -425,18 +446,19 @@ class PullRequestListMiner(PullRequestTimesMiner):
     def __init__(self, *args, **kwargs):
         """Initialize a new instance of `PullRequestListMiner`."""
         super().__init__(*args, **kwargs)
-        self._stages = set()
+        self._properties = set()
         self._participants = {}
+        self._time_from = pd.NaT
 
     @property
-    def stages(self) -> Set[Stage]:
-        """Return the required PR stages."""
-        return self._stages
+    def properties(self) -> Set[Property]:
+        """Return the required PR properties."""
+        return self._properties
 
-    @stages.setter
-    def stages(self, value: Sequence[Stage]):
-        """Set the required PR stages."""
-        self._stages = set(value)
+    @properties.setter
+    def properties(self, value: Sequence[Property]):
+        """Set the required PR properties."""
+        self._properties = set(value)
 
     @property
     def participants(self) -> Dict[ParticipationKind, Set[str]]:
@@ -447,6 +469,17 @@ class PullRequestListMiner(PullRequestTimesMiner):
     def participants(self, value: Mapping[ParticipationKind, Sequence[str]]):
         """Set the required PR participants."""
         self._participants = {k: set(v) for k, v in value.items()}
+
+    @property
+    def time_from(self) -> datetime:
+        """Return the minimum of the allowed events time span."""
+        return self._time_from
+
+    @time_from.setter
+    def time_from(self, value: datetime):
+        """Set the minimum of the allowed events time span."""
+        assert isinstance(value, datetime) and value.tzinfo is not None
+        self._time_from = value
 
     def _match_participants(self, yours: Mapping[ParticipationKind, Set[str]]) -> bool:
         """Check the PR particpants for compatibility with self.participants.
@@ -461,7 +494,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
         return False
 
     def _compile(self, pr: MinedPullRequest) -> Optional[PullRequestListItem]:
-        """Match the PR to the required participants and stages."""
+        """Match the PR to the required participants and properties."""
         prefix = "github.com/"
         author = pr.pr[PullRequest.user_login.key]
         participants = {
@@ -481,19 +514,31 @@ class PullRequestListMiner(PullRequestTimesMiner):
         if not self._match_participants(participants):
             return None
         times = super()._compile(pr)
+        props = set()
         if times.released or (times.closed and not times.merged):
-            stage = Stage.DONE
+            props.add(Property.DONE)
         elif times.merged:
-            # FIXME(vmarkovtsev): no releases data, we don't know if this is actually true
-            # What the hell did you mean Vadim??? - Vadim from the future.
-            stage = Stage.RELEASE
+            props.add(Property.RELEASING)
         elif times.approved:
-            stage = Stage.MERGE
-        elif times.first_review_request and times.last_review:
-            stage = Stage.REVIEW
+            props.add(Property.MERGING)
+        elif times.first_review_request:
+            props.add(Property.REVIEWING)
         else:
-            stage = Stage.WIP
-        if stage not in self.stages:
+            props.add(Property.WIP)
+        time_from = self.time_from
+        if times.created.best > time_from:
+            props.add(Property.CREATED)
+        if (pr.commits[PullRequestCommit.committed_date.key] > time_from).any():
+            props.add(Property.COMMIT_HAPPENED)
+        if (pr.reviews[PullRequestReview.submitted_at.key] > time_from).any():
+            props.add(Property.REVIEW_HAPPENED)
+        if times.approved and times.approved.best > time_from:
+            props.add(Property.APPROVE_HAPPENED)
+        if times.merged and times.merged.best > time_from:
+            props.add(Property.MERGE_HAPPENED)
+        if times.released and times.released.best > time_from:
+            props.add(Property.RELEASE_HAPPENED)
+        if not self.properties.intersection(props):
             return None
         return PullRequestListItem(
             repository=prefix + pr.pr[PullRequest.repository_full_name.key],
@@ -510,7 +555,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
             review_requested=len(pr.review_requests) > 0,
             review_comments=len(pr.review_comments),
             merged=bool(times.merged),
-            stage=stage,
+            properties=props,
             participants=participants,
         )
 

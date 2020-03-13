@@ -1,15 +1,16 @@
 from collections import defaultdict
 import json
-from typing import Set
+from typing import Optional, Set
 
 from aiohttp import ClientResponse
 from prometheus_client import CollectorRegistry
 import pytest
 
 from athenian.api import setup_cache_metrics
-from athenian.api.controllers.miners.pull_request_list_item import Stage
+from athenian.api.controllers.miners.pull_request_list_item import Property
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
+from athenian.api.models.web.pull_request_property import PullRequestProperty
 from tests.conftest import FakeCache
 
 
@@ -152,17 +153,17 @@ async def test_filter_contributors_bad_account(client, headers):
 
 
 @pytest.fixture(scope="module")
-def filter_prs_single_stage_cache():
+def filter_prs_single_prop_cache():
     fc = FakeCache()
     setup_cache_metrics(fc, CollectorRegistry(auto_describe=True))
     return fc
 
 
-@pytest.mark.parametrize("stage", [k.name.lower() for k in Stage])
-async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_single_stage_cache):
+@pytest.mark.parametrize("stage", PullRequestPipelineStage.ALL)
+async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_single_prop_cache):
     if stage == PullRequestPipelineStage.DONE:
         pytest.skip("no releases data")
-    app._cache = filter_prs_single_stage_cache
+    app._cache = filter_prs_single_prop_cache
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
@@ -171,26 +172,45 @@ async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_s
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, {stage})
+    await validate_prs_response(response, PullRequestProperty.ALL, stages={stage})
 
 
-async def test_filter_prs_all_stages(client, headers):
+@pytest.mark.parametrize("prop", [k.name.lower() for k in Property])
+async def test_filter_prs_single_prop(client, headers, prop, app, filter_prs_single_prop_cache):
+    if prop in (PullRequestProperty.DONE, PullRequestProperty.RELEASE_HAPPENED):
+        pytest.skip("no releases data")
+    app._cache = filter_prs_single_prop_cache
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "account": 1,
-        "stages": [],
+        "properties": [prop],
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, PullRequestPipelineStage.ALL)
-    del body["stages"]
+    await validate_prs_response(response, {prop})
+
+
+async def test_filter_prs_all_properties(client, headers):
+    body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "account": 1,
+        "properties": [],
+    }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, PullRequestPipelineStage.ALL)
+    await validate_prs_response(response, PullRequestProperty.ALL,
+                                stages=PullRequestPipelineStage.ALL)
+    del body["properties"]
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    await validate_prs_response(response, PullRequestProperty.ALL,
+                                stages=PullRequestPipelineStage.ALL)
 
 
-async def validate_prs_response(response: ClientResponse, stages: Set[str]):
+async def validate_prs_response(response: ClientResponse, props: Set[str],
+                                stages: Optional[Set[str]] = None):
     assert response.status == 200
     obj = json.loads((await response.read()).decode("utf-8"))
     users = obj["include"]["users"]
@@ -213,7 +233,9 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
         assert pr["updated"], str(pr)
         if pr["merged"]:
             assert pr["closed"], str(pr)
-        assert pr["stage"] in stages
+        if stages is not None:
+            assert pr["stage"] in stages
+        assert props.intersection(set(pr["properties"]))
         comments += pr["comments"]
         commits += pr["commits"]
         review_requested |= pr["review_requested"]
@@ -234,19 +256,19 @@ async def validate_prs_response(response: ClientResponse, stages: Set[str]):
             assert authors == 1
     assert not (set(users) - mentioned_users)
     assert commits > 0
-    if PullRequestPipelineStage.WIP in stages:
+    if PullRequestProperty.WIP in props:
         assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
         assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0
-    elif PullRequestPipelineStage.REVIEW in stages:
+    elif PullRequestProperty.REVIEWING in props:
         assert comments > 0
         assert review_comments > 0
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-    elif PullRequestPipelineStage.MERGE in stages or PullRequestPipelineStage.RELEASE in stages:
+    elif PullRequestProperty.MERGING in props or PullRequestProperty.RELEASING in props:
         assert review_requested
         assert comments > 0
         assert review_comments >= 0
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-    elif PullRequestPipelineStage.DONE in stages:
+    elif PullRequestProperty.DONE in props:
         assert review_requested
         assert comments > 0
         assert review_comments > 0
@@ -259,7 +281,7 @@ async def test_filter_prs_bad_account(client, headers):
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "account": 3,
-        "stages": [],
+        "properties": [],
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
@@ -272,7 +294,7 @@ async def test_filter_prs_access_denied(client, headers):
         "date_to": "2020-01-23",
         "account": 1,
         "in": ["github.com/athenianco/athenian-api"],
-        "stages": [],
+        "properties": [],
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
@@ -285,7 +307,7 @@ async def test_filter_prs_david_bug(client, headers):
         "date_from": "2019-02-22",
         "date_to": "2020-02-22",
         "in": ["github.com/src-d/go-git"],
-        "stages": ["wip", "review", "merge", "release"],
+        "properties": ["wip", "reviewing", "merging", "releasing"],
         "with": {
             "author": ["github.com/Junnplus"],
             "reviewer": ["github.com/Junnplus"],

@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
+from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.pull_request_with import PullRequestWith
 
 
@@ -16,6 +17,7 @@ class FilterPullRequestsRequest(Model):
         date_to: Optional[date] = None,
         in_: Optional[List[str]] = None,
         stages: Optional[List[str]] = None,
+        properties: Optional[List[str]] = None,
         with_: Optional[PullRequestWith] = None,
     ):
         """FilterPullRequestsRequest - a model defined in OpenAPI
@@ -24,7 +26,8 @@ class FilterPullRequestsRequest(Model):
         :param date_from: The date_from of this FilterPullRequestsRequest.
         :param date_to: The date_to of this FilterPullRequestsRequest.
         :param in_: The in_ of this FilterPullRequestsRequest.
-        :param stages: The stages of this FilterPullRequestsRequest.
+        :param stages: The properties of this FilterPullRequestsRequest.
+        :param properties: The properties of this FilterPullRequestsRequest.
         :param with_: The with_ of this FilterPullRequestsRequest.
         """
         self.openapi_types = {
@@ -33,6 +36,7 @@ class FilterPullRequestsRequest(Model):
             "date_to": date,
             "in_": List[str],
             "stages": List[str],
+            "properties": List[str],
             "with_": PullRequestWith,
         }
 
@@ -42,6 +46,7 @@ class FilterPullRequestsRequest(Model):
             "date_to": "date_to",
             "in_": "in",
             "stages": "stages",
+            "properties": "properties",
             "with_": "with",
         }
 
@@ -50,6 +55,7 @@ class FilterPullRequestsRequest(Model):
         self._date_to = date_to
         self._in_ = in_
         self._stages = stages
+        self._properties = properties
         self._with_ = with_
 
     @property
@@ -139,23 +145,43 @@ class FilterPullRequestsRequest(Model):
 
     @property
     def stages(self) -> List[str]:
-        """Gets the stages of this FilterPullRequestsRequest.
+        """Gets the properties of this FilterPullRequestsRequest.
 
-        :return: The stages of this FilterPullRequestsRequest.
+        :return: The properties of this FilterPullRequestsRequest.
         """
         return self._stages
 
     @stages.setter
     def stages(self, stages: List[str]):
-        """Sets the stages of this FilterPullRequestsRequest.
+        """Sets the properties of this FilterPullRequestsRequest.
 
-        :param stages: The stages of this FilterPullRequestsRequest.
+        :param stages: The properties of this FilterPullRequestsRequest.
         """
         for stage in stages:
             if stage not in PullRequestPipelineStage.ALL:
                 raise ValueError("Invalid stage: %s" % stage)
 
         self._stages = stages
+
+    @property
+    def properties(self) -> List[str]:
+        """Gets the properties of this FilterPullRequestsRequest.
+
+        :return: The properties of this FilterPullRequestsRequest.
+        """
+        return self._properties
+
+    @properties.setter
+    def properties(self, properties: List[str]):
+        """Sets the properties of this FilterPullRequestsRequest.
+
+        :param properties: The properties of this FilterPullRequestsRequest.
+        """
+        for stage in properties:
+            if stage not in PullRequestProperty.ALL:
+                raise ValueError("Invalid property: %s" % stage)
+
+        self._properties = properties
 
     @property
     def with_(self) -> Optional[PullRequestWith]:

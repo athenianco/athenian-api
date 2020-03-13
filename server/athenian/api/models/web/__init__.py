@@ -30,6 +30,7 @@ from athenian.api.models.web.pull_request import PullRequest
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
+from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.pull_request_set import PullRequestSet
 from athenian.api.models.web.pull_request_with import PullRequestWith
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest

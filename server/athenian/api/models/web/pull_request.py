@@ -4,6 +4,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
+from athenian.api.models.web.pull_request_property import PullRequestProperty
 
 
 class PullRequest(Model):
@@ -26,6 +27,7 @@ class PullRequest(Model):
         review_comments: Optional[int] = None,
         merged: Optional[bool] = None,
         stage: Optional[str] = None,
+        properties: Optional[List[str]] = None,
         participants: Optional[List[PullRequestParticipant]] = None,
     ):
         """PullRequest - a model defined in OpenAPI
@@ -44,6 +46,7 @@ class PullRequest(Model):
         :param review_comments: The review_comments of this PullRequest.
         :param merged: The merged of this PullRequest.
         :param stage: The stage of this PullRequest.
+        :param properties: The properties of this PullRequest.
         :param participants: The participants of this PullRequest.
         """
         self.openapi_types = {
@@ -62,6 +65,7 @@ class PullRequest(Model):
             "review_comments": int,
             "merged": bool,
             "stage": str,
+            "properties": List[str],
             "participants": List[PullRequestParticipant],
         }
 
@@ -81,6 +85,7 @@ class PullRequest(Model):
             "review_comments": "review_comments",
             "merged": "merged",
             "stage": "stage",
+            "properties": "properties",
             "participants": "participants",
         }
 
@@ -99,6 +104,7 @@ class PullRequest(Model):
         self._review_comments = review_comments
         self._merged = merged
         self._stage = stage
+        self._properties = properties
         self._participants = participants
 
     def __lt__(self, other: "PullRequest") -> bool:
@@ -445,6 +451,28 @@ class PullRequest(Model):
             raise ValueError("Invalid stage: %s" % stage)
 
         self._stage = stage
+
+    @property
+    def properties(self) -> List[str]:
+        """
+        Gets the modelled pipeline properties of this PullRequest.
+
+        :return: The properties of this PullRequest.
+        """
+        return self._properties
+
+    @properties.setter
+    def properties(self, properties: List[str]):
+        """
+        Sets the modelled pipeline properties of this PullRequest.
+
+        :param properties: The properties of this PullRequest.
+        """
+        for prop in properties:
+            if prop not in PullRequestProperty.ALL:
+                raise ValueError("Invalid properties: %s" % properties)
+
+        self._properties = properties
 
     @property
     def participants(self) -> List[PullRequestParticipant]:

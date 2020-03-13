@@ -10,8 +10,8 @@ from sqlalchemy import and_, distinct, or_, select
 
 from athenian.api.controllers.features.entries import PR_ENTRIES
 from athenian.api.controllers.miners.access_classes import access_classes
-from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
-    PullRequestListItem, Stage
+from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
+    PullRequestListItem
 from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.controllers.reposet_controller import load_account_reposets
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
@@ -176,13 +176,25 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
             filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
     except ResponseError as e:
         return e.response
-    stages = set(getattr(Stage, s.upper()) for s in filt.stages) if filt.stages else None
-    if not stages:
-        stages = set(Stage)
+    props = set(getattr(Property, p.upper()) for p in (filt.properties or []))
+    if not props and filt.stages is not None:
+        for s in filt.stages:
+            if s == "wip":
+                props.add(Property.WIP)
+            elif s == "review":
+                props.add(Property.REVIEWING)
+            elif s == "merge":
+                props.add(Property.MERGING)
+            elif s == "release":
+                props.add(Property.RELEASING)
+            elif s == "done":
+                props.add(Property.DONE)
+    if not props:
+        props = set(Property)
     participants = {getattr(ParticipationKind, k.upper()): v
                     for k, v in body.get("with", {}).items()}
     prs = await PR_ENTRIES["github"](
-        filt.date_from, filt.date_to, repos, stages, participants, request.mdb, request.cache)
+        filt.date_from, filt.date_to, repos, props, participants, request.mdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     users = {u.split("/", 1)[1] for u in
              chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs)}
@@ -197,7 +209,18 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
     props = vars(pr).copy()
-    props["stage"] = pr.stage.name.lower()
+    for p in pr.properties:
+        if p == Property.WIP:
+            props["stage"] = "wip"
+        elif p == Property.REVIEWING:
+            props["stage"] = "review"
+        elif p == Property.MERGING:
+            props["stage"] = "merge"
+        elif p == Property.RELEASING:
+            props["stage"] = "release"
+        elif p == Property.DONE:
+            props["stage"] = "done"
+    props["properties"] = sorted(p.name.lower() for p in pr.properties)
     participants = defaultdict(list)
     for pk, pids in sorted(pr.participants.items()):
         pkweb = pk.name.lower()
