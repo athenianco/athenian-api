@@ -15,7 +15,7 @@ from athenian.api.controllers.miners.pull_request_list_item import Participation
 from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.controllers.reposet_controller import load_account_reposets
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
-    PullRequestReview, PushCommit, User
+    PullRequestReview, PushCommit, Release, User
 from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError
 from athenian.api.models.web.filter_contribs_or_repos_request import FilterContribsOrReposRequest
@@ -72,8 +72,15 @@ async def filter_contributors(request: AthenianWebRequest,
                         PullRequestReview.submitted_at.between(filt.date_from, filt.date_to),
                         )))
 
+    async def fetch_releases():
+        return await request.mdb.fetch_all(
+            select([distinct(Release.author)])
+            .where(and_(Release.repository_full_name.in_(repos),
+                        Release.published_at.between(filt.date_from, filt.date_to),
+                        )))
+
     rows = await asyncio.gather(
-        fetch_prs(), fetch_pr_commits(), fetch_push_commits(), fetch_reviews())
+        fetch_prs(), fetch_pr_commits(), fetch_push_commits(), fetch_reviews(), fetch_releases())
     singles = 2
     users = set(r[0] for r in chain.from_iterable(rows[:singles]))
     for r in chain.from_iterable(rows[singles:]):
@@ -127,8 +134,16 @@ async def filter_repositories(request: AthenianWebRequest,
                         PullRequestReview.submitted_at.between(filt.date_from, filt.date_to),
                         )))
 
+    async def fetch_releases():
+        return await request.mdb.fetch_all(
+            select([distinct(Release.repository_full_name)])
+            .where(and_(Release.repository_full_name.in_(repos),
+                        Release.published_at.between(filt.date_from, filt.date_to),
+                        )))
+
     repos = sorted({"github.com/" + r[0] for r in chain.from_iterable(await asyncio.gather(
-        fetch_prs(), fetch_pr_commits(), fetch_push_commits(), fetch_reviews()))})
+        fetch_prs(), fetch_pr_commits(), fetch_push_commits(), fetch_reviews(),
+        fetch_releases()))})
     return web.json_response(repos, dumps=FriendlyJson.dumps)
 
 

@@ -305,23 +305,26 @@ class User(Base,
     location = Column(Text)
     login = Column(Text)
     name = Column(Text)
-    login = Column(Text)
 
 
-class Release(Base,
-              IDMixinNG,
-              UpdatedMixin,
-              ):
-    __tablename__ = "github_node_release"
+class Release(Base):
+    __tablename__ = "github_releases_compat"
 
+    id = Column(Text, primary_key=True)
     author = Column(Text)
-    description = Column(Text)
+    author_avatar_url = Column(Text)
     description_html = Column(Text)
-    is_draft = Column(Boolean)
-    is_prerelease = Column(Boolean)
+    repository_full_name = Column(Text)
     name = Column(Text)
     published_at = Column(TIMESTAMP)
-    resource_path = Column(Text)
+    updated_at = Column(TIMESTAMP)
     tag = Column(Text)
-    tag_name = Column(Text)
     url = Column(Text)
+    sha = Column(Text)
+
+
+class PullRequestMergeCommit(Base):
+    __tablename__ = "github_pull_request_merge_commit_compat"
+
+    id = Column(Text, primary_key=True)
+    sha = Column(Text)
