@@ -14,6 +14,7 @@ class PullRequestWith(Model):
         commit_committer: Optional[List[str]] = None,
         commenter: Optional[List[str]] = None,
         merger: Optional[List[str]] = None,
+        releaser: Optional[List[str]] = None,
     ):
         """PullRequestWith - a model defined in OpenAPI
 
@@ -23,6 +24,7 @@ class PullRequestWith(Model):
         :param commit_committer: The commit_committer of this PullRequestWith.
         :param commenter: The commenter of this PullRequestWith.
         :param merger: The merger of this PullRequestWith.
+        :param releaser: The releaser of this PullRequestWith.
         """
         self.openapi_types = {
             "author": List[str],
@@ -31,6 +33,7 @@ class PullRequestWith(Model):
             "commit_committer": List[str],
             "commenter": List[str],
             "merger": List[str],
+            "releaser": List[str],
         }
 
         self.attribute_map = {
@@ -40,6 +43,7 @@ class PullRequestWith(Model):
             "commit_committer": "commit-committer",
             "commenter": "commenter",
             "merger": "merger",
+            "releaser": "releaser",
         }
 
         self._author = author
@@ -48,6 +52,7 @@ class PullRequestWith(Model):
         self._commit_committer = commit_committer
         self._commenter = commenter
         self._merger = merger
+        self._releaser = releaser
 
     @property
     def author(self) -> Optional[List[str]]:
@@ -144,3 +149,19 @@ class PullRequestWith(Model):
         :param merger: The merger of this PullRequestWith.
         """
         self._merger = merger
+
+    @property
+    def releaser(self) -> Optional[List[str]]:
+        """Gets the releaser of this PullRequestWith.
+
+        :return: The releaser of this PullRequestWith.
+        """
+        return self._releaser
+
+    @releaser.setter
+    def releaser(self, releaser: Optional[List[str]]):
+        """Sets the releaser of this PullRequestWith.
+
+        :param releaser: The releaser of this PullRequestWith.
+        """
+        self._releaser = releaser

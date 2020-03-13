@@ -1637,6 +1637,7 @@ components:
             - commit_committer
             - commenter
             - merger
+            - releaser
             type: string
           type: array
       required:
@@ -1663,6 +1664,8 @@ components:
         commenter:
           $ref: '#/components/schemas/DeveloperSet'
         merger:
+          $ref: '#/components/schemas/DeveloperSet'
+        releaser:
           $ref: '#/components/schemas/DeveloperSet'
       type: object
     FilterCommitsRequest:

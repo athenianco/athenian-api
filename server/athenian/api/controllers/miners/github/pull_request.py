@@ -158,7 +158,7 @@ class PullRequestMiner:
         reviews, review_comments, review_requests, comments, commits = dfs
         # delete from here
         releases = pd.DataFrame(columns=[
-            "pull_request_node_id", "node_id", Release.created_at.key, Release.author.key])
+            "pull_request_node_id", "node_id", Release.published_at.key, Release.author.key])
         releases.set_index(["pull_request_node_id", "node_id"], inplace=True)
         # delete till here
         # TODO(vmarkovtsev): load releases in pain and sweat
@@ -410,7 +410,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             ][PullRequestReview.submitted_at.key].max()
         approved_at = Fallback(approved_at_value, merged_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
-        released_at = pr.releases[Release.created_at.key].min()  # may be None or NaT - that's fine
+        released_at = pr.releases[Release.published_at.key].min()
         return PullRequestTimes(
             created=created_at,
             first_commit=first_commit,

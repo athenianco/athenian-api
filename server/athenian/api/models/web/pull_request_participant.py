@@ -12,8 +12,9 @@ class PullRequestParticipant(Model):
     STATUS_COMMIT_COMMITTER = "commit_committer"
     STATUS_COMMENTER = "commenter"
     STATUS_MERGER = "merger"
+    STATUS_RELEASER = "releaser"
     STATUSES = {STATUS_AUTHOR, STATUS_REVIEWER, STATUS_COMMIT_AUTHOR, STATUS_COMMIT_COMMITTER,
-                STATUS_COMMENTER, STATUS_MERGER}
+                STATUS_COMMENTER, STATUS_MERGER, STATUS_RELEASER}
 
     def __init__(self, id: Optional[str] = None, status: Optional[List[str]] = None):
         """PullRequestParticipant - a model defined in OpenAPI
