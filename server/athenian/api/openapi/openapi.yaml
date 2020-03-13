@@ -1387,7 +1387,8 @@ components:
       - date_to
       type: object
     FilterPullRequestsRequest:
-      description: Filters for /filter/pull_requests.
+      description: Filters for /filter/pull_requests. Empty `properties` passes through
+        all PRs matched by the other filters.
       example:
         account: 1
         date_from: 2000-01-23
@@ -1417,6 +1418,10 @@ components:
           items:
             $ref: '#/components/schemas/PullRequestPipelineStage'
           type: array
+        properties:
+          items:
+            $ref: '#/components/schemas/PullRequestProperty'
+          type: array
         with:
           $ref: '#/components/schemas/PullRequestWith'
       required:
@@ -1432,6 +1437,23 @@ components:
       - merge
       - release
       - done  # PR afterlife - PRs that were released or rejected and nothing ever happens to them
+      example: wip
+      type: string
+    PullRequestProperty:
+      description: PR's modelled lifecycle stage or various events that happened
+        between `time_from` and `time_to`.
+      enum:
+        - wip
+        - created
+        - commit_happened
+        - reviewing
+        - review_happened
+        - approve_happened
+        - merging
+        - merge_happened
+        - releasing
+        - release_happened
+        - done  # PR afterlife - PRs that were released or rejected and nothing ever happens to them
       example: wip
       type: string
     PullRequestSet:
@@ -1569,6 +1591,12 @@ components:
           type: boolean
         stage:
           $ref: '#/components/schemas/PullRequestPipelineStage'
+        properties:
+          description: List of the PR properties triggered in the given time window.
+            There may be extra properties that were not originally requested.
+          items:
+            $ref: '#/components/schemas/PullRequestProperty'
+          type: array
         participants:
           description: List of developers related to this PR, always including the
             author.

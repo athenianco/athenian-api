@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Mapping, Optional, Sequence
+from typing import Collection, Mapping, Optional
 
 import pandas as pd
 
@@ -16,14 +16,20 @@ class ParticipationKind(IntEnum):
     MERGER = 6
 
 
-class Stage(IntEnum):
-    """Modelled evolution pipeline stage."""
+class Property(IntEnum):
+    """PR's modelled lifecycle stage or corresponding events between `time_from` and `time_to`."""
 
     WIP = 1
-    REVIEW = 2
-    MERGE = 3
-    RELEASE = 4
+    REVIEWING = 2
+    MERGING = 3
+    RELEASING = 4
     DONE = 5
+    CREATED = 6
+    COMMIT_HAPPENED = 7
+    REVIEW_HAPPENED = 8
+    APPROVE_HAPPENED = 9
+    MERGE_HAPPENED = 10
+    RELEASE_HAPPENED = 11
 
 
 @dataclass(frozen=True)
@@ -44,5 +50,5 @@ class PullRequestListItem:
     review_requested: bool
     review_comments: int
     merged: bool
-    stage: Stage
-    participants: Mapping[ParticipationKind, Sequence[str]]
+    properties: Collection[Property]
+    participants: Mapping[ParticipationKind, Collection[str]]

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 import pickle
 from typing import List, Mapping, Optional, Sequence, Tuple
 
@@ -12,8 +12,8 @@ import athenian.api.controllers.features.github.pull_request_metrics  # noqa
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.miners.github.pull_request import PullRequestListMiner, \
     PullRequestTimesMiner
-from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, \
-    PullRequestListItem, Stage
+from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
+    PullRequestListItem
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 
 
@@ -50,7 +50,7 @@ async def calc_pull_request_metrics_line_github(
 
 async def filter_pull_requests_func(
         time_from: date, time_to: date, repos: Sequence[str],
-        stages: Sequence[Stage], participants: Mapping[ParticipationKind, Sequence[str]],
+        properties: Sequence[Property], participants: Mapping[ParticipationKind, Sequence[str]],
         db: Database, cache: Optional[aiomcache.Client],
 ) -> List[PullRequestListItem]:
     """All the pull request filters must follow this call signature."""
@@ -61,25 +61,27 @@ async def filter_pull_requests_func(
     exptime=PullRequestListMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, stages, participants, **_: (
+    key=lambda time_from, time_to, repos, properties, participants, **_: (
         time_from.toordinal(),
         time_to.toordinal(),
         ",".join(sorted(repos)),
-        ",".join(s.name.lower() for s in sorted(set(stages))),
+        ",".join(s.name.lower() for s in sorted(set(properties))),
         sorted((k.name.lower(), sorted(set(v))) for k, v in participants.items()),
     ),
 )
 async def filter_pull_requests_github(
         time_from: date, time_to: date, repos: Sequence[str],
-        stages: Sequence[Stage], participants: Mapping[ParticipationKind, Sequence[str]],
+        properties: Sequence[Property], participants: Mapping[ParticipationKind, Sequence[str]],
         db: Database, cache: Optional[aiomcache.Client],
 ) -> List[PullRequestListItem]:
     """Filter GitHub pull requests according to the specified criteria."""
     miner = await PullRequestListMiner.mine(
         time_from, time_to, repos, participants.get(PullRequestParticipant.STATUS_AUTHOR, []),
         db, cache)
-    miner.stages = stages
+    miner.properties = properties
     miner.participants = participants
+    miner.time_from = datetime(time_from.year, time_from.month, time_from.day,
+                               tzinfo=timezone.utc)
     return list(miner)
 
 
