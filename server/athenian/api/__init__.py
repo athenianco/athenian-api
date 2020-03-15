@@ -22,6 +22,7 @@ import pytz
 import sentry_sdk
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+import uvloop
 
 from athenian.api import metadata
 from athenian.api.auth import Auth0
@@ -310,6 +311,7 @@ def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Clien
 
 def main():
     """Server entry point."""
+    uvloop.install()
     args = parse_args()
     log = logging.getLogger(__package__)
     setup_context(log)
