@@ -19,6 +19,7 @@ except ImportError:
             return lambda fn: fn
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+import uvloop
 
 from athenian.api import AthenianApp, create_memcached, setup_cache_metrics
 from athenian.api.auth import Auth0, User
@@ -29,6 +30,7 @@ from athenian.api.models.state.models import Base as StateBase
 from tests.sample_db_data import fill_metadata_session, fill_state_session
 
 
+uvloop.install()
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 invitation_controller.ikey = "vadim"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
