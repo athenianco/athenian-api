@@ -4,7 +4,7 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import databases
 from prometheus_client import CollectorRegistry
@@ -50,6 +50,9 @@ class FakeCache:
         if exp < 0 or 0 < exp < time.time() - start:
             return default
         return value
+
+    async def multi_get(self, *keys: bytes) -> List[Optional[bytes]]:
+        return [await self.get(k) for k in keys]
 
     async def set(self, key: bytes, value: Union[bytes, memoryview], exptime: int = 0) -> bool:
         assert isinstance(key, bytes)

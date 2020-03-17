@@ -47,6 +47,10 @@ class RepositoryMixin:
     repository_full_name = Column(Text, nullable=False)
 
 
+class ParentChildMixin:
+    parent_id = Column(Text, primary_key=True)
+    child_id = Column(Text, primary_key=True)
+
 # -- TABLES --
 
 
@@ -321,6 +325,7 @@ class Release(Base):
     tag = Column(Text)
     url = Column(Text)
     sha = Column(Text)
+    commit_id = Column(Text)
 
 
 class PullRequestMergeCommit(Base):
@@ -328,3 +333,19 @@ class PullRequestMergeCommit(Base):
 
     id = Column(Text, primary_key=True)
     sha = Column(Text)
+
+
+class NodeCommit(Base):
+    __tablename__ = "github_node_commit"
+
+    id = Column(Text, primary_key=True)
+    oid = Column(Text)
+    sha = synonym(oid)
+    pushed_date = Column(TIMESTAMP)
+
+
+NodeCommit.sha.key = "oid"
+
+
+class NodeCommitParent(Base, ParentChildMixin):
+    __tablename__ = "github_node_commit_parents"

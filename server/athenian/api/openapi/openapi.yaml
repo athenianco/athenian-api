@@ -88,8 +88,8 @@ paths:
           description: Requested user does not exist.
       security:
       - bearerAuth: []
-      summary: \"God mode\" ability to turn into any user. The current user must be
-        marked internally as a super admin.
+      summary: '"God mode" ability to turn into any user. The current user must be
+        marked internally as a super admin.'
       tags:
       - user
 # {% if False %}

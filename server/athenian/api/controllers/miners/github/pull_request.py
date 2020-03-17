@@ -15,6 +15,8 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.hardcoded import BOTS
+from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
+    map_releases_to_prs
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
@@ -118,10 +120,15 @@ class PullRequestMiner:
         ]
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
-        prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                   db, PullRequest, index="id")
+        async with db.connection() as conn:
+            prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
+                                       conn, PullRequest, index=PullRequest.node_id.key)
+            released_prs, released_pr_releases = await map_releases_to_prs(
+                repositories, time_from, time_to, conn, cache)
+            if released_prs is not None:
+                prs = prs.merge(released_prs)
         cls.truncate_timestamps(prs, time_to)
-        node_ids = prs[PullRequest.node_id.key] if len(prs) > 0 else set()
+        node_ids = prs.index if len(prs) > 0 else set()
 
         async def fetch_reviews():
             return await cls._read_filtered_models(
@@ -151,29 +158,18 @@ class PullRequestMiner:
                 columns=[PullRequestCommit.authored_date, PullRequestCommit.committed_date,
                          PullRequestCommit.author_login, PullRequestCommit.committer_login])
 
-        dfs = await asyncio.gather(fetch_reviews(), fetch_review_comments(),
-                                   fetch_review_requests(), fetch_comments(), fetch_commits())
+        async def map_releases():
+            merged_prs = prs[prs[PullRequest.merged_at.key].between(time_from, time_to)]
+            return await map_prs_to_releases(merged_prs, time_to, db, cache)
+
+        dfs = await asyncio.gather(
+            fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
+            fetch_commits(), map_releases())
         for df in dfs:
             cls.truncate_timestamps(df, time_to)
-        reviews, review_comments, review_requests, comments, commits = dfs
-        # delete from here
-        releases = pd.DataFrame(columns=[
-            "pull_request_node_id", "node_id", Release.published_at.key, Release.author.key])
-        releases.set_index(["pull_request_node_id", "node_id"], inplace=True)
-        # delete till here
-        # TODO(vmarkovtsev): load releases in pain and sweat
-        """
-        releases = await read_sql_query(
-            select([PullRequest.node_id, Release.id, Release.created_at, Release.author])
-            .where(sql.and_(PullRequest.released_as == Release.id,
-                            PullRequest.node_id.in_(node_ids),
-                            Release.created_at < time_to)),
-            conn,
-            columns=[PullRequest.node_id.key, Release.id.key, Release.created_at.key,
-                     Release.author.key],
-            index=(PullRequest.node_id.key, Release.id.key),
-        )
-        """
+        reviews, review_comments, review_requests, comments, commits, releases = dfs
+        if released_pr_releases is not None:
+            releases = releases.merge(released_pr_releases)
         return [prs, reviews, review_comments, review_requests, comments, commits, releases]
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
@@ -230,9 +226,7 @@ class PullRequestMiner:
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
-        node_id_key = PullRequest.node_id.key
-        for _, pr in self._prs.iterrows():
-            pr_node_id = pr[node_id_key]
+        for pr_node_id, pr in self._prs.iterrows():
             items = {}
             for k in MinedPullRequest.__dataclass_fields__:
                 if k == "pr":
