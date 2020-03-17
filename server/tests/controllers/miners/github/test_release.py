@@ -4,9 +4,8 @@ import pandas as pd
 from sqlalchemy import select
 
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.controllers.miners.github.release import column_released_at, \
-    column_released_by, map_prs_to_releases, map_releases_to_prs
-from athenian.api.models.metadata.github import PullRequest
+from athenian.api.controllers.miners.github.release import map_prs_to_releases, map_releases_to_prs
+from athenian.api.models.metadata.github import PullRequest, Release
 
 
 async def test_map_prs_to_releases(mdb, cache):
@@ -16,8 +15,9 @@ async def test_map_prs_to_releases(mdb, cache):
         releases = await map_prs_to_releases(prs, date.today(), mdb, cache)
         assert len(cache.mem) > 0
         assert len(releases) == 1
-        assert releases.iloc[0][column_released_at] == pd.Timestamp("2019-07-31 13:41:28")
-        assert releases.iloc[0][column_released_by] == "mcuadros"
+        assert releases.iloc[0][Release.published_at.key] == \
+            pd.Timestamp("2019-07-31 13:41:28", tzinfo=timezone.utc)
+        assert releases.iloc[0][Release.author.key] == "mcuadros"
 
 
 async def test_map_prs_to_releases_empty(mdb, cache):
@@ -27,17 +27,22 @@ async def test_map_prs_to_releases_empty(mdb, cache):
         releases = await map_prs_to_releases(prs, date.today(), mdb, cache)
         assert len(cache.mem) == 0
         assert releases.empty
+    prs = prs.iloc[:0]
+    releases = await map_prs_to_releases(prs, date.today(), mdb, cache)
+    assert len(cache.mem) == 0
+    assert releases.empty
 
 
 async def test_map_releases_to_prs(mdb, cache):
     for _ in range(2):
         prs, rels = await map_releases_to_prs(
             ["src-d/go-git"],
-            pd.Timestamp("2019-07-31 00:00:00"), pd.Timestamp("2019-12-01 00:00:00"),
+            date(year=2019, month=7, day=31), date(year=2019, month=12, day=1),
             mdb, cache)
         assert len(prs) == len(rels) == 6
-        assert list(rels[column_released_at].unique()) == [pd.Timestamp("2019-07-31 13:41:28")]
-        assert list(rels[column_released_by].unique()) == ["mcuadros"]
+        assert list(rels[Release.published_at.key].unique()) == \
+            [pd.Timestamp("2019-07-31 13:41:28", tzinfo=timezone.utc)]
+        assert list(rels[Release.author.key].unique()) == ["mcuadros"]
         assert len(cache.mem) > 0
         for pid in rels.index:
             assert not prs.loc[pid].empty
@@ -48,14 +53,14 @@ async def test_map_releases_to_prs(mdb, cache):
 async def test_map_releases_to_prs_empty(mdb, cache):
     prs, rels = await map_releases_to_prs(
         ["src-d/go-git"],
-        pd.Timestamp("2019-11-01 00:00:00"), pd.Timestamp("2019-12-01 00:00:00"),
+        date(year=2019, month=11, day=1), date(year=2019, month=12, day=1),
         mdb, cache)
     assert prs is None
     assert rels is None
     assert len(cache.mem) == 0
     prs, rels = await map_releases_to_prs(
         ["src-d/go-git"],
-        pd.Timestamp("2019-07-01 00:00:00"), pd.Timestamp("2019-12-01 00:00:00"),
+        date(year=2019, month=7, day=1), date(year=2019, month=12, day=1),
         mdb, cache)
     assert prs.empty
     assert rels.empty

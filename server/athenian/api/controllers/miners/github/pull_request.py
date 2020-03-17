@@ -40,7 +40,7 @@ class MinedPullRequest:
     review_requests: pd.DataFrame
     comments: pd.DataFrame
     commits: pd.DataFrame
-    releases: pd.DataFrame
+    release: pd.Series
 
 
 class PullRequestMiner:
@@ -89,7 +89,7 @@ class PullRequestMiner:
             if "pull_request_node_id" in df.columns:
                 df.set_index(["pull_request_node_id", "node_id"], inplace=True)
             else:
-                df.set_index("id", inplace=True)
+                df.set_index("node_id", inplace=True)
             """
             dfs.append(df)
         return dfs
@@ -126,7 +126,8 @@ class PullRequestMiner:
             released_prs, released_pr_releases = await map_releases_to_prs(
                 repositories, time_from, time_to, conn, cache)
             if released_prs is not None:
-                prs = prs.merge(released_prs)
+                prs = pd.concat([prs, released_prs], sort=False)
+                prs.index.name = PullRequest.node_id.key  # the index name gets discarded
         cls.truncate_timestamps(prs, time_to)
         node_ids = prs.index if len(prs) > 0 else set()
 
@@ -159,7 +160,9 @@ class PullRequestMiner:
                          PullRequestCommit.author_login, PullRequestCommit.committer_login])
 
         async def map_releases():
-            merged_prs = prs[prs[PullRequest.merged_at.key].between(time_from, time_to)]
+            merged_prs = prs[prs[PullRequest.merged_at.key]
+                             .between(pd.Timestamp(time_from, tzinfo=timezone.utc),
+                                      pd.Timestamp(time_to, tzinfo=timezone.utc))]
             return await map_prs_to_releases(merged_prs, time_to, db, cache)
 
         dfs = await asyncio.gather(
@@ -169,7 +172,7 @@ class PullRequestMiner:
             cls.truncate_timestamps(df, time_to)
         reviews, review_comments, review_requests, comments, commits, releases = dfs
         if released_pr_releases is not None:
-            releases = releases.merge(released_pr_releases)
+            releases = pd.concat([releases, released_pr_releases], sort=False)
         return [prs, reviews, review_comments, review_requests, comments, commits, releases]
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
@@ -208,7 +211,6 @@ class PullRequestMiner:
             con=conn,
             columns=columns or model_cls,
             index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
-        df.rename_axis(["pull_request_node_id", "node_id"], inplace=True)
         return df
 
     @staticmethod
@@ -231,11 +233,15 @@ class PullRequestMiner:
             for k in MinedPullRequest.__dataclass_fields__:
                 if k == "pr":
                     continue
-                df = getattr(self, "_" + k)
+                df = getattr(self, "_" + (k if k.endswith("s") else k + "s"))
                 try:
                     items[k] = df.loc[pr_node_id]
                 except KeyError:
-                    items[k] = df.iloc[:0].copy()
+                    if k.endswith("s"):
+                        items[k] = df.iloc[:0].copy()
+                    else:
+                        items[k] = pd.Series(
+                            [None] * len(df.columns), index=df.columns, name="empty " + k)
             yield MinedPullRequest(pr, **items)
 
 
@@ -404,7 +410,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             ][PullRequestReview.submitted_at.key].max()
         approved_at = Fallback(approved_at_value, merged_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
-        released_at = pr.releases[Release.published_at.key].min()
+        released_at = Fallback(pr.release[Release.published_at.key], None)
         return PullRequestTimes(
             created=created_at,
             first_commit=first_commit,
@@ -417,7 +423,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             approved=approved_at,
             first_passed_checks=Fallback(None, None),  # FIXME(vmarkovtsev): no CI info
             last_passed_checks=last_passed_checks,
-            released=Fallback(released_at, None),
+            released=released_at,
             closed=closed_at,
         )
 

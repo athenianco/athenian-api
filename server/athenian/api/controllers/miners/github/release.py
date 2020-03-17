@@ -10,7 +10,7 @@ import databases
 import pandas as pd
 from sqlalchemy import and_, desc, func, join, select
 
-from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
 from athenian.api.cache import cached, max_exptime
 from athenian.api.models.metadata.github import NodeCommit, PullRequest, PullRequestMergeCommit, \
     Release
@@ -23,6 +23,8 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               ) -> pd.DataFrame:
     """Match the merged pull requests to the nearest releases that include them."""
     releases = _new_map_df()
+    if prs.empty:
+        return releases
     if cache is not None:
         releases.append(
             await _load_pr_releases_from_cache(prs.index, cache))
@@ -33,13 +35,12 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     return releases.append(missed_releases)
 
 
-column_released_at = "released_at"
-column_released_by = "released_by"
+index_name = "pull_request_node_id"
 
 
 def _new_map_df() -> pd.DataFrame:
-    return pd.DataFrame(columns=[column_released_at, column_released_by],
-                        index=pd.Index([], name="pull_request_node_id"))
+    return pd.DataFrame(columns=[Release.published_at.key, Release.author.key],
+                        index=pd.Index([], name=index_name))
 
 
 async def _load_pr_releases_from_cache(
@@ -65,6 +66,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                                cache: Optional[aiomcache.Client],
                                ) -> pd.DataFrame:
     time_from = prs[PullRequest.merged_at.key].min()
+    time_to = pd.Timestamp(time_to)
     prrfnkey = PullRequest.repository_full_name.key
     repos = prs[prrfnkey].unique()
     rrfnkey = Release.repository_full_name.key
@@ -73,6 +75,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
             select([PullRequestMergeCommit]).where(PullRequestMergeCommit.id.in_(prs.index)),
             conn, PullRequestMergeCommit, index=PullRequestMergeCommit.id.key)
         prs_by_repo = prs.merge(merge_hashes, left_index=True, right_index=True)
+        prs_by_repo.index.name = prs.index.name
         prs_by_repo.reset_index(inplace=True)
         prs_by_repo.set_index([prrfnkey, PullRequest.node_id.key], inplace=True)
         releases = await read_sql_query(
@@ -129,14 +132,14 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
     result = _new_map_df()
     for pr, ((reldate, relauthor), _) in released_prs.items():
         result.loc[pr] = reldate, relauthor
-    return result
+    return postprocess_datetime(result)
 
 
 async def _cache_pr_releases(releases: pd.DataFrame, cache: aiomcache.Client) -> None:
     mt = max_exptime
     for id, released_at, released_by in zip(releases.index,
-                                            releases[column_released_at],
-                                            releases[column_released_by].values):
+                                            releases[Release.published_at.key],
+                                            releases[Release.author.key].values):
         await cache.set(b"release_github|" + id.encode(),
                         marshal.dumps((released_at.timestamp(), released_by)),
                         exptime=mt)
@@ -198,6 +201,8 @@ async def map_releases_to_prs(repos: Iterable[str],
 
     :return: dataframe with PRs, dataframe with the corresponding release mapping.
     """
+    time_from = pd.Timestamp(time_from)
+    time_to = pd.Timestamp(time_to)
     minrows = await db.fetch_all(
         select([Release.repository_full_name, func.min(Release.published_at)])
         .where(and_(Release.repository_full_name.in_(repos),
@@ -222,12 +227,12 @@ async def map_releases_to_prs(repos: Iterable[str],
         prs.append(repo_prs)
         repo_rels = pd.DataFrame.from_records(
             repeat((min_published_at, release[Release.author.key]), len(repo_prs)),
-            index=repo_prs.index, columns=[column_released_at, column_released_by])
-        repo_rels.index.name = "pull_request_node_id"
+            index=repo_prs.index.copy(), columns=[Release.published_at.key, Release.author.key])
+        repo_rels.index.name = index_name
         releases.append(repo_rels)
     if not prs:
         return None, None
-    return pd.concat(prs), pd.concat(releases)
+    return pd.concat(prs), postprocess_datetime(pd.concat(releases))
 
 
 @cached(
