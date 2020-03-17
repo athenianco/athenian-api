@@ -9,7 +9,6 @@ branches:
 env:
   global:
     - GOOGLE_DOCKER_IMAGE=gcr.io/athenian-1/api
-    - IMAGE_BRANCH_COMMIT=${GOOGLE_DOCKER_IMAGE}:${TRAVIS_COMMIT:0:7}
 
 cache:
   directories:
@@ -91,16 +90,15 @@ matrix:
         - git remote add gkwillie https://gkwillie:${GKWILLIE_TOKEN}@github.com/$TRAVIS_REPO_SLUG
         - git push --tags gkwillie HEAD:master
         - set +e
-    - if: branch IN (master, production) AND type != pull_request AND commit_message =~ /^Bump version/
+    - if: branch = master AND type != pull_request AND commit_message =~ /^Bump version/
       stage: main
       name: Deploy
       script:
         - set -e
         - version_file=server/athenian/api/metadata.py
         - current_version=$(grep __version__ $version_file | cut -d\" -f2)
-        - export IMAGE=${IMAGE_BRANCH_COMMIT}-$current_version
+        - export IMAGE=${GOOGLE_DOCKER_IMAGE}:$current_version
         - make gcloud-login
-        - if [ "${TRAVIS_BRANCH}" = "production" ]; then make pubsub-publish; exit; fi
         - docker load -i $HOME/docker/images.tar || true
         - docker image list
         - docker build --cache-from ${GOOGLE_DOCKER_IMAGE}:latest --build-arg COMMIT=$TRAVIS_COMMIT -t $IMAGE .
