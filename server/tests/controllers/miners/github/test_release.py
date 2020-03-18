@@ -18,6 +18,7 @@ async def test_map_prs_to_releases(mdb, cache):
         assert releases.iloc[0][Release.published_at.key] == \
             pd.Timestamp("2019-07-31 13:41:28", tzinfo=timezone.utc)
         assert releases.iloc[0][Release.author.key] == "mcuadros"
+        assert releases.iloc[0][Release.url.key] == "https://github.com/src-d/go-git/releases/tag/v4.13.0"  # noqa
 
 
 async def test_map_prs_to_releases_empty(mdb, cache):
@@ -43,6 +44,7 @@ async def test_map_releases_to_prs(mdb, cache):
         assert list(rels[Release.published_at.key].unique()) == \
             [pd.Timestamp("2019-07-31 13:41:28", tzinfo=timezone.utc)]
         assert list(rels[Release.author.key].unique()) == ["mcuadros"]
+        assert list(rels[Release.url.key].unique()) == ["https://github.com/src-d/go-git/releases/tag/v4.13.0"]  # noqa
         assert len(cache.mem) > 0
         for pid in rels.index:
             assert not prs.loc[pid].empty

@@ -39,7 +39,7 @@ index_name = "pull_request_node_id"
 
 
 def _new_map_df() -> pd.DataFrame:
-    return pd.DataFrame(columns=[Release.published_at.key, Release.author.key],
+    return pd.DataFrame(columns=[Release.published_at.key, Release.author.key, Release.url.key],
                         index=pd.Index([], name=index_name))
 
 
@@ -54,9 +54,9 @@ async def _load_pr_releases_from_cache(
              for _, g in groupby(enumerate(keys), lambda ik: ik[0] // batch_size)])):
         if val is None:
             continue
-        released_at, released_by = marshal.loads(val)
+        released_at, released_by, released_url = marshal.loads(val)
         released_at = datetime.fromtimestamp(released_at).replace(tzinfo=utc)
-        df.loc[key] = released_at, released_by
+        df.loc[key] = released_at, released_by, released_url
     return df
 
 
@@ -85,24 +85,26 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
             .order_by(desc(Release.published_at)),
             conn, Release)
         latest_releases = releases.drop_duplicates([rrfnkey])
-        released_prs: Dict[str, List[Tuple[datetime, str]]] = {}  # PRs released before `time_to`
+        # PRs released before `time_to`
         # Dict value: list of length 2 with the lower and the upper release time bounds and
         # corresponding release authors.
+        released_prs: Dict[str, List[Tuple[datetime, str, str]]] = {}
         repos_left = defaultdict(set)
         pr_by_sha: Dict[str, str] = {}
-        for repo, relc, relsha, reldate, relauthor in zip(
+        for repo, relc, relsha, reldate, relauthor, relurl in zip(
                 latest_releases[rrfnkey].values,
                 latest_releases[Release.commit_id.key].values,
                 latest_releases[Release.sha.key].values,
                 latest_releases[Release.published_at.key].values,
                 latest_releases[Release.author.key].values,
+                latest_releases[Release.url.key].values,
         ):
             history = await _fetch_commit_history(relc, relsha, conn, cache)
             repo_prs = prs_by_repo.loc[repo]
             for pr_id, pr_sha in zip(repo_prs.index,
                                      repo_prs[PullRequestMergeCommit.sha.key].values):
                 if pr_sha in history:
-                    released_prs[pr_id] = [(None, None), (reldate, relauthor)]
+                    released_prs[pr_id] = [(None,) * 3, (reldate, relauthor, relurl)]
                     pr_by_sha[pr_sha] = pr_id
                     repos_left[repo].add(pr_sha)
         # In theory, we could run some clever binary search to skip fetching some release
@@ -113,15 +115,16 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
             backlog = repos_left[repo]
             # We have already fetched the first, the latest release.
             # We will fetch release histories from the earliest to the latest.
-            for relc, relsha, reldate, relauthor in zip(
+            for relc, relsha, reldate, relauthor, relurl in zip(
                     repo_releases[Release.commit_id.key].values,
                     repo_releases[Release.sha.key].values,
                     repo_releases[Release.published_at.key].values,
-                    latest_releases[Release.author.key].values,
+                    repo_releases[Release.author.key].values,
+                    repo_releases[Release.url.key].values,
             ):
                 history = await _fetch_commit_history(relc, relsha, conn, cache)
                 for merge_hash in history.intersection(backlog):
-                    released_prs[pr_by_sha[merge_hash]][0] = (reldate, relauthor)
+                    released_prs[pr_by_sha[merge_hash]][0] = (reldate, relauthor, relurl)
                     backlog.remove(merge_hash)
                 if not backlog:
                     break
@@ -130,18 +133,18 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                 bounds = released_prs[pr_by_sha[merge_hash]]
                 bounds[0] = bounds[1]
     result = _new_map_df()
-    for pr, ((reldate, relauthor), _) in released_prs.items():
-        result.loc[pr] = reldate, relauthor
+    for pr, (details, _) in released_prs.items():
+        result.loc[pr] = details
     return postprocess_datetime(result)
 
 
 async def _cache_pr_releases(releases: pd.DataFrame, cache: aiomcache.Client) -> None:
     mt = max_exptime
-    for id, released_at, released_by in zip(releases.index,
-                                            releases[Release.published_at.key],
-                                            releases[Release.author.key].values):
+    for id, released_at, released_by, release_url in zip(
+            releases.index, releases[Release.published_at.key],
+            releases[Release.author.key].values, releases[Release.url.key].values):
         await cache.set(b"release_github|" + id.encode(),
-                        marshal.dumps((released_at.timestamp(), released_by)),
+                        marshal.dumps((released_at.timestamp(), released_by, release_url)),
                         exptime=mt)
 
 
@@ -226,8 +229,10 @@ async def map_releases_to_prs(repos: Iterable[str],
             db, PullRequest, index=PullRequest.node_id.key)
         prs.append(repo_prs)
         repo_rels = pd.DataFrame.from_records(
-            repeat((min_published_at, release[Release.author.key]), len(repo_prs)),
-            index=repo_prs.index.copy(), columns=[Release.published_at.key, Release.author.key])
+            repeat((min_published_at, release[Release.author.key], release[Release.url.key]),
+                   len(repo_prs)),
+            index=repo_prs.index.copy(),
+            columns=[Release.published_at.key, Release.author.key, Release.url.key])
         repo_rels.index.name = index_name
         releases.append(repo_rels)
     if not prs:
@@ -245,7 +250,7 @@ async def _fetch_release_by_timestamp(repo: str,
                                       min_published_at: datetime,
                                       db: Union[databases.Database, databases.core.Connection],
                                       cache: Optional[aiomcache.Client]):
-    return await db.fetch_one(select([Release.sha, Release.commit_id, Release.author])
+    return await db.fetch_one(select([Release.sha, Release.commit_id, Release.author, Release.url])
                               .where(and_(Release.repository_full_name == repo,
                                           Release.published_at == min_published_at)))
 
