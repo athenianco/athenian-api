@@ -111,7 +111,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
         # histories. In practice, however, every release is going to map to some PRs.
         # Thus we fetch each release until there are unmatched PRs.
         for repo, repo_releases in releases.groupby(rrfnkey, sort=False):
-            repo_releases = repo_releases.iloc[1::-1]
+            repo_releases = repo_releases.iloc[::-1].iloc[:-1]
             backlog = repos_left[repo]
             # We have already fetched the first, the latest release.
             # We will fetch release histories from the earliest to the latest.

@@ -1,7 +1,7 @@
 from datetime import date, timezone
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import select, sql
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, map_releases_to_prs
@@ -67,3 +67,21 @@ async def test_map_releases_to_prs_empty(mdb, cache):
     assert prs.empty
     assert rels.empty
     assert len(cache.mem) > 0
+
+
+async def test_map_prs_to_releases_smoke_metrics(mdb):
+    time_from = date(year=2015, month=10, day=13)
+    time_to = date(year=2020, month=1, day=23)
+    filters = [
+        sql.or_(sql.and_(PullRequest.updated_at >= time_from,
+                         PullRequest.updated_at < time_to),
+                sql.and_(sql.or_(PullRequest.closed_at.is_(None),
+                                 PullRequest.closed_at > time_from),
+                         PullRequest.created_at < time_to)),
+        PullRequest.repository_full_name.in_(["src-d/go-git"]),
+        PullRequest.user_login.in_(["mcuadros", "vmarkovtsev"]),
+    ]
+    prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
+                               mdb, PullRequest, index=PullRequest.node_id.key)
+    releases = await map_prs_to_releases(prs, date.today(), mdb, None)
+    assert len(releases[Release.url.key].unique()) > 1
