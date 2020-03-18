@@ -1,5 +1,6 @@
 import base64
 import binascii
+from datetime import timezone
 from http import HTTPStatus
 import os
 from random import randint
@@ -280,8 +281,8 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
                 finished_date = None
             else:
                 finished_date = max(r[FetchProgress.updated_at.key] for r in rows)
-            model = InstallationProgress(started_date=started_date,
-                                         finished_date=finished_date,
+            model = InstallationProgress(started_date=started_date.replace(tzinfo=timezone.utc),
+                                         finished_date=finished_date.replace(tzinfo=timezone.utc),
                                          owner=owner,
                                          repositories=repositories,
                                          tables=tables)

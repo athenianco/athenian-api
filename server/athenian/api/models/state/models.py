@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, Integer, JSON, String, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
@@ -60,9 +60,9 @@ class RepositorySet(Base):
 
     id = Column(Integer(), primary_key=True)
     owner = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"), nullable=False)
-    updated_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow,
-                        onupdate=lambda ctx: datetime.utcnow())
-    created_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow)
+    updated_at = Column(TIMESTAMP(), nullable=False, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda ctx: datetime.now(timezone.utc))
+    created_at = Column(TIMESTAMP(), nullable=False, default=lambda: datetime.now(timezone.utc))
     updates_count = Column(Integer(), nullable=False, default=1,
                            onupdate=lambda ctx: ctx.current_parameters["updates_count"] + 1)
     items = Column(JSON(), nullable=False)
@@ -80,7 +80,7 @@ class UserAccount(Base):
     account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_user_account"),
                         nullable=False, primary_key=True)
     is_admin = Column(Boolean(), nullable=False, default=False)
-    created_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow)
+    created_at = Column(TIMESTAMP(), nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class Account(Base):
@@ -91,7 +91,7 @@ class Account(Base):
 
     id = Column(Integer(), primary_key=True)
     installation_id = Column(BigInteger(), unique=True, nullable=True)
-    created_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow)
+    created_at = Column(TIMESTAMP(), nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class Invitation(Base):
@@ -106,7 +106,7 @@ class Invitation(Base):
         "accounts.id", name="fk_invitation_account"), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     accepted = Column(Integer(), nullable=False, default=0)
-    created_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow)
+    created_at = Column(TIMESTAMP(), nullable=False, default=lambda: datetime.now(timezone.utc))
     created_by = Column(String(256))
 
 
@@ -117,5 +117,5 @@ class God(Base):
 
     user_id = Column(String(256), primary_key=True)
     mapped_id = Column(String(256), nullable=True)
-    updated_at = Column(TIMESTAMP(), nullable=False, default=datetime.utcnow,
-                        onupdate=lambda ctx: datetime.utcnow())
+    updated_at = Column(TIMESTAMP(), nullable=False, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda ctx: datetime.now(timezone.utc))

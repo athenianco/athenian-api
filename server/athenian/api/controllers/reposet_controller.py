@@ -1,3 +1,4 @@
+from datetime import timezone
 import logging
 from typing import List, Mapping, Optional, Union
 
@@ -206,8 +207,8 @@ async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
             return e.response
     items = [RepositorySetListItem(
         id=rs[RepositorySet.id.key],
-        created=rs[RepositorySet.created_at.key],
-        updated=rs[RepositorySet.updated_at.key],
+        created=rs[RepositorySet.created_at.key].replace(tzinfo=timezone.utc),
+        updated=rs[RepositorySet.updated_at.key].replace(tzinfo=timezone.utc),
         items_count=rs[RepositorySet.items_count.key],
     ).to_dict() for rs in rss]
     return web.json_response(items, status=200, dumps=FriendlyJson.dumps)
