@@ -1,14 +1,13 @@
-from collections import defaultdict
 from datetime import date, datetime, timezone
 from itertools import chain, groupby, repeat
 import marshal
 import pickle
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Iterable, Mapping, Optional, Set, Tuple, Union
 
 import aiomcache
 import databases
 import pandas as pd
-from sqlalchemy import and_, desc, func, join, select
+from sqlalchemy import and_, func, join, select
 
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
 from athenian.api.cache import cached, max_exptime
@@ -68,8 +67,6 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
     time_from = prs[PullRequest.merged_at.key].min()
     time_to = pd.Timestamp(time_to)
     prrfnkey = PullRequest.repository_full_name.key
-    repos = prs[prrfnkey].unique()
-    rrfnkey = Release.repository_full_name.key
     async with db.connection() as conn:
         merge_hashes = await read_sql_query(
             select([PullRequestMergeCommit]).where(PullRequestMergeCommit.id.in_(prs.index)),
@@ -81,61 +78,42 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
         releases = await read_sql_query(
             select([Release])
             .where(and_(Release.published_at.between(time_from, time_to),
-                        Release.repository_full_name.in_(repos)))
-            .order_by(desc(Release.published_at)),
+                        Release.repository_full_name.in_(prs[prrfnkey].unique())))
+            .order_by(Release.published_at),
             conn, Release)
-        latest_releases = releases.drop_duplicates([rrfnkey])
-        # PRs released before `time_to`
-        # Dict value: list of length 2 with the lower and the upper release time bounds and
-        # corresponding release authors.
-        released_prs: Dict[str, List[Tuple[datetime, str, str]]] = {}
-        repos_left = defaultdict(set)
-        pr_by_sha: Dict[str, str] = {}
-        for repo, relc, relsha, reldate, relauthor, relurl in zip(
-                latest_releases[rrfnkey].values,
-                latest_releases[Release.commit_id.key].values,
-                latest_releases[Release.sha.key].values,
-                latest_releases[Release.published_at.key].values,
-                latest_releases[Release.author.key].values,
-                latest_releases[Release.url.key].values,
+        return await _map_prs_to_specific_releases(prs_by_repo, releases, conn, cache)
+
+
+async def _map_prs_to_specific_releases(merged_prs_by_repo: pd.DataFrame,
+                                        releases: pd.DataFrame,
+                                        conn: databases.core.Connection,
+                                        cache: Optional[aiomcache.Client],
+                                        ) -> pd.DataFrame:
+    rrfnkey = Release.repository_full_name.key
+    released_prs = _new_map_df()
+    pr_id_by_hash_by_repo = merged_prs_by_repo[[PullRequestMergeCommit.sha.key]].copy()
+    pr_id_by_hash_by_repo.reset_index(inplace=True)
+    pr_id_by_hash_by_repo.set_index(
+        [PullRequest.repository_full_name.key, PullRequestMergeCommit.sha.key], inplace=True)
+    pr_id_by_hash_by_repo = pr_id_by_hash_by_repo[PullRequest.node_id.key]  # pd.Series
+    for repo, repo_releases in releases.groupby(rrfnkey, sort=False):
+        repo_releases = repo_releases.iloc[:-1]
+        pr_id_by_hash = pr_id_by_hash_by_repo[repo]
+        backlog = set(pr_id_by_hash.index)
+        for relc, relsha, reldate, relauthor, relurl in zip(
+                repo_releases[Release.commit_id.key].values,
+                repo_releases[Release.sha.key].values,
+                repo_releases[Release.published_at.key].values,
+                repo_releases[Release.author.key].values,
+                repo_releases[Release.url.key].values,
         ):
             history = await _fetch_commit_history(relc, relsha, conn, cache)
-            repo_prs = prs_by_repo.loc[repo]
-            for pr_id, pr_sha in zip(repo_prs.index,
-                                     repo_prs[PullRequestMergeCommit.sha.key].values):
-                if pr_sha in history:
-                    released_prs[pr_id] = [(None,) * 3, (reldate, relauthor, relurl)]
-                    pr_by_sha[pr_sha] = pr_id
-                    repos_left[repo].add(pr_sha)
-        # In theory, we could run some clever binary search to skip fetching some release
-        # histories. In practice, however, every release is going to map to some PRs.
-        # Thus we fetch each release until there are unmatched PRs.
-        for repo, repo_releases in releases.groupby(rrfnkey, sort=False):
-            repo_releases = repo_releases.iloc[::-1].iloc[:-1]
-            backlog = repos_left[repo]
-            # We have already fetched the first, the latest release.
-            # We will fetch release histories from the earliest to the latest.
-            for relc, relsha, reldate, relauthor, relurl in zip(
-                    repo_releases[Release.commit_id.key].values,
-                    repo_releases[Release.sha.key].values,
-                    repo_releases[Release.published_at.key].values,
-                    repo_releases[Release.author.key].values,
-                    repo_releases[Release.url.key].values,
-            ):
-                history = await _fetch_commit_history(relc, relsha, conn, cache)
-                for merge_hash in history.intersection(backlog):
-                    released_prs[pr_by_sha[merge_hash]][0] = (reldate, relauthor, relurl)
-                    backlog.remove(merge_hash)
-                if not backlog:
-                    break
-            for merge_hash in backlog:
-                # Set the lower bound of the remaining PRs to the upper bound.
-                bounds = released_prs[pr_by_sha[merge_hash]]
-                bounds[0] = bounds[1]
-    result = _new_map_df()
-    for pr, (details, _) in released_prs.items():
-        result.loc[pr] = details
-    return postprocess_datetime(result)
+            for merge_hash in history.intersection(backlog):
+                released_prs.loc[pr_id_by_hash[merge_hash]] = reldate, relauthor, relurl
+                backlog.remove(merge_hash)
+            if not backlog:
+                break
+    return postprocess_datetime(released_prs)
 
 
 async def _cache_pr_releases(releases: pd.DataFrame, cache: aiomcache.Client) -> None:
@@ -159,6 +137,8 @@ async def _fetch_commit_history(commit_id: str,
                                 conn: databases.core.Connection,
                                 cache: Optional[aiomcache.Client],
                                 ) -> Set[str]:
+    # How about limiting the history by some certain date?
+    # That would speed up the things but then we'll not be able to cache it.
     # Credits: @dennwc
     query = f"""
 WITH RECURSIVE commit_history AS (
@@ -204,6 +184,7 @@ async def map_releases_to_prs(repos: Iterable[str],
 
     :return: dataframe with PRs, dataframe with the corresponding release mapping.
     """
+    # TODO(vmarkovtsev): recursively visit releases that do not contain the earliest release.
     time_from = pd.Timestamp(time_from)
     time_to = pd.Timestamp(time_to)
     minrows = await db.fetch_all(
