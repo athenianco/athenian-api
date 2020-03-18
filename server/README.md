@@ -139,19 +139,8 @@ make clean
 
 ## @gkwillie
 
-The following creates the default user in the state DB:
-
-```
-make gkwillie
-```
-
-or
-
-```
-python3 -m athenian.api.create_default_user postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/state
-```
-
-You need to set `ATHENIAN_DEFAULT_USER` to the Auth0 ID of the default user. @gkwillie's `github|60340680`.
+API supports automatic authorization on behalf of the "default user" `ATHENIAN_DEFAULT_USER`.
+You need to generate a regular accoutn invitation and accept it while being authorized as @gkwillie.
 
 ## Gods
 

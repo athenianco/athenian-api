@@ -116,6 +116,8 @@ async def test_filter_contributors(client, headers):
     assert len(set(contribs)) == len(contribs)
     assert all(c.startswith("github.com/") for c in contribs)
     assert "github.com/mcuadros" in contribs
+    assert "github.com/author_login" not in contribs
+    assert "github.com/committer_login" not in contribs
     body["in"] = ["github.com/src-d/gitbase"]
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
