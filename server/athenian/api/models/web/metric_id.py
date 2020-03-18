@@ -21,6 +21,7 @@ class MetricID(Model):
     PR_OPENED = "pr-opened"
     PR_MERGED = "pr-merged"
     PR_CLOSED = "pr-closed"
+    PR_RELEASED = "pr-released"
     PR_WAIT_FIRST_REVIEW_TIME = "pr-wait-first-review"
     ALL = {
         PR_WIP_TIME,
@@ -37,6 +38,7 @@ class MetricID(Model):
         PR_OPENED,
         PR_MERGED,
         PR_CLOSED,
+        PR_RELEASED,
         PR_WAIT_FIRST_REVIEW_TIME,
     }
 

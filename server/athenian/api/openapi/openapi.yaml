@@ -772,6 +772,7 @@ components:
       - pr-opened
       - pr-merged
       - pr-closed
+      - pr-released
       - pr-wait-first-review
       example: pr-lead-time
       type: string
