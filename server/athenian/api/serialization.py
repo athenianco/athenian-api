@@ -146,8 +146,10 @@ class FriendlyJson:
         if isinstance(obj, datetime.timedelta):
             return "%ds" % obj.total_seconds()
         if isinstance(obj, datetime.datetime):
-            if obj.tzinfo:
-                obj = obj.astimezone(datetime.timezone.utc)
+            if obj != obj:
+                # NaT
+                return None
+            assert obj.tzinfo == datetime.timezone.utc, "all timestamps must be UTC"
             return obj.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339
         if isinstance(obj, datetime.date):
             return obj.strftime("%Y-%m-%d")
