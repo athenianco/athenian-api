@@ -501,6 +501,8 @@ class PullRequestListMiner(PullRequestTimesMiner):
         """Match the PR to the required participants and properties."""
         prefix = "github.com/"
         author = pr.pr[PullRequest.user_login.key]
+        merger = pr.pr[PullRequest.merged_by_login.key]
+        releaser = pr.release[Release.author.key]
         participants = {
             ParticipationKind.AUTHOR: {prefix + author} if author else set(),
             ParticipationKind.REVIEWER: {
@@ -511,10 +513,9 @@ class PullRequestListMiner(PullRequestTimesMiner):
                 (prefix + u) for u in pr.commits[PullRequestCommit.committer_login.key] if u},
             ParticipationKind.COMMIT_AUTHOR: {
                 (prefix + u) for u in pr.commits[PullRequestCommit.author_login.key] if u},
+            ParticipationKind.MERGER: {prefix + merger} if merger else set(),
+            ParticipationKind.RELEASER: {prefix + releaser} if releaser else set(),
         }
-        merged_by = pr.pr[PullRequest.merged_by_login.key]
-        if merged_by:
-            participants[ParticipationKind.MERGER] = {prefix + merged_by}
         if not self._match_participants(participants):
             return None
         times = super()._compile(pr)
@@ -558,7 +559,9 @@ class PullRequestListMiner(PullRequestTimesMiner):
             commits=len(pr.commits),
             review_requested=len(pr.review_requests) > 0,
             review_comments=len(pr.review_comments),
-            merged=bool(times.merged),
+            merged=times.merged.best,
+            released=times.released.best,
+            release_url=pr.release[Release.url.key],
             properties=props,
             participants=participants,
         )

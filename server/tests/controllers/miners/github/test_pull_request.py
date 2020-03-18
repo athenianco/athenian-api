@@ -74,8 +74,10 @@ def validate_pull_request_times(prt: PullRequestTimes):
         if k not in ("first_commit", "last_commit", "last_commit_before_first_review"):
             assert prt.created.best <= v.best, k
         assert prt.work_began.best <= v.best, k
-        if prt.closed:
+        if prt.closed and k != "released":
             assert prt.closed.best >= v.best
+        if prt.released:
+            assert prt.released.best >= v.best
     if prt.first_commit:
         assert prt.last_commit.best >= prt.first_commit.best
     else:
