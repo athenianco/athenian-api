@@ -81,10 +81,7 @@ async def filter_contributors(request: AthenianWebRequest,
 
     rows = await asyncio.gather(
         fetch_prs(), fetch_pr_commits(), fetch_push_commits(), fetch_reviews(), fetch_releases())
-    singles = 2
-    users = set(r[0] for r in chain.from_iterable(rows[:singles]))
-    for r in chain.from_iterable(rows[singles:]):
-        users.update(r)  # r[0] and r[1]
+    users = set(chain.from_iterable(dict(r).values() for r in chain.from_iterable(rows)))
     try:
         users.remove(None)
     except KeyError:
