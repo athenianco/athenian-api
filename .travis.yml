@@ -67,7 +67,7 @@ matrix:
       script:
         - docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
         - docker run --network=host --rm --entrypoint python3 ${GOOGLE_DOCKER_IMAGE} -m athenian.api.models.state postgres://postgres:@0.0.0.0:5432
-        - docker run --network=host -e ATHENIAN_DEFAULT_USER="github|60340680" --rm --entrypoint python3 ${GOOGLE_DOCKER_IMAGE} -m athenian.api.create_default_user postgres://postgres:@0.0.0.0:5432
+        - docker run --network=host -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ --rm --entrypoint python3 ${GOOGLE_DOCKER_IMAGE} -m athenian.api.invite_admin postgres://postgres:@0.0.0.0:5432
     - if: branch = master AND type != pull_request AND commit_message !~ /Bump version/
       stage: bump-version
       name: Bump the version
