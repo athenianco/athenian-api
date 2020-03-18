@@ -20,7 +20,7 @@ def upgrade():
     op.create_table(
         "accounts",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("created_at", sa.TIMESTAMP(), nullable=False),
+        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sqlite_autoincrement=True,
     )
     op.create_table(
@@ -28,8 +28,8 @@ def upgrade():
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("owner", sa.Integer(), sa.ForeignKey("accounts.id", name="fk_reposet_owner"),
                   nullable=False),
-        sa.Column("updated_at", sa.TIMESTAMP(), nullable=False),
-        sa.Column("created_at", sa.TIMESTAMP(), nullable=False),
+        sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False),
+        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("updates_count", sa.Integer(), nullable=False),
         sa.Column("items", sa.JSON(), nullable=False),
         sa.Column("items_count", sa.Integer(), nullable=False),

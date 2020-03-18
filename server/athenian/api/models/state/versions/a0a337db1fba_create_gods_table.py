@@ -21,7 +21,7 @@ def upgrade():
         "gods",
         sa.Column("user_id", sa.String(256), primary_key=True),
         sa.Column("mapped_id", sa.String(256), nullable=True),
-        sa.Column("updated_at", sa.TIMESTAMP(), nullable=False),
+        sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False),
     )
 
 

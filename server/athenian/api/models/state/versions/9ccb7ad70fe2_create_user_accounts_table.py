@@ -23,7 +23,7 @@ def upgrade():
         sa.Column("account_id", sa.Integer(), sa.ForeignKey("accounts.id", name="fk_user_account"),
                   nullable=False, primary_key=True),
         sa.Column("is_admin", sa.Boolean, nullable=False),
-        sa.Column("created_at", sa.TIMESTAMP(), nullable=False),
+        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False),
     )
 
 

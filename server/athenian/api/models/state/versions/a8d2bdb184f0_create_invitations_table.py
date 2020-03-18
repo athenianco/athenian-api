@@ -25,7 +25,7 @@ def upgrade():
             "accounts.id", name="fk_invitation_account"), nullable=False),
         sa.Column("is_active", sa.Boolean, nullable=False, default=True),
         sa.Column("accepted", sa.Integer(), nullable=False, default=0),
-        sa.Column("created_at", sa.TIMESTAMP(), nullable=False),
+        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("created_by", sa.String(256)),
         sqlite_autoincrement=True,
     )
