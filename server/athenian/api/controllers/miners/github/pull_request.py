@@ -333,6 +333,10 @@ class PullRequestTimes:
     last_passed_checks: Fallback[DT]                     # PR_VF
     released: Fallback[DT]                               # PR_R
 
+    def max_timestamp(self) -> DT:
+        """Find the maximum timestamp contained in the struct."""
+        return Fallback.max(*self.__dict__.values()).best
+
 
 class ReviewResolution(Enum):
     """Possible review "state"-s in the metadata DB."""
