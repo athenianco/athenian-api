@@ -180,6 +180,18 @@ class ClosedCalculator(PullRequestSumMetricCalculator[int]):
         return None
 
 
+@register(MetricID.PR_RELEASED)
+class ReleasedCalculator(PullRequestSumMetricCalculator[int]):
+    """Number of released PRs."""
+
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[int]:
+        """Calculate the actual state update."""
+        if times.released and min_time < times.released.best < max_time:
+            return 1
+        return None
+
+
 @register(MetricID.PR_FLOW_RATIO)
 class FlowRatioCalculator(PullRequestMetricCalculator[float]):
     """PR flow ratio - opened / closed - calculator."""

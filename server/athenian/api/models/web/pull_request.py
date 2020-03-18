@@ -25,7 +25,9 @@ class PullRequest(Model):
         commits: Optional[int] = None,
         review_requested: Optional[bool] = None,
         review_comments: Optional[int] = None,
-        merged: Optional[bool] = None,
+        merged: Optional[datetime] = None,
+        released: Optional[datetime] = None,
+        release_url: Optional[str] = None,
         stage: Optional[str] = None,
         properties: Optional[List[str]] = None,
         participants: Optional[List[PullRequestParticipant]] = None,
@@ -45,6 +47,8 @@ class PullRequest(Model):
         :param review_requested: The review_requested of this PullRequest.
         :param review_comments: The review_comments of this PullRequest.
         :param merged: The merged of this PullRequest.
+        :param released: The released of this PullRequest.
+        :param release_url: The release URL of this PullRequest.
         :param stage: The stage of this PullRequest.
         :param properties: The properties of this PullRequest.
         :param participants: The participants of this PullRequest.
@@ -63,7 +67,9 @@ class PullRequest(Model):
             "commits": int,
             "review_requested": bool,
             "review_comments": int,
-            "merged": bool,
+            "merged": datetime,
+            "released": datetime,
+            "release_url": str,
             "stage": str,
             "properties": List[str],
             "participants": List[PullRequestParticipant],
@@ -84,6 +90,8 @@ class PullRequest(Model):
             "review_requested": "review_requested",
             "review_comments": "review_comments",
             "merged": "merged",
+            "released": "released",
+            "release_url": "release_url",
             "stage": "stage",
             "properties": "properties",
             "participants": "participants",
@@ -103,6 +111,8 @@ class PullRequest(Model):
         self._review_requested = review_requested
         self._review_comments = review_comments
         self._merged = merged
+        self._released = released
+        self._release_url = release_url
         self._stage = stage
         self._properties = properties
         self._participants = participants
@@ -409,7 +419,7 @@ class PullRequest(Model):
         self._review_comments = review_comments
 
     @property
-    def merged(self) -> bool:
+    def merged(self) -> datetime:
         """Gets the merged of this PullRequest.
 
         Value indicating whether this PR was merged.
@@ -419,17 +429,54 @@ class PullRequest(Model):
         return self._merged
 
     @merged.setter
-    def merged(self, merged: bool):
+    def merged(self, merged: datetime):
         """Sets the merged of this PullRequest.
 
         Value indicating whether this PR was merged.
 
         :param merged: The updated of this PullRequest.
         """
-        if merged is None:
-            raise ValueError("Invalid value for `merged`, must not be `None`")
-
         self._merged = merged
+
+    @property
+    def released(self) -> datetime:
+        """Gets the released of this PullRequest.
+
+        Value indicating whether this PR was released.
+
+        :return: The released of this PullRequest.
+        """
+        return self._released
+
+    @released.setter
+    def released(self, released: datetime):
+        """Sets the released of this PullRequest.
+
+        Value indicating whether this PR was released.
+
+        :param released: The updated of this PullRequest.
+        """
+        self._released = released
+
+    @property
+    def release_url(self) -> str:
+        """Gets the release_url of this PullRequest.
+
+        URL of the earliest release that includes this merged PR.
+
+        :return: The release_url of this PullRequest.
+        """
+        return self._release_url
+
+    @release_url.setter
+    def release_url(self, release_url: str):
+        """Sets the release_url of this PullRequest.
+
+        URL of the earliest release that includes this merged PR.
+
+        :param release_url: The updated of this PullRequest.
+        """
+        self._release_url = release_url
 
     @property
     def stage(self) -> str:

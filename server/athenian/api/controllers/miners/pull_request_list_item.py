@@ -14,6 +14,7 @@ class ParticipationKind(IntEnum):
     COMMIT_AUTHOR = 4
     COMMIT_COMMITTER = 5
     MERGER = 6
+    RELEASER = 7
 
 
 class Property(IntEnum):
@@ -49,6 +50,8 @@ class PullRequestListItem:
     commits: int
     review_requested: bool
     review_comments: int
-    merged: bool
+    merged: Optional[pd.Timestamp]
+    released: Optional[pd.Timestamp]
+    release_url: str
     properties: Collection[Property]
     participants: Mapping[ParticipationKind, Collection[str]]

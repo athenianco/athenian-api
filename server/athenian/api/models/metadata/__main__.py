@@ -10,7 +10,7 @@ from athenian.api.models.metadata.github import Base
 def main() -> int:
     """Try to fetch one example of each model in the metadata schema from a real DB instance."""
     engine = create_engine(sys.argv[1])
-    print("Checking the metadata schema...", flush=True)
+    print("Checking the metadata schema...\n", flush=True)
     errors = []
     for model in Base._decl_class_registry.values():
         session = sessionmaker(bind=engine)()

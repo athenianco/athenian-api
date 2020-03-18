@@ -4,6 +4,7 @@ import typing
 from typing import Union
 
 from dateutil.parser import parse as parse_datetime
+from dateutil.tz import tzutc
 
 from athenian.api import typing_utils
 
@@ -146,8 +147,11 @@ class FriendlyJson:
         if isinstance(obj, datetime.timedelta):
             return "%ds" % obj.total_seconds()
         if isinstance(obj, datetime.datetime):
-            if obj.tzinfo:
-                obj = obj.astimezone(datetime.timezone.utc)
+            if obj != obj:
+                # NaT
+                return None
+            tz = obj.tzinfo
+            assert tz == datetime.timezone.utc or tz == tzutc(), "all timestamps must be UTC"
             return obj.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339
         if isinstance(obj, datetime.date):
             return obj.strftime("%Y-%m-%d")

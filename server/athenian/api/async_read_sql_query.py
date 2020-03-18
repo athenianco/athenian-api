@@ -54,6 +54,14 @@ async def read_sql_query(sql: ClauseElement,
     frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
     if index is not None:
         frame.set_index(index, inplace=True)
+    return postprocess_datetime(frame)
+
+
+def postprocess_datetime(frame: pd.DataFrame) -> pd.DataFrame:
+    """Ensure *inplace* that all the timestamps inside the dataframe are valid UTC or NaT.
+
+    :return: Fixed dataframe - the same instance as `frame`.
+    """
     for col in frame.select_dtypes(include=[object]):
         frame[col].replace(datetime(1, 1, 1, tzinfo=timezone.utc), pd.NaT, inplace=True)
         frame[col].replace(datetime(1, 1, 1), pd.NaT, inplace=True)

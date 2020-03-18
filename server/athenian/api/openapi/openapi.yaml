@@ -88,8 +88,8 @@ paths:
           description: Requested user does not exist.
       security:
       - bearerAuth: []
-      summary: \"God mode\" ability to turn into any user. The current user must be
-        marked internally as a super admin.
+      summary: '"God mode" ability to turn into any user. The current user must be
+        marked internally as a super admin.'
       tags:
       - user
 # {% if False %}
@@ -772,6 +772,7 @@ components:
       - pr-opened
       - pr-merged
       - pr-closed
+      - pr-released
       - pr-wait-first-review
       example: pr-lead-time
       type: string
@@ -1529,8 +1530,6 @@ components:
         files_changed: 2
         created: 2019-05-17T01:14:00Z
         updated: 2019-09-18T10:49:00Z
-        closed: null
-        merged: false
         comments: 1
         commits: 2
         review_comments: 0
@@ -1571,7 +1570,6 @@ components:
         closed:
           description: When this PR was last closed.
           format: date-time
-          nullable: true
           type: string
         comments:
           description: Number of *regular* (not review) comments in this PR.
@@ -1587,8 +1585,17 @@ components:
           description: Number of review comments this PR received.
           type: integer
         merged:
-          description: Value indicating whether this PR was merged.
-          type: boolean
+          description: When this PR was merged.
+          format: date-time
+          type: string
+        released:
+          description: When this PR was released.
+          format: date-time
+          type: string
+        release_url:
+          description: URL of the earliest release that includes this merged PR.
+          format: url
+          type: string
         stage:
           $ref: '#/components/schemas/PullRequestPipelineStage'
         properties:
@@ -1604,12 +1611,10 @@ components:
             $ref: '#/components/schemas/PullRequestParticipant'
           type: array
       required:
-      - closed
       - comments
       - commits
       - created
       - files_changed
-      - merged
       - number
       - participants
       - repository

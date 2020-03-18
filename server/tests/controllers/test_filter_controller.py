@@ -161,8 +161,6 @@ def filter_prs_single_prop_cache():
 
 @pytest.mark.parametrize("stage", PullRequestPipelineStage.ALL)
 async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_single_prop_cache):
-    if stage == PullRequestPipelineStage.DONE:
-        pytest.skip("no releases data")
     app._cache = filter_prs_single_prop_cache
     body = {
         "date_from": "2015-10-13",
@@ -172,13 +170,17 @@ async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_s
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, PullRequestProperty.ALL, stages={stage})
+    if stage in ("wip", "done"):
+        props = {stage}
+    elif stage in ("merge", "release"):
+        props = {stage[:-1] + "ing"}
+    else:
+        props = {stage + "ing"}
+    await validate_prs_response(response, props, stages={stage})
 
 
 @pytest.mark.parametrize("prop", [k.name.lower() for k in Property])
 async def test_filter_prs_single_prop(client, headers, prop, app, filter_prs_single_prop_cache):
-    if prop in (PullRequestProperty.DONE, PullRequestProperty.RELEASE_HAPPENED):
-        pytest.skip("no releases data")
     app._cache = filter_prs_single_prop_cache
     body = {
         "date_from": "2015-10-13",
@@ -222,7 +224,9 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
     commits = 0
     review_requested = False
     review_comments = 0
-    merged = False
+    release_urls = 0
+    timestamps = defaultdict(bool)
+    response_props = defaultdict(bool)
     for pr in obj["data"]:
         assert pr["repository"].startswith("github.com/"), str(pr)
         assert pr["number"] > 0
@@ -230,9 +234,12 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert pr["size_added"] + pr["size_removed"] >= 0, str(pr)
         assert pr["files_changed"] >= 0, str(pr)
         assert pr["created"], str(pr)
-        assert pr["updated"], str(pr)
-        if pr["merged"]:
+        for k in ("closed", "updated", "merged", "released"):
+            timestamps[k] |= bool(pr.get(k))
+        if pr.get("merged"):
             assert pr["closed"], str(pr)
+        if pr.get("released"):
+            assert pr["merged"], str(pr)
         if stages is not None:
             assert pr["stage"] in stages
         assert props.intersection(set(pr["properties"]))
@@ -240,7 +247,9 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         commits += pr["commits"]
         review_requested |= pr["review_requested"]
         review_comments += pr["review_comments"]
-        merged |= pr["merged"]
+        release_urls += bool(pr.get("release_url"))
+        for prop in pr["properties"]:
+            response_props[prop] = True
         participants = pr["participants"]
         assert len(participants) > 0
         authors = 0
@@ -256,24 +265,49 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
             assert authors == 1
     assert not (set(users) - mentioned_users)
     assert commits > 0
+    assert timestamps["updated"]
     if PullRequestProperty.WIP in props:
         assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
         assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0
-    elif PullRequestProperty.REVIEWING in props:
+        assert response_props.get("wip")
+        assert response_props.get("created")
+        assert response_props.get("commit_happened")
+    if PullRequestProperty.REVIEWING in props:
         assert comments > 0
         assert review_comments > 0
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-    elif PullRequestProperty.MERGING in props or PullRequestProperty.RELEASING in props:
+        assert response_props.get("reviewing")
+        assert response_props.get("review_happened")
+        assert response_props.get("commit_happened")
+    if PullRequestProperty.MERGING in props:
         assert review_requested
         assert comments > 0
         assert review_comments >= 0
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-    elif PullRequestProperty.DONE in props:
+        assert response_props.get("merging")
+        assert response_props.get("commit_happened")
+        assert response_props.get("review_happened")
+        assert response_props.get("approve_happened")
+    if PullRequestProperty.RELEASING in props:
+        assert review_requested
+        assert comments > 0
+        assert review_comments >= 0
+        assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
+        assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
+        assert response_props.get("releasing")
+        assert response_props.get("merge_happened")
+        assert timestamps["merged"]
+    if PullRequestProperty.DONE in props:
         assert review_requested
         assert comments > 0
         assert review_comments > 0
-        assert merged
+        assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
         assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
+        assert statuses[PullRequestParticipant.STATUS_RELEASER] > 0
+        assert response_props.get("done")
+        assert response_props.get("release_happened")
+        assert timestamps["released"]
+        assert timestamps["closed"]
 
 
 async def test_filter_prs_bad_account(client, headers):

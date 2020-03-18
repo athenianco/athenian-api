@@ -44,7 +44,13 @@ async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, cach
         body = (await response.read()).decode("utf-8")
         assert response.status == 200, "Response body is : " + body
         cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+        assert len(cm.calculated) == 2
         assert len(cm.calculated[0].values) > 0
+        nonzero = 0
+        for val in cm.calculated[0].values:
+            assert len(val.values) == 1
+            nonzero += val.values[0] is not None
+        assert nonzero > 0
 
 
 @pytest.mark.parametrize("granularity", ["day", "week", "month"])
@@ -255,12 +261,12 @@ async def test_calc_metrics_prs_reposet(client, headers):
 @pytest.mark.parametrize("metric", [MetricID.PR_WIP_COUNT,
                                     MetricID.PR_REVIEW_COUNT,
                                     MetricID.PR_MERGING_COUNT,
-                                    # FIXME(vmarkovtsev): no releases
-                                    # MetricID.PR_RELEASE_COUNT,
-                                    # MetricID.PR_LEAD_COUNT,
+                                    MetricID.PR_RELEASE_COUNT,
+                                    MetricID.PR_LEAD_COUNT,
                                     MetricID.PR_OPENED,
                                     MetricID.PR_CLOSED,
                                     MetricID.PR_MERGED,
+                                    MetricID.PR_RELEASED,
                                     ])
 async def test_calc_metrics_prs_counts_sums(client, headers, metric):
     body = {

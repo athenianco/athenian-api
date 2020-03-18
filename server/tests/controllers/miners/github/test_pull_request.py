@@ -25,14 +25,14 @@ async def test_pr_miner_iter(mdb):
     )
     with_data = defaultdict(int)
     for pr in miner:
-        with_data["reviews"] += len(pr.reviews) > 0
-        with_data["review_comments"] += len(pr.review_comments) > 0
-        with_data["comments"] += len(pr.comments) > 0
-        with_data["commits"] += len(pr.commits) > 0
-    assert with_data["reviews"] > 0
-    assert with_data["review_comments"] > 0
-    assert with_data["comments"] > 0
-    assert with_data["commits"] > 0
+        with_data["reviews"] += not pr.reviews.empty
+        with_data["review_comments"] += not pr.review_comments.empty
+        with_data["review_requests"] += not pr.review_requests.empty
+        with_data["comments"] += not pr.comments.empty
+        with_data["commits"] += not pr.commits.empty
+        with_data["releases"] += not pr.release.empty
+    for k, v in with_data.items():
+        assert v > 0, k
 
 
 @pytest.mark.parametrize("with_memcached", [False] + ([True] if has_memcached else []))
@@ -48,7 +48,7 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, with_memcached):
         cache,
     )
     if not with_memcached:
-        assert len(cache.mem) == 1
+        assert len(cache.mem) > 0
     first_data = list(miner)
     miner = await PullRequestMiner.mine(
         date.today() - timedelta(days=10 * 365),
@@ -74,8 +74,10 @@ def validate_pull_request_times(prt: PullRequestTimes):
         if k not in ("first_commit", "last_commit", "last_commit_before_first_review"):
             assert prt.created.best <= v.best, k
         assert prt.work_began.best <= v.best, k
-        if prt.closed:
+        if prt.closed and k != "released":
             assert prt.closed.best >= v.best
+        if prt.released:
+            assert prt.released.best >= v.best
     if prt.first_commit:
         assert prt.last_commit.best >= prt.first_commit.best
     else:

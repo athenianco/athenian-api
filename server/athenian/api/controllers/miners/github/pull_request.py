@@ -15,6 +15,8 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.hardcoded import BOTS
+from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
+    map_releases_to_prs
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
@@ -38,7 +40,7 @@ class MinedPullRequest:
     review_requests: pd.DataFrame
     comments: pd.DataFrame
     commits: pd.DataFrame
-    releases: pd.DataFrame
+    release: pd.Series
 
 
 class PullRequestMiner:
@@ -87,7 +89,7 @@ class PullRequestMiner:
             if "pull_request_node_id" in df.columns:
                 df.set_index(["pull_request_node_id", "node_id"], inplace=True)
             else:
-                df.set_index("id", inplace=True)
+                df.set_index("node_id", inplace=True)
             """
             dfs.append(df)
         return dfs
@@ -118,10 +120,16 @@ class PullRequestMiner:
         ]
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
-        prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                   db, PullRequest, index="id")
+        async with db.connection() as conn:
+            prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
+                                       conn, PullRequest, index=PullRequest.node_id.key)
+            released_prs, released_pr_releases = await map_releases_to_prs(
+                repositories, time_from, time_to, conn, cache)
+            if released_prs is not None:
+                prs = pd.concat([prs, released_prs], sort=False)
+                prs.index.name = PullRequest.node_id.key  # the index name gets discarded
         cls.truncate_timestamps(prs, time_to)
-        node_ids = prs[PullRequest.node_id.key] if len(prs) > 0 else set()
+        node_ids = prs.index if len(prs) > 0 else set()
 
         async def fetch_reviews():
             return await cls._read_filtered_models(
@@ -151,29 +159,20 @@ class PullRequestMiner:
                 columns=[PullRequestCommit.authored_date, PullRequestCommit.committed_date,
                          PullRequestCommit.author_login, PullRequestCommit.committer_login])
 
-        dfs = await asyncio.gather(fetch_reviews(), fetch_review_comments(),
-                                   fetch_review_requests(), fetch_comments(), fetch_commits())
+        async def map_releases():
+            merged_prs = prs[prs[PullRequest.merged_at.key]
+                             .between(pd.Timestamp(time_from, tzinfo=timezone.utc),
+                                      pd.Timestamp(time_to, tzinfo=timezone.utc))]
+            return await map_prs_to_releases(merged_prs, time_to, db, cache)
+
+        dfs = await asyncio.gather(
+            fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
+            fetch_commits(), map_releases())
         for df in dfs:
             cls.truncate_timestamps(df, time_to)
-        reviews, review_comments, review_requests, comments, commits = dfs
-        # delete from here
-        releases = pd.DataFrame(columns=[
-            "pull_request_node_id", "node_id", Release.published_at.key, Release.author.key])
-        releases.set_index(["pull_request_node_id", "node_id"], inplace=True)
-        # delete till here
-        # TODO(vmarkovtsev): load releases in pain and sweat
-        """
-        releases = await read_sql_query(
-            select([PullRequest.node_id, Release.id, Release.created_at, Release.author])
-            .where(sql.and_(PullRequest.released_as == Release.id,
-                            PullRequest.node_id.in_(node_ids),
-                            Release.created_at < time_to)),
-            conn,
-            columns=[PullRequest.node_id.key, Release.id.key, Release.created_at.key,
-                     Release.author.key],
-            index=(PullRequest.node_id.key, Release.id.key),
-        )
-        """
+        reviews, review_comments, review_requests, comments, commits, releases = dfs
+        if released_pr_releases is not None:
+            releases = pd.concat([releases, released_pr_releases], sort=False)
         return [prs, reviews, review_comments, review_requests, comments, commits, releases]
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
@@ -212,7 +211,6 @@ class PullRequestMiner:
             con=conn,
             columns=columns or model_cls,
             index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
-        df.rename_axis(["pull_request_node_id", "node_id"], inplace=True)
         return df
 
     @staticmethod
@@ -230,18 +228,20 @@ class PullRequestMiner:
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
-        node_id_key = PullRequest.node_id.key
-        for _, pr in self._prs.iterrows():
-            pr_node_id = pr[node_id_key]
+        for pr_node_id, pr in self._prs.iterrows():
             items = {}
             for k in MinedPullRequest.__dataclass_fields__:
                 if k == "pr":
                     continue
-                df = getattr(self, "_" + k)
+                df = getattr(self, "_" + (k if k.endswith("s") else k + "s"))
                 try:
                     items[k] = df.loc[pr_node_id]
                 except KeyError:
-                    items[k] = df.iloc[:0].copy()
+                    if k.endswith("s"):
+                        items[k] = df.iloc[:0].copy()
+                    else:
+                        items[k] = pd.Series(
+                            [None] * len(df.columns), index=df.columns, name="empty " + k)
             yield MinedPullRequest(pr, **items)
 
 
@@ -333,6 +333,10 @@ class PullRequestTimes:
     last_passed_checks: Fallback[DT]                     # PR_VF
     released: Fallback[DT]                               # PR_R
 
+    def max_timestamp(self) -> DT:
+        """Find the maximum timestamp contained in the struct."""
+        return Fallback.max(*self.__dict__.values()).best
+
 
 class ReviewResolution(Enum):
     """Possible review "state"-s in the metadata DB."""
@@ -410,7 +414,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             ][PullRequestReview.submitted_at.key].max()
         approved_at = Fallback(approved_at_value, merged_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
-        released_at = pr.releases[Release.published_at.key].min()
+        released_at = Fallback(pr.release[Release.published_at.key], None)
         return PullRequestTimes(
             created=created_at,
             first_commit=first_commit,
@@ -423,7 +427,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             approved=approved_at,
             first_passed_checks=Fallback(None, None),  # FIXME(vmarkovtsev): no CI info
             last_passed_checks=last_passed_checks,
-            released=Fallback(released_at, None),
+            released=released_at,
             closed=closed_at,
         )
 
@@ -497,6 +501,8 @@ class PullRequestListMiner(PullRequestTimesMiner):
         """Match the PR to the required participants and properties."""
         prefix = "github.com/"
         author = pr.pr[PullRequest.user_login.key]
+        merger = pr.pr[PullRequest.merged_by_login.key]
+        releaser = pr.release[Release.author.key]
         participants = {
             ParticipationKind.AUTHOR: {prefix + author} if author else set(),
             ParticipationKind.REVIEWER: {
@@ -507,10 +513,9 @@ class PullRequestListMiner(PullRequestTimesMiner):
                 (prefix + u) for u in pr.commits[PullRequestCommit.committer_login.key] if u},
             ParticipationKind.COMMIT_AUTHOR: {
                 (prefix + u) for u in pr.commits[PullRequestCommit.author_login.key] if u},
+            ParticipationKind.MERGER: {prefix + merger} if merger else set(),
+            ParticipationKind.RELEASER: {prefix + releaser} if releaser else set(),
         }
-        merged_by = pr.pr[PullRequest.merged_by_login.key]
-        if merged_by:
-            participants[ParticipationKind.MERGER] = {prefix + merged_by}
         if not self._match_participants(participants):
             return None
         times = super()._compile(pr)
@@ -554,7 +559,9 @@ class PullRequestListMiner(PullRequestTimesMiner):
             commits=len(pr.commits),
             review_requested=len(pr.review_requests) > 0,
             review_comments=len(pr.review_comments),
-            merged=bool(times.merged),
+            merged=times.merged.best,
+            released=times.released.best,
+            release_url=pr.release[Release.url.key],
             properties=props,
             participants=participants,
         )
