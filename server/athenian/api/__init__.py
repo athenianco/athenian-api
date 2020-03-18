@@ -287,6 +287,7 @@ def setup_context(log: logging.Logger) -> None:
         environment=sentry_env,
         dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),
         integrations=[AioHttpIntegration(), SqlalchemyIntegration()],
+        send_default_pii=True,
     )
     with sentry_sdk.configure_scope() as scope:
         scope.set_tag("version", metadata.__version__)
