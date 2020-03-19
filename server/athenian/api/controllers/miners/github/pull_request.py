@@ -123,11 +123,8 @@ class PullRequestMiner:
         async with db.connection() as conn:
             prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                        conn, PullRequest, index=PullRequest.node_id.key)
-            released_prs, released_pr_releases = await map_releases_to_prs(
-                repositories, time_from, time_to, conn, cache)
-            if released_prs is not None:
-                prs = pd.concat([prs, released_prs], sort=False)
-                prs.index.name = PullRequest.node_id.key  # the index name gets discarded
+            released_prs = await map_releases_to_prs(repositories, time_from, time_to, conn, cache)
+            prs = pd.concat([prs, released_prs], sort=False)
         cls.truncate_timestamps(prs, time_to)
         node_ids = prs.index if len(prs) > 0 else set()
 
@@ -171,8 +168,6 @@ class PullRequestMiner:
         for df in dfs:
             cls.truncate_timestamps(df, time_to)
         reviews, review_comments, review_requests, comments, commits, releases = dfs
-        if released_pr_releases is not None:
-            releases = pd.concat([releases, released_pr_releases], sort=False)
         return [prs, reviews, review_comments, review_requests, comments, commits, releases]
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
