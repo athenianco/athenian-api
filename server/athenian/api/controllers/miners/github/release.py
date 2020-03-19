@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from itertools import chain, groupby, repeat
 import marshal
 import pickle
-from typing import Any, Iterable, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterable, Mapping, Optional, Set, Tuple, Union
 
 import aiomcache
 import databases
@@ -65,7 +65,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                                cache: Optional[aiomcache.Client],
                                ) -> pd.DataFrame:
     time_from = prs[PullRequest.merged_at.key].min()
-    time_to = pd.Timestamp(time_to)
+    time_to = pd.Timestamp(time_to, tzinfo=timezone.utc)
     prrfnkey = PullRequest.repository_full_name.key
     async with db.connection() as conn:
         merge_hashes = await read_sql_query(
@@ -185,8 +185,8 @@ async def map_releases_to_prs(repos: Iterable[str],
     :return: dataframe with PRs, dataframe with the corresponding release mapping.
     """
     # TODO(vmarkovtsev): recursively visit releases that do not contain the earliest release.
-    time_from = pd.Timestamp(time_from)
-    time_to = pd.Timestamp(time_to)
+    time_from = pd.Timestamp(time_from, tzinfo=timezone.utc)
+    time_to = pd.Timestamp(time_to, tzinfo=timezone.utc)
     minrows = await db.fetch_all(
         select([Release.repository_full_name, func.min(Release.published_at)])
         .where(and_(Release.repository_full_name.in_(repos),
@@ -194,8 +194,10 @@ async def map_releases_to_prs(repos: Iterable[str],
         .group_by(Release.repository_full_name))
     prs = []
     releases = []
-    for repo, min_published_at in minrows:
-        release = dict(await _fetch_release_by_timestamp(repo, min_published_at, db, cache))
+    for row in minrows:
+        repo, min_published_at = row.values()
+        min_published_at = min_published_at.replace(tzinfo=timezone.utc)
+        release = await _fetch_release_by_timestamp(repo, min_published_at, db, cache)
         release[Release.published_at.key] = min_published_at
         release[Release.repository_full_name.key] = repo
         diff_history, min_commit_date = await _fetch_diff_commit_history(release, db, cache)
@@ -230,10 +232,11 @@ async def map_releases_to_prs(repos: Iterable[str],
 async def _fetch_release_by_timestamp(repo: str,
                                       min_published_at: datetime,
                                       db: Union[databases.Database, databases.core.Connection],
-                                      cache: Optional[aiomcache.Client]):
-    return await db.fetch_one(select([Release.sha, Release.commit_id, Release.author, Release.url])
-                              .where(and_(Release.repository_full_name == repo,
-                                          Release.published_at == min_published_at)))
+                                      cache: Optional[aiomcache.Client]) -> Dict[str, Any]:
+    return dict(await db.fetch_one(
+        select([Release.sha, Release.commit_id, Release.author, Release.url])
+        .where(and_(Release.repository_full_name == repo,
+                    Release.published_at == min_published_at))))
 
 
 @cached(

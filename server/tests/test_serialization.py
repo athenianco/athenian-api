@@ -11,7 +11,7 @@ def test_serialize_datetime():
         pd.Timestamp(0, tzinfo=timezone.utc),
         pd.NaT,
         datetime(year=2020, month=3, day=18, tzinfo=timezone.utc),
-        date.today(),
+        date(year=2020, month=3, day=18),
         pd.Timedelta(minutes=1),
         timedelta(seconds=1),
     ]
