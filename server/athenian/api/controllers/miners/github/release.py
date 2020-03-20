@@ -1,18 +1,16 @@
 from datetime import date, datetime, timedelta, timezone
 from itertools import chain, groupby
 import marshal
-import pickle
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Union
 
 import aiomcache
 import databases
 import pandas as pd
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import and_, desc, select
 
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
 from athenian.api.cache import cached, max_exptime
-from athenian.api.models.metadata.github import NodeCommit, PullRequest, PullRequestMergeCommit, \
-    Release
+from athenian.api.models.metadata.github import PullRequest, Release
 
 
 async def map_prs_to_releases(prs: pd.DataFrame,
@@ -66,56 +64,69 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                                ) -> pd.DataFrame:
     time_from = prs[PullRequest.merged_at.key].min()
     time_to = pd.Timestamp(time_to, tzinfo=timezone.utc)
-    prrfnkey = PullRequest.repository_full_name.key
     async with db.connection() as conn:
-        merge_hashes = await read_sql_query(
-            select([PullRequestMergeCommit]).where(PullRequestMergeCommit.id.in_(prs.index)),
-            conn, PullRequestMergeCommit, index=PullRequestMergeCommit.id.key)
-        prs_by_repo = prs.merge(merge_hashes, left_index=True, right_index=True)
-        prs_by_repo.index.name = prs.index.name
-        prs_by_repo.reset_index(inplace=True)
-        prs_by_repo.set_index([prrfnkey, PullRequest.node_id.key], inplace=True)
+        repos = prs[PullRequest.repository_full_name.key].unique()
         releases = await read_sql_query(
             select([Release])
             .where(and_(Release.published_at.between(time_from, time_to),
-                        Release.repository_full_name.in_(prs[prrfnkey].unique())))
-            .order_by(Release.published_at),
+                        Release.repository_full_name.in_(repos)))
+            .order_by(desc(Release.published_at)),
             conn, Release)
-        return await _map_prs_to_specific_releases(prs_by_repo, releases, conn, cache)
+        releases = dict(list(releases.groupby(Release.repository_full_name.key, sort=False)))
+        histories = await _fetch_release_histories(releases, conn, cache)
+        released_prs = _new_map_df()
+        for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.key, sort=False):
+            try:
+                repo_releases = releases[repo]
+                history = histories[repo]
+            except KeyError:
+                # no releases exist for this repo
+                continue
+            for pr_id, merge_sha in zip(repo_prs.index,
+                                        repo_prs[PullRequest.merge_commit_sha.key].values):
+                try:
+                    items = history[merge_sha]
+                except KeyError:
+                    continue
+                r = repo_releases.iloc[items[0]]
+                released_prs.loc[pr_id] = (r[Release.published_at.key],
+                                           r[Release.author.key],
+                                           r[Release.url.key])
+        return postprocess_datetime(released_prs)
 
 
-async def _map_prs_to_specific_releases(merged_prs_by_repo: pd.DataFrame,
-                                        releases: pd.DataFrame,
-                                        conn: databases.core.Connection,
-                                        cache: Optional[aiomcache.Client],
-                                        ) -> pd.DataFrame:
-    rrfnkey = Release.repository_full_name.key
-    released_prs = _new_map_df()
-    pr_id_by_hash_by_repo = merged_prs_by_repo[[PullRequestMergeCommit.sha.key]].copy()
-    pr_id_by_hash_by_repo.reset_index(inplace=True)
-    pr_id_by_hash_by_repo.set_index(
-        [PullRequest.repository_full_name.key, PullRequestMergeCommit.sha.key], inplace=True)
-    pr_id_by_hash_by_repo = pr_id_by_hash_by_repo[PullRequest.node_id.key]  # pd.Series
-    # TODO(vmarkovtsev): we don't actually have to fetch the history for all the releases because
-    # later releases are going to include earlier releases.
-    for repo, repo_releases in releases.groupby(rrfnkey, sort=False):
-        repo_releases = repo_releases.iloc[:-1]
-        pr_id_by_hash = pr_id_by_hash_by_repo[repo]
-        backlog = set(pr_id_by_hash.index)
-        for relc, relsha, reldate, relauthor, relurl in zip(
+async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
+                                   conn: databases.core.Connection,
+                                   cache: Optional[aiomcache.Client],
+                                   ) -> Dict[str, Dict[str, List[str]]]:
+    histories = {}
+    for repo, repo_releases in releases.items():
+        histories[repo] = history = {}
+        release_hashes = set(repo_releases[Release.sha.key].values)
+        for rel_index, (rel_commit_id, rel_sha) in enumerate(zip(
                 repo_releases[Release.commit_id.key].values,
-                repo_releases[Release.sha.key].values,
-                repo_releases[Release.published_at.key].values,
-                repo_releases[Release.author.key].values,
-                repo_releases[Release.url.key].values,
-        ):
-            history = await _fetch_commit_history_set(relc, relsha, conn, cache)
-            for merge_hash in history.intersection(backlog):
-                released_prs.loc[pr_id_by_hash[merge_hash]] = reldate, relauthor, relurl
-                backlog.remove(merge_hash)
-            if not backlog:
-                break
-    return postprocess_datetime(released_prs)
+                repo_releases[Release.sha.key].values)):
+            if rel_sha in history:
+                parents = [rel_sha]
+                while parents:
+                    x = parents.pop()
+                    if history[x][0] == rel_index or (x in release_hashes and x != rel_sha):
+                        continue
+                    history[x][0] = rel_index
+                    parents.extend(history[x][1:])
+                continue
+            dag = await _fetch_commit_history_dag(rel_commit_id, conn, cache)
+            for c, edges in dag.items():
+                try:
+                    items = history[c]
+                except KeyError:
+                    history[c] = [rel_index] + edges
+                    continue
+                items[0] = rel_index
+                for v in edges:
+                    if v not in items:
+                        items.append(v)
+    return histories
 
 
 async def _cache_pr_releases(releases: pd.DataFrame, cache: aiomcache.Client) -> None:
@@ -134,52 +145,10 @@ async def _cache_pr_releases(releases: pd.DataFrame, cache: aiomcache.Client) ->
     deserialize=marshal.loads,
     key=lambda commit_id, **_: (commit_id,),
 )
-async def _fetch_commit_history_set(commit_id: str,
-                                    commit_sha: str,
-                                    conn: databases.core.Connection,
-                                    cache: Optional[aiomcache.Client],
-                                    ) -> Set[str]:
-    # How about limiting the history by some certain date?
-    # That would speed up the things but then we'll not be able to cache it.
-    # Credits: @dennwc
-    # Git parent-child is reversed github_node_commit_parents' parent-child.
-    query = f"""
-    WITH RECURSIVE commit_history AS (
-        SELECT
-            p.child_id AS parent,
-            c.oid AS parent_oid
-        FROM
-            github_node_commit_parents p
-                LEFT JOIN github_node_commit c ON p.child_id = c.id
-        WHERE
-            p.parent_id = '{commit_id}'
-        UNION
-            SELECT
-                p.child_id AS parent,
-                c.oid AS parent_oid
-            FROM
-                github_node_commit_parents p
-                    INNER JOIN commit_history h ON h.parent = p.parent_id
-                    LEFT JOIN github_node_commit c ON p.child_id = c.id
-    ) SELECT
-        parent_oid
-    FROM
-        commit_history;"""
-    history = {r["parent_oid"] for r in await conn.fetch_all(query)}
-    history.add(commit_sha)
-    return history
-
-
-@cached(
-    exptime=max_exptime,
-    serialize=marshal.dumps,
-    deserialize=marshal.loads,
-    key=lambda commit_id, **_: (commit_id,),
-)
 async def _fetch_commit_history_dag(commit_id: str,
                                     conn: databases.core.Connection,
                                     cache: Optional[aiomcache.Client],
-                                    ) -> Tuple[str, Dict[str, List[str]]]:
+                                    ) -> Dict[str, List[str]]:
     # How about limiting the history by some certain date?
     # That would speed up the things but then we'll not be able to cache it.
     # Credits: @dennwc
@@ -213,14 +182,11 @@ async def _fetch_commit_history_dag(commit_id: str,
         commit_history;"""
     history = [(r["child_oid"], r["parent_oid"]) for r in await conn.fetch_all(query)]
     # parent-child matches github_node_commit_parents again
-    root = history[0][0]
-    dag = {}  # not defaultdict to enable marshal
+    dag = {history[0][0]: []}
     for p, c in history:
-        try:
-            dag[p].append(c)
-        except KeyError:
-            dag[p] = [c]
-    return root, dag
+        dag[p].append(c)
+        dag.setdefault(c, [])
+    return dag
 
 
 async def _find_old_released_prs(releases: pd.DataFrame,
@@ -233,10 +199,12 @@ async def _find_old_released_prs(releases: pd.DataFrame,
     hash_to_release = {h: rid for rid, h in zip(releases.index, releases[Release.sha.key].values)}
     new_releases = releases[releases[Release.published_at.key] >= time_boundary]
     boundary_releases = set()
-    for rid, commit_id in zip(new_releases.index, new_releases[Release.commit_id.key].values):
+    for rid, commit_id, root in zip(new_releases.index,
+                                    new_releases[Release.commit_id.key].values,
+                                    new_releases[Release.sha.key].values):
         if rid in resolved:
             continue
-        root, dag = await _fetch_commit_history_dag(commit_id, db, cache)
+        dag = await _fetch_commit_history_dag(commit_id, db, cache)
         parents = [root]
         while parents:
             x = parents.pop()
@@ -254,22 +222,22 @@ async def _find_old_released_prs(releases: pd.DataFrame,
                     boundary_releases.add(xrid)
                     continue
             observed_commits.add(x)
-            children = dag.get(x, [])
+            children = dag[x]
             parents.extend(children)
     # we need to traverse full history from boundary_releases and subtract it from observed_commits
     released_commits = set()
     for rid in boundary_releases:
-        if releases.loc[rid][Release.sha.key] in released_commits:
+        release = releases.loc[rid]
+        if release[Release.sha.key] in released_commits:
             continue
-        root, dag = await _fetch_commit_history_dag(
-            releases.loc[rid][Release.commit_id.key], db, cache)
-        parents = [root]
+        dag = await _fetch_commit_history_dag(release[Release.commit_id.key], db, cache)
+        parents = [release[Release.sha.key]]
         while parents:
             x = parents.pop()
             if x in released_commits:
                 continue
             released_commits.add(x)
-            children = dag.get(x, [])
+            children = dag[x]
             parents.extend(children)
     observed_commits -= released_commits
     repo = releases.iloc[0][Release.repository_full_name.key] if not releases.empty else ""
@@ -303,51 +271,6 @@ async def map_releases_to_prs(repos: Iterable[str],
     prs = []
     for _, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
         prs.append(await _find_old_released_prs(repo_releases, time_from, db, cache))
-    return pd.concat(prs, sort=False)
-
-
-@cached(
-    exptime=max_exptime,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
-    key=lambda repo, min_published_at, **_: (repo, min_published_at),
-)
-async def _fetch_release_by_timestamp(repo: str,
-                                      min_published_at: datetime,
-                                      db: Union[databases.Database, databases.core.Connection],
-                                      cache: Optional[aiomcache.Client]) -> Dict[str, Any]:
-    return dict(await db.fetch_one(
-        select([Release.sha, Release.commit_id, Release.author, Release.url])
-        .where(and_(Release.repository_full_name == repo,
-                    Release.published_at == min_published_at))))
-
-
-@cached(
-    exptime=max_exptime,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
-    key=lambda release, **_: (release[Release.sha.key], release[Release.repository_full_name.key]),
-)
-async def _fetch_diff_commit_history(release: Mapping[str, Any],
-                                     db: Union[databases.Database, databases.core.Connection],
-                                     cache: Optional[aiomcache.Client]):
-    repo = release[Release.repository_full_name.key]
-    rel_history = await _fetch_commit_history_set(
-        release[Release.commit_id.key], release[Release.sha.key], db, cache)
-    prev_published_at = await db.fetch_val(
-        select([func.max(Release.published_at)])
-        .where(and_(Release.repository_full_name == repo,
-                    Release.published_at < release[Release.published_at.key])))
-    if prev_published_at is not None:
-        prev_commit = await db.fetch_one(
-            select([Release.commit_id, Release.sha])
-            .where(and_(Release.repository_full_name == repo,
-                        Release.published_at == prev_published_at)))
-        prev_history = await _fetch_commit_history_set(*prev_commit, db, cache)
-        diff_history = rel_history - prev_history
-        min_commit_date = await db.fetch_val(
-            select([func.min(NodeCommit.pushed_date)]).where(NodeCommit.oid.in_(diff_history)))
-    else:
-        diff_history = rel_history
-        min_commit_date = datetime(year=1970, month=1, day=1)
-    return diff_history, min_commit_date
+    if prs:
+        return pd.concat(prs, sort=False)
+    return pd.DataFrame()
