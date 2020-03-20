@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import datetime, timezone
 import json
 from typing import Optional, Set
 
@@ -8,6 +9,7 @@ import pytest
 
 from athenian.api import setup_cache_metrics
 from athenian.api.controllers.miners.pull_request_list_item import Property
+from athenian.api.models.web import CommitsList
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
 from athenian.api.models.web.pull_request_property import PullRequestProperty
@@ -356,3 +358,58 @@ async def test_filter_prs_david_bug(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     assert response.status == 200
+
+
+async def test_filter_commits_bypassing_prs(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2019-01-12",
+        "date_to": "2020-02-22",
+        "in": ["{1}"],
+        "property": "bypassing_prs",
+        "with_author": ["github.com/mcuadros"],
+        "with_committer": ["github.com/mcuadros"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/commits", headers=headers, json=body)
+    assert response.status == 200
+    commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert commits.to_dict() == {
+        "data": [{"author": {"email": "mcuadros@gmail.com",
+                             "login": "mcuadros",
+                             "name": "Máximo Cuadros",
+                             "timestamp": datetime(2019, 4, 24, 13, 20, 51, tzinfo=timezone.utc),
+                             "timezone": 2.0},
+                  "committer": {"email": "mcuadros@gmail.com",
+                                "login": "mcuadros",
+                                "name": "Máximo Cuadros",
+                                "timestamp": datetime(2019, 4, 24, 13, 20, 51,
+                                                      tzinfo=timezone.utc),
+                                "timezone": 2.0},
+                  "files_changed": 1,
+                  "hash": "5c6d199dc675465f5e103ea36c0bfcb9d3ebc565",
+                  "message": "plumbing: commit.Stats, fix panic on empty chucks\n\n"
+                             "Signed-off-by: Máximo Cuadros <mcuadros@gmail.com>",
+                  "repository": "src-d/go-git",
+                  "size_added": 4,
+                  "size_removed": 0}],
+        "include": {"users": {
+            "mcuadros": {"avatar": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4"}}}}
+
+
+async def test_filter_commits_bypassing_prs_empty(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2020-01-12",
+        "date_to": "2020-02-22",
+        "in": ["{1}"],
+        "property": "bypassing_prs",
+        "with_author": ["github.com/mcuadros"],
+        "with_committer": ["github.com/mcuadros"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/commits", headers=headers, json=body)
+    assert response.status == 200
+    commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert len(commits.data) == 0
+    assert len(commits.include.users) == 0

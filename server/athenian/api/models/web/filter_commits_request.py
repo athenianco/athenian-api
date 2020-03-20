@@ -11,6 +11,9 @@ class FilterCommitsProperty(Enum):
     BYPASSING_PRS = "bypassing_prs"
 
 
+FilterCommitsProperty.ALL = {f.value for f in FilterCommitsProperty}
+
+
 class FilterCommitsRequest(CommitFilter):
     """Filter for listing commits."""
 
@@ -64,8 +67,8 @@ class FilterCommitsRequest(CommitFilter):
         """
         if property is None:
             raise ValueError("Invalid value for `property`, must not be `None`")
-        if property not in {f.value for f in FilterCommitsProperty}:
+        if property not in FilterCommitsProperty.ALL:
             raise ValueError("Invalid value for `property` - is not one of [%s]" %
-                             ",".join('"%s"' % f.value for f in FilterCommitsProperty))
+                             ",".join('"%s"' % f for f in FilterCommitsProperty.ALL))
 
         self._property = property

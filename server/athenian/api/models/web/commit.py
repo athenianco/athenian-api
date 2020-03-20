@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Optional
 
 from athenian.api.models.web.base_model_ import Model
@@ -15,7 +14,6 @@ class Commit(Model):
         author: Optional[CommitSignature] = None,
         committer: Optional[CommitSignature] = None,
         message: Optional[str] = None,
-        pushed: Optional[datetime] = None,
         size_added: Optional[int] = None,
         size_removed: Optional[int] = None,
         files_changed: Optional[int] = None,
@@ -27,7 +25,6 @@ class Commit(Model):
         :param author: The author of this Commit.
         :param committer: The committer of this Commit.
         :param message: The message of this Commit.
-        :param pushed: The pushed of this Commit.
         :param size_added: The size_added of this Commit.
         :param size_removed: The size_removed of this Commit.
         :param files_changed: The files_changed of this Commit.
@@ -38,7 +35,6 @@ class Commit(Model):
             "author": CommitSignature,
             "committer": CommitSignature,
             "message": str,
-            "pushed": datetime,
             "size_added": int,
             "size_removed": int,
             "files_changed": int,
@@ -50,7 +46,6 @@ class Commit(Model):
             "author": "author",
             "committer": "committer",
             "message": "message",
-            "pushed": "pushed",
             "size_added": "size_added",
             "size_removed": "size_removed",
             "files_changed": "files_changed",
@@ -61,7 +56,6 @@ class Commit(Model):
         self._author = author
         self._committer = committer
         self._message = message
-        self._pushed = pushed
         self._size_added = size_added
         self._size_removed = size_removed
         self._files_changed = files_changed
@@ -178,29 +172,6 @@ class Commit(Model):
             raise ValueError("Invalid value for `message`, must not be `None`")
 
         self._message = message
-
-    @property
-    def pushed(self) -> datetime:
-        """Gets the pushed of this Commit.
-
-        When the commit was pushed to GitHub.
-
-        :return: The pushed of this Commit.
-        """
-        return self._pushed
-
-    @pushed.setter
-    def pushed(self, pushed: datetime):
-        """Sets the pushed of this Commit.
-
-        When the commit was pushed to GitHub.
-
-        :param pushed: The pushed of this Commit.
-        """
-        if pushed is None:
-            raise ValueError("Invalid value for `pushed`, must not be `None`")
-
-        self._pushed = pushed
 
     @property
     def size_added(self) -> int:

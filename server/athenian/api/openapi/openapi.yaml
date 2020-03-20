@@ -113,6 +113,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/CommitsList'
           description: Commits that satisfy the specified filters grouped by date.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
         403:
           content:
             application/json:
@@ -1732,7 +1738,6 @@ components:
             timestamp: 2020-02-25T14:27:21Z
             timezone: 1.0
           message: 'Bump version: 0.0.42 → 0.0.43'
-          pushed: 2020-02-25T14:27:21Z
           size_added: 1
           size_removed: 1
           files_changed: 1
@@ -1751,7 +1756,6 @@ components:
             timestamp: 2020-03-20T10:06:49Z
             timezone: 1.0
           message: 'Bump version: 0.0.78 → 0.0.79'
-          pushed: 2020-03-20T11:06:49Z
           size_added: 1
           size_removed: 1
           files_changed: 1
@@ -1784,7 +1788,6 @@ components:
           timestamp: 2020-02-25T14:27:21Z
           timezone: 1.0
         message: 'Bump version: 0.0.42 → 0.0.43'
-        pushed: 2020-02-25T14:27:21Z
         size_added: 1
         size_removed: 1
         files_changed: 1
@@ -1801,10 +1804,6 @@ components:
         message:
           description: Commit message.
           type: string
-        pushed:
-          description: When the commit was pushed to GitHub.
-          format: date-time
-          type: string
         size_added:
           description: Overall number of lines added.
           type: integer
@@ -1820,7 +1819,6 @@ components:
       - files_changed
       - hash
       - message
-      - pushed
       - repository
       - size_added
       - size_removed
@@ -1887,7 +1885,6 @@ components:
       - account
       - date_from
       - date_to
-      - granularity
       - in
       type: object
     CodeFilter:
