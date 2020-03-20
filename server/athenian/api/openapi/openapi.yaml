@@ -839,7 +839,7 @@ components:
     RepositorySetCreateRequest:
       description: Repository set creation request.
       example:
-        account: 1
+        account: 2
         items:
         - github.com/src-d/hercules
         - github.com/athenianco/athenian-api
@@ -1126,7 +1126,7 @@ components:
         date_from: 2000-01-23
         date_to: 2020-01-23
         granularity: day
-        account: 1
+        account: 2
       properties:
         for:
           description: Sets of developers and repositories to calculate the metrics
@@ -1384,11 +1384,11 @@ components:
     FilterContribsOrReposRequest:
       description: PR filters for /filter/contributors and /filter/repositories.
       example:
-        account: 1
+        account: 2
         date_from: 2000-01-23
         date_to: 2020-05-23
         in:
-        - '{1}'
+        - '{2}'
       properties:
         account:
           description: Session account ID.
@@ -1414,11 +1414,11 @@ components:
       description: Filters for /filter/pull_requests. Empty `properties` passes through
         all PRs matched by the other filters.
       example:
-        account: 1
+        account: 2
         date_from: 2000-01-23
         date_to: 2020-05-23
         in:
-        - '{1}'
+        - '{2}'
         stages:
         - wip
         with:
@@ -1699,11 +1699,12 @@ components:
     FilterCommitsRequest:
       description: Filter for listing commits.
       example:
-        account: 1
+        account: 2
         date_from: 2000-01-23
         date_to: 2020-05-23
         in:
-        - '{1}'
+        - '{2}'
+        property: bypassing_prs
       allOf:
       - $ref: '#/components/schemas/CommitFilter'
       - properties:
@@ -1856,11 +1857,11 @@ components:
     CommitFilter:
       description: Common parts of the commit filter.
       example:
-        account: 1
+        account: 2
         date_from: 2020-01-01
         date_to: 2020-03-01
         in:
-        - '{1}'
+        - '{2}'
         with_author:
         - github.com/vmarkovtsev
       properties:
@@ -1890,12 +1891,12 @@ components:
     CodeFilter:
       description: Filter for revealing code bypassing PRs.
       example:
-        account: 1
+        account: 2
         date_from: 2020-01-01
         date_to: 2020-03-01
         granularity: day
         in:
-          - '{1}'
+          - '{2}'
         with_author:
           - github.com/vmarkovtsev
       allOf:

@@ -413,3 +413,19 @@ async def test_filter_commits_bypassing_prs_empty(client, headers):
     commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
     assert len(commits.data) == 0
     assert len(commits.include.users) == 0
+
+
+async def test_filter_commits_bypassing_prs_no_with(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2020-01-12",
+        "date_to": "2020-02-22",
+        "in": ["{1}"],
+        "property": "bypassing_prs",
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/commits", headers=headers, json=body)
+    assert response.status == 200
+    commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert len(commits.data) == 0
+    assert len(commits.include.users) == 0

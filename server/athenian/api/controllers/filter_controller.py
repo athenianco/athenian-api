@@ -267,14 +267,16 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
         repos = await _common_filter_preprocess(filt, request)
     except ResponseError as e:
         return e.response
-    filt.with_author = [s.split("/", 1)[1] for s in filt.with_author]
-    filt.with_committer = [s.split("/", 1)[1] for s in filt.with_committer]
+    filt.with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
+    filt.with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
     sql_filters = [
         PushCommit.committed_date.between(filt.date_from, filt.date_to),
-        PushCommit.author_login.in_(filt.with_author),
-        PushCommit.committer_login.in_(filt.with_committer),
         PushCommit.repository_full_name.in_(repos),
     ]
+    if filt.with_author:
+        sql_filters.append(PushCommit.author_login.in_(filt.with_author))
+    if filt.with_committer:
+        sql_filters.append(PushCommit.committer_login.in_(filt.with_committer))
     model = CommitsList(data=[], include=IncludedNativeUsers(users={}))
     log = logging.getLogger("filter_commits")
     if filt.property == FilterCommitsProperty.BYPASSING_PRS.value:
