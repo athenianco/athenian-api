@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from typing import List, Optional
 
+from athenian.api.models.web import Granularity
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.metric_id import MetricID
@@ -164,6 +165,9 @@ class PullRequestMetricsRequest(Model):
         """
         if granularity is None:
             raise ValueError("Invalid value for `granularity`, must not be `None`")
+        if not Granularity.format.match(granularity):
+            raise ValueError("Invalid value for `granularity`, does not match /%s/" %
+                             Granularity.format.pattern)
 
         self._granularity = granularity
 

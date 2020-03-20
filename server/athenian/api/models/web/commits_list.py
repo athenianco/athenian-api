@@ -1,26 +1,25 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.commit_group_for_filter_commits_request import \
-    CommitGroupForFilterCommitsRequest
+from athenian.api.models.web.commit import Commit
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
 
 
-class CommitsGroupedByTime(Model):
+class CommitsList(Model):
     """Lists of commits for each time interval."""
 
     def __init__(
         self,
-        data: Optional[List[CommitGroupForFilterCommitsRequest]] = None,
+        data: Optional[List[Commit]] = None,
         include: Optional[IncludedNativeUsers] = None,
     ):
-        """CommitsGroupedByTime - a model defined in OpenAPI
+        """CommitsList - a model defined in OpenAPI
 
-        :param data: The data of this CommitsGroupedByTime.
-        :param include: The include of this CommitsGroupedByTime.
+        :param data: The data of this CommitsList.
+        :param include: The include of this CommitsList.
         """
         self.openapi_types = {
-            "data": List[CommitGroupForFilterCommitsRequest],
+            "data": List[Commit],
             "include": IncludedNativeUsers,
         }
 
@@ -30,18 +29,18 @@ class CommitsGroupedByTime(Model):
         self._include = include
 
     @property
-    def data(self) -> List[CommitGroupForFilterCommitsRequest]:
-        """Gets the data of this CommitsGroupedByTime.
+    def data(self) -> List[Commit]:
+        """Gets the data of this CommitsList.
 
-        :return: The data of this CommitsGroupedByTime.
+        :return: The data of this CommitsList.
         """
         return self._data
 
     @data.setter
-    def data(self, data: List[CommitGroupForFilterCommitsRequest]):
-        """Sets the data of this CommitsGroupedByTime.
+    def data(self, data: List[Commit]):
+        """Sets the data of this CommitsList.
 
-        :param data: The data of this CommitsGroupedByTime.
+        :param data: The data of this CommitsList.
         """
         if data is None:
             raise ValueError("Invalid value for `data`, must not be `None`")
@@ -50,17 +49,17 @@ class CommitsGroupedByTime(Model):
 
     @property
     def include(self) -> IncludedNativeUsers:
-        """Gets the include of this CommitsGroupedByTime.
+        """Gets the include of this CommitsList.
 
-        :return: The include of this CommitsGroupedByTime.
+        :return: The include of this CommitsList.
         """
         return self._include
 
     @include.setter
     def include(self, include: IncludedNativeUsers):
-        """Sets the include of this CommitsGroupedByTime.
+        """Sets the include of this CommitsList.
 
-        :param include: The include of this CommitsGroupedByTime.
+        :param include: The include of this CommitsList.
         """
         if include is None:
             raise ValueError("Invalid value for `include`, must not be `None`")

@@ -67,7 +67,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         time_intervals = Granularity.split(body.granularity, body.date_from, body.date_to)
     except ValueError:
         return ResponseError(InvalidRequestError(
-            detail="granularity value is invalid",
+            detail="granularity value does not match /%s/" % Granularity.format.pattern,
             pointer=".granularity",
         )).response
     for service, (repos, devs, for_set) in filters:

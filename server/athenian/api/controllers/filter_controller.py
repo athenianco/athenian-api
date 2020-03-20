@@ -17,7 +17,8 @@ from athenian.api.controllers.reposet_controller import load_account_reposets
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
     PullRequestReview, PushCommit, Release, User
 from athenian.api.models.state.models import RepositorySet, UserAccount
-from athenian.api.models.web import ForbiddenError
+from athenian.api.models.web import ForbiddenError, InvalidRequestError
+from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contribs_or_repos_request import FilterContribsOrReposRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
 from athenian.api.models.web.included_native_user import IncludedNativeUser
@@ -34,6 +35,11 @@ async def filter_contributors(request: AthenianWebRequest,
                               ) -> web.Response:
     """Find developers that made an action within the given timeframe."""
     filt = FilterContribsOrReposRequest.from_dict(body)
+    if filt.date_to < filt.date_from:
+        return ResponseError(InvalidRequestError(
+            detail="date_from may not be greater than date_to",
+            pointer=".date_from",
+        )).response
     try:
         repos = await _resolve_repos(
             filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
@@ -95,6 +101,11 @@ async def filter_repositories(request: AthenianWebRequest,
                               ) -> web.Response:
     """Find repositories that were updated within the given timeframe."""
     filt = FilterContribsOrReposRequest.from_dict(body)
+    if filt.date_to < filt.date_from:
+        return ResponseError(InvalidRequestError(
+            detail="date_from may not be greater than date_to",
+            pointer=".date_from",
+        )).response
     try:
         repos = await _resolve_repos(
             filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
@@ -183,6 +194,11 @@ async def _resolve_repos(filt: Union[FilterContribsOrReposRequest, FilterPullReq
 async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """List pull requests that satisfy the query."""
     filt = FilterPullRequestsRequest.from_dict(body)
+    if filt.date_to < filt.date_from:
+        return ResponseError(InvalidRequestError(
+            detail="date_from may not be greater than date_to",
+            pointer=".date_from",
+        )).response
     try:
         repos = await _resolve_repos(
             filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
@@ -243,6 +259,6 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
 
 
 async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Response:
-    """Find commits that match the specified query and group them with the required time \
-    granularity."""
+    """Find commits that match the specified query."""
+    _ = FilterCommitsRequest.from_dict(body)
     return None
