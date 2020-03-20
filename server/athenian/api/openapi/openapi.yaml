@@ -111,8 +111,14 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CommitsGroupedByTime'
+                $ref: '#/components/schemas/CommitsList'
           description: Commits that satisfy the specified filters grouped by date.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
         403:
           content:
             application/json:
@@ -121,8 +127,7 @@ paths:
           description: Current user is not allowed to access the specified account.
       security:
       - bearerAuth: []
-      summary: Find commits that match the specified query and group them with the
-        required time granularity.
+      summary: Find commits that match the specified query.
       tags:
         - filter
 # {% if False %}
@@ -146,6 +151,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeveloperSet'
           description: Repositories that were updated within the given timeframe.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
         403:
           content:
             application/json:
@@ -178,6 +189,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/PullRequestSet'
           description: List of pull requests satisfying the specified filters.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
         403:
           content:
             application/json:
@@ -210,6 +227,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/RepositorySet'
           description: Repositories that were updated within the given timeframe.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
         403:
           content:
             application/json:
@@ -392,7 +415,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CommitFilter'
+              $ref: '#/components/schemas/CodeFilter'
         description: Query for measuring the amount of code that was pushed outside
           of pull requests.
         required: true
@@ -742,12 +765,12 @@ components:
     InvalidRequestError:
       allOf:
       - $ref: '#/components/schemas/GenericError'
-      - type: object
-        properties:
+      - properties:
           pointer:
             description: Path to the offending request item.
             example: .granularity
             type: string
+        type: object
     NoSourceDataError:
       allOf:
       - $ref: '#/components/schemas/GenericError'
@@ -1441,20 +1464,20 @@ components:
       example: wip
       type: string
     PullRequestProperty:
-      description: PR's modelled lifecycle stage or various events that happened
-        between `time_from` and `time_to`.
+      description: PR's modelled lifecycle stage or various events that happened between
+        `time_from` and `time_to`.
       enum:
-        - wip
-        - created
-        - commit_happened
-        - reviewing
-        - review_happened
-        - approve_happened
-        - merging
-        - merge_happened
-        - releasing
-        - release_happened
-        - done  # PR afterlife - PRs that were released or rejected and nothing ever happens to them
+      - wip
+      - created
+      - commit_happened
+      - reviewing
+      - review_happened
+      - approve_happened
+      - merging
+      - merge_happened
+      - releasing
+      - release_happened
+      - done  # PR afterlife - PRs that were released or rejected and nothing ever happens to them
       example: wip
       type: string
     PullRequestSet:
@@ -1692,144 +1715,60 @@ components:
         required:
         - property
         type: object
-    CommitsGroupedByTime:
-      description: Lists of commits grouped by date.
+    CommitsList:
+      description: List of commits.
       example:
         include:
           users:
             github.com/gkwillie:
               avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
         data:
-        - date: 2000-01-23
-          commits:
-          - repository: github.com/athenianco/athenian-api
-            hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
-            author:
-              login: github.com/gkwillie
-              name: Groundskeeper Willie
-              email: bot@athenian.co
-              timestamp: 2020-02-25T14:27:21Z
-            committer:
-              login: github.com/gkwillie
-              name: Groundskeeper Willie
-              email: bot@athenian.co
-              timestamp: 2020-02-25T14:27:21Z
-            message: 'Bump version: 0.0.42 → 0.0.43'
-            size_added: 1
-            size_removed: 1
-            files_changed: 1
-          - repository: github.com/athenianco/athenian-api
-            hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
-            author:
-              login: github.com/gkwillie
-              name: Groundskeeper Willie
-              email: bot@athenian.co
-              timestamp: 2020-02-25T14:27:21Z
-            committer:
-              login: github.com/gkwillie
-              name: Groundskeeper Willie
-              email: bot@athenian.co
-              timestamp: 2020-02-25T14:27:21Z
-            message: 'Bump version: 0.0.42 → 0.0.43'
-            size_added: 1
-            size_removed: 1
-            files_changed: 1
-        - date: 2000-01-23
-          commits:
-          - repository: github.com/athenianco/athenian-api
-            hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
-            author:
-              login: github.com/gkwillie
-              name: Groundskeeper Willie
-              email: bot@athenian.co
-              timestamp: 2020-02-25T14:27:21Z
-            committer:
-              login: github.com/gkwillie
-              name: Groundskeeper Willie
-              email: bot@athenian.co
-              timestamp: 2020-02-25T14:27:21Z
-            message: 'Bump version: 0.0.42 → 0.0.43'
-            size_added: 1
-            size_removed: 1
-            files_changed: 1
-          - repository: github.com/athenianco/athenian-api
-            hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
-            author:
-              login: github.com/gkwillie
-              name: Groundskeeper Willie
-              email: bot@athenian.co
-              timestamp: 2020-02-25T14:27:21Z
-            committer:
-              login: github.com/gkwillie
-              name: Groundskeeper Willie
-              email: bot@athenian.co
-              timestamp: 2020-02-25T14:27:21Z
-            message: 'Bump version: 0.0.42 → 0.0.43'
-            size_added: 1
-            size_removed: 1
-            files_changed: 1
+        - repository: github.com/athenianco/athenian-api
+          hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
+          author:
+            login: github.com/gkwillie
+            name: Groundskeeper Willie
+            email: bot@athenian.co
+            timestamp: 2020-02-25T14:27:21Z
+            timezone: 1.0
+          committer:
+            login: github.com/gkwillie
+            name: Groundskeeper Willie
+            email: bot@athenian.co
+            timestamp: 2020-02-25T14:27:21Z
+            timezone: 1.0
+          message: 'Bump version: 0.0.42 → 0.0.43'
+          size_added: 1
+          size_removed: 1
+          files_changed: 1
+        - repository: github.com/athenianco/athenian-api
+          hash: 0d13a3e021fe4219915ba97ea07e465e429a621f
+          author:
+            login: github.com/gkwillie
+            name: Groundskeeper Willie
+            email: bot@athenian.co
+            timestamp: 2020-03-20T10:06:49Z
+            timezone: 1.0
+          committer:
+            login: github.com/gkwillie
+            name: Groundskeeper Willie
+            email: bot@athenian.co
+            timestamp: 2020-03-20T10:06:49Z
+            timezone: 1.0
+          message: 'Bump version: 0.0.78 → 0.0.79'
+          size_added: 1
+          size_removed: 1
+          files_changed: 1
       properties:
         data:
           items:
-            $ref: '#/components/schemas/CommitGroupForFilterCommitsRequest'
+            $ref: '#/components/schemas/Commit'
           type: array
         include:
           $ref: '#/components/schemas/IncludedNativeUsers'
       required:
       - data
       - include
-      type: object
-    CommitGroupForFilterCommitsRequest:
-      description: List of commits that were committed starting from a specific time
-        and ending at +granularity.
-      example:
-        date: 2000-01-23
-        commits:
-        - repository: github.com/athenianco/athenian-api
-          hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
-          author:
-            login: github.com/gkwillie
-            name: Groundskeeper Willie
-            email: bot@athenian.co
-            timestamp: 2020-02-25T14:27:21Z
-          committer:
-            login: github.com/gkwillie
-            name: Groundskeeper Willie
-            email: bot@athenian.co
-            timestamp: 2020-02-25T14:27:21Z
-          message: 'Bump version: 0.0.42 → 0.0.43'
-          size_added: 1
-          size_removed: 1
-          files_changed: 1
-        - repository: github.com/athenianco/athenian-api
-          hash: 79f0bccb856b35ef08ec93da2ff5585da4d2e50e
-          author:
-            login: github.com/gkwillie
-            name: Groundskeeper Willie
-            email: bot@athenian.co
-            timestamp: 2020-02-25T14:27:21Z
-          committer:
-            login: github.com/gkwillie
-            name: Groundskeeper Willie
-            email: bot@athenian.co
-            timestamp: 2020-02-25T14:27:21Z
-          message: 'Bump version: 0.0.42 → 0.0.43'
-          size_added: 1
-          size_removed: 1
-          files_changed: 1
-      properties:
-        date:
-          description: Commits were pushed beginning with this date. They were not
-            pushed later than +granularity.
-          format: date
-          type: string
-        commits:
-          items:
-            $ref: '#/components/schemas/Commit'
-          type: array
-      required:
-      - commits
-      - date
       type: object
     Commit:
       description: Information about a commit.
@@ -1841,11 +1780,13 @@ components:
           name: Groundskeeper Willie
           email: bot@athenian.co
           timestamp: 2020-02-25T14:27:21Z
+          timezone: 1.0
         committer:
           login: github.com/gkwillie
           name: Groundskeeper Willie
           email: bot@athenian.co
           timestamp: 2020-02-25T14:27:21Z
+          timezone: 1.0
         message: 'Bump version: 0.0.42 → 0.0.43'
         size_added: 1
         size_removed: 1
@@ -1890,6 +1831,7 @@ components:
         name: Vadim Markovtsev
         email: vadim@athenian.co
         timestamp: 2020-02-25T14:27:21Z
+        timezone: 1.0
       properties:
         login:
           $ref: '#/components/schemas/DeveloperID'
@@ -1900,19 +1842,23 @@ components:
           description: Git signature email.
           type: string
         timestamp:
-          description: When the corresponding action happened.
+          description: When the corresponding action happened in UTC.
           format: date-time
           type: string
+        timezone:
+          description: Timezone offset of the action timestamp (in hours).
+          format: float
+          type: number
       required:
       - timestamp
+      - timezone
       type: object
     CommitFilter:
-      description: Filter for committed code.
+      description: Common parts of the commit filter.
       example:
         account: 1
         date_from: 2020-01-01
         date_to: 2020-03-01
-        granularity: day
         in:
         - '{1}'
         with_author:
@@ -1929,8 +1875,6 @@ components:
           description: Commits must be made earlier than or equal to this date.
           format: date
           type: string
-        granularity:
-          $ref: '#/components/schemas/Granularity'
         in:
           $ref: '#/components/schemas/RepositorySet'
         with_author:
@@ -1941,9 +1885,27 @@ components:
       - account
       - date_from
       - date_to
-      - granularity
       - in
       type: object
+    CodeFilter:
+      description: Filter for revealing code bypassing PRs.
+      example:
+        account: 1
+        date_from: 2020-01-01
+        date_to: 2020-03-01
+        granularity: day
+        in:
+          - '{1}'
+        with_author:
+          - github.com/vmarkovtsev
+      allOf:
+        - $ref: '#/components/schemas/CommitFilter'
+        - properties:
+            granularity:
+              $ref: '#/components/schemas/Granularity'
+          required:
+            - granularity
+          type: object
     MeasuredCodeBypassingPRs:
       description: Statistics about code pushed outside of pull requests.
       example:

@@ -42,8 +42,6 @@ class UserMixin:
 
 
 class RepositoryMixin:
-    repository_name = Column(Text, nullable=False)
-    repository_owner = Column(Text, nullable=False)
     repository_full_name = Column(Text, nullable=False)
 
 
@@ -133,6 +131,7 @@ class PullRequestCommit(Base):
     __tablename__ = "github_pull_request_commits_compat"
 
     node_id = Column(Text, nullable=False)
+    commit_node_id = Column(Text, nullable=False)
     author_login = Column(Text)
     author_email = Column(Text)
     author_name = Column(Text)
@@ -222,8 +221,6 @@ class PullRequest(Base,
     assignees = Column(ARRAY(BigInteger))
     author_association = Column(Text)
     base_ref = Column(Text, nullable=False)
-    base_repository_name = Column(Text, nullable=False)
-    base_repository_owner = Column(Text, nullable=False)
     base_repository_full_name = Column(Text, nullable=False)
     base_sha = Column(Text, nullable=False)
     base_user = Column(Text, nullable=False)
@@ -234,8 +231,6 @@ class PullRequest(Base,
     deletions = Column(BigInteger)
     head_ref = Column(Text, nullable=False)
     # These are nullable because the head repository can be deleted by the owner.
-    head_repository_name = Column(Text)
-    head_repository_owner = Column(Text)
     head_repository_full_name = Column(Text)
     head_user = Column(Text)
     # head_sha is always not null.
@@ -261,17 +256,26 @@ class PushCommit(Base,
                  RepositoryMixin):
     __tablename__ = "github_push_commits_compat"
 
+    node_id = Column(Text, primary_key=True)
     timestamp = Column(TIMESTAMP)
-    id = Column(BigInteger)
     message = Column(Text)
     author_login = Column(Text)
+    author_avatar_url = Column(Text)
+    author_email = Column(Text)
+    author_name = Column(Text)
+    author_date = Column(Text)
+    authored_date = Column(TIMESTAMP)
     url = Column(Text)
-    sha = Column(Text, primary_key=True)
+    sha = Column(Text)
     committer_login = Column(Text)
-    added = Column(BigInteger)
-    removed = Column(BigInteger)
-    modified = Column(BigInteger)
-    pusher_login = Column(Text)
+    committer_avatar_url = Column(Text)
+    committer_email = Column(Text)
+    committer_name = Column(Text)
+    commit_date = Column(Text)
+    committed_date = Column(TIMESTAMP)
+    additions = Column(BigInteger)
+    deletions = Column(BigInteger)
+    changed_files = Column(BigInteger)
 
 
 class Repository(Base,
@@ -328,13 +332,6 @@ class Release(Base):
     commit_id = Column(Text)
 
 
-class PullRequestMergeCommit(Base):
-    __tablename__ = "github_pull_request_merge_commit_compat"
-
-    id = Column(Text, primary_key=True)
-    sha = Column(Text)
-
-
 class NodeCommit(Base):
     __tablename__ = "github_node_commit"
 
@@ -349,3 +346,11 @@ NodeCommit.sha.key = "oid"
 
 class NodeCommitParent(Base, ParentChildMixin):
     __tablename__ = "github_node_commit_parents"
+
+
+class NodePullRequestCommit(Base):
+    __tablename__ = "github_node_pull_request_commit"
+
+    id = Column(Text, primary_key=True)
+    commit = Column(Text, nullable=False)
+    pull_request = Column(Text, nullable=False)

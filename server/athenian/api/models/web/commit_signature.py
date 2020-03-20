@@ -13,6 +13,7 @@ class CommitSignature(Model):
         name: Optional[str] = None,
         email: Optional[str] = None,
         timestamp: Optional[datetime] = None,
+        timezone: Optional[float] = None,
     ):
         """CommitSignature - a model defined in OpenAPI
 
@@ -20,12 +21,14 @@ class CommitSignature(Model):
         :param name: The name of this CommitSignature.
         :param email: The email of this CommitSignature.
         :param timestamp: The timestamp of this CommitSignature.
+        :param timezone: The timezone of this CommitSignature.
         """
         self.openapi_types = {
             "login": str,
             "name": str,
             "email": str,
             "timestamp": datetime,
+            "timezone": float,
         }
 
         self.attribute_map = {
@@ -33,12 +36,14 @@ class CommitSignature(Model):
             "name": "name",
             "email": "email",
             "timestamp": "timestamp",
+            "timezone": "timezone",
         }
 
         self._login = login
         self._name = name
         self._email = email
         self._timestamp = timestamp
+        self._timezone = timezone
 
     @property
     def login(self) -> str:
@@ -130,3 +135,26 @@ class CommitSignature(Model):
             raise ValueError("Invalid value for `timestamp`, must not be `None`")
 
         self._timestamp = timestamp
+
+    @property
+    def timezone(self) -> float:
+        """Gets the timezone of this CommitSignature.
+
+        Timezone offset of the action timestamp (in hours).
+
+        :return: The timezone of this CommitSignature.
+        """
+        return self._timezone
+
+    @timezone.setter
+    def timezone(self, timezone: float):
+        """Sets the timezone of this CommitSignature.
+
+        Timezone offset of the action timestamp (in hours).
+
+        :param timezone: The timezone of this CommitSignature.
+        """
+        if timezone is None:
+            raise ValueError("Invalid value for `timezone`, must not be `None`")
+
+        self._timezone = timezone

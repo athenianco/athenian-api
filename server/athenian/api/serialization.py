@@ -14,7 +14,8 @@ Class = typing.Type[T]
 
 def _deserialize(
     data: Union[dict, list, str], klass: Union[Class, str],
-) -> Union[dict, list, Class, int, float, str, bool, datetime.date, datetime.datetime]:
+) -> Union[dict, list, Class, int, float, str, bool, datetime.date, datetime.datetime,
+           datetime.timedelta]:
     """Deserializes dict, list, str into an object.
 
     :param data: dict, list or str.
@@ -33,6 +34,8 @@ def _deserialize(
         return deserialize_date(data)
     elif klass == datetime.datetime:
         return deserialize_datetime(data)
+    elif klass == datetime.timedelta:
+        return deserialize_timedelta(data)
     elif typing_utils.is_generic(klass):
         if typing_utils.is_list(klass):
             return _deserialize_list(data, klass.__args__[0])
@@ -83,6 +86,19 @@ def deserialize_datetime(string: str) -> datetime.datetime:
     :return: datetime.
     """
     return parse_datetime(string)
+
+
+def deserialize_timedelta(string: str) -> datetime.timedelta:
+    """Deserializes string to datetime.
+
+    The string should be in iso8601 datetime format.
+
+    :param string: str.
+    :return: datetime.
+    """
+    if not string.endswith("s"):
+        raise ValueError("Unsupported timedelta format: " + string)
+    return datetime.timedelta(seconds=int(string[:-1]))
 
 
 def deserialize_model(data: Union[dict, list], klass: Class) -> T:
