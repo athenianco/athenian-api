@@ -1709,8 +1709,11 @@ components:
       - $ref: '#/components/schemas/CommitFilter'
       - properties:
           property:
-            description: Main trait of the commits - the core of the filter.
+            description: 'Main trait of the commits - the core of the filter.
+              * no_pr_merges: select all the commits but PR merges by noreply@github.com
+              * bypassing_prs: select commits that were pushed without creating a PR'
             enum:
+            - no_pr_merges
             - bypassing_prs
             type: string
         required:

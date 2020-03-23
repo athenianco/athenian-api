@@ -1,17 +1,22 @@
 import asyncio
 from collections import defaultdict
+from datetime import date
 from http import HTTPStatus
 from itertools import chain
-from typing import List, Set, Tuple
+from typing import List, Set, Tuple, Union
 
 from aiohttp import web
 
+from athenian.api import FriendlyJson
+from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
+from athenian.api.controllers.filter_controller import resolve_repos
 from athenian.api.controllers.miners.access_classes import access_classes
+from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedMetric, CalculatedMetrics, CalculatedMetricValues, \
-    ForSet, Granularity
+    CodeBypassingPRsMeasurement, CodeFilter, ForSet, Granularity
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 # from athenian.api.models.no_source_data_error import NoSourceDataError
@@ -56,20 +61,9 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
 
     try:
         filters = await _compile_filters(body.for_, request, body.account)
+        time_intervals = _common_filter_preprocess(body)
     except ResponseError as e:
         return e.response
-    if body.date_to < body.date_from:
-        return ResponseError(InvalidRequestError(
-            detail="date_from may not be greater than date_to",
-            pointer=".date_from",
-        )).response
-    try:
-        time_intervals = Granularity.split(body.granularity, body.date_from, body.date_to)
-    except ValueError:
-        return ResponseError(InvalidRequestError(
-            detail="granularity value does not match /%s/" % Granularity.format.pattern,
-            pointer=".granularity",
-        )).response
     for service, (repos, devs, for_set) in filters:
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
@@ -99,6 +93,23 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
                 v.confidence_scores = None
         met.calculated.append(cm)
     return response(met)
+
+
+def _common_filter_preprocess(
+        filt: Union[PullRequestMetricsRequest, CodeFilter]) -> List[date]:
+    if filt.date_to < filt.date_from:
+        raise ResponseError(InvalidRequestError(
+            detail="date_from may not be greater than date_to",
+            pointer=".date_from",
+        ))
+    try:
+        time_intervals = Granularity.split(filt.granularity, filt.date_from, filt.date_to)
+    except ValueError:
+        raise ResponseError(InvalidRequestError(
+            detail="granularity value does not match /%s/" % Granularity.format.pattern,
+            pointer=".granularity",
+        ))
+    return time_intervals
 
 
 async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, account: int,
@@ -158,4 +169,25 @@ async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, 
 
 async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Measure the amount of code that was pushed outside of pull requests."""
-    return None
+    filt = CodeFilter.from_dict(body)
+    try:
+        repos = await resolve_repos(
+            filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
+        time_intervals = _common_filter_preprocess(filt)
+    except ResponseError as e:
+        return e.response
+    with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
+    with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
+    stats = await METRIC_ENTRIES["github"]["code"](
+        FilterCommitsProperty.bypassing_prs, time_intervals, repos, with_author, with_committer,
+        request.mdb, request.cache)  # type: List[CodeStats]
+    model = [
+        CodeBypassingPRsMeasurement(
+            date=d,
+            bypassed_commits=s.queried_number_of_commits,
+            bypassed_lines=s.queried_number_of_lines,
+            total_commits=s.total_number_of_commits,
+            total_lines=s.total_number_of_lines,
+        ).to_dict()
+        for d, s in zip(time_intervals[:-1], stats)]
+    return web.json_response(model, dumps=FriendlyJson.dumps, status=200)
