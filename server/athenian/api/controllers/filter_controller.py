@@ -272,6 +272,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     sql_filters = [
         PushCommit.committed_date.between(filt.date_from, filt.date_to),
         PushCommit.repository_full_name.in_(repos),
+        PushCommit.committer_email != "noreply@github.com",
     ]
     if filt.with_author:
         sql_filters.append(PushCommit.author_login.in_(filt.with_author))
