@@ -397,6 +397,25 @@ async def test_filter_commits_bypassing_prs(client, headers):
             "mcuadros": {"avatar": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4"}}}}
 
 
+async def test_filter_commits_bypassing_prs_merges(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2019-01-12",
+        "date_to": "2020-02-22",
+        "in": ["{1}"],
+        "property": "bypassing_prs",
+        "with_author": [],
+        "with_committer": [],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/commits", headers=headers, json=body)
+    assert response.status == 200
+    commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert len(commits.data) == 24
+    for c in commits.data:
+        assert c.committer.email != "noreply@github.com"
+
+
 async def test_filter_commits_bypassing_prs_empty(client, headers):
     body = {
         "account": 1,
