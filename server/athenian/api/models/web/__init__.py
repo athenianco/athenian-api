@@ -10,8 +10,7 @@ from athenian.api.models.web.commit_filter import CommitFilter
 from athenian.api.models.web.commit_signature import CommitSignature
 from athenian.api.models.web.commits_list import CommitsList
 from athenian.api.models.web.created_identifier import CreatedIdentifier
-from athenian.api.models.web.filter_commits_request import FilterCommitsProperty, \
-    FilterCommitsRequest
+from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contribs_or_repos_request import FilterContribsOrReposRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
 from athenian.api.models.web.for_set import ForSet

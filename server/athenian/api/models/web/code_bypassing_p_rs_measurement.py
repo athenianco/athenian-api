@@ -13,7 +13,7 @@ class CodeBypassingPRsMeasurement(Model):
         bypassed_commits: Optional[int] = None,
         bypassed_lines: Optional[int] = None,
         total_commits: Optional[int] = None,
-        ratio_lines: Optional[int] = None,
+        total_lines: Optional[int] = None,
     ):
         """CodeBypassingPRsMeasurement - a model defined in OpenAPI
 
@@ -21,14 +21,14 @@ class CodeBypassingPRsMeasurement(Model):
         :param bypassed_commits: The bypassed_commits of this CodeBypassingPRsMeasurement.
         :param bypassed_lines: The bypassed_lines of this CodeBypassingPRsMeasurement.
         :param total_commits: The total_commits of this CodeBypassingPRsMeasurement.
-        :param ratio_lines: The ratio_lines of this CodeBypassingPRsMeasurement.
+        :param total_lines: The total_lines of this CodeBypassingPRsMeasurement.
         """
         self.openapi_types = {
             "date": datetime.date,
             "bypassed_commits": int,
             "bypassed_lines": int,
             "total_commits": int,
-            "ratio_lines": int,
+            "total_lines": int,
         }
 
         self.attribute_map = {
@@ -36,14 +36,14 @@ class CodeBypassingPRsMeasurement(Model):
             "bypassed_commits": "bypassed_commits",
             "bypassed_lines": "bypassed_lines",
             "total_commits": "total_commits",
-            "ratio_lines": "ratio_lines",
+            "total_lines": "total_lines",
         }
 
         self._date = date
         self._bypassed_commits = bypassed_commits
         self._bypassed_lines = bypassed_lines
         self._total_commits = total_commits
-        self._ratio_lines = ratio_lines
+        self._total_lines = total_lines
 
     @property
     def date(self) -> datetime.date:
@@ -139,21 +139,21 @@ class CodeBypassingPRsMeasurement(Model):
         self._total_commits = total_commits
 
     @property
-    def ratio_lines(self) -> int:
-        """Gets the ratio_lines of this CodeBypassingPRsMeasurement.
+    def total_lines(self) -> int:
+        """Gets the total_lines of this CodeBypassingPRsMeasurement.
 
         Overall number of changed (added + removed) lines in the time interval.
 
-        :return: The ratio_lines of this CodeBypassingPRsMeasurement.
+        :return: The total_lines of this CodeBypassingPRsMeasurement.
         """
-        return self._ratio_lines
+        return self._total_lines
 
-    @ratio_lines.setter
-    def ratio_lines(self, ratio_lines: int):
-        """Sets the ratio_lines of this CodeBypassingPRsMeasurement.
+    @total_lines.setter
+    def total_lines(self, total_lines: int):
+        """Sets the total_lines of this CodeBypassingPRsMeasurement.
 
         Overall number of changed (added + removed) lines in the time interval.
 
-        :param ratio_lines: The ratio_lines of this CodeBypassingPRsMeasurement.
+        :param total_lines: The total_lines of this CodeBypassingPRsMeasurement.
         """
-        self._ratio_lines = ratio_lines
+        self._total_lines = total_lines

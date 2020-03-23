@@ -1,11 +1,11 @@
-from datetime import timedelta
+from datetime import date, timedelta
 import itertools
 
 import pandas as pd
 import pytest
 
 from athenian.api import FriendlyJson
-from athenian.api.models.web import CalculatedMetrics, MetricID
+from athenian.api.models.web import CalculatedMetrics, CodeBypassingPRsMeasurement, MetricID
 
 
 @pytest.mark.parametrize("metric, cached",
@@ -320,3 +320,42 @@ async def test_calc_metrics_prs_index_error(client, headers):
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     assert response.status == 200
+
+
+async def test_code_bypassing_prs_smoke(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2019-01-12",
+        "date_to": "2020-02-22",
+        "in": ["{1}"],
+        "granularity": "month",
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_bypassing_prs", headers=headers, json=body,
+    )
+    assert response.status == 200
+    body = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    ms = [CodeBypassingPRsMeasurement.from_dict(x) for x in body]
+    assert len(ms) == 13
+    for s in ms:
+        assert date(year=2019, month=1, day=12) <= s.date < date(year=2020, month=2, day=22)
+        assert s.total_commits >= 0
+        assert s.total_lines >= 0
+        assert 0 <= s.bypassed_commits <= s.total_commits
+        assert 0 <= s.bypassed_lines <= s.total_lines
+
+
+@pytest.mark.parametrize("account, date_to, code",
+                         [(3, "2020-02-22", 403), (1, "2019-01-11", 400)])
+async def test_code_bypassing_prs_nasty_input(client, headers, account, date_to, code):
+    body = {
+        "account": account,
+        "date_from": "2019-01-12",
+        "date_to": date_to,
+        "in": ["{1}"],
+        "granularity": "month",
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_bypassing_prs", headers=headers, json=body,
+    )
+    assert response.status == code

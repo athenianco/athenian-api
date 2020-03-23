@@ -9,21 +9,21 @@ from aiohttp import web
 import aiomcache
 import databases.core
 from dateutil.parser import parse as parse_datetime
-from sqlalchemy import and_, distinct, or_, outerjoin, select
+from sqlalchemy import and_, distinct, or_, select
 
 from athenian.api.controllers.features.entries import PR_ENTRIES
 from athenian.api.controllers.miners.access_classes import access_classes
+from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.controllers.reposet_controller import load_account_reposets
-from athenian.api.models.metadata.github import NodePullRequestCommit, PullRequest, \
-    PullRequestCommit, PullRequestReview, PushCommit, Release, User
+from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
+    PullRequestReview, PushCommit, Release, User
 from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import Commit, CommitSignature, CommitsList, ForbiddenError, \
     InvalidRequestError
-from athenian.api.models.web.filter_commits_request import FilterCommitsProperty, \
-    FilterCommitsRequest
+from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contribs_or_repos_request import FilterContribsOrReposRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
 from athenian.api.models.web.included_native_user import IncludedNativeUser
@@ -157,19 +157,20 @@ async def _common_filter_preprocess(filt: Union[FilterContribsOrReposRequest,
             detail="date_from may not be greater than date_to",
             pointer=".date_from",
         ))
-    return await _resolve_repos(
+    return await resolve_repos(
         filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
 
 
-async def _resolve_repos(filt: Union[FilterContribsOrReposRequest,
-                                     FilterPullRequestsRequest,
-                                     FilterCommitsRequest],
-                         uid: str,
-                         native_uid: str,
-                         sdb_conn: Union[databases.core.Connection, databases.Database],
-                         mdb_conn: Union[databases.core.Connection, databases.Database],
-                         cache: Optional[aiomcache.Client],
-                         ) -> List[str]:
+async def resolve_repos(filt: Union[FilterContribsOrReposRequest,
+                                    FilterPullRequestsRequest,
+                                    FilterCommitsRequest],
+                        uid: str,
+                        native_uid: str,
+                        sdb_conn: Union[databases.core.Connection, databases.Database],
+                        mdb_conn: Union[databases.core.Connection, databases.Database],
+                        cache: Optional[aiomcache.Client],
+                        ) -> List[str]:
+    """Dereference all the reposets and produce the joint list of all mentioned repos."""
     status = await sdb_conn.fetch_one(
         select([UserAccount.is_admin]).where(and_(UserAccount.user_id == uid,
                                                   UserAccount.account_id == filt.account)))
@@ -224,7 +225,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     participants = {getattr(ParticipationKind, k.upper()): v
                     for k, v in body.get("with", {}).items()}
     prs = await PR_ENTRIES["github"](
-        filt.date_from, filt.date_to, repos, props, participants, request.mdb, request.cache)
+        props, filt.date_from, filt.date_to, repos, participants, request.mdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     users = {u.split("/", 1)[1] for u in
              chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs)}
@@ -267,63 +268,53 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
         repos = await _common_filter_preprocess(filt, request)
     except ResponseError as e:
         return e.response
-    filt.with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
-    filt.with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
-    sql_filters = [
-        PushCommit.committed_date.between(filt.date_from, filt.date_to),
-        PushCommit.repository_full_name.in_(repos),
-        PushCommit.committer_email != "noreply@github.com",
-    ]
-    if filt.with_author:
-        sql_filters.append(PushCommit.author_login.in_(filt.with_author))
-    if filt.with_committer:
-        sql_filters.append(PushCommit.committer_login.in_(filt.with_committer))
-    model = CommitsList(data=[], include=IncludedNativeUsers(users={}))
+    with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
+    with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
     log = logging.getLogger("filter_commits")
-    if filt.property == FilterCommitsProperty.BYPASSING_PRS.value:
-        commits = await request.mdb.fetch_all(
-            select([PushCommit])
-            .select_from(outerjoin(PushCommit, NodePullRequestCommit,
-                                   PushCommit.node_id == NodePullRequestCommit.commit))
-            .where(and_(NodePullRequestCommit.commit.is_(None), *sql_filters)))
-        users = model.include.users
-        utc = timezone.utc
-        for commit in commits:
-            obj = Commit(
-                repository=commit[PushCommit.repository_full_name.key],
-                hash=commit[PushCommit.sha.key],
-                message=commit[PushCommit.message.key],
-                size_added=commit[PushCommit.additions.key],
-                size_removed=commit[PushCommit.deletions.key],
-                files_changed=commit[PushCommit.changed_files.key],
-                author=CommitSignature(
-                    login=commit[PushCommit.author_login.key],
-                    name=commit[PushCommit.author_name.key],
-                    email=commit[PushCommit.author_email.key],
-                    timestamp=commit[PushCommit.authored_date.key].replace(tzinfo=utc),
-                ),
-                committer=CommitSignature(
-                    login=commit[PushCommit.committer_login.key],
-                    name=commit[PushCommit.committer_name.key],
-                    email=commit[PushCommit.committer_email.key],
-                    timestamp=commit[PushCommit.committed_date.key].replace(tzinfo=utc),
-                ),
-            )
-            try:
-                dt = parse_datetime(commit[PushCommit.author_date.key])
-                obj.author.timezone = dt.tzinfo.utcoffset(dt).total_seconds() / 3600
-            except ValueError:
-                log.warning("Failed to parse the author timestamp of %s", obj.hash)
-            try:
-                dt = parse_datetime(commit[PushCommit.commit_date.key])
-                obj.committer.timezone = dt.tzinfo.utcoffset(dt).total_seconds() / 3600
-            except ValueError:
-                log.warning("Failed to parse the committer timestamp of %s", obj.hash)
-            if obj.author.login and obj.author.login not in users:
-                users[obj.author.login] = IncludedNativeUser(
-                    avatar=commit[PushCommit.author_avatar_url.key])
-            if obj.committer.login and obj.committer.login not in users:
-                users[obj.committer.login] = IncludedNativeUser(
-                    commit[PushCommit.committer_avatar_url.key])
-            model.data.append(obj)
+    commits = await extract_commits(
+        FilterCommitsProperty[filt.property], filt.date_from, filt.date_to, repos,
+        with_author, with_committer, request.mdb, request.cache)
+    model = CommitsList(data=[], include=IncludedNativeUsers(users={}))
+    users = model.include.users
+    utc = timezone.utc
+    for commit in commits.itertuples():
+        author_login = getattr(commit, PushCommit.author_login.key)
+        committer_login = getattr(commit, PushCommit.committer_login.key)
+        obj = Commit(
+            repository=getattr(commit, PushCommit.repository_full_name.key),
+            hash=getattr(commit, PushCommit.sha.key),
+            message=getattr(commit, PushCommit.message.key),
+            size_added=getattr(commit, PushCommit.additions.key),
+            size_removed=getattr(commit, PushCommit.deletions.key),
+            files_changed=getattr(commit, PushCommit.changed_files.key),
+            author=CommitSignature(
+                login=("github.com/" + author_login) if author_login else None,
+                name=getattr(commit, PushCommit.author_name.key),
+                email=getattr(commit, PushCommit.author_email.key),
+                timestamp=getattr(commit, PushCommit.authored_date.key).replace(tzinfo=utc),
+            ),
+            committer=CommitSignature(
+                login=("github.com/" + committer_login) if committer_login else None,
+                name=getattr(commit, PushCommit.committer_name.key),
+                email=getattr(commit, PushCommit.committer_email.key),
+                timestamp=getattr(commit, PushCommit.committed_date.key).replace(tzinfo=utc),
+            ),
+        )
+        try:
+            dt = parse_datetime(getattr(commit, PushCommit.author_date.key))
+            obj.author.timezone = dt.tzinfo.utcoffset(dt).total_seconds() / 3600
+        except ValueError:
+            log.warning("Failed to parse the author timestamp of %s", obj.hash)
+        try:
+            dt = parse_datetime(getattr(commit, PushCommit.commit_date.key))
+            obj.committer.timezone = dt.tzinfo.utcoffset(dt).total_seconds() / 3600
+        except ValueError:
+            log.warning("Failed to parse the committer timestamp of %s", obj.hash)
+        if obj.author.login and obj.author.login not in users:
+            users[obj.author.login] = IncludedNativeUser(
+                avatar=getattr(commit, PushCommit.author_avatar_url.key))
+        if obj.committer.login and obj.committer.login not in users:
+            users[obj.committer.login] = IncludedNativeUser(
+                getattr(commit, PushCommit.committer_avatar_url.key))
+        model.data.append(obj)
     return response(model)

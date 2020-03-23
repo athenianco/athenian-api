@@ -360,7 +360,7 @@ async def test_filter_prs_david_bug(client, headers):
     assert response.status == 200
 
 
-async def test_filter_commits_bypassing_prs(client, headers):
+async def test_filter_commits_bypassing_prs_mcuadros(client, headers):
     body = {
         "account": 1,
         "date_from": "2019-01-12",
@@ -376,12 +376,12 @@ async def test_filter_commits_bypassing_prs(client, headers):
     commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
     assert commits.to_dict() == {
         "data": [{"author": {"email": "mcuadros@gmail.com",
-                             "login": "mcuadros",
+                             "login": "github.com/mcuadros",
                              "name": "Máximo Cuadros",
                              "timestamp": datetime(2019, 4, 24, 13, 20, 51, tzinfo=timezone.utc),
                              "timezone": 2.0},
                   "committer": {"email": "mcuadros@gmail.com",
-                                "login": "mcuadros",
+                                "login": "github.com/mcuadros",
                                 "name": "Máximo Cuadros",
                                 "timestamp": datetime(2019, 4, 24, 13, 20, 51,
                                                       tzinfo=timezone.utc),
@@ -394,7 +394,29 @@ async def test_filter_commits_bypassing_prs(client, headers):
                   "size_added": 4,
                   "size_removed": 0}],
         "include": {"users": {
-            "mcuadros": {"avatar": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4"}}}}
+            "github.com/mcuadros": {
+                "avatar": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4"}}}}
+
+
+async def test_filter_commits_no_pr_merges_mcuadros(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2019-01-12",
+        "date_to": "2020-02-22",
+        "in": ["{1}"],
+        "property": "no_pr_merges",
+        "with_author": ["github.com/mcuadros"],
+        "with_committer": ["github.com/mcuadros"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/commits", headers=headers, json=body)
+    assert response.status == 200
+    commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert len(commits.data) == 6
+    assert len(commits.include.users) == 1
+    for c in commits.data:
+        assert c.author.login == "github.com/mcuadros"
+        assert c.committer.login == "github.com/mcuadros"
 
 
 async def test_filter_commits_bypassing_prs_merges(client, headers):

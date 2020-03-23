@@ -4,7 +4,8 @@ from datetime import date, datetime, timezone
 from enum import Enum
 import io
 import struct
-from typing import Dict, Generator, Generic, List, Mapping, Optional, Sequence, Set, TypeVar, Union
+from typing import Collection, Dict, Generator, Generic, List, Mapping, Optional, Set, TypeVar, \
+    Union
 
 import aiomcache
 import databases
@@ -106,8 +107,8 @@ class PullRequestMiner:
             ",".join(sorted(developers)),
         ),
     )
-    async def _mine(cls, time_from: date, time_to: date, repositories: Sequence[str],
-                    developers: Sequence[str], db: databases.Database,
+    async def _mine(cls, time_from: date, time_to: date, repositories: Collection[str],
+                    developers: Collection[str], db: databases.Database,
                     cache: Optional[aiomcache.Client],
                     ) -> List[pd.DataFrame]:
         filters = [
@@ -174,8 +175,8 @@ class PullRequestMiner:
     _deserialize_from_cache = staticmethod(_deserialize_from_cache)
 
     @classmethod
-    async def mine(cls, time_from: date, time_to: date, repositories: Sequence[str],
-                   developers: Sequence[str], db: databases.Database,
+    async def mine(cls, time_from: date, time_to: date, repositories: Collection[str],
+                   developers: Collection[str], db: databases.Database,
                    cache: Optional[aiomcache.Client]) -> "PullRequestMiner":
         """
         Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
@@ -193,7 +194,7 @@ class PullRequestMiner:
     @staticmethod
     async def _read_filtered_models(conn: Union[databases.core.Connection, databases.Database],
                                     model_cls: Base,
-                                    node_ids: Sequence[str],
+                                    node_ids: Collection[str],
                                     time_to: date,
                                     columns: Optional[List[InstrumentedAttribute]] = None,
                                     ) -> pd.DataFrame:
@@ -211,8 +212,7 @@ class PullRequestMiner:
     @staticmethod
     def truncate_timestamps(df: pd.DataFrame, upto: date):
         """Set all the timestamps after `upto` to NaT to avoid "future leakages"."""
-        upto = datetime(upto.year, upto.month, upto.day,
-                        tzinfo=timezone.utc)
+        upto = pd.Timestamp(upto, tzinfo=timezone.utc)
         for col in df.select_dtypes(include=[object]):
             try:
                 df[col][df[col] > upto] = pd.NaT
@@ -455,7 +455,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
         return self._properties
 
     @properties.setter
-    def properties(self, value: Sequence[Property]):
+    def properties(self, value: Collection[Property]):
         """Set the required PR properties."""
         self._properties = set(value)
 
@@ -465,7 +465,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
         return self._participants
 
     @participants.setter
-    def participants(self, value: Mapping[ParticipationKind, Sequence[str]]):
+    def participants(self, value: Mapping[ParticipationKind, Collection[str]]):
         """Set the required PR participants."""
         self._participants = {k: set(v) for k, v in value.items()}
 

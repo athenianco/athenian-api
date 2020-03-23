@@ -1,17 +1,8 @@
 from datetime import date
-from enum import Enum
 from typing import List
 
+from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.models.web.commit_filter import CommitFilter
-
-
-class FilterCommitsProperty(Enum):
-    """Possible values of `FilterCommitsRequest.property`."""
-
-    BYPASSING_PRS = "bypassing_prs"
-
-
-FilterCommitsProperty.ALL = {f.value for f in FilterCommitsProperty}
 
 
 class FilterCommitsRequest(CommitFilter):
@@ -69,6 +60,6 @@ class FilterCommitsRequest(CommitFilter):
             raise ValueError("Invalid value for `property`, must not be `None`")
         if property not in FilterCommitsProperty.ALL:
             raise ValueError("Invalid value for `property` - is not one of [%s]" %
-                             ",".join('"%s"' % f for f in FilterCommitsProperty.ALL))
+                             ",".join('"%s"' % f.name for f in FilterCommitsProperty.ALL))
 
         self._property = property
