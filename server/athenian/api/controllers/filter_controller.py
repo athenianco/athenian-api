@@ -11,9 +11,9 @@ import databases.core
 from dateutil.parser import parse as parse_datetime
 from sqlalchemy import and_, distinct, or_, select
 
-from athenian.api.controllers.features.entries import PR_ENTRIES
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
+from athenian.api.controllers.miners.github.pull_request import filter_pull_requests
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.controllers.reposet import resolve_reposet
@@ -39,7 +39,11 @@ async def filter_contributors(request: AthenianWebRequest,
                               body: dict,
                               ) -> web.Response:
     """Find developers that made an action within the given timeframe."""
-    filt = FilterContribsOrReposRequest.from_dict(body)
+    try:
+        filt = FilterContribsOrReposRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
         repos = await _common_filter_preprocess(filt, request)
     except ResponseError as e:
@@ -99,7 +103,11 @@ async def filter_repositories(request: AthenianWebRequest,
                               body: dict,
                               ) -> web.Response:
     """Find repositories that were updated within the given timeframe."""
-    filt = FilterContribsOrReposRequest.from_dict(body)
+    try:
+        filt = FilterContribsOrReposRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
         repos = await _common_filter_preprocess(filt, request)
     except ResponseError as e:
@@ -202,7 +210,11 @@ async def resolve_repos(filt: Union[FilterContribsOrReposRequest,
 
 async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """List pull requests that satisfy the query."""
-    filt = FilterPullRequestsRequest.from_dict(body)
+    try:
+        filt = FilterPullRequestsRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
         repos = await _common_filter_preprocess(filt, request)
     except ResponseError as e:
@@ -222,9 +234,8 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
                 props.add(Property.DONE)
     if not props:
         props = set(Property)
-    participants = {getattr(ParticipationKind, k.upper()): v
-                    for k, v in body.get("with", {}).items()}
-    prs = await PR_ENTRIES["github"](
+    participants = {ParticipationKind[k.upper()]: v for k, v in body.get("with", {}).items()}
+    prs = await filter_pull_requests(
         props, filt.date_from, filt.date_to, repos, participants, request.mdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     users = {u.split("/", 1)[1] for u in
@@ -263,7 +274,11 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
 
 async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find commits that match the specified query."""
-    filt = FilterCommitsRequest.from_dict(body)
+    try:
+        filt = FilterCommitsRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
         repos = await _common_filter_preprocess(filt, request)
     except ResponseError as e:
@@ -272,7 +287,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
     log = logging.getLogger("filter_commits")
     commits = await extract_commits(
-        FilterCommitsProperty[filt.property], filt.date_from, filt.date_to, repos,
+        FilterCommitsProperty(filt.property), filt.date_from, filt.date_to, repos,
         with_author, with_committer, request.mdb, request.cache)
     model = CommitsList(data=[], include=IncludedNativeUsers(users={}))
     users = model.include.users

@@ -450,6 +450,47 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.metrics_controller
       x-codegen-request-body-name: body
+  /metrics/developers:
+    post:
+      operationId: calc_metrics_developer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeveloperMetricsRequest'
+        description: Query for selecting developers and measured activities.
+        required: true
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculatedDeveloperMetrics'
+          description: Calculated metrics.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to access the specified repositories
+            on behalf of the specified account.
+      security:
+      - bearerAuth: []
+      summary: Calculate metrics over developer activities.
+      tags:
+      - metrics
+      # {% if False %}
+      - default
+      # {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.metrics_controller
+      x-codegen-request-body-name: body
   /metrics/prs:
     post:
       operationId: calc_metrics_pr_linear
@@ -466,7 +507,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CalculatedMetrics'
+                $ref: '#/components/schemas/CalculatedPullRequestMetrics'
           description: Calculated metrics.
         400:
           content:
@@ -778,8 +819,8 @@ components:
           repositories:
             $ref: '#/components/schemas/RepositorySet'
         type: object
-    MetricID:
-      description: Currently supported metric types.
+    PullRequestMetricID:
+      description: Currently supported PR metric types.
       enum:
       - pr-wip-time
       - pr-wip-count
@@ -818,7 +859,7 @@ components:
         everybody. Duplicates are automatically ignored.
       example:
       - github.com/vmarkovtsev
-      - github.com/mcuadros
+      - github.com/dpordomingo
       items:
         $ref: '#/components/schemas/DeveloperID'
       type: array
@@ -826,7 +867,7 @@ components:
       description: A set of repositories. An empty list results an empty response
         in contrary to DeveloperSet. Duplicates are automatically ignored.
       example:
-      - github.com/src-d/hercules
+      - github.com/athenianco/athenian-webapp
       - github.com/athenianco/athenian-api
       items:
         $ref: '#/components/schemas/RepositoryID'
@@ -841,7 +882,7 @@ components:
       example:
         account: 2
         items:
-        - github.com/src-d/hercules
+        - github.com/athenianco/athenian-webapp
         - github.com/athenianco/athenian-api
       properties:
         account:
@@ -1086,11 +1127,11 @@ components:
     ForSet:
       example:
         repositories:
-        - github.com/src-d/hercules
+        - github.com/athenianco/athenian-webapp
         - github.com/athenianco/athenian-api
         developers:
         - github.com/vmarkovtsev
-        - github.com/mcuadros
+        - github.com/dpordomingo
       properties:
         repositories:
           $ref: '#/components/schemas/RepositorySet'
@@ -1109,17 +1150,17 @@ components:
       example:
         for:
         - repositories:
-          - github.com/src-d/hercules
+          - github.com/athenianco/athenian-webapp
           - github.com/athenianco/athenian-api
           developers:
           - github.com/vmarkovtsev
-          - github.com/mcuadros
+          - github.com/dpordomingo
         - repositories:
-          - github.com/src-d/hercules
+          - github.com/athenianco/athenian-webapp
           - github.com/athenianco/athenian-api
           developers:
           - github.com/vmarkovtsev
-          - github.com/mcuadros
+          - github.com/dpordomingo
         metrics:
         - pr-lead-time
         - pr-wip-time
@@ -1137,7 +1178,7 @@ components:
         metrics:
           description: Requested metric identifiers.
           items:
-            $ref: '#/components/schemas/MetricID'
+            $ref: '#/components/schemas/PullRequestMetricID'
           type: array
         date_from:
           description: Date from when to start measuring the metrics.
@@ -1160,7 +1201,7 @@ components:
       - granularity
       - metrics
       type: object
-    CalculatedMetric:
+    CalculatedPullRequestMetricsItem:
       description: Series of calculated metrics for a specific set of repositories
         and developers.
       example:
@@ -1193,23 +1234,23 @@ components:
           - 75
         for:
           repositories:
-          - github.com/src-d/hercules
+          - github.com/athenianco/athenian-webapp
           - github.com/athenianco/athenian-api
           developers:
           - github.com/vmarkovtsev
-          - github.com/mcuadros
+          - github.com/dpordomingo
       properties:
         for:
           $ref: '#/components/schemas/ForSet'
         values:
           items:
-            $ref: '#/components/schemas/CalculatedMetricValues'
+            $ref: '#/components/schemas/CalculatedPullRequestMetricValues'
           type: array
       required:
       - for
       - values
       type: object
-    CalculatedMetrics:
+    CalculatedPullRequestMetrics:
       example:
         metrics:
         - pr-lead-time
@@ -1247,9 +1288,9 @@ components:
           for:
             developers:
             - github.com/vmarkovtsev
-            - github.com/mcuadros
+            - github.com/dpordomingo
             repositories:
-            - github.com/src-d/hercules
+            - github.com/athenianco/athenian-webapp
             - github.com/athenianco/athenian-api
         - values:
           - date: 2000-01-23
@@ -1281,9 +1322,9 @@ components:
           for:
             developers:
             - github.com/vmarkovtsev
-            - github.com/mcuadros
+            - github.com/dpordomingo
             repositories:
-            - github.com/src-d/hercules
+            - github.com/athenianco/athenian-webapp
             - github.com/athenianco/athenian-api
         date_to: 2020-01-23
       properties:
@@ -1291,12 +1332,12 @@ components:
           description: Values of the requested metrics through time. The sequence
             order is not guaranteed to be the same as in the preceding request.
           items:
-            $ref: '#/components/schemas/CalculatedMetric'
+            $ref: '#/components/schemas/CalculatedPullRequestMetricsItem'
           type: array
         metrics:
           description: Repeats `PullRequestMetricsRequest.metrics`.
           items:
-            $ref: '#/components/schemas/MetricID'
+            $ref: '#/components/schemas/PullRequestMetricID'
           type: array
         date_from:
           description: Repeats `PullRequestMetricsRequest.date_from`.
@@ -1315,7 +1356,7 @@ components:
       - granularity
       - metrics
       type: object
-    CalculatedMetricValues:
+    CalculatedPullRequestMetricValues:
       example:
         date: 2000-01-23
         values:
@@ -1899,9 +1940,9 @@ components:
         date_to: 2020-03-01
         granularity: day
         in:
-          - '{2}'
+        - '{2}'
         with_author:
-          - github.com/vmarkovtsev
+        - github.com/vmarkovtsev
       allOf:
         - $ref: '#/components/schemas/CommitFilter'
         - properties:
@@ -1962,3 +2003,162 @@ components:
       - total_commits
       - total_lines
       type: object
+    DeveloperMetricsRequest:
+      description: Request for calculating metrics on top of developer activities.
+      example:
+        for:
+        - repositories:
+          - github.com/athenianco/athenian-webapp
+          - github.com/athenianco/athenian-api
+          developers:
+          - github.com/vmarkovtsev
+          - github.com/dpordomingo
+        - repositories:
+          - github.com/athenianco/athenian-webapp
+          - github.com/athenianco/athenian-api
+          developers:
+          - github.com/vmarkovtsev
+          - github.com/dpordomingo
+        metrics:
+        - dev-reviews
+        - dev-prs-created
+        - dev-pr-comments
+        date_from: 2019-10-23
+        date_to: 2020-05-23
+        account: 2
+      properties:
+        for:
+          description: Sets of developers and repositories to calculate the metrics
+            for.
+          items:
+            $ref: '#/components/schemas/ForSet'
+          type: array
+        metrics:
+          description: Requested metric identifiers.
+          items:
+            $ref: '#/components/schemas/DeveloperMetricID'
+          type: array
+        date_from:
+          description: Date from when to start measuring the metrics.
+          format: date
+          type: string
+        date_to:
+          description: Date up to which to measure the metrics.
+          format: date
+          type: string
+        account:
+          description: Session account ID.
+          type: integer
+      required:
+      - account
+      - date_from
+      - date_to
+      - for
+      - metrics
+      type: object
+    DeveloperMetricID:
+      description: Currently supported developer metric types.
+      enum:
+      - dev-commits-pushed
+      - dev-lines-changed
+      - dev-prs-created
+      - dev-prs-merged
+      - dev-releases
+      - dev-reviews
+      - dev-review-approvals
+      - dev-review-rejections
+      - dev-review-neutrals
+      - dev-pr-comments
+      - dev-regular-pr-comments
+      - dev-review-pr-comments
+      example: dev-prs-created
+      type: string
+    CalculatedDeveloperMetrics:
+      description: Response from /metrics/developers - calculated metrics over developer
+        activities.
+      example:
+        date_to: 2000-01-23
+        metrics:
+        - dev-prs-created
+        - dev-reviews
+        calculated:
+        - values:
+          - [20, 5]
+          - [10, 100]
+          for:
+            repositories:
+            - github.com/athenianco/athenian-webapp
+            - github.com/athenianco/athenian-api
+            developers:
+            - github.com/vmarkovtsev
+            - github.com/dpordomingo
+        - values:
+          - [20, 5]
+          - [10, 100]
+          for:
+            repositories:
+            - github.com/athenianco/athenian-webapp
+            - github.com/athenianco/athenian-api
+            developers:
+            - github.com/vmarkovtsev
+            - github.com/dpordomingo
+        date_from: 2000-01-23
+      properties:
+        calculated:
+          description: Values of the requested metrics on the given time interval.
+          items:
+            $ref: '#/components/schemas/CalculatedDeveloperMetricsItem'
+          type: array
+        date_from:
+          description: Repeats `DeveloperMetricsRequest.date_from`.
+          format: date
+          type: string
+        date_to:
+          description: Repeats `DeveloperMetricsRequest.date_to`.
+          format: date
+          type: string
+        metrics:
+          description: Repeats `DeveloperMetricsRequest.metrics`.
+          items:
+            $ref: '#/components/schemas/DeveloperMetricID'
+          type: array
+      required:
+      - calculated
+      - date_from
+      - date_to
+      - metrics
+    CalculatedDeveloperMetricsItem:
+      description: Measured developer metrics for each `DeveloperMetricsRequest.for`.
+      example:
+        values:
+        - [20, 5]
+        - [10, 100]
+        for:
+          repositories:
+          - github.com/athenianco/athenian-webapp
+          - github.com/athenianco/athenian-api
+          developers:
+          - github.com/vmarkovtsev
+          - github.com/dpordomingo
+      properties:
+        for:
+          $ref: '#/components/schemas/ForSet'
+        values:
+          description: The sequence matches `CalculatedDeveloperMetricsItem.for.developers`.
+          items:
+            $ref: '#/components/schemas/CalculatedDeveloperMetricValues'
+          type: array
+      required:
+      - for
+      - values
+      type: object
+    CalculatedDeveloperMetricValues:
+      description: Calculated metrics for the developer at the corresponding place
+        in `CalculatedDeveloperMetricsItem.for.developers`. The sequence of values
+        matches `CalculatedDeveloperMetrics.metrics`.
+      items:
+        allOf:
+        - type: integer
+        - format: float
+          type: number
+      type: array

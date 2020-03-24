@@ -13,10 +13,13 @@ from athenian.api.controllers.features.entries import METRIC_ENTRIES
 from athenian.api.controllers.filter_controller import resolve_repos
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
+from athenian.api.controllers.miners.github.developer import DeveloperTopic
 from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.web import CalculatedMetric, CalculatedMetrics, CalculatedMetricValues, \
-    CodeBypassingPRsMeasurement, CodeFilter, ForSet, Granularity
+from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
+    CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
+    CalculatedPullRequestMetricValues, CodeBypassingPRsMeasurement, CodeFilter, \
+    DeveloperMetricsRequest, ForSet, Granularity
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 # from athenian.api.models.no_source_data_error import NoSourceDataError
@@ -36,9 +39,15 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     :type body: dict | bytes
     """
     try:
-        body = PullRequestMetricsRequest.from_dict(body)
+        filt = PullRequestMetricsRequest.from_dict(body)
     except ValueError as e:
+        # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
+    try:
+        filters = await _compile_repos_and_devs(filt.for_, request, filt.account)
+        time_intervals = _split_to_time_intervals(filt)
+    except ResponseError as e:
+        return e.response
 
     """
     @se7entyse7en:
@@ -52,23 +61,17 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     then setting individual attributes. So we crash somewhere in from_dict() or to_dict() if we
     make something required.
     """
-    met = CalculatedMetrics()
-    met.date_from = body.date_from
-    met.date_to = body.date_to
-    met.granularity = body.granularity
-    met.metrics = body.metrics
+    met = CalculatedPullRequestMetrics()
+    met.date_from = filt.date_from
+    met.date_to = filt.date_to
+    met.granularity = filt.granularity
+    met.metrics = filt.metrics
     met.calculated = []
-
-    try:
-        filters = await _compile_filters(body.for_, request, body.account)
-        time_intervals = _common_filter_preprocess(body)
-    except ResponseError as e:
-        return e.response
     for service, (repos, devs, for_set) in filters:
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
         sentries = METRIC_ENTRIES[service]
-        for m in body.metrics:
+        for m in filt.metrics:
             calcs[sentries[m]].append(m)
         results = {}
         # for each metric, we find the function to calculate and call it
@@ -77,9 +80,9 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
             assert len(fres) == len(time_intervals) - 1
             for i, m in enumerate(metrics):
                 results[m] = [r[i] for r in fres]
-        cm = CalculatedMetric(
+        cm = CalculatedPullRequestMetricsItem(
             for_=for_set,
-            values=[CalculatedMetricValues(
+            values=[CalculatedPullRequestMetricValues(
                 date=d,
                 values=[results[m][i].value for m in met.metrics],
                 confidence_mins=[results[m][i].confidence_min for m in met.metrics],
@@ -95,7 +98,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     return response(met)
 
 
-def _common_filter_preprocess(
+def _split_to_time_intervals(
         filt: Union[PullRequestMetricsRequest, CodeFilter]) -> List[date]:
     if filt.date_to < filt.date_from:
         raise ResponseError(InvalidRequestError(
@@ -112,8 +115,10 @@ def _common_filter_preprocess(
     return time_intervals
 
 
-async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, account: int,
-                           ) -> List[Filter]:
+async def _compile_repos_and_devs(for_sets: List[ForSet],
+                                  request: AthenianWebRequest,
+                                  account: int,
+                                  ) -> List[Filter]:
     filters = []
     sdb, user = request.sdb, request.uid
     checkers = {}
@@ -169,17 +174,21 @@ async def _compile_filters(for_sets: List[ForSet], request: AthenianWebRequest, 
 
 async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Measure the amount of code that was pushed outside of pull requests."""
-    filt = CodeFilter.from_dict(body)
+    try:
+        filt = CodeFilter.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
         repos = await resolve_repos(
             filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
-        time_intervals = _common_filter_preprocess(filt)
+        time_intervals = _split_to_time_intervals(filt)
     except ResponseError as e:
         return e.response
     with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
     stats = await METRIC_ENTRIES["github"]["code"](
-        FilterCommitsProperty.bypassing_prs, time_intervals, repos, with_author, with_committer,
+        FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author, with_committer,
         request.mdb, request.cache)  # type: List[CodeStats]
     model = [
         CodeBypassingPRsMeasurement(
@@ -191,3 +200,36 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         ).to_dict()
         for d, s in zip(time_intervals[:-1], stats)]
     return web.json_response(model, dumps=FriendlyJson.dumps, status=200)
+
+
+async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Calculate metrics over developer activities."""
+    try:
+        filt = DeveloperMetricsRequest.from_dict(body)  # type: DeveloperMetricsRequest
+    except ValueError as e:
+        # for example, passing a date with day=32
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+    try:
+        filters = await _compile_repos_and_devs(filt.for_, request, filt.account)
+    except ResponseError as e:
+        return e.response
+    if filt.date_to < filt.date_from:
+        return ResponseError(InvalidRequestError(
+            detail="date_from may not be greater than date_to",
+            pointer=".date_from",
+        )).response
+
+    met = CalculatedDeveloperMetrics()
+    met.date_from = filt.date_from
+    met.date_to = filt.date_to
+    met.metrics = filt.metrics
+    met.calculated = []
+    topics = {DeveloperTopic(t) for t in filt.metrics}
+    for service, (repos, devs, for_set) in filters:
+        stats = await METRIC_ENTRIES[service]["developers"](
+            devs, repos, topics, filt.date_from, filt.date_to, request.mdb, request.cache)
+        met.calculated.append(CalculatedDeveloperMetricsItem(
+            for_=for_set,
+            values=[[getattr(s, DeveloperTopic(t).name) for t in filt.metrics] for s in stats],
+        ))
+    return response(met)

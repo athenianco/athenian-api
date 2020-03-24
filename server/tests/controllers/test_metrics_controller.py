@@ -5,12 +5,14 @@ import pandas as pd
 import pytest
 
 from athenian.api import FriendlyJson
-from athenian.api.models.web import CalculatedMetrics, CodeBypassingPRsMeasurement, MetricID
+from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRequestMetrics, \
+    CodeBypassingPRsMeasurement, DeveloperMetricID, PullRequestMetricID
 
 
-@pytest.mark.parametrize("metric, cached",
-                         itertools.chain(itertools.zip_longest(MetricID.ALL, [], fillvalue=False),
-                                         [(MetricID.PR_WIP_TIME, True)]))
+@pytest.mark.parametrize(
+    "metric, cached",
+    itertools.chain(itertools.zip_longest(PullRequestMetricID.ALL, [], fillvalue=False),
+                    [(PullRequestMetricID.PR_WIP_TIME, True)]))
 async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, cache):
     """Trivial test to prove that at least something is working."""
     if cached:
@@ -43,7 +45,7 @@ async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, cach
         )
         body = (await response.read()).decode("utf-8")
         assert response.status == 200, "Response body is : " + body
-        cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+        cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
         assert len(cm.calculated) == 2
         assert len(cm.calculated[0].values) > 0
         nonzero = 0
@@ -71,12 +73,12 @@ async def test_calc_metrics_prs_all_time(client, granularity, headers):
                 ],
             },
         ],
-        "metrics": [MetricID.PR_WIP_TIME,
-                    MetricID.PR_REVIEW_TIME,
-                    MetricID.PR_MERGING_TIME,
-                    MetricID.PR_RELEASE_TIME,
-                    MetricID.PR_LEAD_TIME,
-                    MetricID.PR_WAIT_FIRST_REVIEW_TIME],
+        "metrics": [PullRequestMetricID.PR_WIP_TIME,
+                    PullRequestMetricID.PR_REVIEW_TIME,
+                    PullRequestMetricID.PR_MERGING_TIME,
+                    PullRequestMetricID.PR_RELEASE_TIME,
+                    PullRequestMetricID.PR_LEAD_TIME,
+                    PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME],
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
         "granularity": granularity,
@@ -87,7 +89,7 @@ async def test_calc_metrics_prs_all_time(client, granularity, headers):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
     cmins = cmaxs = cscores = 0
     for m, calc in zip(cm.metrics, cm.calculated):
         nonzero = 0
@@ -141,7 +143,7 @@ async def test_calc_metrics_prs_access_denied(client, headers):
                 ],
             },
         ],
-        "metrics": list(MetricID.ALL),
+        "metrics": list(PullRequestMetricID.ALL),
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
         "granularity": "month",
@@ -169,25 +171,28 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
         }],
         "granularity": "month",
         "account": 1,
-        "metrics": list(MetricID.ALL),
+        "metrics": list(PullRequestMetricID.ALL),
     }
     response = await client.request(
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
     assert len(cm.calculated[0].values) > 0
 
 
-async def test_calc_metrics_prs_bad_date(client, headers):
+@pytest.mark.parametrize("account, date_to, code",
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403),
+                          (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
+async def test_calc_metrics_prs_nasty_input(client, headers, account, date_to, code):
     """What if we specify a date that does not exist?"""
     body = {
         "for": [
             {
                 "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
                 "repositories": [
-                    "github.com/src-d/go-git",
+                    "{1}",
                 ],
             },
             {
@@ -197,32 +202,9 @@ async def test_calc_metrics_prs_bad_date(client, headers):
                 ],
             },
         ],
-        "metrics": [MetricID.PR_LEAD_TIME],
+        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
-        "date_to": "2020-02-30",  # 30th of February does not exist
-        "granularity": "week",
-        "account": 1,
-    }
-    response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 400, "Response body is : " + body
-
-
-@pytest.mark.parametrize("account", [3, 10])
-async def test_calc_metrics_prs_reposet_bad_account(client, account, headers):
-    """What if we specify a account that the user does not belong to or does not exist?"""
-    body = {
-        "for": [
-            {
-                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
-                "repositories": ["{1}"],
-            },
-        ],
-        "metrics": [MetricID.PR_LEAD_TIME],
-        "date_from": "2015-10-13",
-        "date_to": "2020-02-20",
+        "date_to": date_to,
         "granularity": "week",
         "account": account,
     }
@@ -230,7 +212,7 @@ async def test_calc_metrics_prs_reposet_bad_account(client, account, headers):
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
+    assert response.status == code, "Response body is : " + body
 
 
 async def test_calc_metrics_prs_reposet(client, headers):
@@ -242,7 +224,7 @@ async def test_calc_metrics_prs_reposet(client, headers):
                 "repositories": ["{1}"],
             },
         ],
-        "metrics": [MetricID.PR_LEAD_TIME],
+        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularity": "week",
@@ -253,20 +235,20 @@ async def test_calc_metrics_prs_reposet(client, headers):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
     assert len(cm.calculated[0].values) > 0
     assert cm.calculated[0].for_.repositories == ["{1}"]
 
 
-@pytest.mark.parametrize("metric", [MetricID.PR_WIP_COUNT,
-                                    MetricID.PR_REVIEW_COUNT,
-                                    MetricID.PR_MERGING_COUNT,
-                                    MetricID.PR_RELEASE_COUNT,
-                                    MetricID.PR_LEAD_COUNT,
-                                    MetricID.PR_OPENED,
-                                    MetricID.PR_CLOSED,
-                                    MetricID.PR_MERGED,
-                                    MetricID.PR_RELEASED,
+@pytest.mark.parametrize("metric", [PullRequestMetricID.PR_WIP_COUNT,
+                                    PullRequestMetricID.PR_REVIEW_COUNT,
+                                    PullRequestMetricID.PR_MERGING_COUNT,
+                                    PullRequestMetricID.PR_RELEASE_COUNT,
+                                    PullRequestMetricID.PR_LEAD_COUNT,
+                                    PullRequestMetricID.PR_OPENED,
+                                    PullRequestMetricID.PR_CLOSED,
+                                    PullRequestMetricID.PR_MERGED,
+                                    PullRequestMetricID.PR_RELEASED,
                                     ])
 async def test_calc_metrics_prs_counts_sums(client, headers, metric):
     body = {
@@ -306,11 +288,11 @@ async def test_calc_metrics_prs_index_error(client, headers):
                 "repositories": ["github.com/src-d/go-git"],
             },
         ],
-        "metrics": [MetricID.PR_WIP_TIME,
-                    MetricID.PR_REVIEW_TIME,
-                    MetricID.PR_MERGING_TIME,
-                    MetricID.PR_RELEASE_TIME,
-                    MetricID.PR_LEAD_TIME],
+        "metrics": [PullRequestMetricID.PR_WIP_TIME,
+                    PullRequestMetricID.PR_REVIEW_TIME,
+                    PullRequestMetricID.PR_MERGING_TIME,
+                    PullRequestMetricID.PR_RELEASE_TIME,
+                    PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2019-02-25",
         "date_to": "2019-02-28",
         "granularity": "week",
@@ -346,7 +328,8 @@ async def test_code_bypassing_prs_smoke(client, headers):
 
 
 @pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-02-22", 403), (1, "2019-01-11", 400)])
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403),
+                          (1, "2019-01-11", 400), (1, "2019-01-32", 400)])
 async def test_code_bypassing_prs_nasty_input(client, headers, account, date_to, code):
     body = {
         "account": account,
@@ -357,5 +340,97 @@ async def test_code_bypassing_prs_nasty_input(client, headers, account, date_to,
     }
     response = await client.request(
         method="POST", path="/v1/metrics/code_bypassing_prs", headers=headers, json=body,
+    )
+    assert response.status == code
+
+
+developer_metric_mcuadros_stats = {
+    "dev-commits-pushed": 207,
+    "dev-lines-changed": 34494,
+    "dev-prs-created": 14,
+    "dev-prs-merged": 175,
+    "dev-releases": 21,
+    "dev-reviews": 68,
+    "dev-review-approvals": 14,
+    "dev-review-rejections": 13,
+    "dev-review-neutrals": 41,
+    "dev-pr-comments": 166,
+    "dev-regular-pr-comments": 92,
+    "dev-review-pr-comments": 74,
+}
+
+
+@pytest.mark.parametrize("metric, value", [(m, developer_metric_mcuadros_stats[m])
+                                           for m in DeveloperMetricID.ALL])
+async def test_developer_metrics_single(client, headers, metric, value):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [
+            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"]},
+        ],
+        "metrics": [metric],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert result.metrics == [metric]
+    assert result.date_from == date(year=2018, month=1, day=12)
+    assert result.date_to == date(year=2020, month=3, day=1)
+    assert len(result.calculated) == 1
+    assert result.calculated[0].for_.repositories == ["{1}"]
+    assert result.calculated[0].for_.developers == ["github.com/mcuadros"]
+    assert result.calculated[0].values == [[value]]
+
+
+async def test_developer_metrics_all(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [
+            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"]},
+        ],
+        "metrics": sorted(DeveloperMetricID.ALL),
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert set(result.metrics) == DeveloperMetricID.ALL
+    assert result.date_from == date(year=2018, month=1, day=12)
+    assert result.date_to == date(year=2020, month=3, day=1)
+    assert len(result.calculated) == 1
+    assert result.calculated[0].for_.repositories == ["{1}"]
+    assert result.calculated[0].for_.developers == ["github.com/mcuadros"]
+    assert len(result.calculated[0].values) == 1
+    assert len(result.calculated[0].values[0]) == len(DeveloperMetricID.ALL)
+    for v, m in zip(result.calculated[0].values[0], sorted(DeveloperMetricID.ALL)):
+        assert v == developer_metric_mcuadros_stats[m]
+
+
+@pytest.mark.parametrize("account, date_to, code",
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403),
+                          (1, "2018-01-11", 400), (1, "2019-01-32", 400)])
+async def test_developer_metrics_nasty_input(client, headers, account, date_to, code):
+    body = {
+        "account": account,
+        "date_from": "2018-01-12",
+        "date_to": date_to,
+        "for": [
+            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"]},
+        ],
+        "metrics": sorted(DeveloperMetricID.ALL),
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == code

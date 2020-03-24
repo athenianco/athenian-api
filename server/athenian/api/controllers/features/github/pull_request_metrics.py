@@ -6,10 +6,10 @@ from athenian.api.controllers.features.github.pull_request import \
     PullRequestSumMetricCalculator, register
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
-from athenian.api.models.web import MetricID
+from athenian.api.models.web import PullRequestMetricID
 
 
-@register(MetricID.PR_WIP_TIME)
+@register(PullRequestMetricID.PR_WIP_TIME)
 class WorkInProgressTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     """Time of work in progress metric."""
 
@@ -23,14 +23,14 @@ class WorkInProgressTimeCalculator(PullRequestMedianMetricCalculator[timedelta])
         return None
 
 
-@register(MetricID.PR_WIP_COUNT)
+@register(PullRequestMetricID.PR_WIP_COUNT)
 class WorkInProgressCounter(PullRequestCounter):
     """Count the number of PRs that were used to calculate PR_WIP_TIME."""
 
     calc_cls = WorkInProgressTimeCalculator
 
 
-@register(MetricID.PR_REVIEW_TIME)
+@register(PullRequestMetricID.PR_REVIEW_TIME)
 class ReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     """Time of the review process metric."""
 
@@ -53,14 +53,14 @@ class ReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
         return None
 
 
-@register(MetricID.PR_REVIEW_COUNT)
+@register(PullRequestMetricID.PR_REVIEW_COUNT)
 class ReviewCounter(PullRequestCounter):
     """Count the number of PRs that were used to calculate PR_REVIEW_TIME."""
 
     calc_cls = ReviewTimeCalculator
 
 
-@register(MetricID.PR_MERGING_TIME)
+@register(PullRequestMetricID.PR_MERGING_TIME)
 class MergingTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     """Time to merge after finishing the review metric."""
 
@@ -80,14 +80,14 @@ class MergingTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
         return None
 
 
-@register(MetricID.PR_MERGING_COUNT)
+@register(PullRequestMetricID.PR_MERGING_COUNT)
 class MergingCounter(PullRequestCounter):
     """Count the number of PRs that were used to calculate PR_MERGING_TIME."""
 
     calc_cls = MergingTimeCalculator
 
 
-@register(MetricID.PR_RELEASE_TIME)
+@register(PullRequestMetricID.PR_RELEASE_TIME)
 class ReleaseTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     """Time to appear in a release after merging metric."""
 
@@ -101,14 +101,14 @@ class ReleaseTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
         return None
 
 
-@register(MetricID.PR_RELEASE_COUNT)
+@register(PullRequestMetricID.PR_RELEASE_COUNT)
 class ReleaseCounter(PullRequestCounter):
     """Count the number of PRs that were used to calculate PR_RELEASE_TIME."""
 
     calc_cls = ReleaseTimeCalculator
 
 
-@register(MetricID.PR_LEAD_TIME)
+@register(PullRequestMetricID.PR_LEAD_TIME)
 class LeadTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     """Time to appear in a release since starting working on the PR."""
 
@@ -122,14 +122,14 @@ class LeadTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
         return None
 
 
-@register(MetricID.PR_LEAD_COUNT)
+@register(PullRequestMetricID.PR_LEAD_COUNT)
 class LeadCounter(PullRequestCounter):
     """Count the number of PRs that were used to calculate PR_LEAD_TIME."""
 
     calc_cls = LeadTimeCalculator
 
 
-@register(MetricID.PR_WAIT_FIRST_REVIEW_TIME)
+@register(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME)
 class WaitFirstReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
     """Elapsed time between requesting the review for the first time and getting it."""
 
@@ -144,7 +144,7 @@ class WaitFirstReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]
         return None
 
 
-@register(MetricID.PR_OPENED)
+@register(PullRequestMetricID.PR_OPENED)
 class OpenedCalculator(PullRequestSumMetricCalculator[int]):
     """Number of open PRs."""
 
@@ -156,7 +156,7 @@ class OpenedCalculator(PullRequestSumMetricCalculator[int]):
         return None
 
 
-@register(MetricID.PR_MERGED)
+@register(PullRequestMetricID.PR_MERGED)
 class MergedCalculator(PullRequestSumMetricCalculator[int]):
     """Number of merged PRs."""
 
@@ -168,7 +168,7 @@ class MergedCalculator(PullRequestSumMetricCalculator[int]):
         return None
 
 
-@register(MetricID.PR_CLOSED)
+@register(PullRequestMetricID.PR_CLOSED)
 class ClosedCalculator(PullRequestSumMetricCalculator[int]):
     """Number of closed PRs."""
 
@@ -180,7 +180,7 @@ class ClosedCalculator(PullRequestSumMetricCalculator[int]):
         return None
 
 
-@register(MetricID.PR_RELEASED)
+@register(PullRequestMetricID.PR_RELEASED)
 class ReleasedCalculator(PullRequestSumMetricCalculator[int]):
     """Number of released PRs."""
 
@@ -192,7 +192,7 @@ class ReleasedCalculator(PullRequestSumMetricCalculator[int]):
         return None
 
 
-@register(MetricID.PR_FLOW_RATIO)
+@register(PullRequestMetricID.PR_FLOW_RATIO)
 class FlowRatioCalculator(PullRequestMetricCalculator[float]):
     """PR flow ratio - opened / closed - calculator."""
 

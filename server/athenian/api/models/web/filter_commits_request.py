@@ -58,8 +58,10 @@ class FilterCommitsRequest(CommitFilter):
         """
         if property is None:
             raise ValueError("Invalid value for `property`, must not be `None`")
-        if property not in FilterCommitsProperty.ALL:
+        try:
+            FilterCommitsProperty(property)
+        except ValueError:
             raise ValueError("Invalid value for `property` - is not one of [%s]" %
-                             ",".join('"%s"' % f.name for f in FilterCommitsProperty.ALL))
+                             ",".join('"%s"' % f.value for f in FilterCommitsProperty)) from None
 
         self._property = property
