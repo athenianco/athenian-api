@@ -15,7 +15,8 @@ from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.web import CalculatedMetric, CalculatedMetrics, CalculatedMetricValues, \
+from athenian.api.models.web import CalculatedPullRequestMetrics, \
+    CalculatedPullRequestMetricsItem, CalculatedPullRequestMetricValues, \
     CodeBypassingPRsMeasurement, CodeFilter, ForSet, Granularity
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
@@ -52,7 +53,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     then setting individual attributes. So we crash somewhere in from_dict() or to_dict() if we
     make something required.
     """
-    met = CalculatedMetrics()
+    met = CalculatedPullRequestMetrics()
     met.date_from = body.date_from
     met.date_to = body.date_to
     met.granularity = body.granularity
@@ -77,9 +78,9 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
             assert len(fres) == len(time_intervals) - 1
             for i, m in enumerate(metrics):
                 results[m] = [r[i] for r in fres]
-        cm = CalculatedMetric(
+        cm = CalculatedPullRequestMetricsItem(
             for_=for_set,
-            values=[CalculatedMetricValues(
+            values=[CalculatedPullRequestMetricValues(
                 date=d,
                 values=[results[m][i].value for m in met.metrics],
                 confidence_mins=[results[m][i].confidence_min for m in met.metrics],
@@ -191,3 +192,8 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         ).to_dict()
         for d, s in zip(time_intervals[:-1], stats)]
     return web.json_response(model, dumps=FriendlyJson.dumps, status=200)
+
+
+async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Calculate metrics over developer activities."""
+    pass

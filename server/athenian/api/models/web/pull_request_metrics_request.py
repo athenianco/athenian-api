@@ -4,7 +4,7 @@ from typing import List, Optional
 from athenian.api.models.web import Granularity
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set import ForSet
-from athenian.api.models.web.metric_id import MetricID
+from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 
 
 class PullRequestMetricsRequest(Model):
@@ -13,7 +13,7 @@ class PullRequestMetricsRequest(Model):
     def __init__(
         self,
         for_: Optional[List[ForSet]] = None,
-        metrics: Optional[List[MetricID]] = None,
+        metrics: Optional[List[PullRequestMetricID]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
         granularity: Optional[str] = None,
@@ -30,7 +30,7 @@ class PullRequestMetricsRequest(Model):
         """
         self.openapi_types = {
             "for_": List[ForSet],
-            "metrics": List[MetricID],
+            "metrics": List[PullRequestMetricID],
             "date_from": date,
             "date_to": date,
             "granularity": str,
@@ -77,7 +77,7 @@ class PullRequestMetricsRequest(Model):
         self._for_ = for_
 
     @property
-    def metrics(self) -> List[MetricID]:
+    def metrics(self) -> List[PullRequestMetricID]:
         """Gets the metrics of this PullRequestMetricsRequest.
 
         Requested metric identifiers.
@@ -87,7 +87,7 @@ class PullRequestMetricsRequest(Model):
         return self._metrics
 
     @metrics.setter
-    def metrics(self, metrics: List[MetricID]):
+    def metrics(self, metrics: List[PullRequestMetricID]):
         """Sets the metrics of this PullRequestMetricsRequest.
 
         Requested metric identifiers.

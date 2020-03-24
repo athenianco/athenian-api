@@ -1,7 +1,7 @@
 from athenian.api.models.web.base_model_ import Model
 
 
-class MetricID(Model):
+class PullRequestMetricID(Model):
     """Linear metric identifier."""
 
     """
@@ -43,7 +43,7 @@ class MetricID(Model):
     }
 
     def __init__(self):
-        """MetricID - a model defined in OpenAPI"""
+        """PullRequestMetricID - a model defined in OpenAPI"""
         self.openapi_types = {}
 
         self.attribute_map = {}

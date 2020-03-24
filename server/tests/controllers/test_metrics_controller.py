@@ -5,12 +5,14 @@ import pandas as pd
 import pytest
 
 from athenian.api import FriendlyJson
-from athenian.api.models.web import CalculatedMetrics, CodeBypassingPRsMeasurement, MetricID
+from athenian.api.models.web import CalculatedPullRequestMetrics, CodeBypassingPRsMeasurement, \
+    PullRequestMetricID
 
 
-@pytest.mark.parametrize("metric, cached",
-                         itertools.chain(itertools.zip_longest(MetricID.ALL, [], fillvalue=False),
-                                         [(MetricID.PR_WIP_TIME, True)]))
+@pytest.mark.parametrize(
+    "metric, cached",
+    itertools.chain(itertools.zip_longest(PullRequestMetricID.ALL, [], fillvalue=False),
+                    [(PullRequestMetricID.PR_WIP_TIME, True)]))
 async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, cache):
     """Trivial test to prove that at least something is working."""
     if cached:
@@ -43,7 +45,7 @@ async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, cach
         )
         body = (await response.read()).decode("utf-8")
         assert response.status == 200, "Response body is : " + body
-        cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+        cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
         assert len(cm.calculated) == 2
         assert len(cm.calculated[0].values) > 0
         nonzero = 0
@@ -71,12 +73,12 @@ async def test_calc_metrics_prs_all_time(client, granularity, headers):
                 ],
             },
         ],
-        "metrics": [MetricID.PR_WIP_TIME,
-                    MetricID.PR_REVIEW_TIME,
-                    MetricID.PR_MERGING_TIME,
-                    MetricID.PR_RELEASE_TIME,
-                    MetricID.PR_LEAD_TIME,
-                    MetricID.PR_WAIT_FIRST_REVIEW_TIME],
+        "metrics": [PullRequestMetricID.PR_WIP_TIME,
+                    PullRequestMetricID.PR_REVIEW_TIME,
+                    PullRequestMetricID.PR_MERGING_TIME,
+                    PullRequestMetricID.PR_RELEASE_TIME,
+                    PullRequestMetricID.PR_LEAD_TIME,
+                    PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME],
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
         "granularity": granularity,
@@ -87,7 +89,7 @@ async def test_calc_metrics_prs_all_time(client, granularity, headers):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
     cmins = cmaxs = cscores = 0
     for m, calc in zip(cm.metrics, cm.calculated):
         nonzero = 0
@@ -141,7 +143,7 @@ async def test_calc_metrics_prs_access_denied(client, headers):
                 ],
             },
         ],
-        "metrics": list(MetricID.ALL),
+        "metrics": list(PullRequestMetricID.ALL),
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
         "granularity": "month",
@@ -169,14 +171,14 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
         }],
         "granularity": "month",
         "account": 1,
-        "metrics": list(MetricID.ALL),
+        "metrics": list(PullRequestMetricID.ALL),
     }
     response = await client.request(
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
     assert len(cm.calculated[0].values) > 0
 
 
@@ -197,7 +199,7 @@ async def test_calc_metrics_prs_bad_date(client, headers):
                 ],
             },
         ],
-        "metrics": [MetricID.PR_LEAD_TIME],
+        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
         "date_to": "2020-02-30",  # 30th of February does not exist
         "granularity": "week",
@@ -220,7 +222,7 @@ async def test_calc_metrics_prs_reposet_bad_account(client, account, headers):
                 "repositories": ["{1}"],
             },
         ],
-        "metrics": [MetricID.PR_LEAD_TIME],
+        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
         "date_to": "2020-02-20",
         "granularity": "week",
@@ -242,7 +244,7 @@ async def test_calc_metrics_prs_reposet(client, headers):
                 "repositories": ["{1}"],
             },
         ],
-        "metrics": [MetricID.PR_LEAD_TIME],
+        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularity": "week",
@@ -253,20 +255,20 @@ async def test_calc_metrics_prs_reposet(client, headers):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    cm = CalculatedMetrics.from_dict(FriendlyJson.loads(body))
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
     assert len(cm.calculated[0].values) > 0
     assert cm.calculated[0].for_.repositories == ["{1}"]
 
 
-@pytest.mark.parametrize("metric", [MetricID.PR_WIP_COUNT,
-                                    MetricID.PR_REVIEW_COUNT,
-                                    MetricID.PR_MERGING_COUNT,
-                                    MetricID.PR_RELEASE_COUNT,
-                                    MetricID.PR_LEAD_COUNT,
-                                    MetricID.PR_OPENED,
-                                    MetricID.PR_CLOSED,
-                                    MetricID.PR_MERGED,
-                                    MetricID.PR_RELEASED,
+@pytest.mark.parametrize("metric", [PullRequestMetricID.PR_WIP_COUNT,
+                                    PullRequestMetricID.PR_REVIEW_COUNT,
+                                    PullRequestMetricID.PR_MERGING_COUNT,
+                                    PullRequestMetricID.PR_RELEASE_COUNT,
+                                    PullRequestMetricID.PR_LEAD_COUNT,
+                                    PullRequestMetricID.PR_OPENED,
+                                    PullRequestMetricID.PR_CLOSED,
+                                    PullRequestMetricID.PR_MERGED,
+                                    PullRequestMetricID.PR_RELEASED,
                                     ])
 async def test_calc_metrics_prs_counts_sums(client, headers, metric):
     body = {
@@ -306,11 +308,11 @@ async def test_calc_metrics_prs_index_error(client, headers):
                 "repositories": ["github.com/src-d/go-git"],
             },
         ],
-        "metrics": [MetricID.PR_WIP_TIME,
-                    MetricID.PR_REVIEW_TIME,
-                    MetricID.PR_MERGING_TIME,
-                    MetricID.PR_RELEASE_TIME,
-                    MetricID.PR_LEAD_TIME],
+        "metrics": [PullRequestMetricID.PR_WIP_TIME,
+                    PullRequestMetricID.PR_REVIEW_TIME,
+                    PullRequestMetricID.PR_MERGING_TIME,
+                    PullRequestMetricID.PR_RELEASE_TIME,
+                    PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2019-02-25",
         "date_to": "2019-02-28",
         "granularity": "week",
