@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set import ForSet
@@ -9,13 +9,13 @@ class CalculatedDeveloperMetricsItem(Model):
 
     def __init__(self,
                  for_: Optional[ForSet] = None,
-                 values: Optional[List[List[Union[int, float]]]] = None):
+                 values: Optional[List[List[object]]] = None):
         """CalculatedDeveloperMetricsItem - a model defined in OpenAPI
 
         :param for_: The for_ of this CalculatedDeveloperMetricsItem.
         :param values: The values of this CalculatedDeveloperMetricsItem.
         """
-        self.openapi_types = {"for_": ForSet, "values": List[List[Union[int, float]]]}
+        self.openapi_types = {"for_": ForSet, "values": List[List[object]]}
 
         self.attribute_map = {"for_": "for", "values": "values"}
 
@@ -42,7 +42,7 @@ class CalculatedDeveloperMetricsItem(Model):
         self._for_ = for_
 
     @property
-    def values(self) -> List[List[Union[int, float]]]:
+    def values(self) -> List[List[object]]:
         """Gets the values of this CalculatedDeveloperMetricsItem.
 
         The sequence matches `CalculatedDeveloperMetricsItem.for.developers`.
@@ -52,7 +52,7 @@ class CalculatedDeveloperMetricsItem(Model):
         return self._values
 
     @values.setter
-    def values(self, values: List[List[Union[int, float]]]):
+    def values(self, values: List[List[object]]):
         """Sets the values of this CalculatedDeveloperMetricsItem.
 
         The sequence matches `CalculatedDeveloperMetricsItem.for.developers`.

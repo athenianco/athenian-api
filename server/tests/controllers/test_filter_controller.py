@@ -52,33 +52,18 @@ async def test_filter_repositories(client, headers):
     assert repos == []
 
 
-async def test_filter_repositories_bad_account(client, headers):
+@pytest.mark.parametrize("account, date_to, code",
+                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403),
+                          (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
+async def test_filter_repositories_nasty_input(client, headers, account, date_to, code):
     body = {
         "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
-        "account": 3,
+        "date_to": date_to,
+        "account": account,
     }
     response = await client.request(
         method="POST", path="/v1/filter/repositories", headers=headers, json=body)
-    assert response.status == 403
-    body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
-        "account": 2,
-        "in": ["{1}"],
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/repositories", headers=headers, json=body)
-    assert response.status == 403
-    body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
-        "account": 1,
-        "in": ["{1}"],
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/repositories", headers=headers, json=body)
-    assert response.status == 200
+    assert response.status == code
 
 
 @pytest.mark.parametrize("in_", [{}, {"in": []}])
@@ -127,33 +112,18 @@ async def test_filter_contributors(client, headers):
     assert contribs == []
 
 
-async def test_filter_contributors_bad_account(client, headers):
+@pytest.mark.parametrize("account, date_to, code",
+                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403),
+                          (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
+async def test_filter_contributors_nasty_input(client, headers, account, date_to, code):
     body = {
         "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
-        "account": 3,
+        "date_to": date_to,
+        "account": account,
     }
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
-    assert response.status == 403
-    body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
-        "account": 2,
-        "in": ["{1}"],
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/contributors", headers=headers, json=body)
-    assert response.status == 403
-    body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
-        "account": 1,
-        "in": ["{1}"],
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/contributors", headers=headers, json=body)
-    assert response.status == 200
+    assert response.status == code
 
 
 @pytest.fixture(scope="module")
@@ -314,29 +284,19 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert timestamps["closed"]
 
 
-async def test_filter_prs_bad_account(client, headers):
+@pytest.mark.parametrize("account, date_to, code",
+                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403),
+                          (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
+async def test_filter_prs_nasty_input(client, headers, account, date_to, code):
     body = {
         "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
-        "account": 3,
+        "date_to": date_to,
+        "account": account,
         "properties": [],
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    assert response.status == 403
-
-
-async def test_filter_prs_access_denied(client, headers):
-    body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
-        "account": 1,
-        "in": ["github.com/athenianco/athenian-api"],
-        "properties": [],
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    assert response.status == 403
+    assert response.status == code
 
 
 async def test_filter_prs_david_bug(client, headers):
@@ -470,3 +430,19 @@ async def test_filter_commits_bypassing_prs_no_with(client, headers):
     commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
     assert len(commits.data) == 0
     assert len(commits.include.users) == 0
+
+
+@pytest.mark.parametrize("account, date_to, code",
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403),
+                          (1, "2010-01-11", 400), (1, "2020-02-32", 400)])
+async def test_filter_commits_bypassing_prs_nasty_input(client, headers, account, date_to, code):
+    body = {
+        "account": account,
+        "date_from": "2020-01-12",
+        "date_to": date_to,
+        "in": ["{1}"],
+        "property": "bypassing_prs",
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/commits", headers=headers, json=body)
+    assert response.status == code

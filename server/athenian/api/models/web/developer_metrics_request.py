@@ -12,7 +12,7 @@ class DeveloperMetricsRequest(Model):
     def __init__(
         self,
         for_: Optional[List[ForSet]] = None,
-        metrics: Optional[List[DeveloperMetricID]] = None,
+        metrics: Optional[List[str]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
         account: Optional[int] = None,
@@ -27,7 +27,7 @@ class DeveloperMetricsRequest(Model):
         """
         self.openapi_types = {
             "for_": List[ForSet],
-            "metrics": List[DeveloperMetricID],
+            "metrics": List[str],
             "date_from": date,
             "date_to": date,
             "account": int,
@@ -71,7 +71,7 @@ class DeveloperMetricsRequest(Model):
         self._for_ = for_
 
     @property
-    def metrics(self) -> List[DeveloperMetricID]:
+    def metrics(self) -> List[str]:
         """Gets the metrics of this DeveloperMetricsRequest.
 
         Requested metric identifiers.
@@ -81,7 +81,7 @@ class DeveloperMetricsRequest(Model):
         return self._metrics
 
     @metrics.setter
-    def metrics(self, metrics: List[DeveloperMetricID]):
+    def metrics(self, metrics: List[str]):
         """Sets the metrics of this DeveloperMetricsRequest.
 
         Requested metric identifiers.
@@ -90,6 +90,9 @@ class DeveloperMetricsRequest(Model):
         """
         if metrics is None:
             raise ValueError("Invalid value for `metrics`, must not be `None`")
+        diff = set(metrics) - DeveloperMetricID.ALL
+        if diff:
+            raise ValueError("Unsupported values of `metrics`: %s" % diff)
 
         self._metrics = metrics
 

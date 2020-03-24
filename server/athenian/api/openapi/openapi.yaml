@@ -2063,7 +2063,7 @@ components:
       - dev-lines-changed
       - dev-prs-created
       - dev-prs-merged
-      - dev-prs-released
+      - dev-releases
       - dev-reviews
       - dev-review-approvals
       - dev-review-rejections

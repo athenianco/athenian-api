@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from enum import Enum
 import io
+import pickle
 import struct
 from typing import Collection, Dict, Generator, Generic, List, Mapping, Optional, Set, TypeVar, \
     Union
@@ -23,6 +24,7 @@ from athenian.api.controllers.miners.pull_request_list_item import Participation
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
+from athenian.api.models.web import PullRequestParticipant
 
 
 @dataclass(frozen=True)
@@ -567,3 +569,30 @@ class PullRequestListMiner(PullRequestTimesMiner):
             item = self._compile(pr)
             if item is not None:
                 yield item
+
+
+@cached(
+    exptime=PullRequestListMiner.CACHE_TTL,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda time_from, time_to, repos, properties, participants, **_: (
+        time_from.toordinal(),
+        time_to.toordinal(),
+        ",".join(sorted(repos)),
+        ",".join(s.name.lower() for s in sorted(set(properties))),
+        sorted((k.name.lower(), sorted(set(v))) for k, v in participants.items()),
+    ),
+)
+async def filter_pull_requests(
+        properties: Collection[Property], time_from: date, time_to: date, repos: Collection[str],
+        participants: Mapping[ParticipationKind, Collection[str]],
+        db: databases.Database, cache: Optional[aiomcache.Client],
+) -> List[PullRequestListItem]:
+    """Filter GitHub pull requests according to the specified criteria."""
+    miner = await PullRequestListMiner.mine(
+        time_from, time_to, repos, participants.get(PullRequestParticipant.STATUS_AUTHOR, []),
+        db, cache)
+    miner.properties = properties
+    miner.participants = participants
+    miner.time_from = pd.Timestamp(time_from, tzinfo=timezone.utc)
+    return list(miner)

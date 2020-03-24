@@ -5,8 +5,8 @@ import pandas as pd
 import pytest
 
 from athenian.api import FriendlyJson
-from athenian.api.models.web import CalculatedPullRequestMetrics, CodeBypassingPRsMeasurement, \
-    PullRequestMetricID
+from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRequestMetrics, \
+    CodeBypassingPRsMeasurement, DeveloperMetricID, PullRequestMetricID
 
 
 @pytest.mark.parametrize(
@@ -182,14 +182,17 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
     assert len(cm.calculated[0].values) > 0
 
 
-async def test_calc_metrics_prs_bad_date(client, headers):
+@pytest.mark.parametrize("account, date_to, code",
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403),
+                          (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
+async def test_calc_metrics_prs_nasty_input(client, headers, account, date_to, code):
     """What if we specify a date that does not exist?"""
     body = {
         "for": [
             {
                 "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
                 "repositories": [
-                    "github.com/src-d/go-git",
+                    "{1}",
                 ],
             },
             {
@@ -201,30 +204,7 @@ async def test_calc_metrics_prs_bad_date(client, headers):
         ],
         "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
-        "date_to": "2020-02-30",  # 30th of February does not exist
-        "granularity": "week",
-        "account": 1,
-    }
-    response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 400, "Response body is : " + body
-
-
-@pytest.mark.parametrize("account", [3, 10])
-async def test_calc_metrics_prs_reposet_bad_account(client, account, headers):
-    """What if we specify a account that the user does not belong to or does not exist?"""
-    body = {
-        "for": [
-            {
-                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
-                "repositories": ["{1}"],
-            },
-        ],
-        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
-        "date_from": "2015-10-13",
-        "date_to": "2020-02-20",
+        "date_to": date_to,
         "granularity": "week",
         "account": account,
     }
@@ -232,7 +212,7 @@ async def test_calc_metrics_prs_reposet_bad_account(client, account, headers):
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
+    assert response.status == code, "Response body is : " + body
 
 
 async def test_calc_metrics_prs_reposet(client, headers):
@@ -348,7 +328,8 @@ async def test_code_bypassing_prs_smoke(client, headers):
 
 
 @pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-02-22", 403), (1, "2019-01-11", 400)])
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403),
+                          (1, "2019-01-11", 400), (1, "2019-01-32", 400)])
 async def test_code_bypassing_prs_nasty_input(client, headers, account, date_to, code):
     body = {
         "account": account,
@@ -359,5 +340,97 @@ async def test_code_bypassing_prs_nasty_input(client, headers, account, date_to,
     }
     response = await client.request(
         method="POST", path="/v1/metrics/code_bypassing_prs", headers=headers, json=body,
+    )
+    assert response.status == code
+
+
+developer_metric_mcuadros_stats = {
+    "dev-commits-pushed": 207,
+    "dev-lines-changed": 34494,
+    "dev-prs-created": 14,
+    "dev-prs-merged": 175,
+    "dev-releases": 21,
+    "dev-reviews": 68,
+    "dev-review-approvals": 14,
+    "dev-review-rejections": 13,
+    "dev-review-neutrals": 41,
+    "dev-pr-comments": 166,
+    "dev-regular-pr-comments": 92,
+    "dev-review-pr-comments": 74,
+}
+
+
+@pytest.mark.parametrize("metric, value", [(m, developer_metric_mcuadros_stats[m])
+                                           for m in DeveloperMetricID.ALL])
+async def test_developer_metrics_single(client, headers, metric, value):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [
+            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"]},
+        ],
+        "metrics": [metric],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert result.metrics == [metric]
+    assert result.date_from == date(year=2018, month=1, day=12)
+    assert result.date_to == date(year=2020, month=3, day=1)
+    assert len(result.calculated) == 1
+    assert result.calculated[0].for_.repositories == ["{1}"]
+    assert result.calculated[0].for_.developers == ["github.com/mcuadros"]
+    assert result.calculated[0].values == [[value]]
+
+
+async def test_developer_metrics_all(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [
+            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"]},
+        ],
+        "metrics": sorted(DeveloperMetricID.ALL),
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert set(result.metrics) == DeveloperMetricID.ALL
+    assert result.date_from == date(year=2018, month=1, day=12)
+    assert result.date_to == date(year=2020, month=3, day=1)
+    assert len(result.calculated) == 1
+    assert result.calculated[0].for_.repositories == ["{1}"]
+    assert result.calculated[0].for_.developers == ["github.com/mcuadros"]
+    assert len(result.calculated[0].values) == 1
+    assert len(result.calculated[0].values[0]) == len(DeveloperMetricID.ALL)
+    for v, m in zip(result.calculated[0].values[0], sorted(DeveloperMetricID.ALL)):
+        assert v == developer_metric_mcuadros_stats[m]
+
+
+@pytest.mark.parametrize("account, date_to, code",
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403),
+                          (1, "2018-01-11", 400), (1, "2019-01-32", 400)])
+async def test_developer_metrics_nasty_input(client, headers, account, date_to, code):
+    body = {
+        "account": account,
+        "date_from": "2018-01-12",
+        "date_to": date_to,
+        "for": [
+            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"]},
+        ],
+        "metrics": sorted(DeveloperMetricID.ALL),
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == code

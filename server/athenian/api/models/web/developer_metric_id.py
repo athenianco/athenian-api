@@ -11,7 +11,7 @@ class DeveloperMetricID(Model):
     LINES_CHANGED = "dev-lines-changed"
     PRS_CREATED = "dev-prs-created"
     PRS_MERGED = "dev-prs-merged"
-    PRS_RELEASED = "dev-prs-released"
+    RELEASES = "dev-releases"
     REVIEWS = "dev-reviews"
     REVIEW_APPROVALS = "dev-review-approvals"
     REVIEW_REJECTIONS = "dev-review-rejections"
@@ -20,7 +20,7 @@ class DeveloperMetricID(Model):
     REGULAR_PR_COMMENTS = "dev-regular-pr-comments"
     REVIEW_PR_COMMENTS = "dev-review-pr-comments"
 
-    ALL = {COMMITS_PUSHED, LINES_CHANGED, PRS_CREATED, PRS_MERGED, PRS_RELEASED, REVIEWS,
+    ALL = {COMMITS_PUSHED, LINES_CHANGED, PRS_CREATED, PRS_MERGED, RELEASES, REVIEWS,
            REVIEW_APPROVALS, REVIEW_REJECTIONS, REVIEW_NEUTRALS, PR_COMMENTS, REGULAR_PR_COMMENTS,
            REVIEW_PR_COMMENTS}
 

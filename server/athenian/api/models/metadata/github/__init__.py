@@ -98,6 +98,7 @@ class PullRequestComment(Base,
                          IDMixin,
                          UpdatedMixin,
                          UserMixin,
+                         RepositoryMixin,
                          ):
     __tablename__ = "github_pull_request_comments_compat"
 
@@ -111,6 +112,7 @@ class PullRequestReviewComment(Base,
                                IDMixin,
                                UpdatedMixin,
                                UserMixin,
+                               RepositoryMixin,
                                ):
     __tablename__ = "github_pull_request_review_comments_compat"
 

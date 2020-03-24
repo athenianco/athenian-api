@@ -16,11 +16,8 @@ from athenian.api.models.metadata.github import NodePullRequestCommit, PushCommi
 class FilterCommitsProperty(Enum):
     """Primary commit filter modes."""
 
-    no_pr_merges = "no_pr_merges"
-    bypassing_prs = "bypassing_prs"
-
-
-FilterCommitsProperty.ALL = {f.value for f in FilterCommitsProperty}
+    NO_PR_MERGES = "no_pr_merges"
+    BYPASSING_PRS = "bypassing_prs"
 
 
 @cached(
@@ -57,9 +54,9 @@ async def extract_commits(prop: FilterCommitsProperty,
         cols_query, cols_df = [PushCommit], PushCommit
     else:
         cols_query = cols_df = columns
-    if prop == FilterCommitsProperty.no_pr_merges:
+    if prop == FilterCommitsProperty.NO_PR_MERGES:
         commits = await read_sql_query(select(cols_query).where(and_(*sql_filters)), db, cols_df)
-    elif prop == FilterCommitsProperty.bypassing_prs:
+    elif prop == FilterCommitsProperty.BYPASSING_PRS:
         commits = await read_sql_query(
             select(cols_query)
             .select_from(outerjoin(PushCommit, NodePullRequestCommit,
