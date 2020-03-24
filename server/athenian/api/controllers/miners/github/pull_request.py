@@ -215,11 +215,11 @@ class PullRequestMiner:
         upto = pd.Timestamp(upto, tzinfo=timezone.utc)
         for col in df.select_dtypes(include=[object]):
             try:
-                df[col][df[col] > upto] = pd.NaT
+                df[df[col] > upto][col] = pd.NaT
             except TypeError:
                 continue
         for col in df.select_dtypes(include=["datetime"]):
-            df[col][df[col] > upto] = pd.NaT
+            df[df[col] > upto][col] = pd.NaT
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
