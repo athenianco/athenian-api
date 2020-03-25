@@ -183,7 +183,7 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
 
 
 @pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403),
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2015-10-13", 200),
                           (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
 async def test_calc_metrics_prs_nasty_input(client, headers, account, date_to, code):
     """What if we specify a date that does not exist?"""
@@ -227,7 +227,7 @@ async def test_calc_metrics_prs_reposet(client, headers):
         "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
-        "granularity": "week",
+        "granularity": "all",
         "account": 1,
     }
     response = await client.request(
@@ -318,9 +318,9 @@ async def test_code_bypassing_prs_smoke(client, headers):
     assert response.status == 200
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
     ms = [CodeBypassingPRsMeasurement.from_dict(x) for x in body]
-    assert len(ms) == 13
+    assert len(ms) == 14
     for s in ms:
-        assert date(year=2019, month=1, day=12) <= s.date < date(year=2020, month=2, day=22)
+        assert date(year=2019, month=1, day=12) <= s.date <= date(year=2020, month=2, day=22)
         assert s.total_commits >= 0
         assert s.total_lines >= 0
         assert 0 <= s.bypassed_commits <= s.total_commits
@@ -328,7 +328,7 @@ async def test_code_bypassing_prs_smoke(client, headers):
 
 
 @pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403),
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2019-01-12", 200),
                           (1, "2019-01-11", 400), (1, "2019-01-32", 400)])
 async def test_code_bypassing_prs_nasty_input(client, headers, account, date_to, code):
     body = {
@@ -418,7 +418,7 @@ async def test_developer_metrics_all(client, headers):
 
 
 @pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403),
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2018-01-12", 200),
                           (1, "2018-01-11", 400), (1, "2019-01-32", 400)])
 async def test_developer_metrics_nasty_input(client, headers, account, date_to, code):
     body = {

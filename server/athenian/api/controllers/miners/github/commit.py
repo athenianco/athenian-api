@@ -41,6 +41,8 @@ async def extract_commits(prop: FilterCommitsProperty,
                           columns: Optional[List[InstrumentedAttribute]] = None,
                           ):
     """Fetch commits that satisfy the given filters."""
+    assert isinstance(date_from, datetime)
+    assert isinstance(date_to, datetime)
     sql_filters = [
         PushCommit.committed_date.between(date_from, date_to),
         PushCommit.repository_full_name.in_(repos),

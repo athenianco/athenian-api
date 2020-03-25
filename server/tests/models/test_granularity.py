@@ -14,13 +14,17 @@ from athenian.api.models.web import Granularity
     ("month", [date(2020, 1, 1), date(2020, 2, 1), date(2020, 3, 1)]),
     ("4 month", [date(2020, 1, 1)]),
     ("year", [date(2020, 1, 1)]),
+    ("all", [date(2020, 1, 1)]),
 ])
 def test_split(value, result):
     splitted = Granularity.split(value, date(2020, 1, 1), date(2020, 3, 2))
+    if result[-1] != date(2020, 3, 2):
+        result.append(date(2020, 3, 2))
     assert result == splitted
 
 
-@pytest.mark.parametrize("value", ["bullshit", "days", " day", "0 day", "01 day", "2day"])
+@pytest.mark.parametrize("value", ["bullshit", "days", " day", "0 day", "01 day", "2day", "2 all",
+                                   " all", "xx3 day", "2 day xxx", "dayll"])
 def test_split_errors(value):
     with pytest.raises(ValueError):
         Granularity.split(value, date(2020, 1, 1), date(2020, 3, 2))

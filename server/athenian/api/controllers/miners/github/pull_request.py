@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 import io
 import pickle
@@ -113,6 +113,10 @@ class PullRequestMiner:
                     developers: Collection[str], db: databases.Database,
                     cache: Optional[aiomcache.Client],
                     ) -> List[pd.DataFrame]:
+        assert isinstance(time_from, date) and not isinstance(time_from, datetime)
+        assert isinstance(time_to, date) and not isinstance(time_to, datetime)
+        time_from = pd.Timestamp(time_from, tzinfo=timezone.utc)
+        time_to = pd.Timestamp(time_to, tzinfo=timezone.utc) + timedelta(days=1)
         filters = [
             sql.or_(sql.and_(PullRequest.updated_at >= time_from,
                              PullRequest.updated_at < time_to),
@@ -160,9 +164,7 @@ class PullRequestMiner:
                          PullRequestCommit.author_login, PullRequestCommit.committer_login])
 
         async def map_releases():
-            merged_prs = prs[prs[PullRequest.merged_at.key]
-                             .between(pd.Timestamp(time_from, tzinfo=timezone.utc),
-                                      pd.Timestamp(time_to, tzinfo=timezone.utc))]
+            merged_prs = prs[prs[PullRequest.merged_at.key].between(time_from, time_to)]
             return await map_prs_to_releases(merged_prs, time_to, db, cache)
 
         dfs = await asyncio.gather(
@@ -183,8 +185,8 @@ class PullRequestMiner:
         """
         Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
 
-        :param time_from: Fetch PRs created starting from this date.
-        :param time_to: Fetch PRs created ending with this date.
+        :param time_from: Fetch PRs created starting from this date, inclusive.
+        :param time_to: Fetch PRs created ending with this date, inclusive.
         :param repositories: PRs must belong to these repositories (prefix excluded).
         :param developers: PRs must be authored by these user IDs. An empty list means everybody.
         :param db: Metadata db instance.
@@ -197,10 +199,9 @@ class PullRequestMiner:
     async def _read_filtered_models(conn: Union[databases.core.Connection, databases.Database],
                                     model_cls: Base,
                                     node_ids: Collection[str],
-                                    time_to: date,
+                                    time_to: datetime,
                                     columns: Optional[List[InstrumentedAttribute]] = None,
                                     ) -> pd.DataFrame:
-        time_to = datetime.combine(time_to, datetime.min.time())
         if columns is not None:
             columns = [model_cls.pull_request_node_id, model_cls.node_id] + columns
         df = await read_sql_query(select(columns or [model_cls]).where(
@@ -212,9 +213,8 @@ class PullRequestMiner:
         return df
 
     @staticmethod
-    def truncate_timestamps(df: pd.DataFrame, upto: date):
+    def truncate_timestamps(df: pd.DataFrame, upto: datetime):
         """Set all the timestamps after `upto` to NaT to avoid "future leakages"."""
-        upto = pd.Timestamp(upto, tzinfo=timezone.utc)
         for col in df.select_dtypes(include=[object]):
             try:
                 df[df[col] > upto][col] = pd.NaT
@@ -589,6 +589,8 @@ async def filter_pull_requests(
         db: databases.Database, cache: Optional[aiomcache.Client],
 ) -> List[PullRequestListItem]:
     """Filter GitHub pull requests according to the specified criteria."""
+    assert isinstance(time_from, date) and not isinstance(time_from, datetime)
+    assert isinstance(time_to, date) and not isinstance(time_to, datetime)
     miner = await PullRequestListMiner.mine(
         time_from, time_to, repos, participants.get(PullRequestParticipant.STATUS_AUTHOR, []),
         db, cache)

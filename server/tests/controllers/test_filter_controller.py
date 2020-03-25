@@ -4,6 +4,7 @@ import json
 from typing import Optional, Set
 
 from aiohttp import ClientResponse
+import dateutil
 from prometheus_client import CollectorRegistry
 import pytest
 
@@ -53,7 +54,7 @@ async def test_filter_repositories(client, headers):
 
 
 @pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403),
+                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403), (1, "2015-10-13", 200),
                           (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
 async def test_filter_repositories_nasty_input(client, headers, account, date_to, code):
     body = {
@@ -113,7 +114,7 @@ async def test_filter_contributors(client, headers):
 
 
 @pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403),
+                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403), (1, "2015-10-13", 200),
                           (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
 async def test_filter_contributors_nasty_input(client, headers, account, date_to, code):
     body = {
@@ -285,7 +286,7 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
 
 
 @pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403),
+                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403), (1, "2015-10-13", 200),
                           (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
 async def test_filter_prs_nasty_input(client, headers, account, date_to, code):
     body = {
@@ -393,7 +394,7 @@ async def test_filter_commits_bypassing_prs_merges(client, headers):
         method="POST", path="/v1/filter/commits", headers=headers, json=body)
     assert response.status == 200
     commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
-    assert len(commits.data) == 24
+    assert len(commits.data) == 25
     for c in commits.data:
         assert c.committer.email != "noreply@github.com"
 
@@ -420,20 +421,29 @@ async def test_filter_commits_bypassing_prs_no_with(client, headers):
     body = {
         "account": 1,
         "date_from": "2020-01-12",
-        "date_to": "2020-02-22",
+        "date_to": "2020-02-21",
         "in": ["{1}"],
         "property": "bypassing_prs",
     }
     response = await client.request(
         method="POST", path="/v1/filter/commits", headers=headers, json=body)
     assert response.status == 200
-    commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
+    commits = CommitsList.from_dict(
+        json.loads((await response.read()).decode("utf-8")))  # type: CommitsList
     assert len(commits.data) == 0
     assert len(commits.include.users) == 0
+    body["date_to"] = "2020-02-22"
+    response = await client.request(
+        method="POST", path="/v1/filter/commits", headers=headers, json=body)
+    assert response.status == 200
+    commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert len(commits.data) == 1
+    assert commits.data[0].committer.timestamp == datetime(2020, 2, 22, 18, 58, 50,
+                                                           tzinfo=dateutil.tz.tzutc())
 
 
 @pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403),
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2020-01-12", 200),
                           (1, "2010-01-11", 400), (1, "2020-02-32", 400)])
 async def test_filter_commits_bypassing_prs_nasty_input(client, headers, account, date_to, code):
     body = {

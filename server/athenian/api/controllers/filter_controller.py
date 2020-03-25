@@ -1,6 +1,6 @@
 import asyncio
 from collections import defaultdict
-from datetime import timezone
+from datetime import datetime, timezone
 from itertools import chain
 import logging
 from typing import List, Optional, Union
@@ -159,12 +159,16 @@ async def filter_repositories(request: AthenianWebRequest,
 async def _common_filter_preprocess(filt: Union[FilterContribsOrReposRequest,
                                                 FilterPullRequestsRequest,
                                                 FilterCommitsRequest],
-                                    request: AthenianWebRequest) -> List[str]:
+                                    request: AthenianWebRequest,
+                                    expand_dates=True) -> List[str]:
     if filt.date_to < filt.date_from:
         raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
             pointer=".date_from",
         ))
+    if expand_dates:
+        filt.date_from = datetime.combine(filt.date_from, datetime.min.time(), tzinfo=timezone.utc)
+        filt.date_to = datetime.combine(filt.date_to, datetime.max.time(), tzinfo=timezone.utc)
     return await resolve_repos(
         filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
 
@@ -216,7 +220,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
-        repos = await _common_filter_preprocess(filt, request)
+        repos = await _common_filter_preprocess(filt, request, expand_dates=False)
     except ResponseError as e:
         return e.response
     props = set(getattr(Property, p.upper()) for p in (filt.properties or []))
