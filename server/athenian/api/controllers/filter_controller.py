@@ -72,14 +72,14 @@ async def filter_contributors(request: AthenianWebRequest,
         return await request.mdb.fetch_all(
             select([PushCommit.author_login, func.count(PushCommit.author_login)])
             .where(and_(PushCommit.repository_full_name.in_(repos),
-                        PushCommit.timestamp.between(filt.date_from, filt.date_to)))
+                        PushCommit.committed_date.between(filt.date_from, filt.date_to)))
             .group_by(PushCommit.author_login))
 
     async def fetch_commit_committers():
         return await request.mdb.fetch_all(
             select([PushCommit.committer_login, func.count(PushCommit.committer_login)])
             .where(and_(PushCommit.repository_full_name.in_(repos),
-                        PushCommit.timestamp.between(filt.date_from, filt.date_to)))
+                        PushCommit.committed_date.between(filt.date_from, filt.date_to)))
             .group_by(PushCommit.committer_login))
 
     async def fetch_reviews():
@@ -155,7 +155,7 @@ async def filter_repositories(request: AthenianWebRequest,
         return await request.mdb.fetch_all(
             select([distinct(PushCommit.repository_full_name)])
             .where(and_(PushCommit.repository_full_name.in_(repos),
-                        PushCommit.timestamp.between(filt.date_from, filt.date_to),
+                        PushCommit.committed_date.between(filt.date_from, filt.date_to),
                         )))
 
     async def fetch_reviews():
