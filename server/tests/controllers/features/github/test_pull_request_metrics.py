@@ -107,15 +107,20 @@ def test_pull_request_closed_no(pr_samples):  # noqa: F811
 
 def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
     calc = FlowRatioCalculator()
+    open_calc = OpenedCalculator()
+    closed_calc = ClosedCalculator()
     time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
     time_to = datetime.now(tz=timezone.utc)
     for pr in pr_samples(1000):
         calc(pr, time_from, time_to)
+        open_calc(pr, time_from, time_to)
+        closed_calc(pr, time_from, time_to)
     m = calc.value()
     assert m.exists
     assert 0 < m.value < 1
     assert m.confidence_min is None
     assert m.confidence_max is None
+    assert m.value == open_calc.value().value / closed_calc.value().value
 
 
 def test_pull_request_flow_ratio_no_closed():
