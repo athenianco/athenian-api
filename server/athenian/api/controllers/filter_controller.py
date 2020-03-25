@@ -113,8 +113,8 @@ async def filter_contributors(request: AthenianWebRequest,
         .where(User.login.in_(users)))
     user_details = {r[0]: (r[1], r[2]) for r in user_details}
     model = [DeveloperSummary(login="github.com/" + u,
-                              avatar=user_details[u][0],
-                              name=user_details[u][1],
+                              avatar=user_details.get(u, [None])[0],
+                              name=user_details.get(u, [None] * 2)[1],
                               updates=DeveloperUpdates(**v),
                               ).to_dict()
              for u, v in sorted(users.items())]
