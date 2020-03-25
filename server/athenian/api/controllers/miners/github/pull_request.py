@@ -118,8 +118,7 @@ class PullRequestMiner:
         time_from = pd.Timestamp(time_from, tzinfo=timezone.utc)
         time_to = pd.Timestamp(time_to, tzinfo=timezone.utc) + timedelta(days=1)
         filters = [
-            sql.or_(sql.and_(PullRequest.updated_at >= time_from,
-                             PullRequest.updated_at < time_to),
+            sql.or_(PullRequest.updated_at.between(time_from, time_to),
                     sql.and_(sql.or_(PullRequest.closed_at.is_(None),
                                      PullRequest.closed_at > time_from),
                              PullRequest.created_at < time_to)),
