@@ -182,7 +182,7 @@ async def _create_new_account_slow(
     """
     acc = Account().create_defaults()
     max_id = (await conn.fetch_one(select([func.max(Account.id)])
-                                   .where(Account.id < admin_backdoor)))[0]
+                                   .where(Account.id < admin_backdoor)))[0] or 0
     acc.id = max_id + 1
     return await conn.execute(insert(Account).values(acc.explode(with_primary_keys=True)))
 
