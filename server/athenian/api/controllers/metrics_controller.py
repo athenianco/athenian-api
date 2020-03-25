@@ -198,7 +198,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
             total_commits=s.total_number_of_commits,
             total_lines=s.total_number_of_lines,
         ).to_dict()
-        for d, s in zip(time_intervals[:-1], stats)]
+        for d, s in zip(time_intervals[1:], stats)]
     return web.json_response(model, dumps=FriendlyJson.dumps, status=200)
 
 

@@ -1142,7 +1142,8 @@ components:
       type: object
     Granularity:
       description: 'How often the metrics are reported. The value must satisfy the
-        following regular expression: (^([1-9]\d* )?(day|week|month|year)$'
+        following regular expression: /^(([1-9]\d* )?(day|week|month|year)|all)$/.
+        "all" produces a single interval [`date_from`, `date_to`].'
       example: 2 week
       type: string
     PullRequestMetricsRequest:

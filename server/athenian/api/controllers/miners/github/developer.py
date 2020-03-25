@@ -1,6 +1,6 @@
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 import pickle
 from typing import Collection, Dict, List, Optional, Sequence, Set, Union
@@ -125,6 +125,8 @@ async def _set_reviews(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                        conn: databases.core.Connection,
                        cache: Optional[aiomcache.Client]) -> None:
     reviews = await _fetch_developer_reviews(devs, repos, date_from, date_to, conn, cache)
+    if reviews.empty:
+        return
     if DeveloperTopic.reviews in topics:
         topic = DeveloperTopic.reviews.name
         for dev, n in (reviews
@@ -204,7 +206,7 @@ async def calc_developer_metrics(devs: Sequence[str],
     """
     stats_by_dev = defaultdict(dict)
     date_from = pd.Timestamp(date_from, tzinfo=timezone.utc)
-    date_to = pd.Timestamp(date_to, tzinfo=timezone.utc)
+    date_to = pd.Timestamp(date_to, tzinfo=timezone.utc) + timedelta(days=1)
     async with db.connection() as conn:
         for key, setter in processors:
             if key.intersection(topics):

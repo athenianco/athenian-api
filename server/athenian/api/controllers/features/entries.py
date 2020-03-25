@@ -1,4 +1,4 @@
-from datetime import date, timezone
+from datetime import date, timedelta, timezone
 import pickle
 from typing import Collection, List, Optional, Sequence, Tuple
 
@@ -7,7 +7,8 @@ from databases import Database
 import pandas as pd
 
 from athenian.api.cache import cached
-from athenian.api.controllers.features.code import calc_code_stats, CodeStats
+from athenian.api.controllers.features.code import CodeStats
+from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request import \
     BinnedPullRequestMetricCalculator, calculators as pull_request_calculators
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
@@ -47,9 +48,8 @@ async def calc_code_metrics(
         db: Database, cache: Optional[aiomcache.Client],
 ) -> List[CodeStats]:
     """Filter code pushed on GitHub according to the specified criteria."""
-    time_from, time_to = \
-        pd.Timestamp(time_intervals[0], tzinfo=timezone.utc), \
-        pd.Timestamp(time_intervals[-1], tzinfo=timezone.utc)
+    time_from, time_to = (pd.Timestamp(time_intervals[i], tzinfo=timezone.utc) for i in (0, -1))
+    time_to += timedelta(days=1)  # include the full last day
     x_commits = await extract_commits(
         prop, time_from, time_to, repos, with_author, with_committer, db, cache)
     all_commits = await extract_commits(

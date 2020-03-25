@@ -14,11 +14,12 @@ from athenian.api.models.metadata.github import PullRequest, Release
 
 
 async def map_prs_to_releases(prs: pd.DataFrame,
-                              time_to: date,
+                              time_to: datetime,
                               db: databases.Database,
                               cache: Optional[aiomcache.Client],
                               ) -> pd.DataFrame:
     """Match the merged pull requests to the nearest releases that include them."""
+    assert isinstance(time_to, datetime)
     releases = _new_map_df()
     if prs.empty:
         return releases
@@ -63,7 +64,6 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                                cache: Optional[aiomcache.Client],
                                ) -> pd.DataFrame:
     time_from = prs[PullRequest.merged_at.key].min()
-    time_to = pd.Timestamp(time_to, tzinfo=timezone.utc)
     async with db.connection() as conn:
         repos = prs[PullRequest.repository_full_name.key].unique()
         releases = await read_sql_query(
@@ -190,7 +190,7 @@ async def _fetch_commit_history_dag(commit_id: str,
 
 
 async def _find_old_released_prs(releases: pd.DataFrame,
-                                 time_boundary: pd.Timestamp,
+                                 time_boundary: datetime,
                                  db: Union[databases.Database, databases.core.Connection],
                                  cache: Optional[aiomcache.Client],
                                  ) -> pd.DataFrame:
@@ -250,8 +250,8 @@ async def _find_old_released_prs(releases: pd.DataFrame,
 
 
 async def map_releases_to_prs(repos: Iterable[str],
-                              time_from: date,
-                              time_to: date,
+                              time_from: datetime,
+                              time_to: datetime,
                               db: Union[databases.Database, databases.core.Connection],
                               cache: Optional[aiomcache.Client],
                               ) -> pd.DataFrame:
@@ -260,8 +260,8 @@ async def map_releases_to_prs(repos: Iterable[str],
 
     :return: dataframe with found PRs.
     """
-    time_from = pd.Timestamp(time_from, tzinfo=timezone.utc)
-    time_to = pd.Timestamp(time_to, tzinfo=timezone.utc)
+    assert isinstance(time_from, datetime)
+    assert isinstance(time_to, datetime)
     old_from = time_from - timedelta(days=365)  # find PRs not older than 365 days before time_from
     releases = await read_sql_query(select([Release])
                                     .where(and_(Release.repository_full_name.in_(repos),
