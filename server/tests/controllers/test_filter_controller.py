@@ -78,7 +78,7 @@ async def test_filter_contributors_no_repos(client, headers, in_):
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     contribs = json.loads((await response.read()).decode("utf-8"))
-    assert len(contribs) == 195
+    assert len(contribs) == 199
     assert len(set(c["login"] for c in contribs)) == len(contribs)
     assert all(c["login"].startswith("github.com/") for c in contribs)
     contribs = {c["login"]: c for c in contribs}
@@ -101,7 +101,7 @@ async def test_filter_contributors(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     contribs = json.loads((await response.read()).decode("utf-8"))
-    assert len(contribs) == 195
+    assert len(contribs) == 199
     assert len(set(c["login"] for c in contribs)) == len(contribs)
     assert all(c["login"].startswith("github.com/") for c in contribs)
     contribs = {c["login"]: c for c in contribs}
