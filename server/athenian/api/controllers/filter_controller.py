@@ -9,7 +9,7 @@ from aiohttp import web
 import aiomcache
 import databases.core
 from dateutil.parser import parse as parse_datetime
-from sqlalchemy import and_, distinct, or_, select
+from sqlalchemy import and_, distinct, func, or_, select
 
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
@@ -18,11 +18,13 @@ from athenian.api.controllers.miners.pull_request_list_item import Participation
     PullRequestListItem
 from athenian.api.controllers.reposet import resolve_reposet
 from athenian.api.controllers.reposet_controller import load_account_reposets
-from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
+from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestReview, PushCommit, Release, User
 from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import Commit, CommitSignature, CommitsList, ForbiddenError, \
     InvalidRequestError
+from athenian.api.models.web.developer_summary import DeveloperSummary
+from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contribs_or_repos_request import FilterContribsOrReposRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
@@ -51,52 +53,72 @@ async def filter_contributors(request: AthenianWebRequest,
 
     async def fetch_prs():
         return await request.mdb.fetch_all(
-            select([distinct(PullRequest.user_login)])
+            select([PullRequest.user_login, func.count(PullRequest.user_login)])
             .where(and_(PullRequest.repository_full_name.in_(repos), or_(
                         PullRequest.created_at.between(filt.date_from, filt.date_to),
                         PullRequest.closed_at.between(filt.date_from, filt.date_to),
-                        PullRequest.updated_at.between(filt.date_from, filt.date_to),
-                        ))))
+                        PullRequest.updated_at.between(filt.date_from, filt.date_to))))
+            .group_by(PullRequest.user_login))
 
-    async def fetch_pr_commits():
+    async def fetch_comments():
         return await request.mdb.fetch_all(
-            select([PullRequestCommit.author_login, PullRequestCommit.committer_login])
-            .where(and_(PullRequestCommit.repository_full_name.in_(repos),
-                        PullRequestCommit.committed_date.between(filt.date_from, filt.date_to),
+            select([PullRequestComment.user_login, func.count(PullRequestComment.user_login)])
+            .where(and_(PullRequestComment.repository_full_name.in_(repos),
+                        PullRequestComment.created_at.between(filt.date_from, filt.date_to),
                         ))
-            .distinct(PullRequestCommit.author_login, PullRequestCommit.committer_login))
+            .group_by(PullRequestComment.user_login))
 
-    async def fetch_push_commits():
+    async def fetch_commit_authors():
         return await request.mdb.fetch_all(
-            select([PushCommit.author_login, PushCommit.committer_login])
+            select([PushCommit.author_login, func.count(PushCommit.author_login)])
             .where(and_(PushCommit.repository_full_name.in_(repos),
-                        PushCommit.timestamp.between(filt.date_from, filt.date_to),
-                        ))
-            .distinct(PushCommit.author_login, PushCommit.committer_login))
+                        PushCommit.timestamp.between(filt.date_from, filt.date_to)))
+            .group_by(PushCommit.author_login))
+
+    async def fetch_commit_committers():
+        return await request.mdb.fetch_all(
+            select([PushCommit.committer_login, func.count(PushCommit.committer_login)])
+            .where(and_(PushCommit.repository_full_name.in_(repos),
+                        PushCommit.timestamp.between(filt.date_from, filt.date_to)))
+            .group_by(PushCommit.committer_login))
 
     async def fetch_reviews():
         return await request.mdb.fetch_all(
-            select([distinct(PullRequestReview.user_login)])
+            select([PullRequestReview.user_login, func.count(PullRequestReview.user_login)])
             .where(and_(PullRequestReview.repository_full_name.in_(repos),
-                        PullRequestReview.submitted_at.between(filt.date_from, filt.date_to),
-                        )))
+                        PullRequestReview.submitted_at.between(filt.date_from, filt.date_to)))
+            .group_by(PullRequestReview.user_login))
 
     async def fetch_releases():
         return await request.mdb.fetch_all(
-            select([distinct(Release.author)])
+            select([Release.author, func.count(Release.author)])
             .where(and_(Release.repository_full_name.in_(repos),
-                        Release.published_at.between(filt.date_from, filt.date_to),
-                        )))
+                        Release.published_at.between(filt.date_from, filt.date_to)))
+            .group_by(Release.author))
 
-    rows = await asyncio.gather(
-        fetch_prs(), fetch_pr_commits(), fetch_push_commits(), fetch_reviews(), fetch_releases())
-    users = set(chain.from_iterable(r.values() for r in chain.from_iterable(rows)))
+    data = await asyncio.gather(
+        fetch_prs(), fetch_comments(), fetch_commit_authors(), fetch_commit_committers(),
+        fetch_reviews(), fetch_releases())
+    users = defaultdict(dict)
+    for rows, key in zip(data, ("prs", "commenter", "commit_author", "commit_committer",
+                                "reviewer", "releaser")):
+        for row in rows:
+            users[row[0]][key] = row[1]
     try:
-        users.remove(None)
+        del users[None]
     except KeyError:
         pass
-    users = ["github.com/" + u for u in sorted(users)]
-    return web.json_response(users, dumps=FriendlyJson.dumps)
+    user_details = await request.mdb.fetch_all(
+        select([User.login, User.avatar_url, User.name])
+        .where(User.login.in_(users)))
+    user_details = {r[0]: (r[1], r[2]) for r in user_details}
+    model = [DeveloperSummary(login="github.com/" + u,
+                              avatar=user_details[u][0],
+                              name=user_details[u][1],
+                              updates=DeveloperUpdates(**v),
+                              ).to_dict()
+             for u, v in sorted(users.items())]
+    return web.json_response(model, dumps=FriendlyJson.dumps)
 
 
 async def filter_repositories(request: AthenianWebRequest,
@@ -122,11 +144,11 @@ async def filter_repositories(request: AthenianWebRequest,
                         PullRequest.updated_at.between(filt.date_from, filt.date_to),
                         ))))
 
-    async def fetch_pr_commits():
+    async def fetch_comments():
         return await request.mdb.fetch_all(
-            select([distinct(PullRequestCommit.repository_full_name)])
-            .where(and_(PullRequestCommit.repository_full_name.in_(repos),
-                        PullRequestCommit.committed_date.between(filt.date_from, filt.date_to),
+            select([distinct(PullRequestComment.repository_full_name)])
+            .where(and_(PullRequestComment.repository_full_name.in_(repos),
+                        PullRequestComment.created_at.between(filt.date_from, filt.date_to),
                         )))
 
     async def fetch_push_commits():
@@ -151,7 +173,7 @@ async def filter_repositories(request: AthenianWebRequest,
                         )))
 
     repos = sorted({"github.com/" + r[0] for r in chain.from_iterable(await asyncio.gather(
-        fetch_prs(), fetch_pr_commits(), fetch_push_commits(), fetch_reviews(),
+        fetch_prs(), fetch_comments(), fetch_push_commits(), fetch_reviews(),
         fetch_releases()))})
     return web.json_response(repos, dumps=FriendlyJson.dumps)
 

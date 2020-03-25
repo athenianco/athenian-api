@@ -129,9 +129,9 @@ paths:
       - bearerAuth: []
       summary: Find commits that match the specified query.
       tags:
-        - filter
+      - filter
 # {% if False %}
-        - default
+      - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
       x-codegen-request-body-name: body
@@ -149,7 +149,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DeveloperSet'
+                $ref: '#/components/schemas/DeveloperSummaries'
           description: Repositories that were updated within the given timeframe.
         400:
           content:
@@ -486,9 +486,9 @@ paths:
       summary: Calculate metrics over developer activities.
       tags:
       - metrics
-      # {% if False %}
+# {% if False %}
       - default
-      # {% endif %}
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.metrics_controller
       x-codegen-request-body-name: body
   /metrics/prs:
@@ -2084,8 +2084,10 @@ components:
         - dev-reviews
         calculated:
         - values:
-          - [20, 5]
-          - [10, 100]
+          - - 20
+            - 5
+          - - 10
+            - 100
           for:
             repositories:
             - github.com/athenianco/athenian-webapp
@@ -2094,8 +2096,10 @@ components:
             - github.com/vmarkovtsev
             - github.com/dpordomingo
         - values:
-          - [20, 5]
-          - [10, 100]
+          - - 20
+            - 5
+          - - 10
+            - 100
           for:
             repositories:
             - github.com/athenianco/athenian-webapp
@@ -2132,8 +2136,10 @@ components:
       description: Measured developer metrics for each `DeveloperMetricsRequest.for`.
       example:
         values:
-        - [20, 5]
-        - [10, 100]
+        - - 20
+          - 5
+        - - 10
+          - 100
         for:
           repositories:
           - github.com/athenianco/athenian-webapp
@@ -2157,9 +2163,91 @@ components:
       description: Calculated metrics for the developer at the corresponding place
         in `CalculatedDeveloperMetricsItem.for.developers`. The sequence of values
         matches `CalculatedDeveloperMetrics.metrics`.
+      example:
+      - activities:
+          prs: 4
+          commit_author: 10
+          commit_committer: 10
+          commenter: 3
+        avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+        login: github.com/gkwillie
+        name: Groundskeeper Willie
       items:
+# {% if False %}
         allOf:
+# {% else %}{{ "\n" }}        oneOf:{% endif %}
         - type: integer
         - format: float
           type: number
       type: array
+    DeveloperSummaries:
+      description: List of developer activity statistics and profile details.
+      items:
+        $ref: '#/components/schemas/DeveloperSummary'
+      type: array
+    DeveloperSummary:
+      description: Developer activity statistics and profile details.
+      example:
+        avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+        login: github.com/gkwillie
+        name: Groundskeeper Willie
+        updates:
+          prs: 4
+          commit_author: 10
+          commit_committer: 10
+          commenter: 3
+      properties:
+        login:
+          description: Developer's login name.
+          example: github.com/gkwillie
+          type: string
+        name:
+          description: Developer's full name.
+          example: Groundskeeper Willie
+          type: string
+        avatar:
+          description: Developer's avatar URL.
+          example: https://avatars0.githubusercontent.com/u/60340680?v=4
+          format: url
+          type: string
+        updates:
+          $ref: '#/components/schemas/DeveloperUpdates'
+      required:
+      - avatar
+      - login
+      - name
+      - updates
+      type: object
+    DeveloperUpdates:
+      description: 'Various developer contributions statistics over the specified
+        time period. Note: any of these properties may be missing if there was no
+        such activity.'
+      example:
+        prs: 4
+        commit_author: 10
+        commit_committer: 10
+        merger: 3
+      properties:
+        prs:
+          description: 'How many PRs authored by this developer updated. Note: this
+            is not the same as the number of PRs this developer opened. Note: the
+            update origin is not necessarily this developer.'
+          type: integer
+        reviewer:
+          description: 'How many reviews this developer submitted. Note: this is not
+            the same as the number of unique PRs reviewed.'
+          type: integer
+        commit_author:
+          description: How many commits this developer authored.
+          type: integer
+        commit_committer:
+          description: How many commits this developer pushed.
+          type: integer
+        commenter:
+          description: 'How many regular PR comments this developer left. Note: issues
+            are not taken into account, only the PRs.'
+          type: integer
+        releaser:
+          description: How many releases this developer created.
+          type: integer
+      type: object
