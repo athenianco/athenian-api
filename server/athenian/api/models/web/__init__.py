@@ -17,6 +17,8 @@ from athenian.api.models.web.commits_list import CommitsList
 from athenian.api.models.web.created_identifier import CreatedIdentifier
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.developer_metrics_request import DeveloperMetricsRequest
+from athenian.api.models.web.developer_summary import DeveloperSummary
+from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contribs_or_repos_request import FilterContribsOrReposRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest

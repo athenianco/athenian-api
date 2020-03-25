@@ -78,9 +78,10 @@ async def test_filter_contributors_no_repos(client, headers, in_):
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     contribs = json.loads((await response.read()).decode("utf-8"))
-    assert len(contribs) == 178
-    assert len(set(contribs)) == len(contribs)
-    assert all(c.startswith("github.com/") for c in contribs)
+    assert len(contribs) == 195
+    assert len(set(c["login"] for c in contribs)) == len(contribs)
+    assert all(c["login"].startswith("github.com/") for c in contribs)
+    contribs = {c["login"]: c for c in contribs}
     assert "github.com/mcuadros" in contribs
     body["date_from"] = body["date_to"]
     response = await client.request(
@@ -100,12 +101,21 @@ async def test_filter_contributors(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     contribs = json.loads((await response.read()).decode("utf-8"))
-    assert len(contribs) == 178
-    assert len(set(contribs)) == len(contribs)
-    assert all(c.startswith("github.com/") for c in contribs)
+    assert len(contribs) == 195
+    assert len(set(c["login"] for c in contribs)) == len(contribs)
+    assert all(c["login"].startswith("github.com/") for c in contribs)
+    contribs = {c["login"]: c for c in contribs}
     assert "github.com/mcuadros" in contribs
     assert "github.com/author_login" not in contribs
     assert "github.com/committer_login" not in contribs
+    assert contribs["github.com/mcuadros"]["avatar"]
+    assert contribs["github.com/mcuadros"]["name"] == "Máximo Cuadros"
+    topics = set()
+    for c in contribs.values():
+        for v in c["updates"]:
+            topics.add(v)
+    assert topics == {"prs", "commenter", "commit_author", "commit_committer", "reviewer",
+                      "releaser"}
     body["in"] = ["github.com/src-d/gitbase"]
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
