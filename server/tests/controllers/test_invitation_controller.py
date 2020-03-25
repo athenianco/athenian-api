@@ -3,10 +3,41 @@ import json
 from random import randint
 
 import pytest
-from sqlalchemy import and_, insert, select, update
+from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.controllers import invitation_controller
-from athenian.api.models.state.models import Invitation
+from athenian.api.models.state.models import Account, Invitation, UserAccount
+
+
+async def test_empty_db_account_creation(client, headers, sdb):
+    await sdb.execute(delete(Account))
+    await sdb.execute(delete(UserAccount))
+
+    iid = await sdb.execute(
+        insert(Invitation).values(
+            Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
+            .create_defaults().explode()))
+    body = {
+        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
+    }
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+
+    body = json.loads((await response.read()).decode("utf-8"))
+
+    del body["user"]["updated"]
+    assert body == {
+        "account": 1,
+        "user": {
+            "id": "auth0|5e1f6dfb57bc640ea390557b",
+            "name": "Vadim Markovtsev",
+            "native_id": "5e1f6dfb57bc640ea390557b",
+            "email": "vadim@athenian.co",
+            "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png", # noqa
+            "accounts": {"1": True},
+        },
+    }
 
 
 async def test_gen_invitation_new(client, app, headers):
