@@ -304,6 +304,38 @@ async def test_calc_metrics_prs_index_error(client, headers):
     assert response.status == 200
 
 
+async def test_calc_metrics_prs_ratio_flow(client, headers):
+    """https://athenianco.atlassian.net/browse/ENG-411"""
+    body = {
+        "date_from": "2016-01-01",
+        "date_to": "2020-01-16",
+        "for": [{
+            "repositories": [
+                "github.com/src-d/go-git",
+            ],
+        }],
+        "granularity": "month",
+        "account": 1,
+        "metrics": [PullRequestMetricID.PR_FLOW_RATIO, PullRequestMetricID.PR_OPENED,
+                    PullRequestMetricID.PR_CLOSED],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
+    assert len(cm.calculated[0].values) > 0
+    for v in cm.calculated[0].values:
+        flow, opened, closed = v.values
+        if opened is not None:
+            assert flow is not None
+        if flow is None:
+            assert closed is None
+            continue
+        assert flow == opened / closed, "%.3f != %d / %d" % (flow, opened, closed)
+
+
 async def test_code_bypassing_prs_smoke(client, headers):
     body = {
         "account": 1,

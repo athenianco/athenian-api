@@ -151,7 +151,7 @@ class OpenedCalculator(PullRequestSumMetricCalculator[int]):
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[int]:
         """Calculate the actual state update."""
-        if times.created.best > min_time:
+        if min_time < times.created.best < max_time:
             return 1
         return None
 
@@ -219,3 +219,8 @@ class FlowRatioCalculator(PullRequestMetricCalculator[float]):
         self._opened(times, min_time, max_time)
         self._closed(times, min_time, max_time)
         return None
+
+    def reset(self):
+        """Reset the internal state."""
+        self._opened.reset()
+        self._closed.reset()
