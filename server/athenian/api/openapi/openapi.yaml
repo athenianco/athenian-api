@@ -142,7 +142,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/FilterContribsOrReposRequest'
+              $ref: '#/components/schemas/GenericFilterRequest'
         x-body-name: body
       responses:
         200:
@@ -211,6 +211,45 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
+  /filter/releases:
+    post:
+      operationId: filter_releases
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenericFilterRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilteredReleases'
+          description: Repositories that were updated within the given timeframe.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to access the specified account.
+      security:
+      - bearerAuth: []
+      summary: Find releases that were published in the given time fram in the given
+        repositories.
+      tags:
+      - filter
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.filter_controller
+      x-codegen-request-body-name: body
   /filter/repositories:
     post:
       operationId: filter_repositories
@@ -218,7 +257,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/FilterContribsOrReposRequest'
+              $ref: '#/components/schemas/GenericFilterRequest'
         x-body-name: body
       responses:
         200:
@@ -1423,8 +1462,9 @@ components:
       required:
       - date
       - values
-    FilterContribsOrReposRequest:
-      description: PR filters for /filter/contributors and /filter/repositories.
+    GenericFilterRequest:
+      description: PR filters for `/filter/contributors`, `/filter/repositories`,
+        `/filter/releases`.
       example:
         account: 2
         date_from: 2000-01-23
@@ -1453,8 +1493,8 @@ components:
       - date_to
       type: object
     FilterPullRequestsRequest:
-      description: Filters for /filter/pull_requests. Empty `properties` passes through
-        all PRs matched by the other filters.
+      description: Filters for `/filter/pull_requests`. Empty `properties` passes
+        through all PRs matched by the other filters.
       example:
         account: 2
         date_from: 2000-01-23
@@ -2250,4 +2290,76 @@ components:
         releaser:
           description: How many releases this developer created.
           type: integer
+      type: object
+    FilteredReleases:
+      description: Response of `/filter/releases` - releases metadata and user details.
+      properties:
+        include:
+          $ref: '#/components/schemas/IncludedNativeUsers'
+        data:
+          $ref: '#/components/schemas/FilteredReleasesItems'
+      type: object
+    FilteredReleasesItems:
+      description: List of release metadata.
+      items:
+        $ref: '#/components/schemas/FilteredRelease'
+      type: array
+    FilteredRelease:
+      description: Various information about a repository release.
+      example:
+        added_lines: 1000
+        commits: 20
+        deleted_lines: 200
+        name: v0.0.93
+        published: 2020-03-25T10:57:00Z
+        publisher: github.com/vmarkovtsev
+        publisher_avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+        repository: github.com/athenianco/athenian-api
+        url: https://github.com/athenianco/athenian-api/releases/tag/v0.0.93
+      properties:
+        name:
+          description: Title of the release.
+          type: string
+        repository:
+          description: Name of the repository where the release exists.
+          type: string
+        url:
+          description: Link to the release.
+          format: url
+          type: string
+        published:
+          description: When the release was created.
+          format: date-time
+          type: string
+        age:
+          description: Time since the previous release /\d+s/.
+          type: string
+        added_lines:
+          description: Cumulative number of lines inserted since the previous release.
+          type: integer
+        deleted_lines:
+          description: Cumulative number of lines removed since the previous release.
+          type: integer
+        commits:
+          description: Number of commits since the previous release.
+          type: integer
+        publisher:
+          description: Login of the person who created the release.
+          type: string
+        commit_authors:
+          description: List of released commit authors' logins.
+          items:
+            $ref: '#/components/schemas/DeveloperID'
+          type: array
+      required:
+      - added_lines
+      - age
+      - commit_authors
+      - commits
+      - deleted_lines
+      - name
+      - published
+      - publisher
+      - repository
+      - url
       type: object

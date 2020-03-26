@@ -42,7 +42,8 @@ async def read_sql_query(sql: ClauseElement,
     try:
         data = await con.fetch_all(query=sql)
     except Exception as e:
-        logging.getLogger("athenian.api.read_sql_query").error("%s", str(sql))
+        logging.getLogger("athenian.api.read_sql_query").error(
+            "%s: %s; %s", type(e).__name__, e, str(sql))
         raise e from None
     try:
         probe = columns[0]

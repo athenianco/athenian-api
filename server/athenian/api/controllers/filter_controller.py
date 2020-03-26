@@ -1,6 +1,6 @@
 import asyncio
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 from typing import List, Optional, Union
@@ -11,9 +11,11 @@ import databases.core
 from dateutil.parser import parse as parse_datetime
 from sqlalchemy import and_, distinct, func, or_, select
 
+from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.pull_request import filter_pull_requests
+from athenian.api.controllers.miners.github.release import mine_releases
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.controllers.reposet import resolve_reposet
@@ -26,8 +28,10 @@ from athenian.api.models.web import Commit, CommitSignature, CommitsList, Forbid
 from athenian.api.models.web.developer_summary import DeveloperSummary
 from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
-from athenian.api.models.web.filter_contribs_or_repos_request import FilterContribsOrReposRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
+from athenian.api.models.web.filtered_release import FilteredRelease
+from athenian.api.models.web.filtered_releases import FilteredReleases
+from athenian.api.models.web.generic_filter_request import GenericFilterRequest
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
 from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
@@ -37,12 +41,10 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import FriendlyJson, response, ResponseError
 
 
-async def filter_contributors(request: AthenianWebRequest,
-                              body: dict,
-                              ) -> web.Response:
+async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find developers that made an action within the given timeframe."""
     try:
-        filt = FilterContribsOrReposRequest.from_dict(body)
+        filt = GenericFilterRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
@@ -121,12 +123,10 @@ async def filter_contributors(request: AthenianWebRequest,
     return web.json_response(model, dumps=FriendlyJson.dumps)
 
 
-async def filter_repositories(request: AthenianWebRequest,
-                              body: dict,
-                              ) -> web.Response:
+async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find repositories that were updated within the given timeframe."""
     try:
-        filt = FilterContribsOrReposRequest.from_dict(body)
+        filt = GenericFilterRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
@@ -178,7 +178,7 @@ async def filter_repositories(request: AthenianWebRequest,
     return web.json_response(repos, dumps=FriendlyJson.dumps)
 
 
-async def _common_filter_preprocess(filt: Union[FilterContribsOrReposRequest,
+async def _common_filter_preprocess(filt: Union[GenericFilterRequest,
                                                 FilterPullRequestsRequest,
                                                 FilterCommitsRequest],
                                     request: AthenianWebRequest,
@@ -195,7 +195,7 @@ async def _common_filter_preprocess(filt: Union[FilterContribsOrReposRequest,
         filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
 
 
-async def resolve_repos(filt: Union[FilterContribsOrReposRequest,
+async def resolve_repos(filt: Union[GenericFilterRequest,
                                     FilterPullRequestsRequest,
                                     FilterCommitsRequest],
                         uid: str,
@@ -359,3 +359,28 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
                 getattr(commit, PushCommit.committer_avatar_url.key))
         model.data.append(obj)
     return response(model)
+
+
+async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Find releases that were published in the given time fram in the given repositories."""
+    try:
+        filt = GenericFilterRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+    try:
+        repos = await _common_filter_preprocess(filt, request)
+    except ResponseError as e:
+        return e.response
+    async with request.mdb.connection() as conn:
+        releases = await read_sql_query(
+            select([Release]).where(and_(
+                Release.repository_full_name.in_(repos),
+                Release.published_at.between(filt.date_from - timedelta(days=365), filt.date_to))),
+            conn, Release, index=Release.id.key)
+        stats, avatars = await mine_releases(releases, filt.date_from, conn, request.cache)
+        data = [FilteredRelease(**items) for _, items in stats.iterrows()]
+    model = FilteredReleases(data=data, include=IncludedNativeUsers(users={
+        u: IncludedNativeUser(avatar=a) for u, a in zip(avatars[User.login.key].values,
+                                                        avatars[User.avatar_url.key].values)}))
+    return model_response(model)
