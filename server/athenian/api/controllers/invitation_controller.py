@@ -1,7 +1,8 @@
 import base64
 import binascii
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
+import logging
 import os
 from random import randint
 import struct
@@ -14,6 +15,7 @@ import databases.core
 import pyffx
 from sqlalchemy import and_, delete, func, insert, select, update
 
+from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_installation_id, get_user_account_status
 from athenian.api.models.metadata.github import FetchProgress, Installation, InstallationOwner, \
@@ -33,6 +35,7 @@ from athenian.api.response import response, ResponseError
 ikey = os.getenv("ATHENIAN_INVITATION_KEY")
 admin_backdoor = (1 << 24) - 1
 url_prefix = os.getenv("ATHENIAN_INVITATION_URL_PREFIX")
+accept_admin_cooldown = timedelta(minutes=1)
 
 
 def validate_env():
@@ -112,6 +115,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         iid, salt = decode_slug(x)
     except binascii.Error:
         return bad_req()
+    log = logging.getLogger(metadata.__package__)
     async with sdb.connection() as conn:
         inv = await conn.fetch_one(
             select([Invitation.account_id, Invitation.accepted, Invitation.is_active])
@@ -125,6 +129,16 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         acc_id = inv[Invitation.account_id.key]
         is_admin = acc_id == admin_backdoor
         if is_admin:
+            timestamp = await conn.fetch_val(
+                select([UserAccount.created_at]).where(and_(UserAccount.user_id == request.uid,
+                                                            UserAccount.is_admin)))
+            if timestamp is not None and datetime.utcnow() - timestamp < accept_admin_cooldown:
+                return ResponseError(GenericError(
+                    type="/errors/AdminCooldownError",
+                    title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
+                    status=HTTPStatus.TOO_MANY_REQUESTS,
+                    detail="You accepted an admin invitation less than %s ago." %
+                           accept_admin_cooldown)).response
             # create a new account for the admin user
             acc_id = await create_new_account(conn)
             if acc_id >= admin_backdoor:
@@ -134,6 +148,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
                     title=HTTPStatus.LOCKED.phrase,
                     status=HTTPStatus.LOCKED,
                     detail="Invitation was not found.")).response
+            log.info("Created new account %d", acc_id)
             status = None
         else:
             status = await conn.fetch_one(select([UserAccount.is_admin])
@@ -147,6 +162,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
                 is_admin=is_admin,
             ).create_defaults()
             await conn.execute(insert(UserAccount).values(user.explode(with_primary_keys=True)))
+            log.info("Assigned user %s to account %d (admin: %s)", request.uid, acc_id, is_admin)
             values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
             await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
         user = await (await request.user()).load_accounts(conn)

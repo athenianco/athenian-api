@@ -38,6 +38,7 @@ async def test_empty_db_account_creation(client, headers, sdb):
             "accounts": {"1": True},
         },
     }
+    assert len(await sdb.fetch_all(select([Account]))) == 1
 
 
 async def test_gen_invitation_new(client, app, headers):
@@ -87,7 +88,8 @@ async def test_gen_invitation_existing(client, eiso, headers):
     assert salt == 777
 
 
-async def test_accept_invitation(client, headers):
+async def test_accept_invitation_smoke(client, headers, sdb):
+    num_accounts_before = len(await sdb.fetch_all(select([Account])))
     body = {
         "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
     }
@@ -107,6 +109,8 @@ async def test_accept_invitation(client, headers):
             "accounts": {"1": True, "2": False, "3": False},
         },
     }
+    num_accounts_after = len(await sdb.fetch_all(select([Account])))
+    assert num_accounts_after == num_accounts_before
 
 
 async def test_accept_invitation_noop(client, eiso, headers):
@@ -154,7 +158,13 @@ async def test_accept_invitation_inactive(client, app, headers):
     assert response.status == 403
 
 
-async def test_accept_invitation_admin(client, app, headers):
+async def test_accept_invitation_admin(client, app, headers, sdb):
+    # avoid 429 cooldown
+    cooldowntd = invitation_controller.accept_admin_cooldown
+    await sdb.execute(update(UserAccount)
+                      .where(UserAccount.user_id == "auth0|5e1f6dfb57bc640ea390557b")
+                      .values(**{UserAccount.created_at.key: datetime.utcnow() - cooldowntd}))
+    num_accounts_before = len(await sdb.fetch_all(select([Account])))
     iid = await app.sdb.execute(
         insert(Invitation).values(
             Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
@@ -178,6 +188,25 @@ async def test_accept_invitation_admin(client, app, headers):
             "accounts": {"1": True, "2": False, "4": True},
         },
     }
+    num_accounts_after = len(await sdb.fetch_all(select([Account])))
+    assert num_accounts_after == num_accounts_before + 1
+
+
+async def test_accept_invitation_admin_cooldown(client, app, headers, sdb):
+    num_accounts_before = len(await sdb.fetch_all(select([Account])))
+    iid = await app.sdb.execute(
+        insert(Invitation).values(
+            Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
+            .create_defaults().explode()))
+    body = {
+        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
+    }
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+    assert response.status == 429
+    num_accounts_after = len(await sdb.fetch_all(select([Account])))
+    assert num_accounts_after == num_accounts_before
 
 
 async def test_check_invitation(client, headers):
