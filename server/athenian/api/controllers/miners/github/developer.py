@@ -262,7 +262,7 @@ async def _fetch_developer_created_prs(devs: Sequence[str],
                                        db: databases.core.Connection,
                                        cache: Optional[aiomcache.Client],
                                        ) -> pd.DataFrame:
-    return await read_sql_query(
+    df = await read_sql_query(
         select([PullRequest.user_login, func.count(PullRequest.created_at)]).where(and_(
             PullRequest.created_at.between(date_from, date_to),
             PullRequest.user_login.in_(devs),
@@ -270,6 +270,8 @@ async def _fetch_developer_created_prs(devs: Sequence[str],
         )).group_by(PullRequest.user_login),
         db, [PullRequest.user_login.key, "created_count"],
         index=PullRequest.user_login.key)
+    df.fillna(0, inplace=True, downcast="infer")
+    return df
 
 
 @cached(
@@ -286,7 +288,7 @@ async def _fetch_developer_merged_prs(devs: Sequence[str],
                                       db: databases.core.Connection,
                                       cache: Optional[aiomcache.Client],
                                       ) -> pd.DataFrame:
-    return await read_sql_query(
+    df = await read_sql_query(
         select([PullRequest.merged_by_login, func.count(PullRequest.merged_at)]).where(and_(
             PullRequest.merged_at.between(date_from, date_to),
             PullRequest.merged_by_login.in_(devs),
@@ -294,6 +296,8 @@ async def _fetch_developer_merged_prs(devs: Sequence[str],
         )).group_by(PullRequest.merged_by_login),
         db, [PullRequest.merged_by_login.key, "merged_count"],
         index=PullRequest.merged_by_login.key)
+    df.fillna(0, inplace=True, downcast="infer")
+    return df
 
 
 @cached(
@@ -310,13 +314,15 @@ async def _fetch_developer_released_prs(devs: Sequence[str],
                                         db: databases.core.Connection,
                                         cache: Optional[aiomcache.Client],
                                         ) -> pd.DataFrame:
-    return await read_sql_query(
+    df = await read_sql_query(
         select([Release.author, func.count(Release.published_at)]).where(and_(
             Release.published_at.between(date_from, date_to),
             Release.author.in_(devs),
             Release.repository_full_name.in_(repos),
         )).group_by(Release.author),
         db, [Release.author.key, "released_count"], index=Release.author.key)
+    df.fillna(0, inplace=True, downcast="infer")
+    return df
 
 
 @cached(
@@ -333,7 +339,7 @@ async def _fetch_developer_reviews(devs: Sequence[str],
                                    db: databases.core.Connection,
                                    cache: Optional[aiomcache.Client],
                                    ) -> pd.DataFrame:
-    return await read_sql_query(
+    df = await read_sql_query(
         select([PullRequestReview.user_login, PullRequestReview.state,
                 func.count(PullRequestReview.submitted_at)])
         .where(and_(
@@ -343,6 +349,8 @@ async def _fetch_developer_reviews(devs: Sequence[str],
         )).group_by(PullRequestReview.user_login, PullRequestReview.state),
         db, [PullRequestReview.user_login.key, PullRequestReview.state.key, "reviews_count"],
         index=[PullRequestReview.user_login.key, PullRequestReview.state.key])
+    df.fillna(0, inplace=True, downcast="infer")
+    return df
 
 
 @cached(
@@ -359,7 +367,7 @@ async def _fetch_developer_review_comments(devs: Sequence[str],
                                            db: databases.core.Connection,
                                            cache: Optional[aiomcache.Client],
                                            ) -> pd.DataFrame:
-    return await read_sql_query(
+    df = await read_sql_query(
         select([PullRequestReviewComment.user_login,
                 func.count(PullRequestReviewComment.created_at)])
         .where(and_(
@@ -369,6 +377,8 @@ async def _fetch_developer_review_comments(devs: Sequence[str],
         )).group_by(PullRequestReviewComment.user_login),
         db, [PullRequestReviewComment.user_login.key, "comments_count"],
         index=PullRequestReviewComment.user_login.key)
+    df.fillna(0, inplace=True, downcast="infer")
+    return df
 
 
 @cached(
@@ -385,7 +395,7 @@ async def _fetch_developer_regular_pr_comments(devs: Sequence[str],
                                                db: databases.core.Connection,
                                                cache: Optional[aiomcache.Client],
                                                ) -> pd.DataFrame:
-    return await read_sql_query(
+    df = await read_sql_query(
         select([PullRequestComment.user_login,
                 func.count(PullRequestComment.created_at)])
         .where(and_(
@@ -395,3 +405,5 @@ async def _fetch_developer_regular_pr_comments(devs: Sequence[str],
         )).group_by(PullRequestComment.user_login),
         db, [PullRequestComment.user_login.key, "comments_count"],
         index=PullRequestComment.user_login.key)
+    df.fillna(0, inplace=True, downcast="infer")
+    return df

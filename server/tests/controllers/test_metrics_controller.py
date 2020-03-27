@@ -448,7 +448,7 @@ async def test_developer_metrics_all(client, headers, dev):
     assert len(result.calculated[0].values[0]) == len(DeveloperMetricID.ALL)
     if dev == "mcuadros":
         for v, m in zip(result.calculated[0].values[0], sorted(DeveloperMetricID.ALL)):
-            assert v == developer_metric_mcuadros_stats[m]
+            assert v == developer_metric_mcuadros_stats[m], m
     elif dev == "xxx":
         assert all(v == 0 for v in result.calculated[0].values[0]), \
             "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID.ALL))
