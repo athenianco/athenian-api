@@ -254,6 +254,7 @@ async def get_installation_delivery_id(account: int,
     serialize=lambda s: s.encode(),
     deserialize=lambda b: b.decode(),
     key=lambda installation_id, **_: (installation_id,),
+    refresh_on_access=True,
 )
 async def get_installation_owner(installation_id: int,
                                  mdb_conn: databases.core.Connection,

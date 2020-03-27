@@ -145,6 +145,7 @@ async def _cache_pr_releases(releases: pd.DataFrame, cache: aiomcache.Client) ->
     serialize=marshal.dumps,
     deserialize=marshal.loads,
     key=lambda commit_id, **_: (commit_id,),
+    refresh_on_access=True,
 )
 async def _fetch_commit_history_dag(commit_id: str,
                                     conn: databases.core.Connection,
@@ -323,6 +324,7 @@ async def mine_releases(releases: pd.DataFrame,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda releases, **_: sorted(releases[Release.id.key]),
+    refresh_on_access=True,
 )
 async def _mine_monorepo_releases(
         releases: pd.DataFrame,
