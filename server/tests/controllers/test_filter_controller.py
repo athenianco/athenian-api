@@ -481,12 +481,16 @@ async def test_filter_releases_smoke(client, headers):
     response_text = (await response.read()).decode("utf-8")
     assert response.status == 200, response_text
     releases = FilteredReleases.from_dict(json.loads(response_text))  # type: FilteredReleases
+    releases.include.users = set(releases.include.users)
     assert len(releases.include.users) == 71
     assert "github.com/mcuadros" in releases.include.users
+    assert len(releases.data) == 21
     for release in releases.data:
         assert release.publisher.startswith("github.com/"), str(release)
         assert len(release.commit_authors) > 0, str(release)
         assert all(a.startswith("github.com/") for a in release.commit_authors), str(release)
+        for a in release.commit_authors:
+            assert a in releases.include.users
         assert release.commits > 0, str(release)
         assert release.url.startswith("http"), str(release)
         assert release.name, str(release)
@@ -496,3 +500,18 @@ async def test_filter_releases_smoke(client, headers):
         assert release.published >= datetime(year=2018, month=1, day=12, tzinfo=timezone.utc), \
             str(release)
         assert release.repository.startswith("github.com/"), str(release)
+
+
+@pytest.mark.parametrize("account, date_to, code",
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2020-01-12", 200),
+                          (1, "2010-01-11", 400), (1, "2020-02-32", 400)])
+async def test_filter_releases_nasty_input(client, headers, account, date_to, code):
+    body = {
+        "account": account,
+        "date_from": "2020-01-12",
+        "date_to": date_to,
+        "in": ["{1}"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/releases", headers=headers, json=body)
+    assert response.status == code
