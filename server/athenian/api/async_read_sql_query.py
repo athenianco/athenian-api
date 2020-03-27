@@ -51,7 +51,8 @@ async def read_sql_query(sql: ClauseElement,
     else:
         if not isinstance(probe, str):
             columns = [c.key for c in columns]
-    frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
+    frame = pd.DataFrame.from_records((r.values() for r in data),
+                                      columns=columns, coerce_float=True)
     if index is not None:
         frame.set_index(index, inplace=True)
     return postprocess_datetime(frame)
