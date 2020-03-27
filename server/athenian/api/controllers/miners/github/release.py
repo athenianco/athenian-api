@@ -1,16 +1,17 @@
 from datetime import date, datetime, timedelta, timezone
 from itertools import chain, groupby
 import marshal
-from typing import Dict, Iterable, List, Optional, Union
+import pickle
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import aiomcache
 import databases
 import pandas as pd
-from sqlalchemy import and_, desc, select
+from sqlalchemy import and_, desc, func, select
 
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
 from athenian.api.cache import cached, max_exptime
-from athenian.api.models.metadata.github import PullRequest, Release
+from athenian.api.models.metadata.github import PullRequest, PushCommit, Release, User
 
 
 async def map_prs_to_releases(prs: pd.DataFrame,
@@ -144,6 +145,7 @@ async def _cache_pr_releases(releases: pd.DataFrame, cache: aiomcache.Client) ->
     serialize=marshal.dumps,
     deserialize=marshal.loads,
     key=lambda commit_id, **_: (commit_id,),
+    refresh_on_access=True,
 )
 async def _fetch_commit_history_dag(commit_id: str,
                                     conn: databases.core.Connection,
@@ -194,21 +196,36 @@ async def _find_old_released_prs(releases: pd.DataFrame,
                                  db: Union[databases.Database, databases.core.Connection],
                                  cache: Optional[aiomcache.Client],
                                  ) -> pd.DataFrame:
-    resolved = set()
-    observed_commits = set()
+    observed_commits, _, _ = await _extract_released_commits(releases, time_boundary, db, cache)
+    repo = releases.iloc[0][Release.repository_full_name.key] if not releases.empty else ""
+    return await read_sql_query(
+        select([PullRequest])
+        .where(and_(PullRequest.merged_at < time_boundary,
+                    PullRequest.repository_full_name == repo,
+                    PullRequest.merge_commit_sha.in_(observed_commits))),
+        db, PullRequest, index=PullRequest.node_id.key)
+
+
+async def _extract_released_commits(releases: pd.DataFrame,
+                                    time_boundary: datetime,
+                                    db: Union[databases.Database, databases.core.Connection],
+                                    cache: Optional[aiomcache.Client],
+                                    ) -> Tuple[Dict[str, List[str]], pd.DataFrame, Dict[str, str]]:
+    resolved_releases = set()
+    full_dag = {}
     hash_to_release = {h: rid for rid, h in zip(releases.index, releases[Release.sha.key].values)}
     new_releases = releases[releases[Release.published_at.key] >= time_boundary]
     boundary_releases = set()
     for rid, commit_id, root in zip(new_releases.index,
                                     new_releases[Release.commit_id.key].values,
                                     new_releases[Release.sha.key].values):
-        if rid in resolved:
+        if rid in resolved_releases:
             continue
         dag = await _fetch_commit_history_dag(commit_id, db, cache)
         parents = [root]
         while parents:
             x = parents.pop()
-            if x in observed_commits:
+            if x in full_dag:
                 continue
             try:
                 xrid = hash_to_release[x]
@@ -217,36 +234,37 @@ async def _find_old_released_prs(releases: pd.DataFrame,
             else:
                 pubdt = releases.loc[xrid][Release.published_at.key]
                 if pubdt >= time_boundary:
-                    resolved.add(xrid)
+                    resolved_releases.add(xrid)
                 else:
                     boundary_releases.add(xrid)
                     continue
-            observed_commits.add(x)
             children = dag[x]
+            x_children = full_dag.setdefault(x, [])
+            for c in children:
+                if c not in x_children:
+                    x_children.append(c)
             parents.extend(children)
-    # we need to traverse full history from boundary_releases and subtract it from observed_commits
-    released_commits = set()
+    # we need to traverse full history from boundary_releases and subtract it from the full DAG
+    ignored_commits = set()
     for rid in boundary_releases:
         release = releases.loc[rid]
-        if release[Release.sha.key] in released_commits:
+        if release[Release.sha.key] in ignored_commits:
             continue
         dag = await _fetch_commit_history_dag(release[Release.commit_id.key], db, cache)
         parents = [release[Release.sha.key]]
         while parents:
             x = parents.pop()
-            if x in released_commits:
+            if x in ignored_commits:
                 continue
-            released_commits.add(x)
+            ignored_commits.add(x)
             children = dag[x]
             parents.extend(children)
-    observed_commits -= released_commits
-    repo = releases.iloc[0][Release.repository_full_name.key] if not releases.empty else ""
-    return await read_sql_query(
-        select([PullRequest])
-        .where(and_(PullRequest.merged_at < time_boundary,
-                    PullRequest.repository_full_name == repo,
-                    PullRequest.merge_commit_sha.in_(observed_commits))),
-        db, PullRequest, index=PullRequest.node_id.key)
+    for c in ignored_commits:
+        try:
+            del full_dag[c]
+        except KeyError:
+            continue
+    return full_dag, new_releases, hash_to_release
 
 
 async def map_releases_to_prs(repos: Iterable[str],
@@ -274,3 +292,121 @@ async def map_releases_to_prs(repos: Iterable[str],
     if prs:
         return pd.concat(prs, sort=False)
     return pd.DataFrame()
+
+
+async def mine_releases(releases: pd.DataFrame,
+                        time_boundary: datetime,
+                        db: Union[databases.Database, databases.core.Connection],
+                        cache: Optional[aiomcache.Client]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Collect details about each release published after `time_boundary` and calculate added \
+    and deleted line statistics."""
+    stats = []
+    for _, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
+        stats.append(await _mine_monorepo_releases(repo_releases, time_boundary, db, cache))
+    user_columns = [User.login, User.avatar_url]
+    if stats:
+        stats = pd.concat(stats, sort=False)
+        people = set(chain(chain.from_iterable(stats["commit_authors"]), stats["publisher"]))
+        stats["publisher"] = "github.com/" + stats["publisher"]
+        stats["repository"] = "github.com/" + stats["repository"]
+        for calist in stats["commit_authors"].values:
+            for i, v in enumerate(calist):
+                calist[i] = "github.com/" + v
+        avatars = await read_sql_query(
+            select(user_columns).where(User.login.in_(people)), db, user_columns)
+        avatars[User.login.key] = "github.com/" + avatars[User.login.key]
+        return stats, avatars
+    return pd.DataFrame(), pd.DataFrame(columns=[c.key for c in user_columns])
+
+
+@cached(
+    exptime=10 * 60,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda releases, **_: sorted(releases[Release.id.key]),
+    refresh_on_access=True,
+)
+async def _mine_monorepo_releases(
+        releases: pd.DataFrame,
+        time_boundary: datetime,
+        db: Union[databases.Database, databases.core.Connection],
+        cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+    dag, new_releases, hash_to_release = await _extract_released_commits(
+        releases, time_boundary, db, cache)
+    stop_hashes = set(new_releases[Release.sha.key])
+    owned_commits = {}  # type: Dict[str, Set[str]]
+    neighbours = {}  # type: Dict[str, Set[str]]
+
+    def find_owned_commits(sha):
+        try:
+            return owned_commits[sha]
+        except KeyError:
+            accessible, boundaries, leaves = _traverse_commits(dag, sha, stop_hashes)
+            neighbours[sha] = boundaries.union(leaves)
+            for b in boundaries:
+                accessible -= find_owned_commits(b)
+            owned_commits[sha] = accessible
+            return accessible
+
+    for sha in new_releases[Release.sha.key].values:
+        find_owned_commits(sha)
+    data = []
+    commit_df_columns = [PushCommit.additions, PushCommit.deletions, PushCommit.author_login]
+    for release in new_releases.itertuples():
+        sha = getattr(release, Release.sha.key)
+        included_commits = owned_commits[sha]
+        repo = getattr(release, Release.repository_full_name.key)
+        df = await read_sql_query(
+            select(commit_df_columns)
+            .where(and_(PushCommit.repository_full_name == repo,
+                        PushCommit.sha.in_(included_commits))),
+            db, commit_df_columns)
+        try:
+            previous_published_at = max(releases.loc[hash_to_release[n]][Release.published_at.key]
+                                        for n in neighbours[sha] if n in hash_to_release)
+        except ValueError:
+            # no previous releases
+            previous_published_at = await db.fetch_val(
+                select([func.min(PushCommit.pushed_date)])
+                .where(and_(PushCommit.repository_full_name.in_(repo),
+                            PushCommit.sha.in_(included_commits))))
+        published_at = getattr(release, Release.published_at.key)
+        data.append([
+            getattr(release, Release.name.key) or getattr(release, Release.tag.key),
+            repo,
+            getattr(release, Release.url.key),
+            published_at,
+            published_at - previous_published_at,
+            df[PushCommit.additions.key].sum(),
+            df[PushCommit.deletions.key].sum(),
+            len(included_commits),
+            getattr(release, Release.author.key),
+            sorted(set(df[PushCommit.author_login.key]) - {None}),
+        ])
+    return pd.DataFrame.from_records(data, columns=[
+        "name", "repository", "url", "published", "age", "added_lines", "deleted_lines", "commits",
+        "publisher", "commit_authors"])
+
+
+def _traverse_commits(dag: Dict[str, List[str]],
+                      root: str,
+                      stops: Set[str]) -> Tuple[Set[str], Set[str], Set[str]]:
+    parents = [root]
+    visited = set()
+    boundaries = set()
+    leaves = set()
+    while parents:
+        x = parents.pop()
+        if x in visited:
+            continue
+        if x in stops and x != root:
+            boundaries.add(x)
+            continue
+        try:
+            children = dag[x]
+            parents.extend(children)
+        except KeyError:
+            leaves.add(x)
+            continue
+        visited.add(x)
+    return visited, boundaries, leaves

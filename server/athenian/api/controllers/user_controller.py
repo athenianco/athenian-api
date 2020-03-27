@@ -5,13 +5,13 @@ from athenian.api.models.state.models import God, UserAccount
 from athenian.api.models.web import ForbiddenError, NotFoundError
 from athenian.api.models.web.account import Account
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import response, ResponseError
+from athenian.api.response import model_response, ResponseError
 
 
 async def get_user(request: AthenianWebRequest) -> web.Response:
     """Return details about the current user."""
     user = await (await request.user()).load_accounts(request.sdb)
-    return response(user)
+    return model_response(user)
 
 
 async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
@@ -32,7 +32,7 @@ async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
     users = await request.auth.get_users(regulars + admins)
     account = Account(regulars=[users[k] for k in regulars if k in users],
                       admins=[users[k] for k in admins if k in users])
-    return response(account)
+    return model_response(account)
 
 
 async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response:
@@ -51,4 +51,4 @@ async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response
         god.mapped_id = id or None
         await conn.execute(update(God).where(God.user_id == user_id).values(god.explode()))
     user = await (await request.auth.get_user(id or user_id)).load_accounts(request.sdb)
-    return response(user)
+    return model_response(user)

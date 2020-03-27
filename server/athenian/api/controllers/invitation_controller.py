@@ -29,7 +29,7 @@ from athenian.api.models.web.invitation_link import InvitationLink
 from athenian.api.models.web.invited_user import InvitedUser
 from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import response, ResponseError
+from athenian.api.response import model_response, ResponseError
 
 
 ikey = os.getenv("ATHENIAN_INVITATION_KEY")
@@ -71,7 +71,7 @@ async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
         invitation_id = await sdb.execute(insert(Invitation).values(inv.explode()))
     slug = encode_slug(invitation_id, salt)
     model = InvitationLink(url=url_prefix + slug)
-    return response(model)
+    return model_response(model)
 
 
 def encode_slug(iid: int, salt: int) -> str:
@@ -166,7 +166,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
             values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
             await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
         user = await (await request.user()).load_accounts(conn)
-    return response(InvitedUser(account=acc_id, user=user))
+    return model_response(InvitedUser(account=acc_id, user=user))
 
 
 async def create_new_account(conn: Union[databases.Database, databases.core.Connection]) -> int:
@@ -209,25 +209,25 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
     url = InvitationLink.from_dict(body).url
     result = InvitationCheckResult(valid=False)
     if not url.startswith(url_prefix):
-        return response(result)
+        return model_response(result)
     x = url[len(url_prefix):].strip("/")
     if len(x) != 8:
-        return response(result)
+        return model_response(result)
     try:
         iid, salt = decode_slug(x)
     except binascii.Error:
-        return response(result)
+        return model_response(result)
     inv = await request.sdb.fetch_one(
         select([Invitation.account_id, Invitation.is_active])
         .where(and_(Invitation.id == iid, Invitation.salt == salt)))
     if inv is None:
-        return response(result)
+        return model_response(result)
     result.valid = True
     result.active = inv[Invitation.is_active.key]
     types = [InvitationCheckResult.INVITATION_TYPE_REGULAR,
              InvitationCheckResult.INVITATION_TYPE_ADMIN]
     result.type = types[inv[Invitation.account_id.key] == admin_backdoor]
-    return response(result)
+    return model_response(result)
 
 
 @cached(
@@ -254,6 +254,7 @@ async def get_installation_delivery_id(account: int,
     serialize=lambda s: s.encode(),
     deserialize=lambda b: b.decode(),
     key=lambda installation_id, **_: (installation_id,),
+    refresh_on_access=True,
 )
 async def get_installation_owner(installation_id: int,
                                  mdb_conn: databases.core.Connection,
@@ -306,4 +307,4 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
                                          owner=owner,
                                          repositories=repositories,
                                          tables=tables)
-            return response(model)
+            return model_response(model)

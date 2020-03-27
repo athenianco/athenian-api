@@ -29,6 +29,7 @@ def cached(exptime: Union[int, Callable[..., int]],
            deserialize: Callable[[ByteString], Any],
            key: Callable[..., Tuple],
            cache: Optional[Callable[..., Optional[aiomcache.Client]]] = None,
+           refresh_on_access=False,
            ) -> Callable[[Callable[..., Coroutine]], Callable[..., Coroutine]]:
     """
     Return factory that creates decorators that cache function call results if possible.
@@ -41,10 +42,15 @@ def cached(exptime: Union[int, Callable[..., int]],
     :param key: Cache key selector. The decorated function's arguments are converted to **kwargs.
     :param cache: Cache client extractor. The decorated function's arguments are converted to \
                   **kwargs. If is None, the client is assigned to the function's "cache" argument.
+    :param refresh_on_access: Reset the cache item's expiration period on each access.
     :return: Decorator that cache function call results if possible.
     """
     def wrapper_cached(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
         """Decorate a function to return the cached result if possible."""
+        log = logging.getLogger("cache")
+        if exptime == max_exptime and not refresh_on_access:
+            log.warning("%s will stay cached for max_exptime but will not refresh on access,"
+                        "consider setting refresh_on_access=True", func.__name__)
         if cache is None:
             def discover_cache(**kwargs) -> Optional[aiomcache.Client]:
                 try:
@@ -75,7 +81,8 @@ def cached(exptime: Union[int, Callable[..., int]],
                 if buffer is not None:
                     result = deserialize(buffer)
                     t = exptime(result=result, **args_dict) if callable(exptime) else exptime
-                    await client.touch(cache_key, t)
+                    if refresh_on_access:
+                        await client.touch(cache_key, t)
                     client.metrics["hits"].labels(__package__, __version__, full_name).inc()
                     client.metrics["hit_latency"] \
                         .labels(__package__, __version__, full_name) \
@@ -88,8 +95,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                 try:
                     await client.set(cache_key, payload, exptime=t)
                 except aiomcache.exceptions.ClientException as e:
-                    logging.getLogger("aiomcache").exception(
-                        "Failed to put %d bytes in memcached", len(payload))
+                    log.exception("Failed to put %d bytes in memcached", len(payload))
                     raise e from None
                 client.metrics["misses"].labels(__package__, __version__, full_name).inc()
                 client.metrics["miss_latency"] \

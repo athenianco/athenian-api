@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from typing import Optional, Set
 
@@ -11,6 +11,7 @@ import pytest
 from athenian.api import setup_cache_metrics
 from athenian.api.controllers.miners.pull_request_list_item import Property
 from athenian.api.models.web import CommitsList
+from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
 from athenian.api.models.web.pull_request_property import PullRequestProperty
@@ -465,4 +466,52 @@ async def test_filter_commits_bypassing_prs_nasty_input(client, headers, account
     }
     response = await client.request(
         method="POST", path="/v1/filter/commits", headers=headers, json=body)
+    assert response.status == code
+
+
+async def test_filter_releases_smoke(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-01-12",
+        "in": ["{1}"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/releases", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+    releases = FilteredReleases.from_dict(json.loads(response_text))  # type: FilteredReleases
+    releases.include.users = set(releases.include.users)
+    assert len(releases.include.users) == 71
+    assert "github.com/mcuadros" in releases.include.users
+    assert len(releases.data) == 21
+    for release in releases.data:
+        assert release.publisher.startswith("github.com/"), str(release)
+        assert len(release.commit_authors) > 0, str(release)
+        assert all(a.startswith("github.com/") for a in release.commit_authors), str(release)
+        for a in release.commit_authors:
+            assert a in releases.include.users
+        assert release.commits > 0, str(release)
+        assert release.url.startswith("http"), str(release)
+        assert release.name, str(release)
+        assert release.added_lines > 0, str(release)
+        assert release.deleted_lines > 0, str(release)
+        assert release.age > timedelta(0), str(release)
+        assert release.published >= datetime(year=2018, month=1, day=12, tzinfo=timezone.utc), \
+            str(release)
+        assert release.repository.startswith("github.com/"), str(release)
+
+
+@pytest.mark.parametrize("account, date_to, code",
+                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2020-01-12", 200),
+                          (1, "2010-01-11", 400), (1, "2020-02-32", 400)])
+async def test_filter_releases_nasty_input(client, headers, account, date_to, code):
+    body = {
+        "account": account,
+        "date_from": "2020-01-12",
+        "date_to": date_to,
+        "in": ["{1}"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/releases", headers=headers, json=body)
     assert response.status == code
