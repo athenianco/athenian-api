@@ -293,12 +293,16 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
                                             total=r[FetchProgress.nodes_total.key])
                       for r in rows]
             started_date = min(r[FetchProgress.created_at.key] for r in rows)
+            if started_date is not None:
+                started_date = started_date.replace(tzinfo=timezone.utc)
             if any(t.fetched < t.total for t in tables):
                 finished_date = None
             else:
                 finished_date = max(r[FetchProgress.updated_at.key] for r in rows)
-            model = InstallationProgress(started_date=started_date.replace(tzinfo=timezone.utc),
-                                         finished_date=finished_date.replace(tzinfo=timezone.utc),
+            if finished_date is not None:
+                finished_date = finished_date.replace(tzinfo=timezone.utc)
+            model = InstallationProgress(started_date=started_date,
+                                         finished_date=finished_date,
                                          owner=owner,
                                          repositories=repositories,
                                          tables=tables)
