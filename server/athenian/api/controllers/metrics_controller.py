@@ -24,7 +24,7 @@ from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 # from athenian.api.models.no_source_data_error import NoSourceDataError
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import response, ResponseError
+from athenian.api.response import model_response, ResponseError
 
 #           service                  developers
 Filter = Tuple[str, Tuple[Set[str], List[str], ForSet]]
@@ -95,7 +95,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
                 v.confidence_maxs = None
                 v.confidence_scores = None
         met.calculated.append(cm)
-    return response(met)
+    return model_response(met)
 
 
 def _split_to_time_intervals(
@@ -232,4 +232,4 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
             for_=for_set,
             values=[[getattr(s, DeveloperTopic(t).name) for t in filt.metrics] for s in stats],
         ))
-    return response(met)
+    return model_response(met)

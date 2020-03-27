@@ -20,7 +20,7 @@ from athenian.api.models.web import BadRequestError, CreatedIdentifier, Forbidde
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import response, ResponseError
+from athenian.api.response import model_response, ResponseError
 
 
 async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -45,7 +45,7 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
             return e.response
         rs = RepositorySet(owner=account, items=items).create_defaults()
         rid = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
-        return response(CreatedIdentifier(rid))
+        return model_response(CreatedIdentifier(rid))
 
 
 async def delete_reposet(request: AthenianWebRequest, id: int) -> web.Response:

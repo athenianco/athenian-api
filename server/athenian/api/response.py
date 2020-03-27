@@ -8,12 +8,12 @@ from athenian.api.models.web.generic_error import GenericError
 from athenian.api.serialization import FriendlyJson
 
 
-def response(model: Model, *,
-             status: int = 200,
-             reason: Optional[str] = None,
-             headers: LooseHeaders = None,
-             ) -> web.Response:
-    """Generate a web response from the given model."""
+def model_response(model: Model, *,
+                   status: int = 200,
+                   reason: Optional[str] = None,
+                   headers: LooseHeaders = None,
+                   ) -> web.Response:
+    """Generate a web model_response from the given model."""
     return web.json_response(model.to_dict(), dumps=FriendlyJson.dumps,
                              status=status, reason=reason, headers=headers)
 
@@ -23,4 +23,4 @@ class ResponseError(Exception):
 
     def __init__(self, model: GenericError):
         """Initialize a new instance of `ResponseError`."""
-        self.response = response(model, status=model.status)
+        self.response = model_response(model, status=model.status)

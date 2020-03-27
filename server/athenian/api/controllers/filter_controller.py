@@ -38,7 +38,7 @@ from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_set import PullRequestSet
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import FriendlyJson, response, ResponseError
+from athenian.api.response import FriendlyJson, model_response, ResponseError
 
 
 async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -272,7 +272,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         "github.com/" + r[User.login.key]: IncludedNativeUser(avatar=r[User.avatar_url.key])
         for r in avatars
     }), data=web_prs)
-    return response(model)
+    return model_response(model)
 
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
@@ -358,7 +358,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
             users[obj.committer.login] = IncludedNativeUser(
                 getattr(commit, PushCommit.committer_avatar_url.key))
         model.data.append(obj)
-    return response(model)
+    return model_response(model)
 
 
 async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Response:
