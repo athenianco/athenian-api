@@ -38,18 +38,18 @@ class DeveloperTopic(Enum):
 class DeveloperStats:
     """Calculated statistics about developer activities."""
 
-    commits_pushed: Optional[int] = None
-    lines_changed: Optional[int] = None
-    prs_created: Optional[int] = None
-    prs_merged: Optional[int] = None
-    releases: Optional[int] = None
-    reviews: Optional[int] = None
-    review_approvals: Optional[int] = None
-    review_rejections: Optional[int] = None
-    review_neutrals: Optional[int] = None
-    pr_comments: Optional[int] = None
-    regular_pr_comments: Optional[int] = None
-    review_pr_comments: Optional[int] = None
+    commits_pushed: int = 0
+    lines_changed: int = 0
+    prs_created: int = 0
+    prs_merged: int = 0
+    releases: int = 0
+    reviews: int = 0
+    review_approvals: int = 0
+    review_rejections: int = 0
+    review_neutrals: int = 0
+    pr_comments: int = 0
+    regular_pr_comments: int = 0
+    review_pr_comments: int = 0
 
 
 async def _set_commits(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
@@ -136,19 +136,28 @@ async def _set_reviews(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
             stats_by_dev[dev][topic] = n
     if DeveloperTopic.review_approvals in topics:
         topic = DeveloperTopic.review_approvals.name
-        for dev, n in reviews.xs(ReviewResolution.APPROVED.value,
-                                 level=PullRequestReview.state.key)["reviews_count"].items():
-            stats_by_dev[dev][topic] = n
+        try:
+            for dev, n in reviews.xs(ReviewResolution.APPROVED.value,
+                                     level=PullRequestReview.state.key)["reviews_count"].items():
+                stats_by_dev[dev][topic] = n
+        except KeyError:
+            pass
     if DeveloperTopic.review_neutrals in topics:
         topic = DeveloperTopic.review_neutrals.name
-        for dev, n in reviews.xs(ReviewResolution.COMMENTED.value,
-                                 level=PullRequestReview.state.key)["reviews_count"].items():
-            stats_by_dev[dev][topic] = n
+        try:
+            for dev, n in reviews.xs(ReviewResolution.COMMENTED.value,
+                                     level=PullRequestReview.state.key)["reviews_count"].items():
+                stats_by_dev[dev][topic] = n
+        except KeyError:
+            pass
     if DeveloperTopic.review_rejections in topics:
         topic = DeveloperTopic.review_rejections.name
-        for dev, n in reviews.xs(ReviewResolution.CHANGES_REQUESTED.value,
-                                 level=PullRequestReview.state.key)["reviews_count"].items():
-            stats_by_dev[dev][topic] = n
+        try:
+            for dev, n in reviews.xs(ReviewResolution.CHANGES_REQUESTED.value,
+                                     level=PullRequestReview.state.key)["reviews_count"].items():
+                stats_by_dev[dev][topic] = n
+        except KeyError:
+            pass
 
 
 async def _set_pr_comments(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
@@ -177,7 +186,8 @@ async def _set_pr_comments(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
         topic = DeveloperTopic.pr_comments.name
         for dev, n in (review_comments["comments_count"] +  # noqa: W504
                        regular_pr_comments["comments_count"]).items():
-            stats_by_dev[dev][topic] = n
+            if n == n:  # can be NaN
+                stats_by_dev[dev][topic] = n
 
 
 processors = [
