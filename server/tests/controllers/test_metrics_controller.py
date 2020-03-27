@@ -420,20 +420,21 @@ async def test_developer_metrics_single(client, headers, metric, value):
     assert result.calculated[0].values == [[value]]
 
 
-async def test_developer_metrics_all(client, headers):
+@pytest.mark.parametrize("dev", ["mcuadros", "vmarkovtsev", "xxx", "EmrysMyrddin"])
+async def test_developer_metrics_all(client, headers, dev):
     body = {
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "for": [
-            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"]},
+            {"repositories": ["{1}"], "developers": ["github.com/" + dev]},
         ],
         "metrics": sorted(DeveloperMetricID.ALL),
     }
     response = await client.request(
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
-    assert response.status == 200
+    assert response.status == 200, (await response.read()).decode("utf-8")
     result: CalculatedDeveloperMetrics
     result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
@@ -442,11 +443,18 @@ async def test_developer_metrics_all(client, headers):
     assert result.date_to == date(year=2020, month=3, day=1)
     assert len(result.calculated) == 1
     assert result.calculated[0].for_.repositories == ["{1}"]
-    assert result.calculated[0].for_.developers == ["github.com/mcuadros"]
+    assert result.calculated[0].for_.developers == ["github.com/" + dev]
     assert len(result.calculated[0].values) == 1
     assert len(result.calculated[0].values[0]) == len(DeveloperMetricID.ALL)
-    for v, m in zip(result.calculated[0].values[0], sorted(DeveloperMetricID.ALL)):
-        assert v == developer_metric_mcuadros_stats[m]
+    if dev == "mcuadros":
+        for v, m in zip(result.calculated[0].values[0], sorted(DeveloperMetricID.ALL)):
+            assert v == developer_metric_mcuadros_stats[m]
+    elif dev == "xxx":
+        assert all(v == 0 for v in result.calculated[0].values[0]), \
+            "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID.ALL))
+    else:
+        assert all(isinstance(v, int) for v in result.calculated[0].values[0]), \
+            "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID.ALL))
 
 
 @pytest.mark.parametrize("account, date_to, code",
