@@ -216,11 +216,11 @@ class PullRequestMiner:
         """Set all the timestamps after `upto` to NaT to avoid "future leakages"."""
         for col in df.select_dtypes(include=[object]):
             try:
-                df[df[col] > upto][col] = pd.NaT
+                df[df[col] > upto, col] = pd.NaT
             except TypeError:
                 continue
         for col in df.select_dtypes(include=["datetime"]):
-            df[df[col] > upto][col] = pd.NaT
+            df[df[col] > upto, col] = pd.NaT
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
