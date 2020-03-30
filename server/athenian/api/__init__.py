@@ -291,6 +291,7 @@ def setup_context(log: logging.Logger) -> None:
         debug=sentry_env != "production",
         max_breadcrumbs=20,
         attach_stacktrace=True,
+        request_bodies="medium",
         release="%s@%s" % (metadata.__package__, metadata.__version__),
     )
     with sentry_sdk.configure_scope() as scope:

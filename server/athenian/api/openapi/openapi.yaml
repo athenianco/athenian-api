@@ -804,6 +804,7 @@ components:
       x-bearerInfoFunc: athenian.api.controllers.security_controller.info_from_bearerAuth
   schemas:
     CreatedIdentifier:
+      additionalProperties: false
       example:
         id: 777
       properties:
@@ -917,6 +918,7 @@ components:
         $ref: '#/components/schemas/RepositorySetListItem'
       type: array
     RepositorySetCreateRequest:
+      additionalProperties: false
       description: Repository set creation request.
       example:
         account: 1
@@ -935,6 +937,7 @@ components:
       - items
       type: object
     RepositorySetListItem:
+      additionalProperties: false
       description: Element of RepositorySetList.
       example:
         items_count: 6
@@ -958,6 +961,7 @@ components:
           type: integer
       type: object
     User:
+      additionalProperties: false
       description: User details. "updated" and "accounts" are populated only for the
         current user.
       example:
@@ -988,6 +992,8 @@ components:
           format: date-time
           type: string
         accounts:
+          additionalProperties:
+            type: boolean
           description: Mapping between account IDs the user is a member of and is_admin
             flags.
           example:
@@ -1002,6 +1008,7 @@ components:
       - picture
       type: object
     InvitedUser:
+      additionalProperties: false
       description: Details about the user who has accepted an invitation.
       example:
         user:
@@ -1023,6 +1030,7 @@ components:
       - user
       type: object
     Account:
+      additionalProperties: false
       description: Account members. "updated" and "accounts" are not populated.
       example:
         regulars:
@@ -1061,6 +1069,7 @@ components:
       - regulars
       type: object
     InvitationLink:
+      additionalProperties: false
       example:
         url: https://app.athenian.co/i/deadf88d
       properties:
@@ -1073,6 +1082,7 @@ components:
       - url
       type: object
     InvitationCheckResult:
+      additionalProperties: false
       example:
         active: true
         type: regular
@@ -1094,6 +1104,7 @@ components:
       - valid
       type: object
     InstallationProgress:
+      additionalProperties: false
       description: Data fetching progress of the Athenian metadata retrieval app.
       example:
         tables:
@@ -1142,6 +1153,7 @@ components:
       - tables
       type: object
     TableFetchingProgress:
+      additionalProperties: false
       description: Used in InstallationProgress.tables to indicate how much data has
         been loaded in each DB table.
       example:
@@ -1164,6 +1176,7 @@ components:
       - total
       type: object
     ForSet:
+      additionalProperties: false
       example:
         repositories:
         - github.com/athenianco/athenian-webapp
@@ -1186,6 +1199,7 @@ components:
       example: 2 week
       type: string
     PullRequestMetricsRequest:
+      additionalProperties: false
       description: Request for calculating metrics on top of pull requests data.
       example:
         for:
@@ -1242,6 +1256,7 @@ components:
       - metrics
       type: object
     CalculatedPullRequestMetricsItem:
+      additionalProperties: false
       description: Series of calculated metrics for a specific set of repositories
         and developers.
       example:
@@ -1291,6 +1306,7 @@ components:
       - values
       type: object
     CalculatedPullRequestMetrics:
+      additionalProperties: false
       example:
         metrics:
         - pr-lead-time
@@ -1397,6 +1413,7 @@ components:
       - metrics
       type: object
     CalculatedPullRequestMetricValues:
+      additionalProperties: false
       example:
         date: 2000-01-23
         values:
@@ -1462,7 +1479,9 @@ components:
       required:
       - date
       - values
+      type: object
     GenericFilterRequest:
+      additionalProperties: false
       description: PR filters for `/filter/contributors`, `/filter/repositories`,
         `/filter/releases`.
       example:
@@ -1493,6 +1512,7 @@ components:
       - date_to
       type: object
     FilterPullRequestsRequest:
+      additionalProperties: false
       description: Filters for `/filter/pull_requests`. Empty `properties` passes
         through all PRs matched by the other filters.
       example:
@@ -1563,6 +1583,7 @@ components:
       example: wip
       type: string
     PullRequestSet:
+      additionalProperties: false
       description: List of pull requests together with the participant profile pictures.
       example:
         include:
@@ -1598,6 +1619,7 @@ components:
       - include
       type: object
     IncludedNativeUser:
+      additionalProperties: false
       description: User traits such as the avatar URL.
       example:
         avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
@@ -1607,7 +1629,9 @@ components:
           type: string
       required:
       - avatar
+      type: object
     IncludedNativeUsers:
+      additionalProperties: false
       example:
         users:
           github.com/gkwillie:
@@ -1622,7 +1646,9 @@ components:
           type: object
       required:
       - users
+      type: object
     PullRequest:
+      additionalProperties: false
       description: Details of a pull request.
       example:
         # https://github.com/src-d/go-git/pull/1152
@@ -1732,6 +1758,7 @@ components:
       - updated
       type: object
     PullRequestParticipant:
+      additionalProperties: false
       description: Developer and their role in the PR.
       properties:
         id:
@@ -1753,7 +1780,9 @@ components:
       required:
       - id
       - status
+      type: object
     PullRequestWith:
+      additionalProperties: false
       description: 'Triage PRs by various developer participation. The aggregation is OR between
         the participation groups and OR within each group. For example, if our request is
         {"author": ["github.com/vmarkovtsev"], "reviewer": ["github.com/gkwillie", "github.com/mcuadros"]}
@@ -1779,6 +1808,7 @@ components:
           $ref: '#/components/schemas/DeveloperSet'
       type: object
     FilterCommitsRequest:
+      additionalProperties: false
       description: Filter for listing commits.
       example:
         account: 1
@@ -1787,22 +1817,42 @@ components:
         in:
         - '{1}'
         property: bypassing_prs
-      allOf:
-      - $ref: '#/components/schemas/CommitFilter'
-      - properties:
-          property:
-            description: 'Main trait of the commits - the core of the filter.
-              * no_pr_merges: select all the commits but PR merges by noreply@github.com
-              * bypassing_prs: select commits that were pushed without creating a PR'
-            enum:
-            - no_pr_merges
-            - bypassing_prs
-            type: string
-        required:
-        - property
-        type: object
+      properties:
+        account:
+          description: Session account ID.
+          type: integer
+        date_from:
+          description: Commits must be made later than or equal to this date.
+          format: date
+          type: string
+        date_to:
+          description: Commits must be made earlier than or equal to this date.
+          format: date
+          type: string
+        in:
+          $ref: '#/components/schemas/RepositorySet'
+        with_author:
+          $ref: '#/components/schemas/DeveloperSet'
+        with_committer:
+          $ref: '#/components/schemas/DeveloperSet'
+        property:
+          description: 'Main trait of the commits - the core of the filter.
+            * no_pr_merges: select all the commits but PR merges by noreply@github.com
+            * bypassing_prs: select commits that were pushed without creating a PR'
+          enum:
+          - no_pr_merges
+          - bypassing_prs
+          type: string
+      required:
+      - account
+      - date_from
+      - date_to
+      - in
+      - property
+      type: object
     CommitsList:
-      description: List of commits.
+      additionalProperties: false
+      description: List of commits metadata and related user details.
       example:
         include:
           users:
@@ -1857,6 +1907,7 @@ components:
       - include
       type: object
     Commit:
+      additionalProperties: false
       description: Information about a commit.
       example:
         repository: github.com/athenianco/athenian-api
@@ -1910,6 +1961,7 @@ components:
       - size_removed
       type: object
     CommitSignature:
+      additionalProperties: false
       description: Git commit signature. It is guaranteed that `login` and/or `name`&`email`
         are present.
       example:
@@ -1939,12 +1991,14 @@ components:
       - timestamp
       - timezone
       type: object
-    CommitFilter:
-      description: Common parts of the commit filter.
+    CodeFilter:
+      additionalProperties: false
+      description: Filter for revealing code bypassing PRs.
       example:
         account: 1
         date_from: 2020-01-01
         date_to: 2020-03-01
+        granularity: day
         in:
         - '{1}'
         with_author:
@@ -1967,31 +2021,15 @@ components:
           $ref: '#/components/schemas/DeveloperSet'
         with_committer:
           $ref: '#/components/schemas/DeveloperSet'
+        granularity:
+          $ref: '#/components/schemas/Granularity'
       required:
       - account
       - date_from
       - date_to
+      - granularity
       - in
       type: object
-    CodeFilter:
-      description: Filter for revealing code bypassing PRs.
-      example:
-        account: 1
-        date_from: 2020-01-01
-        date_to: 2020-03-01
-        granularity: day
-        in:
-        - '{1}'
-        with_author:
-        - github.com/vmarkovtsev
-      allOf:
-        - $ref: '#/components/schemas/CommitFilter'
-        - properties:
-            granularity:
-              $ref: '#/components/schemas/Granularity'
-          required:
-            - granularity
-          type: object
     MeasuredCodeBypassingPRs:
       description: Statistics about code pushed outside of pull requests.
       example:
@@ -2009,6 +2047,7 @@ components:
         $ref: '#/components/schemas/CodeBypassingPRsMeasurement'
       type: array
     CodeBypassingPRsMeasurement:
+      additionalProperties: false
       description: Statistics about code pushed outside of pull requests in a certain
         time interval.
       example:
@@ -2045,6 +2084,7 @@ components:
       - total_lines
       type: object
     DeveloperMetricsRequest:
+      additionalProperties: false
       description: Request for calculating metrics on top of developer activities.
       example:
         for:
@@ -2115,6 +2155,7 @@ components:
       example: dev-prs-created
       type: string
     CalculatedDeveloperMetrics:
+      additionalProperties: false
       description: Response from /metrics/developers - calculated metrics over developer
         activities.
       example:
@@ -2172,7 +2213,9 @@ components:
       - date_from
       - date_to
       - metrics
+      type: object
     CalculatedDeveloperMetricsItem:
+      additionalProperties: false
       description: Measured developer metrics for each `DeveloperMetricsRequest.for`.
       example:
         values:
@@ -2226,6 +2269,7 @@ components:
         $ref: '#/components/schemas/DeveloperSummary'
       type: array
     DeveloperSummary:
+      additionalProperties: false
       description: Developer activity statistics and profile details.
       example:
         avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
@@ -2259,6 +2303,7 @@ components:
       - updates
       type: object
     DeveloperUpdates:
+      additionalProperties: false
       description: 'Various developer contributions statistics over the specified
         time period. Note: any of these properties may be missing if there was no
         such activity.'
@@ -2292,6 +2337,7 @@ components:
           type: integer
       type: object
     FilteredReleases:
+      additionalProperties: false
       description: Response of `/filter/releases` - releases metadata and user details.
       properties:
         include:
@@ -2305,6 +2351,7 @@ components:
         $ref: '#/components/schemas/FilteredRelease'
       type: array
     FilteredRelease:
+      additionalProperties: false
       description: Various information about a repository release.
       example:
         added_lines: 1000
