@@ -7,6 +7,7 @@ import pandas as pd
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
+from athenian.api import metadata
 from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.state.models import Base as StateBase
 
@@ -42,7 +43,7 @@ async def read_sql_query(sql: ClauseElement,
     try:
         data = await con.fetch_all(query=sql)
     except Exception as e:
-        logging.getLogger("athenian.api.read_sql_query").error(
+        logging.getLogger("%s.read_sql_query" % metadata.__package__).error(
             "%s: %s; %s", type(e).__name__, e, str(sql))
         raise e from None
     try:
