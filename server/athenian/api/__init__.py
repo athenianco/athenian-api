@@ -19,9 +19,9 @@ import connexion
 from connexion.spec import OpenAPISpecification
 import databases
 import pytz
-import sentry_sdk
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+import sentry_sdk.utils
 import uvloop
 
 from athenian.api import metadata
@@ -294,6 +294,8 @@ def setup_context(log: logging.Logger) -> None:
         request_bodies="medium",
         release="%s@%s" % (metadata.__package__, metadata.__version__),
     )
+    sentry_sdk.utils.MAX_STRING_LENGTH = 1024
+    sentry_sdk.utils.MAX_FORMAT_PARAM_LENGTH = 256
     with sentry_sdk.configure_scope() as scope:
         scope.set_tag("version", metadata.__version__)
         scope.set_tag("username", username)
