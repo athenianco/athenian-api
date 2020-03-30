@@ -39,6 +39,7 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
         # assume a log-normal distribution
         assert (arr >= 0).all()
         arr = arr[arr != 0]
+        assert len(arr) > 0
         m = np.mean(arr)
         if len(arr) == 1:
             # only one sample, we don't know the stddev so whatever value to indicate a failure
@@ -137,6 +138,9 @@ class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
         if not self.samples:
             return Metric(False, None, None, None)
         assert self.may_have_negative_values is not None
+        if not self.may_have_negative_values and not any(self.samples):
+            # The log-normal distribution is not compatible with this bullshit.
+            return Metric(False, None, None, None)
         return Metric(True, *mean_confidence_interval(self.samples, self.may_have_negative_values))
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,

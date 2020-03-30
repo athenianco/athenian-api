@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from athenian.api.controllers.features.github.pull_request import \
-    PullRequestCounter, PullRequestMedianMetricCalculator, PullRequestMetricCalculator, \
+    PullRequestAverageMetricCalculator, PullRequestCounter, PullRequestMetricCalculator, \
     PullRequestSumMetricCalculator, register
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
@@ -10,7 +10,7 @@ from athenian.api.models.web import PullRequestMetricID
 
 
 @register(PullRequestMetricID.PR_WIP_TIME)
-class WorkInProgressTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
+class WorkInProgressTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Time of work in progress metric."""
 
     may_have_negative_values = False
@@ -31,7 +31,7 @@ class WorkInProgressCounter(PullRequestCounter):
 
 
 @register(PullRequestMetricID.PR_REVIEW_TIME)
-class ReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
+class ReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Time of the review process metric."""
 
     may_have_negative_values = False
@@ -61,7 +61,7 @@ class ReviewCounter(PullRequestCounter):
 
 
 @register(PullRequestMetricID.PR_MERGING_TIME)
-class MergingTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
+class MergingTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Time to merge after finishing the review metric."""
 
     may_have_negative_values = False
@@ -88,7 +88,7 @@ class MergingCounter(PullRequestCounter):
 
 
 @register(PullRequestMetricID.PR_RELEASE_TIME)
-class ReleaseTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
+class ReleaseTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Time to appear in a release after merging metric."""
 
     may_have_negative_values = False
@@ -109,7 +109,7 @@ class ReleaseCounter(PullRequestCounter):
 
 
 @register(PullRequestMetricID.PR_LEAD_TIME)
-class LeadTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
+class LeadTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Time to appear in a release since starting working on the PR."""
 
     may_have_negative_values = False
@@ -130,7 +130,7 @@ class LeadCounter(PullRequestCounter):
 
 
 @register(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME)
-class WaitFirstReviewTimeCalculator(PullRequestMedianMetricCalculator[timedelta]):
+class WaitFirstReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Elapsed time between requesting the review for the first time and getting it."""
 
     may_have_negative_values = False
