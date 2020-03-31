@@ -23,7 +23,8 @@ class PullRequest(Model):
         closed: Optional[datetime] = None,
         comments: Optional[int] = None,
         commits: Optional[int] = None,
-        review_requested: Optional[bool] = None,
+        review_requested: Optional[datetime] = None,
+        approved: Optional[datetime] = None,
         review_comments: Optional[int] = None,
         merged: Optional[datetime] = None,
         released: Optional[datetime] = None,
@@ -45,6 +46,7 @@ class PullRequest(Model):
         :param comments: The comments of this PullRequest.
         :param commits: The commits of this PullRequest.
         :param review_requested: The review_requested of this PullRequest.
+        :param approved: The approved of this PullRequest.
         :param review_comments: The review_comments of this PullRequest.
         :param merged: The merged of this PullRequest.
         :param released: The released of this PullRequest.
@@ -65,7 +67,8 @@ class PullRequest(Model):
             "closed": datetime,
             "comments": int,
             "commits": int,
-            "review_requested": bool,
+            "review_requested": datetime,
+            "approved": datetime,
             "review_comments": int,
             "merged": datetime,
             "released": datetime,
@@ -88,6 +91,7 @@ class PullRequest(Model):
             "comments": "comments",
             "commits": "commits",
             "review_requested": "review_requested",
+            "approved": "approved",
             "review_comments": "review_comments",
             "merged": "merged",
             "released": "released",
@@ -109,6 +113,7 @@ class PullRequest(Model):
         self._comments = comments
         self._commits = commits
         self._review_requested = review_requested
+        self._approved = approved
         self._review_comments = review_comments
         self._merged = merged
         self._released = released
@@ -365,7 +370,7 @@ class PullRequest(Model):
 
         Number of commits in this PR.
 
-        :param commits: The updated of this PullRequest.
+        :param commits: The commits of this PullRequest.
         """
         if commits is None:
             raise ValueError("Invalid value for `commits`, must not be `None`")
@@ -373,7 +378,7 @@ class PullRequest(Model):
         self._commits = commits
 
     @property
-    def review_requested(self) -> bool:
+    def review_requested(self) -> datetime:
         """Gets the review_requested of this PullRequest.
 
         Value indicating whether the author of this PR requested a review.
@@ -383,39 +388,53 @@ class PullRequest(Model):
         return self._review_requested
 
     @review_requested.setter
-    def review_requested(self, review_requested: bool):
+    def review_requested(self, review_requested: Optional[datetime]):
         """Sets the review_requested of this PullRequest.
 
-        Value indicating whether the author of this PR requested a review.
+        When the author of this PR requested a review last time.
 
-        :param review_requested: The updated of this PullRequest.
+        :param review_requested: The review_requested of this PullRequest.
         """
-        if review_requested is None:
-            raise ValueError("Invalid value for `review_requested`, must not be `None`")
-
         self._review_requested = review_requested
+
+    @property
+    def approved(self) -> datetime:
+        """Gets the approved of this PullRequest.
+
+        When the author of this PR requested a review last time.
+
+        :return: The approved of this PullRequest.
+        """
+        return self._approved
+
+    @approved.setter
+    def approved(self, approved: Optional[datetime]):
+        """Sets the approved of this PullRequest.
+
+        When this PR was approved.
+
+        :param approved: The approved of this PullRequest.
+        """
+        self._approved = approved
 
     @property
     def review_comments(self) -> int:
         """Gets the review_comments of this PullRequest.
 
-        Value indicating whether this PR received at least one review.
+        When this PR was approved.
 
         :return: The review_comments of this PullRequest.
         """
         return self._review_comments
 
     @review_comments.setter
-    def review_comments(self, review_comments: int):
+    def review_comments(self, review_comments: Optional[int]):
         """Sets the review_comments of this PullRequest.
 
         Value indicating whether this PR received at least one review.
 
-        :param review_comments: The updated of this PullRequest.
+        :param review_comments: The review_comments of this PullRequest.
         """
-        if review_comments is None:
-            raise ValueError("Invalid value for `review_comments`, must not be `None`")
-
         self._review_comments = review_comments
 
     @property
@@ -434,7 +453,7 @@ class PullRequest(Model):
 
         Value indicating whether this PR was merged.
 
-        :param merged: The updated of this PullRequest.
+        :param merged: The merged of this PullRequest.
         """
         self._merged = merged
 
@@ -454,7 +473,7 @@ class PullRequest(Model):
 
         Value indicating whether this PR was released.
 
-        :param released: The updated of this PullRequest.
+        :param released: The released of this PullRequest.
         """
         self._released = released
 
@@ -474,7 +493,7 @@ class PullRequest(Model):
 
         URL of the earliest release that includes this merged PR.
 
-        :param release_url: The updated of this PullRequest.
+        :param release_url: The release_url of this PullRequest.
         """
         self._release_url = release_url
 

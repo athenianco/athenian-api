@@ -208,7 +208,6 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
     mentioned_users = set()
     comments = 0
     commits = 0
-    review_requested = False
     review_comments = 0
     release_urls = 0
     timestamps = defaultdict(bool)
@@ -220,7 +219,7 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert pr["size_added"] + pr["size_removed"] >= 0, str(pr)
         assert pr["files_changed"] >= 0, str(pr)
         assert pr["created"], str(pr)
-        for k in ("closed", "updated", "merged", "released"):
+        for k in ("closed", "updated", "merged", "released", "review_requested", "approved"):
             timestamps[k] |= bool(pr.get(k))
         if pr.get("merged"):
             assert pr["closed"], str(pr)
@@ -231,7 +230,6 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert props.intersection(set(pr["properties"]))
         comments += pr["comments"]
         commits += pr["commits"]
-        review_requested |= pr["review_requested"]
         review_comments += pr["review_comments"]
         release_urls += bool(pr.get("release_url"))
         for prop in pr["properties"]:
@@ -255,43 +253,48 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
     if PullRequestProperty.WIP in props:
         assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
         assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0
-        assert response_props.get("wip")
-        assert response_props.get("created")
-        assert response_props.get("commit_happened")
+        assert response_props.get(PullRequestProperty.WIP)
+        assert response_props.get(PullRequestProperty.CREATED)
+        assert response_props.get(PullRequestProperty.COMMIT_HAPPENED)
     if PullRequestProperty.REVIEWING in props:
         assert comments > 0
         assert review_comments > 0
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-        assert response_props.get("reviewing")
-        assert response_props.get("review_happened")
-        assert response_props.get("commit_happened")
+        assert response_props.get(PullRequestProperty.REVIEWING)
+        assert response_props.get(PullRequestProperty.REVIEW_HAPPENED)
+        assert response_props.get(PullRequestProperty.COMMIT_HAPPENED)
+        assert response_props.get(PullRequestProperty.REVIEW_REQUEST_HAPPENED)
+        assert response_props.get(PullRequestProperty.CHANGES_REQUEST_HAPPENED)
     if PullRequestProperty.MERGING in props:
-        assert review_requested
+        assert timestamps["review_requested"]
+        assert timestamps["approved"]
         assert comments > 0
         assert review_comments >= 0
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-        assert response_props.get("merging")
-        assert response_props.get("commit_happened")
-        assert response_props.get("review_happened")
-        assert response_props.get("approve_happened")
+        assert response_props.get(PullRequestProperty.MERGING)
+        assert response_props.get(PullRequestProperty.COMMIT_HAPPENED)
+        assert response_props.get(PullRequestProperty.REVIEW_HAPPENED)
+        assert response_props.get(PullRequestProperty.APPROVE_HAPPENED)
     if PullRequestProperty.RELEASING in props:
-        assert review_requested
+        assert timestamps["review_requested"]
+        assert timestamps["approved"]
         assert comments > 0
         assert review_comments >= 0
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
         assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
-        assert response_props.get("releasing")
-        assert response_props.get("merge_happened")
+        assert response_props.get(PullRequestProperty.RELEASING)
+        assert response_props.get(PullRequestProperty.MERGE_HAPPENED)
         assert timestamps["merged"]
     if PullRequestProperty.DONE in props:
-        assert review_requested
+        assert timestamps["review_requested"]
+        assert timestamps["approved"]
         assert comments > 0
         assert review_comments > 0
         assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
         assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
         assert statuses[PullRequestParticipant.STATUS_RELEASER] > 0
-        assert response_props.get("done")
-        assert response_props.get("release_happened")
+        assert response_props.get(PullRequestProperty.DONE)
+        assert response_props.get(PullRequestProperty.RELEASE_HAPPENED)
         assert timestamps["released"]
         assert timestamps["closed"]
 
