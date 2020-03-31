@@ -1,11 +1,13 @@
 import argparse
 import asyncio
 from datetime import timezone
+from functools import partial
 import getpass
 from http import HTTPStatus
 import logging
 import os
 from pathlib import Path
+import signal
 import socket
 import sys
 from typing import Optional
@@ -100,6 +102,20 @@ class ExactServersAioHttpApi(connexion.AioHttpApi):
         self._api_name = connexion.AioHttpApi.normalize_string(self.base_path)
 
 
+class ShuttingDownError(GenericError):
+    """HTTP 503."""
+
+    def __init__(self):
+        """Initialize a new instance of ShuttingDownError.
+
+        :param detail: The details about this error.
+        """
+        super().__init__(type="/errors/ShuttingDownError",
+                         title=HTTPStatus.SERVICE_UNAVAILABLE.phrase,
+                         status=HTTPStatus.SERVICE_UNAVAILABLE,
+                         detail="This server is shutting down, please repeat your request.")
+
+
 class AthenianApp(connexion.AioHttpApp):
     """
     Athenian API application.
@@ -153,6 +169,7 @@ class AthenianApp(connexion.AioHttpApp):
             )
         api.jsonifier.json = FriendlyJson
         prometheus_registry = setup_status(self.app)
+        self._setup_survival()
         setup_cache_metrics(cache, prometheus_registry)
         if ui:
             def index_redirect(_):
@@ -194,6 +211,8 @@ class AthenianApp(connexion.AioHttpApp):
 
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
+        if not self._shutting_down:
+            self.log.warning("Shutting down disgracefully")
         await self._auth0.close()
         try:
             self._mdb_future.cancel()
@@ -216,7 +235,7 @@ class AthenianApp(connexion.AioHttpApp):
         return self._auth0
 
     @aiohttp.web.middleware
-    async def with_db(self, request, handler):
+    async def with_db(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
         """Add "mdb" and "sdb" attributes to every incoming request."""
         if self.mdb is None:
             await self._mdb_future
@@ -239,6 +258,36 @@ class AthenianApp(connexion.AioHttpApp):
                 detail="%s: %s" % (type(e).__name__, e),
             )).response
 
+    @aiohttp.web.middleware
+    async def i_will_survive(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
+        """Return HTTP 503 Service Unavailable if the server is shutting down, also track \
+        the number of active connections."""
+        if self._shutting_down:
+            return ResponseError(ShuttingDownError()).response
+        self._requests += 1
+        try:
+            return await handler(request)
+        finally:
+            self._requests -= 1
+            if self._requests == 0 and self._shutting_down:
+                asyncio.ensure_future(self._raise_graceful_exit())
+
+    def _setup_survival(self):
+        self._shutting_down = False
+        self._requests = 0
+        self.app.middlewares.insert(0, self.i_will_survive)
+
+        def initiate_graceful_shutdown(signame: str):
+            self.log.warning("Received %s, waiting for pending %d requests to finish...",
+                             signame, self._requests)
+            self._shutting_down = True
+            if self._requests == 0:
+                asyncio.ensure_future(self._raise_graceful_exit())
+
+        loop = asyncio.get_event_loop()
+        loop.add_signal_handler(signal.SIGINT, partial(initiate_graceful_shutdown, "SIGINT"))
+        loop.add_signal_handler(signal.SIGTERM, partial(initiate_graceful_shutdown, "SIGTERM"))
+
     def _enable_cors(self) -> None:
         cors = aiohttp_cors.setup(self.app, defaults={
             "*": aiohttp_cors.ResourceOptions(
@@ -250,6 +299,20 @@ class AthenianApp(connexion.AioHttpApp):
             )})
         for route in self.app.router.routes():
             cors.add(route)
+
+    async def _raise_graceful_exit(self):
+        await asyncio.sleep(0)
+        self.log.info("Finished serving all the pending requests, now shutting down")
+
+        def raise_graceful_exit():
+            loop.remove_signal_handler(signal.SIGTERM)
+            raise GracefulExit()
+
+        loop = asyncio.get_event_loop()
+        loop.remove_signal_handler(signal.SIGINT)
+        loop.remove_signal_handler(signal.SIGTERM)
+        loop.add_signal_handler(signal.SIGTERM, raise_graceful_exit)
+        os.kill(os.getpid(), signal.SIGTERM)
 
 
 def setup_context(log: logging.Logger) -> None:
@@ -326,5 +389,6 @@ def main():
     check_schema_version(args.state_db, log)
     cache = create_memcached(args.memcached, log)
     app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui, cache=cache)
-    app.run(host=args.host, port=args.port, use_default_access_log=True)
+    app.run(host=args.host, port=args.port, use_default_access_log=True, handle_signals=False,
+            print=lambda s: log.info("\n" + s))
     return app
