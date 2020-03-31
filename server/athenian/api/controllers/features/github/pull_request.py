@@ -102,17 +102,20 @@ class PullRequestMetricCalculator(Generic[T]):
         """Initialize a new `PullRequestMetricCalculator` instance."""
         self.samples = []
 
-    def __call__(self, times: PullRequestTimes, min_time: datetime, max_time: datetime):
+    def __call__(self, times: PullRequestTimes, min_time: datetime, max_time: datetime) -> bool:
         """Supply another pull request timestamps to update the state.
 
         :param min_time: Start of the considered time interval. It is needed to discard samples \
                          with both ends less than the minimum time.
         :param max_time: Finish of the considered time interval. It is needed to discard samples \
                          with both ends greater than the maximum time.
+        :return: Boolean indicating whether the calculated value exists.
         """
         sample = self.analyze(times, min_time, max_time)
-        if sample is not None:
+        exists = sample is not None
+        if exists:
             self.samples.append(sample)
+        return exists
 
     def reset(self):
         """Reset the internal state."""
@@ -199,6 +202,8 @@ calculators: Dict[str, Type[PullRequestMetricCalculator]] = {}
 
 def register(name: str):
     """Keep track of the PR metric calculators."""
+    assert isinstance(name, str)
+
     def register_with_name(cls: Type[PullRequestMetricCalculator]):
         calculators[name] = cls
         return cls

@@ -158,7 +158,7 @@ class FilterPullRequestsRequest(Model):
         :param stages: The properties of this FilterPullRequestsRequest.
         """
         for stage in stages:
-            if stage not in PullRequestPipelineStage.ALL:
+            if stage not in PullRequestPipelineStage:
                 raise ValueError("Invalid stage: %s" % stage)
 
         self._stages = stages
@@ -178,7 +178,7 @@ class FilterPullRequestsRequest(Model):
         :param properties: The properties of this FilterPullRequestsRequest.
         """
         for stage in properties:
-            if stage not in PullRequestProperty.ALL:
+            if stage not in PullRequestProperty:
                 raise ValueError("Invalid property: %s" % stage)
 
         self._properties = properties

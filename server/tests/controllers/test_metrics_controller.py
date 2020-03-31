@@ -11,7 +11,7 @@ from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRe
 
 @pytest.mark.parametrize(
     "metric, cached",
-    itertools.chain(itertools.zip_longest(PullRequestMetricID.ALL, [], fillvalue=False),
+    itertools.chain(zip(PullRequestMetricID, itertools.repeat(False)),
                     [(PullRequestMetricID.PR_WIP_TIME, True)]))
 async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, cache):
     """Trivial test to prove that at least something is working."""
@@ -78,6 +78,7 @@ async def test_calc_metrics_prs_all_time(client, granularity, headers):
                     PullRequestMetricID.PR_MERGING_TIME,
                     PullRequestMetricID.PR_RELEASE_TIME,
                     PullRequestMetricID.PR_LEAD_TIME,
+                    PullRequestMetricID.PR_CYCLE_TIME,
                     PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME],
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
@@ -143,7 +144,7 @@ async def test_calc_metrics_prs_access_denied(client, headers):
                 ],
             },
         ],
-        "metrics": list(PullRequestMetricID.ALL),
+        "metrics": list(PullRequestMetricID),
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
         "granularity": "month",
@@ -171,7 +172,7 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
         }],
         "granularity": "month",
         "account": 1,
-        "metrics": list(PullRequestMetricID.ALL),
+        "metrics": list(PullRequestMetricID),
     }
     response = await client.request(
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
@@ -245,6 +246,7 @@ async def test_calc_metrics_prs_reposet(client, headers):
                                     PullRequestMetricID.PR_MERGING_COUNT,
                                     PullRequestMetricID.PR_RELEASE_COUNT,
                                     PullRequestMetricID.PR_LEAD_COUNT,
+                                    PullRequestMetricID.PR_CYCLE_COUNT,
                                     PullRequestMetricID.PR_OPENED,
                                     PullRequestMetricID.PR_CLOSED,
                                     PullRequestMetricID.PR_MERGED,
@@ -393,7 +395,7 @@ developer_metric_mcuadros_stats = {
 
 
 @pytest.mark.parametrize("metric, value", [(m, developer_metric_mcuadros_stats[m])
-                                           for m in DeveloperMetricID.ALL])
+                                           for m in DeveloperMetricID])
 async def test_developer_metrics_single(client, headers, metric, value):
     body = {
         "account": 1,
@@ -429,7 +431,7 @@ async def test_developer_metrics_all(client, headers, dev):
         "for": [
             {"repositories": ["{1}"], "developers": ["github.com/" + dev]},
         ],
-        "metrics": sorted(DeveloperMetricID.ALL),
+        "metrics": sorted(DeveloperMetricID),
     }
     response = await client.request(
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
@@ -438,23 +440,23 @@ async def test_developer_metrics_all(client, headers, dev):
     result: CalculatedDeveloperMetrics
     result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
-    assert set(result.metrics) == DeveloperMetricID.ALL
+    assert set(result.metrics) == set(DeveloperMetricID)
     assert result.date_from == date(year=2018, month=1, day=12)
     assert result.date_to == date(year=2020, month=3, day=1)
     assert len(result.calculated) == 1
     assert result.calculated[0].for_.repositories == ["{1}"]
     assert result.calculated[0].for_.developers == ["github.com/" + dev]
     assert len(result.calculated[0].values) == 1
-    assert len(result.calculated[0].values[0]) == len(DeveloperMetricID.ALL)
+    assert len(result.calculated[0].values[0]) == len(DeveloperMetricID)
     if dev == "mcuadros":
-        for v, m in zip(result.calculated[0].values[0], sorted(DeveloperMetricID.ALL)):
+        for v, m in zip(result.calculated[0].values[0], sorted(DeveloperMetricID)):
             assert v == developer_metric_mcuadros_stats[m], m
     elif dev == "xxx":
         assert all(v == 0 for v in result.calculated[0].values[0]), \
-            "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID.ALL))
+            "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID))
     else:
         assert all(isinstance(v, int) for v in result.calculated[0].values[0]), \
-            "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID.ALL))
+            "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID))
 
 
 @pytest.mark.parametrize("account, date_to, code",
@@ -468,7 +470,7 @@ async def test_developer_metrics_nasty_input(client, headers, account, date_to, 
         "for": [
             {"repositories": ["{1}"], "developers": ["github.com/mcuadros"]},
         ],
-        "metrics": sorted(DeveloperMetricID.ALL),
+        "metrics": sorted(DeveloperMetricID),
     }
     response = await client.request(
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,

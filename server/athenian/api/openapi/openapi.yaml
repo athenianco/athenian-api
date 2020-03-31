@@ -872,6 +872,8 @@ components:
       - pr-release-count
       - pr-lead-time
       - pr-lead-count
+      - pr-cycle-time
+      - pr-cycle-count
       - pr-flow-ratio
       - pr-opened
       - pr-merged

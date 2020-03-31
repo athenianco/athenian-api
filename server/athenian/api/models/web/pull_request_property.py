@@ -1,7 +1,7 @@
-from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.base_model_ import Enum, Model
 
 
-class PullRequestProperty(Model):
+class PullRequestProperty(Model, metaclass=Enum):
     """PR's modelled lifecycle stage or various events that happened between `time_from` and \
     `time_to`."""
 
@@ -21,12 +21,3 @@ class PullRequestProperty(Model):
     RELEASING = "releasing"
     RELEASE_HAPPENED = "release_happened"
     DONE = "done"
-    ALL = {WIP, CREATED, COMMIT_HAPPENED, REVIEW_REQUEST_HAPPENED, REVIEWING, REVIEW_HAPPENED,
-           APPROVE_HAPPENED, CHANGES_REQUEST_HAPPENED, MERGING, MERGE_HAPPENED, RELEASING,
-           RELEASE_HAPPENED, DONE}
-
-    def __init__(self):
-        """PullRequestProperty - a model defined in OpenAPI."""
-        self.openapi_types = {}
-
-        self.attribute_map = {}

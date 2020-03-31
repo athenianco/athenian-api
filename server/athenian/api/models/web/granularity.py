@@ -12,12 +12,6 @@ class Granularity(Model):
 
     format = re.compile(r"^(([1-9]\d* )?(day|week|month|year)|all)$")
 
-    def __init__(self):
-        """Granularity - a model defined in OpenAPI"""
-        self.openapi_types = {}
-
-        self.attribute_map = {}
-
     @classmethod
     def split(cls, value: str, date_from: date, date_to: date) -> List[date]:
         """

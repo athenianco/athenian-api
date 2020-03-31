@@ -69,3 +69,24 @@ class Model:
     def __ne__(self, other):
         """Returns true if both objects are not equal."""
         return not self == other
+
+
+class Enum(type):
+    """Trivial enumeration metaclass."""
+
+    def __init__(cls, name, bases, attrs):
+        """Initialize a new enumeration class type."""
+        super().__init__(name, bases, attrs)
+        cls.__members = set(v for k, v in attrs.items() if not k.startswith("__"))
+
+    def __iter__(cls) -> typing.Iterable[str]:
+        """Iterate the enum members."""
+        return iter(cls.__members)
+
+    def __contains__(cls, item: str) -> bool:
+        """Check whether the certain string is the enum's member."""
+        return item in cls.__members
+
+    def __len__(cls) -> int:
+        """Count the number of enumerated values."""
+        return len(cls.__members)

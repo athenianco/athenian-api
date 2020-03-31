@@ -145,7 +145,7 @@ def filter_prs_single_prop_cache():
     return fc
 
 
-@pytest.mark.parametrize("stage", PullRequestPipelineStage.ALL)
+@pytest.mark.parametrize("stage", PullRequestPipelineStage)
 async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_single_prop_cache):
     app._cache = filter_prs_single_prop_cache
     body = {
@@ -188,13 +188,13 @@ async def test_filter_prs_all_properties(client, headers):
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, PullRequestProperty.ALL,
-                                stages=PullRequestPipelineStage.ALL)
+    await validate_prs_response(response, set(PullRequestProperty),
+                                stages=set(PullRequestPipelineStage))
     del body["properties"]
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, PullRequestProperty.ALL,
-                                stages=PullRequestPipelineStage.ALL)
+    await validate_prs_response(response, set(PullRequestProperty),
+                                stages=set(PullRequestPipelineStage))
 
 
 async def validate_prs_response(response: ClientResponse, props: Set[str],

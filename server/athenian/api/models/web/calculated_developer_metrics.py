@@ -44,24 +44,22 @@ class CalculatedDeveloperMetrics(Model):
         self._metrics = metrics
 
     @property
-    def calculated(self):
+    def calculated(self) -> List[CalculatedDeveloperMetricsItem]:
         """Gets the calculated of this CalculatedDeveloperMetrics.
 
         Values of the requested metrics on the given time interval.
 
         :return: The calculated of this CalculatedDeveloperMetrics.
-        :rtype: List[CalculatedDeveloperMetricsItem]
         """
         return self._calculated
 
     @calculated.setter
-    def calculated(self, calculated):
+    def calculated(self, calculated: List[CalculatedDeveloperMetricsItem]):
         """Sets the calculated of this CalculatedDeveloperMetrics.
 
         Values of the requested metrics on the given time interval.
 
         :param calculated: The calculated of this CalculatedDeveloperMetrics.
-        :type calculated: List[CalculatedDeveloperMetricsItem]
         """
         if calculated is None:
             raise ValueError("Invalid value for `calculated`, must not be `None`")
@@ -69,24 +67,22 @@ class CalculatedDeveloperMetrics(Model):
         self._calculated = calculated
 
     @property
-    def date_from(self):
+    def date_from(self) -> date:
         """Gets the date_from of this CalculatedDeveloperMetrics.
 
         Repeats `DeveloperMetricsRequest.date_from`.
 
         :return: The date_from of this CalculatedDeveloperMetrics.
-        :rtype: date
         """
         return self._date_from
 
     @date_from.setter
-    def date_from(self, date_from):
+    def date_from(self, date_from: date):
         """Sets the date_from of this CalculatedDeveloperMetrics.
 
         Repeats `DeveloperMetricsRequest.date_from`.
 
         :param date_from: The date_from of this CalculatedDeveloperMetrics.
-        :type date_from: date
         """
         if date_from is None:
             raise ValueError("Invalid value for `date_from`, must not be `None`")
@@ -94,24 +90,22 @@ class CalculatedDeveloperMetrics(Model):
         self._date_from = date_from
 
     @property
-    def date_to(self):
+    def date_to(self) -> date:
         """Gets the date_to of this CalculatedDeveloperMetrics.
 
         Repeats `DeveloperMetricsRequest.date_to`.
 
         :return: The date_to of this CalculatedDeveloperMetrics.
-        :rtype: date
         """
         return self._date_to
 
     @date_to.setter
-    def date_to(self, date_to):
+    def date_to(self, date_to: date):
         """Sets the date_to of this CalculatedDeveloperMetrics.
 
         Repeats `DeveloperMetricsRequest.date_to`.
 
         :param date_to: The date_to of this CalculatedDeveloperMetrics.
-        :type date_to: date
         """
         if date_to is None:
             raise ValueError("Invalid value for `date_to`, must not be `None`")
@@ -119,24 +113,22 @@ class CalculatedDeveloperMetrics(Model):
         self._date_to = date_to
 
     @property
-    def metrics(self):
+    def metrics(self) -> List[DeveloperMetricID]:
         """Gets the metrics of this CalculatedDeveloperMetrics.
 
         Repeats `DeveloperMetricsRequest.metrics`.
 
         :return: The metrics of this CalculatedDeveloperMetrics.
-        :rtype: List[DeveloperMetricID]
         """
         return self._metrics
 
     @metrics.setter
-    def metrics(self, metrics):
+    def metrics(self, metrics: List[DeveloperMetricID]):
         """Sets the metrics of this CalculatedDeveloperMetrics.
 
         Repeats `DeveloperMetricsRequest.metrics`.
 
         :param metrics: The metrics of this CalculatedDeveloperMetrics.
-        :type metrics: List[DeveloperMetricID]
         """
         if metrics is None:
             raise ValueError("Invalid value for `metrics`, must not be `None`")

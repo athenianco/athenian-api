@@ -90,7 +90,7 @@ class DeveloperMetricsRequest(Model):
         """
         if metrics is None:
             raise ValueError("Invalid value for `metrics`, must not be `None`")
-        diff = set(metrics) - DeveloperMetricID.ALL
+        diff = set(metrics) - set(DeveloperMetricID)
         if diff:
             raise ValueError("Unsupported values of `metrics`: %s" % diff)
 
