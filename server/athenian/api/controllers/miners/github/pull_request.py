@@ -401,12 +401,12 @@ class PullRequestTimesMiner(PullRequestMiner):
             .groupby(PullRequestReview.user_id.key, sort=False) \
             .nth(0)  # the most recent review for each reviewer
         if (grouped_reviews[PullRequestReview.state.key]
-                == ReviewResolution.CHANGES_REQUESTED.name).any():  # noqa: W503
+                == ReviewResolution.CHANGES_REQUESTED.value).any():  # noqa: W503
             # merged with negative reviews
             approved_at_value = None
         else:
             approved_at_value = grouped_reviews[
-                grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED.name
+                grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED.value
             ][PullRequestReview.submitted_at.key].max()
         approved_at = Fallback(approved_at_value, merged_at)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
@@ -533,14 +533,22 @@ class PullRequestListMiner(PullRequestTimesMiner):
             props.add(Property.COMMIT_HAPPENED)
         if (pr.reviews[PullRequestReview.submitted_at.key] > time_from).any():
             props.add(Property.REVIEW_HAPPENED)
+        if times.first_review_request.value is not None and \
+                times.first_review_request.value > time_from:
+            props.add(Property.REVIEW_REQUEST_HAPPENED)
         if times.approved and times.approved.best > time_from:
             props.add(Property.APPROVE_HAPPENED)
         if times.merged and times.merged.best > time_from:
             props.add(Property.MERGE_HAPPENED)
         if times.released and times.released.best > time_from:
             props.add(Property.RELEASE_HAPPENED)
+        if ((pr.reviews[PullRequestReview.state.key] == ReviewResolution.CHANGES_REQUESTED.value)
+                & (pr.reviews[PullRequestReview.submitted_at.key] > time_from)).any():  # noqa
+            props.add(Property.CHANGES_REQUEST_HAPPENED)
         if not self.properties.intersection(props):
             return None
+        review_requested = \
+            pr.review_requests[PullRequestReviewRequest.created_at.key].max() or None
         return PullRequestListItem(
             repository=prefix + pr.pr[PullRequest.repository_full_name.key],
             number=pr.pr[PullRequest.number.key],
@@ -553,7 +561,8 @@ class PullRequestListMiner(PullRequestTimesMiner):
             closed=times.closed.best,
             comments=len(pr.comments),
             commits=len(pr.commits),
-            review_requested=len(pr.review_requests) > 0,
+            review_requested=review_requested,
+            approved=times.approved.best,
             review_comments=len(pr.review_comments),
             merged=times.merged.best,
             released=times.released.best,

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from enum import IntEnum
+from enum import auto, IntEnum
 from typing import Collection, Mapping, Optional
 
 import pandas as pd
@@ -20,17 +20,19 @@ class ParticipationKind(IntEnum):
 class Property(IntEnum):
     """PR's modelled lifecycle stage or corresponding events between `time_from` and `time_to`."""
 
-    WIP = 1
-    REVIEWING = 2
-    MERGING = 3
-    RELEASING = 4
-    DONE = 5
-    CREATED = 6
-    COMMIT_HAPPENED = 7
-    REVIEW_HAPPENED = 8
-    APPROVE_HAPPENED = 9
-    MERGE_HAPPENED = 10
-    RELEASE_HAPPENED = 11
+    WIP = auto()
+    REVIEWING = auto()
+    MERGING = auto()
+    RELEASING = auto()
+    DONE = auto()
+    CREATED = auto()
+    COMMIT_HAPPENED = auto()
+    REVIEW_HAPPENED = auto()
+    APPROVE_HAPPENED = auto()
+    REVIEW_REQUEST_HAPPENED = auto()
+    CHANGES_REQUEST_HAPPENED = auto()
+    MERGE_HAPPENED = auto()
+    RELEASE_HAPPENED = auto()
 
 
 @dataclass(frozen=True)
@@ -48,7 +50,8 @@ class PullRequestListItem:
     closed: Optional[pd.Timestamp]
     comments: int
     commits: int
-    review_requested: bool
+    review_requested: Optional[pd.Timestamp]
+    approved: Optional[pd.Timestamp]
     review_comments: int
     merged: Optional[pd.Timestamp]
     released: Optional[pd.Timestamp]

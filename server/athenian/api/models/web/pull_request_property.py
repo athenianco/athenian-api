@@ -13,14 +13,17 @@ class PullRequestProperty(Model):
     COMMIT_HAPPENED = "commit_happened"
     REVIEWING = "reviewing"
     REVIEW_HAPPENED = "review_happened"
+    REVIEW_REQUEST_HAPPENED = "review_request_happened"
     APPROVE_HAPPENED = "approve_happened"
+    CHANGES_REQUEST_HAPPENED = "changes_request_happened"
     MERGING = "merging"
     MERGE_HAPPENED = "merge_happened"
     RELEASING = "releasing"
     RELEASE_HAPPENED = "release_happened"
     DONE = "done"
-    ALL = {WIP, CREATED, COMMIT_HAPPENED, REVIEWING, REVIEW_HAPPENED, APPROVE_HAPPENED,
-           MERGING, MERGE_HAPPENED, RELEASING, RELEASE_HAPPENED, DONE}
+    ALL = {WIP, CREATED, COMMIT_HAPPENED, REVIEW_REQUEST_HAPPENED, REVIEWING, REVIEW_HAPPENED,
+           APPROVE_HAPPENED, CHANGES_REQUEST_HAPPENED, MERGING, MERGE_HAPPENED, RELEASING,
+           RELEASE_HAPPENED, DONE}
 
     def __init__(self):
         """PullRequestProperty - a model defined in OpenAPI."""
