@@ -129,6 +129,53 @@ class LeadCounter(PullRequestCounter):
     calc_cls = LeadTimeCalculator
 
 
+@register(PullRequestMetricID.PR_CYCLE_TIME)
+class CycleTimeCalculator(PullRequestMetricCalculator[timedelta]):
+    """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, and PR_RELEASE_TIME."""
+
+    def __init__(self):
+        """Initialize a new instance of CycleTimeCalculator."""
+        super().__init__()
+        self._calcs = [WorkInProgressTimeCalculator(), ReviewTimeCalculator(),
+                       MergingTimeCalculator(), ReleaseTimeCalculator()]
+
+    def value(self) -> Metric[timedelta]:
+        """Calculate the current metric value."""
+        exists = False
+        ct = ct_conf_min = ct_conf_max = timedelta(0)
+        for calc in self._calcs:
+            val = calc.value()
+            if val.exists:
+                exists = True
+                ct += val.value
+                ct_conf_min += val.confidence_min
+                ct_conf_max += val.confidence_max
+        return Metric(exists, ct if exists else None,
+                      ct_conf_min if exists else None, ct_conf_max if exists else None)
+
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[timedelta]:
+        """Update the states of the underlying calcs and return whether at least one of the PR's \
+        metrics exists."""
+        exists = False
+        for calc in self._calcs:
+            exists |= calc(times, min_time, max_time)
+        return timedelta(0) if exists else None
+
+    def reset(self):
+        """Reset the internal state."""
+        for calc in self._calcs:
+            calc.reset()
+
+
+@register(PullRequestMetricID.PR_CYCLE_COUNT)
+class CycleCounter(PullRequestCounter):
+    """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, \
+    and PR_RELEASE_TIME."""
+
+    calc_cls = CycleTimeCalculator
+
+
 @register(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME)
 class WaitFirstReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Elapsed time between requesting the review for the first time and getting it."""
