@@ -201,3 +201,11 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
     assert m.value is None
     assert m.confidence_min is None
     assert m.confidence_max is None
+
+
+def test_pull_request_average_metric_calculator_zeros_nonnegative(pr_samples):
+    calc = PullRequestAverageMetricCalculator()
+    calc.may_have_negative_values = False
+    calc.samples.extend(pd.Timedelta(0) for _ in range(3))
+    m = calc.value()
+    assert not m.exists

@@ -17,6 +17,7 @@ from athenian.api.response import ResponseError
     serialize=lambda iid: struct.pack("!q", iid),
     deserialize=lambda buf: struct.unpack("!q", buf)[0],
     key=lambda account, **_: (account,),
+    refresh_on_access=True,
 )
 async def get_installation_id(account: int,
                               sdb_conn: Union[databases.Database, databases.core.Connection],

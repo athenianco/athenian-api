@@ -49,7 +49,7 @@ def cached(exptime: Union[int, Callable[..., int]],
         """Decorate a function to return the cached result if possible."""
         log = logging.getLogger("cache")
         if exptime == max_exptime and not refresh_on_access:
-            log.warning("%s will stay cached for max_exptime but will not refresh on access,"
+            log.warning("%s will stay cached for max_exptime but will not refresh on access, "
                         "consider setting refresh_on_access=True", func.__name__)
         if cache is None:
             def discover_cache(**kwargs) -> Optional[aiomcache.Client]:
