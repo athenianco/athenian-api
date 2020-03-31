@@ -1,5 +1,5 @@
 from athenian.api.models.web.account import Account
-from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.base_model_ import Enum, Model
 from athenian.api.models.web.calculated_developer_metrics import CalculatedDeveloperMetrics
 from athenian.api.models.web.calculated_developer_metrics_item import \
     CalculatedDeveloperMetricsItem

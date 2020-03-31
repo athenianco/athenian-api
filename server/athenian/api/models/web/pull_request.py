@@ -513,7 +513,7 @@ class PullRequest(Model):
 
         :param stage: The stage of this PullRequest.
         """
-        if stage not in PullRequestPipelineStage.ALL:
+        if stage not in PullRequestPipelineStage:
             raise ValueError("Invalid stage: %s" % stage)
 
         self._stage = stage
@@ -535,7 +535,7 @@ class PullRequest(Model):
         :param properties: The properties of this PullRequest.
         """
         for prop in properties:
-            if prop not in PullRequestProperty.ALL:
+            if prop not in PullRequestProperty:
                 raise ValueError("Invalid properties: %s" % properties)
 
         self._properties = properties
