@@ -209,3 +209,17 @@ def test_pull_request_average_metric_calculator_zeros_nonnegative(pr_samples):
     calc.samples.extend(pd.Timedelta(0) for _ in range(3))
     m = calc.value()
     assert not m.exists
+
+
+def test_mean_confidence_interval_nan_confidence_nonnegative():
+    m, cmin, cmax = mean_confidence_interval([pd.Timedelta(0), pd.Timedelta(seconds=1)] * 2, False)
+    assert m == pd.Timedelta(seconds=1)
+    assert cmin == m
+    assert cmax == m
+
+
+def test_mean_confidence_interval_nan_confidence_negative():
+    m, cmin, cmax = mean_confidence_interval([pd.Timedelta(seconds=1)] * 3, True)
+    assert m == pd.Timedelta(seconds=1)
+    assert cmin == m
+    assert cmax == m

@@ -34,7 +34,11 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
             conf_max = max_conf_max_ratio * m
         else:
             sem = scipy.stats.sem(arr)
-            conf_min, conf_max = scipy.stats.t.interval(confidence, len(arr) - 1, loc=m, scale=sem)
+            if sem == 0:
+                conf_min = conf_max = m
+            else:
+                conf_min, conf_max = scipy.stats.t.interval(
+                    confidence, len(arr) - 1, loc=m, scale=sem)
     else:
         # assume a log-normal distribution
         assert (arr >= 0).all()
@@ -50,13 +54,16 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
             # https://doi.org/10.1080/10691898.2005.11910638
             logarr = np.log(arr)
             logvar = np.var(logarr, ddof=1)
-            logm = np.mean(logarr)
-            d = np.sqrt(logvar / len(arr) + logvar**2 / (2 * (len(arr) - 1)))
-            conf_min, conf_max = scipy.stats.t.interval(
-                confidence, len(arr) - 1, loc=logm + logvar / 2, scale=d)
-            conf_min, conf_max = np.exp(conf_min), np.exp(conf_max)
-            if conf_max / m > max_conf_max_ratio:
-                conf_max = max_conf_max_ratio * m
+            if logvar == 0:
+                conf_min = conf_max = m
+            else:
+                logm = np.mean(logarr)
+                d = np.sqrt(logvar / len(arr) + logvar**2 / (2 * (len(arr) - 1)))
+                conf_min, conf_max = scipy.stats.t.interval(
+                    confidence, len(arr) - 1, loc=logm + logvar / 2, scale=d)
+                conf_min, conf_max = np.exp(conf_min), np.exp(conf_max)
+                if conf_max / m > max_conf_max_ratio:
+                    conf_max = max_conf_max_ratio * m
     if dtype_is_timedelta:
         # convert the dtype back
         m = pd.Timedelta(np.timedelta64(int(m * ns)))
