@@ -266,7 +266,7 @@ class AthenianApp(connexion.AioHttpApp):
             return ResponseError(ShuttingDownError()).response
         self._requests += 1
         try:
-            return await handler(request)
+            return await asyncio.shield(handler(request))
         finally:
             self._requests -= 1
             if self._requests == 0 and self._shutting_down:
