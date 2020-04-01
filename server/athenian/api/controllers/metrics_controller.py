@@ -10,11 +10,10 @@ from aiohttp import web
 from athenian.api import FriendlyJson
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
-from athenian.api.controllers.filter_controller import resolve_repos
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
-from athenian.api.controllers.reposet import resolve_reposet
+from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
@@ -175,13 +174,14 @@ async def _compile_repos_and_devs(for_sets: List[ForSet],
 async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Measure the amount of code that was pushed outside of pull requests."""
     try:
-        filt = CodeFilter.from_dict(body)
+        filt = CodeFilter.from_dict(body)  # type: CodeFilter
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
         repos = await resolve_repos(
-            filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
+            filt.in_, filt.account, request.uid, request.native_uid,
+            request.sdb, request.mdb, request.cache)
         time_intervals = _split_to_time_intervals(filt)
     except ResponseError as e:
         return e.response

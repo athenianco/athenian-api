@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from athenian.api import ResponseError
-from athenian.api.controllers.reposet_controller import load_account_reposets
+from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 
