@@ -3,6 +3,8 @@ import json
 import pytest
 from sqlalchemy import select
 
+from athenian.api import ResponseError
+from athenian.api.controllers.reposet_controller import load_account_reposets
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 
@@ -171,3 +173,10 @@ async def test_list_repository_sets_installation(client, sdb, headers):
     assert items[0]["items_count"] == 19
     assert items[0]["created"] != ""
     assert items[0]["updated"] != ""
+
+
+@pytest.mark.parametrize("user_id", ["777", "676724"])
+async def test_load_account_reposets_bad_installation(sdb, mdb, user_id):
+    with pytest.raises(ResponseError):
+        await load_account_reposets(4, user_id, [RepositorySet.items],
+                                    sdb, mdb, None)
