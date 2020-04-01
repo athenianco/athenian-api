@@ -775,6 +775,50 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
+  /settings/release_match:
+    put:
+      operationId: set_release_match
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseMatchRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositorySet'
+          description: List the repositories affected.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is not an admin of this account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user or the account was not found.
+      security:
+      - bearerAuth: []
+      summary: Set the release matching rule for a list of repositories. Only for account admins.
+      tags:
+      - settings
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.settings_controller
+      x-codegen-request-body-name: body
   /user:
     get:
       operationId: get_user
@@ -2413,4 +2457,37 @@ components:
       - publisher
       - repository
       - url
+      type: object
+    ReleaseMatchRequest:
+      description: Release matching rule setting.
+      example:
+        account: 1
+        repositories:
+        - github.com/athenianco/athenian-webapp
+        - github.com/athenianco/athenian-api
+        match: branch
+        branches: master
+        tags: .*
+      properties:
+        account:
+          type: integer
+        repositories:
+          $ref: '#/components/schemas/RepositorySet'
+        branches:
+          description: 'Regular expression to match branch names. Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP'
+          type: string
+        tags:
+          description: 'Regular expression to match tag names. Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP'
+          type: string
+        match:
+          description: 'Workflow choice: consider certain branch merges or tags as
+            releases.'
+          enum:
+          - branch
+          - tag
+          type: string
+      required:
+      - account
+      - repositories
+      - match
       type: object
