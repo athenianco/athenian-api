@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 
 
 class ReleaseMatchRequest(Model):
@@ -150,9 +151,9 @@ class ReleaseMatchRequest(Model):
 
         :param match: The match of this ReleaseMatchRequest.
         """
-        allowed_values = ["branch", "tag"]
-        if match not in allowed_values:
+        if match not in ReleaseMatchStrategy:
             raise ValueError(
-                "Invalid value for `match` (%s), must be one of %s" % (match, allowed_values))
+                "Invalid value for `match` (%s), must be one of %s" %
+                (match, list(ReleaseMatchStrategy)))
 
         self._match = match

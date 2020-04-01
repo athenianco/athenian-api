@@ -10,6 +10,11 @@ from athenian.api.models.web.release_match_request import ReleaseMatchRequest
 from athenian.api.request import AthenianWebRequest
 
 
+async def list_release_match_settings(request: AthenianWebRequest, id: int) -> web.Response:
+    """List the current release matching settings."""
+    pass
+
+
 async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Response:
     """Set the release matching rule for a list of repositories."""
     rule = ReleaseMatchRequest.from_dict(body)  # type: ReleaseMatchRequest
