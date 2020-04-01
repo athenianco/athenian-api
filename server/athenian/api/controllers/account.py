@@ -24,8 +24,7 @@ async def get_installation_id(account: int,
                               cache: Optional[aiomcache.Client],
                               ) -> int:
     """Fetch the Athenian metadata installation ID for the given account ID."""
-    iid = await sdb_conn.fetch_val(
-        select([Account.installation_id]).where(Account.id == account))
+    iid = await sdb_conn.fetch_val(select([Account.installation_id]).where(Account.id == account))
     if iid is None:
         raise ResponseError(NoSourceDataError(
             detail="The account installation has not finished yet."))

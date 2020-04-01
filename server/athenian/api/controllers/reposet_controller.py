@@ -162,6 +162,10 @@ async def load_account_reposets(account: int,
     if rss:
         return rss
 
+    def raise_no_source_data():
+        raise ResponseError(NoSourceDataError(
+            detail="The metadata installation has not registered yet."))
+
     async def create_new_reposet(_mdb_conn: databases.core.Connection):
         # a new account, discover their repos from the installation and create the first reposet
         try:
@@ -171,8 +175,11 @@ async def load_account_reposets(account: int,
                                             .where(InstallationOwner.user_id == int(native_uid))
                                             .order_by(InstallationOwner.created_at.desc()))
             if iid is None:
-                raise ResponseError(NoSourceDataError(
-                    detail="The metadata installation has not registered yet."))
+                raise_no_source_data()
+            existing = await sdb_conn.fetch_all(
+                select([Account]).where(Account.installation_id == iid))
+            if existing:
+                raise_no_source_data()
             await sdb_conn.execute(update(Account)
                                    .where(Account.id == account)
                                    .values({Account.installation_id.key: iid}))
