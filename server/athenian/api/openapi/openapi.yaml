@@ -809,6 +809,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The user or the account was not found.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The installation has not started yet.
       security:
       - bearerAuth: []
       summary: Set the release matching rule for a list of repositories. Only for
@@ -845,6 +851,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The user does not belong to the specified account.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The installation has not started yet.
       security:
       - bearerAuth: []
       summary: List the current release matching settings.
@@ -2547,11 +2559,15 @@ components:
       - repositories
       type: object
     ReleaseMatchStrategy:
-      description: 'Release workflow choice: consider certain branch merges or tags
-        as releases.'
+      description: 'Release workflow choice: how we should detect releases.
+        * branch: merges to certain branches are considered releases and nothing else.
+        * tag: tags with certain name patterns are considered releases and nothing else.
+        * tag_or_branch: follow "tag"; if the repository does not have tags, fallback
+        to "branch".'
       enum:
       - branch
       - tag
+      - tag_or_branch
       type: string
     ReleaseMatchSettings:
       additionalProperties:

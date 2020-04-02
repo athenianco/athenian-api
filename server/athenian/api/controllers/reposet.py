@@ -176,7 +176,7 @@ async def load_account_reposets(account: int,
             "Created the first reposet %d for account %d with %d repos on behalf of %s",
             rs.id, account, len(repos), native_uid,
         )
-        return [vars(rs)]
+        return [rs.explode(with_primary_keys=True)]
 
     if isinstance(mdb_conn, databases.Database):
         async with mdb_conn.connection() as _mdb_conn:
