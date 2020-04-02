@@ -132,7 +132,12 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
             timestamp = await conn.fetch_val(
                 select([UserAccount.created_at]).where(and_(UserAccount.user_id == request.uid,
                                                             UserAccount.is_admin)))
-            if timestamp is not None and datetime.utcnow() - timestamp < accept_admin_cooldown:
+            if timestamp is not None:
+                if timestamp.tzinfo is None:
+                    now = datetime.utcnow()
+                else:
+                    now = datetime.now(tz=timestamp.tzinfo)
+            if timestamp is not None and now - timestamp < accept_admin_cooldown:
                 return ResponseError(GenericError(
                     type="/errors/AdminCooldownError",
                     title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
