@@ -1,13 +1,20 @@
-from typing import List, Optional, Sequence, Tuple, Type, Union
+import asyncio
+from itertools import chain
+import logging
+from typing import List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
 import aiomcache
-import databases
-from sqlalchemy import select
+import databases.core
+from sqlalchemy import and_, insert, select, update
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from athenian.api.controllers.account import get_user_account_status
-from athenian.api.models.state.models import RepositorySet
-from athenian.api.models.web import ForbiddenError, InvalidRequestError, NotFoundError
+from athenian.api.controllers.account import get_installation_id, get_user_account_status
+from athenian.api.controllers.miners.access_classes import access_classes
+from athenian.api.metadata import __package__
+from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
+from athenian.api.models.state.models import Account, RepositorySet, UserAccount
+from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourceDataError, \
+    NotFoundError
 from athenian.api.response import ResponseError
 
 
@@ -72,3 +79,106 @@ async def fetch_reposet(
     account = rs[RepositorySet.owner.key]
     adm = await get_user_account_status(uid, account, sdb, cache)
     return RepositorySet(**rs), adm
+
+
+async def resolve_repos(repositories: List[str],
+                        account: int,
+                        uid: str,
+                        native_uid: str,
+                        sdb_conn: Union[databases.core.Connection, databases.Database],
+                        mdb_conn: Union[databases.core.Connection, databases.Database],
+                        cache: Optional[aiomcache.Client],
+                        strip_prefix=True,
+                        ) -> Set[str]:
+    """Dereference all the reposets and produce the joint list of all mentioned repos."""
+    status = await sdb_conn.fetch_one(
+        select([UserAccount.is_admin]).where(and_(UserAccount.user_id == uid,
+                                                  UserAccount.account_id == account)))
+    if status is None:
+        raise ResponseError(ForbiddenError(
+            detail="User %s is forbidden to access account %d" % (uid, account)))
+    check_access = True
+    if not repositories:
+        rss = await load_account_reposets(
+            account, native_uid, [RepositorySet.id], sdb_conn, mdb_conn, cache)
+        repositories = ["{%d}" % rss[0][RepositorySet.id.key]]
+        check_access = False
+    repos = set(chain.from_iterable(
+        await asyncio.gather(*[
+            resolve_reposet(r, ".in[%d]" % i, uid, account, sdb_conn, cache)
+            for i, r in enumerate(repositories)])))
+    prefix = "github.com/"
+    checked_repos = {r[r.startswith(prefix) and len(prefix):] for r in repos}
+    if check_access:
+        checker = await access_classes["github"](account, sdb_conn, mdb_conn, cache).load()
+        denied = await checker.check(checked_repos)
+        if denied:
+            raise ResponseError(ForbiddenError(
+                detail="the following repositories are access denied for %s: %s" %
+                       ("github.com/", denied),
+            ))
+    if strip_prefix:
+        repos = checked_repos
+    return repos
+
+
+async def load_account_reposets(account: int,
+                                native_uid: str,
+                                fields: list,
+                                sdb_conn: Union[databases.Database, databases.core.Connection],
+                                mdb_conn: Union[databases.Database, databases.core.Connection],
+                                cache: Optional[aiomcache.Client],
+                                ) -> List[Mapping]:
+    """
+    Load the account's repository sets and create one if no exists.
+
+    :param sdb_conn: Connection to the state DB.
+    :param mdb_conn: Connection to the metadata DB, needed only if no reposet exists.
+    :param cache: memcached Client.
+    :param account: Owner of the loaded reposets.
+    :param native_uid: Native user ID, needed only if no reposet exists.
+    :param fields: Which columns to fetch for each RepositorySet.
+    :return: List of DB rows or __dict__-s representing the loaded RepositorySets.
+    """
+    rss = await sdb_conn.fetch_all(select(fields)
+                                   .where(RepositorySet.owner == account)
+                                   .order_by(RepositorySet.created_at))
+    if rss:
+        return rss
+
+    def raise_no_source_data():
+        raise ResponseError(NoSourceDataError(
+            detail="The metadata installation has not registered yet."))
+
+    async def create_new_reposet(_mdb_conn: databases.core.Connection):
+        # a new account, discover their repos from the installation and create the first reposet
+        try:
+            iid = await get_installation_id(account, sdb_conn, cache)
+        except ResponseError:
+            iid = await _mdb_conn.fetch_val(select([InstallationOwner.install_id])
+                                            .where(InstallationOwner.user_id == int(native_uid))
+                                            .order_by(InstallationOwner.created_at.desc()))
+            if iid is None:
+                raise_no_source_data()
+            existing = await sdb_conn.fetch_all(
+                select([Account]).where(Account.installation_id == iid))
+            if existing:
+                raise_no_source_data()
+            await sdb_conn.execute(update(Account)
+                                   .where(Account.id == account)
+                                   .values({Account.installation_id.key: iid}))
+        repos = await _mdb_conn.fetch_all(select([InstallationRepo.repo_full_name])
+                                          .where(InstallationRepo.install_id == iid))
+        repos = [("github.com/" + r[InstallationRepo.repo_full_name.key]) for r in repos]
+        rs = RepositorySet(owner=account, items=repos).create_defaults()
+        rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
+        logging.getLogger(__package__).info(
+            "Created the first reposet %d for account %d with %d repos on behalf of %s",
+            rs.id, account, len(repos), native_uid,
+        )
+        return [rs.explode(with_primary_keys=True)]
+
+    if isinstance(mdb_conn, databases.Database):
+        async with mdb_conn.connection() as _mdb_conn:
+            return await create_new_reposet(_mdb_conn)
+    return await create_new_reposet(mdb_conn)

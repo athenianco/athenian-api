@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, Integer, JSON, String, TIMESTAMP
+from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, Integer, JSON, SmallInteger, \
+    String, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 
 
@@ -122,6 +123,21 @@ class God(Base):
 
     user_id = Column(String(256), primary_key=True)
     mapped_id = Column(String(256), nullable=True)
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda ctx: datetime.now(timezone.utc))
+
+
+class ReleaseSetting(Base):
+    """Release matching rules per repo."""
+
+    __tablename__ = "release_settings"
+
+    repository = Column(String(512), primary_key=True)
+    account_id = Column(Integer(), primary_key=True)
+    branches = Column(String(1024))
+    tags = Column(String(1024))
+    match = Column(SmallInteger())
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
                         default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda ctx: datetime.now(timezone.utc))

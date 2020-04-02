@@ -27,6 +27,10 @@ class AccessChecker:
         self.cache_ttl = cache_ttl
         self._installed_repos = set()
 
+    def installed_repos(self) -> Set[str]:
+        """Get the currently installed repository names *with* the service prefix."""
+        raise NotImplementedError
+
     async def load(self) -> "AccessChecker":
         """Fetch the list of accessible repositories."""
         raise NotImplementedError

@@ -37,6 +37,10 @@ class GitHubAccessChecker(AccessChecker):
         key = InstallationRepo.repo_full_name.key
         return {r[key] for r in installed_repos_db}
 
+    def installed_repos(self) -> Set[str]:
+        """Get the currently installed repository names *with* the service prefix."""
+        return {"github.com/" + r for r in self._installed_repos}
+
     async def check(self, repos: Set[str]) -> Set[str]:
         """Return repositories which do not belong to the metadata installation.
 

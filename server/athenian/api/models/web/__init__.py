@@ -44,6 +44,9 @@ from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipel
 from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.pull_request_set import PullRequestSet
 from athenian.api.models.web.pull_request_with import PullRequestWith
+from athenian.api.models.web.release_match_request import ReleaseMatchRequest
+from athenian.api.models.web.release_match_setting import ReleaseMatchSetting
+from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.models.web.table_fetching_progress import TableFetchingProgress

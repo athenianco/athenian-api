@@ -1,22 +1,17 @@
 from datetime import timezone
-import logging
-from typing import List, Mapping, Optional, Union
+from typing import List, Optional
 
 from aiohttp import web
-import aiomcache
 import databases.core
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, insert, update
 
 from athenian.api import FriendlyJson
-from athenian.api.controllers.account import get_installation_id, get_user_account_status
+from athenian.api.controllers.account import get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
-from athenian.api.controllers.reposet import fetch_reposet
-from athenian.api.metadata import __package__
+from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
-from athenian.api.models.state.models import Account, RepositorySet
-from athenian.api.models.web import BadRequestError, CreatedIdentifier, ForbiddenError, \
-    NoSourceDataError
+from athenian.api.models.state.models import RepositorySet
+from athenian.api.models.web import BadRequestError, CreatedIdentifier, ForbiddenError
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.request import AthenianWebRequest
@@ -136,68 +131,6 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
                                .where(RepositorySet.id == id)
                                .values(rs.explode()))
         return web.json_response(body, status=200)
-
-
-async def load_account_reposets(account: int,
-                                native_uid: str,
-                                fields: list,
-                                sdb_conn: Union[databases.Database, databases.core.Connection],
-                                mdb_conn: Union[databases.Database, databases.core.Connection],
-                                cache: Optional[aiomcache.Client],
-                                ) -> List[Mapping]:
-    """
-    Load the account's repository sets and create one if no exists.
-
-    :param sdb_conn: Connection to the state DB.
-    :param mdb_conn: Connection to the metadata DB, needed only if no reposet exists.
-    :param cache: memcached Client.
-    :param account: Owner of the loaded reposets.
-    :param native_uid: Native user ID, needed only if no reposet exists.
-    :param fields: Which columns to fetch for each RepositorySet.
-    :return: List of DB rows or __dict__-s representing the loaded RepositorySets.
-    """
-    rss = await sdb_conn.fetch_all(select(fields)
-                                   .where(RepositorySet.owner == account)
-                                   .order_by(RepositorySet.created_at))
-    if rss:
-        return rss
-
-    def raise_no_source_data():
-        raise ResponseError(NoSourceDataError(
-            detail="The metadata installation has not registered yet."))
-
-    async def create_new_reposet(_mdb_conn: databases.core.Connection):
-        # a new account, discover their repos from the installation and create the first reposet
-        try:
-            iid = await get_installation_id(account, sdb_conn, cache)
-        except ResponseError:
-            iid = await _mdb_conn.fetch_val(select([InstallationOwner.install_id])
-                                            .where(InstallationOwner.user_id == int(native_uid))
-                                            .order_by(InstallationOwner.created_at.desc()))
-            if iid is None:
-                raise_no_source_data()
-            existing = await sdb_conn.fetch_all(
-                select([Account]).where(Account.installation_id == iid))
-            if existing:
-                raise_no_source_data()
-            await sdb_conn.execute(update(Account)
-                                   .where(Account.id == account)
-                                   .values({Account.installation_id.key: iid}))
-        repos = await _mdb_conn.fetch_all(select([InstallationRepo.repo_full_name])
-                                          .where(InstallationRepo.install_id == iid))
-        repos = [("github.com/" + r[InstallationRepo.repo_full_name.key]) for r in repos]
-        rs = RepositorySet(owner=account, items=repos).create_defaults()
-        rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
-        logging.getLogger(__package__).info(
-            "Created the first reposet %d for account %d with %d repos on behalf of %s",
-            rs.id, account, len(repos), native_uid,
-        )
-        return [vars(rs)]
-
-    if isinstance(mdb_conn, databases.Database):
-        async with mdb_conn.connection() as _mdb_conn:
-            return await create_new_reposet(_mdb_conn)
-    return await create_new_reposet(mdb_conn)
 
 
 async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:

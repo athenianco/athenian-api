@@ -280,6 +280,7 @@ class AthenianApp(connexion.AioHttpApp):
         def initiate_graceful_shutdown(signame: str):
             self.log.warning("Received %s, waiting for pending %d requests to finish...",
                              signame, self._requests)
+            sentry_sdk.add_breadcrumb(category="signal", message=signame, level="warning")
             self._shutting_down = True
             if self._requests == 0:
                 asyncio.ensure_future(self._raise_graceful_exit())

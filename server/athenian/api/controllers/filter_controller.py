@@ -3,28 +3,22 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
-from typing import List, Optional, Union
+from typing import Set, Union
 
 from aiohttp import web
-import aiomcache
-import databases.core
 from dateutil.parser import parse as parse_datetime
 from sqlalchemy import and_, distinct, func, or_, select
 
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.pull_request import filter_pull_requests
 from athenian.api.controllers.miners.github.release import mine_releases
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
-from athenian.api.controllers.reposet import resolve_reposet
-from athenian.api.controllers.reposet_controller import load_account_reposets
+from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestReview, PushCommit, Release, User
-from athenian.api.models.state.models import RepositorySet, UserAccount
-from athenian.api.models.web import Commit, CommitSignature, CommitsList, ForbiddenError, \
-    InvalidRequestError
+from athenian.api.models.web import Commit, CommitSignature, CommitsList, InvalidRequestError
 from athenian.api.models.web.developer_summary import DeveloperSummary
 from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
@@ -182,7 +176,7 @@ async def _common_filter_preprocess(filt: Union[GenericFilterRequest,
                                                 FilterPullRequestsRequest,
                                                 FilterCommitsRequest],
                                     request: AthenianWebRequest,
-                                    expand_dates=True) -> List[str]:
+                                    expand_dates=True) -> Set[str]:
     if filt.date_to < filt.date_from:
         raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
@@ -192,46 +186,8 @@ async def _common_filter_preprocess(filt: Union[GenericFilterRequest,
         filt.date_from = datetime.combine(filt.date_from, datetime.min.time(), tzinfo=timezone.utc)
         filt.date_to = datetime.combine(filt.date_to, datetime.max.time(), tzinfo=timezone.utc)
     return await resolve_repos(
-        filt, request.uid, request.native_uid, request.sdb, request.mdb, request.cache)
-
-
-async def resolve_repos(filt: Union[GenericFilterRequest,
-                                    FilterPullRequestsRequest,
-                                    FilterCommitsRequest],
-                        uid: str,
-                        native_uid: str,
-                        sdb_conn: Union[databases.core.Connection, databases.Database],
-                        mdb_conn: Union[databases.core.Connection, databases.Database],
-                        cache: Optional[aiomcache.Client],
-                        ) -> List[str]:
-    """Dereference all the reposets and produce the joint list of all mentioned repos."""
-    status = await sdb_conn.fetch_one(
-        select([UserAccount.is_admin]).where(and_(UserAccount.user_id == uid,
-                                                  UserAccount.account_id == filt.account)))
-    if status is None:
-        raise ResponseError(ForbiddenError(
-            detail="User %s is forbidden to access account %d" % (uid, filt.account)))
-    check_access = True
-    if not filt.in_:
-        rss = await load_account_reposets(
-            filt.account, native_uid, [RepositorySet.id], sdb_conn, mdb_conn, cache)
-        filt.in_ = ["{%d}" % rss[0][RepositorySet.id.key]]
-        check_access = False
-    repos = set(chain.from_iterable(
-        await asyncio.gather(*[
-            resolve_reposet(r, ".in[%d]" % i, uid, filt.account, sdb_conn, cache)
-            for i, r in enumerate(filt.in_)])))
-    prefix = "github.com/"
-    repos = [r[r.startswith(prefix) and len(prefix):] for r in repos]
-    if check_access:
-        checker = await access_classes["github"](filt.account, sdb_conn, mdb_conn, cache).load()
-        denied = await checker.check(set(repos))
-        if denied:
-            raise ResponseError(ForbiddenError(
-                detail="the following repositories are access denied for %s: %s" %
-                       ("github.com/", denied),
-            ))
-    return repos
+        filt.in_, filt.account, request.uid, request.native_uid,
+        request.sdb, request.mdb, request.cache)
 
 
 async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:

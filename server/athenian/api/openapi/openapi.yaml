@@ -775,6 +775,98 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
+  /settings/release_match:
+    put:
+      operationId: set_release_match
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseMatchRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositorySet'
+          description: List the repositories affected.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is not an admin of this account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user or the account was not found.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The installation has not started yet.
+      security:
+      - bearerAuth: []
+      summary: Set the release matching rule for a list of repositories. Only for
+        account admins.
+      tags:
+      - settings
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.settings_controller
+      x-codegen-request-body-name: body
+  /settings/release_match/{id}:
+    get:
+      operationId: list_release_match_settings
+      parameters:
+      - description: Numeric identifier of the account.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseMatchSettings'
+          description: Current release matching settings per repo.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The installation has not started yet.
+      security:
+      - bearerAuth: []
+      summary: List the current release matching settings.
+      tags:
+      - settings
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.settings_controller
+      x-codegen-request-body-name: body
   /user:
     get:
       operationId: get_user
@@ -2343,6 +2435,30 @@ components:
     FilteredReleases:
       additionalProperties: false
       description: Response of `/filter/releases` - releases metadata and user details.
+      example:
+        include:
+          users:
+            github.com/gkwillie:
+              avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+        data:
+        - added_lines: 1000
+          commits: 20
+          deleted_lines: 200
+          name: v0.0.93
+          published: 2020-03-25T10:57:00Z
+          publisher: github.com/vmarkovtsev
+          publisher_avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+          repository: github.com/athenianco/athenian-api
+          url: https://github.com/athenianco/athenian-api/releases/tag/v0.0.93
+        - added_lines: 1000
+          commits: 20
+          deleted_lines: 200
+          name: v0.0.93
+          published: 2020-03-25T10:57:00Z
+          publisher: github.com/vmarkovtsev
+          publisher_avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+          repository: github.com/athenianco/athenian-api
+          url: https://github.com/athenianco/athenian-api/releases/tag/v0.0.93
       properties:
         include:
           $ref: '#/components/schemas/IncludedNativeUsers'
@@ -2413,4 +2529,64 @@ components:
       - publisher
       - repository
       - url
+      type: object
+    ReleaseMatchRequest:
+      description: Release matching rule setting.
+      example:
+        account: 1
+        repositories:
+        - github.com/athenianco/athenian-webapp
+        - github.com/athenianco/athenian-api
+        match: branch
+        branches: master
+        tags: .*
+      properties:
+        account:
+          type: integer
+        repositories:
+          $ref: '#/components/schemas/RepositorySet'
+        branches:
+          description: 'Regular expression to match branch names. Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP'
+          type: string
+        tags:
+          description: 'Regular expression to match tag names. Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP'
+          type: string
+        match:
+          $ref: '#/components/schemas/ReleaseMatchStrategy'
+      required:
+      - account
+      - match
+      - repositories
+      type: object
+    ReleaseMatchStrategy:
+      description: 'Release workflow choice: how we should detect releases.
+        * branch: merges to certain branches are considered releases and nothing else.
+        * tag: tags with certain name patterns are considered releases and nothing else.
+        * tag_or_branch: follow "tag"; if the repository does not have tags, fallback
+        to "branch".'
+      enum:
+      - branch
+      - tag
+      - tag_or_branch
+      type: string
+    ReleaseMatchSettings:
+      additionalProperties:
+        $ref: '#/components/schemas/ReleaseMatchSetting'
+      description: Mapping from repository names to their release match settings.
+      type: object
+    ReleaseMatchSetting:
+      description: Release matching setting for a specific repository.
+      properties:
+        branches:
+          description: 'Regular expression to match branch names. Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP'
+          type: string
+        tags:
+          description: 'Regular expression to match tag names. Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP'
+          type: string
+        match:
+          $ref: '#/components/schemas/ReleaseMatchStrategy'
+      required:
+      - branches
+      - match
+      - tags
       type: object
