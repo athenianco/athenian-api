@@ -131,7 +131,8 @@ class PullRequestMiner:
         async with db.connection() as conn:
             prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                        conn, PullRequest, index=PullRequest.node_id.key)
-            released_prs = await map_releases_to_prs(repositories, time_from, time_to, conn, cache)
+            released_prs = await map_releases_to_prs(
+                repositories, time_from, time_to, release_settings, conn, cache)
             prs = pd.concat([prs, released_prs], sort=False)
         cls.truncate_timestamps(prs, time_to)
         node_ids = prs.index if len(prs) > 0 else set()
@@ -166,7 +167,7 @@ class PullRequestMiner:
 
         async def map_releases():
             merged_prs = prs[prs[PullRequest.merged_at.key].between(time_from, time_to)]
-            return await map_prs_to_releases(merged_prs, time_to, db, cache)
+            return await map_prs_to_releases(merged_prs, time_to, release_settings, db, cache)
 
         dfs = await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),

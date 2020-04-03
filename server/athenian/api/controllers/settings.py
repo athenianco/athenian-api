@@ -31,6 +31,16 @@ class ReleaseMatchSetting:
     tags: str
     match: Match
 
+    def __str__(self) -> str:
+        """Return the compact string representation of the object."""
+        return '{"branches": "%s", "tags": "%s", "match": "%s"}' % (
+            self.branches, self.tags, self.match.name)
+
+    def __repr__(self) -> str:
+        """Return the Python representation of the object."""
+        return 'ReleaseMatchSetting(branches="%s", tags="%s", match=Match["%s"])' % (
+            self.branches, self.tags, self.match.name)
+
 
 class Settings:
     """User's settings."""
@@ -77,14 +87,14 @@ class Settings:
                 settings[row[ReleaseSetting.repository.key]] = ReleaseMatchSetting(
                     branches=row[ReleaseSetting.branches.key],
                     tags=row[ReleaseSetting.tags.key],
-                    match=Match(row[ReleaseSetting.match.key]).name,
+                    match=Match(row[ReleaseSetting.match.key]),
                 )
             for repo in repos:
                 if repo not in settings:
                     settings[repo] = ReleaseMatchSetting(
                         branches=default_branch_alias,
                         tags=".*",
-                        match=Match.tag_or_branch.name,
+                        match=Match.tag_or_branch,
                     )
         return settings
 

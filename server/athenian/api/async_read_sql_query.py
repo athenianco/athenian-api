@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 import logging
+import textwrap
 from typing import Optional, Sequence, Union
 
-import databases
 import pandas as pd
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
@@ -10,10 +10,11 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.state.models import Base as StateBase
+from athenian.api.typing_utils import DatabaseLike
 
 
 async def read_sql_query(sql: ClauseElement,
-                         con: Union[databases.Database, databases.core.Connection],
+                         con: DatabaseLike,
                          columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                                         MetadataBase, StateBase],
                          index: Optional[Union[str, Sequence[str]]] = None,
@@ -44,7 +45,7 @@ async def read_sql_query(sql: ClauseElement,
         data = await con.fetch_all(query=sql)
     except Exception as e:
         logging.getLogger("%s.read_sql_query" % metadata.__package__).error(
-            "%s: %s; %s", type(e).__name__, e, str(sql))
+            "%s: %s; %s", type(e).__name__, e, textwrap.shorten(str(sql), 1000))
         raise e from None
     try:
         probe = columns[0]

@@ -1,16 +1,16 @@
 from datetime import datetime
 from enum import Enum
 import pickle
-from typing import Collection, List, Optional, Union
+from typing import Collection, List, Optional
 
 import aiomcache
-import databases
 from sqlalchemy import and_, outerjoin, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.models.metadata.github import NodePullRequestCommit, PushCommit
+from athenian.api.typing_utils import DatabaseLike
 
 
 class FilterCommitsProperty(Enum):
@@ -36,7 +36,7 @@ async def extract_commits(prop: FilterCommitsProperty,
                           repos: Collection[str],
                           with_author: Optional[Collection[str]],
                           with_committer: Optional[Collection[str]],
-                          db: Union[databases.Database, databases.core.Connection],
+                          db: DatabaseLike,
                           cache: Optional[aiomcache.Client],
                           columns: Optional[List[InstrumentedAttribute]] = None,
                           ):

@@ -6,7 +6,7 @@ import logging
 import os
 from random import randint
 import struct
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 
 from aiohttp import web
 import aiomcache
@@ -30,7 +30,7 @@ from athenian.api.models.web.invited_user import InvitedUser
 from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
-
+from athenian.api.typing_utils import DatabaseLike
 
 ikey = os.getenv("ATHENIAN_INVITATION_KEY")
 admin_backdoor = (1 << 24) - 1
@@ -174,7 +174,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
     return model_response(InvitedUser(account=acc_id, user=user))
 
 
-async def create_new_account(conn: Union[databases.Database, databases.core.Connection]) -> int:
+async def create_new_account(conn: DatabaseLike) -> int:
     """Create a new account."""
     if isinstance(conn, databases.Database):
         slow = conn.url.dialect == "sqlite"
@@ -186,7 +186,7 @@ async def create_new_account(conn: Union[databases.Database, databases.core.Conn
 
 
 async def _create_new_account_fast(
-        conn: Union[databases.Database, databases.core.Connection]) -> int:
+        conn: DatabaseLike) -> int:
     """Create a new account.
 
     Should be used for PostgreSQL.
@@ -195,7 +195,7 @@ async def _create_new_account_fast(
 
 
 async def _create_new_account_slow(
-        conn: Union[databases.Database, databases.core.Connection]) -> int:
+        conn: DatabaseLike) -> int:
     """Create a new account without relying on autoincrement.
 
     SQLite does not allow resetting the primary key sequence, so we have to increment the ID

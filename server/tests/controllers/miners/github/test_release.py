@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Dict
 
 import pandas as pd
 from sqlalchemy import select, sql
@@ -6,14 +7,23 @@ from sqlalchemy import select, sql
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
+from athenian.api.controllers.settings import Match, ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest, Release
+
+
+def generate_repo_settings(prs: pd.DataFrame) -> Dict[str, ReleaseMatchSetting]:
+    return {
+        "github.com/" + r: ReleaseMatchSetting(branches="", tags=".*", match=Match.tag)
+        for r in prs[PullRequest.repository_full_name.key]
+    }
 
 
 async def test_map_prs_to_releases(mdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1126),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     for _ in range(2):
-        releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc), mdb, cache)
+        releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc),
+                                             generate_repo_settings(prs), mdb, cache)
         assert len(cache.mem) > 0
         assert len(releases) == 1
         assert releases.iloc[0][Release.published_at.key] == \
@@ -26,22 +36,24 @@ async def test_map_prs_to_releases_empty(mdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1231),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     for _ in range(2):
-        releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc), mdb, cache)
+        releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc),
+                                             generate_repo_settings(prs), mdb, cache)
         assert len(cache.mem) == 0
         assert releases.empty
     prs = prs.iloc[:0]
-    releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc), mdb, cache)
+    releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc),
+                                         generate_repo_settings(prs), mdb, cache)
     assert len(cache.mem) == 0
     assert releases.empty
 
 
-async def test_map_releases_to_prs(mdb, cache):
+async def test_map_releases_to_prs(mdb, cache, release_match_setting_tag):
     for _ in range(2):
         prs = await map_releases_to_prs(
             ["src-d/go-git"],
             datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
             datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-            mdb, cache)
+            release_match_setting_tag, mdb, cache)
         assert len(prs) == 7
         assert (prs[PullRequest.merged_at.key] < pd.Timestamp(
             "2019-07-31 00:00:00", tzinfo=timezone.utc)).all()
@@ -49,19 +61,19 @@ async def test_map_releases_to_prs(mdb, cache):
             "2019-06-19 00:00:00", tzinfo=timezone.utc)).all()
 
 
-async def test_map_releases_to_prs_empty(mdb, cache):
+async def test_map_releases_to_prs_empty(mdb, cache, release_match_setting_tag):
     prs = await map_releases_to_prs(
         ["src-d/go-git"],
         datetime(year=2019, month=11, day=1, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-        mdb, cache)
+        release_match_setting_tag, mdb, cache)
     assert prs.empty
     assert len(cache.mem) == 0
     prs = await map_releases_to_prs(
         ["src-d/go-git"],
         datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-        mdb, cache)
+        release_match_setting_tag, mdb, cache)
     assert prs.empty
     assert len(cache.mem) > 0
 
@@ -80,5 +92,6 @@ async def test_map_prs_to_releases_smoke_metrics(mdb):
     ]
     prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                mdb, PullRequest, index=PullRequest.node_id.key)
-    releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc), mdb, None)
+    releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc),
+                                         generate_repo_settings(prs), mdb, None)
     assert len(releases[Release.url.key].unique()) > 1

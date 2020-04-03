@@ -1,8 +1,8 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import chain, groupby
 import marshal
 import pickle
-from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import databases
@@ -10,12 +10,41 @@ import pandas as pd
 from sqlalchemy import and_, desc, func, select
 
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
-from athenian.api.cache import cached, max_exptime
+from athenian.api.cache import cached, gen_cache_key, max_exptime
+from athenian.api.controllers.settings import Match, ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest, PushCommit, Release, User
+from athenian.api.typing_utils import DatabaseLike
+
+
+async def load_releases(repos: Iterable[str],
+                        time_from: datetime,
+                        time_to: datetime,
+                        settings: Dict[str, ReleaseMatchSetting],
+                        conn: databases.core.Connection,
+                        index: Optional[Union[str, Sequence[str]]] = None,
+                        ) -> pd.DataFrame:
+    """Fetch releases from the metadata DB according to the match settings."""
+    repos_by_tag_only = []
+    repos_by_tag_or_branch = []
+    repos_by_branch = []
+    for k, v in settings.items():
+        if v.match == Match.tag:
+            repos_by_tag_only.append(k)
+        elif v.match == Match.tag_or_branch:
+            repos_by_tag_or_branch.append(k)
+        elif v.match == Match.branch:
+            repos_by_branch.append(k)
+    return await read_sql_query(
+        select([Release])
+        .where(and_(Release.published_at.between(time_from, time_to),
+                    Release.repository_full_name.in_(repos)))
+        .order_by(desc(Release.published_at)),
+        conn, Release, index=index)
 
 
 async def map_prs_to_releases(prs: pd.DataFrame,
                               time_to: datetime,
+                              release_settings: Dict[str, ReleaseMatchSetting],
                               db: databases.Database,
                               cache: Optional[aiomcache.Client],
                               ) -> pd.DataFrame:
@@ -25,12 +54,12 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     if prs.empty:
         return releases
     if cache is not None:
-        releases.append(
-            await _load_pr_releases_from_cache(prs.index, cache))
+        releases.append(await _load_pr_releases_from_cache(
+            prs.index, prs[PullRequest.repository_full_name.key].values, release_settings, cache))
     merged_prs = prs[~prs.index.isin(releases.index)]
-    missed_releases = await _map_prs_to_releases(merged_prs, time_to, db, cache)
+    missed_releases = await _map_prs_to_releases(merged_prs, time_to, release_settings, db, cache)
     if cache is not None:
-        await _cache_pr_releases(missed_releases, cache)
+        await _cache_pr_releases(missed_releases, release_settings, cache)
     return releases.append(missed_releases)
 
 
@@ -38,41 +67,41 @@ index_name = "pull_request_node_id"
 
 
 def _new_map_df() -> pd.DataFrame:
-    return pd.DataFrame(columns=[Release.published_at.key, Release.author.key, Release.url.key],
+    return pd.DataFrame(columns=[Release.published_at.key, Release.author.key, Release.url.key,
+                                 Release.repository_full_name.key],
                         index=pd.Index([], name=index_name))
 
 
-async def _load_pr_releases_from_cache(
-        prs: Iterable[str], cache: aiomcache.Client) -> pd.DataFrame:
+async def _load_pr_releases_from_cache(prs: Iterable[str],
+                                       pr_repos: Iterable[str],
+                                       release_settings: Dict[str, ReleaseMatchSetting],
+                                       cache: aiomcache.Client) -> pd.DataFrame:
     batch_size = 32
     df = _new_map_df()
     utc = timezone.utc
-    keys = [b"release_github|" + pr.encode() for pr in prs]
+    keys = [gen_cache_key("release_github|%s|%s", pr, release_settings["github.com/" + repo])
+            for pr, repo in zip(prs, pr_repos)]
     for key, val in zip(keys, chain.from_iterable(
             [await cache.multi_get(*(k for _, k in g))
              for _, g in groupby(enumerate(keys), lambda ik: ik[0] // batch_size)])):
         if val is None:
             continue
-        released_at, released_by, released_url = marshal.loads(val)
+        released_at, released_by, released_url, repo = marshal.loads(val)
         released_at = datetime.fromtimestamp(released_at).replace(tzinfo=utc)
-        df.loc[key] = released_at, released_by, released_url
+        df.loc[key] = released_at, released_by, released_url, repo
     return df
 
 
 async def _map_prs_to_releases(prs: pd.DataFrame,
-                               time_to: date,
+                               time_to: datetime,
+                               release_settings: Dict[str, ReleaseMatchSetting],
                                db: databases.Database,
                                cache: Optional[aiomcache.Client],
                                ) -> pd.DataFrame:
     time_from = prs[PullRequest.merged_at.key].min()
     async with db.connection() as conn:
         repos = prs[PullRequest.repository_full_name.key].unique()
-        releases = await read_sql_query(
-            select([Release])
-            .where(and_(Release.published_at.between(time_from, time_to),
-                        Release.repository_full_name.in_(repos)))
-            .order_by(desc(Release.published_at)),
-            conn, Release)
+        releases = await load_releases(repos, time_from, time_to, release_settings, conn)
         releases = dict(list(releases.groupby(Release.repository_full_name.key, sort=False)))
         histories = await _fetch_release_histories(releases, conn, cache)
         released_prs = _new_map_df()
@@ -92,7 +121,8 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                 r = repo_releases.iloc[items[0]]
                 released_prs.loc[pr_id] = (r[Release.published_at.key],
                                            r[Release.author.key],
-                                           r[Release.url.key])
+                                           r[Release.url.key],
+                                           repo)
         return postprocess_datetime(released_prs)
 
 
@@ -130,13 +160,17 @@ async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
     return histories
 
 
-async def _cache_pr_releases(releases: pd.DataFrame, cache: aiomcache.Client) -> None:
+async def _cache_pr_releases(releases: pd.DataFrame,
+                             release_settings: Dict[str, ReleaseMatchSetting],
+                             cache: aiomcache.Client) -> None:
     mt = max_exptime
-    for id, released_at, released_by, release_url in zip(
+    for id, released_at, released_by, release_url, repo in zip(
             releases.index, releases[Release.published_at.key],
-            releases[Release.author.key].values, releases[Release.url.key].values):
-        await cache.set(b"release_github|" + id.encode(),
-                        marshal.dumps((released_at.timestamp(), released_by, release_url)),
+            releases[Release.author.key].values, releases[Release.url.key].values,
+            releases[Release.repository_full_name.key].values):
+        key = gen_cache_key("release_github|%s|%s", id, release_settings["github.com/" + repo])
+        await cache.set(key,
+                        marshal.dumps((released_at.timestamp(), released_by, release_url, repo)),
                         exptime=mt)
 
 
@@ -193,7 +227,7 @@ async def _fetch_commit_history_dag(commit_id: str,
 
 async def _find_old_released_prs(releases: pd.DataFrame,
                                  time_boundary: datetime,
-                                 db: Union[databases.Database, databases.core.Connection],
+                                 db: DatabaseLike,
                                  cache: Optional[aiomcache.Client],
                                  ) -> pd.DataFrame:
     observed_commits, _, _ = await _extract_released_commits(releases, time_boundary, db, cache)
@@ -208,7 +242,7 @@ async def _find_old_released_prs(releases: pd.DataFrame,
 
 async def _extract_released_commits(releases: pd.DataFrame,
                                     time_boundary: datetime,
-                                    db: Union[databases.Database, databases.core.Connection],
+                                    db: DatabaseLike,
                                     cache: Optional[aiomcache.Client],
                                     ) -> Tuple[Dict[str, List[str]], pd.DataFrame, Dict[str, str]]:
     resolved_releases = set()
@@ -270,7 +304,8 @@ async def _extract_released_commits(releases: pd.DataFrame,
 async def map_releases_to_prs(repos: Iterable[str],
                               time_from: datetime,
                               time_to: datetime,
-                              db: Union[databases.Database, databases.core.Connection],
+                              release_settings: Dict[str, ReleaseMatchSetting],
+                              db: DatabaseLike,
                               cache: Optional[aiomcache.Client],
                               ) -> pd.DataFrame:
     """Find pull requests which were released between `time_from` and `time_to` but merged before \
@@ -281,11 +316,8 @@ async def map_releases_to_prs(repos: Iterable[str],
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
     old_from = time_from - timedelta(days=365)  # find PRs not older than 365 days before time_from
-    releases = await read_sql_query(select([Release])
-                                    .where(and_(Release.repository_full_name.in_(repos),
-                                                Release.published_at.between(old_from, time_to)))
-                                    .order_by(desc(Release.published_at)),
-                                    db, Release, index=Release.id.key)
+    releases = await load_releases(
+        repos, old_from, time_to, release_settings, db, index=Release.id.key)
     prs = []
     for _, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
         prs.append(await _find_old_released_prs(repo_releases, time_from, db, cache))
@@ -296,7 +328,7 @@ async def map_releases_to_prs(repos: Iterable[str],
 
 async def mine_releases(releases: pd.DataFrame,
                         time_boundary: datetime,
-                        db: Union[databases.Database, databases.core.Connection],
+                        db: DatabaseLike,
                         cache: Optional[aiomcache.Client]) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Collect details about each release published after `time_boundary` and calculate added \
     and deleted line statistics."""
@@ -329,7 +361,7 @@ async def mine_releases(releases: pd.DataFrame,
 async def _mine_monorepo_releases(
         releases: pd.DataFrame,
         time_boundary: datetime,
-        db: Union[databases.Database, databases.core.Connection],
+        db: DatabaseLike,
         cache: Optional[aiomcache.Client]) -> pd.DataFrame:
     dag, new_releases, hash_to_release = await _extract_released_commits(
         releases, time_boundary, db, cache)
