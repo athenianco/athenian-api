@@ -16,7 +16,7 @@ pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
 max_exptime = 30 * 24 * 3600  # 30 days according to the docs
 
 
-def _gen_cache_key(fmt: str, *args) -> bytes:
+def gen_cache_key(fmt: str, *args) -> bytes:
     """Compose a memcached-friendly cache key from a printf-like."""
     full_key = (fmt % args).encode()
     first_half = xxh64_hexdigest(full_key[:len(full_key) // 2])
@@ -76,7 +76,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                 props = key(**args_dict)
                 assert isinstance(props, tuple), "key() must return a tuple"
                 full_name = func.__module__ + "." + func.__qualname__
-                cache_key = _gen_cache_key(full_name + "|" + "|".join([str(p) for p in props]))
+                cache_key = gen_cache_key(full_name + "|" + "|".join([str(p) for p in props]))
                 buffer = await client.get(cache_key)
                 if buffer is not None:
                     result = deserialize(buffer)

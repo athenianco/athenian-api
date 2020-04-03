@@ -16,6 +16,7 @@ from athenian.api.models.state.models import Account, RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourceDataError, \
     NotFoundError
 from athenian.api.response import ResponseError
+from athenian.api.typing_utils import DatabaseLike
 
 
 async def resolve_reposet(repo: str,
@@ -57,7 +58,7 @@ async def fetch_reposet(
     id: int,
     columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
     uid: str,
-    sdb: Union[databases.Database, databases.core.Connection],
+    sdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
 ) -> Tuple[RepositorySet, bool]:
     """
@@ -125,8 +126,8 @@ async def resolve_repos(repositories: List[str],
 async def load_account_reposets(account: int,
                                 native_uid: str,
                                 fields: list,
-                                sdb_conn: Union[databases.Database, databases.core.Connection],
-                                mdb_conn: Union[databases.Database, databases.core.Connection],
+                                sdb_conn: DatabaseLike,
+                                mdb_conn: DatabaseLike,
                                 cache: Optional[aiomcache.Client],
                                 ) -> List[Mapping]:
     """

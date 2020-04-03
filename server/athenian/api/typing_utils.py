@@ -1,4 +1,7 @@
 import sys
+from typing import Union
+
+import databases
 
 if sys.version_info < (3, 7):
     import typing
@@ -29,3 +32,6 @@ else:
     def is_list(klass):
         """Determine whether klass is a List."""
         return klass.__origin__ == list
+
+
+DatabaseLike = Union[databases.Database, databases.core.Connection]

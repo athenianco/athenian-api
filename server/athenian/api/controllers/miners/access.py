@@ -1,7 +1,8 @@
-from typing import Optional, Set, Union
+from typing import Optional, Set
 
 import aiomcache
-import databases.core
+
+from athenian.api.typing_utils import DatabaseLike
 
 
 class AccessChecker:
@@ -11,8 +12,8 @@ class AccessChecker:
 
     def __init__(self,
                  account: int,
-                 sdb_conn: Union[databases.Database, databases.core.Connection],
-                 mdb_conn: Union[databases.Database, databases.core.Connection],
+                 sdb_conn: DatabaseLike,
+                 mdb_conn: DatabaseLike,
                  cache: Optional[aiomcache.Client],
                  cache_ttl=CACHE_TTL):
         """

@@ -11,16 +11,15 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestListM
     PullRequestMiner, PullRequestTimes, PullRequestTimesMiner
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
-from athenian.api.controllers.settings import Match, ReleaseMatchSetting
 from tests.conftest import has_memcached
 
 
-async def test_pr_miner_iter(mdb):
+async def test_pr_miner_iter(mdb, release_match_setting_tag):
     miner = await PullRequestMiner.mine(
         date.today() - timedelta(days=10 * 365),
         date.today(),
         ["src-d/go-git"],
-        {"github.com/src-d/go-git": ReleaseMatchSetting(branches="", tags=".*", match=Match.tag)},
+        release_match_setting_tag,
         [],
         mdb,
         None,
@@ -38,14 +37,15 @@ async def test_pr_miner_iter(mdb):
 
 
 @pytest.mark.parametrize("with_memcached", [False] + ([True] if has_memcached else []))
-async def test_pr_miner_iter_cache(mdb, cache, memcached, with_memcached):
+async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_tag,
+                                   with_memcached):
     if with_memcached:
         cache = memcached
     miner = await PullRequestMiner.mine(
         date.today() - timedelta(days=10 * 365),
         date.today(),
         ["src-d/go-git"],
-        {"github.com/src-d/go-git": ReleaseMatchSetting(branches="", tags=".*", match=Match.tag)},
+        release_match_setting_tag,
         [],
         mdb,
         cache,
@@ -57,7 +57,7 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, with_memcached):
         date.today() - timedelta(days=10 * 365),
         date.today(),
         ["src-d/go-git"],
-        {"github.com/src-d/go-git": ReleaseMatchSetting(branches="", tags=".*", match=Match.tag)},
+        release_match_setting_tag,
         [],
         None,
         cache,
@@ -107,12 +107,12 @@ def validate_pull_request_times(prt: PullRequestTimes):
             assert prt.closed
 
 
-async def test_pr_times_miner(mdb):
+async def test_pr_times_miner(mdb, release_match_setting_tag):
     miner = await PullRequestTimesMiner.mine(
         date.today() - timedelta(days=10 * 365),
         date.today(),
         ["src-d/go-git"],
-        {"github.com/src-d/go-git": ReleaseMatchSetting(branches="", tags=".*", match=Match.tag)},
+        release_match_setting_tag,
         [],
         mdb,
         None,
@@ -121,12 +121,12 @@ async def test_pr_times_miner(mdb):
         validate_pull_request_times(prt)
 
 
-async def test_pr_times_miner_empty_review_comments(mdb):
+async def test_pr_times_miner_empty_review_comments(mdb, release_match_setting_tag):
     miner = await PullRequestTimesMiner.mine(
         date.today() - timedelta(days=10 * 365),
         date.today(),
         ["src-d/go-git"],
-        {"github.com/src-d/go-git": ReleaseMatchSetting(branches="", tags=".*", match=Match.tag)},
+        release_match_setting_tag,
         [],
         mdb,
         None,
@@ -136,12 +136,12 @@ async def test_pr_times_miner_empty_review_comments(mdb):
         validate_pull_request_times(prt)
 
 
-async def test_pr_times_miner_empty_commits(mdb):
+async def test_pr_times_miner_empty_commits(mdb, release_match_setting_tag):
     miner = await PullRequestTimesMiner.mine(
         date.today() - timedelta(days=10 * 365),
         date.today(),
         ["src-d/go-git"],
-        {"github.com/src-d/go-git": ReleaseMatchSetting(branches="", tags=".*", match=Match.tag)},
+        release_match_setting_tag,
         [],
         mdb,
         None,
@@ -151,12 +151,12 @@ async def test_pr_times_miner_empty_commits(mdb):
         validate_pull_request_times(prt)
 
 
-async def test_pr_times_miner_bug_less_timestamp_float(mdb):
+async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_setting_tag):
     miner = await PullRequestTimesMiner.mine(
         date(2019, 10, 16) - timedelta(days=3),
         date(2019, 10, 16),
         ["src-d/go-git"],
-        {"github.com/src-d/go-git": ReleaseMatchSetting(branches="", tags=".*", match=Match.tag)},
+        release_match_setting_tag,
         [],
         mdb,
         None,
@@ -167,12 +167,12 @@ async def test_pr_times_miner_bug_less_timestamp_float(mdb):
         validate_pull_request_times(prt)
 
 
-async def test_pr_list_miner_none(mdb):
+async def test_pr_list_miner_none(mdb, release_match_setting_tag):
     miner = await PullRequestListMiner.mine(
         date.today() - timedelta(days=10 * 365),
         date.today(),
         ["src-d/go-git"],
-        {"github.com/src-d/go-git": ReleaseMatchSetting(branches="", tags=".*", match=Match.tag)},
+        release_match_setting_tag,
         [],
         mdb,
         None,
@@ -181,12 +181,12 @@ async def test_pr_list_miner_none(mdb):
     assert not prs
 
 
-async def test_pr_list_miner_match_participants(mdb):
+async def test_pr_list_miner_match_participants(mdb, release_match_setting_tag):
     miner = await PullRequestListMiner.mine(
         date.today() - timedelta(days=10 * 365),
         date.today(),
         ["src-d/go-git"],
-        {"github.com/src-d/go-git": ReleaseMatchSetting(branches="", tags=".*", match=Match.tag)},
+        release_match_setting_tag,
         [],
         mdb,
         None,
@@ -209,12 +209,12 @@ async def test_pr_list_miner_match_participants(mdb):
         assert mcuadros_is_author or smola_is_author or mcuadros_is_only_commenter
 
 
-async def test_pr_list_miner_no_participants(mdb):
+async def test_pr_list_miner_no_participants(mdb, release_match_setting_tag):
     miner = await PullRequestListMiner.mine(
         date.today() - timedelta(days=10 * 365),
         date.today(),
         ["src-d/go-git"],
-        {"github.com/src-d/go-git": ReleaseMatchSetting(branches="", tags=".*", match=Match.tag)},
+        release_match_setting_tag,
         [],
         mdb,
         None,

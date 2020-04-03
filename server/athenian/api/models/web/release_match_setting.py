@@ -29,6 +29,13 @@ class ReleaseMatchSetting(Model):
         self._tags = tags
         self._match = match
 
+    @classmethod
+    def from_dataclass(cls, struct) -> "ReleaseMatchSetting":
+        """Convert a dataclass structure to the web model."""
+        return ReleaseMatchSetting(branches=struct.branches,
+                                   tags=struct.tags,
+                                   match=struct.match.name)
+
     @property
     def branches(self) -> str:
         """Gets the branches of this ReleaseMatchSetting.

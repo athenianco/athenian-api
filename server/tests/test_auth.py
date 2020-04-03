@@ -4,7 +4,7 @@ from aiohttp.web_runner import GracefulExit
 import pytest
 
 from athenian.api import Auth0
-from athenian.api.cache import _gen_cache_key
+from athenian.api.cache import gen_cache_key
 from athenian.api.models.web import User
 
 
@@ -33,7 +33,7 @@ async def test_cache_userinfo(cache, loop):
         "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
     }
     user = User.from_auth0(**profile)
-    await cache.set(_gen_cache_key("athenian.api.auth.Auth0._get_user_info_cached|whatever"),
+    await cache.set(gen_cache_key("athenian.api.auth.Auth0._get_user_info_cached|whatever"),
                     pickle.dumps(user))
     user = await auth0._get_user_info("whatever")
     assert user.name == "Eiso Kant"

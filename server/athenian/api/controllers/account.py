@@ -1,14 +1,14 @@
 import struct
-from typing import Optional, Union
+from typing import Optional
 
 import aiomcache
-import databases.core
 from sqlalchemy import and_, select
 
 from athenian.api.cache import cached, max_exptime
 from athenian.api.models.state.models import Account, UserAccount
 from athenian.api.models.web import NoSourceDataError, NotFoundError
 from athenian.api.response import ResponseError
+from athenian.api.typing_utils import DatabaseLike
 
 
 @cached(
@@ -20,7 +20,7 @@ from athenian.api.response import ResponseError
     refresh_on_access=True,
 )
 async def get_installation_id(account: int,
-                              sdb_conn: Union[databases.Database, databases.core.Connection],
+                              sdb_conn: DatabaseLike,
                               cache: Optional[aiomcache.Client],
                               ) -> int:
     """Fetch the Athenian metadata installation ID for the given account ID."""
@@ -39,7 +39,7 @@ async def get_installation_id(account: int,
 )
 async def get_user_account_status(user: str,
                                   account: int,
-                                  sdb_conn: Union[databases.Database, databases.core.Connection],
+                                  sdb_conn: DatabaseLike,
                                   cache: Optional[aiomcache.Client],
                                   ) -> bool:
     """Return the value indicating whether the given user is an admin of the given account."""
