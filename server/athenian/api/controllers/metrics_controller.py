@@ -14,6 +14,7 @@ from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
 from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
+from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
@@ -38,12 +39,12 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     :type body: dict | bytes
     """
     try:
-        filt = PullRequestMetricsRequest.from_dict(body)
+        filt = PullRequestMetricsRequest.from_dict(body)  # type: PullRequestMetricsRequest
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
-        filters = await _compile_repos_and_devs(filt.for_, request, filt.account)
+        filters, repos = await _compile_repos_and_devs(filt.for_, request, filt.account)
         time_intervals = _split_to_time_intervals(filt)
     except ResponseError as e:
         return e.response
@@ -66,6 +67,9 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     met.granularity = filt.granularity
     met.metrics = filt.metrics
     met.calculated = []
+    # There should not be any new exception here so we don't have to catch ResponseError.
+    release_settings = \
+        await Settings.from_request(request, filt.account).list_release_matches(repos)
     for service, (repos, devs, for_set) in filters:
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
@@ -75,7 +79,8 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         results = {}
         # for each metric, we find the function to calculate and call it
         for func, metrics in calcs.items():
-            fres = await func(metrics, time_intervals, repos, devs, request.mdb, request.cache)
+            fres = await func(metrics, time_intervals, repos, release_settings, devs, request.mdb,
+                              request.cache)
             assert len(fres) == len(time_intervals) - 1
             for i, m in enumerate(metrics):
                 results[m] = [r[i] for r in fres]
@@ -117,10 +122,22 @@ def _split_to_time_intervals(
 async def _compile_repos_and_devs(for_sets: List[ForSet],
                                   request: AthenianWebRequest,
                                   account: int,
-                                  ) -> List[Filter]:
+                                  ) -> (List[Filter], List[str]):
+    """
+    Build the list of Filter-s for a given list of ForSet-s.
+
+    Repository sets are dereferenced. Access permissions are checked.
+
+    :param for_sets: Paired lists of repositories and developers.
+    :param request: Our incoming request to take the metadata DB, the user ID, the cache.
+    :param account: Account ID on behalf of which we are loading reposets.
+    :return: Resulting list of Filter-s and the list of all repositories after dereferencing, \
+             with service prefixes.
+    """
     filters = []
     sdb, user = request.sdb, request.uid
     checkers = {}
+    all_repos = []
     async with sdb.connection() as sdb_conn:
         for i, for_set in enumerate(for_sets):
             repos = set()
@@ -140,6 +157,7 @@ async def _compile_repos_and_devs(for_sets: List[ForSet],
                                 pointer=".for[%d].repositories" % i,
                             ))
                         repos.add(repo[len(prefix):])
+                        all_repos.append(repo)
             if service is None:
                 raise ResponseError(InvalidRequestError(
                     detail='the provider of a "for" element is unsupported or the set is empty',
@@ -168,7 +186,7 @@ async def _compile_repos_and_devs(for_sets: List[ForSet],
                             ))
                         devs.append(dev[len(prefix):])
             filters.append((service, (repos, devs, for_set)))
-    return filters
+    return filters, all_repos
 
 
 async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -210,7 +228,8 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
-        filters = await _compile_repos_and_devs(filt.for_, request, filt.account)
+        # FIXME(vmarkovtsev): developer metrics + release settings???
+        filters, _ = await _compile_repos_and_devs(filt.for_, request, filt.account)
     except ResponseError as e:
         return e.response
     if filt.date_to < filt.date_from:

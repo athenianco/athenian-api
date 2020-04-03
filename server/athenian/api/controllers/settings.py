@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import IntEnum
 import re
 from typing import Collection, Dict, List, Optional, Set
@@ -11,8 +12,7 @@ from athenian.api.controllers.account import get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.models.state.models import ReleaseSetting
-from athenian.api.models.web import ForbiddenError, InvalidRequestError, \
-    ReleaseMatchSetting as WebReleaseMatchSetting, ReleaseMatchStrategy
+from athenian.api.models.web import ForbiddenError, InvalidRequestError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
 
 Match = IntEnum("Match", {ReleaseMatchStrategy.BRANCH: 0,
@@ -21,6 +21,15 @@ Match = IntEnum("Match", {ReleaseMatchStrategy.BRANCH: 0,
 Match.__doc__ = """Supported release matching strategies."""
 
 default_branch_alias = "{{default}}"
+
+
+@dataclass(frozen=True)
+class ReleaseMatchSetting:
+    """Internal representation of the repository release match setting."""
+
+    branches: str
+    tags: str
+    match: Match
 
 
 class Settings:
@@ -51,7 +60,7 @@ class Settings:
             sdb=request.sdb, mdb=request.mdb, cache=request.cache)
 
     async def list_release_matches(self, repos: Optional[Collection[str]] = None,
-                                   ) -> Dict[str, WebReleaseMatchSetting]:
+                                   ) -> Dict[str, ReleaseMatchSetting]:
         """List the current release matching settings for all related repositories."""
         async with self._sdb.connection() as conn:
             await get_user_account_status(self._user_id, self._account, conn, self._cache)
@@ -60,19 +69,19 @@ class Settings:
                 for cls in access_classes.values():
                     repos.update((await cls(self._account, conn, self._mdb, self._cache).load())
                                  .installed_repos())
-            settings: Dict[str, WebReleaseMatchSetting] = {}
+            settings: Dict[str, ReleaseMatchSetting] = {}
             rows = await conn.fetch_all(
                 select([ReleaseSetting]).where(and_(ReleaseSetting.account_id == self._account,
                                                     ReleaseSetting.repository.in_(repos))))
             for row in rows:
-                settings[row[ReleaseSetting.repository.key]] = WebReleaseMatchSetting(
+                settings[row[ReleaseSetting.repository.key]] = ReleaseMatchSetting(
                     branches=row[ReleaseSetting.branches.key],
                     tags=row[ReleaseSetting.tags.key],
                     match=Match(row[ReleaseSetting.match.key]).name,
                 )
             for repo in repos:
                 if repo not in settings:
-                    settings[repo] = WebReleaseMatchSetting(
+                    settings[repo] = ReleaseMatchSetting(
                         branches=default_branch_alias,
                         tags=".*",
                         match=Match.tag_or_branch.name,

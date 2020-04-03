@@ -16,6 +16,7 @@ from athenian.api.controllers.miners.github.release import mine_releases
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.controllers.reposet import resolve_repos
+from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestReview, PushCommit, Release, User
 from athenian.api.models.web import Commit, CommitSignature, CommitsList, InvalidRequestError
@@ -176,7 +177,8 @@ async def _common_filter_preprocess(filt: Union[GenericFilterRequest,
                                                 FilterPullRequestsRequest,
                                                 FilterCommitsRequest],
                                     request: AthenianWebRequest,
-                                    expand_dates=True) -> Set[str]:
+                                    expand_dates=True,
+                                    strip_prefix=True) -> Set[str]:
     if filt.date_to < filt.date_from:
         raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
@@ -187,18 +189,19 @@ async def _common_filter_preprocess(filt: Union[GenericFilterRequest,
         filt.date_to = datetime.combine(filt.date_to, datetime.max.time(), tzinfo=timezone.utc)
     return await resolve_repos(
         filt.in_, filt.account, request.uid, request.native_uid,
-        request.sdb, request.mdb, request.cache)
+        request.sdb, request.mdb, request.cache, strip_prefix=strip_prefix)
 
 
 async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """List pull requests that satisfy the query."""
     try:
-        filt = FilterPullRequestsRequest.from_dict(body)
+        filt = FilterPullRequestsRequest.from_dict(body)  # type: FilterPullRequestsRequest
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
-        repos = await _common_filter_preprocess(filt, request, expand_dates=False)
+        repos = await _common_filter_preprocess(
+            filt, request, expand_dates=False, strip_prefix=False)
     except ResponseError as e:
         return e.response
     props = set(getattr(Property, p.upper()) for p in (filt.properties or []))
@@ -217,8 +220,10 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     if not props:
         props = set(Property)
     participants = {ParticipationKind[k.upper()]: v for k, v in body.get("with", {}).items()}
-    prs = await filter_pull_requests(
-        props, filt.date_from, filt.date_to, repos, participants, request.mdb, request.cache)
+    settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
+    repos = [r.split("/", 1)[1] for r in repos]
+    prs = await filter_pull_requests(props, filt.date_from, filt.date_to, repos, settings,
+                                     participants, request.mdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     users = {u.split("/", 1)[1] for u in
              chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs)}

@@ -345,6 +345,8 @@ NodeCommit.sha.key = "oid"
 class NodeCommitParent(Base, ParentChildMixin):
     __tablename__ = "github_node_commit_parents"
 
+    index = Column(Integer, nullable=False)
+
 
 class NodePullRequestCommit(Base):
     __tablename__ = "github_node_pull_request_commit"
@@ -352,3 +354,14 @@ class NodePullRequestCommit(Base):
     id = Column(Text, primary_key=True)
     commit = Column(Text, nullable=False)
     pull_request = Column(Text, nullable=False)
+
+
+class Branch(Base, RepositoryMixin):
+    __tablename__ = "github_branches_compat"
+
+    repo_id = Column(Text, primary_key=True)
+    branch_id = Column(Text, primary_key=True)
+    branch_name = Column(Text, nullable=False)
+    is_default = Column(Boolean, nullable=False)
+    commit_id = Column(Text, nullable=False)
+    commit_sha = Column(Text, nullable=False)

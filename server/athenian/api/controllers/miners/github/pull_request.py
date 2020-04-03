@@ -21,6 +21,7 @@ from athenian.api.controllers.miners.github.release import map_prs_to_releases, 
     map_releases_to_prs
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
+from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
@@ -110,6 +111,7 @@ class PullRequestMiner:
         ),
     )
     async def _mine(cls, time_from: date, time_to: date, repositories: Collection[str],
+                    release_settings: Dict[str, ReleaseMatchSetting],
                     developers: Collection[str], db: databases.Database,
                     cache: Optional[aiomcache.Client],
                     ) -> List[pd.DataFrame]:
@@ -179,6 +181,7 @@ class PullRequestMiner:
 
     @classmethod
     async def mine(cls, time_from: date, time_to: date, repositories: Collection[str],
+                   release_settings: Dict[str, ReleaseMatchSetting],
                    developers: Collection[str], db: databases.Database,
                    cache: Optional[aiomcache.Client]) -> "PullRequestMiner":
         """
@@ -191,7 +194,8 @@ class PullRequestMiner:
         :param db: Metadata db instance.
         :param cache: memcached client to cache the collected data.
         """
-        dfs = await cls._mine(time_from, time_to, repositories, developers, db, cache)
+        dfs = await cls._mine(time_from, time_to, repositories, release_settings, developers,
+                              db, cache)
         return cls(*dfs)
 
     @staticmethod
@@ -592,16 +596,23 @@ class PullRequestListMiner(PullRequestTimesMiner):
     ),
 )
 async def filter_pull_requests(
-        properties: Collection[Property], time_from: date, time_to: date, repos: Collection[str],
+        properties: Collection[Property],
+        time_from: date,
+        time_to: date,
+        repos: Collection[str],
+        release_settings: Dict[str, ReleaseMatchSetting],
         participants: Mapping[ParticipationKind, Collection[str]],
         db: databases.Database, cache: Optional[aiomcache.Client],
 ) -> List[PullRequestListItem]:
-    """Filter GitHub pull requests according to the specified criteria."""
+    """Filter GitHub pull requests according to the specified criteria.
+
+    :param repos: List of repository names without the service prefix.
+    """
     assert isinstance(time_from, date) and not isinstance(time_from, datetime)
     assert isinstance(time_to, date) and not isinstance(time_to, datetime)
     miner = await PullRequestListMiner.mine(
-        time_from, time_to, repos, participants.get(PullRequestParticipant.STATUS_AUTHOR, []),
-        db, cache)
+        time_from, time_to, repos, release_settings,
+        participants.get(PullRequestParticipant.STATUS_AUTHOR, []), db, cache)
     miner.properties = properties
     miner.participants = participants
     miner.time_from = pd.Timestamp(time_from, tzinfo=timezone.utc)
