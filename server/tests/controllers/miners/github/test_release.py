@@ -128,11 +128,11 @@ async def test_load_releases_branches(mdb, cache, branches):
             conn,
             cache,
         )
-    check_branch_releases(releases, 239, date_from, date_to)
+    check_branch_releases(releases, 240, date_from, date_to)
 
 
 @pytest.mark.parametrize("date_from, n", [
-    (datetime(year=2017, month=10, day=4, tzinfo=timezone.utc), 44),
+    (datetime(year=2017, month=10, day=4, tzinfo=timezone.utc), 45),
     (datetime(year=2017, month=9, day=4, tzinfo=timezone.utc), 1),
     (datetime(year=2017, month=12, day=8, tzinfo=timezone.utc), 0),
 ])
@@ -152,3 +152,34 @@ async def test_load_releases_tag_or_branch(mdb, cache, date_from, n):
         check_branch_releases(releases, n, date_from, date_to)
     else:
         assert len(releases) == n
+
+
+async def test_load_releases_tag_or_branch_initial(mdb):
+    date_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    date_to = datetime(year=2015, month=10, day=22, tzinfo=timezone.utc)
+    async with mdb.connection() as conn:
+        releases = await load_releases(
+            ["src-d/go-git"],
+            date_from,
+            date_to,
+            {"github.com/src-d/go-git": ReleaseMatchSetting(
+                branches="master", tags="", match=Match.branch)},
+            conn,
+            None,
+        )
+    check_branch_releases(releases, 17, date_from, date_to)
+
+
+async def test_map_releases_to_prs_branches(mdb):
+    date_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
+    date_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
+    async with mdb.connection() as conn:
+        prs = await map_releases_to_prs(
+            ["src-d/go-git"],
+            date_from,
+            date_to,
+            {"github.com/src-d/go-git": ReleaseMatchSetting(
+                branches="master", tags="", match=Match.branch)},
+            conn,
+            None)
+        assert prs.empty

@@ -9,6 +9,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 import aiomcache
 import aiosqlite
 import databases
+import numpy as np
 import pandas as pd
 from sqlalchemy import and_, desc, distinct, func, select
 
@@ -132,7 +133,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
     for repo, repo_branches in branches.groupby(Branch.repository_full_name.key):
         regexp = settings["github.com/" + repo].branches
         default_branch = \
-            repo_branches[Branch.branch_name.key][repo_branches[Branch.is_default.key]][0]
+            repo_branches[Branch.branch_name.key][repo_branches[Branch.is_default.key]].iloc[0]
         regexp = regexp.replace(default_branch_alias, default_branch)
         # note: dict.setdefault() is not good here because re.compile() will be evaluated
         try:
@@ -151,15 +152,16 @@ async def _match_releases_by_branch(repos: Iterable[str],
     pseudo_releases = []
     for repo, merge_points in merge_points_by_repo.items():
         commits = await read_sql_query(
-            select([PushCommit]).where(and_(PushCommit.node_id.in_(merge_points),
-                                            PushCommit.pushed_date.between(time_from, time_to))),
+            select([PushCommit]).where(and_(
+                PushCommit.node_id.in_(merge_points),
+                PushCommit.committed_date.between(time_from, time_to))),
             conn, PushCommit)
         pseudo_releases.append(pd.DataFrame({
             Release.author.key: commits[PushCommit.author_login.key],
             Release.commit_id.key: commits[PushCommit.node_id.key],
             Release.id.key: commits[PushCommit.node_id.key] + "_" + repo,
             Release.name.key: commits[PushCommit.sha.key],
-            Release.published_at.key: commits[PushCommit.pushed_date.key],
+            Release.published_at.key: commits[PushCommit.committed_date.key],
             Release.repository_full_name.key: repo,
             Release.sha.key: commits[PushCommit.sha.key],
             Release.tag.key: None,
@@ -249,7 +251,10 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                                            r[Release.author.key],
                                            r[Release.url.key],
                                            repo)
-        return postprocess_datetime(released_prs)
+    released_prs[Release.published_at.key] = np.maximum(
+        released_prs[Release.published_at.key],
+        prs.loc[released_prs.index][PullRequest.merged_at.key])
+    return postprocess_datetime(released_prs)
 
 
 async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
@@ -386,7 +391,12 @@ async def _fetch_commit_history_dag(commit_id: str,
         commit_history;"""
     history = [(r["child_oid"], r["parent_oid"]) for r in await conn.fetch_all(query)]
     # parent-child matches github_node_commit_parents again
-    dag = {history[0][0]: []}
+    try:
+        dag = {history[0][0]: []}
+    except IndexError:
+        # initial commit
+        sha = await conn.fetch_val(select([PushCommit.sha]).where(PushCommit.node_id == commit_id))
+        return {sha: []}
     for p, c in history:
         dag[p].append(c)
         dag.setdefault(c, [])
@@ -567,7 +577,7 @@ async def _mine_monorepo_releases(
         except ValueError:
             # no previous releases
             previous_published_at = await db.fetch_val(
-                select([func.min(PushCommit.pushed_date)])
+                select([func.min(PushCommit.committed_date)])
                 .where(and_(PushCommit.repository_full_name.in_(repo),
                             PushCommit.sha.in_(included_commits))))
         published_at = getattr(release, Release.published_at.key)
