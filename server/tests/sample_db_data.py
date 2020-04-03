@@ -43,7 +43,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                     elif pt is datetime.datetime:
                         ctor = str_to_datetime
                     elif pt is bool:
-                        ctor = lambda x: x == "t"  # noqa:E731
+                        ctor = lambda x: x == "t" or x == "1"  # noqa:E731
                     else:
                         ctor = lambda x: x  # noqa:E731
                     columns[c.name] = ctor
