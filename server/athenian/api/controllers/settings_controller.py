@@ -1,7 +1,10 @@
+from dataclasses import asdict
+
 from aiohttp import web
 
 from athenian.api import ResponseError
 from athenian.api.controllers.settings import Match, Settings
+from athenian.api.models.web import ReleaseMatchSetting
 from athenian.api.models.web.release_match_request import ReleaseMatchRequest
 from athenian.api.request import AthenianWebRequest
 
@@ -13,7 +16,8 @@ async def list_release_match_settings(request: AthenianWebRequest, id: int) -> w
         model = await settings.list_release_matches()
     except ResponseError as e:
         return e.response
-    return web.json_response({k: m.to_dict() for k, m in model.items()})
+    return web.json_response({k: ReleaseMatchSetting(**asdict(m)).to_dict()
+                              for k, m in model.items()})
 
 
 async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Response:

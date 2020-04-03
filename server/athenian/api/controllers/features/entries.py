@@ -1,6 +1,6 @@
 from datetime import date, timedelta, timezone
 import pickle
-from typing import Collection, List, Optional, Sequence, Tuple
+from typing import Collection, Dict, List, Optional, Sequence, Tuple
 
 import aiomcache
 from databases import Database
@@ -16,6 +16,7 @@ from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import calc_developer_metrics
 from athenian.api.controllers.miners.github.pull_request import PullRequestTimesMiner
+from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import PushCommit
 
 
@@ -32,11 +33,12 @@ from athenian.api.models.metadata.github import PushCommit
 )
 async def calc_pull_request_metrics_line_github(
         metrics: Collection[str], time_intervals: Sequence[date], repos: Collection[str],
-        developers: Collection[str], db: Database, cache: Optional[aiomcache.Client],
+        release_settings: Dict[str, ReleaseMatchSetting], developers: Collection[str],
+        db: Database, cache: Optional[aiomcache.Client],
 ) -> List[Tuple[Metric]]:
     """Calculate pull request metrics on GitHub data."""
     miner = await PullRequestTimesMiner.mine(
-        time_intervals[0], time_intervals[-1], repos, developers, db, cache)
+        time_intervals[0], time_intervals[-1], repos, release_settings, developers, db, cache)
     calcs = [pull_request_calculators[m]() for m in metrics]
     binned = BinnedPullRequestMetricCalculator(calcs, time_intervals)
     return binned(miner)
