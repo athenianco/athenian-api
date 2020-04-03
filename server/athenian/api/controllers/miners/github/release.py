@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
-from itertools import chain, groupby
+from itertools import chain, groupby, repeat
 import marshal
 import pickle
+import re
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
@@ -34,12 +35,38 @@ async def load_releases(repos: Iterable[str],
             repos_by_tag_or_branch.append(k)
         elif v.match == Match.branch:
             repos_by_branch.append(k)
-    return await read_sql_query(
-        select([Release])
-        .where(and_(Release.published_at.between(time_from, time_to),
-                    Release.repository_full_name.in_(repos)))
-        .order_by(desc(Release.published_at)),
-        conn, Release, index=index)
+    result = []
+    if repos_by_tag_only + repos_by_tag_or_branch:
+        releases = await read_sql_query(
+            select([Release])
+            .where(and_(Release.published_at.between(time_from, time_to),
+                        Release.repository_full_name.in_(repos)))
+            .order_by(desc(Release.published_at)),
+            conn, Release, index=[Release.repository_full_name.key, Release.tag.key])
+        # filter by regexp
+        regexp_cache = {}
+        matched = []
+        for repo in chain(repos_by_tag_only, repos_by_tag_or_branch):
+            short_repo = repo.split("/", 1)[1]
+            try:
+                repo_releases = releases.loc[short_repo]
+            except KeyError:
+                continue
+            if repo_releases.empty:
+                continue
+            regexp = settings[repo].tags
+            # note: dict.setdefault() is not good here because re.compile() will be evaluated
+            try:
+                regexp = regexp_cache[regexp]
+            except KeyError:
+                regexp = regexp_cache[regexp] = re.compile(regexp)
+            tags_matched = repo_releases.index[repo_releases.index.str.match(regexp)]
+            matched.append(((short_repo, tag) for tag in tags_matched))
+        result.append(releases.loc[list(chain.from_iterable(matched))].reset_index())
+    result = pd.concat(result)
+    if index is not None:
+        result.set_index(index, inplace=True)
+    return result
 
 
 async def map_prs_to_releases(prs: pd.DataFrame,
