@@ -42,8 +42,9 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
     else:
         # assume a log-normal distribution
         assert (arr >= 0).all()
-        arr = arr[arr != 0]
-        assert len(arr) > 0
+        # deal with zeros - they are not allowed by log-normal
+        zeros = arr == 0
+        arr[zeros] = 1
         m = np.mean(arr)
         if len(arr) == 1:
             # only one sample, we don't know the stddev so whatever value to indicate a failure
@@ -64,6 +65,10 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
                 conf_min, conf_max = np.exp(conf_min), np.exp(conf_max)
                 if conf_max / m > max_conf_max_ratio:
                     conf_max = max_conf_max_ratio * m
+        if zeros.all():
+            m -= 1
+            conf_min = max(0, conf_min - 1)
+            conf_max = max(m, conf_max - 1)
     if dtype_is_timedelta:
         # convert the dtype back
         m = pd.Timedelta(np.timedelta64(int(m * ns)))
