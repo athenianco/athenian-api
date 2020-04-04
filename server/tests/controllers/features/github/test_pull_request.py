@@ -223,3 +223,24 @@ def test_mean_confidence_interval_nan_confidence_negative():
     assert m == pd.Timedelta(seconds=1)
     assert cmin == m
     assert cmax == m
+
+
+def test_mean_confidence_interval_timedelta_positive_zeros():
+    np.random.seed(8)
+    mean, conf_min, conf_max = mean_confidence_interval(
+        [0] * 10 + [10] * 20 + [20] * 10 + [30] * 5 + [40] * 3 + [50], False)
+    assert isinstance(mean, int)
+    assert isinstance(conf_min, int)
+    assert isinstance(conf_max, int)
+    assert mean == 14
+    assert conf_min == 12
+    assert conf_max == 30
+    mean, conf_min, conf_max = mean_confidence_interval([0] * 10, False)
+    assert isinstance(mean, int)
+    assert isinstance(conf_min, int)
+    assert isinstance(conf_max, int)
+    assert mean == 0
+    assert conf_min == 0
+    assert conf_max == 0
+    mean, conf_min, conf_max = mean_confidence_interval([0.0] * 10 + [1.0], False)
+    assert mean > 0
