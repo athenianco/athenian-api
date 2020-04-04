@@ -7,6 +7,7 @@ import time
 from typing import Dict, List, Optional, Union
 
 import databases
+import numpy as np
 from prometheus_client import CollectorRegistry
 try:
     import pytest
@@ -31,6 +32,7 @@ from tests.sample_db_data import fill_metadata_session, fill_state_session
 
 
 uvloop.install()
+np.seterr(all="raise")
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 invitation_controller.ikey = "vadim"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"

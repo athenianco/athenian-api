@@ -242,3 +242,5 @@ def test_mean_confidence_interval_timedelta_positive_zeros():
     assert mean == 0
     assert conf_min == 0
     assert conf_max == 0
+    mean, conf_min, conf_max = mean_confidence_interval([0.0] * 10 + [1.0], False)
+    assert mean > 0

@@ -62,9 +62,14 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
                 d = np.sqrt(logvar / len(arr) + logvar**2 / (2 * (len(arr) - 1)))
                 conf_min, conf_max = scipy.stats.t.interval(
                     confidence, len(arr) - 1, loc=logm + logvar / 2, scale=d)
-                conf_min, conf_max = np.exp(conf_min), np.exp(conf_max)
-                if conf_max / m > max_conf_max_ratio:
-                    conf_max = max_conf_max_ratio * m
+                if conf_min > -20:
+                    conf_min = np.exp(conf_min)
+                else:
+                    conf_min = 0
+                if conf_max < logarr.max() + np.log(max_conf_max_ratio):
+                    conf_max = np.exp(conf_max)
+                else:
+                    conf_max = arr.max() * max_conf_max_ratio
         if zeros.all():
             m -= 1
             conf_min = max(0, conf_min - 1)
