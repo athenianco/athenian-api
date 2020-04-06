@@ -17,9 +17,9 @@ class CalculatedPullRequestMetricValues(Model):
 
         :param date: The date of this CalculatedPullRequestMetricValues.
         :param values: The values of this CalculatedPullRequestMetricValues.
-        :param confidence_mins: The left boundaries of the 95% confidence interval of this \
+        :param confidence_mins: The left boundaries of the 80% confidence interval of this \
                                CalculatedPullRequestMetricValues.
-        :param confidence_maxs: The right boundaries of the 95% confidence interval of this \
+        :param confidence_maxs: The right boundaries of the 80% confidence interval of this \
                                CalculatedPullRequestMetricValues.
         :param confidence_scores: The confidence scores of this CalculatedPullRequestMetricValues.
         """
@@ -89,48 +89,48 @@ class CalculatedPullRequestMetricValues(Model):
 
     @property
     def confidence_mins(self) -> List[object]:
-        """Gets the left boundaries of the 95% confidence interval of this \
+        """Gets the left boundaries of the 80% confidence interval of this \
         CalculatedPullRequestMetricValues.
 
-        Confidence interval @ p=0.95, minimum. The same order as `metrics`.
+        Confidence interval @ p=0.8, minimum. The same order as `metrics`.
 
-        :return: The left boundaries of the 95% confidence interval of this \
+        :return: The left boundaries of the 80% confidence interval of this \
                  CalculatedPullRequestMetricValues.
         """
         return self._confidence_mins
 
     @confidence_mins.setter
     def confidence_mins(self, confidence_mins: List[object]):
-        """Sets the left boundaries of the 95% confidence interval of this \
+        """Sets the left boundaries of the 80% confidence interval of this \
         CalculatedPullRequestMetricValues.
 
-        Confidence interval @ p=0.95, minimum. he same order as `metrics`.
+        Confidence interval @ p=0.8, minimum. he same order as `metrics`.
 
-        :param confidence_mins: The left boundaries of the 95% confidence interval of this \
+        :param confidence_mins: The left boundaries of the 80% confidence interval of this \
                                 CalculatedPullRequestMetricValues.
         """
         self._confidence_mins = confidence_mins
 
     @property
     def confidence_maxs(self) -> List[object]:
-        """Gets the right boundaries of the 95% confidence interval of this \
+        """Gets the right boundaries of the 80% confidence interval of this \
         CalculatedPullRequestMetricValues.
 
-        Confidence interval @ p=0.95, maximum. The same order as `metrics`.
+        Confidence interval @ p=0.8, maximum. The same order as `metrics`.
 
-        :return: The right boundaries of the 95% confidence interval of this \
+        :return: The right boundaries of the 80% confidence interval of this \
                  CalculatedPullRequestMetricValues.
         """
         return self._confidence_maxs
 
     @confidence_maxs.setter
     def confidence_maxs(self, confidence_maxs: List[object]):
-        """Sets the right boundaries of the 95% confidence interval of this \
+        """Sets the right boundaries of the 80% confidence interval of this \
         CalculatedPullRequestMetricValues.
 
-        Confidence interval @ p=0.95, maximum. he same order as `metrics`.
+        Confidence interval @ p=0.8, maximum. he same order as `metrics`.
 
-        :param confidence_maxs: The right boundaries of the 95% confidence interval of this \
+        :param confidence_maxs: The right boundaries of the 80% confidence interval of this \
                                 CalculatedPullRequestMetricValues.
         """
         self._confidence_maxs = confidence_maxs
