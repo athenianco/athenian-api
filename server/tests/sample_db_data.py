@@ -75,6 +75,7 @@ def fill_state_session(session: sqlalchemy.orm.Session):
     session.add(Account(id=1, installation_id=6366825))
     session.add(Account(id=2))
     session.add(Account(id=3))
+    session.flush()
     session.add(UserAccount(
         user_id="auth0|5e1f6dfb57bc640ea390557b", account_id=1, is_admin=True))
     session.add(UserAccount(

@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 import logging
 import os
 from pathlib import Path
+import shutil
+import tempfile
 import time
 from typing import Dict, List, Optional, Union
 
@@ -34,9 +36,11 @@ from tests.sample_db_data import fill_metadata_session, fill_state_session
 uvloop.install()
 np.seterr(all="raise")
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
+sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".sqlite")
 invitation_controller.ikey = "vadim"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
 override_mdb = os.getenv("OVERRIDE_MDB")
+override_sdb = os.getenv("OVERRIDE_SDB")
 
 
 class FakeCache:
@@ -204,11 +208,18 @@ def metadata_db() -> str:
 
 @pytest.fixture(scope="function")
 def state_db() -> str:
-    state_db_path = db_dir / "sdb.sqlite"
-    conn_str = "sqlite:///%s" % state_db_path
-    if state_db_path.exists():
-        state_db_path.unlink()
+    if override_sdb:
+        conn_str = override_sdb
+    else:
+        state_db_path = db_dir / "sdb.sqlite"
+        conn_str = "sqlite:///%s" % state_db_path
+        if state_db_path.exists():
+            state_db_path.unlink()
+        if Path(sdb_backup.name).stat().st_size > 0:
+            shutil.copy(sdb_backup.name, state_db_path)
+            return conn_str
     engine = create_engine(conn_str)
+    StateBase.metadata.drop_all(engine)
     StateBase.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     try:
@@ -216,7 +227,9 @@ def state_db() -> str:
         session.commit()
     finally:
         session.close()
-    os.chmod(state_db_path, 0o666)
+    if not override_sdb:
+        os.chmod(state_db_path, 0o666)
+        shutil.copy(state_db_path, sdb_backup.name)
     return conn_str
 
 
@@ -229,8 +242,6 @@ async def mdb(metadata_db, loop):
 
 @pytest.fixture(scope="function")
 async def sdb(state_db, loop):
-    state_db_path = db_dir / "sdb.sqlite"
-    conn_str = "sqlite:///%s" % state_db_path
-    db = databases.Database(conn_str)
+    db = databases.Database(state_db)
     await db.connect()
     return db
