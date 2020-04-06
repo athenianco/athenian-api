@@ -140,7 +140,7 @@ class Settings:
                       for r in repos]
             query = insert(ReleaseSetting).prefix_with("OR REPLACE", dialect="sqlite")
             if self._sdb.url.dialect != "sqlite":
-                await conn.execute(delete([ReleaseSetting]).where(and_(
+                await conn.execute(delete(ReleaseSetting).where(and_(
                     ReleaseSetting.account_id == self._account,
                     ReleaseSetting.repository.in_(repos),
                 )))

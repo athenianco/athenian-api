@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 from random import randint
 
@@ -6,12 +6,16 @@ import pytest
 from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.controllers import invitation_controller
-from athenian.api.models.state.models import Account, Invitation, UserAccount
+from athenian.api.models.state.models import Account, Invitation, RepositorySet, UserAccount
 
 
 async def test_empty_db_account_creation(client, headers, sdb):
-    await sdb.execute(delete(Account))
+    await sdb.execute(delete(RepositorySet))
     await sdb.execute(delete(UserAccount))
+    await sdb.execute(delete(Invitation))
+    await sdb.execute(delete(Account).where(Account.id != invitation_controller.admin_backdoor))
+    if sdb.url.dialect != "sqlite":
+        await sdb.execute("ALTER SEQUENCE accounts_id_seq RESTART;")
 
     iid = await sdb.execute(
         insert(Invitation).values(
@@ -38,10 +42,11 @@ async def test_empty_db_account_creation(client, headers, sdb):
             "accounts": {"1": True},
         },
     }
-    assert len(await sdb.fetch_all(select([Account]))) == 1
+    # the second is admin backdoor
+    assert len(await sdb.fetch_all(select([Account]))) == 2
 
 
-async def test_gen_invitation_new(client, app, headers):
+async def test_gen_invitation_new(client, headers, sdb):
     response = await client.request(
         method="GET", path="/v1/invite/generate/1", headers=headers, json={},
     )
@@ -50,7 +55,7 @@ async def test_gen_invitation_new(client, app, headers):
     assert body["url"].startswith(prefix)
     x = body["url"][len(prefix):]
     iid, salt = invitation_controller.decode_slug(x)
-    inv = await app.sdb.fetch_one(
+    inv = await sdb.fetch_one(
         select([Invitation])
         .where(and_(Invitation.id == iid, Invitation.salt == salt)))
     assert inv is not None
@@ -58,7 +63,10 @@ async def test_gen_invitation_new(client, app, headers):
     assert inv[Invitation.accepted.key] == 0
     assert inv[Invitation.account_id.key] == 1
     assert inv[Invitation.created_by.key] == "auth0|5e1f6dfb57bc640ea390557b"
-    assert inv[Invitation.created_at.key] > datetime.utcnow() - timedelta(minutes=1)
+    try:
+        assert inv[Invitation.created_at.key] > datetime.now(timezone.utc) - timedelta(minutes=1)
+    except TypeError:
+        assert inv[Invitation.created_at.key] > datetime.utcnow() - timedelta(minutes=1)
 
 
 async def test_gen_invitation_no_admin(client, headers):
@@ -146,9 +154,9 @@ async def test_accept_invitation_trash(client, trash, headers):
     assert response.status == 400
 
 
-async def test_accept_invitation_inactive(client, app, headers):
-    await app.sdb.execute(
-        update(Invitation).where(Invitation.id == 1).values({Invitation.is_active.key: False}))
+async def test_accept_invitation_inactive(client, headers, sdb):
+    await sdb.execute(
+        update(Invitation).where(Invitation.id == 1).values({Invitation.is_active: False}))
     body = {
         "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
     }
@@ -158,14 +166,14 @@ async def test_accept_invitation_inactive(client, app, headers):
     assert response.status == 403
 
 
-async def test_accept_invitation_admin(client, app, headers, sdb):
+async def test_accept_invitation_admin(client, headers, sdb):
     # avoid 429 cooldown
     cooldowntd = invitation_controller.accept_admin_cooldown
     await sdb.execute(update(UserAccount)
                       .where(UserAccount.user_id == "auth0|5e1f6dfb57bc640ea390557b")
-                      .values(**{UserAccount.created_at.key: datetime.utcnow() - cooldowntd}))
+                      .values({UserAccount.created_at: datetime.now(timezone.utc) - cooldowntd}))
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
-    iid = await app.sdb.execute(
+    iid = await sdb.execute(
         insert(Invitation).values(
             Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
             .create_defaults().explode()))
@@ -192,9 +200,13 @@ async def test_accept_invitation_admin(client, app, headers, sdb):
     assert num_accounts_after == num_accounts_before + 1
 
 
-async def test_accept_invitation_admin_cooldown(client, app, headers, sdb):
+async def test_accept_invitation_admin_cooldown(client, headers, sdb):
+    await sdb.execute(update(UserAccount)
+                      .where(and_(UserAccount.user_id == "auth0|5e1f6dfb57bc640ea390557b",
+                                  UserAccount.is_admin))
+                      .values({UserAccount.created_at: datetime.now(timezone.utc)}))
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
-    iid = await app.sdb.execute(
+    iid = await sdb.execute(
         insert(Invitation).values(
             Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
             .create_defaults().explode()))
@@ -231,8 +243,8 @@ async def test_check_invitation_not_exists(client, headers):
     assert body == {"valid": False}
 
 
-async def test_check_invitation_admin(client, app, headers):
-    iid = await app.sdb.execute(
+async def test_check_invitation_admin(client, headers, sdb):
+    iid = await sdb.execute(
         insert(Invitation).values(
             Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
             .create_defaults().explode()))
@@ -246,9 +258,9 @@ async def test_check_invitation_admin(client, app, headers):
     assert body == {"valid": True, "active": True, "type": "admin"}
 
 
-async def test_check_invitation_inactive(client, app, headers):
-    await app.sdb.execute(
-        update(Invitation).where(Invitation.id == 1).values({Invitation.is_active.key: False}))
+async def test_check_invitation_inactive(client, headers, sdb):
+    await sdb.execute(
+        update(Invitation).where(Invitation.id == 1).values({Invitation.is_active: False}))
     body = {
         "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
     }

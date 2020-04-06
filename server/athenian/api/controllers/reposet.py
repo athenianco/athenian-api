@@ -195,7 +195,7 @@ async def _load_account_reposets(account: int,
                     raise_no_source_data()
                 await sdb_conn.execute(update(Account)
                                        .where(Account.id == account)
-                                       .values({Account.installation_id.key: iid}))
+                                       .values({Account.installation_id: iid}))
             repos = await mdb_conn.fetch_all(select([InstallationRepo.repo_full_name])
                                              .where(InstallationRepo.install_id == iid))
             repos = [("github.com/" + r[InstallationRepo.repo_full_name.key]) for r in repos]

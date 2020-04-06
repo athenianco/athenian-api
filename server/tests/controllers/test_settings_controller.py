@@ -117,7 +117,7 @@ async def test_set_release_match_422(client, headers, sdb, gkwillie):
     await sdb.execute(delete(RepositorySet))
     await sdb.execute(update(Account)
                       .where(Account.id == 1)
-                      .values({Account.installation_id.key: None}))
+                      .values({Account.installation_id: None}))
     await sdb.execute(insert(UserAccount).values(UserAccount(
         user_id="github|60340680", account_id=1, is_admin=True,
     ).create_defaults().explode(with_primary_keys=True)))
