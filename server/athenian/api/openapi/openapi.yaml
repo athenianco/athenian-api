@@ -1539,7 +1539,7 @@ components:
             - type: string
           type: array
         confidence_mins:
-          description: Confidence interval @ p=0.95, minimum. The same order as `metrics`.
+          description: Confidence interval @ p=0.8, minimum. The same order as `metrics`.
             It is optional because there can be exact metrics like "count open PRs
             per month".
           items:
@@ -1552,7 +1552,7 @@ components:
             - type: string
           type: array
         confidence_maxs:
-          description: Confidence interval @ p=0.95, maximum. The same order as `metrics`.
+          description: Confidence interval @ p=0.8, maximum. The same order as `metrics`.
             It is optional because there can be exact metrics like "count open PRs
             per month".
           items:

@@ -9,7 +9,7 @@ from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
 
 
-def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, confidence=0.95,
+def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, confidence=0.8,
                              ) -> Tuple[T, T, T]:
     """Calculate the mean value and the confidence interval."""
     assert len(data) > 0
@@ -92,7 +92,7 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
     return m, conf_min, conf_max
 
 
-def median_confidence_interval(data: Sequence[T], confidence=0.95) -> Tuple[T, T, T]:
+def median_confidence_interval(data: Sequence[T], confidence=0.8) -> Tuple[T, T, T]:
     """Calculate the median value and the confidence interval."""
     assert len(data) > 0
     arr = np.asarray(data)

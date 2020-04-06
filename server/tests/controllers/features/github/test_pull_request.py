@@ -27,8 +27,8 @@ def test_mean_confidence_interval_positive():
     assert isinstance(conf_min, np.float32)
     assert isinstance(conf_max, np.float32)
     assert 20.7 < mean < 20.8
-    assert 18.93 < conf_min < 18.94
-    assert 29.5 < conf_max < 29.6
+    assert 20.45 < conf_min < 20.46
+    assert 27.38 < conf_max < 27.39
 
 
 def test_mean_confidence_interval_negative(square_centered_samples):
@@ -37,8 +37,8 @@ def test_mean_confidence_interval_negative(square_centered_samples):
     assert isinstance(conf_min, np.int64)
     assert isinstance(conf_max, np.int64)
     assert mean == 0
-    assert conf_min == -22
-    assert conf_max == 22
+    assert conf_min == -14
+    assert conf_max == 14
 
 
 def test_mean_confidence_interval_timedelta_positive():
@@ -50,8 +50,8 @@ def test_mean_confidence_interval_timedelta_positive():
     assert isinstance(conf_min, pd.Timedelta)
     assert isinstance(conf_max, pd.Timedelta)
     assert pd.Timedelta(hours=20) < mean < pd.Timedelta(hours=21)
-    assert pd.Timedelta(hours=18) < conf_min < pd.Timedelta(hours=19)
-    assert pd.Timedelta(hours=29) < conf_max < pd.Timedelta(hours=30)
+    assert pd.Timedelta(hours=20) < conf_min < pd.Timedelta(hours=21)
+    assert pd.Timedelta(hours=27) < conf_max < pd.Timedelta(hours=28)
 
 
 def test_mean_confidence_interval_timedelta_negative(square_centered_samples):
@@ -61,8 +61,8 @@ def test_mean_confidence_interval_timedelta_negative(square_centered_samples):
     assert isinstance(conf_min, pd.Timedelta)
     assert isinstance(conf_max, pd.Timedelta)
     assert mean == pd.Timedelta(0)
-    assert abs((conf_min - pd.Timedelta(seconds=-22)).total_seconds()) < 1
-    assert abs((conf_max - pd.Timedelta(seconds=22)).total_seconds()) < 1
+    assert abs((conf_min - pd.Timedelta(seconds=-14)).total_seconds()) < 1
+    assert abs((conf_max - pd.Timedelta(seconds=14)).total_seconds()) < 1
 
 
 def test_mean_confidence_interval_empty():
@@ -76,8 +76,8 @@ def test_mean_confidence_interval_negative_list(square_centered_samples):
     assert isinstance(conf_min, np.int64)
     assert isinstance(conf_max, np.int64)
     assert mean == 0
-    assert conf_min == -22
-    assert conf_max == 22
+    assert conf_min == -14
+    assert conf_max == 14
 
 
 def test_median_confidence_interval_int(square_centered_samples):
@@ -86,8 +86,8 @@ def test_median_confidence_interval_int(square_centered_samples):
     assert isinstance(conf_min, np.int64)
     assert isinstance(conf_max, np.int64)
     assert mean == 0
-    assert conf_min == -16
-    assert conf_max == 16
+    assert conf_min == -4
+    assert conf_max == 4
 
 
 def test_median_confidence_interval_timedelta(square_centered_samples):
@@ -97,8 +97,8 @@ def test_median_confidence_interval_timedelta(square_centered_samples):
     assert isinstance(conf_min, pd.Timedelta)
     assert isinstance(conf_max, pd.Timedelta)
     assert mean == pd.Timedelta(0)
-    assert conf_min == pd.Timedelta(seconds=-16)
-    assert conf_max == pd.Timedelta(seconds=16)
+    assert conf_min == pd.Timedelta(seconds=-4)
+    assert conf_max == pd.Timedelta(seconds=4)
 
 
 def test_median_confidence_interval_empty():
@@ -233,8 +233,8 @@ def test_mean_confidence_interval_timedelta_positive_zeros():
     assert isinstance(conf_min, int)
     assert isinstance(conf_max, int)
     assert mean == 14
-    assert conf_min == 12
-    assert conf_max == 30
+    assert conf_min == 14
+    assert conf_max == 25
     mean, conf_min, conf_max = mean_confidence_interval([0] * 10, False)
     assert isinstance(mean, int)
     assert isinstance(conf_min, int)

@@ -517,6 +517,10 @@ class PullRequestListMiner(PullRequestTimesMiner):
             ParticipationKind.MERGER: {prefix + merger} if merger else set(),
             ParticipationKind.RELEASER: {prefix + releaser} if releaser else set(),
         }
+        try:
+            participants[ParticipationKind.REVIEWER].remove(prefix + author)
+        except (KeyError, TypeError):
+            pass
         if not self._match_participants(participants):
             return None
         times = super()._compile(pr)
