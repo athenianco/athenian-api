@@ -24,21 +24,23 @@ stages:
   - main
   - bump-version
 
+_install: &_install
+  - sudo sed -i 's/-m 64/-m 128/g' /etc/memcached.conf
+  - sudo sed -i 's/-I 1m/-I 64m/g' /etc/memcached.conf
+  - sudo systemctl start memcached
+  - cd server
+  - pip install -r requirements.txt
+  - pip install -r lint-requirements.txt
+  - pip install -r test-requirements.txt
+  - pip install -e .
+
 matrix:
   fast_finish: true
   include:
     - if: commit_message !~ /Bump version/
       stage: main
-      name: Style check and unit tests (1/2 - all but controllers)
-      install:
-        - sudo sed -i 's/-m 64/-m 128/g' /etc/memcached.conf
-        - sudo sed -i 's/-I 1m/-I 64m/g' /etc/memcached.conf
-        - sudo systemctl start memcached
-        - cd server
-        - pip install -r requirements.txt
-        - pip install -r lint-requirements.txt
-        - pip install -r test-requirements.txt
-        - pip install -e .
+      name: Unit tests (1/4 - sqlite, style checks)
+      install: *_install
       script:
         - set -e
         - flake8
@@ -50,17 +52,40 @@ matrix:
         - set +e
     - if: commit_message !~ /Bump version/
       stage: main
-      name: Unit tests (2/2 - controllers)
-      install:
-        - sudo sed -i 's/-m 64/-m 128/g' /etc/memcached.conf
-        - sudo sed -i 's/-I 1m/-I 64m/g' /etc/memcached.conf
-        - sudo systemctl start memcached
-        - cd server
-        - pip install -r requirements.txt
-        - pip install -r test-requirements.txt
-        - pip install -e .
+      name: Unit tests (2/4 - postgresql)
+      services:
+        - postgresql
+      install: *_install
+      before_script:
+        - psql -c "create database state;" -U postgres
+        - psql -c "create database metadata;" -U postgres
       script:
         - set -e
+        - export OVERRIDE_SDB=postgresql://postgres:postgres@0.0.0.0:5432/state
+        - pytest --ignore=tests/controllers
+        - pytest tests/controllers/features
+        - pytest tests/controllers/miners
+        - set +e
+    - if: commit_message !~ /Bump version/
+      stage: main
+      name: Unit tests (3/4 - sqlite)
+      install: *_install
+      script:
+        - set -e
+        - pytest tests/controllers --ignore tests/controllers/features --ignore tests/controllers/miners
+        - set +e
+    - if: commit_message !~ /Bump version/
+      stage: main
+      name: Unit tests (4/4 - postgresql)
+      services:
+        - postgresql
+      install: *_install
+      before_script:
+        - psql -c "create database state;" -U postgres
+        - psql -c "create database metadata;" -U postgres
+      script:
+        - set -e
+        - export OVERRIDE_SDB=postgresql://postgres:postgres@0.0.0.0:5432/state
         - pytest tests/controllers --ignore tests/controllers/features --ignore tests/controllers/miners
         - set +e
     - if: commit_message !~ /Bump version/
