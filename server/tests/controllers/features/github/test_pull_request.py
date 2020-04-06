@@ -6,9 +6,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from athenian.api.controllers.features.github.pull_request import mean_confidence_interval, \
-    median_confidence_interval, PullRequestAverageMetricCalculator, \
+from athenian.api.controllers.features.github.pull_request import \
+    PullRequestAverageMetricCalculator, \
     PullRequestMedianMetricCalculator
+from athenian.api.controllers.features.statistics import mean_confidence_interval, \
+    median_confidence_interval
 from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestTimes
 
 
@@ -27,8 +29,8 @@ def test_mean_confidence_interval_positive():
     assert isinstance(conf_min, np.float32)
     assert isinstance(conf_max, np.float32)
     assert 20.7 < mean < 20.8
-    assert 20.45 < conf_min < 20.46
-    assert 27.38 < conf_max < 27.39
+    assert 17.71 < conf_min < 17.72
+    assert 23.645 < conf_max < 23.665
 
 
 def test_mean_confidence_interval_negative(square_centered_samples):
@@ -50,8 +52,8 @@ def test_mean_confidence_interval_timedelta_positive():
     assert isinstance(conf_min, pd.Timedelta)
     assert isinstance(conf_max, pd.Timedelta)
     assert pd.Timedelta(hours=20) < mean < pd.Timedelta(hours=21)
-    assert pd.Timedelta(hours=20) < conf_min < pd.Timedelta(hours=21)
-    assert pd.Timedelta(hours=27) < conf_max < pd.Timedelta(hours=28)
+    assert pd.Timedelta(hours=17) < conf_min < pd.Timedelta(hours=18)
+    assert pd.Timedelta(hours=23) < conf_max < pd.Timedelta(hours=24)
 
 
 def test_mean_confidence_interval_timedelta_negative(square_centered_samples):
@@ -213,7 +215,7 @@ def test_pull_request_average_metric_calculator_zeros_nonnegative(pr_samples):
 
 def test_mean_confidence_interval_nan_confidence_nonnegative():
     m, cmin, cmax = mean_confidence_interval([pd.Timedelta(0), pd.Timedelta(seconds=1)] * 2, False)
-    assert m == pd.Timedelta(seconds=1)
+    assert m == pd.Timedelta(seconds=0)
     assert cmin == m
     assert cmax == m
 
@@ -233,8 +235,8 @@ def test_mean_confidence_interval_timedelta_positive_zeros():
     assert isinstance(conf_min, int)
     assert isinstance(conf_max, int)
     assert mean == 14
-    assert conf_min == 14
-    assert conf_max == 25
+    assert conf_min == 12
+    assert conf_max == 16
     mean, conf_min, conf_max = mean_confidence_interval([0] * 10, False)
     assert isinstance(mean, int)
     assert isinstance(conf_min, int)
@@ -244,3 +246,21 @@ def test_mean_confidence_interval_timedelta_positive_zeros():
     assert conf_max == 0
     mean, conf_min, conf_max = mean_confidence_interval([0.0] * 10 + [1.0], False)
     assert mean > 0
+
+
+def test_mean_confidence_interval_nonnegative_overflow():
+    arr = np.array([5689621, 5448983, 5596389, 5468130, 4722905, 5000224, 4723318,  # noqa
+                    4063452, 4406564, 3728378, 4064774, 3874963, 3693545, 3618715,  # noqa
+                    3208079, 3207821, 3116119, 2656753, 2424436, 2408454, 2058306,  # noqa
+                    1884453, 1907901, 1221960, 1013571, 1012170,       0,       0,  # noqa
+                          0,       0,       0,     659,       0,       0,       0,  # noqa
+                        682,       0,       0,       0,     693,       0,       0,  # noqa
+                          0,     666,       0,     719,       0,       0,       0,  # noqa
+                        715,       0,   94176,       0,       0,       0,       0,  # noqa
+                        742,       0,     683,       0,       0,       0,       0,  # noqa
+                          0,       0,       0,       0,       0])                   # noqa
+    arr = [pd.Timedelta(td) for td in (arr * 1_000_000_000).astype(np.timedelta64)]
+    m, conf_min, conf_max = mean_confidence_interval(arr, False)
+    assert m.days == 15
+    assert conf_min.days == 11
+    assert conf_max.days == 18
