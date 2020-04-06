@@ -240,9 +240,12 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         for p in participants:
             assert p["id"].startswith("github.com/")
             mentioned_users.add(p["id"])
+            is_author = PullRequestParticipant.STATUS_AUTHOR in p["status"]
+            authors += is_author
+            if is_author:
+                assert PullRequestParticipant.STATUS_REVIEWER not in p["status"], pr["number"]
             for s in p["status"]:
                 statuses[s] += 1
-                authors += s == PullRequestParticipant.STATUS_AUTHOR
                 assert s in PullRequestParticipant.STATUSES
         if pr["number"] != 749:
             # the author of 749 is deleted on GitHub
