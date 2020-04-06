@@ -17,3 +17,4 @@ python-dateutil==2.7.3
 pyffx==0.3.0
 aiomcache==0.6.0
 uvloop==0.14.0
+bootstrapped==0.0.2
