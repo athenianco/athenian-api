@@ -18,8 +18,8 @@ class IDMixin:
 
 class IDMixinNG:
     id = Column(Text, primary_key=True)
-    discovered_at = Column(TIMESTAMP, default=datetime.utcnow)
-    fetched_at = Column(TIMESTAMP, default=datetime.utcnow)
+    discovered_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+    fetched_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
 
     @declared_attr
     def node_id(self):
@@ -32,8 +32,8 @@ class BodyMixin:
 
 
 class UpdatedMixin:
-    created_at = Column(TIMESTAMP)
-    updated_at = Column(TIMESTAMP)
+    created_at = Column(TIMESTAMP(timezone=True))
+    updated_at = Column(TIMESTAMP(timezone=True))
 
 
 class UserMixin:
@@ -79,9 +79,9 @@ class InstallationRepo(Base):
     install_id = Column(BigInteger,
                         ForeignKey("github_installations.id", name="fk_github_installation_repo"),
                         primary_key=True)
-    repo_id = Column(BigInteger, primary_key=True)
+    repo_id = Column(Text, primary_key=True)
     repo_full_name = Column(Text, nullable=False)
-    updated_at = Column(TIMESTAMP, nullable=False)
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class FetchProgress(Base, UpdatedMixin):
@@ -120,13 +120,13 @@ class PullRequestReviewComment(Base,
     commit_id = Column(Text)
     diff_hunk = Column(Text)
     htmlurl = Column(Text)
-    in_reply_to = Column(BigInteger)
+    in_reply_to = Column(Text)
     original_commit_id = Column(Text)
     original_position = Column(BigInteger)
     path = Column(Text)
     position = Column(BigInteger)
     pull_request_node_id = Column(Text, nullable=False)
-    pull_request_review_id = Column(BigInteger)
+    pull_request_review_id = Column(BigInteger, nullable=False)
 
 
 class PullRequestCommit(Base, RepositoryMixin):
@@ -138,12 +138,12 @@ class PullRequestCommit(Base, RepositoryMixin):
     author_email = Column(Text)
     author_name = Column(Text)
     author_date = Column(Text, nullable=False)
-    authored_date = Column(TIMESTAMP, nullable=False)
+    authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
     committer_login = Column(Text)
     committer_email = Column(Text)
     committer_name = Column(Text)
     commit_date = Column(Text, nullable=False)
-    committed_date = Column(TIMESTAMP, nullable=False)
+    committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
     pull_request_node_id = Column(Text, primary_key=True)
     sha = Column(Text, primary_key=True)
     additions = Column(Integer, nullable=False)
@@ -184,7 +184,7 @@ class PullRequestReview(Base,
     htmlurl = Column(Text)
     pull_request_node_id = Column(Text, nullable=False)
     state = Column(Text, nullable=False)
-    submitted_at = Column(TIMESTAMP, nullable=False)
+    submitted_at = Column(TIMESTAMP(timezone=True), nullable=False)
     repository_full_name = Column(Text)
     created_at = synonym("submitted_at")
 
@@ -198,7 +198,7 @@ class PullRequestReviewRequest(Base,
     __tablename__ = "github_node_review_requested_event"
 
     actor = Column(Text, nullable=False)
-    created_at = Column(TIMESTAMP)
+    created_at = Column(TIMESTAMP(timezone=True))
     pull_request = Column(Text, nullable=False)
     pull_request_node_id = synonym("pull_request")
     # FIXME(vmarkovtsev): set nullable=False when ENG-303 is resolved
@@ -219,14 +219,14 @@ class PullRequest(Base,
     __tablename__ = "github_pull_requests_compat"
 
     additions = Column(BigInteger)
-    assignees = Column(ARRAY(BigInteger))
+    assignees = Column(ARRAY(Text))
     author_association = Column(Text)
     base_ref = Column(Text, nullable=False)
     base_repository_full_name = Column(Text, nullable=False)
     base_sha = Column(Text, nullable=False)
     base_user = Column(Text, nullable=False)
     changed_files = Column(BigInteger)
-    closed_at = Column(TIMESTAMP)
+    closed_at = Column(TIMESTAMP(timezone=True))
     deletions = Column(BigInteger)
     head_ref = Column(Text, nullable=False)
     # These are nullable because the head repository can be deleted by the owner.
@@ -240,7 +240,7 @@ class PullRequest(Base,
     merge_commit_sha = Column(Text)
     mergeable = Column(Text)
     merged = Column(Boolean)
-    merged_at = Column(TIMESTAMP)
+    merged_at = Column(TIMESTAMP(timezone=True))
     merged_by_id = Column(BigInteger)
     merged_by_login = Column(Text)
     milestone_id = Column(Text, nullable=False)
@@ -257,13 +257,13 @@ class PushCommit(Base,
 
     node_id = Column(Text, primary_key=True)
     message = Column(Text, nullable=False)
-    pushed_date = Column(TIMESTAMP)
+    pushed_date = Column(TIMESTAMP(timezone=True))
     author_login = Column(Text)
     author_avatar_url = Column(Text)
     author_email = Column(Text)
     author_name = Column(Text)
     author_date = Column(Text, nullable=False)
-    authored_date = Column(TIMESTAMP, nullable=False)
+    authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
     url = Column(Text)
     sha = Column(Text, nullable=False)
     committer_login = Column(Text)
@@ -271,7 +271,7 @@ class PushCommit(Base,
     committer_email = Column(Text)
     committer_name = Column(Text)
     commit_date = Column(Text, nullable=False)
-    committed_date = Column(TIMESTAMP, nullable=False)
+    committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
     additions = Column(BigInteger, nullable=False)
     deletions = Column(BigInteger, nullable=False)
     changed_files = Column(BigInteger, nullable=False)
@@ -294,7 +294,7 @@ class Repository(Base,
     name = Column(Text)
     owner = Column(BigInteger, nullable=False)
     private = Column(Boolean)
-    pushed_at = Column(TIMESTAMP)
+    pushed_at = Column(TIMESTAMP(timezone=True))
     ssh_url = Column(Text)
 
 
@@ -322,8 +322,8 @@ class Release(Base, RepositoryMixin):
     author_avatar_url = Column(Text)
     description_html = Column(Text)
     name = Column(Text)
-    published_at = Column(TIMESTAMP)
-    updated_at = Column(TIMESTAMP)
+    published_at = Column(TIMESTAMP(timezone=True))
+    updated_at = Column(TIMESTAMP(timezone=True))
     tag = Column(Text)
     url = Column(Text)
     sha = Column(Text, nullable=False)
@@ -336,7 +336,7 @@ class NodeCommit(Base):
     id = Column(Text, primary_key=True)
     oid = Column(Text, nullable=False)
     sha = synonym(oid)
-    committed_date = Column(TIMESTAMP)
+    committed_date = Column(TIMESTAMP(timezone=True))
 
 
 NodeCommit.sha.key = "oid"

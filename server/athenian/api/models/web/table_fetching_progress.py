@@ -25,6 +25,10 @@ class TableFetchingProgress(Model):
         self._name = name
         self._total = total
 
+    def __lt__(self, other: "TableFetchingProgress") -> bool:
+        """Implement "<"."""
+        return self.name < other.name
+
     @property
     def fetched(self) -> int:
         """Gets the fetched of this TableFetchingProgress.

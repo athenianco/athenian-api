@@ -20,7 +20,7 @@ except ImportError:
             if not kwargs:
                 return args[0]
             return lambda fn: fn
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 import uvloop
 
@@ -28,7 +28,7 @@ from athenian.api import AthenianApp, create_memcached, setup_cache_metrics
 from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata import hack_sqlite_arrays
-from athenian.api.models.metadata.github import Base as MetadataBase
+from athenian.api.models.metadata.github import Base as MetadataBase, PullRequest
 from athenian.api.models.state.models import Base as StateBase
 from tests.sample_db_data import fill_metadata_session, fill_state_session
 
@@ -188,21 +188,22 @@ def client(loop, aiohttp_client, app):
 @pytest.fixture(scope="module")
 def metadata_db() -> str:
     if override_mdb:
-        return override_mdb
-    hack_sqlite_arrays()
-    metadata_db_path = db_dir / "mdb.sqlite"
-    conn_str = "sqlite:///%s" % metadata_db_path
-    if metadata_db_path.exists():
-        return conn_str
+        conn_str = override_mdb
+    else:
+        hack_sqlite_arrays()
+        metadata_db_path = db_dir / "mdb.sqlite"
+        conn_str = "sqlite:///%s" % metadata_db_path
     engine = create_engine(conn_str)
     MetadataBase.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
-    try:
-        fill_metadata_session(session)
-        session.commit()
-    finally:
-        session.close()
-    os.chmod(metadata_db_path, 0o666)
+    if session.query(func.count(PullRequest.node_id)).one()[0] == 0:
+        try:
+            fill_metadata_session(session)
+            session.commit()
+        finally:
+            session.close()
+        if not override_mdb:
+            os.chmod(metadata_db_path, 0o666)
     return conn_str
 
 
