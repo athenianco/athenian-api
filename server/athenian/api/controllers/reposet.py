@@ -1,7 +1,7 @@
 import asyncio
 from itertools import chain
 import logging
-from sqlite3 import OperationalError
+from sqlite3 import IntegrityError, OperationalError
 from typing import List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
 import aiomcache
@@ -18,7 +18,7 @@ from athenian.api.models.metadata.github import InstallationOwner, InstallationR
 from athenian.api.models.state.models import Account, RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourceDataError, \
     NotFoundError
-from athenian.api.models.web.generic_error import TransactionConflict
+from athenian.api.models.web.generic_error import DatabaseConflict
 from athenian.api.response import ResponseError
 from athenian.api.typing_utils import DatabaseLike
 
@@ -206,8 +206,8 @@ async def _load_account_reposets(account: int,
                 rs.id, account, len(repos), native_uid,
             )
             return [rs.explode(with_primary_keys=True)]
-    except (UniqueViolationError, OperationalError) as e:
+    except (UniqueViolationError, IntegrityError, OperationalError) as e:
         logging.getLogger("%s.load_account_reposets" % metadata.__package__).error(
             "%s: %s", type(e).__name__, e)
-        raise ResponseError(TransactionConflict(
+        raise ResponseError(DatabaseConflict(
             detail="concurrent initial reposet creation")) from None

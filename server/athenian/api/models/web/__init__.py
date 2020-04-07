@@ -24,8 +24,8 @@ from athenian.api.models.web.filter_pull_requests_request import FilterPullReque
 from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.for_set import ForSet
-from athenian.api.models.web.generic_error import BadRequestError, ForbiddenError, GenericError, \
-    NotFoundError, TransactionConflict
+from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, \
+    ForbiddenError, GenericError, NotFoundError
 from athenian.api.models.web.generic_filter_request import GenericFilterRequest
 from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.included_native_user import IncludedNativeUser

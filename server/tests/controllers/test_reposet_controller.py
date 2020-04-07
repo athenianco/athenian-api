@@ -90,6 +90,26 @@ async def test_set_repository_set_404(client, headers):
     assert response.status == 404, "Response body is : " + body
 
 
+async def test_set_repository_set_same(client, headers):
+    body = ["github.com/src-d/go-git", "github.com/src-d/gitbase"]
+    response = await client.request(
+        method="PUT", path="/v1/reposet/1", headers=headers, json=body,
+    )
+    assert response.status == 200, "Response body is : " + body
+
+
+async def test_set_repository_set_409(client, headers):
+    body = RepositorySetCreateRequest(1, ["github.com/src-d/go-git"]).to_dict()
+    await client.request(
+        method="POST", path="/v1/reposet/create", headers=headers, json=body,
+    )
+    body = ["github.com/src-d/go-git"]
+    response = await client.request(
+        method="PUT", path="/v1/reposet/1", headers=headers, json=body,
+    )
+    assert response.status == 409
+
+
 @pytest.mark.parametrize("reposet", [2, 3])
 async def test_set_repository_set_bad_account(client, reposet, headers):
     body = ["github.com/src-d/hercules"]
@@ -118,6 +138,15 @@ async def test_create_repository_set(client, headers):
     assert response.status == 200, "Response body is : " + body
     body = json.loads(body)
     assert body["id"] >= 4
+
+
+async def test_create_repository_set_409(client, headers):
+    body = RepositorySetCreateRequest(1, ["github.com/src-d/go-git", "github.com/src-d/gitbase"],
+                                      ).to_dict()
+    response = await client.request(
+        method="POST", path="/v1/reposet/create", headers=headers, json=body,
+    )
+    assert response.status == 409
 
 
 @pytest.mark.parametrize("account", [2, 3, 10])
