@@ -212,6 +212,7 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
     release_urls = 0
     timestamps = defaultdict(bool)
     response_props = defaultdict(bool)
+    stage_timings = defaultdict(int)
     for pr in obj["data"]:
         assert pr["repository"].startswith("github.com/"), str(pr)
         assert pr["number"] > 0
@@ -234,6 +235,11 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         release_urls += bool(pr.get("release_url"))
         for prop in pr["properties"]:
             response_props[prop] = True
+        try:
+            for k, v in pr["stage_timings"].items():
+                stage_timings[k] += int(v[:-1])
+        except KeyError:
+            pass
         participants = pr["participants"]
         assert len(participants) > 0
         authors = 0
@@ -268,6 +274,7 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert response_props.get(PullRequestProperty.COMMIT_HAPPENED)
         assert response_props.get(PullRequestProperty.REVIEW_REQUEST_HAPPENED)
         assert response_props.get(PullRequestProperty.CHANGES_REQUEST_HAPPENED)
+        assert "wip" in stage_timings
     if PullRequestProperty.MERGING in props:
         assert timestamps["review_requested"]
         assert timestamps["approved"]
@@ -278,6 +285,8 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert response_props.get(PullRequestProperty.COMMIT_HAPPENED)
         assert response_props.get(PullRequestProperty.REVIEW_HAPPENED)
         assert response_props.get(PullRequestProperty.APPROVE_HAPPENED)
+        assert "wip" in stage_timings
+        assert "review" in stage_timings
     if PullRequestProperty.RELEASING in props:
         assert timestamps["review_requested"]
         assert timestamps["approved"]
@@ -288,6 +297,9 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert response_props.get(PullRequestProperty.RELEASING)
         assert response_props.get(PullRequestProperty.MERGE_HAPPENED)
         assert timestamps["merged"]
+        assert "wip" in stage_timings
+        assert "review" in stage_timings
+        assert "merge" in stage_timings
     if PullRequestProperty.DONE in props:
         assert timestamps["review_requested"]
         assert timestamps["approved"]
@@ -300,6 +312,10 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert response_props.get(PullRequestProperty.RELEASE_HAPPENED)
         assert timestamps["released"]
         assert timestamps["closed"]
+        assert "wip" in stage_timings
+        assert "review" in stage_timings
+        assert "merge" in stage_timings
+        assert "release" in stage_timings
 
 
 @pytest.mark.parametrize("account, date_to, code",

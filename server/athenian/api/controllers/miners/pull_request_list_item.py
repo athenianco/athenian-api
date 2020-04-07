@@ -1,6 +1,7 @@
 from dataclasses import dataclass
+from datetime import timedelta
 from enum import auto, IntEnum
-from typing import Collection, Mapping, Optional
+from typing import Collection, Dict, Mapping, Optional
 
 import pandas as pd
 
@@ -56,5 +57,6 @@ class PullRequestListItem:
     merged: Optional[pd.Timestamp]
     released: Optional[pd.Timestamp]
     release_url: str
+    stage_timings: Dict[str, timedelta]
     properties: Collection[Property]
     participants: Mapping[ParticipationKind, Collection[str]]

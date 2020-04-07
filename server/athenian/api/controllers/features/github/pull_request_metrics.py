@@ -37,10 +37,10 @@ class ReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     may_have_negative_values = False
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
-                ) -> Optional[timedelta]:
+                allow_unclosed=False) -> Optional[timedelta]:
         """Calculate the actual state update."""
         # We cannot be sure that the approvals finished unless the PR is closed.
-        if times.first_review_request and times.closed and (
+        if times.first_review_request and (times.closed or allow_unclosed) and (
                 (times.approved.value is not None and min_time < times.approved.best < max_time)
                 or  # noqa
                 (times.last_review and min_time < times.last_review.best < max_time)):
@@ -49,7 +49,7 @@ class ReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
             elif times.last_review:
                 return times.last_review.best - times.first_review_request.best
             else:
-                assert False  # noqa
+                return None
         return None
 
 

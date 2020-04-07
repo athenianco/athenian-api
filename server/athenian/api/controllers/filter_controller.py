@@ -10,8 +10,8 @@ from dateutil.parser import parse as parse_datetime
 from sqlalchemy import and_, distinct, func, or_, select
 
 from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.controllers.features.github.pull_request_filter import filter_pull_requests
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
-from athenian.api.controllers.miners.github.pull_request import filter_pull_requests
 from athenian.api.controllers.miners.github.release import mine_releases
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
@@ -32,6 +32,7 @@ from athenian.api.models.web.included_native_users import IncludedNativeUsers
 from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_set import PullRequestSet
+from athenian.api.models.web.stage_timings import StageTimings
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import FriendlyJson, model_response, ResponseError
 
@@ -250,6 +251,10 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
         elif p == Property.DONE:
             props["stage"] = "done"
     props["properties"] = sorted(p.name.lower() for p in pr.properties)
+    if pr.stage_timings:
+        props["stage_timings"] = StageTimings(**pr.stage_timings)
+    else:
+        del props["stage_timings"]
     participants = defaultdict(list)
     for pk, pids in sorted(pr.participants.items()):
         pkweb = pk.name.lower()

@@ -1827,6 +1827,8 @@ components:
           type: string
         stage:
           $ref: '#/components/schemas/PullRequestPipelineStage'
+        stage_timings:
+          $ref: '#/components/schemas/StageTimings'
         properties:
           description: List of the PR properties triggered in the given time window.
             There may be extra properties that were not originally requested.
@@ -1852,6 +1854,23 @@ components:
       - stage
       - title
       - updated
+      type: object
+    StageTimings:
+      additionalProperties: false
+      description: Time spent by the PR in each pipeline stage.
+      example:
+        wip: 120s
+      properties:
+        wip:
+          type: string
+        review:
+          type: string
+        merge:
+          type: string
+        release:
+          type: string
+      required:
+      - wip
       type: object
     PullRequestParticipant:
       additionalProperties: false
@@ -2349,6 +2368,7 @@ components:
         - type: integer
         - format: float
           type: number
+        - type: string
       type: array
     DeveloperSummaries:
       description: List of developer activity statistics and profile details.
@@ -2531,6 +2551,7 @@ components:
       - url
       type: object
     ReleaseMatchRequest:
+      additionalProperties: false
       description: Release matching rule setting.
       example:
         account: 1
@@ -2575,6 +2596,7 @@ components:
       description: Mapping from repository names to their release match settings.
       type: object
     ReleaseMatchSetting:
+      additionalProperties: false
       description: Release matching setting for a specific repository.
       properties:
         branches:
