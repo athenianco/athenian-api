@@ -23,10 +23,15 @@ def upgrade():
     op.add_column("repository_sets",
                   sa.Column("items_checksum", sa.BigInteger(), nullable=True))
     session = Session(bind=op.get_bind())
-    for rs in session.query(RepositorySet):
-        rs.items_checksum = rs.calc_items_checksum_obj(rs.items)
-        session.flush()
-    session.commit()
+    try:
+        for obj in session.query(RepositorySet):
+            obj.touch(exclude={RepositorySet.items_checksum.key})
+            session.flush()
+        session.commit()
+    except Exception as e:
+        with op.batch_alter_table("repository_sets") as bop:
+            bop.drop_column("items_checksum")
+        raise e from None
     with op.batch_alter_table("repository_sets") as bop:
         bop.alter_column("items_checksum", nullable=False)
         bop.create_unique_constraint("uc_owner_items", ["owner", "items_checksum"])
