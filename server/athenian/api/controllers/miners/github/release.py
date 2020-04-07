@@ -154,7 +154,8 @@ async def _match_releases_by_branch(repos: Iterable[str],
         commits = await read_sql_query(
             select([PushCommit]).where(and_(
                 PushCommit.node_id.in_(merge_points),
-                PushCommit.committed_date.between(time_from, time_to))),
+                PushCommit.committed_date.between(time_from, time_to)))
+            .order_by(desc(PushCommit.commit_date)),
             conn, PushCommit)
         pseudo_releases.append(pd.DataFrame({
             Release.author.key: commits[PushCommit.author_login.key],
