@@ -235,11 +235,8 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         release_urls += bool(pr.get("release_url"))
         for prop in pr["properties"]:
             response_props[prop] = True
-        try:
-            for k, v in pr["stage_timings"].items():
-                stage_timings[k] += int(v[:-1])
-        except KeyError:
-            pass
+        for k, v in pr["stage_timings"].items():
+            stage_timings[k] += int(v[:-1])
         participants = pr["participants"]
         assert len(participants) > 0
         authors = 0
@@ -265,6 +262,7 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert response_props.get(PullRequestProperty.WIP)
         assert response_props.get(PullRequestProperty.CREATED)
         assert response_props.get(PullRequestProperty.COMMIT_HAPPENED)
+        assert "wip" in stage_timings
     if PullRequestProperty.REVIEWING in props:
         assert comments > 0
         assert review_comments > 0
@@ -275,6 +273,7 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert response_props.get(PullRequestProperty.REVIEW_REQUEST_HAPPENED)
         assert response_props.get(PullRequestProperty.CHANGES_REQUEST_HAPPENED)
         assert "wip" in stage_timings
+        assert "review" in stage_timings
     if PullRequestProperty.MERGING in props:
         assert timestamps["review_requested"]
         assert timestamps["approved"]
@@ -287,6 +286,7 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert response_props.get(PullRequestProperty.APPROVE_HAPPENED)
         assert "wip" in stage_timings
         assert "review" in stage_timings
+        assert "merge" in stage_timings
     if PullRequestProperty.RELEASING in props:
         assert timestamps["review_requested"]
         assert timestamps["approved"]
@@ -300,6 +300,7 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
         assert "wip" in stage_timings
         assert "review" in stage_timings
         assert "merge" in stage_timings
+        assert "release" in stage_timings
     if PullRequestProperty.DONE in props:
         assert timestamps["review_requested"]
         assert timestamps["approved"]

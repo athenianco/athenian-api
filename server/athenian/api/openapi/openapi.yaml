@@ -1697,6 +1697,8 @@ components:
           created: 2019-05-17T01:14:00Z
           updated: 2019-09-18T10:49:00Z
           stage: wip
+          stage_timings:
+            wip: 2000s
           participants:
           - id: github.com/NonLogicalDev
             status: author
@@ -1760,6 +1762,8 @@ components:
         comments: 1
         commits: 2
         stage: wip
+        stage_timings:
+          wip: 2000s
         participants:
         - id: github.com/NonLogicalDev
           status: author
@@ -1852,6 +1856,7 @@ components:
       - size_added
       - size_removed
       - stage
+      - stage_timings
       - title
       - updated
       type: object

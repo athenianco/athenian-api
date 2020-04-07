@@ -251,10 +251,7 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
         elif p == Property.DONE:
             props["stage"] = "done"
     props["properties"] = sorted(p.name.lower() for p in pr.properties)
-    if pr.stage_timings:
-        props["stage_timings"] = StageTimings(**pr.stage_timings)
-    else:
-        del props["stage_timings"]
+    props["stage_timings"] = StageTimings(**pr.stage_timings)
     participants = defaultdict(list)
     for pk, pids in sorted(pr.participants.items()):
         pkweb = pk.name.lower()

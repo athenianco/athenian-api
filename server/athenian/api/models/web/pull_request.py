@@ -540,6 +540,9 @@ class PullRequest(Model):
 
         :param stage_timings: The stage timings of this PullRequest.
         """
+        if stage_timings is None:
+            raise ValueError("Invalid value for `stage_timings`, must not be `None`")
+
         self._stage_timings = stage_timings
 
     @property

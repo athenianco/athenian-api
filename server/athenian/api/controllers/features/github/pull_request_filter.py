@@ -29,6 +29,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
         self._properties = set()
         self._participants = {}
         self._time_from = pd.NaT
+        self._time_to = pd.NaT
         self._calcs = {
             "wip": WorkInProgressTimeCalculator(),
             "review": ReviewTimeCalculator(),
@@ -66,6 +67,17 @@ class PullRequestListMiner(PullRequestTimesMiner):
         """Set the minimum of the allowed events time span."""
         assert isinstance(value, datetime) and value.tzinfo is not None
         self._time_from = value
+
+    @property
+    def time_to(self) -> datetime:
+        """Return the minimum of the allowed events time span."""
+        return self._time_to
+
+    @time_to.setter
+    def time_to(self, value: datetime):
+        """Set the maximum of the allowed events time span."""
+        assert isinstance(value, datetime) and value.tzinfo is not None
+        self._time_to = value
 
     def _match_participants(self, yours: Mapping[ParticipationKind, Set[str]]) -> bool:
         """Check the PR particpants for compatibility with self.participants.
@@ -139,11 +151,16 @@ class PullRequestListMiner(PullRequestTimesMiner):
             return None
         review_requested = \
             pr.review_requests[PullRequestReviewRequest.created_at.key].max() or None
+        time_to = min(self.time_to, datetime.now(timezone.utc))
         stage_timings = {}
         for k, calc in self._calcs.items():
             kwargs = {} if k != "review" else {"allow_unclosed": True}
-            stage_timings[k] = calc.analyze(
-                times, time_from, times.max_timestamp() + timedelta(seconds=1), **kwargs)
+            stage_timings[k] = calc.analyze(times, time_from, time_to, **kwargs)
+        for prop, stage in ((Property.WIP, "wip"), (Property.REVIEWING, "review"),
+                            (Property.MERGING, "merge"), (Property.RELEASING, "release")):
+            if prop in props:
+                stage_timings[stage] = self._calcs[stage].analyze(
+                    times, time_from, time_to, override_event_time=time_to)
         return PullRequestListItem(
             repository=prefix + pr.pr[PullRequest.repository_full_name.key],
             number=pr.pr[PullRequest.number.key],
@@ -208,4 +225,5 @@ async def filter_pull_requests(
     miner.properties = properties
     miner.participants = participants
     miner.time_from = pd.Timestamp(time_from, tzinfo=timezone.utc)
+    miner.time_to = pd.Timestamp(time_to, tzinfo=timezone.utc) + timedelta(days=1)
     return list(miner)
