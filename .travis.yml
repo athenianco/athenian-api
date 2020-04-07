@@ -62,6 +62,7 @@ matrix:
       script:
         - set -e
         - export OVERRIDE_SDB=postgresql://postgres:postgres@0.0.0.0:5432/state
+        - export OVERRIDE_MDB=postgresql://postgres:postgres@0.0.0.0:5432/metadata
         - pytest --ignore=tests/controllers
         - pytest tests/controllers/features
         - pytest tests/controllers/miners
@@ -86,6 +87,7 @@ matrix:
       script:
         - set -e
         - export OVERRIDE_SDB=postgresql://postgres:postgres@0.0.0.0:5432/state
+        - export OVERRIDE_MDB=postgresql://postgres:postgres@0.0.0.0:5432/metadata
         - pytest tests/controllers --ignore tests/controllers/features --ignore tests/controllers/miners
         - set +e
     - if: commit_message !~ /Bump version/

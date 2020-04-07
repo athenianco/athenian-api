@@ -294,10 +294,10 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
                 .where(InstallationRepo.install_id == installation_id))
             rows = await mdb_conn.fetch_all(
                 select([FetchProgress]).where(FetchProgress.event_id == delivery_id))
-            tables = [TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.key],
-                                            name=r[FetchProgress.node_type.key],
-                                            total=r[FetchProgress.nodes_total.key])
-                      for r in rows]
+            tables = sorted(TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.key],
+                                                  name=r[FetchProgress.node_type.key],
+                                                  total=r[FetchProgress.nodes_total.key])
+                            for r in rows)
             started_date = min(r[FetchProgress.created_at.key] for r in rows)
             if started_date is not None:
                 started_date = started_date.replace(tzinfo=timezone.utc)
