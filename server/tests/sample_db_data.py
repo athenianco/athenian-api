@@ -88,7 +88,7 @@ def fill_state_session(session: sqlalchemy.orm.Session):
         user_id="auth0|5e1f6e2e8bfa520ea5290741", account_id=1, is_admin=False))
     session.add(RepositorySet(
         owner=1,
-        items=["github.com/src-d/go-git", "github.com/src-d/gitbase"]))
+        items=["github.com/src-d/gitbase", "github.com/src-d/go-git"]))
     session.add(RepositorySet(
         owner=2,
         items=["github.com/src-d/hercules", "github.com/athenianco/athenian-api"]))

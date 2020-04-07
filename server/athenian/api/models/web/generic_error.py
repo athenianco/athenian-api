@@ -198,13 +198,13 @@ class ForbiddenError(GenericError):
                          status=HTTPStatus.FORBIDDEN, detail=detail)
 
 
-class TransactionConflict(GenericError):
+class DatabaseConflict(GenericError):
     """HTTP 409."""
 
     def __init__(self, detail: Optional[str] = None):
-        """Initialize a new instance of TransactionConflict.
+        """Initialize a new instance of DatabaseConflict.
 
         :param detail: The details about this error.
         """
-        super().__init__(type="/errors/TransactionConflict", title=HTTPStatus.CONFLICT.phrase,
+        super().__init__(type="/errors/DatabaseConflict", title=HTTPStatus.CONFLICT.phrase,
                          status=HTTPStatus.CONFLICT, detail=detail)

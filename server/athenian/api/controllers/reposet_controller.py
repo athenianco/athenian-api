@@ -1,7 +1,9 @@
 from datetime import timezone
+from sqlite3 import IntegrityError, OperationalError
 from typing import List, Optional
 
 from aiohttp import web
+from asyncpg import UniqueViolationError
 import databases.core
 from sqlalchemy import delete, insert, update
 
@@ -11,7 +13,8 @@ from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.state.models import RepositorySet
-from athenian.api.models.web import BadRequestError, CreatedIdentifier, ForbiddenError
+from athenian.api.models.web import BadRequestError, CreatedIdentifier, DatabaseConflict, \
+    ForbiddenError
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.request import AthenianWebRequest
@@ -39,7 +42,10 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
         except ResponseError as e:
             return e.response
         rs = RepositorySet(owner=account, items=items).create_defaults()
-        rid = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
+        try:
+            rid = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
+        except (UniqueViolationError, IntegrityError, OperationalError):
+            return ResponseError(DatabaseConflict(detail="this reposet already exists")).response
         return model_response(CreatedIdentifier(rid))
 
 
@@ -125,11 +131,16 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
             body = await _check_reposet(request, sdb_conn, id, body)
         except ResponseError as e:
             return e.response
-        rs.items = body
-        rs.refresh()
-        await sdb_conn.execute(update(RepositorySet)
-                               .where(RepositorySet.id == id)
-                               .values(rs.explode()))
+        if rs.items != body:
+            rs.items = body
+            rs.refresh()
+            try:
+                await sdb_conn.execute(update(RepositorySet)
+                                       .where(RepositorySet.id == id)
+                                       .values(rs.explode()))
+            except (UniqueViolationError, IntegrityError, OperationalError):
+                return ResponseError(DatabaseConflict(
+                    detail="this reposet already exists")).response
         return web.json_response(body, status=200)
 
 

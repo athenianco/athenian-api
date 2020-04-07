@@ -5,12 +5,14 @@ from http import HTTPStatus
 import logging
 import os
 from random import randint
+from sqlite3 import IntegrityError, OperationalError
 import struct
 from typing import Optional, Tuple
 
 from aiohttp import web
 import aiomcache
 import aiosqlite.core
+from asyncpg import IntegrityConstraintViolationError
 import databases.core
 import pyffx
 from sqlalchemy import and_, delete, func, insert, select, update
@@ -23,6 +25,7 @@ from athenian.api.models.metadata.github import FetchProgress, Installation, Ins
 from athenian.api.models.state.models import Account, Invitation, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
     NoSourceDataError, NotFoundError
+from athenian.api.models.web.generic_error import DatabaseConflict
 from athenian.api.models.web.installation_progress import InstallationProgress
 from athenian.api.models.web.invitation_check_result import InvitationCheckResult
 from athenian.api.models.web.invitation_link import InvitationLink
@@ -115,63 +118,72 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         iid, salt = decode_slug(x)
     except binascii.Error:
         return bad_req()
-    log = logging.getLogger(metadata.__package__)
     async with sdb.connection() as conn:
-        inv = await conn.fetch_one(
-            select([Invitation.account_id, Invitation.accepted, Invitation.is_active])
-            .where(and_(Invitation.id == iid, Invitation.salt == salt)))
-        if inv is None:
-            return ResponseError(NotFoundError(
-                detail="Invitation was not found.")).response
-        if not inv[Invitation.is_active.key]:
-            return ResponseError(ForbiddenError(
-                detail="This invitation is disabled.")).response
-        acc_id = inv[Invitation.account_id.key]
-        is_admin = acc_id == admin_backdoor
-        if is_admin:
-            timestamp = await conn.fetch_val(
-                select([UserAccount.created_at]).where(and_(UserAccount.user_id == request.uid,
-                                                            UserAccount.is_admin)))
-            if timestamp is not None:
-                if timestamp.tzinfo is None:
-                    now = datetime.utcnow()
-                else:
-                    now = datetime.now(tz=timestamp.tzinfo)
-            if timestamp is not None and now - timestamp < accept_admin_cooldown:
-                return ResponseError(GenericError(
-                    type="/errors/AdminCooldownError",
-                    title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
-                    status=HTTPStatus.TOO_MANY_REQUESTS,
-                    detail="You accepted an admin invitation less than %s ago." %
-                           accept_admin_cooldown)).response
-            # create a new account for the admin user
-            acc_id = await create_new_account(conn)
-            if acc_id >= admin_backdoor:
-                await conn.execute(delete(Account).where(Account.id == acc_id))
-                return ResponseError(GenericError(
-                    type="/errors/LockedError",
-                    title=HTTPStatus.LOCKED.phrase,
-                    status=HTTPStatus.LOCKED,
-                    detail="Invitation was not found.")).response
-            log.info("Created new account %d", acc_id)
-            status = None
-        else:
-            status = await conn.fetch_one(select([UserAccount.is_admin])
-                                          .where(and_(UserAccount.user_id == request.uid,
-                                                      UserAccount.account_id == acc_id)))
-        if status is None:
-            # create the user<>account record
-            user = UserAccount(
-                user_id=request.uid,
-                account_id=acc_id,
-                is_admin=is_admin,
-            ).create_defaults()
-            await conn.execute(insert(UserAccount).values(user.explode(with_primary_keys=True)))
-            log.info("Assigned user %s to account %d (admin: %s)", request.uid, acc_id, is_admin)
-            values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
-            await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
-        user = await (await request.user()).load_accounts(conn)
+        try:
+            async with conn.transaction():
+                acc_id, user = await _accept_invitation(iid, salt, request, conn)
+        except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
+            return ResponseError(DatabaseConflict(detail=str(e))).response
+        except ResponseError as e:
+            return e.response
     return model_response(InvitedUser(account=acc_id, user=user))
+
+
+async def _accept_invitation(iid, salt, request, conn):
+    log = logging.getLogger(metadata.__package__)
+    inv = await conn.fetch_one(
+        select([Invitation.account_id, Invitation.accepted, Invitation.is_active])
+        .where(and_(Invitation.id == iid, Invitation.salt == salt)))
+    if inv is None:
+        raise ResponseError(NotFoundError(detail="Invitation was not found."))
+    if not inv[Invitation.is_active.key]:
+        raise ResponseError(ForbiddenError(detail="This invitation is disabled."))
+    acc_id = inv[Invitation.account_id.key]
+    is_admin = acc_id == admin_backdoor
+    if is_admin:
+        timestamp = await conn.fetch_val(
+            select([UserAccount.created_at]).where(and_(UserAccount.user_id == request.uid,
+                                                        UserAccount.is_admin)))
+        if timestamp is not None:
+            if timestamp.tzinfo is None:
+                now = datetime.utcnow()
+            else:
+                now = datetime.now(tz=timestamp.tzinfo)
+        if timestamp is not None and now - timestamp < accept_admin_cooldown:
+            raise ResponseError(GenericError(
+                type="/errors/AdminCooldownError",
+                title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
+                status=HTTPStatus.TOO_MANY_REQUESTS,
+                detail="You accepted an admin invitation less than %s ago." %
+                       accept_admin_cooldown))
+        # create a new account for the admin user
+        acc_id = await create_new_account(conn)
+        if acc_id >= admin_backdoor:
+            await conn.execute(delete(Account).where(Account.id == acc_id))
+            raise ResponseError(GenericError(
+                type="/errors/LockedError",
+                title=HTTPStatus.LOCKED.phrase,
+                status=HTTPStatus.LOCKED,
+                detail="Invitation was not found."))
+        log.info("Created new account %d", acc_id)
+        status = None
+    else:
+        status = await conn.fetch_one(select([UserAccount.is_admin])
+                                      .where(and_(UserAccount.user_id == request.uid,
+                                                  UserAccount.account_id == acc_id)))
+    if status is None:
+        # create the user<>account record
+        user = UserAccount(
+            user_id=request.uid,
+            account_id=acc_id,
+            is_admin=is_admin,
+        ).create_defaults()
+        await conn.execute(insert(UserAccount).values(user.explode(with_primary_keys=True)))
+        log.info("Assigned user %s to account %d (admin: %s)", request.uid, acc_id, is_admin)
+        values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
+        await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
+    user = await (await request.user()).load_accounts(conn)
+    return acc_id, user
 
 
 async def create_new_account(conn: DatabaseLike) -> int:

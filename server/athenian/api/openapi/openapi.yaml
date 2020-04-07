@@ -325,6 +325,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: Invitation was not found.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Concurrent requests.
       security:
       - bearerAuth: []
       summary: Accept the account membership invitation and finish registration. The
@@ -600,6 +606,12 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: The user is forbidden to create a repository set from the specified
             items.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: There is an existing reposet with the same contents.
       security:
       - bearerAuth: []
       summary: Create a repository set.
@@ -729,6 +741,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The specified repository set was not found.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: There is an existing reposet with the same contents.
       security:
       - bearerAuth: []
       summary: Update a repository set. The user must be an admin of the account that
@@ -765,6 +783,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The user does not belong to the specified account.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Concurrent requests that are finishing the account registration.
       security:
       - bearerAuth: []
       summary: List the repository sets belonging to the current user.
