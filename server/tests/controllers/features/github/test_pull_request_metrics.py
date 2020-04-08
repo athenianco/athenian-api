@@ -74,7 +74,8 @@ def test_pull_request_metrics_float_binned(pr_samples, cls):  # noqa: F811
     time_intervals = Granularity.split("month", time_from, time_to)
     binned = BinnedPullRequestMetricCalculator([cls()], time_intervals)
     result = binned(pr_samples(1000))
-    for m in result:
+    # the last interval is null and that's intended
+    for m in result[:-1]:
         assert m[0].exists
         assert m[0].value > 1
         assert m[0].confidence_min is None

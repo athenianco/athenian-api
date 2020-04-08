@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import re
 from typing import List
 
@@ -28,7 +28,7 @@ class Granularity(Model):
         if not match:
             raise ValueError("Invalid granularity format: " + value)
         if value == "all":
-            return [date_from, date_to]
+            return [date_from, date_to + timedelta(days=1)]
         _, step, base = match.groups()
         if step is None:
             step = 1
@@ -40,6 +40,5 @@ class Granularity(Model):
         }[base]
         unsampled = [d.date() for d in rrule(freq, dtstart=date_from, until=date_to)]
         series = unsampled[::int(step)]
-        if series[-1] != date_to or len(series) == 1:
-            series.append(date_to)
+        series.append(date_to + timedelta(days=1))
         return series

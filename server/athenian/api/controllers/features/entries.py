@@ -1,4 +1,4 @@
-from datetime import date, timedelta, timezone
+from datetime import date, timezone
 import pickle
 from typing import Collection, Dict, List, Optional, Sequence, Tuple
 
@@ -51,7 +51,6 @@ async def calc_code_metrics(
 ) -> List[CodeStats]:
     """Filter code pushed on GitHub according to the specified criteria."""
     time_from, time_to = (pd.Timestamp(time_intervals[i], tzinfo=timezone.utc) for i in (0, -1))
-    time_to += timedelta(days=1)  # include the full last day
     x_commits = await extract_commits(
         prop, time_from, time_to, repos, with_author, with_committer, db, cache)
     all_commits = await extract_commits(

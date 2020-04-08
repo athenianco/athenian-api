@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 import io
 import struct
@@ -113,8 +113,7 @@ class PullRequestMiner:
                     ) -> List[pd.DataFrame]:
         assert isinstance(time_from, date) and not isinstance(time_from, datetime)
         assert isinstance(time_to, date) and not isinstance(time_to, datetime)
-        time_from = pd.Timestamp(time_from, tzinfo=timezone.utc)
-        time_to = pd.Timestamp(time_to, tzinfo=timezone.utc) + timedelta(days=1)
+        time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (time_from, time_to))
         filters = [
             sql.or_(PullRequest.updated_at.between(time_from, time_to),
                     sql.and_(sql.or_(PullRequest.closed_at.is_(None),
