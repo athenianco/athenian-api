@@ -92,7 +92,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
                 confidence_mins=[results[m][i].confidence_min for m in met.metrics],
                 confidence_maxs=[results[m][i].confidence_max for m in met.metrics],
                 confidence_scores=[results[m][i].confidence_score() for m in met.metrics],
-            ) for i, d in enumerate(time_intervals[1:])])
+            ) for i, d in enumerate(time_intervals[:-1])])
         for v in cm.values:
             if sum(1 for c in v.confidence_scores if c is not None) == 0:
                 v.confidence_mins = None
@@ -216,7 +216,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
             total_commits=s.total_number_of_commits,
             total_lines=s.total_number_of_lines,
         ).to_dict()
-        for d, s in zip(time_intervals[1:], stats)]
+        for d, s in zip(time_intervals[:-1], stats)]
     return web.json_response(model, dumps=FriendlyJson.dumps, status=200)
 
 
