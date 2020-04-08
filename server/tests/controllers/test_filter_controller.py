@@ -492,7 +492,7 @@ async def test_filter_commits_bypassing_prs_nasty_input(client, headers, account
     assert response.status == code
 
 
-async def test_filter_releases_smoke(client, headers):
+async def test_filter_releases_by_tag(client, headers):
     body = {
         "account": 1,
         "date_from": "2018-01-12",
@@ -523,6 +523,20 @@ async def test_filter_releases_smoke(client, headers):
         assert release.published >= datetime(year=2018, month=1, day=12, tzinfo=timezone.utc), \
             str(release)
         assert release.repository.startswith("github.com/"), str(release)
+
+
+async def test_filter_releases_by_branch(client, headers, cache, app):
+    app._cache = cache
+    body = {
+        "account": 1,
+        "date_from": "2015-01-01",
+        "date_to": "2020-10-22",
+        "in": ["{1}"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/releases", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
 
 
 @pytest.mark.parametrize("account, date_to, code",

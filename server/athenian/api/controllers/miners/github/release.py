@@ -28,7 +28,11 @@ async def load_releases(repos: Iterable[str],
                         cache: Optional[aiomcache.Client],
                         index: Optional[Union[str, Sequence[str]]] = None,
                         ) -> pd.DataFrame:
-    """Fetch releases from the metadata DB according to the match settings."""
+    """
+    Fetch releases from the metadata DB according to the match settings.
+
+    :param repos: Repositories in which to search for releases *without the service prefix*.
+    """
     assert isinstance(conn, databases.core.Connection)
     repos_by_tag_only = []
     repos_by_tag_or_branch = []
@@ -534,7 +538,7 @@ async def mine_releases(releases: pd.DataFrame,
     exptime=10 * 60,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda releases, **_: sorted(releases[Release.id.key]),
+    key=lambda releases, **_: (sorted(releases.index),),
     refresh_on_access=True,
 )
 async def _mine_monorepo_releases(
@@ -587,7 +591,8 @@ async def _mine_monorepo_releases(
             repo,
             getattr(release, Release.url.key),
             published_at,
-            published_at - previous_published_at,
+            (published_at - previous_published_at) if previous_published_at is not None
+            else timedelta(0),
             df[PushCommit.additions.key].sum(),
             df[PushCommit.deletions.key].sum(),
             len(included_commits),

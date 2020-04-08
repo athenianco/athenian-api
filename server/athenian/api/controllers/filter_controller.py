@@ -9,10 +9,9 @@ from aiohttp import web
 from dateutil.parser import parse as parse_datetime
 from sqlalchemy import and_, distinct, func, or_, select
 
-from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.controllers.features.github.pull_request_filter import filter_pull_requests
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
-from athenian.api.controllers.miners.github.release import mine_releases
+from athenian.api.controllers.miners.github.release import load_releases, mine_releases
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.controllers.reposet import resolve_repos
@@ -332,15 +331,14 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
-        repos = await _common_filter_preprocess(filt, request)
+        repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
     except ResponseError as e:
         return e.response
+    settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
+    repos = [r.split("/", 1)[1] for r in repos]
     async with request.mdb.connection() as conn:
-        releases = await read_sql_query(
-            select([Release]).where(and_(
-                Release.repository_full_name.in_(repos),
-                Release.published_at.between(filt.date_from - timedelta(days=365), filt.date_to))),
-            conn, Release, index=Release.id.key)
+        releases = await load_releases(repos, filt.date_from - timedelta(days=365), filt.date_to,
+                                       settings, conn, request.cache, index=Release.id.key)
         stats, avatars = await mine_releases(releases, filt.date_from, conn, request.cache)
         data = [FilteredRelease(**items) for _, items in stats.iterrows()]
     model = FilteredReleases(data=data, include=IncludedNativeUsers(users={
