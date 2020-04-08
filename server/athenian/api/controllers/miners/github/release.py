@@ -199,10 +199,14 @@ async def map_prs_to_releases(prs: pd.DataFrame,
 index_name = "pull_request_node_id"
 
 
-def _new_map_df() -> pd.DataFrame:
-    return pd.DataFrame(columns=[Release.published_at.key, Release.author.key, Release.url.key,
-                                 Release.repository_full_name.key],
-                        index=pd.Index([], name=index_name))
+def _new_map_df(data=None) -> pd.DataFrame:
+    columns = [Release.published_at.key,
+               Release.author.key,
+               Release.url.key,
+               Release.repository_full_name.key]
+    if data is None:
+        return pd.DataFrame(columns=columns, index=pd.Index([], name=index_name))
+    return pd.DataFrame.from_records(data, columns=[index_name] + columns, index=index_name)
 
 
 async def _load_pr_releases_from_cache(prs: Iterable[str],
@@ -237,7 +241,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
         releases = await load_releases(repos, time_from, time_to, release_settings, conn, cache)
         releases = dict(list(releases.groupby(Release.repository_full_name.key, sort=False)))
         histories = await _fetch_release_histories(releases, conn, cache)
-        released_prs = _new_map_df()
+        released_prs = []
         for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.key, sort=False):
             try:
                 repo_releases = releases[repo]
@@ -252,10 +256,12 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                 except KeyError:
                     continue
                 r = repo_releases.iloc[items[0]]
-                released_prs.loc[pr_id] = (r[Release.published_at.key],
-                                           r[Release.author.key],
-                                           r[Release.url.key],
-                                           repo)
+                released_prs.append((pr_id,
+                                     r[Release.published_at.key],
+                                     r[Release.author.key],
+                                     r[Release.url.key],
+                                     repo))
+        released_prs = _new_map_df(released_prs)
     released_prs[Release.published_at.key] = np.maximum(
         released_prs[Release.published_at.key],
         prs.loc[released_prs.index][PullRequest.merged_at.key])
