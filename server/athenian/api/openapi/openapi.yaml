@@ -1336,8 +1336,8 @@ components:
         metrics:
         - pr-lead-time
         - pr-wip-time
-        date_from: 2000-01-23
-        date_to: 2020-01-23
+        date_from: 2020-01-23
+        date_to: 2020-01-24
         granularity: day
         account: 1
       properties:
@@ -1379,7 +1379,7 @@ components:
         and developers.
       example:
         values:
-        - date: 2000-01-23
+        - date: 2020-01-23
           values:
           - 0.8008282
           - 0.8008282
@@ -1392,7 +1392,7 @@ components:
           confidence_scores:
           - 75
           - 75
-        - date: 2000-01-23
+        - date: 2020-01-24
           values:
           - 0.8008282
           - 0.8008282
@@ -1425,15 +1425,17 @@ components:
       type: object
     CalculatedPullRequestMetrics:
       additionalProperties: false
+      description: The dates start from `date_from` and end earlier or equal to `date_to`.
       example:
         metrics:
         - pr-lead-time
         - pr-wip-time
-        date_from: 2000-01-23
+        date_from: 2020-01-23
+        date_to: 2020-01-24
         granularity: day
         calculated:
         - values:
-          - date: 2000-01-23
+          - date: 2020-01-23
             values:
             - 0.8008282
             - 0.8008282
@@ -1446,7 +1448,7 @@ components:
             confidence_scores:
             - 75
             - 75
-          - date: 2000-01-23
+          - date: 2020-01-24
             values:
             - 0.8008282
             - 0.8008282
@@ -1467,7 +1469,7 @@ components:
             - github.com/athenianco/athenian-webapp
             - github.com/athenianco/athenian-api
         - values:
-          - date: 2000-01-23
+          - date: 2020-01-23
             values:
             - 0.8008282
             - 0.8008282
@@ -1480,7 +1482,7 @@ components:
             confidence_scores:
             - 75
             - 75
-          - date: 2000-01-23
+          - date: 2020-01-24
             values:
             - 0.8008282
             - 0.8008282
@@ -1500,7 +1502,6 @@ components:
             repositories:
             - github.com/athenianco/athenian-webapp
             - github.com/athenianco/athenian-api
-        date_to: 2020-01-23
       properties:
         calculated:
           description: Values of the requested metrics through time. The sequence
@@ -1533,7 +1534,7 @@ components:
     CalculatedPullRequestMetricValues:
       additionalProperties: false
       example:
-        date: 2000-01-23
+        date: 2020-01-23
         values:
         - 0.8008282
         - 0.8008282
@@ -1604,7 +1605,7 @@ components:
         `/filter/releases`.
       example:
         account: 1
-        date_from: 2000-01-23
+        date_from: 2020-01-23
         date_to: 2020-05-23
         in:
         - '{1}'
@@ -1635,7 +1636,7 @@ components:
         through all PRs matched by the other filters.
       example:
         account: 1
-        date_from: 2000-01-23
+        date_from: 2020-01-23
         date_to: 2020-05-23
         in:
         - '{1}'
@@ -1956,7 +1957,7 @@ components:
       description: Filter for listing commits.
       example:
         account: 1
-        date_from: 2000-01-23
+        date_from: 2020-01-23
         date_to: 2020-05-23
         in:
         - '{1}'
@@ -2303,7 +2304,8 @@ components:
       description: Response from /metrics/developers - calculated metrics over developer
         activities.
       example:
-        date_to: 2000-01-23
+        date_from: 2020-01-23
+        date_to: 2020-01-24
         metrics:
         - dev-prs-created
         - dev-reviews
@@ -2332,7 +2334,6 @@ components:
             developers:
             - github.com/vmarkovtsev
             - github.com/dpordomingo
-        date_from: 2000-01-23
       properties:
         calculated:
           description: Values of the requested metrics on the given time interval.

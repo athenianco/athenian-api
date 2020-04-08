@@ -91,9 +91,10 @@ async def test_calc_metrics_prs_all_time(client, granularity, headers):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
-    assert cm.calculated[0].values[0].date > date(year=2015, month=10, day=13)
-    assert cm.calculated[0].values[-1].date > date(year=2019, month=3, day=15)
-    assert cm.calculated[0].values[-2].date <= date(year=2019, month=3, day=15)
+    assert cm.calculated[0].values[0].date == date(year=2015, month=10, day=13)
+    assert cm.calculated[0].values[-1].date <= date(year=2019, month=3, day=15)
+    for i in range(len(cm.calculated[0].values) - 1):
+        assert cm.calculated[0].values[i].date < cm.calculated[0].values[i + 1].date
     cmins = cmaxs = cscores = 0
     for m, calc in zip(cm.metrics, cm.calculated):
         nonzero = 0
@@ -357,11 +358,13 @@ async def test_code_bypassing_prs_smoke(client, headers):
     ms = [CodeBypassingPRsMeasurement.from_dict(x) for x in body]
     assert len(ms) == 14
     for s in ms:
-        assert date(year=2019, month=1, day=12) <= s.date <= date(year=2020, month=2, day=23)
+        assert date(year=2019, month=1, day=12) <= s.date <= date(year=2020, month=2, day=22)
         assert s.total_commits >= 0
         assert s.total_lines >= 0
         assert 0 <= s.bypassed_commits <= s.total_commits
         assert 0 <= s.bypassed_lines <= s.total_lines
+    for i in range(len(ms) - 1):
+        assert ms[i].date < ms[i + 1].date
 
 
 @pytest.mark.parametrize("account, date_to, code",
