@@ -235,7 +235,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                                db: databases.Database,
                                cache: Optional[aiomcache.Client],
                                ) -> pd.DataFrame:
-    time_from = prs[PullRequest.merged_at.key].min()
+    time_from = prs[PullRequest.merged_at.key].min() - timedelta(minutes=1)
     async with db.connection() as conn:
         repos = prs[PullRequest.repository_full_name.key].unique()
         releases = await load_releases(repos, time_from, time_to, release_settings, conn, cache)
