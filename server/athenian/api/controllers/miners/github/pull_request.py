@@ -333,6 +333,10 @@ class PullRequestTimes:
         """Find the maximum timestamp contained in the struct."""
         return Fallback.max(*self.__dict__.values()).best
 
+    def __str__(self) -> str:
+        """Format for human-readability."""
+        return "{\n\t%s\n}" % ",\n\t".join("%s: %s" % (k, v.best) for k, v in vars(self).items())
+
 
 class ReviewResolution(Enum):
     """Possible review "state"-s in the metadata DB."""

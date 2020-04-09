@@ -5,6 +5,7 @@ from typing import Set
 
 from aiohttp import ClientResponse
 import dateutil
+import numpy as np
 from prometheus_client import CollectorRegistry
 import pytest
 
@@ -189,6 +190,7 @@ async def validate_prs_response(response: ClientResponse, props: Set[str]):
     timestamps = defaultdict(bool)
     response_props = defaultdict(bool)
     stage_timings = defaultdict(int)
+    stages = {"wip": 0, "review": 1, "merge": 2, "release": 3}
     for pr in obj["data"]:
         assert pr["repository"].startswith("github.com/"), str(pr)
         assert pr["number"] > 0
@@ -209,8 +211,13 @@ async def validate_prs_response(response: ClientResponse, props: Set[str]):
         release_urls += bool(pr.get("release_url"))
         for prop in pr["properties"]:
             response_props[prop] = True
+        reported_timings = np.zeros(4, dtype=int)
         for k, v in pr["stage_timings"].items():
+            reported_timings[stages[k]] = 1
             stage_timings[k] += int(v[:-1])
+        diff = np.diff(reported_timings)
+        assert (diff == -1).sum() <= 1 or (reported_timings[:3] == [1, 0, 1]).all(), \
+            str(pr["stage_timings"])
         participants = pr["participants"]
         assert len(participants) > 0
         authors = 0
