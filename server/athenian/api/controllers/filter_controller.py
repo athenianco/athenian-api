@@ -205,18 +205,6 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     except ResponseError as e:
         return e.response
     props = set(getattr(Property, p.upper()) for p in (filt.properties or []))
-    if not props and filt.stages is not None:
-        for s in filt.stages:
-            if s == "wip":
-                props.add(Property.WIP)
-            elif s == "review":
-                props.add(Property.REVIEWING)
-            elif s == "merge":
-                props.add(Property.MERGING)
-            elif s == "release":
-                props.add(Property.RELEASING)
-            elif s == "done":
-                props.add(Property.DONE)
     if not props:
         props = set(Property)
     participants = {ParticipationKind[k.upper()]: v for k, v in body.get("with", {}).items()}
@@ -238,17 +226,6 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
     props = vars(pr).copy()
-    for p in pr.properties:
-        if p == Property.WIP:
-            props["stage"] = "wip"
-        elif p == Property.REVIEWING:
-            props["stage"] = "review"
-        elif p == Property.MERGING:
-            props["stage"] = "merge"
-        elif p == Property.RELEASING:
-            props["stage"] = "release"
-        elif p == Property.DONE:
-            props["stage"] = "done"
     props["properties"] = sorted(p.name.lower() for p in pr.properties)
     props["stage_timings"] = StageTimings(**pr.stage_timings)
     participants = defaultdict(list)
