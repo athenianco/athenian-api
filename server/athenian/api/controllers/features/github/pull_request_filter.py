@@ -153,14 +153,15 @@ class PullRequestListMiner(PullRequestTimesMiner):
             pr.review_requests[PullRequestReviewRequest.created_at.key].max() or None
         time_to = min(self.time_to, datetime.now(timezone.utc))
         stage_timings = {}
+        no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
         for k, calc in self._calcs.items():
             kwargs = {} if k != "review" else {"allow_unclosed": True}
-            stage_timings[k] = calc.analyze(times, time_from, time_to, **kwargs)
+            stage_timings[k] = calc.analyze(times, no_time_from, time_to, **kwargs)
         for prop, stage in ((Property.WIP, "wip"), (Property.REVIEWING, "review"),
                             (Property.MERGING, "merge"), (Property.RELEASING, "release")):
             if prop in props:
                 stage_timings[stage] = self._calcs[stage].analyze(
-                    times, time_from, time_to, override_event_time=time_to)
+                    times, no_time_from, time_to, override_event_time=time_to)
         return PullRequestListItem(
             repository=prefix + pr.pr[PullRequest.repository_full_name.key],
             number=pr.pr[PullRequest.number.key],
