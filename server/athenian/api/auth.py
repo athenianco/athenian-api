@@ -40,7 +40,8 @@ class Auth0:
 
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
                  client_secret=AUTH0_CLIENT_SECRET, whitelist: Sequence[str] = tuple(),
-                 default_user=DEFAULT_USER, cache: Optional[aiomcache.Client] = None, lazy=False):
+                 default_user=DEFAULT_USER, cache: Optional[aiomcache.Client] = None, lazy=False,
+                 force_default_user=False):
         """
         Create a new Auth0 middleware.
 
@@ -58,6 +59,8 @@ class Auth0:
         :param cache: memcached client to cache the user profiles.
         :param lazy: Value that indicates whether Auth0 Management API tokens and JWKS data \
                      must be asynchronously requested at first related method call.
+        :param force_default_user: Ignore all the incoming bearer tokens and pretend the default \
+                                   user.
         """
         self._domain = domain
         self._audience = audience
@@ -69,6 +72,9 @@ class Auth0:
             raise EnvironmentError("Auth0 default user is not set. Specify ATHENIAN_DEFAULT_USER.")
         self._default_user_id = default_user
         self._default_user = None  # type: Optional[User]
+        self.force_default_user = force_default_user
+        if force_default_user:
+            self.log.warning("Forced default user authorization mode")
         self._session = aiohttp.ClientSession()
         self._kids_event = asyncio.Event()
         if not lazy:
@@ -179,7 +185,7 @@ class Auth0:
         def verify_security(auth_funcs, required_scopes, function):
             @functools.wraps(function)
             async def wrapper(request: ConnexionRequest):
-                if "Authorization" not in request.headers:
+                if "Authorization" not in request.headers or self.force_default_user:
                     # Otherwise we will never reach self.extract_token and self._set_user
                     request.headers = CIMultiDict(request.headers)
                     request.headers["Authorization"] = "Bearer null"

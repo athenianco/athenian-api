@@ -10,7 +10,7 @@ from pathlib import Path
 import signal
 import socket
 import sys
-from typing import Optional
+from typing import Callable, Optional
 
 import aiohttp.web
 from aiohttp.web_exceptions import HTTPFound
@@ -83,6 +83,9 @@ def parse_args() -> argparse.Namespace:
                         help="memcached (users profiles, preprocessed metadata cache) address, "
                              "for example, 0.0.0.0:11211")
     parser.add_argument("--ui", action="store_true", help="Enable the REST UI.")
+    parser.add_argument("--force-default-user", action="store_true",
+                        help="Bypass user authorization and execute all requests on behalf of the "
+                             "default user.")
     return parser.parse_args()
 
 
@@ -381,6 +384,15 @@ def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Clien
     return aiomcache.Client(host, port)
 
 
+def create_auth0_factory(force_default_user: bool) -> Callable[[], Auth0]:
+    """Create the factory of Auth0 instances."""
+    def factory(**kwargs):
+        return Auth0(**kwargs, force_default_user=force_default_user)
+
+    factory.ensure_static_configuration = Auth0.ensure_static_configuration
+    return factory
+
+
 def main():
     """Server entry point."""
     uvloop.install()
@@ -389,7 +401,9 @@ def main():
     setup_context(log)
     check_schema_version(args.state_db, log)
     cache = create_memcached(args.memcached, log)
-    app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui, cache=cache)
+    auth0_cls = create_auth0_factory(args.force_default_user)
+    app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui,
+                      auth0_cls=auth0_cls, cache=cache)
     app.run(host=args.host, port=args.port, use_default_access_log=True, handle_signals=False,
             print=lambda s: log.info("\n" + s))
     return app
