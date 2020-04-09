@@ -220,11 +220,12 @@ async def filter_pull_requests(
     """
     assert isinstance(time_from, date) and not isinstance(time_from, datetime)
     assert isinstance(time_to, date) and not isinstance(time_to, datetime)
+    time_to += timedelta(days=1)
     miner = await PullRequestListMiner.mine(
         time_from, time_to, repos, release_settings,
         participants.get(PullRequestParticipant.STATUS_AUTHOR, []), db, cache)
     miner.properties = properties
     miner.participants = participants
     miner.time_from = pd.Timestamp(time_from, tzinfo=timezone.utc)
-    miner.time_to = pd.Timestamp(time_to, tzinfo=timezone.utc) + timedelta(days=1)
+    miner.time_to = pd.Timestamp(time_to, tzinfo=timezone.utc)
     return list(miner)
