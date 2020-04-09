@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import json
-from typing import Optional, Set
+from typing import Set
 
 from aiohttp import ClientResponse
 import dateutil
@@ -13,7 +13,6 @@ from athenian.api.controllers.miners.pull_request_list_item import Property
 from athenian.api.models.web import CommitsList
 from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
-from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
 from athenian.api.models.web.pull_request_property import PullRequestProperty
 from tests.conftest import FakeCache
 
@@ -145,26 +144,6 @@ def filter_prs_single_prop_cache():
     return fc
 
 
-@pytest.mark.parametrize("stage", PullRequestPipelineStage)
-async def test_filter_prs_single_stage(client, headers, stage, app, filter_prs_single_prop_cache):
-    app._cache = filter_prs_single_prop_cache
-    body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
-        "account": 1,
-        "stages": [stage],
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    if stage in ("wip", "done"):
-        props = {stage}
-    elif stage in ("merge", "release"):
-        props = {stage[:-1] + "ing"}
-    else:
-        props = {stage + "ing"}
-    await validate_prs_response(response, props, stages={stage})
-
-
 @pytest.mark.parametrize("prop", [k.name.lower() for k in Property])
 async def test_filter_prs_single_prop(client, headers, prop, app, filter_prs_single_prop_cache):
     app._cache = filter_prs_single_prop_cache
@@ -188,17 +167,14 @@ async def test_filter_prs_all_properties(client, headers):
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, set(PullRequestProperty),
-                                stages=set(PullRequestPipelineStage))
+    await validate_prs_response(response, set(PullRequestProperty))
     del body["properties"]
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, set(PullRequestProperty),
-                                stages=set(PullRequestPipelineStage))
+    await validate_prs_response(response, set(PullRequestProperty))
 
 
-async def validate_prs_response(response: ClientResponse, props: Set[str],
-                                stages: Optional[Set[str]] = None):
+async def validate_prs_response(response: ClientResponse, props: Set[str]):
     assert response.status == 200
     obj = json.loads((await response.read()).decode("utf-8"))
     users = obj["include"]["users"]
@@ -226,8 +202,6 @@ async def validate_prs_response(response: ClientResponse, props: Set[str],
             assert pr["closed"], str(pr)
         if pr.get("released"):
             assert pr["merged"], str(pr)
-        if stages is not None:
-            assert pr["stage"] in stages
         assert props.intersection(set(pr["properties"]))
         comments += pr["comments"]
         commits += pr["commits"]

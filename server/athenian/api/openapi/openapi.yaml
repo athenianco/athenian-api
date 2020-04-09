@@ -1721,7 +1721,8 @@ components:
           files_changed: 2
           created: 2019-05-17T01:14:00Z
           updated: 2019-09-18T10:49:00Z
-          stage: wip
+          properties:
+          - "wip"
           stage_timings:
             wip: 2000s
           participants:
@@ -1786,7 +1787,8 @@ components:
         updated: 2019-09-18T10:49:00Z
         comments: 1
         commits: 2
-        stage: wip
+        properties:
+        - wip
         stage_timings:
           wip: 2000s
         participants:
@@ -1854,8 +1856,6 @@ components:
           description: URL of the earliest release that includes this merged PR.
           format: url
           type: string
-        stage:
-          $ref: '#/components/schemas/PullRequestPipelineStage'
         stage_timings:
           $ref: '#/components/schemas/StageTimings'
         properties:
@@ -1877,10 +1877,10 @@ components:
       - files_changed
       - number
       - participants
+      - properties
       - repository
       - size_added
       - size_removed
-      - stage
       - stage_timings
       - title
       - updated
@@ -1899,8 +1899,6 @@ components:
           type: string
         release:
           type: string
-      required:
-      - wip
       type: object
     PullRequestParticipant:
       additionalProperties: false
