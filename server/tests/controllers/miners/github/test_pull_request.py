@@ -73,34 +73,36 @@ def validate_pull_request_times(prt: PullRequestTimes):
         if not v:
             continue
         if k not in ("first_commit", "last_commit", "last_commit_before_first_review"):
-            assert prt.created.best <= v.best, k
-        assert prt.work_began.best <= v.best, k
+            assert prt.created <= v, k
+        assert prt.work_began <= v, k
         if prt.closed and k != "released":
-            assert prt.closed.best >= v.best
+            assert prt.closed >= v
         if prt.released:
-            assert prt.released.best >= v.best
+            assert prt.released >= v
     if prt.first_commit:
-        assert prt.last_commit.best >= prt.first_commit.best
+        assert prt.last_commit >= prt.first_commit
     else:
         assert not prt.last_commit
     if prt.first_comment_on_first_review:
-        assert prt.last_commit_before_first_review.best >= prt.first_commit.best
-        assert prt.last_commit_before_first_review.best <= prt.last_commit.best
-        assert prt.last_commit_before_first_review.best <= prt.first_comment_on_first_review.best
-        assert prt.first_review_request.best <= prt.first_comment_on_first_review.best
+        assert prt.last_commit_before_first_review >= prt.first_commit
+        assert prt.last_commit_before_first_review <= prt.last_commit
+        assert prt.last_commit_before_first_review <= prt.first_comment_on_first_review
+        assert prt.first_review_request <= prt.first_comment_on_first_review
         if prt.last_review:
             # There may be a regular comment that counts for `first_comment_on_first_review`
             # but no actual review submission.
-            assert prt.last_review.best >= prt.first_comment_on_first_review.best
-        assert prt.first_review_request.best <= prt.first_comment_on_first_review.best
+            assert prt.last_review >= prt.first_comment_on_first_review
+        assert prt.first_review_request <= prt.first_comment_on_first_review
     else:
         assert not prt.last_review
         assert not prt.last_commit_before_first_review
     if prt.approved:
-        assert prt.first_comment_on_first_review.best <= prt.approved.best
-        assert prt.first_review_request.best <= prt.approved.best
+        assert prt.first_comment_on_first_review <= prt.approved
+        assert prt.first_review_request <= prt.approved
+        if prt.last_review:
+            assert prt.last_review >= prt.approved
         if prt.merged:
-            assert prt.approved.best <= prt.merged.best
+            assert prt.approved <= prt.merged
             assert prt.closed
 
 
