@@ -48,10 +48,10 @@ class ReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
             return override_event_time - times.first_review_request.best
         # We cannot be sure that the approvals finished unless the PR is closed.
         if (times.closed or allow_unclosed) and (
-                (times.approved.value is not None and min_time <= times.approved.best <= max_time)
+                (times.approved and min_time <= times.approved.best <= max_time)
                 or  # noqa
                 (times.last_review and min_time <= times.last_review.best <= max_time)):
-            if times.approved.value:
+            if times.approved:
                 return times.approved.best - times.first_review_request.best
             elif times.last_review:
                 return times.last_review.best - times.first_review_request.best
