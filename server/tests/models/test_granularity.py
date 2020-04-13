@@ -8,10 +8,10 @@ from athenian.api.models.web import Granularity
 @pytest.mark.parametrize("value, result", [
     ("day", [date(2020, 1, 1) + i * timedelta(days=1) for i in range(63)]),
     ("1 day", [date(2020, 1, 1) + i * timedelta(days=1) for i in range(63)]),
-    ("2 day", [date(2020, 1, 1) + 2 * i * timedelta(days=1) for i in range(31)] +  # noqa: W504
+    ("2 day", [date(2020, 1, 1) + 2 * i * timedelta(days=1) for i in range(31)] +
      [date(2020, 3, 3)]),
     ("week", [date(2020, 1, 1) + i * timedelta(days=7) for i in range(9)] + [date(2020, 3, 3)]),
-    ("3 week", [date(2020, 1, 1) + 3 * i * timedelta(days=7) for i in range(3)] +  # noqa: W504
+    ("3 week", [date(2020, 1, 1) + 3 * i * timedelta(days=7) for i in range(3)] +
      [date(2020, 3, 3)]),
     ("month", [date(2020, 1, 1), date(2020, 2, 1), date(2020, 3, 1), date(2020, 3, 3)]),
     ("4 month", [date(2020, 1, 1), date(2020, 3, 3)]),
