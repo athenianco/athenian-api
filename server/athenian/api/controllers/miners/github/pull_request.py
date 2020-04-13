@@ -387,8 +387,8 @@ class PullRequestTimesMiner(PullRequestMiner):
         if first_comment_on_first_review:
             last_commit_before_first_review = Fallback(
                 pr.commits[pr.commits[PullRequestCommit.committed_date.key]
-                           <= first_comment_on_first_review.best]  # noqa: W503
-                    [PullRequestCommit.committed_date.key].max(),
+                           <= first_comment_on_first_review.best][
+                    PullRequestCommit.committed_date.key].max(),
                 first_comment_on_first_review)
             # force pushes that were lost
             first_commit = Fallback.min(first_commit, last_commit_before_first_review)
@@ -431,7 +431,7 @@ class PullRequestTimesMiner(PullRequestMiner):
             .groupby(PullRequestReview.user_id.key, sort=False) \
             .nth(0)  # the most recent review for each reviewer
         if (grouped_reviews[PullRequestReview.state.key]
-                == ReviewResolution.CHANGES_REQUESTED.value).any():  # noqa: W503
+                == ReviewResolution.CHANGES_REQUESTED.value).any():
             # merged with negative reviews
             approved_at_value = None
         else:

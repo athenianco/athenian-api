@@ -184,7 +184,7 @@ async def _set_pr_comments(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
                 stats_by_dev[dev][topic] = n
     if DeveloperTopic.pr_comments in topics:
         topic = DeveloperTopic.pr_comments.name
-        for dev, n in (review_comments["comments_count"] +  # noqa: W504
+        for dev, n in (review_comments["comments_count"] +
                        regular_pr_comments["comments_count"]).items():
             if n == n:  # can be NaN
                 stats_by_dev[dev][topic] = n

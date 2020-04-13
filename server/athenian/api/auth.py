@@ -172,7 +172,7 @@ class Auth0:
         """Check that the authentication is properly configured by the environment variables \
         and raise an exception if it is not."""
         if not (cls.AUTH0_DOMAIN and cls.AUTH0_AUDIENCE
-                and cls.AUTH0_CLIENT_ID and cls.AUTH0_CLIENT_SECRET):  # noqa: W503
+                and cls.AUTH0_CLIENT_ID and cls.AUTH0_CLIENT_SECRET):
             cls.log.error("API authentication requires setting AUTH0_DOMAIN, AUTH0_AUDIENCE, "
                           "AUTH0_CLIENT_ID and AUTH0_CLIENT_SECRET")
             raise EnvironmentError("AUTH0_DOMAIN, AUTH0_AUDIENCE, AUTH0_CLIENT_ID, "
