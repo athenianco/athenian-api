@@ -161,12 +161,12 @@ async def _match_releases_by_branch(repos: Iterable[str],
                 PushCommit.committed_date.between(time_from, time_to)))
             .order_by(desc(PushCommit.commit_date)),
             conn, PushCommit)
-        authors = commits[PushCommit.author_login.key]
-        not_gh_merge = ((commits[PushCommit.committer_name.key] != "GitHub")
-                        | (commits[PushCommit.committer_email.key] != "noreply@github.com"))
-        authors[not_gh_merge] = commits[PushCommit.committer_login.key][not_gh_merge]
+        gh_merge = ((commits[PushCommit.committer_name.key] == "GitHub")
+                    & (commits[PushCommit.committer_email.key] == "noreply@github.com"))
+        commits[PushCommit.author_login.key].where(
+            gh_merge, commits.loc[~gh_merge, PushCommit.committer_login.key], inplace=True)
         pseudo_releases.append(pd.DataFrame({
-            Release.author.key: authors,
+            Release.author.key: commits[PushCommit.author_login.key],
             Release.commit_id.key: commits[PushCommit.node_id.key],
             Release.id.key: commits[PushCommit.node_id.key] + "_" + repo,
             Release.name.key: commits[PushCommit.sha.key],
