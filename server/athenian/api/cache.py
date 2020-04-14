@@ -94,16 +94,16 @@ def cached(exptime: Union[int, Callable[..., int]],
                 payload = serialize(result)
                 try:
                     await client.set(cache_key, payload, exptime=t)
-                except aiomcache.exceptions.ClientException as e:
+                except aiomcache.exceptions.ClientException:
                     log.exception("Failed to put %d bytes in memcached", len(payload))
-                    raise e from None
-                client.metrics["misses"].labels(__package__, __version__, full_name).inc()
-                client.metrics["miss_latency"] \
-                    .labels(__package__, __version__, full_name) \
-                    .observe(time.time() - start_time)
-                client.metrics["size"] \
-                    .labels(__package__, __version__, full_name) \
-                    .observe(len(payload))
+                else:
+                    client.metrics["misses"].labels(__package__, __version__, full_name).inc()
+                    client.metrics["miss_latency"] \
+                        .labels(__package__, __version__, full_name) \
+                        .observe(time.time() - start_time)
+                    client.metrics["size"] \
+                        .labels(__package__, __version__, full_name) \
+                        .observe(len(payload))
             return result
 
         wrapped_cached.__name__ = func.__name__

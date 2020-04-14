@@ -375,7 +375,8 @@ class PullRequestTimesMiner(PullRequestMiner):
         created_at = Fallback(pr.pr[PullRequest.created_at.key], None)
         merged_at = Fallback(pr.pr[PullRequest.merged_at.key], None)
         closed_at = Fallback(pr.pr[PullRequest.closed_at.key], None)
-        first_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].min(), None)
+        first_commit = Fallback(pr.commits[PullRequestCommit.authored_date.key].min(), None)
+        # yes, first_commit uses authored_date while last_commit uses committed_date
         last_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].max(), None)
         authored_comments = pr.comments[PullRequestReviewComment.user_id.key]
         external_comments_times = pr.comments.loc[
