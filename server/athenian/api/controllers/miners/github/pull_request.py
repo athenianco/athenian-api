@@ -374,9 +374,9 @@ class PullRequestTimesMiner(PullRequestMiner):
         first_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].min(), None)
         last_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].max(), None)
         authored_comments = pr.comments[PullRequestReviewComment.user_id.key]
-        external_comments = pr.comments[
-            (authored_comments != pr.pr[PullRequest.user_id.key]) & ~authored_comments.isin(BOTS)]
-        external_comments_times = external_comments[PullRequestComment.created_at.key]
+        external_comments_times = pr.comments.loc[
+            (authored_comments != pr.pr[PullRequest.user_id.key]) & ~authored_comments.isin(BOTS),
+            PullRequestComment.created_at.key]
         first_comment = dtmin(
             pr.review_comments[PullRequestReviewComment.created_at.key].min(),
             pr.reviews[PullRequestReview.submitted_at.key].min(),
@@ -385,10 +385,9 @@ class PullRequestTimesMiner(PullRequestMiner):
             first_comment = None
         first_comment_on_first_review = Fallback(first_comment, merged_at)
         if first_comment_on_first_review:
+            committed_dates = pr.commits[PullRequestCommit.committed_date.key]
             last_commit_before_first_review = Fallback(
-                pr.commits[pr.commits[PullRequestCommit.committed_date.key]
-                           <= first_comment_on_first_review.best][
-                    PullRequestCommit.committed_date.key].max(),
+                committed_dates[committed_dates <= first_comment_on_first_review.best].max(),
                 first_comment_on_first_review)
             # force pushes that were lost
             first_commit = Fallback.min(first_commit, last_commit_before_first_review)
@@ -413,9 +412,9 @@ class PullRequestTimesMiner(PullRequestMiner):
             first_review_request = Fallback(
                 last_commit_before_first_review.value, first_review_request)
         if closed_at:
+            submitted_ats = pr.reviews[PullRequestReview.submitted_at.key]
             last_review = Fallback(
-                pr.reviews[pr.reviews[PullRequestReview.submitted_at.key] <= closed_at.best][
-                    PullRequestReview.submitted_at.key].max(),
+                submitted_ats[submitted_ats <= closed_at.best].max(),
                 dtmin(external_comments_times[external_comments_times < closed_at.best].max()))
         else:
             last_review = Fallback(
@@ -429,15 +428,15 @@ class PullRequestTimesMiner(PullRequestMiner):
         grouped_reviews = reviews_before_merge \
             .sort_values([PullRequestReview.submitted_at.key], ascending=True) \
             .groupby(PullRequestReview.user_id.key, sort=False) \
-            .nth(0)  # the most recent review for each reviewer
+            .first()  # the most recent review for each reviewer
         if (grouped_reviews[PullRequestReview.state.key]
                 == ReviewResolution.CHANGES_REQUESTED.value).any():
             # merged with negative reviews
             approved_at_value = None
         else:
-            approved_at_value = grouped_reviews[
-                grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED.value
-            ][PullRequestReview.submitted_at.key].max()
+            approved_at_value = grouped_reviews.loc[
+                grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED.value,
+                PullRequestReview.submitted_at.key].max()
         approved_at = Fallback(approved_at_value, None)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         released_at = Fallback(pr.release[Release.published_at.key], None)
