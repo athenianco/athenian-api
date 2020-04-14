@@ -18,10 +18,15 @@ class WorkInProgressTimeCalculator(PullRequestAverageMetricCalculator[timedelta]
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 override_event_time: Optional[datetime] = None) -> Optional[timedelta]:
         """Calculate the actual state update."""
-        first_review_request = times.first_review_request.best if override_event_time is None \
-            else override_event_time
-        if first_review_request is not None and min_time <= first_review_request <= max_time:
-            return first_review_request - times.work_began.best
+        if override_event_time is not None:
+            wip_end = override_event_time
+        elif times.last_review:
+            wip_end = times.first_review_request.best
+        else:
+            # review was probably requested but never happened
+            wip_end = times.last_commit.best
+        if wip_end is not None and min_time <= wip_end <= max_time:
+            return wip_end - times.work_began.best
         return None
 
 
