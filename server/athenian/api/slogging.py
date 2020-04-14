@@ -237,6 +237,7 @@ def setup(level: Union[str, int], structured: bool, config_path: str = None):
     # All the output level setting is down right afterwards.
     logging.basicConfig()
     logging.setLogRecordFactory(NumpyLogRecord)
+    logging.captureWarnings(True)
     if config_path is not None and os.path.isfile(config_path):
         with open(config_path) as fh:
             config = yaml.safe_load(fh)
