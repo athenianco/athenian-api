@@ -224,6 +224,7 @@ class PullRequestMiner:
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
+        empty_df_cache = {}
         for pr_node_id, pr in self._prs.iterrows():
             items = {}
             for k in MinedPullRequest.__dataclass_fields__:
@@ -231,10 +232,13 @@ class PullRequestMiner:
                     continue
                 df = getattr(self, "_" + (k if k.endswith("s") else k + "s"))
                 try:
-                    items[k] = df.loc[pr_node_id]
+                    items[k] = df.xs(pr_node_id)
                 except KeyError:
                     if k.endswith("s"):
-                        items[k] = df.iloc[:0].copy()
+                        try:
+                            items[k] = empty_df_cache[k]
+                        except KeyError:
+                            items[k] = empty_df_cache[k] = df.iloc[:0].copy()
                     else:
                         items[k] = pd.Series(
                             [None] * len(df.columns), index=df.columns, name="empty " + k)
