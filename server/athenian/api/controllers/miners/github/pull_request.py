@@ -129,6 +129,7 @@ class PullRequestMiner:
             released_prs = await map_releases_to_prs(
                 repositories, time_from, time_to, release_settings, conn, cache)
             prs = pd.concat([prs, released_prs], sort=False)
+        prs.sort_index(level=0, inplace=True, sort_remaining=False)
         cls.truncate_timestamps(prs, time_to)
         node_ids = prs.index if len(prs) > 0 else set()
 
@@ -224,16 +225,36 @@ class PullRequestMiner:
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
+        df_fields = list(MinedPullRequest.__dataclass_fields__)
+        df_fields.remove("pr")
+        dfs = []
+        grouped_df_iters = []
+        for k in df_fields:
+            df = getattr(self, "_" + (k if k.endswith("s") else k + "s"))
+            dfs.append(df)
+            grouped_df_iters.append(iter(df.groupby(level=0, sort=True)))
+        grouped_df_states = []
+        for i in grouped_df_iters:
+            try:
+                grouped_df_states.append(next(i))
+            except StopIteration:
+                grouped_df_states.append((None, None))
         empty_df_cache = {}
         for pr_node_id, pr in self._prs.iterrows():
-            items = {}
-            for k in MinedPullRequest.__dataclass_fields__:
-                if k == "pr":
-                    continue
-                df = getattr(self, "_" + (k if k.endswith("s") else k + "s"))
-                try:
-                    items[k] = df.xs(pr_node_id)
-                except KeyError:
+            items = {"pr": pr}
+            for i, (k, (state_pr_node_id, gdf), git, df) in enumerate(zip(
+                    df_fields, grouped_df_states, grouped_df_iters, dfs)):
+                if state_pr_node_id == pr_node_id:
+                    if not k.endswith("s"):
+                        gdf = gdf.iloc[0]
+                    else:
+                        gdf.reset_index(level=0, drop=True, inplace=True)
+                    items[k] = gdf
+                    try:
+                        grouped_df_states[i] = next(git)
+                    except StopIteration:
+                        grouped_df_states[i] = None, None
+                else:
                     if k.endswith("s"):
                         try:
                             items[k] = empty_df_cache[k]
@@ -242,7 +263,7 @@ class PullRequestMiner:
                     else:
                         items[k] = pd.Series(
                             [None] * len(df.columns), index=df.columns, name="empty " + k)
-            yield MinedPullRequest(pr, **items)
+            yield MinedPullRequest(**items)
 
 
 T = TypeVar("T")
