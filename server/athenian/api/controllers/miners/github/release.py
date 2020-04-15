@@ -84,7 +84,7 @@ async def _match_releases_by_tag_or_branch(repos: Iterable[str],
         conn, [Release.repository_full_name.key])
     matched = []
     repos_by_tag = probe[Release.repository_full_name.key].values
-    if repos_by_tag:
+    if repos_by_tag.size > 0:
         matched.append(await _match_releases_by_tag(
             repos_by_tag, time_from, time_to, settings, conn))
     repos_by_branch = set(repos) - set(repos_by_tag)
