@@ -55,7 +55,7 @@ async def load_releases(repos: Iterable[str],
     if repos_by_branch:
         result.append(await _match_releases_by_branch(
             repos_by_branch, time_from, time_to, settings, conn, cache))
-    result = pd.concat(result)
+    result = pd.concat(result) if result else pd.DataFrame()
     if len(result.columns) == 0:
         # can happen if no such repositories were found
         result = pd.DataFrame(columns=[c.name for c in Release.__table__.columns])
