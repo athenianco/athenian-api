@@ -129,6 +129,7 @@ class PullRequestMiner:
             released_prs = await map_releases_to_prs(
                 repositories, time_from, time_to, release_settings, conn, cache)
             prs = pd.concat([prs, released_prs], sort=False)
+        prs.sort_index(level=0, inplace=True, sort_remaining=False)
         cls.truncate_timestamps(prs, time_to)
         node_ids = prs.index if len(prs) > 0 else set()
 
@@ -224,16 +225,36 @@ class PullRequestMiner:
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
+        df_fields = list(MinedPullRequest.__dataclass_fields__)
+        df_fields.remove("pr")
+        dfs = []
+        grouped_df_iters = []
+        for k in df_fields:
+            df = getattr(self, "_" + (k if k.endswith("s") else k + "s"))
+            dfs.append(df)
+            grouped_df_iters.append(iter(df.groupby(level=0, sort=True, as_index=False)))
+        grouped_df_states = []
+        for i in grouped_df_iters:
+            try:
+                grouped_df_states.append(next(i))
+            except StopIteration:
+                grouped_df_states.append((None, None))
         empty_df_cache = {}
         for pr_node_id, pr in self._prs.iterrows():
-            items = {}
-            for k in MinedPullRequest.__dataclass_fields__:
-                if k == "pr":
-                    continue
-                df = getattr(self, "_" + (k if k.endswith("s") else k + "s"))
-                try:
-                    items[k] = df.xs(pr_node_id)
-                except KeyError:
+            items = {"pr": pr}
+            for i, (k, (state_pr_node_id, gdf), git, df) in enumerate(zip(
+                    df_fields, grouped_df_states, grouped_df_iters, dfs)):
+                if state_pr_node_id == pr_node_id:
+                    if not k.endswith("s"):
+                        gdf = gdf.iloc[0]
+                    else:
+                        gdf.reset_index(level=0, drop=True, inplace=True)
+                    items[k] = gdf
+                    try:
+                        grouped_df_states[i] = next(git)
+                    except StopIteration:
+                        grouped_df_states[i] = None, None
+                else:
                     if k.endswith("s"):
                         try:
                             items[k] = empty_df_cache[k]
@@ -242,7 +263,7 @@ class PullRequestMiner:
                     else:
                         items[k] = pd.Series(
                             [None] * len(df.columns), index=df.columns, name="empty " + k)
-            yield MinedPullRequest(pr, **items)
+            yield MinedPullRequest(**items)
 
 
 T = TypeVar("T")
@@ -375,13 +396,15 @@ class PullRequestTimesMiner(PullRequestMiner):
         created_at = Fallback(pr.pr[PullRequest.created_at.key], None)
         merged_at = Fallback(pr.pr[PullRequest.merged_at.key], None)
         closed_at = Fallback(pr.pr[PullRequest.closed_at.key], None)
+        # we don't need the indexes
+        pr.comments.reset_index(inplace=True, drop=True)
+        pr.reviews.reset_index(inplace=True, drop=True)
         first_commit = Fallback(pr.commits[PullRequestCommit.authored_date.key].min(), None)
         # yes, first_commit uses authored_date while last_commit uses committed_date
         last_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].max(), None)
         authored_comments = pr.comments[PullRequestReviewComment.user_id.key]
-        external_comments_times = pr.comments.loc[
-            (authored_comments != pr.pr[PullRequest.user_id.key]) & ~authored_comments.isin(BOTS),
-            PullRequestComment.created_at.key]
+        external_comments_times = pr.comments[PullRequestComment.created_at.key][
+            (authored_comments != pr.pr[PullRequest.user_id.key]) & ~authored_comments.isin(BOTS)]
         first_comment = dtmin(
             pr.review_comments[PullRequestReviewComment.created_at.key].min(),
             pr.reviews[PullRequestReview.submitted_at.key].min(),
@@ -431,17 +454,17 @@ class PullRequestTimesMiner(PullRequestMiner):
         else:
             reviews_before_merge = pr.reviews
         grouped_reviews = reviews_before_merge \
-            .sort_values([PullRequestReview.submitted_at.key], ascending=True) \
-            .groupby(PullRequestReview.user_id.key, sort=False) \
-            .first()  # the most recent review for each reviewer
+            .sort_values([PullRequestReview.submitted_at.key], ascending=True, ignore_index=True) \
+            .groupby(PullRequestReview.user_id.key, sort=False, as_index=False) \
+            .head(1)  # the most recent review for each reviewer
         if (grouped_reviews[PullRequestReview.state.key]
                 == ReviewResolution.CHANGES_REQUESTED.value).any():
             # merged with negative reviews
             approved_at_value = None
         else:
-            approved_at_value = grouped_reviews.loc[
-                grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED.value,
-                PullRequestReview.submitted_at.key].max()
+            approved_at_value = grouped_reviews[PullRequestReview.submitted_at.key][
+                grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED.value
+            ].max()
         approved_at = Fallback(approved_at_value, None)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         released_at = Fallback(pr.release[Release.published_at.key], None)

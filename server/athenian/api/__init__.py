@@ -322,7 +322,7 @@ class AthenianApp(connexion.AioHttpApp):
 def setup_context(log: logging.Logger) -> None:
     """Log general info about the running process and configure Sentry."""
     log.info("%s", sys.argv)
-    log.info("Version %s", metadata.__version__)
+    log.info("Version: %s", metadata.__version__)
     commit = getattr(metadata, "__commit__", None)
     if commit:
         log.info("Commit: %s", commit)
@@ -331,7 +331,7 @@ def setup_context(log: logging.Logger) -> None:
         log.info("Image built on %s", build_date)
     username = getpass.getuser()
     hostname = socket.getfqdn()
-    log.info("%s@%s", username, hostname)
+    log.info("%s@%s -> %d", username, hostname, os.getpid())
     dev_id = os.getenv("ATHENIAN_DEV_ID")
     if dev_id:
         log.info("Developer: %s", dev_id)
