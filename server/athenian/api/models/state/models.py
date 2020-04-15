@@ -2,8 +2,8 @@ import ctypes
 from datetime import datetime, timezone
 import json
 
-from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, Integer, JSON, SmallInteger, \
-    String, TIMESTAMP, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, func, Integer, JSON, \
+    SmallInteger, String, TIMESTAMP, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 import xxhash
 
@@ -90,9 +90,11 @@ class RepositorySet(Base):
     owner = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
                         default=lambda: datetime.now(timezone.utc),
+                        server_default=func.now(),
                         onupdate=lambda ctx: datetime.now(timezone.utc))
     created_at = Column(TIMESTAMP(timezone=True), nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc),
+                        server_default=func.now())
     updates_count = Column(always_unequal(Integer()), nullable=False, default=1,
                            onupdate=lambda ctx: ctx.get_current_parameters()["updates_count"] + 1)
     items = Column(always_unequal(JSON()), nullable=False)
@@ -114,7 +116,8 @@ class UserAccount(Base):
                         nullable=False, primary_key=True)
     is_admin = Column(Boolean(), nullable=False, default=False)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc),
+                        server_default=func.now())
 
 
 class Account(Base):
@@ -126,7 +129,8 @@ class Account(Base):
     id = Column(Integer(), primary_key=True)
     installation_id = Column(BigInteger(), unique=True, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc),
+                        server_default=func.now())
 
 
 class Invitation(Base):
@@ -142,7 +146,8 @@ class Invitation(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     accepted = Column(Integer(), nullable=False, default=0)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False,
-                        default=lambda: datetime.now(timezone.utc))
+                        default=lambda: datetime.now(timezone.utc),
+                        server_default=func.now())
     created_by = Column(String(256))
 
 
@@ -155,6 +160,7 @@ class God(Base):
     mapped_id = Column(String(256), nullable=True)
     updated_at = Column(always_unequal(TIMESTAMP(timezone=True)), nullable=False,
                         default=lambda: datetime.now(timezone.utc),
+                        server_default=func.now(),
                         onupdate=lambda ctx: datetime.now(timezone.utc))
 
 
@@ -170,4 +176,5 @@ class ReleaseSetting(Base):
     match = Column(SmallInteger())
     updated_at = Column(always_unequal(TIMESTAMP(timezone=True)), nullable=False,
                         default=lambda: datetime.now(timezone.utc),
+                        server_default=func.now(),
                         onupdate=lambda ctx: datetime.now(timezone.utc))
