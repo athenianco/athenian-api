@@ -108,6 +108,7 @@ async def _match_releases_by_tag(repos: Iterable[str],
                     Release.repository_full_name.in_(repos)))
         .order_by(desc(Release.published_at)),
         conn, Release, index=[Release.repository_full_name.key, Release.tag.key])
+    releases = releases[~releases.index.duplicated(keep="first")]
     regexp_cache = {}
     matched = []
     for repo in repos:
@@ -281,7 +282,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
         released_prs = _new_map_df(released_prs)
     released_prs[Release.published_at.key] = np.maximum(
         released_prs[Release.published_at.key],
-        prs.loc[released_prs.index][PullRequest.merged_at.key])
+        prs.loc[released_prs.index, PullRequest.merged_at.key])
     return postprocess_datetime(released_prs)
 
 
@@ -472,7 +473,7 @@ async def _extract_released_commits(releases: pd.DataFrame,
             except KeyError:
                 pass
             else:
-                pubdt = releases.loc[xrid][Release.published_at.key]
+                pubdt = releases.loc[xrid, Release.published_at.key]
                 if pubdt >= time_boundary:
                     resolved_releases.add(xrid)
                 else:
