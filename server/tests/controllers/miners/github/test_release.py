@@ -185,10 +185,11 @@ async def test_map_releases_to_prs_branches(mdb):
         assert prs.empty
 
 
-async def test_load_releases_empty(mdb):
+@pytest.mark.parametrize("repos", [["src-d/gitbase"], []])
+async def test_load_releases_empty(mdb, repos):
     async with mdb.connection() as conn:
         releases = await load_releases(
-            ["src-d/gitbase"],
+            repos,
             datetime(year=2020, month=6, day=30, tzinfo=timezone.utc),
             datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
             {"github.com/src-d/gitbase": ReleaseMatchSetting(
