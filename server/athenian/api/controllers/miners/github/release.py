@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain, groupby
+import logging
 import marshal
 import pickle
 import re
@@ -13,6 +14,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import and_, desc, distinct, func, select
 
+from athenian.api import metadata
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
 from athenian.api.cache import cached, gen_cache_key, max_exptime
 from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
@@ -139,10 +141,16 @@ async def _match_releases_by_branch(repos: Iterable[str],
         select([Branch]).where(Branch.repository_full_name.in_(repos)), conn, Branch)
     regexp_cache = {}
     branches_matched = []
+    log = logging.getLogger("%s.match_releases_by_branch" % metadata.__package__)
     for repo, repo_branches in branches.groupby(Branch.repository_full_name.key):
         regexp = settings["github.com/" + repo].branches
-        default_branch = \
-            repo_branches[Branch.branch_name.key][repo_branches[Branch.is_default.key]].iloc[0]
+        try:
+            default_branch = \
+                repo_branches[Branch.branch_name.key][repo_branches[Branch.is_default.key]].iloc[0]
+        except IndexError:
+            log.error('failed to find the default branch for "%s": only have %s',
+                      repo, repo_branches[Branch.branch_name.key, Branch.is_default.key])
+            continue
         regexp = regexp.replace(default_branch_alias, default_branch)
         # note: dict.setdefault() is not good here because re.compile() will be evaluated
         try:
