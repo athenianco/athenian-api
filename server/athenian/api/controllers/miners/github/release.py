@@ -125,7 +125,7 @@ async def _match_releases_by_tag(repos: Iterable[str],
         except KeyError:
             regexp = regexp_cache[regexp] = re.compile(regexp)
         tags_matched = repo_releases.index[repo_releases.index.str.match(regexp)]
-        matched.append(((repo, tag) for tag in tags_matched))
+        matched.append([(repo, tag) for tag in tags_matched])
     releases = releases.loc[list(chain.from_iterable(matched))]
     releases.reset_index(inplace=True)
     return releases
