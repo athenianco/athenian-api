@@ -4,7 +4,8 @@ import pytest
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.models.state.models import Account, ReleaseSetting, RepositorySet, UserAccount
+from athenian.api.models.state.models import Installation, ReleaseSetting, RepositorySet, \
+    UserAccount
 from athenian.api.models.web import ReleaseMatchSetting, ReleaseMatchStrategy
 
 
@@ -59,10 +60,9 @@ async def test_set_release_match_different_accounts(client, headers, sdb):
     }
     response1 = await client.request(
         method="PUT", path="/v1/settings/release_match", headers=headers, json=body1)
-    await sdb.execute(update(Account).where(Account.id == 1).values(
-        {Account.installation_id.key: None}))
-    await sdb.execute(update(Account).where(Account.id == 2).values(
-        {Account.installation_id.key: 6366825}))
+    await sdb.execute(delete(Installation).where(Installation.account_id == 1))
+    await sdb.execute(insert(Installation).values(
+        Installation(id=6366825, account_id=2).explode(with_primary_keys=True)))
     await sdb.execute(update(UserAccount).where(UserAccount.account_id == 2).values(
         {UserAccount.is_admin.key: True}))
     body2 = {
@@ -115,9 +115,7 @@ async def test_set_release_match_nasty_input(
 
 async def test_set_release_match_422(client, headers, sdb, gkwillie):
     await sdb.execute(delete(RepositorySet))
-    await sdb.execute(update(Account)
-                      .where(Account.id == 1)
-                      .values({Account.installation_id: None}))
+    await sdb.execute(delete(Installation))
     await sdb.execute(insert(UserAccount).values(UserAccount(
         user_id="github|60340680", account_id=1, is_admin=True,
     ).create_defaults().explode(with_primary_keys=True)))
