@@ -183,3 +183,17 @@ async def test_map_releases_to_prs_branches(mdb):
             conn,
             None)
         assert prs.empty
+
+
+async def test_load_releases_empty(mdb):
+    async with mdb.connection() as conn:
+        releases = await load_releases(
+            ["src-d/gitbase"],
+            datetime(year=2020, month=6, day=30, tzinfo=timezone.utc),
+            datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
+            {"github.com/src-d/gitbase": ReleaseMatchSetting(
+                branches=".*", tags=".*", match=Match.branch)},
+            conn,
+            None,
+            index=Release.id.key)
+        assert releases.empty
