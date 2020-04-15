@@ -56,6 +56,9 @@ async def load_releases(repos: Iterable[str],
         result.append(await _match_releases_by_branch(
             repos_by_branch, time_from, time_to, settings, conn, cache))
     result = pd.concat(result)
+    if len(result.columns) == 0:
+        # can happen if no such repositories were found
+        result = pd.DataFrame(columns=[c.name for c in Release.__table__.columns])
     if index is not None:
         result.set_index(index, inplace=True)
     return result
@@ -120,7 +123,9 @@ async def _match_releases_by_tag(repos: Iterable[str],
             regexp = regexp_cache[regexp] = re.compile(regexp)
         tags_matched = repo_releases.index[repo_releases.index.str.match(regexp)]
         matched.append(((repo, tag) for tag in tags_matched))
-    return releases.loc[list(chain.from_iterable(matched))].reset_index()
+    releases = releases.loc[list(chain.from_iterable(matched))]
+    releases.reset_index(inplace=True)
+    return releases
 
 
 async def _match_releases_by_branch(repos: Iterable[str],
