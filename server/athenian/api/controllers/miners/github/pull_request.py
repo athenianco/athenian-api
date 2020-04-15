@@ -232,7 +232,7 @@ class PullRequestMiner:
         for k in df_fields:
             df = getattr(self, "_" + (k if k.endswith("s") else k + "s"))
             dfs.append(df)
-            grouped_df_iters.append(iter(df.groupby(level=0, sort=True)))
+            grouped_df_iters.append(iter(df.groupby(level=0, sort=True, as_index=False)))
         grouped_df_states = []
         for i in grouped_df_iters:
             try:
@@ -396,13 +396,15 @@ class PullRequestTimesMiner(PullRequestMiner):
         created_at = Fallback(pr.pr[PullRequest.created_at.key], None)
         merged_at = Fallback(pr.pr[PullRequest.merged_at.key], None)
         closed_at = Fallback(pr.pr[PullRequest.closed_at.key], None)
+        # we don't need the indexes
+        pr.comments.reset_index(inplace=True, drop=True)
+        pr.reviews.reset_index(inplace=True, drop=True)
         first_commit = Fallback(pr.commits[PullRequestCommit.authored_date.key].min(), None)
         # yes, first_commit uses authored_date while last_commit uses committed_date
         last_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].max(), None)
         authored_comments = pr.comments[PullRequestReviewComment.user_id.key]
-        external_comments_times = pr.comments.loc[
-            (authored_comments != pr.pr[PullRequest.user_id.key]) & ~authored_comments.isin(BOTS),
-            PullRequestComment.created_at.key]
+        external_comments_times = pr.comments[PullRequestComment.created_at.key][
+            (authored_comments != pr.pr[PullRequest.user_id.key]) & ~authored_comments.isin(BOTS)]
         first_comment = dtmin(
             pr.review_comments[PullRequestReviewComment.created_at.key].min(),
             pr.reviews[PullRequestReview.submitted_at.key].min(),
@@ -452,17 +454,17 @@ class PullRequestTimesMiner(PullRequestMiner):
         else:
             reviews_before_merge = pr.reviews
         grouped_reviews = reviews_before_merge \
-            .sort_values([PullRequestReview.submitted_at.key], ascending=True) \
-            .groupby(PullRequestReview.user_id.key, sort=False) \
-            .first()  # the most recent review for each reviewer
+            .sort_values([PullRequestReview.submitted_at.key], ascending=True, ignore_index=True) \
+            .groupby(PullRequestReview.user_id.key, sort=False, as_index=False) \
+            .head(1)  # the most recent review for each reviewer
         if (grouped_reviews[PullRequestReview.state.key]
                 == ReviewResolution.CHANGES_REQUESTED.value).any():
             # merged with negative reviews
             approved_at_value = None
         else:
-            approved_at_value = grouped_reviews.loc[
-                grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED.value,
-                PullRequestReview.submitted_at.key].max()
+            approved_at_value = grouped_reviews[PullRequestReview.submitted_at.key][
+                grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED.value
+            ].max()
         approved_at = Fallback(approved_at_value, None)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         released_at = Fallback(pr.release[Release.published_at.key], None)
