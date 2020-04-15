@@ -127,10 +127,19 @@ class Account(Base):
     __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(Integer(), primary_key=True)
-    installation_id = Column(BigInteger(), unique=True, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False,
                         default=lambda: datetime.now(timezone.utc),
                         server_default=func.now())
+
+
+class Installation(Base):
+    """Mapping account -> installation_id, one-to-many."""
+
+    __tablename__ = "installation_ids"
+
+    id = Column(BigInteger(), primary_key=True, autoincrement=False)
+    account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_installation_id_owner"),
+                        nullable=False)
 
 
 class Invitation(Base):

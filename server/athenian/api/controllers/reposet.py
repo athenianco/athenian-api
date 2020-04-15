@@ -7,15 +7,15 @@ from typing import List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 import aiomcache
 from asyncpg import UniqueViolationError
 import databases.core
-from sqlalchemy import and_, insert, select, update
+from sqlalchemy import and_, insert, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
-from athenian.api.controllers.account import get_installation_id, get_user_account_status
+from athenian.api.controllers.account import get_installation_ids, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.metadata import __package__
 from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
-from athenian.api.models.state.models import Account, RepositorySet, UserAccount
+from athenian.api.models.state.models import Installation, RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourceDataError, \
     NotFoundError
 from athenian.api.models.web.generic_error import DatabaseConflict
@@ -182,22 +182,27 @@ async def _load_account_reposets(account: int,
         async with sdb_conn.transaction():
             # new account, discover their repos from the installation and create the first reposet
             try:
-                iid = await get_installation_id(account, sdb_conn, cache)
+                iids = await get_installation_ids(account, sdb_conn, cache)
             except ResponseError:
-                iid = await mdb_conn.fetch_val(select([InstallationOwner.install_id])
-                                               .where(InstallationOwner.user_id == int(native_uid))
-                                               .order_by(InstallationOwner.created_at.desc()))
-                if iid is None:
+                iids = await mdb_conn.fetch_all(
+                    select([InstallationOwner.install_id])
+                    .where(InstallationOwner.user_id == int(native_uid)))
+                iids = {r[0] for r in iids}
+                if not iids:
                     raise_no_source_data()
-                existing = await sdb_conn.fetch_all(
-                    select([Account]).where(Account.installation_id == iid))
-                if existing:
+                owned_iids = await sdb_conn.fetch_all(select([Installation.id])
+                                                      .where(Installation.id.in_(iids)))
+                owned_iids = {r[0] for r in owned_iids}
+                iids -= owned_iids
+                if not iids:
                     raise_no_source_data()
-                await sdb_conn.execute(update(Account)
-                                       .where(Account.id == account)
-                                       .values({Account.installation_id: iid}))
+                for iid in iids:
+                    # we don't expect many installations for the same account so don't go parallel
+                    values = Installation(id=iid, account_id=account).explode(
+                        with_primary_keys=True)
+                    await sdb_conn.execute(insert(Installation).values(values))
             repos = await mdb_conn.fetch_all(select([InstallationRepo.repo_full_name])
-                                             .where(InstallationRepo.install_id == iid))
+                                             .where(InstallationRepo.install_id.in_(iids)))
             repos = [("github.com/" + r[InstallationRepo.repo_full_name.key]) for r in repos]
             rs = RepositorySet(owner=account, items=repos).create_defaults()
             rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))

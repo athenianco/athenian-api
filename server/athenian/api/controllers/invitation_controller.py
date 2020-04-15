@@ -3,11 +3,12 @@ import binascii
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 import logging
+import marshal
 import os
 from random import randint
 from sqlite3 import IntegrityError, OperationalError
 import struct
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from aiohttp import web
 import aiomcache
@@ -19,7 +20,7 @@ from sqlalchemy import and_, delete, func, insert, select, update
 
 from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
-from athenian.api.controllers.account import get_installation_id, get_user_account_status
+from athenian.api.controllers.account import get_installation_ids, get_user_account_status
 from athenian.api.models.metadata.github import FetchProgress, Installation, InstallationOwner, \
     InstallationRepo
 from athenian.api.models.state.models import Account, Invitation, UserAccount
@@ -149,13 +150,13 @@ async def _accept_invitation(iid, salt, request, conn):
                 now = datetime.utcnow()
             else:
                 now = datetime.now(tz=timestamp.tzinfo)
-        if timestamp is not None and now - timestamp < accept_admin_cooldown:
-            raise ResponseError(GenericError(
-                type="/errors/AdminCooldownError",
-                title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
-                status=HTTPStatus.TOO_MANY_REQUESTS,
-                detail="You accepted an admin invitation less than %s ago." %
-                       accept_admin_cooldown))
+            if now - timestamp < accept_admin_cooldown:
+                raise ResponseError(GenericError(
+                    type="/errors/AdminCooldownError",
+                    title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
+                    status=HTTPStatus.TOO_MANY_REQUESTS,
+                    detail="You accepted an admin invitation less than %s ago." %
+                           accept_admin_cooldown))
         # create a new account for the admin user
         acc_id = await create_new_account(conn)
         if acc_id >= admin_backdoor:
@@ -249,21 +250,26 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
 
 @cached(
     exptime=24 * 3600,  # 1 day
-    serialize=lambda t: (struct.pack("!q", t[0]) + t[1].encode()),
-    deserialize=lambda buf: (struct.unpack("!q", buf[:8])[0], buf[8:].decode()),
+    serialize=lambda t: marshal.dumps(t),
+    deserialize=lambda buf: marshal.loads(buf),
     key=lambda account, **_: (account,),
 )
-async def get_installation_delivery_id(account: int,
-                                       sdb_conn: databases.core.Connection,
-                                       mdb_conn: databases.core.Connection,
-                                       cache: Optional[aiomcache.Client]) -> Tuple[int, str]:
+async def get_installation_delivery_ids(account: int,
+                                        sdb_conn: databases.core.Connection,
+                                        mdb_conn: databases.core.Connection,
+                                        cache: Optional[aiomcache.Client],
+                                        ) -> List[Tuple[int, str]]:
     """Load the app installation and delivery IDs for the given account."""
-    installation_id = await get_installation_id(account, sdb_conn, cache)
-    did = await mdb_conn.fetch_val(
-        select([Installation.delivery_id]).where(Installation.id == installation_id))
-    if did is None:
-        raise ResponseError(NoSourceDataError(detail="The installation has not started yet."))
-    return installation_id, did
+    installation_ids = await get_installation_ids(account, sdb_conn, cache)
+    dids = await mdb_conn.fetch_all(
+        select([Installation.id, Installation.delivery_id])
+        .where(Installation.id.in_(installation_ids)))
+    diff = len(installation_ids) - len(dids)
+    if diff > 0:
+        raise ResponseError(NoSourceDataError(detail="There %s %d missing installation%s." %
+                                                     ("are" if diff > 1 else "is", diff,
+                                                      "s" if diff > 1 else "")))
+    return [(did[0], did[1]) for did in dids]
 
 
 @cached(
@@ -295,33 +301,47 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
             return e.response
         async with request.mdb.connection() as mdb_conn:
             try:
-                installation_id, delivery_id = await get_installation_delivery_id(
-                    id, sdb_conn, mdb_conn, request.cache)
-                owner = await get_installation_owner(installation_id, mdb_conn, request.cache)
+                id_ids = await get_installation_delivery_ids(id, sdb_conn, mdb_conn, request.cache)
+                owner = await get_installation_owner(id_ids[0][0], mdb_conn, request.cache)
             except ResponseError as e:
                 return e.response
             # we don't cache this because the number of repos can dynamically change
-            repositories = await mdb_conn.fetch_val(
-                select([func.count(InstallationRepo.repo_id)])
-                .where(InstallationRepo.install_id == installation_id))
-            rows = await mdb_conn.fetch_all(
-                select([FetchProgress]).where(FetchProgress.event_id == delivery_id))
-            tables = sorted(TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.key],
-                                                  name=r[FetchProgress.node_type.key],
-                                                  total=r[FetchProgress.nodes_total.key])
-                            for r in rows)
-            started_date = min(r[FetchProgress.created_at.key] for r in rows)
-            if started_date is not None:
-                started_date = started_date.replace(tzinfo=timezone.utc)
-            if any(t.fetched < t.total for t in tables):
-                finished_date = None
-            else:
-                finished_date = max(r[FetchProgress.updated_at.key] for r in rows)
-            if finished_date is not None:
-                finished_date = finished_date.replace(tzinfo=timezone.utc)
-            model = InstallationProgress(started_date=started_date,
-                                         finished_date=finished_date,
+            models = []
+            for installation_id, delivery_id in id_ids:
+                repositories = await mdb_conn.fetch_val(
+                    select([func.count(InstallationRepo.repo_id)])
+                    .where(InstallationRepo.install_id == installation_id))
+                rows = await mdb_conn.fetch_all(
+                    select([FetchProgress]).where(FetchProgress.event_id == delivery_id))
+                tables = [TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.key],
+                                                name=r[FetchProgress.node_type.key],
+                                                total=r[FetchProgress.nodes_total.key])
+                          for r in rows]
+                started_date = min(r[FetchProgress.created_at.key] for r in rows)
+                if started_date is not None:
+                    started_date = started_date.replace(tzinfo=timezone.utc)
+                if any(t.fetched < t.total for t in tables):
+                    finished_date = None
+                else:
+                    finished_date = max(r[FetchProgress.updated_at.key] for r in rows)
+                if finished_date is not None:
+                    finished_date = finished_date.replace(tzinfo=timezone.utc)
+                model = InstallationProgress(started_date=started_date,
+                                             finished_date=finished_date,
+                                             owner=owner,
+                                             repositories=repositories,
+                                             tables=tables)
+                models.append(model)
+            tables = {}
+            for m in models:
+                for t in m.tables:
+                    table = tables.setdefault(
+                        t.name, TableFetchingProgress(name=t.name, fetched=0, total=0))
+                    table.fetched += t.fetched
+                    table.total += t.total
+            model = InstallationProgress(started_date=min(m.started_date for m in models),
+                                         finished_date=max(m.finished_date for m in models),
                                          owner=owner,
-                                         repositories=repositories,
-                                         tables=tables)
+                                         repositories=sum(m.repositories for m in models),
+                                         tables=sorted(tables.values()))
             return model_response(model)
