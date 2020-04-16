@@ -3,6 +3,7 @@ from datetime import datetime
 import json
 
 import dateutil.parser
+import pytest
 
 
 async def test_get_user(client, headers):
@@ -101,3 +102,72 @@ async def test_become(client, headers):
         "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
         "accounts": {"1": True, "2": False},
     }
+
+
+async def test_change_user_regular(client, headers):
+    body = {
+        "account": 1,
+        "user": "auth0|5e1f6e2e8bfa520ea5290741",
+        "status": "regular",
+    }
+    response = await client.request(
+        method="PUT", path="/v1/account/user", headers=headers, json=body,
+    )
+    assert response.status == 200
+    items = json.loads((await response.read()).decode("utf-8"))
+    assert len(items["admins"]) == 1
+    assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
+    assert len(items["regulars"]) == 1
+    assert items["regulars"][0]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
+
+
+async def test_change_user_admin(client, headers):
+    body = {
+        "account": 1,
+        "user": "auth0|5e1f6e2e8bfa520ea5290741",
+        "status": "admin",
+    }
+    response = await client.request(
+        method="PUT", path="/v1/account/user", headers=headers, json=body,
+    )
+    assert response.status == 200
+    items = json.loads((await response.read()).decode("utf-8"))
+    assert len(items["admins"]) == 2
+    assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
+    assert items["admins"][1]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
+
+
+async def test_change_user_banish(client, headers):
+    body = {
+        "account": 1,
+        "user": "auth0|5e1f6e2e8bfa520ea5290741",
+        "status": "banished",
+    }
+    response = await client.request(
+        method="PUT", path="/v1/account/user", headers=headers, json=body,
+    )
+    assert response.status == 200
+    items = json.loads((await response.read()).decode("utf-8"))
+    assert len(items["admins"]) == 1
+    assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
+    assert len(items["regulars"]) == 0
+
+
+@pytest.mark.parametrize("account, user, status, code", [
+    (1, "auth0|5e1f6dfb57bc640ea390557b", "regular", 403),
+    (1, "auth0|5e1f6dfb57bc640ea390557b", "banished", 403),
+    (2, "auth0|5e1f6dfb57bc640ea390557b", "regular", 403),
+    (2, "auth0|5e1f6dfb57bc640ea390557b", "admin", 403),
+    (2, "auth0|5e1f6dfb57bc640ea390557b", "banished", 403),
+    (3, "auth0|5e1f6dfb57bc640ea390557b", "regular", 404),
+])
+async def test_change_user_errors(client, headers, account, user, status, code):
+    body = {
+        "account": account,
+        "user": user,
+        "status": status,
+    }
+    response = await client.request(
+        method="PUT", path="/v1/account/user", headers=headers, json=body,
+    )
+    assert response.status == code

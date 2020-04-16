@@ -13,6 +13,45 @@ servers:
 - description: '{{ server_description }} - {{ server_url }}'
   url: '{{ server_url }}/v1'
 paths:
+  /account/user:
+    put:
+      operationId: change_user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountUserChangeRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+          description: Effective account members.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Requesting user is not an admin of the account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account was not found.
+      security:
+      - bearerAuth: []
+      summary: 'Change the status of an account member: regular, admin, or banished
+        (deleted). This endpoint is allowed only for account admins.'
+      tags:
+      - user
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.user_controller
+      x-codegen-request-body-name: body
   /account/{id}:
     get:
       operationId: get_account
@@ -32,7 +71,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Account'
-          description: List the current user's account members.
+          description: List of the account members.
         403:
           content:
             application/json:
@@ -1722,7 +1761,7 @@ components:
           created: 2019-05-17T01:14:00Z
           updated: 2019-09-18T10:49:00Z
           properties:
-          - "wip"
+          - wip
           stage_timings:
             wip: 2000s
           participants:
@@ -1979,11 +2018,10 @@ components:
         with_committer:
           $ref: '#/components/schemas/DeveloperSet'
         property:
-          description: 'Main trait of the commits - the core of the filter.
-
+          description: |-
+            Main trait of the commits - the core of the filter.
             * no_pr_merges: select all the commits but PR merges by noreply@github.com
-
-            * bypassing_prs: select commits that were pushed without creating a PR'
+            * bypassing_prs: select commits that were pushed without creating a PR
           enum:
           - no_pr_merges
           - bypassing_prs
@@ -2283,44 +2321,21 @@ components:
       - metrics
       type: object
     DeveloperMetricID:
-      description: 'Currently supported developer metric types.
-
+      description: |-
+        Currently supported developer metric types.
         * `dev-commits-pushed`: how many commits were pushed.
-
-        * `dev-lines-changed`: how many lines were either inserted or removed in the pushed
-                               commits.
-
+        * `dev-lines-changed`: how many lines were either inserted or removed in the pushed commits.
         * `dev-prs-created`: how many PRs were created.
-
-        * `dev-prs-reviewed`: how many *distinct* PRs were reviewed
-                              (approved, rejected or neutral).
-
-        * `dev-prs-merged`: how many PRs were merged by this developer. This is *not* how many
-                            authored PRs were merged!
-
+        * `dev-prs-reviewed`: how many *distinct* PRs were reviewed (approved, rejected or neutral).
+        * `dev-prs-merged`: how many PRs were merged by this developer. This is *not* how many authored PRs were merged!
         * `dev-releases`: how many releases were authored by this developer.
-
-        * `dev-reviews`: how many reviews were submitted. One PR may have several reviews
-                         by the same developer! This value equals to the sum of
-                         `dev-review-approvals`, `dev-review-rejections` and
-                         `dev-review-neutrals`.
-
-        * `dev-review-approvals`: how many approvals this developer submitted. One PR may have
-                                  several approvals by the same developer!
-
-        * `dev-review-rejections`: how many rejections this developer submitted. One PR may have
-                                   several rejections by the same developer!
-
-        * `dev-review-neutrals`: how many neutral ("comment") reviews this developer submitted.
-                                 One PR may have several neutral reviews by the same developer!
-
+        * `dev-reviews`: how many reviews were submitted. One PR may have several reviews by the same developer! This value equals to the sum of `dev-review-approvals`, `dev-review-rejections` and `dev-review-neutrals`.
+        * `dev-review-approvals`: how many approvals this developer submitted. One PR may have several approvals by the same developer!
+        * `dev-review-rejections`: how many rejections this developer submitted. One PR may have several rejections by the same developer!
+        * `dev-review-neutrals`: how many neutral ("comment") reviews this developer submitted. One PR may have several neutral reviews by the same developer!
         * `dev-pr-comments`: how many comments (both regular and review) this developer posted.
-
-        * `dev-regular-pr-comments`: how many regular comments (not review suggestions!)
-                                     this developer posted.
-
-        * `dev-review-pr-comments`: how many review suggestions (summaries are not considered!)
-                                    this developer posted.'
+        * `dev-regular-pr-comments`: how many regular comments (not review suggestions!) this developer posted.
+        * `dev-review-pr-comments`: how many review suggestions (summaries are not considered!) this developer posted.
       enum:
       - dev-commits-pushed
       - dev-lines-changed
@@ -2648,14 +2663,11 @@ components:
       - repositories
       type: object
     ReleaseMatchStrategy:
-      description: 'Release workflow choice: how we should detect releases.
-
+      description: |-
+        Release workflow choice: how we should detect releases.
         * `branch`: merges to certain branches are considered releases and nothing else.
-
         * `tag`: tags with certain name patterns are considered releases and nothing else.
-
-        * `tag_or_branch`: follow "tag"; if the repository does not have tags, fallback
-        to "branch".'
+        * `tag_or_branch`: follow "tag"; if the repository does not have tags, fallback to "branch".
       enum:
       - branch
       - tag
@@ -2682,4 +2694,30 @@ components:
       - branches
       - match
       - tags
+      type: object
+    AccountUserChangeRequest:
+      additionalProperties: false
+      description: Request to change an account member's status.
+      example:
+        user: github|60340680
+        account: 1
+        status: regular
+      properties:
+        account:
+          description: Account ID.
+          type: integer
+        user:
+          description: Account member ID.
+          type: string
+        status:
+          description: Account membership role.
+          enum:
+          - regular
+          - admin
+          - banished
+          type: string
+      required:
+      - account
+      - status
+      - user
       type: object
