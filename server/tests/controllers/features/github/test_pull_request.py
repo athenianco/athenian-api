@@ -210,7 +210,8 @@ def test_pull_request_average_metric_calculator_zeros_nonnegative(pr_samples):
     calc.may_have_negative_values = False
     calc.samples.extend(pd.Timedelta(0) for _ in range(3))
     m = calc.value()
-    assert not m.exists
+    assert m.exists
+    assert m.value == pd.Timedelta(0)
 
 
 def test_mean_confidence_interval_nan_confidence_nonnegative():

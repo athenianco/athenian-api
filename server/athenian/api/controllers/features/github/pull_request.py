@@ -60,9 +60,9 @@ class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
         if not self.samples:
             return Metric(False, None, None, None)
         assert self.may_have_negative_values is not None
-        if not self.may_have_negative_values and not any(self.samples):
-            # The log-normal distribution is not compatible with this bullshit.
-            return Metric(False, None, None, None)
+        if not self.may_have_negative_values:
+            zero = type(self.samples[0])(0)
+            assert all(s >= zero for s in self.samples)
         return Metric(True, *mean_confidence_interval(self.samples, self.may_have_negative_values))
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
