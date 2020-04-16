@@ -135,7 +135,7 @@ class Account(Base):
 class Installation(Base):
     """Mapping account -> installation_id, one-to-many."""
 
-    __tablename__ = "installation_ids"
+    __tablename__ = "installations"
 
     id = Column(BigInteger(), primary_key=True, autoincrement=False)
     account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_installation_id_owner"),
