@@ -77,7 +77,11 @@ def cached(exptime: Union[int, Callable[..., int]],
                 assert isinstance(props, tuple), "key() must return a tuple"
                 full_name = func.__module__ + "." + func.__qualname__
                 cache_key = gen_cache_key(full_name + "|" + "|".join([str(p) for p in props]))
-                buffer = await client.get(cache_key)
+                try:
+                    buffer = await client.get(cache_key)
+                except Exception:
+                    log.exception("failed to fetch %s", cache_key)
+                    buffer = None
                 if buffer is not None:
                     result = deserialize(buffer)
                     t = exptime(result=result, **args_dict) if callable(exptime) else exptime
