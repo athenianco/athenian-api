@@ -163,7 +163,7 @@ class PullRequestMiner:
                          PullRequestCommit.author_login, PullRequestCommit.committer_login])
 
         async def map_releases():
-            merged_prs = prs[prs[PullRequest.merged_at.key].between(time_from, time_to)]
+            merged_prs = prs[prs[PullRequest.merged_at.key] <= time_to]
             return await map_prs_to_releases(merged_prs, time_to, release_settings, db, cache)
 
         dfs = await asyncio.gather(
