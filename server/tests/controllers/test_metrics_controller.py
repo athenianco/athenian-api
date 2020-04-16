@@ -388,6 +388,7 @@ developer_metric_mcuadros_stats = {
     "dev-commits-pushed": 207,
     "dev-lines-changed": 34494,
     "dev-prs-created": 14,
+    "dev-prs-reviewed": 35,
     "dev-prs-merged": 175,
     "dev-releases": 21,
     "dev-reviews": 68,

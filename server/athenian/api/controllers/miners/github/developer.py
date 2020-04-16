@@ -8,7 +8,7 @@ from typing import Collection, Dict, List, Optional, Sequence, Set, Union
 import aiomcache
 import databases
 import pandas as pd
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, distinct, func, select
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
@@ -23,6 +23,7 @@ class DeveloperTopic(Enum):
     commits_pushed = "dev-commits-pushed"
     lines_changed = "dev-lines-changed"
     prs_created = "dev-prs-created"
+    prs_reviewed = "dev-prs-reviewed"
     prs_merged = "dev-prs-merged"
     releases = "dev-releases"
     reviews = "dev-reviews"
@@ -41,6 +42,7 @@ class DeveloperStats:
     commits_pushed: int = 0
     lines_changed: int = 0
     prs_created: int = 0
+    prs_reviewed: int = 0
     prs_merged: int = 0
     releases: int = 0
     reviews: int = 0
@@ -88,6 +90,20 @@ async def _set_prs_created(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
         stats_by_dev[dev][topic] = n
 
 
+async def _set_prs_reviewed(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
+                            topics: Set[str],
+                            devs: Sequence[str],
+                            repos: Collection[str],
+                            date_from: datetime,
+                            date_to: datetime,
+                            conn: databases.core.Connection,
+                            cache: Optional[aiomcache.Client]) -> None:
+    prs = await _fetch_developer_reviewed_prs(devs, repos, date_from, date_to, conn, cache)
+    topic = DeveloperTopic.prs_reviewed.name
+    for dev, n in prs["reviewed_count"].items():
+        stats_by_dev[dev][topic] = n
+
+
 async def _set_prs_merged(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                           topics: Set[str],
                           devs: Sequence[str],
@@ -130,8 +146,7 @@ async def _set_reviews(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
     if DeveloperTopic.reviews in topics:
         topic = DeveloperTopic.reviews.name
         for dev, n in (reviews
-                       .reset_index()
-                       .groupby(PullRequestReview.user_login.key, sort=False)
+                       .groupby(level=0, sort=False)
                        .sum()["reviews_count"]).items():
             stats_by_dev[dev][topic] = n
     if DeveloperTopic.review_approvals in topics:
@@ -193,12 +208,13 @@ async def _set_pr_comments(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
 processors = [
     ({DeveloperTopic.commits_pushed, DeveloperTopic.lines_changed}, _set_commits),
     ({DeveloperTopic.prs_created}, _set_prs_created),
+    ({DeveloperTopic.prs_reviewed}, _set_prs_reviewed),
     ({DeveloperTopic.prs_merged}, _set_prs_merged),
     ({DeveloperTopic.releases}, _set_releases),
     ({DeveloperTopic.reviews, DeveloperTopic.review_approvals, DeveloperTopic.review_neutrals,
-     DeveloperTopic.review_rejections}, _set_reviews),
+      DeveloperTopic.review_rejections}, _set_reviews),
     ({DeveloperTopic.pr_comments, DeveloperTopic.regular_pr_comments,
-     DeveloperTopic.review_pr_comments}, _set_pr_comments),
+      DeveloperTopic.review_pr_comments}, _set_pr_comments),
 ]
 
 
@@ -224,8 +240,11 @@ async def calc_developer_metrics(devs: Sequence[str],
     return [DeveloperStats(**stats_by_dev[dev]) for dev in devs]
 
 
+CACHE_EXPIRATION_TIME = 5 * 60  # 5 min
+
+
 @cached(
-    exptime=5 * 60,
+    exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda devs, repos, date_from, date_to, **_: (
@@ -249,7 +268,7 @@ async def _fetch_developer_commits(devs: Sequence[str],
 
 
 @cached(
-    exptime=5 * 60,
+    exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda devs, repos, date_from, date_to, **_: (
@@ -275,7 +294,7 @@ async def _fetch_developer_created_prs(devs: Sequence[str],
 
 
 @cached(
-    exptime=5 * 60,
+    exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda devs, repos, date_from, date_to, **_: (
@@ -301,7 +320,7 @@ async def _fetch_developer_merged_prs(devs: Sequence[str],
 
 
 @cached(
-    exptime=5 * 60,
+    exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda devs, repos, date_from, date_to, **_: (
@@ -326,7 +345,35 @@ async def _fetch_developer_released_prs(devs: Sequence[str],
 
 
 @cached(
-    exptime=5 * 60,
+    exptime=CACHE_EXPIRATION_TIME,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda devs, repos, date_from, date_to, **_: (
+        ",".join(devs), ",".join(sorted(repos)), date_from.toordinal(), date_to.toordinal()),
+)
+async def _fetch_developer_reviewed_prs(devs: Sequence[str],
+                                        repos: Collection[str],
+                                        date_from: datetime,
+                                        date_to: datetime,
+                                        db: databases.core.Connection,
+                                        cache: Optional[aiomcache.Client],
+                                        ) -> pd.DataFrame:
+    df = await read_sql_query(
+        select([PullRequestReview.user_login,
+                func.count(distinct(PullRequestReview.pull_request_node_id))])
+        .where(and_(
+            PullRequestReview.submitted_at.between(date_from, date_to),
+            PullRequestReview.user_login.in_(devs),
+            PullRequestReview.repository_full_name.in_(repos),
+        )).group_by(PullRequestReview.user_login),
+        db, [PullRequestReview.user_login.key, "reviewed_count"],
+        index=PullRequestReview.user_login.key)
+    df.fillna(0, inplace=True, downcast="infer")
+    return df
+
+
+@cached(
+    exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda devs, repos, date_from, date_to, **_: (
@@ -354,7 +401,7 @@ async def _fetch_developer_reviews(devs: Sequence[str],
 
 
 @cached(
-    exptime=5 * 60,
+    exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda devs, repos, date_from, date_to, **_: (
@@ -382,7 +429,7 @@ async def _fetch_developer_review_comments(devs: Sequence[str],
 
 
 @cached(
-    exptime=5 * 60,
+    exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda devs, repos, date_from, date_to, **_: (
