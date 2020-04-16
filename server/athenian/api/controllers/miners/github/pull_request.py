@@ -129,6 +129,7 @@ class PullRequestMiner:
             released_prs = await map_releases_to_prs(
                 repositories, time_from, time_to, release_settings, conn, cache)
             prs = pd.concat([prs, released_prs], sort=False)
+            prs = prs[~prs.index.duplicated()]
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
         cls.truncate_timestamps(prs, time_to)
         node_ids = prs.index if len(prs) > 0 else set()
