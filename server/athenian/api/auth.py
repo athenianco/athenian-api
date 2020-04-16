@@ -286,6 +286,7 @@ class Auth0:
         self._kids_event.set()
 
     async def _acquire_management_token(self) -> float:
+        data = {}
         try:
             resp = await self._session.post("https://%s/oauth/token" % self._domain, headers={
                 "content-type": "application/x-www-form-urlencoded",
@@ -300,7 +301,7 @@ class Auth0:
             self._mgmt_event.set()
             expires_in = int(data["expires_in"])
         except Exception as e:
-            self.log.exception("Failed to renew the mgmt Auth0 token")
+            self.log.exception("Failed to renew the mgmt Auth0 token: %s", data)
             raise GracefulExit() from e
         self.log.info("Acquired new Auth0 management token %s...%s for the next %s",
                       self._mgmt_token[:12], self._mgmt_token[-12:], timedelta(seconds=expires_in))

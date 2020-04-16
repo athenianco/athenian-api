@@ -170,6 +170,8 @@ class AthenianApp(connexion.AioHttpApp):
                 pass_context_arg_name="request",
                 options={"middlewares": [self.with_db]},
             )
+            components = api.specification.raw["components"]
+            components["schemas"] = dict(sorted(components["schemas"].items()))
         api.jsonifier.json = FriendlyJson
         prometheus_registry = setup_status(self.app)
         self._setup_survival()

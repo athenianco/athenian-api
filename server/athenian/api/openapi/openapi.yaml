@@ -1980,7 +1980,9 @@ components:
           $ref: '#/components/schemas/DeveloperSet'
         property:
           description: 'Main trait of the commits - the core of the filter.
+
             * no_pr_merges: select all the commits but PR merges by noreply@github.com
+
             * bypassing_prs: select commits that were pushed without creating a PR'
           enum:
           - no_pr_merges
@@ -2282,30 +2284,43 @@ components:
       type: object
     DeveloperMetricID:
       description: 'Currently supported developer metric types.
-        * `dev-commits-pushed` - how many commits were pushed.
-        * `dev-lines-changed` - how many lines were either inserted or removed in the pushed
-                                commits.
-        * `dev-prs-created` - how many PRs were created.
-        * `dev-prs-reviewed` - how many *distinct* PRs were reviewed
-                               (approved, rejected or neutral).
-        * `dev-prs-merged` - how many PRs were merged by this developer. This is *not* how many
-                           authored PRs were merged!
-        * `dev-releases` - how many releases were authored by this developer.
-        * `dev-reviews` - how many reviews were submitted. One PR may have several reviews
-                          by the same developer! This value equals to the sum of
-                          `dev-review-approvals`, `dev-review-rejections` and
-                          `dev-review-neutrals`.
-        * `dev-review-approvals` - how many approvals this developer submitted. One PR may have
-                                   several approvals by the same developer!
-        * `dev-review-rejections` - how many rejections this developer submitted. One PR may have
-                                    several rejections by the same developer!
-        * `dev-review-neutrals` - how many neutral ("comment") reviews this developer submitted.
-                                  One PR may have several neutral reviews by the same developer!
-        * `dev-pr-comments` - how many comments (both regular and review) this developer posted.
-        * `dev-regular-pr-comments` - how many regular comments (not review suggestions!)
-                                      this developer posted.
-        * `dev-review-pr-comments` - how many review suggestions (summaries are not considered!)
-                                     this developer posted.'
+
+        * `dev-commits-pushed`: how many commits were pushed.
+
+        * `dev-lines-changed`: how many lines were either inserted or removed in the pushed
+                               commits.
+
+        * `dev-prs-created`: how many PRs were created.
+
+        * `dev-prs-reviewed`: how many *distinct* PRs were reviewed
+                              (approved, rejected or neutral).
+
+        * `dev-prs-merged`: how many PRs were merged by this developer. This is *not* how many
+                            authored PRs were merged!
+
+        * `dev-releases`: how many releases were authored by this developer.
+
+        * `dev-reviews`: how many reviews were submitted. One PR may have several reviews
+                         by the same developer! This value equals to the sum of
+                         `dev-review-approvals`, `dev-review-rejections` and
+                         `dev-review-neutrals`.
+
+        * `dev-review-approvals`: how many approvals this developer submitted. One PR may have
+                                  several approvals by the same developer!
+
+        * `dev-review-rejections`: how many rejections this developer submitted. One PR may have
+                                   several rejections by the same developer!
+
+        * `dev-review-neutrals`: how many neutral ("comment") reviews this developer submitted.
+                                 One PR may have several neutral reviews by the same developer!
+
+        * `dev-pr-comments`: how many comments (both regular and review) this developer posted.
+
+        * `dev-regular-pr-comments`: how many regular comments (not review suggestions!)
+                                     this developer posted.
+
+        * `dev-review-pr-comments`: how many review suggestions (summaries are not considered!)
+                                    this developer posted.'
       enum:
       - dev-commits-pushed
       - dev-lines-changed
@@ -2634,9 +2649,12 @@ components:
       type: object
     ReleaseMatchStrategy:
       description: 'Release workflow choice: how we should detect releases.
-        * branch: merges to certain branches are considered releases and nothing else.
-        * tag: tags with certain name patterns are considered releases and nothing else.
-        * tag_or_branch: follow "tag"; if the repository does not have tags, fallback
+
+        * `branch`: merges to certain branches are considered releases and nothing else.
+
+        * `tag`: tags with certain name patterns are considered releases and nothing else.
+
+        * `tag_or_branch`: follow "tag"; if the repository does not have tags, fallback
         to "branch".'
       enum:
       - branch
