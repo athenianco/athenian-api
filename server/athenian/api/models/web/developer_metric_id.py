@@ -7,6 +7,7 @@ class DeveloperMetricID(Model, metaclass=Enum):
     COMMITS_PUSHED = "dev-commits-pushed"
     LINES_CHANGED = "dev-lines-changed"
     PRS_CREATED = "dev-prs-created"
+    PRS_REVIEWED = "dev-prs-reviewed"
     PRS_MERGED = "dev-prs-merged"
     RELEASES = "dev-releases"
     REVIEWS = "dev-reviews"
