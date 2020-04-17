@@ -62,7 +62,7 @@ class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
         assert self.may_have_negative_values is not None
         if not self.may_have_negative_values:
             zero = type(self.samples[0])(0)
-            assert all(s >= zero for s in self.samples)
+            assert all(s >= zero for s in self.samples), str(self.samples)
         return Metric(True, *mean_confidence_interval(self.samples, self.may_have_negative_values))
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,

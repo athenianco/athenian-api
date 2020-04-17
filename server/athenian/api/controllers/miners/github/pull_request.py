@@ -440,15 +440,23 @@ class PullRequestTimesMiner(PullRequestMiner):
                 last_commit_before_first_review > first_review_request:
             first_review_request = Fallback(
                 last_commit_before_first_review.value, first_review_request)
+        review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.key]
         if closed_at:
-            submitted_ats = pr.reviews[PullRequestReview.submitted_at.key]
+            not_review_comments = \
+                pr.reviews[PullRequestReview.state.key] != ReviewResolution.COMMENTED.value
+            # it is possible to approve/reject after closing the PR
+            # you start the review, then somebody closes the PR, then you submit the review
+            last_review_at = review_submitted_ats[
+                (review_submitted_ats <= closed_at.best) | not_review_comments].max()
+            if last_review_at == last_review_at:
+                # we don't want dtmin() here - what if there was no review at all?
+                last_review_at = min(last_review_at, closed_at.best)
             last_review = Fallback(
-                submitted_ats[submitted_ats <= closed_at.best].max(),
-                dtmin(external_comments_times[external_comments_times < closed_at.best].max()))
+                last_review_at,
+                dtmin(external_comments_times[external_comments_times <= closed_at.best].max()))
         else:
-            last_review = Fallback(
-                pr.reviews[PullRequestReview.submitted_at.key].max(),
-                dtmin(external_comments_times.max()))
+            last_review = Fallback(review_submitted_ats.max(),
+                                   dtmin(external_comments_times.max()))
         if merged_at:
             reviews_before_merge = pr.reviews[
                 pr.reviews[PullRequestReview.submitted_at.key] <= merged_at.best]
@@ -466,6 +474,9 @@ class PullRequestTimesMiner(PullRequestMiner):
             approved_at_value = grouped_reviews[PullRequestReview.submitted_at.key][
                 grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED.value
             ].max()
+        if approved_at_value is not None and closed_at:
+            # similar to last_review
+            approved_at_value = min(approved_at_value, closed_at.best)
         approved_at = Fallback(approved_at_value, None)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         released_at = Fallback(pr.release[Release.published_at.key], None)
