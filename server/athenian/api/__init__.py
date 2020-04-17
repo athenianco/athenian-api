@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import bdb
 from datetime import timezone
 from functools import partial
 import getpass
@@ -31,6 +32,7 @@ from athenian.api.auth import Auth0
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
+from athenian.api.db import measure_db_overhead
 from athenian.api.metadata import __package__
 from athenian.api.models.state import check_schema_version
 from athenian.api.models.web import GenericError
@@ -185,34 +187,24 @@ class AthenianApp(connexion.AioHttpApp):
         self._cache = cache
         self.mdb = self.sdb = None  # type: Optional[databases.Database]
 
-        async def connect_to_mdb():
+        async def connect_to_db(name: str, shortcut: str, db_conn: str, db_options: dict):
             try:
-                db = databases.Database(mdb_conn, **(mdb_options or {}))
+                db = databases.Database(db_conn, **(db_options or {}))
                 await db.connect()
             except Exception as e:
                 if isinstance(e, asyncio.CancelledError):
                     return
-                self.log.exception("Failed to connect to the metadata DB at %s", mdb_conn)
+                self.log.exception("Failed to connect to the %s DB at %s", name, db_conn)
                 raise GracefulExit() from None
-            self.log.info("Connected to the metadata DB on %s", mdb_conn)
-            self.mdb = db
-
-        async def connect_to_sdb():
-            try:
-                db = databases.Database(sdb_conn, **(sdb_options or {}))
-                await db.connect()
-            except Exception as e:
-                if isinstance(e, asyncio.CancelledError):
-                    return
-                self.log.exception("Failed to connect to the state DB at %s", sdb_conn)
-                raise GracefulExit() from None
-            self.log.info("Connected to the server state DB on %s", sdb_conn)
-            self.sdb = db
+            self.log.info("Connected to the %s DB on %s", name, db_conn)
+            setattr(self, shortcut, measure_db_overhead(db, shortcut, self.app))
 
         self.app.on_shutdown.append(self.shutdown)
         # Schedule the DB connections
-        self._mdb_future = asyncio.ensure_future(connect_to_mdb())
-        self._sdb_future = asyncio.ensure_future(connect_to_sdb())
+        self._mdb_future = asyncio.ensure_future(connect_to_db(
+            "metadata", "mdb", mdb_conn, mdb_options))
+        self._sdb_future = asyncio.ensure_future(connect_to_db(
+            "state", "sdb", sdb_conn, sdb_options))
 
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
@@ -255,6 +247,9 @@ class AthenianApp(connexion.AioHttpApp):
         request.cache = self._cache
         try:
             return await handler(request)
+        except bdb.BdbQuit:
+            # breakpoint() helper
+            raise GracefulExit() from None
         except ConnectionError as e:
             return ResponseError(GenericError(
                 type="/errors/InternalConnectivityError",

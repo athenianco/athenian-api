@@ -11,7 +11,7 @@ from prometheus_client.utils import INF
 from xxhash import xxh64_hexdigest
 
 from athenian.api.metadata import __package__, __version__
-
+from athenian.api.typing_utils import wraps
 
 pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
 max_exptime = 30 * 24 * 3600  # 30 days according to the docs
@@ -111,13 +111,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                         .observe(len(payload))
             return result
 
-        wrapped_cached.__name__ = func.__name__
-        wrapped_cached.__qualname__ = func.__qualname__
-        wrapped_cached.__module__ = func.__module__
-        wrapped_cached.__doc__ = func.__doc__
-        wrapped_cached.__annotations__ = func.__annotations__
-        wrapped_cached.__wrapped__ = func
-        return wrapped_cached
+        return wraps(wrapped_cached, func)
 
     return wrapper_cached
 
@@ -156,7 +150,8 @@ def setup_cache_metrics(cache: Optional[aiomcache.Client], registry: CollectorRe
             ["app_name", "version", "func"],
             buckets=[10, 100, 1000, 5000, 10000, 25000, 50000, 75000,
                      100000, 200000, 300000, 400000, 500000, 750000,
-                     1000000, 2000000, 5000000, 10000000, INF],
+                     1000000, 2000000, 3000000, 4000000, 5000000, 7500000,
+                     10000000, INF],
             registry=registry,
         ),
     }

@@ -28,7 +28,7 @@ def test_integration_micro(metadata_db, aiohttp_unused_port):
         with kill_cond:
             kill_cond.wait(10)
         if proc.poll() is None:
-            proc.kill()
+            proc.terminate()
 
     killer = Thread(target=kill)
     killer.start()
@@ -47,9 +47,8 @@ def test_integration_micro(metadata_db, aiohttp_unused_port):
         if ("Listening on 0.0.0.0:" + unused_port) in line:
             wins += 1
         if wins == n_checks:
-            break
-    with kill_cond:
-        kill_cond.notify_all()
+            with kill_cond:
+                kill_cond.notify_all()
     killer.join()
-    assert proc.poll() is None, "Server crashed"
+    assert not proc.poll(), "Server crashed"
     proc.terminate()
