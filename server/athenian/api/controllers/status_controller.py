@@ -58,6 +58,10 @@ def setup_status(app) -> prometheus_client.CollectorRegistry:
     app["request_latency"] = prometheus_client.Histogram(
         "request_latency_seconds", "Request latency",
         ["app_name", "version", "endpoint"],
+        buckets=[0.05, 0.1, 0.25, 0.5, 0.75, 1.0,
+                 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+                 12.0, 15.0, 20.0, 25.0, 30.0,
+                 45.0, 60.0, 120.0, 180.0, 240.0, prometheus_client.metrics.INF],
         registry=registry,
     )
     app["request_in_progress"] = prometheus_client.Gauge(
