@@ -150,7 +150,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
                 repo_branches[Branch.branch_name.key][repo_branches[Branch.is_default.key]].iloc[0]
         except IndexError:
             log.error('failed to find the default branch for "%s": only have %s',
-                      repo, repo_branches[Branch.branch_name.key, Branch.is_default.key])
+                      repo, repo_branches[[Branch.branch_name.key, Branch.is_default.key]])
             continue
         regexp = regexp.replace(default_branch_alias, default_branch)
         # note: dict.setdefault() is not good here because re.compile() will be evaluated
