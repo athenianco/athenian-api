@@ -455,7 +455,7 @@ class PullRequestTimesMiner(PullRequestMiner):
         else:
             reviews_before_merge = pr.reviews
         grouped_reviews = reviews_before_merge \
-            .sort_values([PullRequestReview.submitted_at.key], ascending=True, ignore_index=True) \
+            .sort_values([PullRequestReview.submitted_at.key], ascending=False, ignore_index=True)\
             .groupby(PullRequestReview.user_id.key, sort=False, as_index=False) \
             .head(1)  # the most recent review for each reviewer
         if (grouped_reviews[PullRequestReview.state.key]
