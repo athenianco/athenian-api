@@ -7,6 +7,7 @@ from typing import Any, ByteString, Callable, Coroutine, Optional, Tuple, Union
 
 import aiomcache
 from prometheus_client import CollectorRegistry, Counter, Histogram
+from prometheus_client.utils import INF
 from xxhash import xxh64_hexdigest
 
 from athenian.api.metadata import __package__, __version__
@@ -144,11 +145,18 @@ def setup_cache_metrics(cache: Optional[aiomcache.Client], registry: CollectorRe
         "miss_latency": Histogram(
             "cache_miss_latency", "Elapsed time to retrieve items bypassing the cache",
             ["app_name", "version", "func"],
+            buckets=[0.05, 0.1, 0.25, 0.5, 0.75, 1.0,
+                     1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+                     12.0, 15.0, 20.0, 25.0, 30.0,
+                     45.0, 60.0, 120.0, 180.0, 240.0, INF],
             registry=registry,
         ),
         "size": Histogram(
             "cache_size", "Cached object size",
             ["app_name", "version", "func"],
+            buckets=[10, 100, 1000, 5000, 10000, 25000, 50000, 75000,
+                     100000, 200000, 300000, 400000, 500000, 750000,
+                     1000000, 2000000, 5000000, 10000000, INF],
             registry=registry,
         ),
     }
