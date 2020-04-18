@@ -1,4 +1,5 @@
 from datetime import timedelta
+from functools import lru_cache, wraps
 from typing import Sequence, Tuple
 
 import bootstrapped.bootstrap as bootstrap
@@ -8,6 +9,22 @@ import pandas as pd
 import scipy.stats
 
 from athenian.api.controllers.features.metric import T
+
+
+vanilla_random_choice = np.random.choice
+lru_random_choice = lru_cache(maxsize=1024)(np.random.choice)
+
+
+@wraps(np.random.choice)
+def cached_choice(*args, **kwargs):
+    """Avoid hitting "unhashable type" error."""
+    try:
+        return lru_random_choice(*args, **kwargs)
+    except TypeError:
+        return vanilla_random_choice(*args, **kwargs)
+
+
+np.random.choice = cached_choice
 
 
 def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, confidence=0.8,
