@@ -66,13 +66,20 @@ def postprocess_datetime(frame: pd.DataFrame) -> pd.DataFrame:
 
     :return: Fixed dataframe - the same instance as `frame`.
     """
+    utc_dt1 = datetime(1, 1, 1, tzinfo=timezone.utc)
+    dt1 = datetime(1, 1, 1)
     for col in frame.select_dtypes(include=[object]):
-        frame[col].replace(datetime(1, 1, 1, tzinfo=timezone.utc), pd.NaT, inplace=True)
-        frame[col].replace(datetime(1, 1, 1), pd.NaT, inplace=True)
+        fc = frame[col]
+        if utc_dt1 in fc:
+            fc.replace(utc_dt1, pd.NaT, inplace=True)
+        if dt1 in fc:
+            fc.replace(dt1, pd.NaT, inplace=True)
     for col in frame.select_dtypes(include=["datetime"]):
-        frame[col].replace(0, pd.NaT, inplace=True)
+        fc = frame[col]
+        if 0 in fc:
+            fc.replace(0, pd.NaT, inplace=True)
         try:
-            frame[col] = frame[col].dt.tz_localize(timezone.utc)
+            frame[col] = fc.dt.tz_localize(timezone.utc)
         except TypeError:
             continue
     return frame
