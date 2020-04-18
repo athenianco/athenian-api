@@ -9,6 +9,7 @@ from typing import Collection, Dict, Generator, Generic, List, Optional, TypeVar
 
 import aiomcache
 import databases
+import numpy as np
 import pandas as pd
 from sqlalchemy import select, sql
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -404,8 +405,9 @@ class PullRequestTimesMiner(PullRequestMiner):
         # yes, first_commit uses authored_date while last_commit uses committed_date
         last_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].max(), None)
         authored_comments = pr.comments[PullRequestReviewComment.user_id.key]
-        external_comments_times = pr.comments[PullRequestComment.created_at.key][
-            (authored_comments != pr.pr[PullRequest.user_id.key]) & ~authored_comments.isin(BOTS)]
+        external_comments_times = pr.comments[PullRequestComment.created_at.key].take(
+            np.where((authored_comments != pr.pr[PullRequest.user_id.key]) &
+                     ~authored_comments.isin(BOTS))[0])
         first_comment = dtmin(
             pr.review_comments[PullRequestReviewComment.created_at.key].min(),
             pr.reviews[PullRequestReview.submitted_at.key].min(),
@@ -416,7 +418,8 @@ class PullRequestTimesMiner(PullRequestMiner):
         if first_comment_on_first_review:
             committed_dates = pr.commits[PullRequestCommit.committed_date.key]
             last_commit_before_first_review = Fallback(
-                committed_dates[committed_dates <= first_comment_on_first_review.best].max(),
+                committed_dates.take(np.where(
+                    committed_dates <= first_comment_on_first_review.best)[0]).max(),
                 first_comment_on_first_review)
             # force pushes that were lost
             first_commit = Fallback.min(first_commit, last_commit_before_first_review)
@@ -443,37 +446,48 @@ class PullRequestTimesMiner(PullRequestMiner):
         review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.key]
         if closed_at:
             not_review_comments = \
-                pr.reviews[PullRequestReview.state.key] != ReviewResolution.COMMENTED.value
+                pr.reviews[PullRequestReview.state.key].values != ReviewResolution.COMMENTED.value
             # it is possible to approve/reject after closing the PR
             # you start the review, then somebody closes the PR, then you submit the review
-            last_review_at = review_submitted_ats[
-                (review_submitted_ats <= closed_at.best) | not_review_comments].max()
+            last_review_at = review_submitted_ats.take(
+                np.where((review_submitted_ats.values <= closed_at.best.to_numpy()) |
+                         not_review_comments)[0]).max()
             if last_review_at == last_review_at:
                 # we don't want dtmin() here - what if there was no review at all?
                 last_review_at = min(last_review_at, closed_at.best)
             last_review = Fallback(
                 last_review_at,
-                dtmin(external_comments_times[external_comments_times <= closed_at.best].max()))
+                dtmin(external_comments_times.take(np.where(
+                    external_comments_times <= closed_at.best)[0]).max()))
         else:
             last_review = Fallback(review_submitted_ats.max(),
                                    dtmin(external_comments_times.max()))
         if merged_at:
-            reviews_before_merge = pr.reviews[
-                pr.reviews[PullRequestReview.submitted_at.key] <= merged_at.best]
+            reviews_before_merge = \
+                pr.reviews[PullRequestReview.submitted_at.key].values <= merged_at.best.to_numpy()
+            if reviews_before_merge.all():
+                reviews_before_merge = pr.reviews
+            else:
+                reviews_before_merge = pr.reviews.take(np.where(reviews_before_merge)[0])
         else:
             reviews_before_merge = pr.reviews
-        grouped_reviews = reviews_before_merge \
-            .sort_values([PullRequestReview.submitted_at.key], ascending=False, ignore_index=True)\
-            .groupby(PullRequestReview.user_id.key, sort=False, as_index=False) \
-            .head(1)  # the most recent review for each reviewer
-        if (grouped_reviews[PullRequestReview.state.key]
+        # the most recent review for each reviewer
+        if reviews_before_merge.empty:
+            grouped_reviews = reviews_before_merge
+        else:
+            grouped_reviews = reviews_before_merge \
+                .sort_values([PullRequestReview.submitted_at.key],
+                             ascending=False, ignore_index=True) \
+                .groupby(PullRequestReview.user_id.key, sort=False, as_index=False) \
+                .head(1)  # the most recent review for each reviewer
+        if (grouped_reviews[PullRequestReview.state.key].values
                 == ReviewResolution.CHANGES_REQUESTED.value).any():
             # merged with negative reviews
             approved_at_value = None
         else:
-            approved_at_value = grouped_reviews[PullRequestReview.submitted_at.key][
-                grouped_reviews[PullRequestReview.state.key] == ReviewResolution.APPROVED.value
-            ].max()
+            approved_at_value = grouped_reviews[PullRequestReview.submitted_at.key].take(
+                np.where(grouped_reviews[PullRequestReview.state.key].values ==
+                         ReviewResolution.APPROVED.value)[0]).max()
         if approved_at_value is not None and closed_at:
             # similar to last_review
             approved_at_value = min(approved_at_value, closed_at.best)
