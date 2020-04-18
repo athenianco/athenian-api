@@ -488,9 +488,9 @@ class PullRequestTimesMiner(PullRequestMiner):
             approved_at_value = grouped_reviews[PullRequestReview.submitted_at.key].take(
                 np.where(grouped_reviews[PullRequestReview.state.key].values ==
                          ReviewResolution.APPROVED.value)[0]).max()
-        if approved_at_value is not None and closed_at:
-            # similar to last_review
-            approved_at_value = min(approved_at_value, closed_at.best)
+            if approved_at_value == approved_at_value and closed_at:
+                # similar to last_review
+                approved_at_value = min(approved_at_value, closed_at.best)
         approved_at = Fallback(approved_at_value, None)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         released_at = Fallback(pr.release[Release.published_at.key], None)
