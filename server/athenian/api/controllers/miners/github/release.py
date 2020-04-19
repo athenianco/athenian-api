@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain, groupby
@@ -168,7 +169,8 @@ async def _match_releases_by_branch(repos: Iterable[str],
                                branches_matched[Branch.commit_id.key].values):
         merge_points_by_repo[repo].update(await _fetch_first_parents(commit_id, conn, cache))
     pseudo_releases = []
-    for repo, merge_points in merge_points_by_repo.items():
+
+    async def fetch_merge_commits(repo, merge_points):
         commits = await read_sql_query(
             select([PushCommit]).where(and_(
                 PushCommit.node_id.in_(merge_points),
@@ -190,6 +192,11 @@ async def _match_releases_by_branch(repos: Iterable[str],
             Release.tag.key: None,
             Release.url.key: commits[PushCommit.url.key],
         }))
+    errors = await asyncio.gather(
+        *(fetch_merge_commits(*rm) for rm in merge_points_by_repo.items()), return_exceptions=True)
+    for e in errors:
+        if e is not None:
+            raise e from None
     return pd.concat(pseudo_releases)
 
 
@@ -291,7 +298,8 @@ async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
                                    cache: Optional[aiomcache.Client],
                                    ) -> Dict[str, Dict[str, List[str]]]:
     histories = {}
-    for repo, repo_releases in releases.items():
+
+    async def fetch_release_history(repo, repo_releases):
         histories[repo] = history = {}
         release_hashes = set(repo_releases[Release.sha.key].values)
         for rel_index, (rel_commit_id, rel_sha) in enumerate(zip(
@@ -317,6 +325,12 @@ async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
                 for v in edges:
                     if v not in items:
                         items.append(v)
+
+    errors = await asyncio.gather(*(fetch_release_history(*r) for r in releases.items()),
+                                  return_exceptions=True)
+    for e in errors:
+        if e is not None:
+            raise e from None
     return histories
 
 
@@ -539,9 +553,13 @@ async def mine_releases(releases: pd.DataFrame,
                         cache: Optional[aiomcache.Client]) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Collect details about each release published after `time_boundary` and calculate added \
     and deleted line statistics."""
-    stats = []
-    for _, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
-        stats.append(await _mine_monorepo_releases(repo_releases, time_boundary, db, cache))
+    miners = (_mine_monorepo_releases(repo_releases, time_boundary, db, cache)
+              for _, repo_releases in releases.groupby(Release.repository_full_name.key,
+                                                       sort=False))
+    stats = await asyncio.gather(*miners, return_exceptions=True)
+    for s in stats:
+        if isinstance(s, BaseException):
+            raise s from None
     user_columns = [User.login, User.avatar_url]
     if stats:
         stats = pd.concat(stats, sort=False)
