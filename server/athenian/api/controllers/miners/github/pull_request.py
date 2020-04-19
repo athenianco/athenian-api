@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 import io
 import struct
-from typing import Collection, Dict, Generator, Generic, List, Optional, TypeVar, \
+from typing import Any, Collection, Dict, Generator, Generic, List, Optional, TypeVar, \
     Union
 
 import aiomcache
@@ -35,13 +35,13 @@ class MinedPullRequest:
     The artificial first index layer makes it is faster to select data belonging to a certain PR.
     """
 
-    pr: pd.Series
+    pr: Dict[str, Any]
     reviews: pd.DataFrame
     review_comments: pd.DataFrame
     review_requests: pd.DataFrame
     comments: pd.DataFrame
     commits: pd.DataFrame
-    release: pd.Series
+    release: Dict[str, Any]
 
 
 class PullRequestMiner:
@@ -242,15 +242,18 @@ class PullRequestMiner:
             except StopIteration:
                 grouped_df_states.append((None, None))
         empty_df_cache = {}
-        for pr_node_id, pr in self._prs.iterrows():
-            items = {"pr": pr}
+        pr_columns = self._prs.columns
+        for pr_tuple in self._prs.itertuples():
+            pr_node_id = pr_tuple.Index
+            items = {"pr": {c: v for c, v in zip(pr_columns, pr_tuple[1:])}}
             for i, (k, (state_pr_node_id, gdf), git, df) in enumerate(zip(
                     df_fields, grouped_df_states, grouped_df_iters, dfs)):
                 if state_pr_node_id == pr_node_id:
                     if not k.endswith("s"):
-                        gdf = gdf.iloc[0]
+                        # must faster than gdf.iloc[0]
+                        gdf = {c: v for c, v in zip(gdf.columns, gdf._data.fast_xs(0))}
                     else:
-                        gdf.reset_index(level=0, drop=True, inplace=True)
+                        gdf.index = gdf.index.droplevel(0)
                     items[k] = gdf
                     try:
                         grouped_df_states[i] = next(git)
@@ -263,8 +266,7 @@ class PullRequestMiner:
                         except KeyError:
                             items[k] = empty_df_cache[k] = df.iloc[:0].copy()
                     else:
-                        items[k] = pd.Series(
-                            [None] * len(df.columns), index=df.columns, name="empty " + k)
+                        items[k] = {c: None for c in df.columns}
             yield MinedPullRequest(**items)
 
 
@@ -474,6 +476,10 @@ class PullRequestTimesMiner(PullRequestMiner):
         # the most recent review for each reviewer
         if reviews_before_merge.empty:
             grouped_reviews = reviews_before_merge
+        elif reviews_before_merge[PullRequestReview.user_id.key].nunique() == 1:
+            # fast lane
+            grouped_reviews = reviews_before_merge.take([
+                reviews_before_merge[PullRequestReview.submitted_at.key].values.argmax()])
         else:
             grouped_reviews = reviews_before_merge \
                 .sort_values([PullRequestReview.submitted_at.key],
