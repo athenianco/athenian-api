@@ -476,6 +476,10 @@ class PullRequestTimesMiner(PullRequestMiner):
         # the most recent review for each reviewer
         if reviews_before_merge.empty:
             grouped_reviews = reviews_before_merge
+        elif reviews_before_merge[PullRequestReview.user_id.key].nunique() == 1:
+            # fast lane
+            grouped_reviews = reviews_before_merge.take([
+                reviews_before_merge[PullRequestReview.submitted_at.key].values.argmax()])
         else:
             grouped_reviews = reviews_before_merge \
                 .sort_values([PullRequestReview.submitted_at.key],
