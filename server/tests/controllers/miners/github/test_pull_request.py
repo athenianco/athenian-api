@@ -2,8 +2,7 @@ from collections import defaultdict
 import dataclasses
 from datetime import date, timedelta
 
-import pandas as pd
-from pandas.testing import assert_frame_equal, assert_series_equal
+from pandas.testing import assert_frame_equal
 import pytest
 
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
@@ -22,15 +21,19 @@ async def test_pr_miner_iter(mdb, release_match_setting_tag):
         None,
     )
     with_data = defaultdict(int)
+    size = 0
     for pr in miner:
+        size += 1
+        with_data["prs"] += bool(pr.pr)
         with_data["reviews"] += not pr.reviews.empty
         with_data["review_comments"] += not pr.review_comments.empty
         with_data["review_requests"] += not pr.review_requests.empty
         with_data["comments"] += not pr.comments.empty
         with_data["commits"] += not pr.commits.empty
-        with_data["releases"] += not pr.release.empty
+        with_data["releases"] += bool(pr.release)
     for k, v in with_data.items():
         assert v > 0, k
+    assert with_data["prs"] == size
 
 
 @pytest.mark.parametrize("with_memcached", [False] + ([True] if has_memcached else []))
@@ -62,8 +65,8 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
     second_data = list(miner)
     for first, second in zip(first_data, second_data):
         for fv, sv in zip(dataclasses.astuple(first), dataclasses.astuple(second)):
-            if isinstance(fv, pd.Series):
-                assert_series_equal(fv, sv)
+            if isinstance(fv, dict):
+                assert str(fv) == str(sv)
             else:
                 assert_frame_equal(fv.reset_index(), sv.reset_index())
 
