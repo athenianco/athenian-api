@@ -280,7 +280,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                     items = history[merge_sha]
                 except KeyError:
                     continue
-                r = repo_releases.iloc[items[0]]
+                r = repo_releases.xs(items[0])
                 released_prs.append((pr_id,
                                      r[Release.published_at.key],
                                      r[Release.author.key],
