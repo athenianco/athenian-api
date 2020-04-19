@@ -170,7 +170,7 @@ class AthenianApp(connexion.AioHttpApp):
                     "build_date": getattr(metadata, "__date__", "N/A"),
                 },
                 pass_context_arg_name="request",
-                options={"middlewares": [self.with_db]},
+                options={"middlewares": [self.with_db, self.add_server_name]},
             )
             components = api.specification.raw["components"]
             components["schemas"] = dict(sorted(components["schemas"].items()))
@@ -205,6 +205,7 @@ class AthenianApp(connexion.AioHttpApp):
             "metadata", "mdb", mdb_conn, mdb_options))
         self._sdb_future = asyncio.ensure_future(connect_to_db(
             "state", "sdb", sdb_conn, sdb_options))
+        self.server_name = socket.getfqdn()
 
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
@@ -257,6 +258,13 @@ class AthenianApp(connexion.AioHttpApp):
                 status=HTTPStatus.SERVICE_UNAVAILABLE,
                 detail="%s: %s" % (type(e).__name__, e),
             )).response
+
+    @aiohttp.web.middleware
+    async def add_server_name(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
+        """Append X-Backend-Server HTTP header."""
+        response = await handler(request)  # type: aiohttp.web.Response
+        response.headers.add("X-Backend-Server", self.server_name)
+        return response
 
     @aiohttp.web.middleware
     async def i_will_survive(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:

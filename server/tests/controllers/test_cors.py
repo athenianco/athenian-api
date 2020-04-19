@@ -2,9 +2,10 @@ async def test_cors(client, headers):
     response = await client.request(
         method="GET", path="/v1/reposet/1", headers=headers, json={},
     )
-    assert response.headers["Access-Control-Expose-Headers"] == ""
+    assert response.headers["Access-Control-Expose-Headers"] == "X-Backend-Server"
     assert response.headers["Access-Control-Allow-Origin"] == "http://localhost"
     assert response.headers["Access-Control-Allow-Credentials"] == "true"
+    assert response.headers["X-Backend-Server"]
 
     # preflight
     headers = {
