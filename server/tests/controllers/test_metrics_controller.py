@@ -93,6 +93,8 @@ async def test_calc_metrics_prs_all_time(client, headers):
     gcounts = defaultdict(int)
     assert len(cm.calculated) == 6
     for calc in cm.calculated:
+        assert calc.for_.developers == ["github.com/vmarkovtsev", "github.com/mcuadros"]
+        assert calc.for_.repositories == ["github.com/src-d/go-git"]
         gcounts[calc.granularity] += 1
         nonzero = defaultdict(int)
         for val in calc.values:
