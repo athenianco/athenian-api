@@ -1,5 +1,5 @@
 from datetime import date
-from typing import List
+from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_pull_request_metrics_item import \
@@ -13,11 +13,11 @@ class CalculatedPullRequestMetrics(Model):
 
     def __init__(
         self,
-        calculated: List[CalculatedPullRequestMetricsItem] = None,
-        metrics: List[PullRequestMetricID] = None,
-        date_from: date = None,
-        date_to: date = None,
-        granularity: Granularity = None,
+        calculated: Optional[List[CalculatedPullRequestMetricsItem]] = None,
+        metrics: Optional[List[str]] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        granularities: Optional[List[str]] = None,
     ):
         """CalculatedPullRequestMetrics - a model defined in OpenAPI
 
@@ -25,14 +25,14 @@ class CalculatedPullRequestMetrics(Model):
         :param metrics: The metrics of this CalculatedPullRequestMetrics.
         :param date_from: The date_from of this CalculatedPullRequestMetrics.
         :param date_to: The date_to of this CalculatedPullRequestMetrics.
-        :param granularity: The granularity of this CalculatedPullRequestMetrics.
+        :param granularities: The granularities of this CalculatedPullRequestMetrics.
         """
         self.openapi_types = {
             "calculated": List[CalculatedPullRequestMetricsItem],
-            "metrics": List[PullRequestMetricID],
+            "metrics": List[str],
             "date_from": date,
             "date_to": date,
-            "granularity": Granularity,
+            "granularities": List[str],
         }
 
         self.attribute_map = {
@@ -40,34 +40,32 @@ class CalculatedPullRequestMetrics(Model):
             "metrics": "metrics",
             "date_from": "date_from",
             "date_to": "date_to",
-            "granularity": "granularity",
+            "granularities": "granularities",
         }
 
         self._calculated = calculated
         self._metrics = metrics
         self._date_from = date_from
         self._date_to = date_to
-        self._granularity = granularity
+        self._granularities = granularities
 
     @property
-    def calculated(self):
+    def calculated(self) -> List[CalculatedPullRequestMetricsItem]:
         """Gets the calculated of this CalculatedPullRequestMetrics.
 
         The values of the requested metrics through time.
 
         :return: The calculated of this CalculatedPullRequestMetrics.
-        :rtype: List[CalculatedPullRequestMetricsItem]
         """
         return self._calculated
 
     @calculated.setter
-    def calculated(self, calculated):
+    def calculated(self, calculated: List[CalculatedPullRequestMetricsItem]):
         """Sets the calculated of this CalculatedPullRequestMetrics.
 
         The values of the requested metrics through time.
 
         :param calculated: The calculated of this CalculatedPullRequestMetrics.
-        :type calculated: List[CalculatedPullRequestMetricsItem]
         """
         if calculated is None:
             raise ValueError("Invalid value for `calculated`, must not be `None`")
@@ -75,49 +73,49 @@ class CalculatedPullRequestMetrics(Model):
         self._calculated = calculated
 
     @property
-    def metrics(self):
+    def metrics(self) -> List[str]:
         """Gets the metrics of this CalculatedPullRequestMetrics.
 
         Repeats `PullRequestMetricsRequest.metrics`.
 
         :return: The metrics of this CalculatedPullRequestMetrics.
-        :rtype: List[PullRequestMetricID]
         """
         return self._metrics
 
     @metrics.setter
-    def metrics(self, metrics):
+    def metrics(self, metrics: List[str]):
         """Sets the metrics of this CalculatedPullRequestMetrics.
 
         Repeats `PullRequestMetricsRequest.metrics`.
 
         :param metrics: The metrics of this CalculatedPullRequestMetrics.
-        :type metrics: List[PullRequestMetricID]
         """
         if metrics is None:
             raise ValueError("Invalid value for `metrics`, must not be `None`")
+        for m in metrics:
+            if m not in PullRequestMetricID:
+                raise ValueError('Invalid value for `metrics`: "%s" must be one of %s' %
+                                 m, list(PullRequestMetricID))
 
         self._metrics = metrics
 
     @property
-    def date_from(self):
+    def date_from(self) -> date:
         """Gets the date_from of this CalculatedPullRequestMetrics.
 
         Repeats `PullRequestMetricsRequest.date_from`.
 
         :return: The date_from of this CalculatedPullRequestMetrics.
-        :rtype: date
         """
         return self._date_from
 
     @date_from.setter
-    def date_from(self, date_from):
+    def date_from(self, date_from: date):
         """Sets the date_from of this CalculatedPullRequestMetrics.
 
         Repeats `PullRequestMetricsRequest.date_from`.
 
         :param date_from: The date_from of this CalculatedPullRequestMetrics.
-        :type date_from: date
         """
         if date_from is None:
             raise ValueError("Invalid value for `date_from`, must not be `None`")
@@ -125,24 +123,22 @@ class CalculatedPullRequestMetrics(Model):
         self._date_from = date_from
 
     @property
-    def date_to(self):
+    def date_to(self) -> date:
         """Gets the date_to of this CalculatedPullRequestMetrics.
 
         Repeats `PullRequestMetricsRequest.date_to`.
 
         :return: The date_to of this CalculatedPullRequestMetrics.
-        :rtype: date
         """
         return self._date_to
 
     @date_to.setter
-    def date_to(self, date_to):
+    def date_to(self, date_to: date):
         """Sets the date_to of this CalculatedPullRequestMetrics.
 
         Repeats `PullRequestMetricsRequest.date_to`.
 
         :param date_to: The date_to of this CalculatedPullRequestMetrics.
-        :type date_to: date
         """
         if date_to is None:
             raise ValueError("Invalid value for `date_to`, must not be `None`")
@@ -150,22 +146,25 @@ class CalculatedPullRequestMetrics(Model):
         self._date_to = date_to
 
     @property
-    def granularity(self):
-        """Gets the granularity of this CalculatedPullRequestMetrics.
+    def granularities(self) -> List[str]:
+        """Gets the granularities of this CalculatedPullRequestMetrics.
 
-        :return: The granularity of this CalculatedPullRequestMetrics.
-        :rtype: Granularity
+        :return: The granularities of this CalculatedPullRequestMetrics.
         """
-        return self._granularity
+        return self._granularities
 
-    @granularity.setter
-    def granularity(self, granularity):
-        """Sets the granularity of this CalculatedPullRequestMetrics.
+    @granularities.setter
+    def granularities(self, granularities: List[str]):
+        """Sets the granularities of this CalculatedPullRequestMetrics.
 
-        :param granularity: The granularity of this CalculatedPullRequestMetrics.
-        :type granularity: Granularity
+        :param granularities: The granularities of this CalculatedPullRequestMetrics.
         """
-        if granularity is None:
-            raise ValueError("Invalid value for `granularity`, must not be `None`")
+        if granularities is None:
+            raise ValueError("Invalid value for `granularities`, must not be `None`")
+        for i, g in enumerate(granularities):
+            if not Granularity.format.match(g):
+                raise ValueError(
+                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/' %
+                    i, g, Granularity.format.pattern)
 
-        self._granularity = granularity
+        self._granularities = granularities

@@ -17,6 +17,7 @@ class PullRequestMetricsRequest(Model):
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
         granularity: Optional[str] = None,
+        granularities: Optional[List[str]] = None,
         account: Optional[int] = None,
     ):
         """PullRequestMetricsRequest - a model defined in OpenAPI
@@ -26,6 +27,7 @@ class PullRequestMetricsRequest(Model):
         :param date_from: The date_from of this PullRequestMetricsRequest.
         :param date_to: The date_to of this PullRequestMetricsRequest.
         :param granularity: The granularity of this PullRequestMetricsRequest.
+        :param granularities: The granularities of this PullRequestMetricsRequest.
         :param account: The account of this PullRequestMetricsRequest.
         """
         self.openapi_types = {
@@ -34,6 +36,7 @@ class PullRequestMetricsRequest(Model):
             "date_from": date,
             "date_to": date,
             "granularity": str,
+            "granularities": List[str],
             "account": int,
         }
 
@@ -43,6 +46,7 @@ class PullRequestMetricsRequest(Model):
             "date_from": "date_from",
             "date_to": "date_to",
             "granularity": "granularity",
+            "granularities": "granularities",
             "account": "account",
         }
 
@@ -51,6 +55,7 @@ class PullRequestMetricsRequest(Model):
         self._date_from = date_from
         self._date_to = date_to
         self._granularity = granularity
+        self._granularities = granularities
         self._account = account
 
     @property
@@ -166,10 +171,32 @@ class PullRequestMetricsRequest(Model):
         if granularity is None:
             raise ValueError("Invalid value for `granularity`, must not be `None`")
         if not Granularity.format.match(granularity):
-            raise ValueError("Invalid value for `granularity`, does not match /%s/" %
-                             Granularity.format.pattern)
+            raise ValueError('Invalid value for `granularity`: "%s" does not match /%s/' %
+                             granularity, Granularity.format.pattern)
 
         self._granularity = granularity
+
+    @property
+    def granularities(self) -> List[str]:
+        """Gets the granularities of this PullRequestMetricsRequest.
+
+        :return: The granularities of this PullRequestMetricsRequest.
+        """
+        return self._granularities
+
+    @granularities.setter
+    def granularities(self, granularities: List[str]):
+        """Sets the granularity of this PullRequestMetricsRequest.
+
+        :param granularities: The granularities of this PullRequestMetricsRequest.
+        """
+        for i, g in enumerate(granularities):
+            if not Granularity.format.match(g):
+                raise ValueError(
+                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/' %
+                    i, g, Granularity.format.pattern)
+
+        self._granularities = granularities
 
     @property
     def account(self) -> int:
