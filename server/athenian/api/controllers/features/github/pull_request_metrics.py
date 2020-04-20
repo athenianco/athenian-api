@@ -185,7 +185,7 @@ class CycleTimeCalculator(PullRequestMetricCalculator[timedelta]):
 @register(PullRequestMetricID.PR_CYCLE_COUNT)
 class CycleCounter(PullRequestCounter):
     """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, \
-    and PR_RELEASE_TIME."""
+    or PR_RELEASE_TIME."""
 
     calc_cls = CycleTimeCalculator
 
@@ -203,6 +203,13 @@ class WaitFirstReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta
                 min_time <= times.first_comment_on_first_review.best <= max_time:
             return times.first_comment_on_first_review.best - times.first_review_request.best
         return None
+
+
+@register(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT)
+class WaitFirstReviewCounter(PullRequestCounter):
+    """Count PRs that were used to calculate PR_WAIT_FIRST_REVIEW_TIME."""
+
+    calc_cls = WaitFirstReviewTimeCalculator
 
 
 @register(PullRequestMetricID.PR_OPENED)

@@ -22,3 +22,4 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_CLOSED = "pr-closed"
     PR_RELEASED = "pr-released"
     PR_WAIT_FIRST_REVIEW_TIME = "pr-wait-first-review"
+    PR_WAIT_FIRST_REVIEW_COUNT = "pr-wait-first-review-count"
