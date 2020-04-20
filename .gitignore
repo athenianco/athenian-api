@@ -1,6 +1,7 @@
 .idea
 /.ci
 
+**/*.speedscope
 **/alembic.ini
 server/tests/*db.sqlite
 
