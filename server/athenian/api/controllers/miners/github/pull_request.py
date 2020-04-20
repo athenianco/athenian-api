@@ -172,11 +172,32 @@ class PullRequestMiner:
             fetch_commits(), map_releases())
         for df in dfs:
             cls.truncate_timestamps(df, time_to)
-        reviews, review_comments, review_requests, comments, commits, releases = dfs
-        return [prs, reviews, review_comments, review_requests, comments, commits, releases]
+
+        # filter out PRs which were released before `time_from` and don't have any "important"
+        # events
+        cls._remove_spurious_prs(time_from, prs, *dfs)
+
+        return [prs, *dfs]
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
     _deserialize_from_cache = staticmethod(_deserialize_from_cache)
+
+    @classmethod
+    def _remove_spurious_prs(cls,
+                             time_from: datetime,
+                             prs: pd.DataFrame,
+                             reviews: pd.DataFrame,
+                             review_comments: pd.DataFrame,
+                             review_requests: pd.DataFrame,
+                             comments: pd.DataFrame,
+                             commits: pd.DataFrame,
+                             releases: pd.DataFrame):
+        old_releases = np.where(releases[Release.published_at.key] < time_from)[0]
+        if len(old_releases) == 0:
+            return
+        fishy = releases.index[old_releases]
+        for df in (prs, reviews, review_comments, review_requests, comments, commits, releases):
+            df.drop(fishy, inplace=True, errors="ignore")
 
     @classmethod
     async def mine(cls, time_from: date, time_to: date, repositories: Collection[str],
