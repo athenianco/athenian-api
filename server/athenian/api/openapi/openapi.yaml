@@ -1015,7 +1015,27 @@ components:
             $ref: '#/components/schemas/RepositorySet'
         type: object
     PullRequestMetricID:
-      description: Currently supported PR metric types.
+      description: |-
+        Currently supported PR metric types.
+        * `pr-wip-time`: average time spent in Work In Progress stage.
+        * `pr-wip-count`: number of PRs used to calculate `pr-wip-time`.
+        * `pr-review-time`: average time spent in Review stage.
+        * `pr-review-count`: number of PRs used to calculate `pr-review-time`.
+        * `pr-merging-time`: average time spent in Merge stage.
+        * `pr-merging-count`: number of PRs used to calculate `pr-merging-time`.
+        * `pr-release-time`: average time spent in Release stage.
+        * `pr-release-count`: number of PRs used to calculate `pr-release-time`.
+        * `pr-lead-time`: average Lead Time - time between the work started and the release.
+        * `pr-lead-count`: number of PRs used to calculate `pr-lead-time`. It should be the same as `pr-release-count`.
+        * `pr-cycle-time`: Cycle Time - sum of correspodning `pr-wip-time`, `pr-review-time`, `pr-merging-time`, and `pr-release-time`.
+        * `pr-cycle-count`: number of PRs used to calculate `pr-cycle-time`. It equals to the overall number of PRs observed in the given time window.
+        * `pr-wait-first-review`: average time of waiting for the first review.
+        * `pr-wait-first-review-count`: number of PRs used to calculate `pr-wait-first-review`. Note: this is *not* the same as the number of PRs waiting for the first review.
+        * `pr-flow-ratio`: ratio of opened to closed PRs.
+        * `pr-opened`: number of opened PRs.
+        * `pr-merged`: number of merged PRs.
+        * `pr-closed`: number of closed PRs.
+        * `pr-released`: number of released PRs.
       enum:
       - pr-wip-time
       - pr-wip-count
@@ -1029,12 +1049,13 @@ components:
       - pr-lead-count
       - pr-cycle-time
       - pr-cycle-count
+      - pr-wait-first-review
+      - pr-wait-first-review-count
       - pr-flow-ratio
       - pr-opened
       - pr-merged
       - pr-closed
       - pr-released
-      - pr-wait-first-review
       example: pr-lead-time
       type: string
     DeveloperID:
