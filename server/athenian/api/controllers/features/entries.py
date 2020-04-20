@@ -26,22 +26,23 @@ from athenian.api.models.metadata.github import PushCommit
     deserialize=pickle.loads,
     key=lambda metrics, time_intervals, repos, developers, **_: (
         ",".join(sorted(metrics)),
-        ",".join(str(dt.toordinal()) for dt in time_intervals),
+        ";".join(",".join(str(dt.toordinal()) for dt in ts) for ts in time_intervals),
         ",".join(sorted(repos)),
         ",".join(sorted(developers)),
     ),
 )
 async def calc_pull_request_metrics_line_github(
-        metrics: Collection[str], time_intervals: Sequence[date], repos: Collection[str],
+        metrics: Collection[str], time_intervals: Sequence[Sequence[date]], repos: Collection[str],
         release_settings: Dict[str, ReleaseMatchSetting], developers: Collection[str],
         db: Database, cache: Optional[aiomcache.Client],
-) -> List[Tuple[Metric]]:
+) -> List[List[Tuple[Metric]]]:
     """Calculate pull request metrics on GitHub data."""
-    miner = await PullRequestTimesMiner.mine(
-        time_intervals[0], time_intervals[-1], repos, release_settings, developers, db, cache)
+    miner = await PullRequestTimesMiner.mine(time_intervals[0][0], time_intervals[0][-1], repos,
+                                             release_settings, developers, db, cache)
+    if len(time_intervals) > 1:
+        miner = list(miner)  # re-use PullRequestTimes for multiple time intervals
     calcs = [pull_request_calculators[m]() for m in metrics]
-    binned = BinnedPullRequestMetricCalculator(calcs, time_intervals)
-    return binned(miner)
+    return [BinnedPullRequestMetricCalculator(calcs, ts)(miner) for ts in time_intervals]
 
 
 async def calc_code_metrics(

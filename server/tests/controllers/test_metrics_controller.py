@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import date, timedelta
 import itertools
 
@@ -27,17 +28,11 @@ async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, cach
                         "github.com/src-d/go-git",
                     ],
                 },
-                {
-                    "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
-                    "repositories": [
-                        "github.com/src-d/go-git",
-                    ],
-                },
             ],
             "metrics": [metric],
             "date_from": "2015-10-13",
             "date_to": "2020-01-23",
-            "granularity": "week",
+            "granularities": ["week"],
             "account": 1,
         }
         response = await client.request(
@@ -46,7 +41,7 @@ async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, cach
         body = (await response.read()).decode("utf-8")
         assert response.status == 200, "Response body is : " + body
         cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
-        assert len(cm.calculated) == 2
+        assert len(cm.calculated) == 1
         assert len(cm.calculated[0].values) > 0
         nonzero = 0
         for val in cm.calculated[0].values:
@@ -55,8 +50,7 @@ async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, cach
         assert nonzero > 0
 
 
-@pytest.mark.parametrize("granularity", ["day", "week", "month"])
-async def test_calc_metrics_prs_all_time(client, granularity, headers):
+async def test_calc_metrics_prs_all_time(client, headers):
     """https://athenianco.atlassian.net/browse/ENG-116"""
     body = {
         "for": [
@@ -82,7 +76,7 @@ async def test_calc_metrics_prs_all_time(client, granularity, headers):
                     PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME],
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
-        "granularity": granularity,
+        "granularities": ["day", "week", "month"],
         "account": 1,
     }
     response = await client.request(
@@ -96,15 +90,18 @@ async def test_calc_metrics_prs_all_time(client, granularity, headers):
     for i in range(len(cm.calculated[0].values) - 1):
         assert cm.calculated[0].values[i].date < cm.calculated[0].values[i + 1].date
     cmins = cmaxs = cscores = 0
-    for m, calc in zip(cm.metrics, cm.calculated):
-        nonzero = 0
+    gcounts = defaultdict(int)
+    assert len(cm.calculated) == 6
+    for calc in cm.calculated:
+        gcounts[calc.granularity] += 1
+        nonzero = defaultdict(int)
         for val in calc.values:
-            for t in val.values:
+            for m, t in zip(cm.metrics, val.values):
                 if t is None:
                     continue
                 assert pd.to_timedelta(t) >= timedelta(0), \
                     "Metric: %s\nValues: %s" % (m, val.values)
-                nonzero += pd.to_timedelta(t) > timedelta(0)
+                nonzero[m] += pd.to_timedelta(t) > timedelta(0)
             if val.confidence_mins is not None:
                 cmins += 1
                 for t, v in zip(val.confidence_mins, val.values):
@@ -129,11 +126,12 @@ async def test_calc_metrics_prs_all_time(client, granularity, headers):
                         continue
                     assert 0 <= s <= 100, \
                         "Metric: %s\nConfidence scores: %s" % (m, val.confidence_scores)
-        if m != "pr-release-time":
-            assert nonzero > 0, str(m)
+        for k, v in nonzero.items():
+            assert v > 0, k
     assert cmins > 0
     assert cmaxs > 0
     assert cscores > 0
+    assert all((v == 2) for v in gcounts.values())
 
 
 async def test_calc_metrics_prs_access_denied(client, headers):

@@ -45,7 +45,22 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
         filters, repos = await _compile_repos_and_devs(filt.for_, request, filt.account)
-        time_intervals = _split_to_time_intervals(filt)
+        # TODO(vmarkovtsev): remove deprecated `granularity`
+        if filt.granularities is not None:
+            granularities = filt.granularities
+            time_intervals = []
+            for i, g in enumerate(granularities):
+                try:
+                    time_intervals.append(Granularity.split(g, filt.date_from, filt.date_to))
+                except ValueError:
+                    raise ResponseError(InvalidRequestError(
+                        detail='granularity "%s" does not match /%s/' % (
+                            g, Granularity.format.pattern),
+                        pointer=".granularity[%d]" % i,
+                    ))
+        else:
+            granularities = [filt.granularity]
+            time_intervals = [_split_to_time_intervals(filt)]
     except ResponseError as e:
         return e.response
 
@@ -64,7 +79,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     met = CalculatedPullRequestMetrics()
     met.date_from = filt.date_from
     met.date_to = filt.date_to
-    met.granularity = filt.granularity
+    met.granularities = granularities
     met.metrics = filt.metrics
     met.calculated = []
     # There should not be any new exception here so we don't have to catch ResponseError.
@@ -76,29 +91,35 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         sentries = METRIC_ENTRIES[service]
         for m in filt.metrics:
             calcs[sentries[m]].append(m)
-        results = {}
+        gresults = []
         # for each metric, we find the function to calculate and call it
         for func, metrics in calcs.items():
-            fres = await func(metrics, time_intervals, repos, release_settings, devs, request.mdb,
-                              request.cache)
-            assert len(fres) == len(time_intervals) - 1
-            for i, m in enumerate(metrics):
-                results[m] = [r[i] for r in fres]
-        cm = CalculatedPullRequestMetricsItem(
-            for_=for_set,
-            values=[CalculatedPullRequestMetricValues(
-                date=d,
-                values=[results[m][i].value for m in met.metrics],
-                confidence_mins=[results[m][i].confidence_min for m in met.metrics],
-                confidence_maxs=[results[m][i].confidence_max for m in met.metrics],
-                confidence_scores=[results[m][i].confidence_score() for m in met.metrics],
-            ) for i, d in enumerate(time_intervals[:-1])])
-        for v in cm.values:
-            if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                v.confidence_mins = None
-                v.confidence_maxs = None
-                v.confidence_scores = None
-        met.calculated.append(cm)
+            mvs = await func(metrics, time_intervals, repos, release_settings, devs, request.mdb,
+                             request.cache)
+            assert len(mvs) == len(time_intervals)
+            for mv, ts in zip(mvs, time_intervals):
+                assert len(mv) == len(ts) - 1
+                mr = {}
+                gresults.append(mr)
+                for i, m in enumerate(metrics):
+                    mr[m] = [r[i] for r in mv]
+        for granularity, results, ts in zip(granularities, gresults, time_intervals):
+            cm = CalculatedPullRequestMetricsItem(
+                for_=for_set,
+                granularity=granularity,
+                values=[CalculatedPullRequestMetricValues(
+                    date=d,
+                    values=[results[m][i].value for m in met.metrics],
+                    confidence_mins=[results[m][i].confidence_min for m in met.metrics],
+                    confidence_maxs=[results[m][i].confidence_max for m in met.metrics],
+                    confidence_scores=[results[m][i].confidence_score() for m in met.metrics],
+                ) for i, d in enumerate(ts[:-1])])
+            for v in cm.values:
+                if sum(1 for c in v.confidence_scores if c is not None) == 0:
+                    v.confidence_mins = None
+                    v.confidence_maxs = None
+                    v.confidence_scores = None
+            met.calculated.append(cm)
     return model_response(met)
 
 
@@ -113,7 +134,8 @@ def _split_to_time_intervals(
         time_intervals = Granularity.split(filt.granularity, filt.date_from, filt.date_to)
     except ValueError:
         raise ResponseError(InvalidRequestError(
-            detail="granularity value does not match /%s/" % Granularity.format.pattern,
+            detail='granularity "%s" does not match /%s/' % (
+                filt.granularity, Granularity.format.pattern),
             pointer=".granularity",
         ))
     return time_intervals
