@@ -1745,8 +1745,20 @@ components:
       example: wip
       type: string
     PullRequestProperty:
-      description: PR's modelled lifecycle stage or various events that happened between
-        `time_from` and `time_to`.
+      description: |-
+        PR's modelled lifecycle stage or various events that happened between `time_from` and `time_to`.
+        * `wip`: PRs in Work In Progress stage - that is, not yet reviewed or merged.
+        * `created`: opened PRs. Note: they were opened in the given time window.
+        * `commit_happened`: PRs with a new commit pushed. Note: the commits were pushed in the given time window.
+        * `review_request_happened`: PRs where the author requested a review. Note: the review was requested in the given time window.
+        * `approve_happened`: PRs with new review approvals. Note: they were approved in the given time window.
+        * `changes_request_happened`: PRs with new review rejections. Note: they were rejected in the given time window.
+        * `reviewing`: PRs in Review stage - that is, a review was requested or at least one review happened, but not approved yet.
+        * `merging`: PRs in Merge stage - that is, already reviewed but not yet merged.
+        * `merge_happened`: merged PRs. Note: they were merged in the given time window.
+        * `releasing`: PRs in Release stage - that is, already merged but not yet released.
+        * `release_happened`: released PRs. Note: they were released in the given time window.
+        * `done`: either released or otherwise closed PRs - "afterlife".
       enum:
       - wip
       - created
@@ -1760,7 +1772,7 @@ components:
       - merge_happened
       - releasing
       - release_happened
-      - done  # PR afterlife - PRs that were released or rejected and nothing ever happens to them
+      - done
       example: wip
       type: string
     PullRequestSet:
