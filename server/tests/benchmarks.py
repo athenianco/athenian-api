@@ -40,18 +40,22 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output", required=True, help="Output CSV path.")
     parser.add_argument("-s", "--server", default="http://0.0.0.0:8080", help="Server address.")
+    parser.add_argument("-t", "--time", default=60,
+                        help="Time in seconds during which to send the same requests.")
+    parser.add_argument("--with-cache", action="store_true", help="Enable the server cache.")
     return parser.parse_args()
 
 
-def benchmark(addr, endpoint, body):
+def benchmark(addr, endpoint, body, target_time, with_cache):
     payload = common_body.copy()
     payload.update(body)
     url = "%s/v1/%s" % (addr, endpoint)
     start_time = time.time()
     timings = []
-    while time.time() - start_time < 60:
+    headers = {} if with_cache else {"Cache-Control": "no-cache"}
+    while time.time() - start_time < target_time:
         rst = time.time()
-        print(requests.post(url, json=payload).text, file=sys.stderr)
+        print(requests.post(url, json=payload, headers=headers).text, file=sys.stderr)
         timings.append(time.time() - rst)
         sys.stdout.write(".")
         sys.stdout.flush()
@@ -65,7 +69,7 @@ def main():
     results = {}
     for name, endpoint, body in queries:
         print("=== %s ===" % name, flush=True)
-        duration = benchmark(args.server, endpoint, body)
+        duration = benchmark(args.server, endpoint, body, args.time, args.with_cache)
         results[name] = duration
     pd.Series(results).to_csv(args.output, header=False)
 
