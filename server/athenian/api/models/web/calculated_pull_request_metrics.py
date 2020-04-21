@@ -165,6 +165,6 @@ class CalculatedPullRequestMetrics(Model):
             if not Granularity.format.match(g):
                 raise ValueError(
                     'Invalid value for `granularity[%d]`: "%s"` does not match /%s/' %
-                    i, g, Granularity.format.pattern)
+                    (i, g, Granularity.format.pattern))
 
         self._granularities = granularities
