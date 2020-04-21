@@ -102,26 +102,23 @@ async def resolve_repos(repositories: List[str],
     if status is None:
         raise ResponseError(ForbiddenError(
             detail="User %s is forbidden to access account %d" % (uid, account)))
-    check_access = True
     if not repositories:
         rss = await load_account_reposets(
             account, native_uid, [RepositorySet.id], sdb_conn, mdb_conn, cache)
         repositories = ["{%d}" % rss[0][RepositorySet.id.key]]
-        check_access = False
     repos = set(chain.from_iterable(
         await asyncio.gather(*[
             resolve_reposet(r, ".in[%d]" % i, uid, account, sdb_conn, cache)
             for i, r in enumerate(repositories)])))
     prefix = "github.com/"
     checked_repos = {r[r.startswith(prefix) and len(prefix):] for r in repos}
-    if check_access:
-        checker = await access_classes["github"](account, sdb_conn, mdb_conn, cache).load()
-        denied = await checker.check(checked_repos)
-        if denied:
-            raise ResponseError(ForbiddenError(
-                detail="the following repositories are access denied for %s: %s" %
-                       ("github.com/", denied),
-            ))
+    checker = await access_classes["github"](account, sdb_conn, mdb_conn, cache).load()
+    denied = await checker.check(checked_repos)
+    if denied:
+        raise ResponseError(ForbiddenError(
+            detail="the following repositories are access denied for %s: %s" %
+                   ("github.com/", denied),
+        ))
     if strip_prefix:
         repos = checked_repos
     return repos
