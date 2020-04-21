@@ -205,7 +205,7 @@ class AthenianApp(connexion.AioHttpApp):
             "metadata", "mdb", mdb_conn, mdb_options))
         self._sdb_future = asyncio.ensure_future(connect_to_db(
             "state", "sdb", sdb_conn, sdb_options))
-        self.server_name = os.getenv("NODE_NAME", socket.getfqdn())
+        self.server_name = os.getenv("SERVER_NAME", socket.getfqdn())
 
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
