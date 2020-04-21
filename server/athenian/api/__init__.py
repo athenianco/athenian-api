@@ -245,7 +245,10 @@ class AthenianApp(connexion.AioHttpApp):
             del self._sdb_future
         request.mdb = self.mdb
         request.sdb = self.sdb
-        request.cache = self._cache
+        if request.headers.get("Cache-Control") != "no-cache":
+            request.cache = self._cache
+        else:
+            request.cache = None
         try:
             return await handler(request)
         except bdb.BdbQuit:
