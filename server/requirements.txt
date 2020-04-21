@@ -1,7 +1,7 @@
 connexion[aiohttp,swagger-ui]==2.5.1
 aiohttp_cors==0.7.0
 swagger-ui-bundle==0.0.6
-sqlalchemy==1.3.12
+sqlalchemy==1.3.16
 asyncpg==0.20.1
 databases[postgresql,sqlite]==0.2.6
 xxhash==1.4.3
