@@ -1398,7 +1398,8 @@ components:
         - pr-wip-time
         date_from: 2020-01-23
         date_to: 2020-01-24
-        granularity: day
+        granularities:
+        - day
         account: 1
       properties:
         for:
@@ -1420,8 +1421,6 @@ components:
           description: Date up to which to measure the metrics.
           format: date
           type: string
-        granularity:
-          $ref: '#/components/schemas/Granularity'
         granularities:
           items:
             $ref: '#/components/schemas/Granularity'
@@ -1434,6 +1433,7 @@ components:
       - date_from
       - date_to
       - for
+      - granularities
       - metrics
       type: object
     CalculatedPullRequestMetricsItem:
