@@ -10,6 +10,7 @@ from prometheus_client import CollectorRegistry, Counter, Histogram
 from prometheus_client.utils import INF
 from xxhash import xxh64_hexdigest
 
+from athenian.api import metadata
 from athenian.api.metadata import __package__, __version__
 from athenian.api.typing_utils import wraps
 
@@ -48,7 +49,7 @@ def cached(exptime: Union[int, Callable[..., int]],
     """
     def wrapper_cached(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
         """Decorate a function to return the cached result if possible."""
-        log = logging.getLogger("cache")
+        log = logging.getLogger("%s.cache" % metadata.__package__)
         if exptime == max_exptime and not refresh_on_access:
             log.warning("%s will stay cached for max_exptime but will not refresh on access, "
                         "consider setting refresh_on_access=True", func.__name__)
@@ -80,7 +81,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                 cache_key = gen_cache_key(full_name + "|" + "|".join([str(p) for p in props]))
                 try:
                     buffer = await client.get(cache_key)
-                except Exception:
+                except aiomcache.exceptions.ClientException:
                     log.exception("failed to fetch %s", cache_key)
                     buffer = None
                 if buffer is not None:

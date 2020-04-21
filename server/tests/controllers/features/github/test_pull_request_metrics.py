@@ -13,7 +13,7 @@ from athenian.api.controllers.features.github.pull_request_metrics import Closed
     WorkInProgressTimeCalculator
 from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestTimes
 from athenian.api.models.web import Granularity
-from tests.controllers.features.github.test_pull_request import ensure_dtype, pr_samples  # noqa
+from tests.controllers.features.github.test_pull_request import ensure_dtype
 
 
 def random_dropout(pr, prob):

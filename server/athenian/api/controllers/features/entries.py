@@ -7,6 +7,8 @@ from databases import Database
 import pandas as pd
 
 from athenian.api.cache import cached
+from athenian.api.controllers.features.cached_released import load_cached_released_times, \
+    store_cached_released_times
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request import \
@@ -37,12 +39,19 @@ async def calc_pull_request_metrics_line_github(
         db: Database, cache: Optional[aiomcache.Client],
 ) -> List[List[Tuple[Metric]]]:
     """Calculate pull request metrics on GitHub data."""
-    miner = await PullRequestTimesMiner.mine(time_intervals[0][0], time_intervals[0][-1], repos,
-                                             release_settings, developers, db, cache)
-    if len(time_intervals) > 1:
-        miner = list(miner)  # re-use PullRequestTimes for multiple time intervals
+    date_from, date_to = time_intervals[0][0], time_intervals[0][-1]
+    assert date_to > date_from
+    released_times = await load_cached_released_times(date_from, date_to, repos, cache)
+    miner = await PullRequestTimesMiner.mine(
+        date_from, date_to, repos, release_settings, developers, db, cache,
+        pr_blacklist=released_times,
+    )
+    mined_prs = list(miner)
     calcs = [pull_request_calculators[m]() for m in metrics]
-    return [BinnedPullRequestMetricCalculator(calcs, ts)(miner) for ts in time_intervals]
+    times = [BinnedPullRequestMetricCalculator(calcs, ts)(mined_prs) for ts in time_intervals]
+    await store_cached_released_times(mined_prs, times, cache)
+    times.extend(released_times.values())
+    return times
 
 
 async def calc_code_metrics(

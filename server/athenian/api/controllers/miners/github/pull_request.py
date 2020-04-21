@@ -3,9 +3,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from enum import Enum
 import io
+import logging
 import struct
-from typing import Any, Collection, Dict, Generator, Generic, List, Optional, TypeVar, \
-    Union
+from typing import Any, Collection, Dict, Generator, Generic, List, Optional, TypeVar, Union
 
 import aiomcache
 import databases
@@ -14,6 +14,7 @@ import pandas as pd
 from sqlalchemy import select, sql
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
+from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.hardcoded import BOTS
@@ -49,6 +50,7 @@ class PullRequestMiner:
     with individual PR tuples."""
 
     CACHE_TTL = 5 * 60
+    log = logging.getLogger("%s.PullRequestMiner" % metadata.__package__)
 
     def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
                  review_requests: pd.DataFrame, comments: pd.DataFrame, commits: pd.DataFrame,
@@ -107,10 +109,14 @@ class PullRequestMiner:
             ",".join(sorted(developers)),
         ),
     )
-    async def _mine(cls, time_from: date, time_to: date, repositories: Collection[str],
+    async def _mine(cls,
+                    time_from: date,
+                    time_to: date,
+                    repositories: Collection[str],
                     release_settings: Dict[str, ReleaseMatchSetting],
                     developers: Collection[str], db: databases.Database,
                     cache: Optional[aiomcache.Client],
+                    pr_blacklist: Optional[Collection[str]] = None,
                     ) -> List[pd.DataFrame]:
         assert isinstance(time_from, date) and not isinstance(time_from, datetime)
         assert isinstance(time_to, date) and not isinstance(time_to, datetime)
@@ -131,6 +137,10 @@ class PullRequestMiner:
                 repositories, time_from, time_to, release_settings, conn, cache)
             prs = pd.concat([prs, released_prs], sort=False)
             prs = prs[~prs.index.duplicated()]
+        if pr_blacklist is not None:
+            old_len = len(prs)
+            prs = prs[~prs.index.intersection(pr_blacklist)]
+            cls.log.info("PR blacklist cut the number of PRs from %d to %d", old_len, len(prs))
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
         cls.truncate_timestamps(prs, time_to)
         node_ids = prs.index if len(prs) > 0 else set()
@@ -200,10 +210,16 @@ class PullRequestMiner:
             df.drop(fishy, inplace=True, errors="ignore")
 
     @classmethod
-    async def mine(cls, time_from: date, time_to: date, repositories: Collection[str],
+    async def mine(cls,
+                   time_from: date,
+                   time_to: date,
+                   repositories: Collection[str],
                    release_settings: Dict[str, ReleaseMatchSetting],
-                   developers: Collection[str], db: databases.Database,
-                   cache: Optional[aiomcache.Client]) -> "PullRequestMiner":
+                   developers: Collection[str],
+                   db: databases.Database,
+                   cache: Optional[aiomcache.Client],
+                   pr_blacklist: Optional[Collection[str]] = None,
+                   ) -> "PullRequestMiner":
         """
         Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
 
@@ -213,9 +229,10 @@ class PullRequestMiner:
         :param developers: PRs must be authored by these user IDs. An empty list means everybody.
         :param db: Metadata db instance.
         :param cache: memcached client to cache the collected data.
+        :param pr_blacklist: completely ignore the existence of these PR node IDs.
         """
         dfs = await cls._mine(time_from, time_to, repositories, release_settings, developers,
-                              db, cache)
+                              db, cache, pr_blacklist=pr_blacklist)
         return cls(*dfs)
 
     @staticmethod
@@ -263,10 +280,10 @@ class PullRequestMiner:
             except StopIteration:
                 grouped_df_states.append((None, None))
         empty_df_cache = {}
-        pr_columns = self._prs.columns
+        pr_columns = [PullRequest.node_id.key] + self._prs.columns
         for pr_tuple in self._prs.itertuples():
             pr_node_id = pr_tuple.Index
-            items = {"pr": {c: v for c, v in zip(pr_columns, pr_tuple[1:])}}
+            items = {"pr": dict(zip(pr_columns, pr_tuple))}
             for i, (k, (state_pr_node_id, gdf), git, df) in enumerate(zip(
                     df_fields, grouped_df_states, grouped_df_iters, dfs)):
                 if state_pr_node_id == pr_node_id:
