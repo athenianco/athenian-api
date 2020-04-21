@@ -151,7 +151,7 @@ async def test_calc_metrics_prs_access_denied(client, headers):
         "metrics": list(PullRequestMetricID),
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
-        "granularity": "month",
+        "granularities": ["month"],
         "account": 1,
     }
     response = await client.request(
@@ -174,7 +174,7 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
                 "github.com/src-d/go-git",
             ],
         }],
-        "granularity": "month",
+        "granularities": ["month"],
         "account": 1,
         "metrics": list(PullRequestMetricID),
     }
@@ -210,7 +210,7 @@ async def test_calc_metrics_prs_nasty_input(client, headers, account, date_to, c
         "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
         "date_to": date_to,
-        "granularity": "week",
+        "granularities": ["week"],
         "account": account,
     }
     response = await client.request(
@@ -232,7 +232,7 @@ async def test_calc_metrics_prs_reposet(client, headers):
         "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
-        "granularity": "all",
+        "granularities": ["all"],
         "account": 1,
     }
     response = await client.request(
@@ -267,7 +267,7 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric):
         "metrics": [metric],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
-        "granularity": "month",
+        "granularities": ["month"],
         "account": 1,
     }
     response = await client.request(
@@ -301,7 +301,7 @@ async def test_calc_metrics_prs_index_error(client, headers):
                     PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2019-02-25",
         "date_to": "2019-02-28",
-        "granularity": "week",
+        "granularities": ["week"],
         "account": 1,
     }
     response = await client.request(
@@ -320,7 +320,7 @@ async def test_calc_metrics_prs_ratio_flow(client, headers):
                 "github.com/src-d/go-git",
             ],
         }],
-        "granularity": "month",
+        "granularities": ["month"],
         "account": 1,
         "metrics": [PullRequestMetricID.PR_FLOW_RATIO, PullRequestMetricID.PR_OPENED,
                     PullRequestMetricID.PR_CLOSED],

@@ -45,22 +45,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
         filters, repos = await _compile_repos_and_devs(filt.for_, request, filt.account)
-        # TODO(vmarkovtsev): remove deprecated `granularity`
-        if filt.granularities is not None:
-            granularities = filt.granularities
-            time_intervals = []
-            for i, g in enumerate(granularities):
-                try:
-                    time_intervals.append(Granularity.split(g, filt.date_from, filt.date_to))
-                except ValueError:
-                    raise ResponseError(InvalidRequestError(
-                        detail='granularity "%s" does not match /%s/' % (
-                            g, Granularity.format.pattern),
-                        pointer=".granularity[%d]" % i,
-                    ))
-        else:
-            granularities = [filt.granularity]
-            time_intervals = [_split_to_time_intervals(filt)]
+        time_intervals = _split_to_time_intervals(filt.date_from, filt.date_to, filt.granularities)
     except ResponseError as e:
         return e.response
 
@@ -79,7 +64,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     met = CalculatedPullRequestMetrics()
     met.date_from = filt.date_from
     met.date_to = filt.date_to
-    met.granularities = granularities
+    met.granularities = filt.granularities
     met.metrics = filt.metrics
     met.calculated = []
     # There should not be any new exception here so we don't have to catch ResponseError.
@@ -103,7 +88,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
                 gresults.append(mr)
                 for i, m in enumerate(metrics):
                     mr[m] = [r[i] for r in mv]
-        for granularity, results, ts in zip(granularities, gresults, time_intervals):
+        for granularity, results, ts in zip(filt.granularities, gresults, time_intervals):
             cm = CalculatedPullRequestMetricsItem(
                 for_=for_set,
                 granularity=granularity,
@@ -123,22 +108,28 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     return model_response(met)
 
 
-def _split_to_time_intervals(
-        filt: Union[PullRequestMetricsRequest, CodeFilter]) -> List[date]:
-    if filt.date_to < filt.date_from:
+def _split_to_time_intervals(date_from: date, date_to: date, granularities: Union[str, List[str]],
+                             ) -> Union[List[date], List[List[date]]]:
+    if date_to < date_from:
         raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
             pointer=".date_from",
         ))
-    try:
-        time_intervals = Granularity.split(filt.granularity, filt.date_from, filt.date_to)
-    except ValueError:
-        raise ResponseError(InvalidRequestError(
-            detail='granularity "%s" does not match /%s/' % (
-                filt.granularity, Granularity.format.pattern),
-            pointer=".granularity",
-        ))
-    return time_intervals
+
+    def split(granularity, ptr):
+        try:
+            return Granularity.split(granularity, date_from, date_to)
+        except ValueError:
+            raise ResponseError(InvalidRequestError(
+                detail='granularity "%s" does not match /%s/' % (
+                    granularity, Granularity.format.pattern),
+                pointer=ptr,
+            ))
+
+    if isinstance(granularities, str):
+        return split(granularities, ".granularity")
+
+    return [split(g, ".granularities[%d]" % i) for i, g in enumerate(granularities)]
 
 
 async def _compile_repos_and_devs(for_sets: List[ForSet],
@@ -222,7 +213,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         repos = await resolve_repos(
             filt.in_, filt.account, request.uid, request.native_uid,
             request.sdb, request.mdb, request.cache)
-        time_intervals = _split_to_time_intervals(filt)
+        time_intervals = _split_to_time_intervals(filt.date_from, filt.date_to, filt.granularity)
     except ResponseError as e:
         return e.response
     with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
