@@ -1,19 +1,22 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import itertools
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request import BinnedPullRequestMetricCalculator
 from athenian.api.controllers.features.github.pull_request_metrics import ClosedCalculator, \
     FlowRatioCalculator, LeadCounter, LeadTimeCalculator, MergedCalculator, MergingCounter, \
     MergingTimeCalculator, OpenedCalculator, ReleaseCounter, ReleaseTimeCalculator, \
     ReviewCounter, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, WorkInProgressCounter, \
     WorkInProgressTimeCalculator
-from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestTimes
-from athenian.api.models.web import Granularity
-from tests.controllers.features.github.test_pull_request import ensure_dtype, pr_samples  # noqa
+from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestTimes, \
+    PullRequestTimesMiner
+from athenian.api.models.web import Granularity, PullRequestMetricID
+from tests.conftest import has_memcached
+from tests.controllers.features.github.test_pull_request import ensure_dtype
 
 
 def random_dropout(pr, prob):
@@ -166,3 +169,24 @@ def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
     if cls is not WorkInProgressCounter:
         assert nones > 0
     assert nonones > 0
+
+
+@pytest.mark.parametrize("with_memcached, with_mine_cache_wipe",
+                         itertools.product(*([[False, True]] * 2)))
+async def test_calc_pull_request_metrics_line_github_cache(
+        mdb, cache, memcached, with_memcached, release_match_setting_tag, with_mine_cache_wipe):
+    if with_memcached:
+        if not has_memcached:
+            raise pytest.skip("no memcached")
+        cache = memcached
+    date_from = date(year=2017, month=1, day=1)
+    date_to = date(year=2019, month=10, day=1)
+    args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]],
+            ["src-d/go-git"], release_match_setting_tag, [], mdb, cache)
+    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    assert await calc_pull_request_metrics_line_github.reset_cache(*args)
+    if with_mine_cache_wipe:
+        assert await PullRequestTimesMiner._mine.reset_cache(
+            None, date_from, date_to, ["src-d/go-git"], release_match_setting_tag, [], mdb, cache)
+    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    assert metrics1 == metrics2

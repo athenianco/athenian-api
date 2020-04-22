@@ -67,6 +67,13 @@ class FakeCache:
         self.mem[key] = value, time.time(), exptime
         return True
 
+    async def delete(self, key: bytes) -> bool:
+        try:
+            del self.mem[key]
+            return True
+        except KeyError:
+            return False
+
     async def close(self):
         pass
 
