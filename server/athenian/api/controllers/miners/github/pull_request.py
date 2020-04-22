@@ -97,13 +97,22 @@ class PullRequestMiner:
             dfs.append(df)
         return dfs
 
-    def _delete_blacklisted_prs(result: List[pd.DataFrame],
+    def _postprocess_cached_prs(result: List[pd.DataFrame],
+                                repositories: Collection[str],
+                                developers: Collection[str],
                                 pr_blacklist: Optional[Collection[str]] = None,
                                 **_) -> List[pd.DataFrame]:
-        if not pr_blacklist:
-            return result
-        for df in result:
-            df.drop(pr_blacklist, inplace=True, errors="ignore")
+        to_remove = set()
+        if pr_blacklist:
+            to_remove.update(pr_blacklist)
+        prs = result[0]
+        pr_filter = prs[PullRequest.repository_full_name.key].isin(repositories)
+        if len(developers) > 0:
+            pr_filter &= prs[PullRequest.user_login.key].isin(developers)
+        to_remove.update(prs.index.take(np.where(~pr_filter)[0]))
+        if to_remove:
+            for df in result:
+                df.drop(to_remove, inplace=True, errors="ignore")
         return result
 
     @classmethod
@@ -112,12 +121,9 @@ class PullRequestMiner:
         serialize=_serialize_for_cache,
         deserialize=_deserialize_from_cache,
         key=lambda date_from, date_to, repositories, developers, **_: (
-            date_from.toordinal(),
-            date_to.toordinal(),
-            ",".join(sorted(repositories)),
-            ",".join(sorted(developers)),
+            date_from.toordinal(), date_to.toordinal(),
         ),
-        postprocess=_delete_blacklisted_prs,
+        postprocess=_postprocess_cached_prs,
     )
     async def _mine(cls,
                     date_from: date,
@@ -202,7 +208,7 @@ class PullRequestMiner:
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
     _deserialize_from_cache = staticmethod(_deserialize_from_cache)
-    _delete_blacklisted_prs = staticmethod(_delete_blacklisted_prs)
+    _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
 
     @classmethod
     def _remove_spurious_prs(cls,
