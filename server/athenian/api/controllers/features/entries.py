@@ -47,11 +47,11 @@ async def calc_pull_request_metrics_line_github(
         pr_blacklist=released_times,
     )
     mined_prs = list(miner)
+    await store_cached_released_times(mined_prs, cache)
+    mined_times = [t for _, t in mined_prs]
+    mined_times.extend(released_times.values())
     calcs = [pull_request_calculators[m]() for m in metrics]
-    times = [BinnedPullRequestMetricCalculator(calcs, ts)(mined_prs) for ts in time_intervals]
-    await store_cached_released_times(mined_prs, times, cache)
-    times.extend(released_times.values())
-    return times
+    return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_times) for ts in time_intervals]
 
 
 async def calc_code_metrics(

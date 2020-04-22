@@ -5,7 +5,7 @@ from enum import Enum
 import io
 import logging
 import struct
-from typing import Any, Collection, Dict, Generator, Generic, List, Optional, TypeVar, Union
+from typing import Any, Collection, Dict, Generator, Generic, List, Optional, Tuple, TypeVar, Union
 
 import aiomcache
 import databases
@@ -97,30 +97,41 @@ class PullRequestMiner:
             dfs.append(df)
         return dfs
 
+    def _delete_blacklisted_prs(result: List[pd.DataFrame],
+                                pr_blacklist: Optional[Collection[str]] = None,
+                                **_) -> List[pd.DataFrame]:
+        if not pr_blacklist:
+            return result
+        for df in result:
+            df.drop(pr_blacklist, inplace=True, errors="ignore")
+        return result
+
     @classmethod
     @cached(
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=_serialize_for_cache,
         deserialize=_deserialize_from_cache,
-        key=lambda time_from, time_to, repositories, developers, **_: (
-            time_from.toordinal(),
-            time_to.toordinal(),
+        key=lambda date_from, date_to, repositories, developers, **_: (
+            date_from.toordinal(),
+            date_to.toordinal(),
             ",".join(sorted(repositories)),
             ",".join(sorted(developers)),
         ),
+        postprocess=_delete_blacklisted_prs,
     )
     async def _mine(cls,
-                    time_from: date,
-                    time_to: date,
+                    date_from: date,
+                    date_to: date,
                     repositories: Collection[str],
                     release_settings: Dict[str, ReleaseMatchSetting],
-                    developers: Collection[str], db: databases.Database,
+                    developers: Collection[str],
+                    db: databases.Database,
                     cache: Optional[aiomcache.Client],
                     pr_blacklist: Optional[Collection[str]] = None,
                     ) -> List[pd.DataFrame]:
-        assert isinstance(time_from, date) and not isinstance(time_from, datetime)
-        assert isinstance(time_to, date) and not isinstance(time_to, datetime)
-        time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (time_from, time_to))
+        assert isinstance(date_from, date) and not isinstance(date_from, datetime)
+        assert isinstance(date_to, date) and not isinstance(date_to, datetime)
+        time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
         filters = [
             sql.or_(PullRequest.updated_at.between(time_from, time_to),
                     sql.and_(sql.or_(PullRequest.closed_at.is_(None),
@@ -137,9 +148,9 @@ class PullRequestMiner:
                 repositories, time_from, time_to, release_settings, conn, cache)
             prs = pd.concat([prs, released_prs], sort=False)
             prs = prs[~prs.index.duplicated()]
-        if pr_blacklist is not None:
+        if pr_blacklist:
             old_len = len(prs)
-            prs = prs[~prs.index.intersection(pr_blacklist)]
+            prs.drop(pr_blacklist, inplace=True, errors="ignore")
             cls.log.info("PR blacklist cut the number of PRs from %d to %d", old_len, len(prs))
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
         cls.truncate_timestamps(prs, time_to)
@@ -191,6 +202,7 @@ class PullRequestMiner:
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
     _deserialize_from_cache = staticmethod(_deserialize_from_cache)
+    _delete_blacklisted_prs = staticmethod(_delete_blacklisted_prs)
 
     @classmethod
     def _remove_spurious_prs(cls,
@@ -211,8 +223,8 @@ class PullRequestMiner:
 
     @classmethod
     async def mine(cls,
-                   time_from: date,
-                   time_to: date,
+                   date_from: date,
+                   date_to: date,
                    repositories: Collection[str],
                    release_settings: Dict[str, ReleaseMatchSetting],
                    developers: Collection[str],
@@ -223,15 +235,15 @@ class PullRequestMiner:
         """
         Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
 
-        :param time_from: Fetch PRs created starting from this date, inclusive.
-        :param time_to: Fetch PRs created ending with this date, inclusive.
+        :param date_from: Fetch PRs created starting from this date, inclusive.
+        :param date_to: Fetch PRs created ending with this date, inclusive.
         :param repositories: PRs must belong to these repositories (prefix excluded).
         :param developers: PRs must be authored by these user IDs. An empty list means everybody.
         :param db: Metadata db instance.
         :param cache: memcached client to cache the collected data.
         :param pr_blacklist: completely ignore the existence of these PR node IDs.
         """
-        dfs = await cls._mine(time_from, time_to, repositories, release_settings, developers,
+        dfs = await cls._mine(date_from, date_to, repositories, release_settings, developers,
                               db, cache, pr_blacklist=pr_blacklist)
         return cls(*dfs)
 
@@ -280,7 +292,8 @@ class PullRequestMiner:
             except StopIteration:
                 grouped_df_states.append((None, None))
         empty_df_cache = {}
-        pr_columns = [PullRequest.node_id.key] + self._prs.columns
+        pr_columns = [PullRequest.node_id.key]
+        pr_columns.extend(self._prs.columns)
         for pr_tuple in self._prs.itertuples():
             pr_node_id = pr_tuple.Index
             items = {"pr": dict(zip(pr_columns, pr_tuple))}
@@ -554,10 +567,10 @@ class PullRequestTimesMiner(PullRequestMiner):
             closed=closed_at,
         )
 
-    def __iter__(self) -> Generator[PullRequestTimes, None, None]:
-        """Iterate over the individual pull requests."""
+    def __iter__(self) -> Generator[Tuple[Dict[str, Any], PullRequestTimes], None, None]:
+        """Yield pairs of PR metadata with corresponding `PullRequestTimes`."""
         for pr in super().__iter__():
-            yield self._compile(pr)
+            yield pr.pr, self._compile(pr)
 
 
 def dtmin(*args: Union[DT, float]) -> DT:

@@ -32,6 +32,7 @@ def cached(exptime: Union[int, Callable[..., int]],
            key: Callable[..., Tuple],
            cache: Optional[Callable[..., Optional[aiomcache.Client]]] = None,
            refresh_on_access=False,
+           postprocess: Optional[Callable[..., Any]] = None,
            ) -> Callable[[Callable[..., Coroutine]], Callable[..., Coroutine]]:
     """
     Return factory that creates decorators that cache function call results if possible.
@@ -45,6 +46,8 @@ def cached(exptime: Union[int, Callable[..., int]],
     :param cache: Cache client extractor. The decorated function's arguments are converted to \
                   **kwargs. If is None, the client is assigned to the function's "cache" argument.
     :param refresh_on_access: Reset the cache item's expiration period on each access.
+    :param postprocess: Execute an arbitrary function on the deserialized "result" with \
+                        the arguments passed to the wrapped function.
     :return: Decorator that cache function call results if possible.
     """
     def wrapper_cached(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
@@ -67,28 +70,30 @@ def cached(exptime: Union[int, Callable[..., int]],
             def discover_cache(**kwargs):
                 return cache
         signature = inspect.signature(func)
+        full_name = func.__module__ + "." + func.__qualname__
 
         # no functool.wraps() shit here! It discards the coroutine status and aiohttp notices that
-        async def wrapped_cached(*args, **kwargs):
+        async def wrapped_cached(*args, **kwargs) -> Any:
             start_time = time.time()
             args_dict = signature.bind(*args, **kwargs).arguments
             client = discover_cache(**args_dict)
-            cache_key = full_name = None
+            cache_key = None
             if client is not None:
                 props = key(**args_dict)
-                assert isinstance(props, tuple), "key() must return a tuple"
-                full_name = func.__module__ + "." + func.__qualname__
-                cache_key = gen_cache_key(full_name + "|" + "|".join([str(p) for p in props]))
+                assert isinstance(props, tuple), "key() must return a tuple in %s" % full_name
+                cache_key = gen_cache_key(full_name + "|" + "|".join(str(p) for p in props))
                 try:
                     buffer = await client.get(cache_key)
                 except aiomcache.exceptions.ClientException:
-                    log.exception("failed to fetch %s", cache_key)
+                    log.exception("failed to fetch %s/%s", full_name, cache_key.decode())
                     buffer = None
                 if buffer is not None:
                     result = deserialize(buffer)
                     t = exptime(result=result, **args_dict) if callable(exptime) else exptime
                     if refresh_on_access:
                         await client.touch(cache_key, t)
+                    if postprocess is not None:
+                        result = postprocess(result=result, **args_dict)
                     client.metrics["hits"].labels(__package__, __version__, full_name).inc()
                     client.metrics["hit_latency"] \
                         .labels(__package__, __version__, full_name) \
@@ -101,7 +106,8 @@ def cached(exptime: Union[int, Callable[..., int]],
                 try:
                     await client.set(cache_key, payload, exptime=t)
                 except aiomcache.exceptions.ClientException:
-                    log.exception("Failed to put %d bytes in memcached", len(payload))
+                    log.exception("Failed to put %d bytes in memcached for %s/%s",
+                                  len(payload), full_name, cache_key.decode())
                 else:
                     client.metrics["misses"].labels(__package__, __version__, full_name).inc()
                     client.metrics["miss_latency"] \
@@ -112,6 +118,20 @@ def cached(exptime: Union[int, Callable[..., int]],
                         .observe(len(payload))
             return result
 
+        async def reset_cache(*args, **kwargs) -> bool:
+            args_dict = signature.bind(*args, **kwargs).arguments
+            client = discover_cache(**args_dict)
+            if client is None:
+                return False
+            props = key(**args_dict)
+            assert isinstance(props, tuple), "key() must return a tuple in %s" % full_name
+            cache_key = gen_cache_key(full_name + "|" + "|".join(str(p) for p in props))
+            try:
+                return await client.delete(cache_key)
+            except aiomcache.exceptions.ClientException:
+                log.exception("Failed to delete %s/%s in memcached", full_name, cache_key.decode())
+
+        wrapped_cached.reset_cache = reset_cache
         return wraps(wrapped_cached, func)
 
     return wrapper_cached

@@ -1,12 +1,14 @@
 from collections import defaultdict
 import dataclasses
 from datetime import date, timedelta
+from typing import Any, Dict
 
 from pandas.testing import assert_frame_equal
 import pytest
 
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
     PullRequestTimes, PullRequestTimesMiner
+from athenian.api.models.metadata.github import PullRequest
 from tests.conftest import has_memcached
 
 
@@ -36,10 +38,12 @@ async def test_pr_miner_iter(mdb, release_match_setting_tag):
     assert with_data["prs"] == size
 
 
-@pytest.mark.parametrize("with_memcached", [False] + ([True] if has_memcached else []))
+@pytest.mark.parametrize("with_memcached", [False, True])
 async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_tag,
                                    with_memcached):
     if with_memcached:
+        if not has_memcached:
+            raise pytest.skip("no memcached")
         cache = memcached
     miner = await PullRequestMiner.mine(
         date.today() - timedelta(days=10 * 365),
@@ -71,7 +75,9 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
                 assert_frame_equal(fv.reset_index(), sv.reset_index())
 
 
-def validate_pull_request_times(prt: PullRequestTimes):
+def validate_pull_request_times(prmeta: Dict[str, Any], prt: PullRequestTimes):
+    assert prmeta[PullRequest.node_id.key]
+    assert prmeta[PullRequest.repository_full_name.key] == "src-d/go-git"
     for k, v in vars(prt).items():
         if not v:
             continue
@@ -109,7 +115,7 @@ def validate_pull_request_times(prt: PullRequestTimes):
             assert prt.closed
 
 
-async def test_pr_times_miner(mdb, release_match_setting_tag):
+async def test_pr_times_miner_smoke(mdb, release_match_setting_tag):
     miner = await PullRequestTimesMiner.mine(
         date.today() - timedelta(days=10 * 365),
         date.today(),
@@ -120,7 +126,7 @@ async def test_pr_times_miner(mdb, release_match_setting_tag):
         None,
     )
     for prt in miner:
-        validate_pull_request_times(prt)
+        validate_pull_request_times(*prt)
 
 
 async def test_pr_times_miner_empty_review_comments(mdb, release_match_setting_tag):
@@ -135,7 +141,7 @@ async def test_pr_times_miner_empty_review_comments(mdb, release_match_setting_t
     )
     miner._review_comments = miner._review_comments.iloc[0:0]
     for prt in miner:
-        validate_pull_request_times(prt)
+        validate_pull_request_times(*prt)
 
 
 async def test_pr_times_miner_empty_commits(mdb, release_match_setting_tag):
@@ -150,7 +156,7 @@ async def test_pr_times_miner_empty_commits(mdb, release_match_setting_tag):
     )
     miner._commits = miner._commits.iloc[0:0]
     for prt in miner:
-        validate_pull_request_times(prt)
+        validate_pull_request_times(*prt)
 
 
 async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_setting_tag):
@@ -166,4 +172,4 @@ async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_settin
     prts = list(miner)
     assert len(prts) > 0
     for prt in prts:
-        validate_pull_request_times(prt)
+        validate_pull_request_times(*prt)

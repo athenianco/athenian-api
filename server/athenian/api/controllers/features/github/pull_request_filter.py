@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 import pickle
 from typing import Collection, Dict, Generator, List, Mapping, Optional, Set
 
@@ -197,9 +197,9 @@ class PullRequestListMiner(PullRequestTimesMiner):
     exptime=PullRequestListMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, properties, participants, **_: (
-        time_from.toordinal(),
-        time_to.toordinal(),
+    key=lambda date_from, date_to, repos, properties, participants, **_: (
+        date_from.toordinal(),
+        date_to.toordinal(),
         ",".join(sorted(repos)),
         ",".join(s.name.lower() for s in sorted(set(properties))),
         sorted((k.name.lower(), sorted(set(v))) for k, v in participants.items()),
@@ -207,8 +207,8 @@ class PullRequestListMiner(PullRequestTimesMiner):
 )
 async def filter_pull_requests(
         properties: Collection[Property],
-        time_from: date,
-        time_to: date,
+        date_from: date,
+        date_to: date,
         repos: Collection[str],
         release_settings: Dict[str, ReleaseMatchSetting],
         participants: Mapping[ParticipationKind, Collection[str]],
@@ -218,14 +218,13 @@ async def filter_pull_requests(
 
     :param repos: List of repository names without the service prefix.
     """
-    assert isinstance(time_from, date) and not isinstance(time_from, datetime)
-    assert isinstance(time_to, date) and not isinstance(time_to, datetime)
-    time_to += timedelta(days=1)
+    assert isinstance(date_from, date) and not isinstance(date_from, datetime)
+    assert isinstance(date_to, date) and not isinstance(date_to, datetime)
     miner = await PullRequestListMiner.mine(
-        time_from, time_to, repos, release_settings,
+        date_from, date_to, repos, release_settings,
         participants.get(PullRequestParticipant.STATUS_AUTHOR, []), db, cache)
     miner.properties = properties
     miner.participants = participants
-    miner.time_from = pd.Timestamp(time_from, tzinfo=timezone.utc)
-    miner.time_to = pd.Timestamp(time_to, tzinfo=timezone.utc)
+    miner.time_from = pd.Timestamp(date_from, tzinfo=timezone.utc)
+    miner.time_to = pd.Timestamp(date_to, tzinfo=timezone.utc)
     return list(miner)
