@@ -73,6 +73,20 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
                 assert str(fv) == str(sv)
             else:
                 assert_frame_equal(fv.reset_index(), sv.reset_index())
+    if not with_memcached:
+        cache_size = len(cache.mem)
+        # check that the cache has not changed if we add some filters
+        prs = list(await PullRequestMiner.mine(
+            date.today() - timedelta(days=10 * 365),
+            date.today(),
+            ["src-d/go-git"],
+            release_match_setting_tag,
+            ["mcuadros"],
+            None,
+            cache,
+        ))
+        assert len(cache.mem) == cache_size
+        assert all(pr.pr[PullRequest.user_login.key] == "mcuadros" for pr in prs)
 
 
 def validate_pull_request_times(prmeta: Dict[str, Any], prt: PullRequestTimes):
