@@ -15,6 +15,7 @@ class FilterPullRequestsRequest(Model):
         account: Optional[int] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
+        timezone: Optional[int] = None,
         in_: Optional[List[str]] = None,
         stages: Optional[List[str]] = None,
         properties: Optional[List[str]] = None,
@@ -25,6 +26,7 @@ class FilterPullRequestsRequest(Model):
         :param account: The account of this FilterPullRequestsRequest.
         :param date_from: The date_from of this FilterPullRequestsRequest.
         :param date_to: The date_to of this FilterPullRequestsRequest.
+        :param timezone: The timezone of this FilterPullRequestsRequest.
         :param in_: The in_ of this FilterPullRequestsRequest.
         :param stages: The properties of this FilterPullRequestsRequest.
         :param properties: The properties of this FilterPullRequestsRequest.
@@ -34,6 +36,7 @@ class FilterPullRequestsRequest(Model):
             "account": int,
             "date_from": date,
             "date_to": date,
+            "timezone": int,
             "in_": List[str],
             "stages": List[str],
             "properties": List[str],
@@ -44,6 +47,7 @@ class FilterPullRequestsRequest(Model):
             "account": "account",
             "date_from": "date_from",
             "date_to": "date_to",
+            "timezone": "timezone",
             "in_": "in",
             "stages": "stages",
             "properties": "properties",
@@ -53,6 +57,7 @@ class FilterPullRequestsRequest(Model):
         self._account = account
         self._date_from = date_from
         self._date_to = date_to
+        self._timezone = timezone
         self._in_ = in_
         self._stages = stages
         self._properties = properties
@@ -126,6 +131,26 @@ class FilterPullRequestsRequest(Model):
             raise ValueError("Invalid value for `date_to`, must not be `None`")
 
         self._date_to = date_to
+
+    @property
+    def timezone(self) -> int:
+        """Gets the timezone of this FilterPullRequestsRequest.
+
+        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
+
+        :return: The timezone of this FilterPullRequestsRequest.
+        """
+        return self._timezone
+
+    @timezone.setter
+    def timezone(self, timezone: int):
+        """Sets the timezone of this FilterPullRequestsRequest.
+
+        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
+
+        :param timezone: The timezone of this FilterPullRequestsRequest.
+        """
+        self._timezone = timezone
 
     @property
     def in_(self) -> List[str]:

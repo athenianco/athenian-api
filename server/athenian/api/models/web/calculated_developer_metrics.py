@@ -15,6 +15,7 @@ class CalculatedDeveloperMetrics(Model):
         calculated: Optional[List[CalculatedDeveloperMetricsItem]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
+        timezone: Optional[int] = None,
         metrics: Optional[List[DeveloperMetricID]] = None,
     ):
         """CalculatedDeveloperMetrics - a model defined in OpenAPI
@@ -22,12 +23,14 @@ class CalculatedDeveloperMetrics(Model):
         :param calculated: The calculated of this CalculatedDeveloperMetrics.
         :param date_from: The date_from of this CalculatedDeveloperMetrics.
         :param date_to: The date_to of this CalculatedDeveloperMetrics.
+        :param timezone: The timezone of this CalculatedDeveloperMetrics.
         :param metrics: The metrics of this CalculatedDeveloperMetrics.
         """
         self.openapi_types = {
             "calculated": List[CalculatedDeveloperMetricsItem],
             "date_from": date,
             "date_to": date,
+            "timezone": int,
             "metrics": List[DeveloperMetricID],
         }
 
@@ -35,12 +38,14 @@ class CalculatedDeveloperMetrics(Model):
             "calculated": "calculated",
             "date_from": "date_from",
             "date_to": "date_to",
+            "timezone": "timezone",
             "metrics": "metrics",
         }
 
         self._calculated = calculated
         self._date_from = date_from
         self._date_to = date_to
+        self._timezone = timezone
         self._metrics = metrics
 
     @property
@@ -111,6 +116,26 @@ class CalculatedDeveloperMetrics(Model):
             raise ValueError("Invalid value for `date_to`, must not be `None`")
 
         self._date_to = date_to
+
+    @property
+    def timezone(self) -> int:
+        """Gets the timezone of this CalculatedDeveloperMetrics.
+
+        Repeats `DeveloperMetricsRequest.timezone`.
+
+        :return: The timezone of this CalculatedDeveloperMetrics.
+        """
+        return self._timezone
+
+    @timezone.setter
+    def timezone(self, timezone: int):
+        """Sets the timezone of this CalculatedDeveloperMetrics.
+
+        Repeats `DeveloperMetricsRequest.timezone`.
+
+        :param timezone: The timezone of this CalculatedDeveloperMetrics.
+        """
+        self._timezone = timezone
 
     @property
     def metrics(self) -> List[DeveloperMetricID]:

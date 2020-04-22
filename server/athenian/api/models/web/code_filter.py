@@ -1,5 +1,5 @@
 from datetime import date
-from typing import List
+from typing import List, Optional
 
 from athenian.api.models.web.commit_filter import CommitFilter
 from athenian.api.models.web.granularity import Granularity
@@ -10,19 +10,21 @@ class CodeFilter(CommitFilter):
 
     def __init__(
         self,
-        account: int = None,
-        date_from: date = None,
-        date_to: date = None,
-        in_: List[str] = None,
-        with_author: List[str] = None,
-        with_committer: List[str] = None,
-        granularity: str = None,
+        account: Optional[int] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        timezone: Optional[int] = None,
+        in_: Optional[List[str]] = None,
+        with_author: Optional[List[str]] = None,
+        with_committer: Optional[List[str]] = None,
+        granularity: Optional[str] = None,
     ):
         """CodeFilter - a model defined in OpenAPI
 
         :param account: The account of this CodeFilter.
         :param date_from: The date_from of this CodeFilter.
         :param date_to: The date_to of this CodeFilter.
+        :param timezone: The timezone of this CodeFilter.
         :param in_: The in of this CodeFilter.
         :param with_author: The with_author of this CodeFilter.
         :param with_committer: The with_committer of this CodeFilter.
@@ -31,6 +33,7 @@ class CodeFilter(CommitFilter):
         super().__init__(account=account,
                          date_from=date_from,
                          date_to=date_to,
+                         timezone=timezone,
                          in_=in_,
                          with_author=with_author,
                          with_committer=with_committer)

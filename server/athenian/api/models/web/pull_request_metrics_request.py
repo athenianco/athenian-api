@@ -16,6 +16,7 @@ class PullRequestMetricsRequest(Model):
         metrics: Optional[List[PullRequestMetricID]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
+        timezone: Optional[int] = None,
         granularities: Optional[List[str]] = None,
         account: Optional[int] = None,
     ):
@@ -25,6 +26,7 @@ class PullRequestMetricsRequest(Model):
         :param metrics: The metrics of this PullRequestMetricsRequest.
         :param date_from: The date_from of this PullRequestMetricsRequest.
         :param date_to: The date_to of this PullRequestMetricsRequest.
+        :param timezone: The timezone of this PullRequestMetricsRequest.
         :param granularities: The granularities of this PullRequestMetricsRequest.
         :param account: The account of this PullRequestMetricsRequest.
         """
@@ -33,6 +35,7 @@ class PullRequestMetricsRequest(Model):
             "metrics": List[PullRequestMetricID],
             "date_from": date,
             "date_to": date,
+            "timezone": int,
             "granularities": List[str],
             "account": int,
         }
@@ -42,6 +45,7 @@ class PullRequestMetricsRequest(Model):
             "metrics": "metrics",
             "date_from": "date_from",
             "date_to": "date_to",
+            "timezone": "timezone",
             "granularities": "granularities",
             "account": "account",
         }
@@ -50,6 +54,7 @@ class PullRequestMetricsRequest(Model):
         self._metrics = metrics
         self._date_from = date_from
         self._date_to = date_to
+        self._timezone = timezone
         self._granularities = granularities
         self._account = account
 
@@ -148,6 +153,26 @@ class PullRequestMetricsRequest(Model):
         if isinstance(date_to, datetime):
             date_to = date_to.date()
         self._date_to = date_to
+
+    @property
+    def timezone(self) -> int:
+        """Gets the timezone of this PullRequestMetricsRequest.
+
+        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
+
+        :return: The timezone of this PullRequestMetricsRequest.
+        """
+        return self._timezone
+
+    @timezone.setter
+    def timezone(self, timezone: int):
+        """Sets the timezone of this PullRequestMetricsRequest.
+
+        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
+
+        :param timezone: The timezone of this PullRequestMetricsRequest.
+        """
+        self._timezone = timezone
 
     @property
     def granularities(self) -> List[str]:

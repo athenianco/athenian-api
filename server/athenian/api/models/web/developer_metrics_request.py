@@ -15,6 +15,7 @@ class DeveloperMetricsRequest(Model):
         metrics: Optional[List[str]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
+        timezone: Optional[int] = None,
         account: Optional[int] = None,
     ):
         """DeveloperMetricsRequest - a model defined in OpenAPI

@@ -74,7 +74,7 @@ def deserialize_date(string: str) -> datetime.date:
     :param string: str.
     :return: date.
     """
-    return parse_datetime(string).date()
+    return parse_datetime(string, ignoretz=True).date()
 
 
 def deserialize_datetime(string: str) -> datetime.datetime:
