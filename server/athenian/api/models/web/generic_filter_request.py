@@ -12,6 +12,7 @@ class GenericFilterRequest(Model):
         account: Optional[int] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
+        timezone: Optional[int] = None,
         in_: Optional[List[str]] = None,
     ):
         """GenericFilterRequest - a model defined in OpenAPI
@@ -19,12 +20,14 @@ class GenericFilterRequest(Model):
         :param account: The account of this GenericFilterRequest.
         :param date_from: The date_from of this GenericFilterRequest.
         :param date_to: The date_to of this GenericFilterRequest.
+        :param timezone: The timezone of this GenericFilterRequest.
         :param in_: The in of this GenericFilterRequest.
         """
         self.openapi_types = {
             "account": int,
             "date_from": date,
             "date_to": date,
+            "timezone": int,
             "in_": List[str],
         }
 
@@ -32,12 +35,14 @@ class GenericFilterRequest(Model):
             "account": "account",
             "date_from": "date_from",
             "date_to": "date_to",
+            "timezone": "timezone",
             "in_": "in",
         }
 
         self._account = account
         self._date_from = date_from
         self._date_to = date_to
+        self._timezone = timezone
         self._in_ = in_
 
     @property
@@ -108,6 +113,26 @@ class GenericFilterRequest(Model):
             raise ValueError("Invalid value for `date_to`, must not be `None`")
 
         self._date_to = date_to
+
+    @property
+    def timezone(self) -> int:
+        """Gets the timezone of this GenericFilterRequest.
+
+        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
+
+        :return: The timezone of this GenericFilterRequest.
+        """
+        return self._timezone
+
+    @timezone.setter
+    def timezone(self, timezone: int):
+        """Sets the timezone of this GenericFilterRequest.
+
+        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
+
+        :param timezone: The timezone of this GenericFilterRequest.
+        """
+        self._timezone = timezone
 
     @property
     def in_(self) -> List[str]:

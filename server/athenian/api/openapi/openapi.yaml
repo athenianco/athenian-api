@@ -1421,6 +1421,10 @@ components:
           description: Date up to which to measure the metrics.
           format: date
           type: string
+        timezone:
+          description: Local time zone offset in minutes, used to adjust `date_from`
+            and `date_to`.
+          type: integer
         granularities:
           items:
             $ref: '#/components/schemas/Granularity'
@@ -1588,6 +1592,9 @@ components:
           description: Repeats `PullRequestMetricsRequest.date_to`.
           format: date
           type: string
+        timezone:
+          description: Repeats `PullRequestMetricsRequest.timezone`.
+          type: integer
         granularities:
           items:
             $ref: '#/components/schemas/Granularity'
@@ -1691,6 +1698,10 @@ components:
             is any action that influences the stage assignment.
           format: date
           type: string
+        timezone:
+          description: Local time zone offset in minutes, used to adjust `date_from`
+            and `date_to`.
+          type: integer
         in:
           $ref: '#/components/schemas/RepositorySet'
       required:
@@ -1725,6 +1736,10 @@ components:
           description: PRs must be updated earlier than or equal to this date.
           format: date
           type: string
+        timezone:
+          description: Local time zone offset in minutes, used to adjust `date_from`
+            and `date_to`.
+          type: integer
         in:
           $ref: '#/components/schemas/RepositorySet'
         stages:
@@ -2053,6 +2068,10 @@ components:
           description: Commits must be made earlier than or equal to this date.
           format: date
           type: string
+        timezone:
+          description: Local time zone offset in minutes, used to adjust `date_from`
+            and `date_to`.
+          type: integer
         in:
           $ref: '#/components/schemas/RepositorySet'
         with_author:
@@ -2240,6 +2259,10 @@ components:
           description: Commits must be made earlier than or equal to this date.
           format: date
           type: string
+        timezone:
+          description: Local time zone offset in minutes, used to adjust `date_from`
+            and `date_to`.
+          type: integer
         in:
           $ref: '#/components/schemas/RepositorySet'
         with_author:
@@ -2352,6 +2375,10 @@ components:
           description: Date up to which to measure the metrics.
           format: date
           type: string
+        timezone:
+          description: Local time zone offset in minutes, used to adjust `date_from`
+            and `date_to`.
+          type: integer
         account:
           description: Session account ID.
           type: integer
@@ -2443,6 +2470,9 @@ components:
           description: Repeats `DeveloperMetricsRequest.date_to`.
           format: date
           type: string
+        timezone:
+          description: Repeats `DeveloperMetricsRequest.timezone`.
+          type: integer
         metrics:
           description: Repeats `DeveloperMetricsRequest.metrics`.
           items:

@@ -12,6 +12,7 @@ class CommitFilter(Model):
         account: Optional[int] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
+        timezone: Optional[int] = None,
         in_: Optional[List[str]] = None,
         with_author: Optional[List[str]] = None,
         with_committer: Optional[List[str]] = None,
@@ -21,6 +22,7 @@ class CommitFilter(Model):
         :param account: The account of this CommitFilter.
         :param date_from: The date_from of this CommitFilter.
         :param date_to: The date_to of this CommitFilter.
+        :param timezone: The timezone of this CommitFilter.
         :param in_: The in of this CommitFilter.
         :param with_author: The with_author of this CommitFilter.
         :param with_committer: The with_committer of this CommitFilter.
@@ -29,6 +31,7 @@ class CommitFilter(Model):
             "account": int,
             "date_from": date,
             "date_to": date,
+            "timezone": int,
             "in_": List[str],
             "with_author": List[str],
             "with_committer": List[str],
@@ -38,6 +41,7 @@ class CommitFilter(Model):
             "account": "account",
             "date_from": "date_from",
             "date_to": "date_to",
+            "timezone": "timezone",
             "in_": "in",
             "with_author": "with_author",
             "with_committer": "with_committer",
@@ -46,6 +50,7 @@ class CommitFilter(Model):
         self._account = account
         self._date_from = date_from
         self._date_to = date_to
+        self._timezone = timezone
         self._in_ = in_
         self._with_author = with_author
         self._with_committer = with_committer
@@ -118,6 +123,26 @@ class CommitFilter(Model):
             raise ValueError("Invalid value for `date_to`, must not be `None`")
 
         self._date_to = date_to
+
+    @property
+    def timezone(self) -> int:
+        """Gets the timezone of this CommitFilter.
+
+        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
+
+        :return: The timezone of this CommitFilter.
+        """
+        return self._timezone
+
+    @timezone.setter
+    def timezone(self, timezone: int):
+        """Sets the timezone of this CommitFilter.
+
+        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
+
+        :param timezone: The timezone of this CommitFilter.
+        """
+        self._timezone = timezone
 
     @property
     def in_(self) -> List[str]:

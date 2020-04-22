@@ -17,6 +17,7 @@ class CalculatedPullRequestMetrics(Model):
         metrics: Optional[List[str]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
+        timezone: Optional[int] = None,
         granularities: Optional[List[str]] = None,
     ):
         """CalculatedPullRequestMetrics - a model defined in OpenAPI
@@ -32,6 +33,7 @@ class CalculatedPullRequestMetrics(Model):
             "metrics": List[str],
             "date_from": date,
             "date_to": date,
+            "timezone": int,
             "granularities": List[str],
         }
 
@@ -40,6 +42,7 @@ class CalculatedPullRequestMetrics(Model):
             "metrics": "metrics",
             "date_from": "date_from",
             "date_to": "date_to",
+            "timezone": "timezone",
             "granularities": "granularities",
         }
 
@@ -47,6 +50,7 @@ class CalculatedPullRequestMetrics(Model):
         self._metrics = metrics
         self._date_from = date_from
         self._date_to = date_to
+        self._timezone = timezone
         self._granularities = granularities
 
     @property
@@ -144,6 +148,26 @@ class CalculatedPullRequestMetrics(Model):
             raise ValueError("Invalid value for `date_to`, must not be `None`")
 
         self._date_to = date_to
+
+    @property
+    def timezone(self) -> int:
+        """Gets the timezone of this CalculatedPullRequestMetrics.
+
+        Repeats `PullRequestMetricsRequest.timezone`.
+
+        :return: The timezone of this CalculatedPullRequestMetrics.
+        """
+        return self._timezone
+
+    @timezone.setter
+    def timezone(self, timezone: int):
+        """Sets the timezone of this CalculatedPullRequestMetrics.
+
+        Repeats `PullRequestMetricsRequest.timezone`.
+
+        :param timezone: The timezone of this CalculatedPullRequestMetrics.
+        """
+        self._timezone = timezone
 
     @property
     def granularities(self) -> List[str]:
