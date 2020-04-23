@@ -1,6 +1,6 @@
 from collections import defaultdict
 import dataclasses
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict
 
 from pandas.testing import assert_frame_equal
@@ -13,9 +13,13 @@ from tests.conftest import has_memcached
 
 
 async def test_pr_miner_iter(mdb, release_match_setting_tag):
+    date_from = date(year=2015, month=1, day=1)
+    date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestMiner.mine(
-        date.today() - timedelta(days=10 * 365),
-        date.today(),
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         ["src-d/go-git"],
         release_match_setting_tag,
         [],
@@ -45,9 +49,13 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
         if not has_memcached:
             raise pytest.skip("no memcached")
         cache = memcached
+    date_from = date(year=2015, month=1, day=1)
+    date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestMiner.mine(
-        date.today() - timedelta(days=10 * 365),
-        date.today(),
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         ["src-d/go-git"],
         release_match_setting_tag,
         [],
@@ -58,8 +66,10 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
         assert len(cache.mem) > 0
     first_data = list(miner)
     miner = await PullRequestMiner.mine(
-        date.today() - timedelta(days=10 * 365),
-        date.today(),
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         ["src-d/go-git"],
         release_match_setting_tag,
         [],
@@ -77,8 +87,10 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
         cache_size = len(cache.mem)
         # check that the cache has not changed if we add some filters
         prs = list(await PullRequestMiner.mine(
-            date.today() - timedelta(days=10 * 365),
-            date.today(),
+            date_from,
+            date_to,
+            datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+            datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
             ["src-d/go-git"],
             release_match_setting_tag,
             ["mcuadros"],
@@ -130,9 +142,13 @@ def validate_pull_request_times(prmeta: Dict[str, Any], prt: PullRequestTimes):
 
 
 async def test_pr_times_miner_smoke(mdb, release_match_setting_tag):
+    date_from = date(year=2015, month=1, day=1)
+    date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestTimesMiner.mine(
-        date.today() - timedelta(days=10 * 365),
-        date.today(),
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         ["src-d/go-git"],
         release_match_setting_tag,
         [],
@@ -144,9 +160,13 @@ async def test_pr_times_miner_smoke(mdb, release_match_setting_tag):
 
 
 async def test_pr_times_miner_empty_review_comments(mdb, release_match_setting_tag):
+    date_from = date(year=2015, month=1, day=1)
+    date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestTimesMiner.mine(
-        date.today() - timedelta(days=10 * 365),
-        date.today(),
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         ["src-d/go-git"],
         release_match_setting_tag,
         [],
@@ -159,9 +179,13 @@ async def test_pr_times_miner_empty_review_comments(mdb, release_match_setting_t
 
 
 async def test_pr_times_miner_empty_commits(mdb, release_match_setting_tag):
+    date_from = date(year=2015, month=1, day=1)
+    date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestTimesMiner.mine(
-        date.today() - timedelta(days=10 * 365),
-        date.today(),
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         ["src-d/go-git"],
         release_match_setting_tag,
         [],
@@ -174,9 +198,13 @@ async def test_pr_times_miner_empty_commits(mdb, release_match_setting_tag):
 
 
 async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_setting_tag):
+    date_from = date(2019, 10, 16) - timedelta(days=3)
+    date_to = date(2019, 10, 16)
     miner = await PullRequestTimesMiner.mine(
-        date(2019, 10, 16) - timedelta(days=3),
-        date(2019, 10, 16),
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         ["src-d/go-git"],
         release_match_setting_tag,
         [],

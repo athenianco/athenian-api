@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timezone
 from typing import List
 
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner
@@ -7,9 +7,13 @@ from athenian.api.controllers.miners.pull_request_list_item import Participation
 
 
 async def test_pr_list_miner_none(mdb, release_match_setting_tag):
+    date_from = date(year=2015, month=1, day=1)
+    date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestListMiner.mine(
-        date.today() - timedelta(days=10 * 365),
-        date.today(),
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         ["src-d/go-git"],
         release_match_setting_tag,
         [],
@@ -21,9 +25,13 @@ async def test_pr_list_miner_none(mdb, release_match_setting_tag):
 
 
 async def test_pr_list_miner_match_participants(mdb, release_match_setting_tag):
+    date_from = date(year=2015, month=1, day=1)
+    date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestListMiner.mine(
-        date.today() - timedelta(days=10 * 365),
-        date.today(),
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         ["src-d/go-git"],
         release_match_setting_tag,
         [],
@@ -49,9 +57,13 @@ async def test_pr_list_miner_match_participants(mdb, release_match_setting_tag):
 
 
 async def test_pr_list_miner_no_participants(mdb, release_match_setting_tag):
+    date_from = date(year=2015, month=1, day=1)
+    date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestListMiner.mine(
-        date.today() - timedelta(days=10 * 365),
-        date.today(),
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         ["src-d/go-git"],
         release_match_setting_tag,
         [],

@@ -76,6 +76,7 @@ async def test_calc_metrics_prs_all_time(client, headers):
                     PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME],
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
+        "timezone": 60,
         "granularities": ["day", "week", "month"],
         "account": 1,
     }
@@ -347,6 +348,7 @@ async def test_code_bypassing_prs_smoke(client, headers):
         "account": 1,
         "date_from": "2019-01-12",
         "date_to": "2020-02-22",
+        "timezone": 60,
         "in": ["{1}"],
         "granularity": "month",
     }
@@ -435,6 +437,7 @@ async def test_developer_metrics_all(client, headers, dev):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
+        "timezone": 60,
         "for": [
             {"repositories": ["{1}"], "developers": ["github.com/" + dev]},
         ],

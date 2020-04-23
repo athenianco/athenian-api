@@ -85,7 +85,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                 try:
                     buffer = await client.get(cache_key)
                 except aiomcache.exceptions.ClientException:
-                    log.exception("failed to fetch %s/%s", full_name, cache_key.decode())
+                    log.exception("Failed to fetch cached %s/%s", full_name, cache_key.decode())
                     buffer = None
                 if buffer is not None:
                     result = deserialize(buffer)
