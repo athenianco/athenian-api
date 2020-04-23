@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import datetime
 from typing import Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
 
 from athenian.api.controllers.features.metric import Metric, T
@@ -133,25 +133,23 @@ def register(name: str):
 class BinnedPullRequestMetricCalculator(Generic[T]):
     """Batched metrics calculation on sequential time intervals."""
 
-    def __init__(self, calcs: Sequence[PullRequestMetricCalculator[T]],
-                 time_intervals: Sequence[date]):
+    def __init__(self,
+                 calcs: Sequence[PullRequestMetricCalculator[T]],
+                 time_intervals: Sequence[datetime]):
         """
         Initialize a new instance of `BinnedPullRequestMetricCalculator`.
 
         :param calcs: Metric calculators. Their order matches the order of the results in \
                       `__call__()`.
-        :param time_intervals: Time interval borders. Each interval spans \
-                               `[time_intervals[i], time_intervals[i + 1]]`, and the ending is \
-                               not included except for the last interval.
+        :param time_intervals: Time interval borders in UTC. Each interval spans \
+                               `[time_intervals[i], time_intervals[i + 1]]`, the ending \
+                               not included.
         """
         self.calcs = calcs
         assert len(time_intervals) >= 2
-        self.time_intervals = [datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
-                               for d in time_intervals[:-1]]
-        self.time_intervals.append(
-            datetime.combine(time_intervals[-1], datetime.max.time(), tzinfo=timezone.utc))
+        self.time_intervals = time_intervals
 
-    def __call__(self, items: Iterable[PullRequestTimes]) -> List[Tuple[Metric[T]]]:
+    def __call__(self, items: Iterable[PullRequestTimes]) -> List[Tuple[Metric[T], ...]]:
         """
         Calculate the binned metrics.
 

@@ -1,12 +1,12 @@
-from datetime import date, timezone
+from datetime import datetime
 import pickle
 from typing import Collection, Dict, List, Optional, Sequence, Tuple
 
 import aiomcache
 from databases import Database
-import pandas as pd
 
 from athenian.api.cache import cached
+from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.cached_released import load_cached_released_times, \
     store_cached_released_times
 from athenian.api.controllers.features.code import CodeStats
@@ -28,24 +28,28 @@ from athenian.api.models.metadata.github import PushCommit
     deserialize=pickle.loads,
     key=lambda metrics, time_intervals, repos, developers, **_: (
         ",".join(sorted(metrics)),
-        ";".join(",".join(str(dt.toordinal()) for dt in ts) for ts in time_intervals),
+        ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
         ",".join(sorted(repos)),
         ",".join(sorted(developers)),
     ),
 )
-async def calc_pull_request_metrics_line_github(
-        metrics: Collection[str], time_intervals: Sequence[Sequence[date]], repos: Collection[str],
-        release_settings: Dict[str, ReleaseMatchSetting], developers: Collection[str],
-        db: Database, cache: Optional[aiomcache.Client],
-) -> List[List[Tuple[Metric]]]:
+async def calc_pull_request_metrics_line_github(metrics: Collection[str],
+                                                time_intervals: Sequence[Sequence[datetime]],
+                                                repos: Collection[str],
+                                                release_settings: Dict[str, ReleaseMatchSetting],
+                                                developers: Collection[str],
+                                                db: Database,
+                                                cache: Optional[aiomcache.Client],
+                                                ) -> List[List[Tuple[Metric, ...]]]:
     """Calculate pull request metrics on GitHub data."""
-    date_from, date_to = time_intervals[0][0], time_intervals[0][-1]
-    assert date_to > date_from
+    time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
+    date_from, date_to = coarsen_time_interval(time_from, time_to)
+    # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
+    # are effectively discarded later in BinnedPullRequestMetricCalculator
     released_times = await load_cached_released_times(date_from, date_to, repos, cache)
     miner = await PullRequestTimesMiner.mine(
         date_from, date_to, repos, release_settings, developers, db, cache,
-        pr_blacklist=released_times,
-    )
+        pr_blacklist=released_times)
     mined_prs = list(miner)
     await store_cached_released_times(mined_prs, cache)
     mined_times = [t for _, t in mined_prs]
@@ -54,13 +58,16 @@ async def calc_pull_request_metrics_line_github(
     return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_times) for ts in time_intervals]
 
 
-async def calc_code_metrics(
-        prop: FilterCommitsProperty, time_intervals: Sequence[date], repos: Collection[str],
-        with_author: Optional[Collection[str]], with_committer: Optional[Collection[str]],
-        db: Database, cache: Optional[aiomcache.Client],
-) -> List[CodeStats]:
+async def calc_code_metrics(prop: FilterCommitsProperty,
+                            time_intervals: Sequence[datetime],
+                            repos: Collection[str],
+                            with_author: Optional[Collection[str]],
+                            with_committer: Optional[Collection[str]],
+                            db: Database,
+                            cache: Optional[aiomcache.Client],
+                            ) -> List[CodeStats]:
     """Filter code pushed on GitHub according to the specified criteria."""
-    time_from, time_to = (pd.Timestamp(time_intervals[i], tzinfo=timezone.utc) for i in (0, -1))
+    time_from, time_to = time_intervals[0], time_intervals[-1]
     x_commits = await extract_commits(
         prop, time_from, time_to, repos, with_author, with_committer, db, cache)
     all_commits = await extract_commits(

@@ -120,8 +120,8 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=_serialize_for_cache,
         deserialize=_deserialize_from_cache,
-        key=lambda date_from, date_to, repositories, developers, **_: (
-            date_from.toordinal(), date_to.toordinal(),
+        key=lambda date_from, date_to, release_settings, **_: (
+            date_from.toordinal(), date_to.toordinal(), release_settings,
         ),
         postprocess=_postprocess_cached_prs,
     )

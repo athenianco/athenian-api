@@ -24,6 +24,7 @@ class DeveloperMetricsRequest(Model):
         :param metrics: The metrics of this DeveloperMetricsRequest.
         :param date_from: The date_from of this DeveloperMetricsRequest.
         :param date_to: The date_to of this DeveloperMetricsRequest.
+        :param timezone: The timezone of this DeveloperMetricsRequest.
         :param account: The account of this DeveloperMetricsRequest.
         """
         self.openapi_types = {
@@ -31,6 +32,7 @@ class DeveloperMetricsRequest(Model):
             "metrics": List[str],
             "date_from": date,
             "date_to": date,
+            "timezone": int,
             "account": int,
         }
 
@@ -39,6 +41,7 @@ class DeveloperMetricsRequest(Model):
             "metrics": "metrics",
             "date_from": "date_from",
             "date_to": "date_to",
+            "timezone": "timezone",
             "account": "account",
         }
 
@@ -46,6 +49,7 @@ class DeveloperMetricsRequest(Model):
         self._metrics = metrics
         self._date_from = date_from
         self._date_to = date_to
+        self._timezone = timezone
         self._account = account
 
     @property
@@ -142,6 +146,26 @@ class DeveloperMetricsRequest(Model):
             raise ValueError("Invalid value for `date_to`, must not be `None`")
 
         self._date_to = date_to
+
+    @property
+    def timezone(self) -> int:
+        """Gets the timezone of this PullRequestMetricsRequest.
+
+        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
+
+        :return: The timezone of this PullRequestMetricsRequest.
+        """
+        return self._timezone
+
+    @timezone.setter
+    def timezone(self, timezone: int):
+        """Sets the timezone of this PullRequestMetricsRequest.
+
+        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
+
+        :param timezone: The timezone of this PullRequestMetricsRequest.
+        """
+        self._timezone = timezone
 
     @property
     def account(self) -> int:

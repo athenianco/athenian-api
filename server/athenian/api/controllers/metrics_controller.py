@@ -1,9 +1,9 @@
 import asyncio
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from itertools import chain
-from typing import List, Set, Tuple, Union
+from typing import List, Optional, Set, Tuple, Union
 
 from aiohttp import web
 
@@ -45,7 +45,8 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
         filters, repos = await _compile_repos_and_devs(filt.for_, request, filt.account)
-        time_intervals = _split_to_time_intervals(filt.date_from, filt.date_to, filt.granularities)
+        time_intervals, tzoffset = _split_to_time_intervals(
+            filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     except ResponseError as e:
         return e.response
 
@@ -64,6 +65,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     met = CalculatedPullRequestMetrics()
     met.date_from = filt.date_from
     met.date_to = filt.date_to
+    met.timezone = filt.timezone
     met.granularities = filt.granularities
     met.metrics = filt.metrics
     met.calculated = []
@@ -93,7 +95,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
                 for_=for_set,
                 granularity=granularity,
                 values=[CalculatedPullRequestMetricValues(
-                    date=d,
+                    date=(d - tzoffset).date(),
                     values=[results[m][i].value for m in met.metrics],
                     confidence_mins=[results[m][i].confidence_min for m in met.metrics],
                     confidence_maxs=[results[m][i].confidence_max for m in met.metrics],
@@ -108,28 +110,34 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     return model_response(met)
 
 
-def _split_to_time_intervals(date_from: date, date_to: date, granularities: Union[str, List[str]],
-                             ) -> Union[List[date], List[List[date]]]:
+def _split_to_time_intervals(date_from: date,
+                             date_to: date,
+                             granularities: Union[str, List[str]],
+                             tzoffset: Optional[int],
+                             ) -> Tuple[Union[List[datetime], List[List[datetime]]], timedelta]:
     if date_to < date_from:
         raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
             pointer=".date_from",
         ))
+    tzoffset = timedelta(minutes=-tzoffset) if tzoffset is not None else timedelta(0)
 
-    def split(granularity, ptr):
+    def split(granularity: str, ptr: str) -> List[datetime]:
         try:
-            return Granularity.split(granularity, date_from, date_to)
+            intervals = Granularity.split(granularity, date_from, date_to)
         except ValueError:
             raise ResponseError(InvalidRequestError(
                 detail='granularity "%s" does not match /%s/' % (
                     granularity, Granularity.format.pattern),
                 pointer=ptr,
             ))
+        return [datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc) + tzoffset
+                for i in intervals]
 
     if isinstance(granularities, str):
-        return split(granularities, ".granularity")
+        return split(granularities, ".granularity"), tzoffset
 
-    return [split(g, ".granularities[%d]" % i) for i, g in enumerate(granularities)]
+    return [split(g, ".granularities[%d]" % i) for i, g in enumerate(granularities)], tzoffset
 
 
 async def _compile_repos_and_devs(for_sets: List[ForSet],
@@ -213,7 +221,8 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         repos = await resolve_repos(
             filt.in_, filt.account, request.uid, request.native_uid,
             request.sdb, request.mdb, request.cache)
-        time_intervals = _split_to_time_intervals(filt.date_from, filt.date_to, filt.granularity)
+        time_intervals, tzoffset = _split_to_time_intervals(
+            filt.date_from, filt.date_to, filt.granularity, filt.timezone)
     except ResponseError as e:
         return e.response
     with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
@@ -223,7 +232,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         request.mdb, request.cache)  # type: List[CodeStats]
     model = [
         CodeBypassingPRsMeasurement(
-            date=d,
+            date=(d - tzoffset).date(),
             bypassed_commits=s.queried_number_of_commits,
             bypassed_lines=s.queried_number_of_lines,
             total_commits=s.total_number_of_commits,
@@ -254,12 +263,19 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     met = CalculatedDeveloperMetrics()
     met.date_from = filt.date_from
     met.date_to = filt.date_to
+    met.timezone = filt.timezone
     met.metrics = filt.metrics
     met.calculated = []
     topics = {DeveloperTopic(t) for t in filt.metrics}
+    time_from = datetime.combine(filt.date_from, datetime.min.time(), tzinfo=timezone.utc)
+    time_to = datetime.combine(filt.date_to, datetime.max.time(), tzinfo=timezone.utc)
+    if filt.timezone is not None:
+        tzoffset = timedelta(minutes=-filt.timezone)
+        time_from += tzoffset
+        time_to += tzoffset
     for service, (repos, devs, for_set) in filters:
         stats = await METRIC_ENTRIES[service]["developers"](
-            devs, repos, topics, filt.date_from, filt.date_to, request.mdb, request.cache)
+            devs, repos, topics, time_from, time_to, request.mdb, request.cache)
         met.calculated.append(CalculatedDeveloperMetricsItem(
             for_=for_set,
             values=[[getattr(s, DeveloperTopic(t).name) for t in filt.metrics] for s in stats],
