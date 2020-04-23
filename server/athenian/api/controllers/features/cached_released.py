@@ -18,6 +18,7 @@ from athenian.api.models.metadata.github import PullRequest
 async def load_cached_released_times(date_from: date,
                                      date_to: date,
                                      repos: Collection[str],
+                                     developers: Collection[str],
                                      cache: Optional[aiomcache.Client],
                                      ) -> Dict[str, PullRequestTimes]:
     """Fetch PullRequestTimes of the cached released PRs."""
@@ -29,7 +30,7 @@ async def load_cached_released_times(date_from: date,
     batch_size = 32
 
     async def fetch_repo_days(repo_days: List[Tuple[str, datetime]],
-                              ) -> Iterable[Tuple[str, PullRequestTimes]]:
+                              ) -> Iterable[Tuple[str, str, PullRequestTimes]]:
         cache_keys = [gen_cache_key("cached_released_times|%s|%d", repo, day.date().toordinal())
                       for repo, day in repo_days]
         try:
@@ -47,7 +48,13 @@ async def load_cached_released_times(date_from: date,
     for i in range(0, len(batches), parallel_retrievals):
         results.extend(chain.from_iterable(await asyncio.gather(
             *batches[i:i + parallel_retrievals], return_exceptions=True)))
-    return dict(r for r in results if not isinstance(r, Exception))
+    if len(developers) > 0:
+        developers = set(developers)
+        result = dict((r[0], r[2]) for r in results
+                      if not isinstance(r, Exception) and r[1] in developers)
+    else:
+        result = dict((r[0], r[2]) for r in results if not isinstance(r, Exception))
+    return result
 
 
 async def store_cached_released_times(prs: Sequence[Tuple[Dict[str, Any], PullRequestTimes]],
@@ -60,13 +67,14 @@ async def store_cached_released_times(prs: Sequence[Tuple[Dict[str, Any], PullRe
     repodays = defaultdict(lambda: defaultdict(list))
     rfnkey = PullRequest.repository_full_name.key
     nidkey = PullRequest.node_id.key
+    ulkey = PullRequest.user_login.key
     for pr, times in prs:
         if times.released:
-            repodays[pr[rfnkey]][times.released.best.date()].append((pr[nidkey], times))
+            repodays[pr[rfnkey]][times.released.best.date()].append((pr[nidkey], pr[ulkey], times))
 
     async def store_repo_day(repo: str,
                              day: date,
-                             items: List[Tuple[str, PullRequestTimes]],
+                             items: List[Tuple[str, str, PullRequestTimes]],
                              ) -> None:
         cache_key = gen_cache_key("cached_released_times|%s|%d", repo, day.toordinal())
         payload = pickle.dumps(items)
