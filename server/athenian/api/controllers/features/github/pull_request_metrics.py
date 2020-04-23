@@ -25,7 +25,7 @@ class WorkInProgressTimeCalculator(PullRequestAverageMetricCalculator[timedelta]
         else:
             # review was probably requested but never happened
             wip_end = times.last_commit.best
-        if wip_end is not None and min_time <= wip_end <= max_time:
+        if wip_end is not None and min_time <= wip_end < max_time:
             return wip_end - times.work_began.best
         return None
 
@@ -49,13 +49,13 @@ class ReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
         """Calculate the actual state update."""
         if not times.first_review_request:
             return None
-        if override_event_time is not None and min_time <= override_event_time <= max_time:
+        if override_event_time is not None and min_time <= override_event_time < max_time:
             return override_event_time - times.first_review_request.best
         # We cannot be sure that the approvals finished unless the PR is closed.
         if (times.closed or allow_unclosed) and (
-                (times.approved and min_time <= times.approved.best <= max_time)
+                (times.approved and min_time <= times.approved.best < max_time)
                 or  # noqa
-                (times.last_review and min_time <= times.last_review.best <= max_time)):
+                (times.last_review and min_time <= times.last_review.best < max_time)):
             if times.approved:
                 return times.approved.best - times.first_review_request.best
             elif times.last_review:
@@ -82,7 +82,7 @@ class MergingTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
                 override_event_time: Optional[datetime] = None) -> Optional[timedelta]:
         """Calculate the actual state update."""
         closed = times.closed.best if override_event_time is None else override_event_time
-        if closed is not None and min_time <= closed <= max_time:
+        if closed is not None and min_time <= closed < max_time:
             # closed may mean either merged or not merged
             if times.approved:
                 return closed - times.approved.best
@@ -110,7 +110,7 @@ class ReleaseTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
                 override_event_time: Optional[datetime] = None) -> Optional[timedelta]:
         """Calculate the actual state update."""
         released = times.released.best if override_event_time is None else override_event_time
-        if times.merged and released is not None and min_time <= released <= max_time:
+        if times.merged and released is not None and min_time <= released < max_time:
             return released - times.merged.best
         return None
 
@@ -131,7 +131,7 @@ class LeadTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[timedelta]:
         """Calculate the actual state update."""
-        if times.released and min_time <= times.released.best <= max_time:
+        if times.released and min_time <= times.released.best < max_time:
             return times.released.best - times.work_began.best
         return None
 
@@ -200,7 +200,7 @@ class WaitFirstReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta
                 ) -> Optional[timedelta]:
         """Calculate the actual state update."""
         if times.first_review_request and times.first_comment_on_first_review and \
-                min_time <= times.first_comment_on_first_review.best <= max_time:
+                min_time <= times.first_comment_on_first_review.best < max_time:
             return times.first_comment_on_first_review.best - times.first_review_request.best
         return None
 
@@ -219,7 +219,7 @@ class OpenedCalculator(PullRequestSumMetricCalculator[int]):
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[int]:
         """Calculate the actual state update."""
-        if min_time <= times.created.best <= max_time:
+        if min_time <= times.created.best < max_time:
             return 1
         return None
 
@@ -231,7 +231,7 @@ class MergedCalculator(PullRequestSumMetricCalculator[int]):
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[int]:
         """Calculate the actual state update."""
-        if times.merged and min_time <= times.merged.best <= max_time:
+        if times.merged and min_time <= times.merged.best < max_time:
             return 1
         return None
 
@@ -243,7 +243,7 @@ class ClosedCalculator(PullRequestSumMetricCalculator[int]):
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[int]:
         """Calculate the actual state update."""
-        if times.closed and min_time <= times.closed.best <= max_time:
+        if times.closed and min_time <= times.closed.best < max_time:
             return 1
         return None
 
@@ -255,7 +255,7 @@ class ReleasedCalculator(PullRequestSumMetricCalculator[int]):
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[int]:
         """Calculate the actual state update."""
-        if times.released and min_time <= times.released.best <= max_time:
+        if times.released and min_time <= times.released.best < max_time:
             return 1
         return None
 

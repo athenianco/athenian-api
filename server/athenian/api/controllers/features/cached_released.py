@@ -21,6 +21,8 @@ async def load_cached_released_times(date_from: date,
                                      cache: Optional[aiomcache.Client],
                                      ) -> Dict[str, PullRequestTimes]:
     """Fetch PullRequestTimes of the cached released PRs."""
+    assert isinstance(date_from, date) and not isinstance(date_from, datetime)
+    assert isinstance(date_to, date) and not isinstance(date_to, datetime)
     if cache is None:
         return {}
     log = logging.getLogger("%s.cached_released_times" % metadata.__package__)

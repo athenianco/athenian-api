@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import datetime, timedelta, timezone
 import pickle
 from typing import Collection, Dict, Generator, List, Mapping, Optional, Set
 
@@ -7,6 +7,7 @@ import databases
 import pandas as pd
 
 from athenian.api.cache import cached
+from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
@@ -65,7 +66,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
     @time_from.setter
     def time_from(self, value: datetime):
         """Set the minimum of the allowed events time span."""
-        assert isinstance(value, datetime) and value.tzinfo is not None
+        assert isinstance(value, datetime) and value.tzinfo.utcoffset(value) == timedelta(0)
         self._time_from = value
 
     @property
@@ -76,7 +77,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
     @time_to.setter
     def time_to(self, value: datetime):
         """Set the maximum of the allowed events time span."""
-        assert isinstance(value, datetime) and value.tzinfo is not None
+        assert isinstance(value, datetime) and value.tzinfo.utcoffset(value) == timedelta(0)
         self._time_to = value
 
     def _match_participants(self, yours: Mapping[ParticipationKind, Set[str]]) -> bool:
@@ -117,6 +118,11 @@ class PullRequestListMiner(PullRequestTimesMiner):
         if not self._match_participants(participants):
             return None
         times = super()._compile(pr)
+        time_from = self.time_from
+        time_to = min(self.time_to, datetime.now(timezone.utc))
+        if (times.released and times.released.best < time_from) or \
+                times.work_began.best >= time_to:
+            return None
         props = set()
         if times.released or (times.closed and not times.merged):
             props.add(Property.DONE)
@@ -128,7 +134,6 @@ class PullRequestListMiner(PullRequestTimesMiner):
             props.add(Property.REVIEWING)
         else:
             props.add(Property.WIP)
-        time_from = self.time_from
         if times.created.best > time_from:
             props.add(Property.CREATED)
         if (pr.commits[PullRequestCommit.committed_date.key] > time_from).any():
@@ -151,17 +156,19 @@ class PullRequestListMiner(PullRequestTimesMiner):
             return None
         review_requested = \
             pr.review_requests[PullRequestReviewRequest.created_at.key].max() or None
-        time_to = min(self.time_to, datetime.now(timezone.utc))
         stage_timings = {}
         no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
         for k, calc in self._calcs.items():
             kwargs = {} if k != "review" else {"allow_unclosed": True}
             stage_timings[k] = calc.analyze(times, no_time_from, time_to, **kwargs)
+        bumped_time_to = time_to + timedelta(seconds=1)
+        # we don't overwrite the timings below because if there is a certain stage in `props`
+        # then it is by definition incomplete and we set it to None in the previous loop
         for prop, stage in ((Property.WIP, "wip"), (Property.REVIEWING, "review"),
                             (Property.MERGING, "merge"), (Property.RELEASING, "release")):
             if prop in props:
                 stage_timings[stage] = self._calcs[stage].analyze(
-                    times, no_time_from, time_to, override_event_time=time_to)
+                    times, no_time_from, bumped_time_to, override_event_time=time_to)
         return PullRequestListItem(
             repository=prefix + pr.pr[PullRequest.repository_full_name.key],
             number=pr.pr[PullRequest.number.key],
@@ -197,34 +204,32 @@ class PullRequestListMiner(PullRequestTimesMiner):
     exptime=PullRequestListMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda date_from, date_to, repos, properties, participants, **_: (
-        date_from.toordinal(),
-        date_to.toordinal(),
+    key=lambda time_from, time_to, repos, properties, participants, **_: (
+        time_from.timestamp(),
+        time_to.timestamp(),
         ",".join(sorted(repos)),
         ",".join(s.name.lower() for s in sorted(set(properties))),
         sorted((k.name.lower(), sorted(set(v))) for k, v in participants.items()),
     ),
 )
-async def filter_pull_requests(
-        properties: Collection[Property],
-        date_from: date,
-        date_to: date,
-        repos: Collection[str],
-        release_settings: Dict[str, ReleaseMatchSetting],
-        participants: Mapping[ParticipationKind, Collection[str]],
-        db: databases.Database, cache: Optional[aiomcache.Client],
-) -> List[PullRequestListItem]:
+async def filter_pull_requests(properties: Collection[Property],
+                               time_from: datetime,
+                               time_to: datetime,
+                               repos: Collection[str],
+                               release_settings: Dict[str, ReleaseMatchSetting],
+                               participants: Mapping[ParticipationKind, Collection[str]],
+                               db: databases.Database, cache: Optional[aiomcache.Client],
+                               ) -> List[PullRequestListItem]:
     """Filter GitHub pull requests according to the specified criteria.
 
     :param repos: List of repository names without the service prefix.
     """
-    assert isinstance(date_from, date) and not isinstance(date_from, datetime)
-    assert isinstance(date_to, date) and not isinstance(date_to, datetime)
+    date_from, date_to = coarsen_time_interval(time_from, time_to)
     miner = await PullRequestListMiner.mine(
         date_from, date_to, repos, release_settings,
         participants.get(PullRequestParticipant.STATUS_AUTHOR, []), db, cache)
     miner.properties = properties
     miner.participants = participants
-    miner.time_from = pd.Timestamp(date_from, tzinfo=timezone.utc)
-    miner.time_to = pd.Timestamp(date_to, tzinfo=timezone.utc)
+    miner.time_from = time_from
+    miner.time_to = time_to
     return list(miner)

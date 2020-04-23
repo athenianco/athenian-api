@@ -39,7 +39,7 @@ from athenian.api.response import FriendlyJson, model_response, ResponseError
 async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find developers that made an action within the given timeframe."""
     try:
-        filt = GenericFilterRequest.from_dict(body)
+        filt = GenericFilterRequest.from_dict(body)  # type: GenericFilterRequest
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
@@ -121,7 +121,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
 async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find repositories that were updated within the given timeframe."""
     try:
-        filt = GenericFilterRequest.from_dict(body)
+        filt = GenericFilterRequest.from_dict(body)  # type: GenericFilterRequest
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
@@ -177,16 +177,18 @@ async def _common_filter_preprocess(filt: Union[GenericFilterRequest,
                                                 FilterPullRequestsRequest,
                                                 FilterCommitsRequest],
                                     request: AthenianWebRequest,
-                                    expand_dates=True,
                                     strip_prefix=True) -> Set[str]:
     if filt.date_to < filt.date_from:
         raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
             pointer=".date_from",
         ))
-    if expand_dates:
-        filt.date_from = datetime.combine(filt.date_from, datetime.min.time(), tzinfo=timezone.utc)
-        filt.date_to = datetime.combine(filt.date_to, datetime.max.time(), tzinfo=timezone.utc)
+    filt.date_from = datetime.combine(filt.date_from, datetime.min.time(), tzinfo=timezone.utc)
+    filt.date_to = datetime.combine(filt.date_to, datetime.max.time(), tzinfo=timezone.utc)
+    if filt.timezone is not None:
+        tzoffset = timedelta(minutes=-filt.timezone)
+        filt.date_from += tzoffset
+        filt.date_to += tzoffset
     return await resolve_repos(
         filt.in_, filt.account, request.uid, request.native_uid,
         request.sdb, request.mdb, request.cache, strip_prefix=strip_prefix)
@@ -200,8 +202,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     try:
-        repos = await _common_filter_preprocess(
-            filt, request, expand_dates=False, strip_prefix=False)
+        repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
     except ResponseError as e:
         return e.response
     props = set(getattr(Property, p.upper()) for p in (filt.properties or []))
@@ -210,7 +211,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     participants = {ParticipationKind[k.upper()]: v for k, v in body.get("with", {}).items()}
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
-    prs = await filter_pull_requests(props, filt.date_from, filt.date_to + timedelta(days=1),
+    prs = await filter_pull_requests(props, filt.date_from, filt.date_to,
                                      repos, settings, participants, request.mdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     users = {u.split("/", 1)[1] for u in

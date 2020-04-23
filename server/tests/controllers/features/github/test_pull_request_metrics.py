@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 import itertools
 
 import numpy as np
@@ -74,7 +74,8 @@ def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa
 def test_pull_request_metrics_float_binned(pr_samples, cls):  # noqa: F811
     time_from = (datetime.now(tz=timezone.utc) - timedelta(days=365 * 3 // 2)).date()
     time_to = (datetime.now(tz=timezone.utc) - timedelta(days=365 // 2)).date()
-    time_intervals = Granularity.split("month", time_from, time_to)
+    time_intervals = [datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc)
+                      for i in Granularity.split("month", time_from, time_to)]
     binned = BinnedPullRequestMetricCalculator([cls()], time_intervals)
     result = binned(pr_samples(1000))
     # the last interval is null and that's intended
@@ -179,8 +180,8 @@ async def test_calc_pull_request_metrics_line_github_cache(
         if not has_memcached:
             raise pytest.skip("no memcached")
         cache = memcached
-    date_from = date(year=2017, month=1, day=1)
-    date_to = date(year=2019, month=10, day=1)
+    date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
+    date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
     args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]],
             ["src-d/go-git"], release_match_setting_tag, [], mdb, cache)
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
