@@ -46,7 +46,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
     # are effectively discarded later in BinnedPullRequestMetricCalculator
-    released_times = await load_cached_released_times(date_from, date_to, repos, cache)
+    released_times = await load_cached_released_times(date_from, date_to, repos, developers, cache)
     miner = await PullRequestTimesMiner.mine(
         date_from, date_to, time_from, time_to, repos, release_settings, developers, db, cache,
         pr_blacklist=released_times)

@@ -33,6 +33,7 @@ def cached(exptime: Union[int, Callable[..., int]],
            cache: Optional[Callable[..., Optional[aiomcache.Client]]] = None,
            refresh_on_access=False,
            postprocess: Optional[Callable[..., Any]] = None,
+           version: int = 1,
            ) -> Callable[[Callable[..., Coroutine]], Callable[..., Coroutine]]:
     """
     Return factory that creates decorators that cache function call results if possible.
@@ -48,6 +49,7 @@ def cached(exptime: Union[int, Callable[..., int]],
     :param refresh_on_access: Reset the cache item's expiration period on each access.
     :param postprocess: Execute an arbitrary function on the deserialized "result" with \
                         the arguments passed to the wrapped function.
+    :param version: Version of the cache payload format.
     :return: Decorator that cache function call results if possible.
     """
     def wrapper_cached(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
@@ -81,7 +83,8 @@ def cached(exptime: Union[int, Callable[..., int]],
             if client is not None:
                 props = key(**args_dict)
                 assert isinstance(props, tuple), "key() must return a tuple in %s" % full_name
-                cache_key = gen_cache_key(full_name + "|" + "|".join(str(p) for p in props))
+                cache_key = gen_cache_key(
+                    full_name + "|" + str(version) + "|" + "|".join(str(p) for p in props))
                 try:
                     buffer = await client.get(cache_key)
                 except aiomcache.exceptions.ClientException:
@@ -125,7 +128,8 @@ def cached(exptime: Union[int, Callable[..., int]],
                 return False
             props = key(**args_dict)
             assert isinstance(props, tuple), "key() must return a tuple in %s" % full_name
-            cache_key = gen_cache_key(full_name + "|" + "|".join(str(p) for p in props))
+            cache_key = gen_cache_key(
+                full_name + "|" + str(version) + "|" + "|".join(str(p) for p in props))
             try:
                 return await client.delete(cache_key)
             except aiomcache.exceptions.ClientException:
