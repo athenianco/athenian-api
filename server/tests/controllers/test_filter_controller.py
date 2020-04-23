@@ -11,7 +11,7 @@ import pytest
 
 from athenian.api import setup_cache_metrics
 from athenian.api.controllers.miners.pull_request_list_item import Property
-from athenian.api.models.web import CommitsList
+from athenian.api.models.web import CommitsList, PullRequestSet
 from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_property import PullRequestProperty
@@ -40,6 +40,7 @@ async def test_filter_repositories(client, headers):
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
+        "timezone": 60,
         "account": 1,
         "in": ["github.com/src-d/go-git"],
     }
@@ -96,6 +97,7 @@ async def test_filter_contributors(client, headers):
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
+        "timezone": 60,
         "account": 1,
         "in": ["github.com/src-d/go-git"],
     }
@@ -163,6 +165,7 @@ async def test_filter_prs_all_properties(client, headers):
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
+        "timezone": 60,
         "account": 1,
         "properties": [],
     }
@@ -173,6 +176,48 @@ async def test_filter_prs_all_properties(client, headers):
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     await validate_prs_response(response, set(PullRequestProperty))
+
+
+@pytest.mark.parametrize("timezone, must_match", [(120, True), (60, True), (0, False)])
+async def test_filter_prs_merged_timezone(client, headers, timezone, must_match):
+    body = {
+        "date_from": "2017-07-08",
+        "date_to": "2017-07-10",
+        "timezone": timezone,
+        "account": 1,
+        "properties": [PullRequestProperty.MERGE_HAPPENED],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    assert response.status == 200
+    obj = json.loads((await response.read()).decode("utf-8"))
+    prs = PullRequestSet.from_dict(obj)  # type: PullRequestSet
+    matched = False
+    for pr in prs.data:
+        if pr.number == 467:  # merged 2017-07-08 01:37 GMT+2 = 2017-07-07 23:37 UTC
+            matched = True
+    assert matched == must_match
+
+
+@pytest.mark.parametrize("timezone, must_match", [(-7 * 60, False), (-8 * 60, True)])
+async def test_filter_prs_created_timezone(client, headers, timezone, must_match):
+    body = {
+        "date_from": "2017-07-15",
+        "date_to": "2017-07-16",
+        "timezone": timezone,
+        "account": 1,
+        "properties": [],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    assert response.status == 200
+    obj = json.loads((await response.read()).decode("utf-8"))
+    prs = PullRequestSet.from_dict(obj)  # type: PullRequestSet
+    matched = False
+    for pr in prs.data:
+        if pr.number == 485:  # created 2017-07-17 09:02 GMT+2 = 2017-07-17 07:02 UTC
+            matched = True
+    assert matched == must_match
 
 
 async def validate_prs_response(response: ClientResponse, props: Set[str]):
@@ -379,6 +424,7 @@ async def test_filter_commits_no_pr_merges_mcuadros(client, headers):
         "account": 1,
         "date_from": "2019-01-12",
         "date_to": "2020-02-22",
+        "timezone": 60,
         "in": ["{1}"],
         "property": "no_pr_merges",
         "with_author": ["github.com/mcuadros"],
@@ -478,6 +524,7 @@ async def test_filter_releases_by_tag(client, headers):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-01-12",
+        "timezone": 60,
         "in": ["{1}"],
     }
     response = await client.request(

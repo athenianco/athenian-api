@@ -48,7 +48,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     # are effectively discarded later in BinnedPullRequestMetricCalculator
     released_times = await load_cached_released_times(date_from, date_to, repos, cache)
     miner = await PullRequestTimesMiner.mine(
-        date_from, date_to, repos, release_settings, developers, db, cache,
+        date_from, date_to, time_from, time_to, repos, release_settings, developers, db, cache,
         pr_blacklist=released_times)
     mined_prs = list(miner)
     await store_cached_released_times(mined_prs, cache)

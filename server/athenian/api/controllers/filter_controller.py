@@ -184,7 +184,8 @@ async def _common_filter_preprocess(filt: Union[GenericFilterRequest,
             pointer=".date_from",
         ))
     filt.date_from = datetime.combine(filt.date_from, datetime.min.time(), tzinfo=timezone.utc)
-    filt.date_to = datetime.combine(filt.date_to, datetime.max.time(), tzinfo=timezone.utc)
+    filt.date_to = datetime.combine(
+        filt.date_to + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
     if filt.timezone is not None:
         tzoffset = timedelta(minutes=-filt.timezone)
         filt.date_from += tzoffset

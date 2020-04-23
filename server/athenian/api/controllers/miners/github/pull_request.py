@@ -159,7 +159,7 @@ class PullRequestMiner:
             prs.drop(pr_blacklist, inplace=True, errors="ignore")
             cls.log.info("PR blacklist cut the number of PRs from %d to %d", old_len, len(prs))
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
-        cls.truncate_timestamps(prs, time_to)
+        cls._truncate_timestamps(prs, time_to)
         node_ids = prs.index if len(prs) > 0 else set()
 
         async def fetch_reviews():
@@ -197,13 +197,6 @@ class PullRequestMiner:
         dfs = await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
             fetch_commits(), map_releases())
-        for df in dfs:
-            cls.truncate_timestamps(df, time_to)
-
-        # filter out PRs which were released before `time_from` and don't have any "important"
-        # events
-        cls._remove_spurious_prs(time_from, prs, *dfs)
-
         return [prs, *dfs]
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
@@ -231,6 +224,8 @@ class PullRequestMiner:
     async def mine(cls,
                    date_from: date,
                    date_to: date,
+                   time_from: datetime,
+                   time_to: datetime,
                    repositories: Collection[str],
                    release_settings: Dict[str, ReleaseMatchSetting],
                    developers: Collection[str],
@@ -243,14 +238,22 @@ class PullRequestMiner:
 
         :param date_from: Fetch PRs created starting from this date, inclusive.
         :param date_to: Fetch PRs created ending with this date, inclusive.
+        :param time_from: Precise timestamp of since when PR events are allowed to happen.
+        :param time_to: Precise timestamp of until when PR events are allowed to happen.
         :param repositories: PRs must belong to these repositories (prefix excluded).
         :param developers: PRs must be authored by these user IDs. An empty list means everybody.
         :param db: Metadata db instance.
         :param cache: memcached client to cache the collected data.
         :param pr_blacklist: completely ignore the existence of these PR node IDs.
         """
+        date_from_with_time = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+        date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
+        assert time_from >= date_from_with_time
+        assert time_to <= date_to_with_time
         dfs = await cls._mine(date_from, date_to, repositories, release_settings, developers,
                               db, cache, pr_blacklist=pr_blacklist)
+        if time_from != date_from_with_time or time_to != date_to_with_time:
+            cls._truncate_prs(dfs, time_from, time_to)
         return cls(*dfs)
 
     @staticmethod
@@ -270,8 +273,33 @@ class PullRequestMiner:
             index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
         return df
 
+    @classmethod
+    def _truncate_prs(cls, dfs: List[pd.DataFrame], time_from: datetime, time_to: datetime,
+                      ) -> None:
+        """
+        Remove PRs outside of the given time range.
+
+        This is used to correctly handle timezone offsets.
+        """
+        prs, releases = dfs[0], dfs[-1]
+        # filter out PRs which were released before `time_from`
+        unreleased = releases.index.take(np.where(
+            releases[Release.published_at.key] < time_from)[0])
+        # closed but not merged in `[date_from, time_from]`
+        unrejected = prs.index.take(np.where(
+            (prs[PullRequest.closed_at.key] < time_from) &
+            prs[PullRequest.merged_at.key].isnull())[0])
+        # created in `[time_to, date_to]`
+        uncreated = prs.index.take(np.where(
+            prs[PullRequest.created_at.key] >= time_to)[0])
+        to_remove = unreleased.union(unrejected.union(uncreated))
+        for df in dfs:
+            if not to_remove.empty:
+                df.drop(to_remove, inplace=True, errors="ignore")
+            cls._truncate_timestamps(df, time_to)
+
     @staticmethod
-    def truncate_timestamps(df: pd.DataFrame, upto: datetime):
+    def _truncate_timestamps(df: pd.DataFrame, upto: datetime):
         """Set all the timestamps after `upto` to NaT to avoid "future leakages"."""
         for col in df.select_dtypes(include=[object]):
             try:

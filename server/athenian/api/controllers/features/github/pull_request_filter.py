@@ -120,9 +120,6 @@ class PullRequestListMiner(PullRequestTimesMiner):
         times = super()._compile(pr)
         time_from = self.time_from
         time_to = min(self.time_to, datetime.now(timezone.utc))
-        if (times.released and times.released.best < time_from) or \
-                times.work_began.best >= time_to:
-            return None
         props = set()
         if times.released or (times.closed and not times.merged):
             props.add(Property.DONE)
@@ -226,7 +223,7 @@ async def filter_pull_requests(properties: Collection[Property],
     """
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     miner = await PullRequestListMiner.mine(
-        date_from, date_to, repos, release_settings,
+        date_from, date_to, time_from, time_to, repos, release_settings,
         participants.get(PullRequestParticipant.STATUS_AUTHOR, []), db, cache)
     miner.properties = properties
     miner.participants = participants
