@@ -70,8 +70,11 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     met.metrics = filt.metrics
     met.calculated = []
     # There should not be any new exception here so we don't have to catch ResponseError.
-    release_settings = \
-        await Settings.from_request(request, filt.account).list_release_matches(repos)
+    try:
+        release_settings = \
+            await Settings.from_request(request, filt.account).list_release_matches(repos)
+    except ResponseError as e:
+        return e.response
     for service, (repos, devs, for_set) in filters:
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics

@@ -210,7 +210,10 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     if not props:
         props = set(Property)
     participants = {ParticipationKind[k.upper()]: v for k, v in body.get("with", {}).items()}
-    settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
+    try:
+        settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
+    except ResponseError as e:
+        return e.response
     repos = [r.split("/", 1)[1] for r in repos]
     prs = await filter_pull_requests(props, filt.date_from, filt.date_to,
                                      repos, settings, participants, request.mdb, request.cache)
@@ -313,7 +316,10 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
     except ResponseError as e:
         return e.response
-    settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
+    try:
+        settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
+    except ResponseError as e:
+        return e.response
     repos = [r.split("/", 1)[1] for r in repos]
     async with request.mdb.connection() as conn:
         releases = await load_releases(repos, filt.date_from - timedelta(days=365), filt.date_to,
