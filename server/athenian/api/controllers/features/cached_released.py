@@ -31,7 +31,7 @@ async def load_cached_released_times(date_from: date,
 
     async def fetch_repo_days(repo_days: List[Tuple[str, datetime]],
                               ) -> Iterable[Tuple[str, str, PullRequestTimes]]:
-        cache_keys = [gen_cache_key("cached_released_times|%s|%d", repo, day.date().toordinal())
+        cache_keys = [gen_cache_key("cached_released_times|1|%s|%d", repo, day.date().toordinal())
                       for repo, day in repo_days]
         try:
             buffers = await cache.multi_get(*cache_keys)
@@ -76,7 +76,7 @@ async def store_cached_released_times(prs: Sequence[Tuple[Dict[str, Any], PullRe
                              day: date,
                              items: List[Tuple[str, str, PullRequestTimes]],
                              ) -> None:
-        cache_key = gen_cache_key("cached_released_times|%s|%d", repo, day.toordinal())
+        cache_key = gen_cache_key("cached_released_times|1|%s|%d", repo, day.toordinal())
         payload = pickle.dumps(items)
         try:
             if not await cache.touch(cache_key, exptime=max_exptime):
