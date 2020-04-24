@@ -239,7 +239,7 @@ async def _load_pr_releases_from_cache(prs: Iterable[str],
                                        release_settings: Dict[str, ReleaseMatchSetting],
                                        cache: aiomcache.Client) -> pd.DataFrame:
     batch_size = 32
-    df = _new_map_df()
+    records = []
     utc = timezone.utc
     keys = [gen_cache_key("release_github|%s|%s", pr, release_settings["github.com/" + repo])
             for pr, repo in zip(prs, pr_repos)]
@@ -250,7 +250,8 @@ async def _load_pr_releases_from_cache(prs: Iterable[str],
             continue
         released_at, released_by, released_url, repo = marshal.loads(val)
         released_at = datetime.fromtimestamp(released_at).replace(tzinfo=utc)
-        df.loc[key] = released_at, released_by, released_url, repo
+        records.append((key, released_at, released_by, released_url, repo))
+    df = _new_map_df(records)
     return df
 
 
@@ -619,7 +620,7 @@ async def _mine_monorepo_releases(
                         PushCommit.sha.in_(included_commits))),
             db, commit_df_columns)
         try:
-            previous_published_at = max(releases.loc[hash_to_release[n]][Release.published_at.key]
+            previous_published_at = max(releases.loc[hash_to_release[n], Release.published_at.key]
                                         for n in neighbours[sha] if n in hash_to_release)
         except ValueError:
             # no previous releases
