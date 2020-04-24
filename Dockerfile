@@ -62,7 +62,7 @@ lapack_libs = mkl_lapack95_lp64' > /root/.numpy-site.cfg && \
       libfftw3-3 libfftw3-dev gfortran libgfortran4 python3-dev gcc g++ && \
     export NPY_NUM_BUILD_JOBS=$(getconf _NPROCESSORS_ONLN) && \
     echo $NPY_NUM_BUILD_JOBS && \
-    pip3 $VERBOSE install --no-cache-dir numpy --no-binary numpy && \
+    pip3 $VERBOSE install --no-cache-dir numpy==1.18.3 --no-binary numpy && \
     apt-get remove -y libfftw3-dev gfortran python3-dev gcc g++ && \
     apt-get autoremove -y && \
     apt-get clean && \
@@ -70,10 +70,13 @@ lapack_libs = mkl_lapack95_lp64' > /root/.numpy-site.cfg && \
     rm -rf /usr/share/doc/*
 
 ADD server/requirements.txt /server/requirements.txt
+ADD databases.patch /databases.patch
 RUN apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends python3-dev gcc g++ && \
+    apt-get install -y --no-install-suggests --no-install-recommends python3-dev gcc g++ patch && \
     pip3 install --no-cache-dir -r /server/requirements.txt && \
-    apt-get remove -y python3-dev gcc g++ && \
+    patch /usr/local/lib/python*/dist-packages/databases/backends/postgres.py /databases.patch && \
+    rm /databases.patch && \
+    apt-get remove -y python3-dev gcc g++ patch && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
