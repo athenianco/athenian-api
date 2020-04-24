@@ -4,6 +4,9 @@ import json
 
 import dateutil.parser
 import pytest
+from sqlalchemy import insert
+
+from athenian.api.models.state.models import God
 
 
 async def test_get_user(client, headers):
@@ -69,7 +72,10 @@ async def test_get_users_rate_limit(xapp):
         assert u.email == "vadim@athenian.co"
 
 
-async def test_become(client, headers):
+async def test_become(client, headers, sdb):
+    await sdb.execute(insert(God).values(God(
+        user_id="auth0|5e1f6dfb57bc640ea390557b",
+    ).create_defaults().explode(with_primary_keys=True)))
     response = await client.request(
         method="GET", path="/v1/become?id=auth0|5e1f6e2e8bfa520ea5290741", headers=headers,
         json={},

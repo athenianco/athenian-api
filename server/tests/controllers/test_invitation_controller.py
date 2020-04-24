@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.controllers import invitation_controller
-from athenian.api.models.state.models import Account, Installation, Invitation, RepositorySet, \
-    UserAccount
+from athenian.api.models.state.models import Account, God, Installation, Invitation, \
+    RepositorySet, UserAccount
 
 
 async def test_empty_db_account_creation(client, headers, sdb):
@@ -282,6 +282,24 @@ async def test_check_invitation_malformed(client, headers):
     )
     body = json.loads((await response.read()).decode("utf-8"))
     assert body == {"valid": False}
+
+
+async def test_accept_invitation_god(client, headers, sdb):
+    await sdb.execute(insert(God).values(God(
+        user_id="auth0|5e1f6dfb57bc640ea390557b",
+        mapped_id="auth0|5e1f6e2e8bfa520ea5290741",
+    ).create_defaults().explode(with_primary_keys=True)))
+    iid = await sdb.execute(
+        insert(Invitation).values(Invitation(
+            salt=888, account_id=invitation_controller.admin_backdoor).create_defaults().explode(),
+        ))
+    body = {
+        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
+    }
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+    assert response.status == 403
 
 
 def test_encode_decode():
