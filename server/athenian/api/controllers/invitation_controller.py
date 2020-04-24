@@ -105,6 +105,10 @@ def decode_slug(slug: str) -> (int, int):
 
 async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Response:
     """Accept the membership invitation."""
+    if getattr(request, "god_id", None) is not None:
+        return ResponseError(ForbiddenError(
+            detail="You must not be a god to accept an invitation.")).response
+
     def bad_req():
         return ResponseError(BadRequestError(detail="Invalid invitation URL")).response
 
