@@ -59,4 +59,4 @@ async def test_load_store_cached_released_filters(pr_samples, cache):
         assert pr[0][PullRequest.repository_full_name.key] == "one"
         assert pr[0][PullRequest.user_login.key] == "xxx"
         assert load_value == pr[1]
-    assert len(loaded_prs) == 17
+    assert 16 <= len(loaded_prs) <= 17
