@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import aiosqlite
+import asyncpg
 import databases
 import numpy as np
 import pandas as pd
@@ -434,10 +435,14 @@ async def _fetch_commit_history_dag(commit_id: str,
     FROM
         commit_history;"""
     dag = {}
-    async for r in conn.iterate(query):
-        # parent-child matches github_node_commit_parents again
-        parent = r["child_oid"]
-        child = r["parent_oid"]
+    if isinstance(conn.raw_connection, asyncpg.connection.Connection):
+        # this works much faster then iterate() / fetch_all()
+        rows = await conn.raw_connection.fetch(query)
+    else:
+        rows = await conn.fetch_all(query)
+    for r in rows:
+        # reverse the order so that parent-child matches github_node_commit_parents again
+        child, parent = r
         try:
             dag[parent].append(child)
         except KeyError:
