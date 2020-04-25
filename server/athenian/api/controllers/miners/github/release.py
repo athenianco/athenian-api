@@ -433,17 +433,21 @@ async def _fetch_commit_history_dag(commit_id: str,
         child_oid
     FROM
         commit_history;"""
-    history = [(r["child_oid"], r["parent_oid"]) for r in await conn.fetch_all(query)]
-    # parent-child matches github_node_commit_parents again
-    try:
-        dag = {history[0][0]: []}
-    except IndexError:
+    dag = {}
+    async for r in conn.iterate(query):
+        # parent-child matches github_node_commit_parents again
+        parent = r["child_oid"]
+        child = r["parent_oid"]
+        try:
+            dag[parent].append(child)
+        except KeyError:
+            # first iteration
+            dag[parent] = [child]
+        dag.setdefault(child, [])
+    if not dag:
         # initial commit
         sha = await conn.fetch_val(select([PushCommit.sha]).where(PushCommit.node_id == commit_id))
         return {sha: []}
-    for p, c in history:
-        dag[p].append(c)
-        dag.setdefault(c, [])
     return dag
 
 
