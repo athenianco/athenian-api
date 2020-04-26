@@ -19,7 +19,7 @@ from sqlalchemy import and_, desc, distinct, func, select
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
 from athenian.api.cache import cached, gen_cache_key, max_exptime
-from athenian.api.controllers.miners.github.release_accelerated import traverse_history
+from athenian.api.controllers.miners.github.release_accelerated import update_history
 from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
 from athenian.api.models.metadata.github import Branch, PullRequest, PushCommit, Release, User
 from athenian.api.typing_utils import DatabaseLike
@@ -309,14 +309,13 @@ async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
                 repo_releases[Release.commit_id.key].values,
                 repo_releases[Release.sha.key].values)):
             if rel_sha in history:
-                traverse_history(history, rel_sha, rel_index, release_hashes)
+                update_history(history, rel_sha, rel_index, release_hashes)
                 continue
             dag = await _fetch_commit_history_dag(rel_commit_id, conn, cache)
             for c, edges in dag.items():
-                try:
-                    items = history[c]
-                except KeyError:
-                    history[c] = [rel_index] + edges
+                items = history.get(c)
+                if items is None:
+                    history[c] = [rel_index, *edges]
                     continue
                 items[0] = rel_index
                 for v in edges:
