@@ -6,17 +6,17 @@ from cpython.ref cimport PyObject
 from libcpp.vector cimport vector
 
 
-def traverse_history(history: dict,
+def update_history(history: dict,
+                   rel_sha: str,
+                   rel_index: int,
+                   release_hashes: set):
+    _update_history(history, rel_sha, rel_index, release_hashes)
+
+
+cdef _update_history(history: dict,
                      rel_sha: str,
                      rel_index: int,
                      release_hashes: set):
-    _traverse_history(history, rel_sha, rel_index, release_hashes)
-
-
-cdef _traverse_history(history: dict,
-                       rel_sha: str,
-                       rel_index: int,
-                       release_hashes: set):
     cdef vector[PyObject *] parents
     parents.push_back(<PyObject *>rel_sha)
     cdef str x, h
