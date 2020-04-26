@@ -76,7 +76,7 @@ RUN apt-get update && \
     pip3 install --no-cache-dir -r /server/requirements.txt && \
     patch /usr/local/lib/python*/dist-packages/databases/backends/postgres.py /databases.patch && \
     rm /databases.patch && \
-    apt-get remove -y python3-dev gcc g++ patch && \
+    apt-get remove -y patch && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

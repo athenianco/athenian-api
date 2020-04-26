@@ -1,6 +1,7 @@
 from importlib.machinery import SourceFileLoader
 import os
 
+from Cython.Build import cythonize
 from setuptools import find_packages, setup
 
 version = SourceFileLoader("version", "athenian/api/metadata.py").load_module()
@@ -21,6 +22,7 @@ setup(
     url="https://github.com/athenian/athenian-api",
     download_url="https://github.com/athenian/athenian-api",
     packages=find_packages(exclude=["tests"]),
+    ext_modules=cythonize("athenian/api/controllers/miners/github/release_accelerated.pyx"),
     namespace_packages=["athenian"],
     keywords=[],
     install_requires=[],
