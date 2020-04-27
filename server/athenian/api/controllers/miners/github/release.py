@@ -305,9 +305,10 @@ async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
     async def fetch_release_history(repo, repo_releases):
         histories[repo] = history = {}
         release_hashes = set(repo_releases[Release.sha.key].values)
-        for rel_index, (rel_commit_id, rel_sha) in enumerate(zip(
+        for rel_index, rel_commit_id, rel_sha in zip(
+                repo_releases.index.values,
                 repo_releases[Release.commit_id.key].values,
-                repo_releases[Release.sha.key].values)):
+                repo_releases[Release.sha.key].values):
             if rel_sha in history:
                 update_history(history, rel_sha, rel_index, release_hashes)
                 continue
