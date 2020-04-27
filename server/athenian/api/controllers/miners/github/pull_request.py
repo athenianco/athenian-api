@@ -66,10 +66,8 @@ class PullRequestMiner:
         self._commits = commits
         self._releases = releases
 
-    def _serialize_for_cache(dfs: List[pd.DataFrame],
-                             repositories: Set[str],
-                             developers: Set[str],
-                             ) -> memoryview:
+    def _serialize_for_cache(objs: Tuple[List[pd.DataFrame], Set[str], Set[str]]) -> memoryview:
+        dfs, repositories, developers = objs
         assert len(dfs) < 256
         buf = io.BytesIO()
         buf.close = lambda: None  # disable closing the buffer in to_pickle()
@@ -95,28 +93,28 @@ class PullRequestMiner:
         for beg, end in zip(offsets, offsets[1:]):
             df = pd.read_pickle(io.BytesIO(data[beg:end]))
             dfs.append(df)
-        return dfs[:-1], *dfs[-1]
+        return dfs[:-1], dfs[-1][0], dfs[-1][1]
 
     def _postprocess_cached_prs(result: Tuple[List[pd.DataFrame], Set[str], Set[str]],
                                 repositories: Collection[str],
                                 developers: Collection[str],
                                 pr_blacklist: Optional[Collection[str]] = None,
-                                **_) -> List[pd.DataFrame]:
-        cached_repositories, cached_developers = result[1:]
-        if set(repositories) - cached_developers:
+                                **_) -> Tuple[List[pd.DataFrame], Set[str], Set[str]]:
+        dfs, cached_repositories, cached_developers = result
+        if set(repositories) - cached_repositories:
             raise CancelCache()
         if cached_developers and (not developers or set(developers) - cached_developers):
             raise CancelCache()
         to_remove = set()
         if pr_blacklist:
             to_remove.update(pr_blacklist)
-        prs = result[0]
+        prs = dfs[0]
         pr_filter = prs[PullRequest.repository_full_name.key].isin(repositories)
         if len(developers) > 0:
             pr_filter &= prs[PullRequest.user_login.key].isin(developers)
         to_remove.update(prs.index.take(np.where(~pr_filter)[0]))
         if to_remove:
-            for df in result:
+            for df in dfs:
                 df.drop(to_remove, inplace=True, errors="ignore")
         return result
 
@@ -126,8 +124,7 @@ class PullRequestMiner:
         serialize=_serialize_for_cache,
         deserialize=_deserialize_from_cache,
         key=lambda date_from, date_to, repositories, developers, release_settings, **_: (
-            date_from.toordinal(), date_to.toordinal(),
-            release_settings,
+            date_from.toordinal(), date_to.toordinal(), release_settings,
         ),
         postprocess=_postprocess_cached_prs,
         version=2,
@@ -199,7 +196,8 @@ class PullRequestMiner:
 
         async def map_releases():
             merged_prs = prs[prs[PullRequest.merged_at.key] <= time_to]
-            return await map_prs_to_releases(merged_prs, time_to, release_settings, db, cache)
+            return await map_prs_to_releases(
+                merged_prs, time_from, time_to, release_settings, db, cache)
 
         dfs = await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
