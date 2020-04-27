@@ -83,6 +83,18 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
                 assert str(fv) == str(sv)
             else:
                 assert_frame_equal(fv.reset_index(), sv.reset_index())
+    # we still use the cache here
+    await PullRequestMiner.mine(
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
+        ["src-d/go-git"],
+        release_match_setting_tag,
+        ["mcuadros"],
+        None,
+        cache,
+    )
     if not with_memcached:
         cache_size = len(cache.mem)
         # check that the cache has not changed if we add some filters
@@ -99,6 +111,34 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
         ))
         assert len(cache.mem) == cache_size
         assert all(pr.pr[PullRequest.user_login.key] == "mcuadros" for pr in prs)
+
+
+async def test_pr_miner_iter_cache_incompatible(mdb, cache, release_match_setting_tag):
+    date_from = date(year=2015, month=1, day=1)
+    date_to = date(year=2020, month=1, day=1)
+    await PullRequestMiner.mine(
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
+        ["src-d/go-git"],
+        release_match_setting_tag,
+        [],
+        mdb,
+        cache,
+    )
+    with pytest.raises(AttributeError):
+        await PullRequestMiner.mine(
+            date_from,
+            date_to,
+            datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+            datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
+            ["src-d/gitbase"],
+            release_match_setting_tag,
+            [],
+            None,
+            cache,
+        )
 
 
 def validate_pull_request_times(prmeta: Dict[str, Any], prt: PullRequestTimes):

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict
 
 import pandas as pd
@@ -22,27 +22,34 @@ def generate_repo_settings(prs: pd.DataFrame) -> Dict[str, ReleaseMatchSetting]:
 async def test_map_prs_to_releases(mdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1126),
                                mdb, PullRequest, index=PullRequest.node_id.key)
-    for _ in range(2):
-        releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc),
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    time_from = time_to - timedelta(days=5 * 365)
+    for i in range(2):
+        releases = await map_prs_to_releases(prs, time_from, time_to,
                                              generate_repo_settings(prs), mdb, cache)
         assert len(cache.mem) > 0
-        assert len(releases) == 1
+        assert len(releases) == 1, str(i)
         assert releases.iloc[0][Release.published_at.key] == \
             pd.Timestamp("2019-06-18 22:57:34+0000", tzinfo=timezone.utc)
         assert releases.iloc[0][Release.author.key] == "mcuadros"
         assert releases.iloc[0][Release.url.key] == "https://github.com/src-d/go-git/releases/tag/v4.12.0"  # noqa
+    releases = await map_prs_to_releases(prs, time_to, time_to,
+                                         generate_repo_settings(prs), mdb, None)
+    assert len(releases) == 0
 
 
 async def test_map_prs_to_releases_empty(mdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1231),
                                mdb, PullRequest, index=PullRequest.node_id.key)
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    time_from = time_to - timedelta(days=5 * 365)
     for _ in range(2):
-        releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc),
+        releases = await map_prs_to_releases(prs, time_from, time_to,
                                              generate_repo_settings(prs), mdb, cache)
         assert len(cache.mem) == 0
         assert releases.empty
     prs = prs.iloc[:0]
-    releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc),
+    releases = await map_prs_to_releases(prs, time_from, time_to,
                                          generate_repo_settings(prs), mdb, cache)
     assert len(cache.mem) == 0
     assert releases.empty
@@ -95,7 +102,9 @@ async def test_map_prs_to_releases_smoke_metrics(mdb):
     ]
     prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                mdb, PullRequest, index=PullRequest.node_id.key)
-    releases = await map_prs_to_releases(prs, datetime.now(tz=timezone.utc),
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    time_from = time_to - timedelta(days=5 * 365)
+    releases = await map_prs_to_releases(prs, time_from, time_to,
                                          generate_repo_settings(prs), mdb, None)
     assert len(releases[Release.url.key].unique()) > 1
 

@@ -41,6 +41,7 @@ invitation_controller.ikey = "vadim"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
 override_mdb = os.getenv("OVERRIDE_MDB")
 override_sdb = os.getenv("OVERRIDE_SDB")
+override_memcached = os.getenv("OVERRIDE_MEMCACHED")
 
 
 class FakeCache:
@@ -90,7 +91,7 @@ def cache():
 
 @pytest.fixture(scope="function")
 def memcached(loop, request):
-    client = create_memcached("0.0.0.0:11211", logging.getLogger("pytest"))
+    client = create_memcached(override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
     trash = []
     set = client.set
 
@@ -113,7 +114,7 @@ def memcached(loop, request):
 
 
 def check_memcached():
-    client = create_memcached("0.0.0.0:11211", logging.getLogger("pytest"))
+    client = create_memcached(override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
 
     async def probe():
         try:

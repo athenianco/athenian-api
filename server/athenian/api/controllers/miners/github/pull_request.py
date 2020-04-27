@@ -4,8 +4,10 @@ from datetime import date, datetime, timezone
 from enum import Enum
 import io
 import logging
+import pickle
 import struct
-from typing import Any, Collection, Dict, Generator, Generic, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Collection, Dict, Generator, Generic, List, Optional, Set, Tuple, \
+    TypeVar, Union
 
 import aiomcache
 import databases
@@ -16,7 +18,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.cache import cached
+from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.github.hardcoded import BOTS
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
@@ -64,54 +66,55 @@ class PullRequestMiner:
         self._commits = commits
         self._releases = releases
 
-    def _serialize_for_cache(dfs: List[pd.DataFrame]) -> memoryview:
+    def _serialize_for_cache(objs: Tuple[List[pd.DataFrame], Set[str], Set[str]]) -> memoryview:
+        dfs, repositories, developers = objs
         assert len(dfs) < 256
         buf = io.BytesIO()
         buf.close = lambda: None  # disable closing the buffer in to_pickle()
         offsets = []
         for df in dfs:
-            # pickle works 2-3x faster for both serialization and deserialization on our data
+            # pickle works 2-3x faster than feather/arrow
+            # for both serialization and deserialization on our data
             df.to_pickle(buf)
             # tracking of the offsets is not really needed for pickles, but is required by feather
             # we don't use feather *yet* due to https://github.com/pandas-dev/pandas/issues/32587
-            # FIXME(vmarkovtsev): ^^^
             offsets.append(buf.tell())
+        pickle.dump((repositories, developers), buf)
+        offsets.append(buf.tell())
         buf.write(struct.pack("!" + "I" * len(offsets), *offsets))
         buf.write(struct.pack("!B", len(offsets)))
         return buf.getbuffer()
 
-    def _deserialize_from_cache(data: bytes) -> List[pd.DataFrame]:
+    def _deserialize_from_cache(data: bytes) -> Tuple[List[pd.DataFrame], Set[str], Set[str]]:
         data = memoryview(data)
         size = struct.unpack("!B", data[-1:])[0]
         offsets = (0,) + struct.unpack("!" + "I" * size, data[-size * 4 - 1:-1])
         dfs = []
         for beg, end in zip(offsets, offsets[1:]):
             df = pd.read_pickle(io.BytesIO(data[beg:end]))
-            # The following code recovers the index if it was discarded.
-            """
-            if "pull_request_node_id" in df.columns:
-                df.set_index(["pull_request_node_id", "node_id"], inplace=True)
-            else:
-                df.set_index("node_id", inplace=True)
-            """
             dfs.append(df)
-        return dfs
+        return dfs[:-1], dfs[-1][0], dfs[-1][1]
 
-    def _postprocess_cached_prs(result: List[pd.DataFrame],
+    def _postprocess_cached_prs(result: Tuple[List[pd.DataFrame], Set[str], Set[str]],
                                 repositories: Collection[str],
                                 developers: Collection[str],
                                 pr_blacklist: Optional[Collection[str]] = None,
-                                **_) -> List[pd.DataFrame]:
+                                **_) -> Tuple[List[pd.DataFrame], Set[str], Set[str]]:
+        dfs, cached_repositories, cached_developers = result
+        if set(repositories) - cached_repositories:
+            raise CancelCache()
+        if cached_developers and (not developers or set(developers) - cached_developers):
+            raise CancelCache()
         to_remove = set()
         if pr_blacklist:
             to_remove.update(pr_blacklist)
-        prs = result[0]
+        prs = dfs[0]
         pr_filter = prs[PullRequest.repository_full_name.key].isin(repositories)
         if len(developers) > 0:
             pr_filter &= prs[PullRequest.user_login.key].isin(developers)
         to_remove.update(prs.index.take(np.where(~pr_filter)[0]))
         if to_remove:
-            for df in result:
+            for df in dfs:
                 df.drop(to_remove, inplace=True, errors="ignore")
         return result
 
@@ -120,10 +123,11 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=_serialize_for_cache,
         deserialize=_deserialize_from_cache,
-        key=lambda date_from, date_to, release_settings, **_: (
+        key=lambda date_from, date_to, repositories, developers, release_settings, **_: (
             date_from.toordinal(), date_to.toordinal(), release_settings,
         ),
         postprocess=_postprocess_cached_prs,
+        version=2,
     )
     async def _mine(cls,
                     date_from: date,
@@ -134,7 +138,7 @@ class PullRequestMiner:
                     db: databases.Database,
                     cache: Optional[aiomcache.Client],
                     pr_blacklist: Optional[Collection[str]] = None,
-                    ) -> List[pd.DataFrame]:
+                    ) -> Tuple[List[pd.DataFrame], Set[str], Set[str]]:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
@@ -192,12 +196,13 @@ class PullRequestMiner:
 
         async def map_releases():
             merged_prs = prs[prs[PullRequest.merged_at.key] <= time_to]
-            return await map_prs_to_releases(merged_prs, time_to, release_settings, db, cache)
+            return await map_prs_to_releases(
+                merged_prs, time_from, time_to, release_settings, db, cache)
 
         dfs = await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
             fetch_commits(), map_releases())
-        return [prs, *dfs]
+        return [prs, *dfs], set(repositories), set(developers)
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
     _deserialize_from_cache = staticmethod(_deserialize_from_cache)
@@ -250,8 +255,8 @@ class PullRequestMiner:
         date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
-        dfs = await cls._mine(date_from, date_to, repositories, release_settings, developers,
-                              db, cache, pr_blacklist=pr_blacklist)
+        dfs, _, _ = await cls._mine(date_from, date_to, repositories, release_settings, developers,
+                                    db, cache, pr_blacklist=pr_blacklist)
         if time_from != date_from_with_time or time_to != date_to_with_time:
             cls._truncate_prs(dfs, time_from, time_to)
         return cls(*dfs)
