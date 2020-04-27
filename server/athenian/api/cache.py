@@ -18,6 +18,10 @@ pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
 max_exptime = 30 * 24 * 3600  # 30 days according to the docs
 
 
+class CancelCache(Exception):
+    """Raised in cached.postprocess() to indicate that the cache should be ignored."""
+
+
 def gen_cache_key(fmt: str, *args) -> bytes:
     """Compose a memcached-friendly cache key from a printf-like."""
     full_key = (fmt % args).encode()
@@ -95,13 +99,21 @@ def cached(exptime: Union[int, Callable[..., int]],
                     t = exptime(result=result, **args_dict) if callable(exptime) else exptime
                     if refresh_on_access:
                         await client.touch(cache_key, t)
+                    ignore = False
                     if postprocess is not None:
-                        result = postprocess(result=result, **args_dict)
-                    client.metrics["hits"].labels(__package__, __version__, full_name).inc()
-                    client.metrics["hit_latency"] \
-                        .labels(__package__, __version__, full_name) \
-                        .observe(time.time() - start_time)
-                    return result
+                        try:
+                            result = postprocess(result=result, **args_dict)
+                        except CancelCache:
+                            log.info("%s/%s was ignored", full_name, cache_key.decode())
+                            client.metrics["ignored"].labels(
+                                __package__, __version__, full_name).inc()
+                            ignore = True
+                    if not ignore:
+                        client.metrics["hits"].labels(__package__, __version__, full_name).inc()
+                        client.metrics["hit_latency"] \
+                            .labels(__package__, __version__, full_name) \
+                            .observe(time.time() - start_time)
+                        return result
             result = await func(*args, **kwargs)
             if client is not None:
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
@@ -148,6 +160,11 @@ def setup_cache_metrics(cache: Optional[aiomcache.Client], registry: CollectorRe
     cache.metrics = {
         "hits": Counter(
             "cache_hits", "Number of times the cache was useful",
+            ["app_name", "version", "func"],
+            registry=registry,
+        ),
+        "ignored": Counter(
+            "cache_ignored", "Number of times the cache was ignored",
             ["app_name", "version", "func"],
             registry=registry,
         ),
