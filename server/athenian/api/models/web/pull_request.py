@@ -3,7 +3,6 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
-from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
 from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.stage_timings import StageTimings
 
@@ -30,7 +29,6 @@ class PullRequest(Model):
         merged: Optional[datetime] = None,
         released: Optional[datetime] = None,
         release_url: Optional[str] = None,
-        stage: Optional[str] = None,
         stage_timings: Optional[StageTimings] = None,
         properties: Optional[List[str]] = None,
         participants: Optional[List[PullRequestParticipant]] = None,
@@ -53,7 +51,6 @@ class PullRequest(Model):
         :param merged: The merged of this PullRequest.
         :param released: The released of this PullRequest.
         :param release_url: The release URL of this PullRequest.
-        :param stage: The stage of this PullRequest.
         :param stage_timings: The stage timings of this PullRequest.
         :param properties: The properties of this PullRequest.
         :param participants: The participants of this PullRequest.
@@ -76,7 +73,6 @@ class PullRequest(Model):
             "merged": datetime,
             "released": datetime,
             "release_url": str,
-            "stage": str,
             "stage_timings": StageTimings,
             "properties": List[str],
             "participants": List[PullRequestParticipant],
@@ -100,7 +96,6 @@ class PullRequest(Model):
             "merged": "merged",
             "released": "released",
             "release_url": "release_url",
-            "stage": "stage",
             "stage_timings": "stage_timings",
             "properties": "properties",
             "participants": "participants",
@@ -123,7 +118,6 @@ class PullRequest(Model):
         self._merged = merged
         self._released = released
         self._release_url = release_url
-        self._stage = stage
         self._stage_timings = stage_timings
         self._properties = properties
         self._participants = participants
@@ -502,27 +496,6 @@ class PullRequest(Model):
         :param release_url: The release_url of this PullRequest.
         """
         self._release_url = release_url
-
-    @property
-    def stage(self) -> str:
-        """
-        Gets the modelled pipeline stage of this PullRequest.
-
-        :return: The stage of this PullRequest.
-        """
-        return self._stage
-
-    @stage.setter
-    def stage(self, stage: str):
-        """
-        Sets the modelled pipeline stage of this PullRequest.
-
-        :param stage: The stage of this PullRequest.
-        """
-        if stage not in PullRequestPipelineStage:
-            raise ValueError("Invalid stage: %s" % stage)
-
-        self._stage = stage
 
     @property
     def stage_timings(self) -> StageTimings:

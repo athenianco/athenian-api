@@ -154,6 +154,7 @@ async def test_filter_prs_single_prop(client, headers, prop, app, filter_prs_sin
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "account": 1,
+        "in": [],
         "properties": [prop],
     }
     response = await client.request(
@@ -167,6 +168,7 @@ async def test_filter_prs_all_properties(client, headers):
         "date_to": "2020-01-23",
         "timezone": 60,
         "account": 1,
+        "in": [],
         "properties": [],
     }
     response = await client.request(
@@ -185,6 +187,7 @@ async def test_filter_prs_merged_timezone(client, headers, timezone, must_match)
         "date_to": "2017-07-10",
         "timezone": timezone,
         "account": 1,
+        "in": [],
         "properties": [PullRequestProperty.MERGE_HAPPENED],
     }
     response = await client.request(
@@ -206,6 +209,7 @@ async def test_filter_prs_created_timezone(client, headers, timezone, must_match
         "date_to": "2017-07-16",
         "timezone": timezone,
         "account": 1,
+        "in": [],
         "properties": [],
     }
     response = await client.request(
@@ -221,8 +225,9 @@ async def test_filter_prs_created_timezone(client, headers, timezone, must_match
 
 
 async def validate_prs_response(response: ClientResponse, props: Set[str]):
-    assert response.status == 200
-    obj = json.loads((await response.read()).decode("utf-8"))
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    obj = json.loads(text)
     users = obj["include"]["users"]
     assert len(users) > 0
     assert len(obj["data"]) > 0
@@ -353,6 +358,7 @@ async def test_filter_prs_nasty_input(client, headers, account, date_to, code):
         "date_from": "2015-10-13",
         "date_to": date_to,
         "account": account,
+        "in": [],
         "properties": [],
     }
     response = await client.request(

@@ -2,7 +2,6 @@ from datetime import date
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.pull_request_pipeline_stage import PullRequestPipelineStage
 from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.pull_request_with import PullRequestWith
 
@@ -17,7 +16,6 @@ class FilterPullRequestsRequest(Model):
         date_to: Optional[date] = None,
         timezone: Optional[int] = None,
         in_: Optional[List[str]] = None,
-        stages: Optional[List[str]] = None,
         properties: Optional[List[str]] = None,
         with_: Optional[PullRequestWith] = None,
     ):
@@ -28,7 +26,6 @@ class FilterPullRequestsRequest(Model):
         :param date_to: The date_to of this FilterPullRequestsRequest.
         :param timezone: The timezone of this FilterPullRequestsRequest.
         :param in_: The in_ of this FilterPullRequestsRequest.
-        :param stages: The properties of this FilterPullRequestsRequest.
         :param properties: The properties of this FilterPullRequestsRequest.
         :param with_: The with_ of this FilterPullRequestsRequest.
         """
@@ -38,7 +35,6 @@ class FilterPullRequestsRequest(Model):
             "date_to": date,
             "timezone": int,
             "in_": List[str],
-            "stages": List[str],
             "properties": List[str],
             "with_": PullRequestWith,
         }
@@ -49,7 +45,6 @@ class FilterPullRequestsRequest(Model):
             "date_to": "date_to",
             "timezone": "timezone",
             "in_": "in",
-            "stages": "stages",
             "properties": "properties",
             "with_": "with",
         }
@@ -59,7 +54,6 @@ class FilterPullRequestsRequest(Model):
         self._date_to = date_to
         self._timezone = timezone
         self._in_ = in_
-        self._stages = stages
         self._properties = properties
         self._with_ = with_
 
@@ -162,31 +156,14 @@ class FilterPullRequestsRequest(Model):
 
     @in_.setter
     def in_(self, in_: List[str]):
-        """Sets the in_ of this FilterPullRequestsRequest.
+        """Sets the in of this FilterPullRequestsRequest.
 
-        :param in_: The in_ of this FilterPullRequestsRequest.
+        :param in_: The in of this FilterPullRequestsRequest.
         """
+        if in_ is None:
+            raise ValueError("Invalid value for `in`, must not be `None`")
+
         self._in_ = in_
-
-    @property
-    def stages(self) -> List[str]:
-        """Gets the properties of this FilterPullRequestsRequest.
-
-        :return: The properties of this FilterPullRequestsRequest.
-        """
-        return self._stages
-
-    @stages.setter
-    def stages(self, stages: List[str]):
-        """Sets the properties of this FilterPullRequestsRequest.
-
-        :param stages: The properties of this FilterPullRequestsRequest.
-        """
-        for stage in stages:
-            if stage not in PullRequestPipelineStage:
-                raise ValueError("Invalid stage: %s" % stage)
-
-        self._stages = stages
 
     @property
     def properties(self) -> List[str]:
