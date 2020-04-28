@@ -474,7 +474,7 @@ async def _fetch_commit_history_dag(commit_id: str,
                 rows = await conn.raw_connection.fetch(query)
                 break
             except asyncpg.InterfaceError:
-                continue
+                await asyncio.sleep(0)
     else:
         rows = await conn.fetch_all(query)
     for r in rows:
