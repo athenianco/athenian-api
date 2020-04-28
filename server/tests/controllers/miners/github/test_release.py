@@ -56,36 +56,34 @@ async def test_map_prs_to_releases_empty(mdb, cache):
 
 
 async def test_map_releases_to_prs(mdb, cache, release_match_setting_tag):
-    async with mdb.connection() as conn:
-        for _ in range(2):
-            prs = await map_releases_to_prs(
-                ["src-d/go-git"],
-                datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
-                datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-                release_match_setting_tag, conn, cache)
-            assert len(prs) == 7
-            assert (prs[PullRequest.merged_at.key] < pd.Timestamp(
-                "2019-07-31 00:00:00", tzinfo=timezone.utc)).all()
-            assert (prs[PullRequest.merged_at.key] > pd.Timestamp(
-                "2019-06-19 00:00:00", tzinfo=timezone.utc)).all()
+    for _ in range(2):
+        prs = await map_releases_to_prs(
+            ["src-d/go-git"],
+            datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
+            datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
+            release_match_setting_tag, mdb, cache)
+        assert len(prs) == 7
+        assert (prs[PullRequest.merged_at.key] < pd.Timestamp(
+            "2019-07-31 00:00:00", tzinfo=timezone.utc)).all()
+        assert (prs[PullRequest.merged_at.key] > pd.Timestamp(
+            "2019-06-19 00:00:00", tzinfo=timezone.utc)).all()
 
 
 async def test_map_releases_to_prs_empty(mdb, cache, release_match_setting_tag):
-    async with mdb.connection() as conn:
-        prs = await map_releases_to_prs(
-            ["src-d/go-git"],
-            datetime(year=2019, month=11, day=1, tzinfo=timezone.utc),
-            datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-            release_match_setting_tag, conn, cache)
-        assert prs.empty
-        assert len(cache.mem) == 0
-        prs = await map_releases_to_prs(
-            ["src-d/go-git"],
-            datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
-            datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-            release_match_setting_tag, conn, cache)
-        assert prs.empty
-        assert len(cache.mem) > 0
+    prs = await map_releases_to_prs(
+        ["src-d/go-git"],
+        datetime(year=2019, month=11, day=1, tzinfo=timezone.utc),
+        datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
+        release_match_setting_tag, mdb, cache)
+    assert prs.empty
+    assert len(cache.mem) == 0
+    prs = await map_releases_to_prs(
+        ["src-d/go-git"],
+        datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
+        datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
+        release_match_setting_tag, mdb, cache)
+    assert prs.empty
+    assert len(cache.mem) > 0
 
 
 async def test_map_prs_to_releases_smoke_metrics(mdb):
@@ -127,16 +125,15 @@ def check_branch_releases(releases: pd.DataFrame, n: int, date_from: datetime, d
 async def test_load_releases_branches(mdb, cache, branches):
     date_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
     date_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
-    async with mdb.connection() as conn:
-        releases = await load_releases(
-            ["src-d/go-git"],
-            date_from,
-            date_to,
-            {"github.com/src-d/go-git": ReleaseMatchSetting(
-                branches=branches, tags="", match=Match.branch)},
-            conn,
-            cache,
-        )
+    releases = await load_releases(
+        ["src-d/go-git"],
+        date_from,
+        date_to,
+        {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches=branches, tags="", match=Match.branch)},
+        mdb,
+        cache,
+    )
     check_branch_releases(releases, 240, date_from, date_to)
 
 
@@ -147,16 +144,15 @@ async def test_load_releases_branches(mdb, cache, branches):
 ])
 async def test_load_releases_tag_or_branch(mdb, cache, date_from, n):
     date_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
-    async with mdb.connection() as conn:
-        releases = await load_releases(
-            ["src-d/go-git"],
-            date_from,
-            date_to,
-            {"github.com/src-d/go-git": ReleaseMatchSetting(
-                branches="master", tags="", match=Match.tag_or_branch)},
-            conn,
-            cache,
-        )
+    releases = await load_releases(
+        ["src-d/go-git"],
+        date_from,
+        date_to,
+        {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="master", tags="", match=Match.tag_or_branch)},
+        mdb,
+        cache,
+    )
     if n > 1:
         check_branch_releases(releases, n, date_from, date_to)
     else:
@@ -166,44 +162,41 @@ async def test_load_releases_tag_or_branch(mdb, cache, date_from, n):
 async def test_load_releases_tag_or_branch_initial(mdb):
     date_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2015, month=10, day=22, tzinfo=timezone.utc)
-    async with mdb.connection() as conn:
-        releases = await load_releases(
-            ["src-d/go-git"],
-            date_from,
-            date_to,
-            {"github.com/src-d/go-git": ReleaseMatchSetting(
-                branches="master", tags="", match=Match.branch)},
-            conn,
-            None,
-        )
+    releases = await load_releases(
+        ["src-d/go-git"],
+        date_from,
+        date_to,
+        {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="master", tags="", match=Match.branch)},
+        mdb,
+        None,
+    )
     check_branch_releases(releases, 17, date_from, date_to)
 
 
 async def test_map_releases_to_prs_branches(mdb):
     date_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
-    async with mdb.connection() as conn:
-        prs = await map_releases_to_prs(
-            ["src-d/go-git"],
-            date_from,
-            date_to,
-            {"github.com/src-d/go-git": ReleaseMatchSetting(
-                branches="master", tags="", match=Match.branch)},
-            conn,
-            None)
-        assert prs.empty
+    prs = await map_releases_to_prs(
+        ["src-d/go-git"],
+        date_from,
+        date_to,
+        {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="master", tags="", match=Match.branch)},
+        mdb,
+        None)
+    assert prs.empty
 
 
 @pytest.mark.parametrize("repos", [["src-d/gitbase"], []])
 async def test_load_releases_empty(mdb, repos):
-    async with mdb.connection() as conn:
-        releases = await load_releases(
-            repos,
-            datetime(year=2020, month=6, day=30, tzinfo=timezone.utc),
-            datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
-            {"github.com/src-d/gitbase": ReleaseMatchSetting(
-                branches=".*", tags=".*", match=Match.branch)},
-            conn,
-            None,
-            index=Release.id.key)
-        assert releases.empty
+    releases = await load_releases(
+        repos,
+        datetime(year=2020, month=6, day=30, tzinfo=timezone.utc),
+        datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
+        {"github.com/src-d/gitbase": ReleaseMatchSetting(
+            branches=".*", tags=".*", match=Match.branch)},
+        mdb,
+        None,
+        index=Release.id.key)
+    assert releases.empty

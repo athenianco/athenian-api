@@ -32,7 +32,7 @@ async def load_releases(repos: Iterable[str],
                         time_from: datetime,
                         time_to: datetime,
                         settings: Dict[str, ReleaseMatchSetting],
-                        conn: databases.core.Connection,
+                        db: databases.Database,
                         cache: Optional[aiomcache.Client],
                         index: Optional[Union[str, Sequence[str]]] = None,
                         ) -> pd.DataFrame:
@@ -41,7 +41,7 @@ async def load_releases(repos: Iterable[str],
 
     :param repos: Repositories in which to search for releases *without the service prefix*.
     """
-    assert isinstance(conn, databases.core.Connection)
+    assert isinstance(db, databases.Database)
     repos_by_tag_only = []
     repos_by_tag_or_branch = []
     repos_by_branch = []
@@ -55,14 +55,18 @@ async def load_releases(repos: Iterable[str],
             repos_by_branch.append(repo)
     result = []
     if repos_by_tag_only:
-        result.append(await _match_releases_by_tag(
-            repos_by_tag_only, time_from, time_to, settings, conn))
+        result.append(_match_releases_by_tag(
+            repos_by_tag_only, time_from, time_to, settings, db))
     if repos_by_tag_or_branch:
-        result.append(await _match_releases_by_tag_or_branch(
-            repos_by_tag_or_branch, time_from, time_to, settings, conn, cache))
+        result.append(_match_releases_by_tag_or_branch(
+            repos_by_tag_or_branch, time_from, time_to, settings, db, cache))
     if repos_by_branch:
-        result.append(await _match_releases_by_branch(
-            repos_by_branch, time_from, time_to, settings, conn, cache))
+        result.append(_match_releases_by_branch(
+            repos_by_branch, time_from, time_to, settings, db, cache))
+    result = await asyncio.gather(*result, return_exceptions=True)
+    for r in result:
+        if isinstance(r, Exception):
+            raise r
     result = pd.concat(result) if result else pd.DataFrame()
     if len(result.columns) == 0:
         # can happen if no such repositories were found
@@ -79,7 +83,7 @@ async def _match_releases_by_tag_or_branch(repos: Iterable[str],
                                            time_from: datetime,
                                            time_to: datetime,
                                            settings: Dict[str, ReleaseMatchSetting],
-                                           conn: databases.core.Connection,
+                                           db: databases.Database,
                                            cache: Optional[aiomcache.Client],
                                            ) -> pd.DataFrame:
     probe = await read_sql_query(
@@ -89,16 +93,20 @@ async def _match_releases_by_tag_or_branch(repos: Iterable[str],
             time_from - tag_by_branch_probe_lookaround,
             time_to + tag_by_branch_probe_lookaround),
         )),
-        conn, [Release.repository_full_name.key])
+        db, [Release.repository_full_name.key])
     matched = []
     repos_by_tag = probe[Release.repository_full_name.key].values
     if repos_by_tag.size > 0:
-        matched.append(await _match_releases_by_tag(
-            repos_by_tag, time_from, time_to, settings, conn))
+        matched.append(_match_releases_by_tag(
+            repos_by_tag, time_from, time_to, settings, db))
     repos_by_branch = set(repos) - set(repos_by_tag)
     if repos_by_branch:
-        matched.append(await _match_releases_by_branch(
-            repos_by_branch, time_from, time_to, settings, conn, cache))
+        matched.append(_match_releases_by_branch(
+            repos_by_branch, time_from, time_to, settings, db, cache))
+    matched = await asyncio.gather(*matched, return_exceptions=True)
+    for m in matched:
+        if isinstance(m, Exception):
+            raise m
     return pd.concat(matched)
 
 
@@ -106,14 +114,14 @@ async def _match_releases_by_tag(repos: Iterable[str],
                                  time_from: datetime,
                                  time_to: datetime,
                                  settings: Dict[str, ReleaseMatchSetting],
-                                 conn: databases.core.Connection,
+                                 db: databases.Database,
                                  ) -> pd.DataFrame:
     releases = await read_sql_query(
         select([Release])
         .where(and_(Release.published_at.between(time_from, time_to),
                     Release.repository_full_name.in_(repos)))
         .order_by(desc(Release.published_at)),
-        conn, Release, index=[Release.repository_full_name.key, Release.tag.key])
+        db, Release, index=[Release.repository_full_name.key, Release.tag.key])
     releases = releases[~releases.index.duplicated(keep="first")]
     regexp_cache = {}
     matched = []
@@ -142,11 +150,11 @@ async def _match_releases_by_branch(repos: Iterable[str],
                                     time_from: datetime,
                                     time_to: datetime,
                                     settings: Dict[str, ReleaseMatchSetting],
-                                    conn: databases.core.Connection,
+                                    db: databases.Database,
                                     cache: Optional[aiomcache.Client],
                                     ) -> pd.DataFrame:
     branches = await read_sql_query(
-        select([Branch]).where(Branch.repository_full_name.in_(repos)), conn, Branch)
+        select([Branch]).where(Branch.repository_full_name.in_(repos)), db, Branch)
     regexp_cache = {}
     branches_matched = []
     log = logging.getLogger("%s.match_releases_by_branch" % metadata.__package__)
@@ -171,9 +179,19 @@ async def _match_releases_by_branch(repos: Iterable[str],
         return pd.DataFrame()
     branches_matched = pd.concat(branches_matched)
     merge_points_by_repo = defaultdict(set)
+
+    async def update_merge_points_by_repo(repo, commit_id):
+        async with db.connection() as conn:
+            merge_points_by_repo[repo].update(await _fetch_first_parents(commit_id, conn, cache))
+
+    update_tasks = []
     for repo, commit_id in zip(branches_matched[Branch.repository_full_name.key].values,
                                branches_matched[Branch.commit_id.key].values):
-        merge_points_by_repo[repo].update(await _fetch_first_parents(commit_id, conn, cache))
+        update_tasks.append(update_merge_points_by_repo(repo, commit_id))
+    errors = await asyncio.gather(*update_tasks, return_exceptions=True)
+    for e in errors:
+        if e is not None:
+            raise e
     pseudo_releases = []
 
     async def fetch_merge_commits(repo, merge_points):
@@ -182,7 +200,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
                 PushCommit.node_id.in_(merge_points),
                 PushCommit.committed_date.between(time_from, time_to)))
             .order_by(desc(PushCommit.commit_date)),
-            conn, PushCommit)
+            db, PushCommit)
         gh_merge = ((commits[PushCommit.committer_name.key] == "GitHub")
                     & (commits[PushCommit.committer_email.key] == "noreply@github.com"))
         commits[PushCommit.author_login.key].where(
@@ -216,23 +234,23 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               ) -> pd.DataFrame:
     """Match the merged pull requests to the nearest releases that include them."""
     assert isinstance(time_to, datetime)
+    assert isinstance(db, databases.Database)
     pr_releases = _new_map_df()
     if prs.empty:
         return pr_releases
     time_from = max(time_from, prs[PullRequest.merged_at.key].min() - timedelta(minutes=1))
-    async with db.connection() as conn:
-        repos = prs[PullRequest.repository_full_name.key].unique()
-        releases = await load_releases(repos, time_from, time_to, release_settings, conn, cache)
-        if cache is not None:
-            matched_bys = {
-                r: g.head(1).loc[0, matched_by_column] for r, g in releases[
-                    [Release.repository_full_name.key, matched_by_column]
-                ].groupby(Release.repository_full_name.key, sort=False, as_index=False)}
-            pr_releases.append(await _load_pr_releases_from_cache(
-                prs.index, prs[PullRequest.repository_full_name.key].values, matched_bys,
-                release_settings, cache))
-        merged_prs = prs[~prs.index.isin(pr_releases.index)]
-        missed_releases = await _map_prs_to_releases(merged_prs, releases, conn, cache)
+    repos = prs[PullRequest.repository_full_name.key].unique()
+    releases = await load_releases(repos, time_from, time_to, release_settings, db, cache)
+    if cache is not None:
+        matched_bys = {
+            r: g.head(1).loc[0, matched_by_column] for r, g in releases[
+                [Release.repository_full_name.key, matched_by_column]
+            ].groupby(Release.repository_full_name.key, sort=False, as_index=False)}
+        pr_releases.append(await _load_pr_releases_from_cache(
+            prs.index, prs[PullRequest.repository_full_name.key].values, matched_bys,
+            release_settings, cache))
+    merged_prs = prs[~prs.index.isin(pr_releases.index)]
+    missed_releases = await _map_prs_to_releases(merged_prs, releases, db, cache)
     if cache is not None:
         await _cache_pr_releases(missed_releases, release_settings, cache)
     return pr_releases.append(missed_releases)
@@ -278,11 +296,11 @@ async def _load_pr_releases_from_cache(prs: Iterable[str],
 
 async def _map_prs_to_releases(prs: pd.DataFrame,
                                releases: pd.DataFrame,
-                               conn: databases.core.Connection,
+                               db: databases.Database,
                                cache: Optional[aiomcache.Client],
                                ) -> pd.DataFrame:
     releases = dict(list(releases.groupby(Release.repository_full_name.key, sort=False)))
-    histories = await _fetch_release_histories(releases, conn, cache)
+    histories = await _fetch_release_histories(releases, db, cache)
     released_prs = []
     for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.key, sort=False):
         try:
@@ -312,7 +330,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
 
 
 async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
-                                   conn: databases.core.Connection,
+                                   db: databases.Database,
                                    cache: Optional[aiomcache.Client],
                                    ) -> Dict[str, Dict[str, List[str]]]:
     histories = {}
@@ -327,7 +345,8 @@ async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
             if rel_sha in history:
                 update_history(history, rel_sha, rel_index, release_hashes)
                 continue
-            dag = await _fetch_commit_history_dag(rel_commit_id, conn, cache)
+            async with db.connection() as conn:
+                dag = await _fetch_commit_history_dag(rel_commit_id, conn, cache)
             for c, edges in dag.items():
                 items = history.get(c)
                 if items is None:
@@ -372,6 +391,7 @@ async def _fetch_first_parents(commit_id: str,
                                cache: Optional[aiomcache.Client],
                                ) -> List[str]:
     # Git parent-child is reversed github_node_commit_parents' parent-child.
+    assert isinstance(conn, databases.core.Connection)
     quote = "`" if isinstance(conn.raw_connection, aiosqlite.core.Connection) else ""
     query = f"""
         WITH RECURSIVE commit_first_parents AS (
@@ -417,6 +437,7 @@ async def _fetch_commit_history_dag(commit_id: str,
     # That would speed up the things but then we'll not be able to cache it.
     # Credits: @dennwc
     # Git parent-child is reversed github_node_commit_parents' parent-child.
+    assert isinstance(conn, databases.core.Connection)
     query = f"""
     WITH RECURSIVE commit_history AS (
         SELECT
@@ -447,7 +468,13 @@ async def _fetch_commit_history_dag(commit_id: str,
     dag = {}
     if isinstance(conn.raw_connection, asyncpg.connection.Connection):
         # this works much faster then iterate() / fetch_all()
-        rows = await conn.raw_connection.fetch(query)
+        rows = []
+        while True:
+            try:
+                rows = await conn.raw_connection.fetch(query)
+                break
+            except asyncpg.InterfaceError:
+                continue
     else:
         rows = await conn.fetch_all(query)
     for r in rows:
@@ -486,6 +513,9 @@ async def _extract_released_commits(releases: pd.DataFrame,
                                     db: DatabaseLike,
                                     cache: Optional[aiomcache.Client],
                                     ) -> Tuple[Dict[str, List[str]], pd.DataFrame, Dict[str, str]]:
+    if isinstance(db, databases.Database):
+        async with db.connection() as conn:
+            return await _extract_released_commits(releases, time_boundary, conn, cache)
     resolved_releases = set()
     full_dag = {}
     hash_to_release = {h: rid for rid, h in zip(releases.index, releases[Release.sha.key].values)}
@@ -546,7 +576,7 @@ async def map_releases_to_prs(repos: Iterable[str],
                               time_from: datetime,
                               time_to: datetime,
                               release_settings: Dict[str, ReleaseMatchSetting],
-                              db: DatabaseLike,
+                              db: databases.Database,
                               cache: Optional[aiomcache.Client],
                               ) -> pd.DataFrame:
     """Find pull requests which were released between `time_from` and `time_to` but merged before \
@@ -556,26 +586,33 @@ async def map_releases_to_prs(repos: Iterable[str],
     """
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
+    assert isinstance(db, databases.Database)
     old_from = time_from - timedelta(days=365)  # find PRs not older than 365 days before time_from
     releases = await load_releases(
         repos, old_from, time_to, release_settings, db, cache, index=Release.id.key)
     prs = []
     for _, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
-        prs.append(await _find_old_released_prs(repo_releases, time_from, db, cache))
+        prs.append(_find_old_released_prs(repo_releases, time_from, db, cache))
     if prs:
+        prs = await asyncio.gather(*prs, return_exceptions=True)
+        for pr in prs:
+            if isinstance(pr, Exception):
+                raise pr
         return pd.concat(prs, sort=False)
     return pd.DataFrame()
 
 
 async def mine_releases(releases: pd.DataFrame,
                         time_boundary: datetime,
-                        db: DatabaseLike,
+                        db: databases.Database,
                         cache: Optional[aiomcache.Client]) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Collect details about each release published after `time_boundary` and calculate added \
     and deleted line statistics."""
-    miners = (_mine_monorepo_releases(repo_releases, time_boundary, db, cache)
-              for _, repo_releases in releases.groupby(Release.repository_full_name.key,
-                                                       sort=False))
+    assert isinstance(db, databases.Database)
+    miners = (
+        _mine_monorepo_releases(repo_releases, time_boundary, db, cache)
+        for _, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False)
+    )
     stats = await asyncio.gather(*miners, return_exceptions=True)
     for s in stats:
         if isinstance(s, BaseException):
