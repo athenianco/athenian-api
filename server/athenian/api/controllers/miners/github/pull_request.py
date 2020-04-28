@@ -151,13 +151,12 @@ class PullRequestMiner:
         ]
         if len(developers) > 0:
             filters.append(PullRequest.user_login.in_(developers))
-        async with db.connection() as conn:
-            prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                       conn, PullRequest, index=PullRequest.node_id.key)
-            released_prs = await map_releases_to_prs(
-                repositories, time_from, time_to, release_settings, conn, cache)
-            prs = pd.concat([prs, released_prs], sort=False)
-            prs = prs[~prs.index.duplicated()]
+        prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
+                                   db, PullRequest, index=PullRequest.node_id.key)
+        released_prs = await map_releases_to_prs(
+            repositories, time_from, time_to, release_settings, db, cache)
+        prs = pd.concat([prs, released_prs], sort=False)
+        prs = prs[~prs.index.duplicated()]
         if pr_blacklist:
             old_len = len(prs)
             prs.drop(pr_blacklist, inplace=True, errors="ignore")

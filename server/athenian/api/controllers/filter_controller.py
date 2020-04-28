@@ -321,11 +321,10 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     except ResponseError as e:
         return e.response
     repos = [r.split("/", 1)[1] for r in repos]
-    async with request.mdb.connection() as conn:
-        releases = await load_releases(repos, filt.date_from - timedelta(days=365), filt.date_to,
-                                       settings, conn, request.cache, index=Release.id.key)
-        stats, avatars = await mine_releases(releases, filt.date_from, conn, request.cache)
-        data = [FilteredRelease(**items) for _, items in stats.iterrows()]
+    releases = await load_releases(repos, filt.date_from - timedelta(days=365), filt.date_to,
+                                   settings, request.mdb, request.cache, index=Release.id.key)
+    stats, avatars = await mine_releases(releases, filt.date_from, request.mdb, request.cache)
+    data = [FilteredRelease(**items) for _, items in stats.iterrows()]
     model = FilteredReleases(data=data, include=IncludedNativeUsers(users={
         u: IncludedNativeUser(avatar=a) for u, a in zip(avatars[User.login.key].values,
                                                         avatars[User.avatar_url.key].values)}))
