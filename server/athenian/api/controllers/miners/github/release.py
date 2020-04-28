@@ -245,7 +245,9 @@ async def map_prs_to_releases(prs: pd.DataFrame,
         matched_bys = {
             r: g.head(1).loc[0, matched_by_column] for r, g in releases[
                 [Release.repository_full_name.key, matched_by_column]
-            ].groupby(Release.repository_full_name.key, sort=False, as_index=False)}
+            ].groupby(Release.repository_full_name.key, sort=False, as_index=False)
+            if len(g) > 0
+        }
         pr_releases.append(await _load_pr_releases_from_cache(
             prs.index, prs[PullRequest.repository_full_name.key].values, matched_bys,
             release_settings, cache))
