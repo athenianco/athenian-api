@@ -337,6 +337,8 @@ async def test_calc_metrics_prs_ratio_flow(client, headers):
         flow, opened, closed = v.values
         if opened is not None:
             assert flow is not None
+        else:
+            opened = 0
         if flow is None:
             assert closed is None
             continue

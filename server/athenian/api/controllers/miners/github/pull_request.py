@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass
+import dataclasses
 from datetime import date, datetime, timezone
 from enum import Enum
 import io
@@ -28,7 +28,7 @@ from athenian.api.models.metadata.github import Base, PullRequest, PullRequestCo
     Release
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class MinedPullRequest:
     """All the relevant information we are able to load from the metadata DB about a PR.
 
@@ -442,7 +442,7 @@ class Fallback(Generic[T]):
 DT = Union[pd.Timestamp, datetime, None]
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class PullRequestTimes:
     """Various PR update timestamps."""
 
@@ -470,7 +470,16 @@ class PullRequestTimes:
 
     def __str__(self) -> str:
         """Format for human-readability."""
-        return "{\n\t%s\n}" % ",\n\t".join("%s: %s" % (k, v.best) for k, v in vars(self).items())
+        return "{\n\t%s\n}" % ",\n\t".join(
+            "%s: %s" % (k, v.best) for k, v in dataclasses.asdict(self).items())
+
+    def __lt__(self, other: "PullRequestTimes") -> bool:
+        """Order by `work_began`."""
+        return self.work_began.best < other.work_began.best
+
+    def __hash__(self) -> int:
+        """Implement hash()."""
+        return hash(str(self))
 
 
 class ReviewResolution(Enum):
