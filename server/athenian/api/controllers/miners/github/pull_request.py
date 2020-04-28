@@ -257,8 +257,7 @@ class PullRequestMiner:
         assert time_to <= date_to_with_time
         dfs, _, _ = await cls._mine(date_from, date_to, repositories, release_settings, developers,
                                     db, cache, pr_blacklist=pr_blacklist)
-        if time_from != date_from_with_time or time_to != date_to_with_time:
-            cls._truncate_prs(dfs, time_from, time_to)
+        cls._truncate_prs(dfs, time_from, time_to)
         return cls(*dfs)
 
     @staticmethod
@@ -308,11 +307,11 @@ class PullRequestMiner:
         """Set all the timestamps after `upto` to NaT to avoid "future leakages"."""
         for col in df.select_dtypes(include=[object]):
             try:
-                df[df[col] > upto, col] = pd.NaT
+                df.loc[df[col] > upto, col] = pd.NaT
             except TypeError:
                 continue
         for col in df.select_dtypes(include=["datetime"]):
-            df[df[col] > upto, col] = pd.NaT
+            df.loc[df[col] > upto, col] = pd.NaT
 
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""

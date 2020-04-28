@@ -166,6 +166,10 @@ class PullRequestListMiner(PullRequestTimesMiner):
             if prop in props:
                 stage_timings[stage] = self._calcs[stage].analyze(
                     times, no_time_from, bumped_time_to, override_event_time=time_to)
+        updated_at = pr.pr[PullRequest.updated_at.key]
+        if updated_at != updated_at:
+            # can happen after timestamp truncation
+            updated_at = times.max_timestamp()
         return PullRequestListItem(
             repository=prefix + pr.pr[PullRequest.repository_full_name.key],
             number=pr.pr[PullRequest.number.key],
@@ -174,7 +178,7 @@ class PullRequestListMiner(PullRequestTimesMiner):
             size_removed=pr.pr[PullRequest.deletions.key],
             files_changed=pr.pr[PullRequest.changed_files.key],
             created=pr.pr[PullRequest.created_at.key],
-            updated=pr.pr[PullRequest.updated_at.key],
+            updated=updated_at,
             closed=times.closed.best,
             comments=len(pr.comments),
             commits=len(pr.commits),
