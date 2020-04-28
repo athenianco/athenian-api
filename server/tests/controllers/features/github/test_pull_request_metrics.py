@@ -7,11 +7,11 @@ import pytest
 
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request import BinnedPullRequestMetricCalculator
-from athenian.api.controllers.features.github.pull_request_metrics import ClosedCalculator, \
-    FlowRatioCalculator, LeadCounter, LeadTimeCalculator, MergedCalculator, MergingCounter, \
-    MergingTimeCalculator, OpenedCalculator, ReleaseCounter, ReleaseTimeCalculator, \
-    ReviewCounter, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, WorkInProgressCounter, \
-    WorkInProgressTimeCalculator
+from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
+    ClosedCalculator, CycleCounter, FlowRatioCalculator, LeadCounter, LeadTimeCalculator, \
+    MergedCalculator, MergingCounter, MergingTimeCalculator, OpenedCalculator, ReleaseCounter, \
+    ReleaseTimeCalculator, ReviewCounter, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
+    WorkInProgressCounter, WorkInProgressTimeCalculator
 from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestTimes, \
     PullRequestTimesMiner
 from athenian.api.models.web import Granularity, PullRequestMetricID
@@ -79,11 +79,11 @@ def test_pull_request_metrics_float_binned(pr_samples, cls):  # noqa: F811
     binned = BinnedPullRequestMetricCalculator([cls()], time_intervals)
     result = binned(pr_samples(1000))
     # the last interval is null and that's intended
-    for m in result[:-1]:
-        assert m[0].exists
-        assert m[0].value > 1
-        assert m[0].confidence_min is None
-        assert m[0].confidence_max is None
+    for i, m in enumerate(result[:-1]):
+        assert m[0].exists, str(i)
+        assert m[0].value > 1, str(i)
+        assert m[0].confidence_min is None, str(i)
+        assert m[0].confidence_max is None, str(i)
 
 
 def test_pull_request_opened_no(pr_samples):  # noqa: F811
@@ -152,9 +152,13 @@ def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
                           MergingCounter,
                           ReleaseCounter,
                           LeadCounter,
+                          CycleCounter,
+                          AllCounter,
                           ])
 def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
     calc = cls()
+    if isinstance(calc, AllCounter):
+        calc.calc = calc
     nones = nonones = 0
     for pr in pr_samples(1000):
         time_to = datetime.now(tz=timezone.utc)
@@ -167,7 +171,7 @@ def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
         else:
             assert delta == 0
             nones += 1
-    if cls is not WorkInProgressCounter:
+    if cls not in (WorkInProgressCounter, CycleCounter, AllCounter):
         assert nones > 0
     assert nonones > 0
 
@@ -190,4 +194,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
         assert await PullRequestTimesMiner._mine.reset_cache(
             None, date_from, date_to, ["src-d/go-git"], release_match_setting_tag, [], mdb, cache)
     metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
-    assert metrics1 == metrics2
+    assert metrics1.exists and metrics2.exists
+    assert metrics1.value == metrics2.value
+    assert metrics1.confidence_score() == metrics2.confidence_score()
+    assert metrics1.confidence_min < metrics1.value < metrics1.confidence_max

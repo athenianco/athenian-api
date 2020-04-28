@@ -190,6 +190,24 @@ class CycleCounter(PullRequestCounter):
     calc_cls = CycleTimeCalculator
 
 
+@register(PullRequestMetricID.PR_ALL_COUNT)
+class AllCounter(PullRequestSumMetricCalculator[int]):
+    """Count all the PRs that are active in the given time interval."""
+
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[int]:
+        """Calculate the actual state update."""
+        cut_before_released = (
+            times.work_began.best < min_time and times.released and times.released.best < min_time
+        )
+        cut_before_rejected = (
+            times.work_began.best < min_time and times.closed and not times.merged
+            and times.closed.best < min_time
+        )
+        cut_after = times.work_began.best >= max_time
+        return int(not (cut_before_released or cut_before_rejected or cut_after))
+
+
 @register(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME)
 class WaitFirstReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
     """Elapsed time between requesting the review for the first time and getting it."""

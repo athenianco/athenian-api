@@ -159,16 +159,19 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
         borders = self.time_intervals
         calcs = self.calcs
         bins = [[] for _ in borders[:-1]]
-        items = sorted(items, key=lambda x: x.created.best)
+        items = sorted(items)
         pos = 0
         for item in items:
-            while pos < len(borders) - 1 and item.created.best > borders[pos + 1]:
+            while pos < len(borders) - 1 and item.work_began.best > borders[pos + 1]:
                 pos += 1
             endpoint = item.max_timestamp()
-            span = pos
-            while span < len(bins) and endpoint > borders[span]:
-                bins[span].append(item)
-                span += 1
+            if endpoint <= borders[0]:
+                bins[0].append(item)
+            else:
+                span = pos
+                while span < len(bins) and endpoint > borders[span]:
+                    bins[span].append(item)
+                    span += 1
         result = []
         for bin, time_from, time_to in zip(bins, borders, borders[1:]):
             for item in bin:

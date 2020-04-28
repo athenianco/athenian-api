@@ -1029,6 +1029,7 @@ components:
         * `pr-lead-count`: number of PRs used to calculate `pr-lead-time`. It should be the same as `pr-release-count`.
         * `pr-cycle-time`: Cycle Time - sum of correspodning `pr-wip-time`, `pr-review-time`, `pr-merging-time`, and `pr-release-time`.
         * `pr-cycle-count`: number of PRs used to calculate `pr-cycle-time`. It equals to the overall number of PRs observed in the given time window.
+        * `pr-all-count`: equals to the sum of `pr-cycle-count` with the number of PRs which are still not done on the specified time interval but don't have any stage-changing events. This metric should be exactly the same as the number of PRs returned by `/filter/prs`.
         * `pr-wait-first-review`: average time of waiting for the first review.
         * `pr-wait-first-review-count`: number of PRs used to calculate `pr-wait-first-review`. Note: this is *not* the same as the number of PRs waiting for the first review.
         * `pr-flow-ratio`: ratio of opened to closed PRs.
@@ -1049,6 +1050,7 @@ components:
       - pr-lead-count
       - pr-cycle-time
       - pr-cycle-count
+      - pr-all-count
       - pr-wait-first-review
       - pr-wait-first-review-count
       - pr-flow-ratio

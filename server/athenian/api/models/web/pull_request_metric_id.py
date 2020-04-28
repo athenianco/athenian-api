@@ -16,6 +16,7 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_LEAD_COUNT = "pr-lead-count"
     PR_CYCLE_TIME = "pr-cycle-time"
     PR_CYCLE_COUNT = "pr-cycle-count"
+    PR_ALL_COUNT = "pr-all-count"
     PR_FLOW_RATIO = "pr-flow-ratio"
     PR_OPENED = "pr-opened"
     PR_MERGED = "pr-merged"
