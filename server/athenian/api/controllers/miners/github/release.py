@@ -468,13 +468,8 @@ async def _fetch_commit_history_dag(commit_id: str,
     dag = {}
     if isinstance(conn.raw_connection, asyncpg.connection.Connection):
         # this works much faster then iterate() / fetch_all()
-        rows = []
-        while True:
-            try:
-                rows = await conn.raw_connection.fetch(query)
-                break
-            except asyncpg.InterfaceError:
-                await asyncio.sleep(0)
+        async with conn._query_lock:
+            rows = await conn.raw_connection.fetch(query)
     else:
         rows = await conn.fetch_all(query)
     for r in rows:
