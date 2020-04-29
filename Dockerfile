@@ -1,4 +1,4 @@
-FROM ubuntu:19.10
+FROM ubuntu:20.04
 
 ENV BROWSER=/browser \
     LC_ALL=en_US.UTF-8
@@ -62,7 +62,7 @@ lapack_libs = mkl_lapack95_lp64' > /root/.numpy-site.cfg && \
       libfftw3-3 libfftw3-dev gfortran libgfortran4 python3-dev gcc g++ && \
     export NPY_NUM_BUILD_JOBS=$(getconf _NPROCESSORS_ONLN) && \
     echo $NPY_NUM_BUILD_JOBS && \
-    pip3 $VERBOSE install --no-cache-dir numpy==1.18.3 --no-binary numpy && \
+    pip3 $VERBOSE install --no-cache-dir scipy==1.2.1 numpy==1.18.3 --no-binary numpy && \
     apt-get remove -y libfftw3-dev gfortran python3-dev gcc g++ && \
     apt-get autoremove -y && \
     apt-get clean && \
