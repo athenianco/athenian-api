@@ -298,7 +298,9 @@ class PullRequestMiner:
         to_remove = unreleased.union(unrejected.union(uncreated))
         for df in dfs:
             if not to_remove.empty:
-                df.drop(to_remove, inplace=True, errors="ignore")
+                df.drop(to_remove,
+                        level=0 if isinstance(df.index, pd.MultiIndex) else None,
+                        inplace=True, errors="ignore")
             cls._truncate_timestamps(df, time_to)
 
     @staticmethod
