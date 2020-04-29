@@ -308,6 +308,13 @@ def _new_map_df(data=None) -> pd.DataFrame:
     return pd.DataFrame.from_records(data, columns=[index_name] + columns, index=index_name)
 
 
+def _gen_released_pr_cache_key(pr_id: str,
+                               repo: str,
+                               release_settings: Dict[str, ReleaseMatchSetting],
+                               ) -> bytes:
+    return gen_cache_key("release_github|4|%s|%s", pr_id, release_settings["github.com/" + repo])
+
+
 async def _load_pr_releases_from_cache(prs: Iterable[str],
                                        pr_repos: Iterable[str],
                                        matched_bys: Dict[str, int],
@@ -316,7 +323,7 @@ async def _load_pr_releases_from_cache(prs: Iterable[str],
     batch_size = 32
     records = []
     utc = timezone.utc
-    keys = [gen_cache_key("release_github|4|%s|%s", pr, release_settings["github.com/" + repo])
+    keys = [_gen_released_pr_cache_key(pr, repo, release_settings)
             for pr, repo in zip(prs, pr_repos)]
     for key, val in zip(keys, chain.from_iterable(
             [await cache.multi_get(*(k for _, k in g))
@@ -407,12 +414,12 @@ async def _cache_pr_releases(releases: pd.DataFrame,
                              release_settings: Dict[str, ReleaseMatchSetting],
                              cache: aiomcache.Client) -> None:
     mt = max_exptime
-    for id, released_at, released_by, release_url, repo, matched_by in zip(
+    for pr_id, released_at, released_by, release_url, repo, matched_by in zip(
             releases.index, releases[Release.published_at.key],
             releases[Release.author.key].values, releases[Release.url.key].values,
             releases[Release.repository_full_name.key].values,
             releases[matched_by_column].values):
-        key = gen_cache_key("release_github|4|%s|%s", id, release_settings["github.com/" + repo])
+        key = _gen_released_pr_cache_key(pr_id, repo, release_settings)
         t = released_at.timestamp(), released_by, release_url, repo, int(matched_by)
         await cache.set(key, marshal.dumps(t), exptime=mt)
 
