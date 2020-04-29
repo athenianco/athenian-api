@@ -316,7 +316,7 @@ async def _load_pr_releases_from_cache(prs: Iterable[str],
     batch_size = 32
     records = []
     utc = timezone.utc
-    keys = [gen_cache_key("release_github|3|%s|%s", pr, release_settings["github.com/" + repo])
+    keys = [gen_cache_key("release_github|4|%s|%s", pr, release_settings["github.com/" + repo])
             for pr, repo in zip(prs, pr_repos)]
     for key, val in zip(keys, chain.from_iterable(
             [await cache.multi_get(*(k for _, k in g))
@@ -412,7 +412,7 @@ async def _cache_pr_releases(releases: pd.DataFrame,
             releases[Release.author.key].values, releases[Release.url.key].values,
             releases[Release.repository_full_name.key].values,
             releases[matched_by_column].values):
-        key = gen_cache_key("release_github|3|%s|%s", id, release_settings["github.com/" + repo])
+        key = gen_cache_key("release_github|4|%s|%s", id, release_settings["github.com/" + repo])
         t = released_at.timestamp(), released_by, release_url, repo, int(matched_by)
         await cache.set(key, marshal.dumps(t), exptime=mt)
 

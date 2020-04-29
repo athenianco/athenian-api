@@ -127,7 +127,7 @@ class PullRequestMiner:
             date_from.toordinal(), date_to.toordinal(), release_settings,
         ),
         postprocess=_postprocess_cached_prs,
-        version=2,
+        version=3,
     )
     async def _mine(cls,
                     date_from: date,
