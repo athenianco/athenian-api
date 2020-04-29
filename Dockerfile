@@ -59,7 +59,7 @@ mkl_libs = mkl_rt\n\
 lapack_libs = mkl_lapack95_lp64' > /root/.numpy-site.cfg && \
     apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends \
-      libfftw3-3 libfftw3-dev gfortran libgfortran4 python3-dev gcc g++ && \
+      libfftw3-3 libfftw3-dev gfortran libgfortran5 python3-dev gcc g++ && \
     export NPY_NUM_BUILD_JOBS=$(getconf _NPROCESSORS_ONLN) && \
     echo $NPY_NUM_BUILD_JOBS && \
     pip3 $VERBOSE install --no-cache-dir scipy==1.2.1 numpy==1.18.3 --no-binary numpy && \
