@@ -15,6 +15,10 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
 from athenian.api.models.metadata.github import PullRequest
 
 
+def _gen_released_times_cache_key(repo: str, day: date):
+    return gen_cache_key("cached_released_times|2|%s|%d", repo, day.toordinal())
+
+
 async def load_cached_released_times(date_from: date,
                                      date_to: date,
                                      repos: Collection[str],
@@ -31,8 +35,7 @@ async def load_cached_released_times(date_from: date,
 
     async def fetch_repo_days(repo_days: List[Tuple[str, datetime]],
                               ) -> Iterable[Tuple[str, str, PullRequestTimes]]:
-        cache_keys = [gen_cache_key("cached_released_times|1|%s|%d", repo, day.date().toordinal())
-                      for repo, day in repo_days]
+        cache_keys = [_gen_released_times_cache_key(repo, day.date()) for repo, day in repo_days]
         try:
             buffers = await cache.multi_get(*cache_keys)
         except aiomcache.exceptions.ClientException:
@@ -76,7 +79,7 @@ async def store_cached_released_times(prs: Sequence[Tuple[Dict[str, Any], PullRe
                              day: date,
                              items: List[Tuple[str, str, PullRequestTimes]],
                              ) -> None:
-        cache_key = gen_cache_key("cached_released_times|1|%s|%d", repo, day.toordinal())
+        cache_key = _gen_released_times_cache_key(repo, day)
         payload = pickle.dumps(items)
         try:
             if not await cache.touch(cache_key, exptime=max_exptime):
