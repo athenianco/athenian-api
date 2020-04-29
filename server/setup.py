@@ -1,8 +1,11 @@
 from importlib.machinery import SourceFileLoader
 import os
 
-from Cython.Build import cythonize
 from setuptools import find_packages, setup
+# The following import has to stay after imports from `setuptools`:
+# - https://stackoverflow.com/questions/21594925/
+#     error-each-element-of-ext-modules-option-must-be-an-extension-instance-or-2-t
+from Cython.Build import cythonize  # noqa: I100
 
 version = SourceFileLoader("version", "athenian/api/metadata.py").load_module()
 
