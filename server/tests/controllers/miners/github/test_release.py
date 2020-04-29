@@ -19,7 +19,7 @@ def generate_repo_settings(prs: pd.DataFrame) -> Dict[str, ReleaseMatchSetting]:
     }
 
 
-async def test_map_prs_to_releases(mdb, cache):
+async def test_map_prs_to_releases_cache(mdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1126),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
@@ -35,7 +35,9 @@ async def test_map_prs_to_releases(mdb, cache):
         assert releases.iloc[0][Release.url.key] == "https://github.com/src-d/go-git/releases/tag/v4.12.0"  # noqa
     releases = await map_prs_to_releases(prs, time_to, time_to,
                                          generate_repo_settings(prs), mdb, None)
-    assert len(releases) == 0
+    # the PR was merged and released in the past, we must detect that
+    assert len(releases) == 1
+    assert releases.iloc[0][Release.url.key] == "https://github.com/src-d/go-git/releases/tag/v4.12.0"  # noqa
 
 
 async def test_map_prs_to_releases_empty(mdb, cache):

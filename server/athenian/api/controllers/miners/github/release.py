@@ -73,6 +73,8 @@ async def load_releases(repos: Iterable[str],
         result = pd.DataFrame(columns=[c.name for c in Release.__table__.columns])
     if index is not None:
         result.set_index(index, inplace=True)
+    else:
+        result.reset_index(drop=True, inplace=True)
     return result
 
 
@@ -180,14 +182,24 @@ async def _match_releases_by_branch(repos: Iterable[str],
     branches_matched = pd.concat(branches_matched)
     merge_points_by_repo = defaultdict(set)
 
-    async def update_merge_points_by_repo(repo, commit_id):
+    async def update_merge_points_by_repo(repo, commit_id, branch_name):
+        mp = merge_points_by_repo[repo]
         async with db.connection() as conn:
-            merge_points_by_repo[repo].update(await _fetch_first_parents(commit_id, conn, cache))
+            mp.update(await _fetch_first_parents(commit_id, conn, cache))
+            rows = await conn.fetch_all(select([PullRequest.merge_commit_id]).where(and_(
+                PullRequest.repository_full_name == repo,
+                PullRequest.base_ref == branch_name,
+                PullRequest.merged_at.between(time_from, time_to),
+            )))
+            mp.update(r[0] for r in rows)
 
     update_tasks = []
-    for repo, commit_id in zip(branches_matched[Branch.repository_full_name.key].values,
-                               branches_matched[Branch.commit_id.key].values):
-        update_tasks.append(update_merge_points_by_repo(repo, commit_id))
+    for repo, commit_id, branch_name in zip(
+            branches_matched[Branch.repository_full_name.key].values,
+            branches_matched[Branch.commit_id.key].values,
+            branches_matched[Branch.branch_name.key].values,
+    ):
+        update_tasks.append(update_merge_points_by_repo(repo, commit_id, branch_name))
     errors = await asyncio.gather(*update_tasks, return_exceptions=True)
     for e in errors:
         if e is not None:
@@ -238,16 +250,31 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     pr_releases = _new_map_df()
     if prs.empty:
         return pr_releases
-    time_from = max(time_from, prs[PullRequest.merged_at.key].min() - timedelta(minutes=1))
     repos = prs[PullRequest.repository_full_name.key].unique()
-    releases = await load_releases(repos, time_from, time_to, release_settings, db, cache)
+    earliest_merge = prs[PullRequest.merged_at.key].min() - timedelta(minutes=1)
+    if earliest_merge >= time_from:
+        releases = await load_releases(
+            repos, earliest_merge, time_to, release_settings, db, cache)
+    else:
+        # we have to load releases in two separate batches: before and after time_from
+        # that's because the release strategy can change depending on the time range
+        # see ENG-710 and ENG-725
+        releases_new = await load_releases(repos, time_from, time_to, release_settings, db, cache)
+        matched_bys = _extract_matched_bys_from_releases(releases_new)
+        # these matching rules must be applied in the past to stay consistent
+        consistent_release_settings = {}
+        for k, setting in release_settings.items():
+            consistent_release_settings[k] = ReleaseMatchSetting(
+                tags=setting.tags,
+                branches=setting.branches,
+                match=Match(matched_bys.get(k.split("/", 1)[1], setting.match)),
+            )
+        releases_old = await load_releases(
+            repos, earliest_merge, time_from, consistent_release_settings, db, cache)
+        releases = pd.concat([releases_new, releases_old])
+        releases.reset_index(drop=True, inplace=True)
     if cache is not None:
-        matched_bys = {
-            r: g.head(1).loc[0, matched_by_column] for r, g in releases[
-                [Release.repository_full_name.key, matched_by_column]
-            ].groupby(Release.repository_full_name.key, sort=False, as_index=False)
-            if len(g) > 0
-        }
+        matched_bys = _extract_matched_bys_from_releases(releases)
         pr_releases.append(await _load_pr_releases_from_cache(
             prs.index, prs[PullRequest.repository_full_name.key].values, matched_bys,
             release_settings, cache))
@@ -256,6 +283,15 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     if cache is not None:
         await _cache_pr_releases(missed_releases, release_settings, cache)
     return pr_releases.append(missed_releases)
+
+
+def _extract_matched_bys_from_releases(releases: pd.DataFrame) -> dict:
+    return {
+        r: g.head(1).iat[0, 1] for r, g in releases[
+            [Release.repository_full_name.key, matched_by_column]
+        ].groupby(Release.repository_full_name.key, sort=False, as_index=False)
+        if len(g) > 0
+    }
 
 
 index_name = "pull_request_node_id"
