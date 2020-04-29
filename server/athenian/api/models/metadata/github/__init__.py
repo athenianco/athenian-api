@@ -237,6 +237,7 @@ class PullRequest(Base,
     htmlurl = Column(Text)
     labels = Column(ARRAY(Text()))
     maintainer_can_modify = Column(Boolean)
+    merge_commit_id = Column(Text)
     merge_commit_sha = Column(Text)
     mergeable = Column(Text)
     merged = Column(Boolean)
