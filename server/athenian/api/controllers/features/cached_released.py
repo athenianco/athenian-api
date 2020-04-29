@@ -20,7 +20,7 @@ def _gen_released_times_cache_key(repo: str,
                                   day: date,
                                   release_settings: Dict[str, ReleaseMatchSetting],
                                   ) -> bytes:
-    return gen_cache_key("cached_released_times|3|%s|%d|%s",
+    return gen_cache_key("cached_released_times|4|%s|%d|%s",
                          repo,
                          day.toordinal(),
                          release_settings["github.com/" + repo])

@@ -312,7 +312,7 @@ def _gen_released_pr_cache_key(pr_id: str,
                                repo: str,
                                release_settings: Dict[str, ReleaseMatchSetting],
                                ) -> bytes:
-    return gen_cache_key("release_github|4|%s|%s", pr_id, release_settings["github.com/" + repo])
+    return gen_cache_key("release_github|6|%s|%s", pr_id, release_settings["github.com/" + repo])
 
 
 async def _load_pr_releases_from_cache(prs: Iterable[str],
@@ -430,6 +430,7 @@ async def _cache_pr_releases(releases: pd.DataFrame,
     deserialize=marshal.loads,
     key=lambda commit_id, **_: (commit_id,),
     refresh_on_access=True,
+    version=2,
 )
 async def _fetch_first_parents(commit_id: str,
                                conn: databases.core.Connection,
