@@ -12,17 +12,25 @@ from dateutil.rrule import DAILY, rrule
 from athenian.api import metadata
 from athenian.api.cache import gen_cache_key, max_exptime
 from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
+from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest
 
 
-def _gen_released_times_cache_key(repo: str, day: date):
-    return gen_cache_key("cached_released_times|2|%s|%d", repo, day.toordinal())
+def _gen_released_times_cache_key(repo: str,
+                                  day: date,
+                                  release_settings: Dict[str, ReleaseMatchSetting],
+                                  ) -> bytes:
+    return gen_cache_key("cached_released_times|3|%s|%d|%s",
+                         repo,
+                         day.toordinal(),
+                         release_settings["github.com/" + repo])
 
 
 async def load_cached_released_times(date_from: date,
                                      date_to: date,
                                      repos: Collection[str],
                                      developers: Collection[str],
+                                     release_settings: Dict[str, ReleaseMatchSetting],
                                      cache: Optional[aiomcache.Client],
                                      ) -> Dict[str, PullRequestTimes]:
     """Fetch PullRequestTimes of the cached released PRs."""
@@ -35,7 +43,8 @@ async def load_cached_released_times(date_from: date,
 
     async def fetch_repo_days(repo_days: List[Tuple[str, datetime]],
                               ) -> Iterable[Tuple[str, str, PullRequestTimes]]:
-        cache_keys = [_gen_released_times_cache_key(repo, day.date()) for repo, day in repo_days]
+        cache_keys = [_gen_released_times_cache_key(repo, day.date(), release_settings)
+                      for repo, day in repo_days]
         try:
             buffers = await cache.multi_get(*cache_keys)
         except aiomcache.exceptions.ClientException:
@@ -61,6 +70,7 @@ async def load_cached_released_times(date_from: date,
 
 
 async def store_cached_released_times(prs: Sequence[Tuple[Dict[str, Any], PullRequestTimes]],
+                                      release_settings: Dict[str, ReleaseMatchSetting],
                                       cache: Optional[aiomcache.Client],
                                       ) -> None:
     """Put the PullRequestTimes belonging to released PRs to the cache."""
@@ -79,7 +89,7 @@ async def store_cached_released_times(prs: Sequence[Tuple[Dict[str, Any], PullRe
                              day: date,
                              items: List[Tuple[str, str, PullRequestTimes]],
                              ) -> None:
-        cache_key = _gen_released_times_cache_key(repo, day)
+        cache_key = _gen_released_times_cache_key(repo, day, release_settings)
         payload = pickle.dumps(items)
         try:
             if not await cache.touch(cache_key, exptime=max_exptime):
@@ -92,4 +102,8 @@ async def store_cached_released_times(prs: Sequence[Tuple[Dict[str, Any], PullRe
              for (day, rdt) in days.items()]
     chunk_size = 128
     for i in range(0, len(tasks), chunk_size):
-        await asyncio.gather(*tasks[i:i + chunk_size], return_exceptions=True)
+        errors = await asyncio.gather(*tasks[i:i + chunk_size], return_exceptions=True)
+        if any(errors):
+            for e in errors:
+                if e is not None:
+                    raise e
