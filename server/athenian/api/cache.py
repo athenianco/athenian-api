@@ -95,42 +95,54 @@ def cached(exptime: Union[int, Callable[..., int]],
                     log.exception("Failed to fetch cached %s/%s", full_name, cache_key.decode())
                     buffer = None
                 if buffer is not None:
-                    result = deserialize(buffer)
-                    t = exptime(result=result, **args_dict) if callable(exptime) else exptime
-                    if refresh_on_access:
-                        await client.touch(cache_key, t)
-                    ignore = False
-                    if postprocess is not None:
-                        try:
-                            result = postprocess(result=result, **args_dict)
-                        except CancelCache:
-                            log.info("%s/%s was ignored", full_name, cache_key.decode())
-                            client.metrics["ignored"].labels(
-                                __package__, __version__, full_name).inc()
-                            ignore = True
-                    if not ignore:
-                        client.metrics["hits"].labels(__package__, __version__, full_name).inc()
-                        client.metrics["hit_latency"] \
-                            .labels(__package__, __version__, full_name) \
-                            .observe(time.time() - start_time)
-                        return result
+                    try:
+                        result = deserialize(buffer)
+                    except Exception as e:
+                        log.error("Failed to deserialize cached %s/%s: %s: %s",
+                                  full_name, cache_key.decode(), type(e).__name__, e)
+                    else:
+                        t = exptime(result=result, **args_dict) if callable(exptime) else exptime
+                        if refresh_on_access:
+                            await client.touch(cache_key, t)
+                        ignore = False
+                        if postprocess is not None:
+                            try:
+                                result = postprocess(result=result, **args_dict)
+                            except CancelCache:
+                                log.info("%s/%s was ignored", full_name, cache_key.decode())
+                                client.metrics["ignored"].labels(
+                                    __package__, __version__, full_name).inc()
+                                ignore = True
+                        if not ignore:
+                            client.metrics["hits"] \
+                                .labels(__package__, __version__, full_name) \
+                                .inc()
+                            client.metrics["hit_latency"] \
+                                .labels(__package__, __version__, full_name) \
+                                .observe(time.time() - start_time)
+                            return result
             result = await func(*args, **kwargs)
             if client is not None:
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
-                payload = serialize(result)
                 try:
-                    await client.set(cache_key, payload, exptime=t)
-                except aiomcache.exceptions.ClientException:
-                    log.exception("Failed to put %d bytes in memcached for %s/%s",
-                                  len(payload), full_name, cache_key.decode())
+                    payload = serialize(result)
+                except Exception as e:
+                    log.error("Failed to serialize %s/%s: %s: %s",
+                              full_name, cache_key.decode(), type(e).__name__, e)
                 else:
-                    client.metrics["misses"].labels(__package__, __version__, full_name).inc()
-                    client.metrics["miss_latency"] \
-                        .labels(__package__, __version__, full_name) \
-                        .observe(time.time() - start_time)
-                    client.metrics["size"] \
-                        .labels(__package__, __version__, full_name) \
-                        .observe(len(payload))
+                    try:
+                        await client.set(cache_key, payload, exptime=t)
+                    except aiomcache.exceptions.ClientException:
+                        log.exception("Failed to put %d bytes in memcached for %s/%s",
+                                      len(payload), full_name, cache_key.decode())
+                    else:
+                        client.metrics["misses"].labels(__package__, __version__, full_name).inc()
+                        client.metrics["miss_latency"] \
+                            .labels(__package__, __version__, full_name) \
+                            .observe(time.time() - start_time)
+                        client.metrics["size"] \
+                            .labels(__package__, __version__, full_name) \
+                            .observe(len(payload))
             return result
 
         async def reset_cache(*args, **kwargs) -> bool:

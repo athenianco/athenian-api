@@ -1,5 +1,6 @@
 import asyncio
 import marshal
+import pickle
 from typing import Optional
 
 import aiomcache
@@ -57,3 +58,31 @@ async def test_cached(memcached):
     await asyncio.sleep(1)
     assert await add_one(inc_evaluated, 1, memcached) == 2
     assert evaluated == 2
+
+
+async def test_cache_serialization_errors(cache):
+    def crash(*_):
+        raise ValueError
+
+    @cached(
+        exptime=1,
+        serialize=crash,
+        deserialize=pickle.loads,
+        key=lambda **_: tuple(),
+    )
+    async def test(cache):
+        return 1
+
+    await test(cache)
+
+    @cached(
+        exptime=1,
+        serialize=pickle.dumps,
+        deserialize=crash,
+        key=lambda **_: tuple(),
+    )
+    async def test(cache):
+        return 1
+
+    await test(cache)
+    await test(cache)
