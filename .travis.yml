@@ -133,10 +133,14 @@ matrix:
     - if: branch = master AND type != pull_request AND commit_message =~ /^Bump version/
       stage: main
       name: Deploy
+      install:
+        - curl -sL https://sentry.io/get-cli/ | bash
       script:
         - set -e
         - version_file=server/athenian/api/metadata.py
         - current_version=$(grep __version__ $version_file | cut -d\" -f2)
+        - sentry-cli releases new -p $SENTRY_PROJECT $current_version
+        - sentry-cli releases set-commits --auto $current_version
         - export IMAGE=${GOOGLE_DOCKER_IMAGE}:$current_version
         - make gcloud-login
         - docker load -i $HOME/docker/images.tar || true
@@ -146,6 +150,7 @@ matrix:
         - make pubsub-publish
         - docker tag $IMAGE ${GOOGLE_DOCKER_IMAGE}
         - IMAGE=${GOOGLE_DOCKER_IMAGE} make docker-push
+        - sentry-cli releases finalize $current_version
         - set +e
 
 notifications:
