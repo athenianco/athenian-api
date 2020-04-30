@@ -23,6 +23,7 @@ The server requires:
 - `ATHENIAN_INVITATION_URL_PREFIX` environment variable which specifies the invitation URL beginning.
 - Accessible PostgreSQL endpoint with the metadata.
 - Accessible PostgreSQL endpoint with the server state.
+- Accessible PostgreSQL endpoint with the precomputed objects.
 - Exposing the configured HTTP port outside.
 
 ### Configuration
@@ -40,3 +41,8 @@ No configuration files are required.
 ### State
 
 The server's state such as user settings, etc., is stored in a SQL database specified with `--state-db`.
+Besides, the state implicitly depends on the cache (`--memcached`) and the precomputed objects (`--precomputed-db`).
+So running a sparkling clean and fresh API server requires:
+
+- Wiping the state DB and the precomputed objects DB.
+- Re-launching memcached.

@@ -174,9 +174,10 @@ def headers() -> Dict[str, str]:
 
 
 @pytest.fixture(scope="function")
-async def app(metadata_db, state_db) -> AthenianApp:
+async def app(metadata_db, state_db, precomputed_db) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
-    return AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, ui=False, auth0_cls=TestAuth0)
+    return AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, pdb_conn=precomputed_db,
+                       ui=False, auth0_cls=TestAuth0)
 
 
 @pytest.fixture(scope="function")
@@ -243,6 +244,11 @@ def state_db() -> str:
 
 
 @pytest.fixture(scope="function")
+def precomputed_db() -> str:
+    return "sqlite://"
+
+
+@pytest.fixture(scope="function")
 async def mdb(metadata_db, loop):
     db = databases.Database(metadata_db)
     await db.connect()
@@ -252,5 +258,12 @@ async def mdb(metadata_db, loop):
 @pytest.fixture(scope="function")
 async def sdb(state_db, loop):
     db = databases.Database(state_db)
+    await db.connect()
+    return db
+
+
+@pytest.fixture(scope="function")
+async def pdb(precomputed_db, loop):
+    db = databases.Database(precomputed_db)
     await db.connect()
     return db

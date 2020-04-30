@@ -74,13 +74,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="0.0.0.0", help="HTTP server host.")
     parser.add_argument("--port", type=int, default=8080, help="HTTP server port.")
     parser.add_argument("--metadata-db",
-                        default="postgresql://postgres:postgres@0.0.0.0:5432/postgres",
+                        default="postgresql://postgres:postgres@0.0.0.0:5432/metadata",
                         help="Metadata (GitHub events, etc.) DB connection string in SQLAlchemy "
                              "format. This DB is readonly.")
     parser.add_argument("--state-db",
-                        default="postgresql://postgres:postgres@0.0.0.0:5432/postgres",
+                        default="postgresql://postgres:postgres@0.0.0.0:5432/state",
                         help="Server state (user settings, etc.) DB connection string in "
                              "SQLAlchemy format. This DB is read/write.")
+    parser.add_argument("--precomputed-db",
+                        default="postgresql://postgres:postgres@0.0.0.0:5432/precomputed",
+                        help="Precomputed objects augmenting the metadata DB and reducing "
+                             "the amount of online work. DB connection string in SQLAlchemy "
+                             "format. This DB is read/write.")
     parser.add_argument("--memcached", required=False,
                         help="memcached (users profiles, preprocessed metadata cache) address, "
                              "for example, 0.0.0.0:11211")
@@ -131,17 +136,26 @@ class AthenianApp(connexion.AioHttpApp):
 
     log = logging.getLogger(__package__)
 
-    def __init__(self, mdb_conn: str, sdb_conn: str, ui: bool,
-                 mdb_options: Optional[dict] = None, sdb_options: Optional[dict] = None,
-                 auth0_cls=Auth0, cache: Optional[aiomcache.Client] = None):
+    def __init__(self,
+                 mdb_conn: str,
+                 sdb_conn: str,
+                 pdb_conn: str,
+                 ui: bool,
+                 mdb_options: Optional[dict] = None,
+                 sdb_options: Optional[dict] = None,
+                 pdb_options: Optional[dict] = None,
+                 auth0_cls=Auth0,
+                 cache: Optional[aiomcache.Client] = None):
         """
         Initialize the underlying connexion -> aiohttp application.
 
         :param mdb_conn: SQLAlchemy connection string for the readonly metadata DB.
         :param sdb_conn: SQLAlchemy connection string for the writeable server state DB.
+        :param pdb_conn: SQLAlchemy connection string for the writeable precomputed objects DB.
         :param ui: Value indicating whether to enable the Swagger/OpenAPI UI at host:port/v*/ui.
         :param mdb_options: Extra databases.Database() kwargs for the metadata DB.
         :param sdb_options: Extra databases.Database() kwargs for the state DB.
+        :param pdb_options: Extra databases.Database() kwargs for the precomputed objects DB.
         :param auth0_cls: Injected authorization class, simplifies unit testing.
         :param cache: memcached client for caching auxiliary data.
         """
@@ -185,7 +199,7 @@ class AthenianApp(connexion.AioHttpApp):
             self.app.router.add_get("/", index_redirect)
         self._enable_cors()
         self._cache = cache
-        self.mdb = self.sdb = None  # type: Optional[databases.Database]
+        self.mdb = self.sdb = self.pdb = None  # type: Optional[databases.Database]
 
         async def connect_to_db(name: str, shortcut: str, db_conn: str, db_options: dict):
             try:
@@ -200,11 +214,15 @@ class AthenianApp(connexion.AioHttpApp):
             setattr(self, shortcut, measure_db_overhead(db, shortcut, self.app))
 
         self.app.on_shutdown.append(self.shutdown)
-        # Schedule the DB connections
-        self._mdb_future = asyncio.ensure_future(connect_to_db(
-            "metadata", "mdb", mdb_conn, mdb_options))
-        self._sdb_future = asyncio.ensure_future(connect_to_db(
-            "state", "sdb", sdb_conn, sdb_options))
+        # schedule the DB connections when the server starts
+        self._db_futures = {
+            args[1]: asyncio.ensure_future(connect_to_db(*args))
+            for args in (
+                ("metadata", "mdb", mdb_conn, mdb_options),
+                ("state", "sdb", sdb_conn, sdb_options),
+                ("precomputed", "pdb", pdb_conn, pdb_options),
+            )
+        }
         self.server_name = socket.getfqdn()
         node_name = os.getenv("NODE_NAME")
         if node_name is not None:
@@ -215,18 +233,11 @@ class AthenianApp(connexion.AioHttpApp):
         if not self._shutting_down:
             self.log.warning("Shutting down disgracefully")
         await self._auth0.close()
-        try:
-            self._mdb_future.cancel()
-        except AttributeError:
-            pass
-        if self.mdb is not None:
-            await self.mdb.disconnect()
-        try:
-            self._sdb_future.cancel()
-        except AttributeError:
-            pass
-        if self.sdb is not None:
-            await self.sdb.disconnect()
+        for f in self._db_futures.values():
+            f.cancel()
+        for db in (self.mdb, self.sdb, self.pdb):
+            if db is not None:
+                await db.disconnect()
         if self._cache is not None:
             await self._cache.close()
 
@@ -238,16 +249,13 @@ class AthenianApp(connexion.AioHttpApp):
     @aiohttp.web.middleware
     async def with_db(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
         """Add "mdb" and "sdb" attributes to every incoming request."""
-        if self.mdb is None:
-            await self._mdb_future
-            assert self.mdb is not None
-            del self._mdb_future
-        if self.sdb is None:
-            await self._sdb_future
-            assert self.sdb is not None
-            del self._sdb_future
-        request.mdb = self.mdb
-        request.sdb = self.sdb
+        for db in ("mdb", "sdb", "pdb"):
+            if getattr(self, db) is None:
+                await self._db_futures[db]
+                del self._db_futures[db]
+                assert getattr(self, db) is not None
+            # we can access them through `request.app.*db` but these are shorter to write
+            setattr(request, db, getattr(self, db))
         if request.headers.get("Cache-Control") != "no-cache":
             request.cache = self._cache
         else:
@@ -413,8 +421,8 @@ def main():
     check_schema_version(args.state_db, log)
     cache = create_memcached(args.memcached, log)
     auth0_cls = create_auth0_factory(args.force_default_user)
-    app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db, ui=args.ui,
-                      auth0_cls=auth0_cls, cache=cache)
+    app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db,
+                      pdb_conn=args.precomputed_db, ui=args.ui, auth0_cls=auth0_cls, cache=cache)
     app.run(host=args.host, port=args.port, use_default_access_log=True, handle_signals=False,
             print=lambda s: log.info("\n" + s))
     return app
