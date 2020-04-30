@@ -135,7 +135,8 @@ class PullRequestListMiner(PullRequestTimesMiner):
             props.add(Property.CREATED)
         if (pr.commits[PullRequestCommit.committed_date.key] > time_from).any():
             props.add(Property.COMMIT_HAPPENED)
-        if (pr.reviews[PullRequestReview.submitted_at.key] > time_from).any():
+        if ((pr.reviews[PullRequestReview.submitted_at.key] > time_from)
+                & (pr.reviews[PullRequestReview.user_login.key] != author)).any():
             props.add(Property.REVIEW_HAPPENED)
         if times.first_review_request.value is not None and \
                 times.first_review_request.value > time_from:
