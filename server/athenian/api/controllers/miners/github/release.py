@@ -430,7 +430,6 @@ async def _cache_pr_releases(releases: pd.DataFrame,
     deserialize=marshal.loads,
     key=lambda commit_id, **_: (commit_id,),
     refresh_on_access=True,
-    version=2,
 )
 async def _fetch_first_parents(commit_id: str,
                                conn: databases.core.Connection,
