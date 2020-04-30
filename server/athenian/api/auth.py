@@ -355,6 +355,7 @@ class Auth0:
             mapped_id = god[God.mapped_id.key]
             if mapped_id is not None:
                 request.uid = mapped_id
+                request.native_uid = mapped_id.rsplit("|", 1)[1]
                 self.log.info("God mode: %s became %s", request.god_id, mapped_id)
 
         async def get_user_info():
