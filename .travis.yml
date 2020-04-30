@@ -57,10 +57,12 @@ matrix:
       before_script:
         - psql -c "create database state;" -U postgres
         - psql -c "create database metadata;" -U postgres
+        - psql -c "create database precomputed;" -U postgres
       script:
         - set -e
         - export OVERRIDE_SDB=postgresql://postgres:postgres@0.0.0.0:5432/state
         - export OVERRIDE_MDB=postgresql://postgres:postgres@0.0.0.0:5432/metadata
+        - export OVERRIDE_PDB=postgresql://postgres:postgres@0.0.0.0:5432/precomputed
         - pytest --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py
         - set +e
     - if: commit_message !~ /Bump version/
@@ -80,10 +82,12 @@ matrix:
       before_script:
         - psql -c "create database state;" -U postgres
         - psql -c "create database metadata;" -U postgres
+        - psql -c "create database precomputed;" -U postgres
       script:
         - set -e
         - export OVERRIDE_SDB=postgresql://postgres:postgres@0.0.0.0:5432/state
         - export OVERRIDE_MDB=postgresql://postgres:postgres@0.0.0.0:5432/metadata
+        - export OVERRIDE_PDB=postgresql://postgres:postgres@0.0.0.0:5432/precomputed
         - pytest tests/controllers/test_filter_controller.py tests/controllers/test_metrics_controller.py
         - set +e
     - if: commit_message !~ /Bump version/
