@@ -581,6 +581,8 @@ class PullRequestTimesMiner(PullRequestMiner):
                 reviews_before_merge[PullRequestReview.submitted_at.key].values.argmax()])
         else:
             grouped_reviews = reviews_before_merge \
+                .take(np.where(reviews_before_merge[PullRequestReview.state.key] !=
+                               ReviewResolution.COMMENTED.value)[0]) \
                 .sort_values([PullRequestReview.submitted_at.key],
                              ascending=False, ignore_index=True) \
                 .groupby(PullRequestReview.user_id.key, sort=False, as_index=False) \
