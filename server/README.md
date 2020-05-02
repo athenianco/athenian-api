@@ -95,7 +95,7 @@ Generate sample SQLite metadata and state databases:
 
 ```
 docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /server/tests/gen_sqlite_db.py
-``` 
+```
 
 You should have two SQLite files in `$(pwd)`: `mdb.sqlite` and `sdb.sqlite`. The third DB `--precomputed-db` can be set to any (already existing or not) `.sqlite` file or `sqlite://`.
 
@@ -141,6 +141,67 @@ You can erase the API data fixtures created by `make run-api` with:
 ```
 make clean
 ```
+
+## Running the API server locally with real data
+
+You can also run the api server and all the other services with real data using docker compose. For this setup you'll need the following:
+- docker compose,
+- an `.env` file setup with also all the credentials for Auth0,
+- gloud locally setup and authenticated with Athenian's email,
+- a Google Cloud service account with the corresponding json credentials file to connect to the CloudSQL database,
+- the credentials for the CloudSQL databases and the name of the instances.
+
+Spin up the container with postgres and the container with cloud sql proxy:
+```
+$ CLOUD_SQL_STAGING_INSTANCE=<instance name> CLOUD_SQL_PRODUCTION_INSTANCE=<instance name> docker-compose up cloud_sql_proxy postgres
+```
+
+This step requires the credentials of the service account in a json file. The default path is `./credentials.json`, otherwise it can be set using the `CLOUD_SQL_PROXY_CREDENTIALS_FILE` env var.
+
+Once the database is ready to accept connections, run `server/tests/load_postgres_data.py`. This script accepts a single argument that is the environment name. The accepted values are: `staging` and `production`:
+```
+$ python3 server/tests/load_postgres_data.py staging --remote-postgres-user=<name of the pg user>
+```
+
+This will ask to input the password for the CloudSQL instance as follows:
+```
+Password for CloudSQL instance of 'staging' environment of user '<pg user>':
+```
+
+Then it will dump `state`, `precomputed` and `metadata` databases from the live environment and restores it into the `postgres` container. Here's an example log:
+```
+Password for CloudSQL instance of 'staging' environment of user '<pg user>:
+Dumping database: pg_dump --host cloud_sql_proxy --port 5432 --username=<pg user> -Fc --dbname=state > /db_dumps/state.dump
+Done!
+Creating database: createdb -U api state
+Loading dump into container: pg_restore -x -Fc -O -U api -d state /db_dumps/state.dump
+Done!
+Dumping database: pg_dump --host cloud_sql_proxy --port 5432 --username=<pg user> -Fc --dbname=precomputed > /db_dumps/precomputed.dump
+Done!
+Creating database: createdb -U api precomputed
+Loading dump into container: pg_restore -x -Fc -O -U api -d precomputed /db_dumps/precomputed.dump
+Done!
+Dumping database: pg_dump --host cloud_sql_proxy --port 5432 --username=<pg user> -Fc --dbname=metadata > /db_dumps/metadata.dump
+Done!
+Creating database: createdb -U api metadata
+Loading dump into container: pg_restore -x -Fc -O -U api -d metadata /db_dumps/metadata.dump
+pg_restore: WARNING:  column "labels" has type "unknown"
+DETAIL:  Proceeding with relation creation anyway.
+pg_restore: WARNING:  column "milestone_id" has type "unknown"
+DETAIL:  Proceeding with relation creation anyway.
+pg_restore: WARNING:  column "milestone_title" has type "unknown"
+DETAIL:  Proceeding with relation creation anyway.
+Done!
+```
+
+Now you can finally run the `api`:
+```
+$ docker-compose up api
+```
+
+By default it runs the latest image, that is `gcr.io/athenian-1/api:latest`. It can be changed using the `API_IMAGE` env var.
+
+This will also spin up `memcached`. The api is now ready with real data at port `8080`. The port can otherwise be customized using the `API_HOST_PORT` env var.
 
 ## @gkwillie
 
