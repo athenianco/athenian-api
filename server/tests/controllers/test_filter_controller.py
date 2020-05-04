@@ -20,15 +20,10 @@ from tests.conftest import FakeCache
 
 async def test_filter_repositories_no_repos(client, headers):
     body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
+        "date_from": "2015-01-12",
+        "date_to": "2015-01-12",
         "account": 1,
     }
-    response = await client.request(
-        method="POST", path="/v1/filter/repositories", headers=headers, json=body)
-    repos = json.loads((await response.read()).decode("utf-8"))
-    assert repos == ["github.com/src-d/go-git"]
-    body["date_from"] = body["date_to"]
     response = await client.request(
         method="POST", path="/v1/filter/repositories", headers=headers, json=body)
     assert response.status == 200
@@ -36,7 +31,7 @@ async def test_filter_repositories_no_repos(client, headers):
     assert repos == []
 
 
-async def test_filter_repositories(client, headers):
+async def test_filter_repositories_smoke(client, headers):
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
@@ -72,7 +67,7 @@ async def test_filter_repositories_nasty_input(client, headers, account, date_to
 @pytest.mark.parametrize("in_", [{}, {"in": []}])
 async def test_filter_contributors_no_repos(client, headers, in_):
     body = {
-        "date_from": "2015-10-13",
+        "date_from": "2015-01-12",
         "date_to": "2020-01-23",
         "account": 1,
         **in_,
@@ -80,12 +75,12 @@ async def test_filter_contributors_no_repos(client, headers, in_):
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     contribs = json.loads((await response.read()).decode("utf-8"))
-    assert len(contribs) == 199
+    assert len(contribs) == 202
     assert len(set(c["login"] for c in contribs)) == len(contribs)
     assert all(c["login"].startswith("github.com/") for c in contribs)
     contribs = {c["login"]: c for c in contribs}
     assert "github.com/mcuadros" in contribs
-    body["date_from"] = body["date_to"]
+    body["date_to"] = body["date_from"]
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     assert response.status == 200
