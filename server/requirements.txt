@@ -5,7 +5,7 @@ sqlalchemy==1.3.16
 asyncpg==0.20.1
 databases[postgresql,sqlite]==0.3.2
 xxhash==1.4.3
-numpy==1.18.3
+numpy==1.18.4
 scipy==1.2.1
 sentry-sdk==0.14.3
 prometheus_client==0.7.1
