@@ -2742,6 +2742,11 @@ components:
     ReleaseMatchSetting:
       additionalProperties: false
       description: Release matching setting for a specific repository.
+      example:
+        branches: '{{ "{{default}}" }}'
+        default_branch: master
+        tags: .*
+        match: tag_or_branch
       properties:
         branches:
           description: 'Regular expression to match branch names. Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP'
@@ -2751,8 +2756,12 @@ components:
           type: string
         match:
           $ref: '#/components/schemas/ReleaseMatchStrategy'
+        default_branch:
+          description: Name of the default branch of this repository.
+          type: string
       required:
       - branches
+      - default_branch
       - match
       - tags
       type: object
