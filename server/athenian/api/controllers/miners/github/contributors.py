@@ -16,8 +16,8 @@ from athenian.api.models.metadata.github import PullRequest, PullRequestComment,
     exptime=5 * 60,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
-    key=lambda repos, date_from, date_to, **_: (
-        ",".join(repos), date_from.timestamp(), date_to.timestamp()),
+    key=lambda repos, time_from, time_to, **_: (
+        ",".join(repos), time_from.timestamp(), time_to.timestamp()),
 )
 async def mine_contributors(repos: Collection[str],
                             time_from: datetime,
