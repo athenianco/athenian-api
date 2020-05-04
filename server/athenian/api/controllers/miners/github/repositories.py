@@ -21,50 +21,51 @@ from athenian.api.models.metadata.github import PullRequest, PullRequestComment,
         ",".join(repos), date_from.timestamp(), date_to.timestamp()),
 )
 async def mine_repositories(repos: Collection[str],
-                            date_from: datetime,
-                            date_to: datetime,
+                            time_from: datetime,
+                            time_to: datetime,
                             db: databases.Database,
                             cache: Optional[aiomcache.Client],
                             ) -> List[str]:
     """Discover repositories from the given set which were updated in the given time frame."""
-    assert isinstance(date_from, datetime)
-    assert isinstance(date_to, datetime)
+    assert isinstance(time_from, datetime)
+    assert isinstance(time_to, datetime)
 
     async def fetch_prs():
         return await db.fetch_all(
             select([distinct(PullRequest.repository_full_name)])
             .where(and_(PullRequest.repository_full_name.in_(repos), or_(
-                        PullRequest.created_at.between(date_from, date_to),
-                        PullRequest.closed_at.between(date_from, date_to),
-                        PullRequest.updated_at.between(date_from, date_to),
+                        PullRequest.created_at.between(time_from, time_to),
+                        and_(PullRequest.created_at < time_to, PullRequest.closed_at.is_(None)),
+                        PullRequest.closed_at.between(time_from, time_to),
+                        PullRequest.updated_at.between(time_from, time_to),
                         ))))
 
     async def fetch_comments():
         return await db.fetch_all(
             select([distinct(PullRequestComment.repository_full_name)])
             .where(and_(PullRequestComment.repository_full_name.in_(repos),
-                        PullRequestComment.created_at.between(date_from, date_to),
+                        PullRequestComment.created_at.between(time_from, time_to),
                         )))
 
     async def fetch_push_commits():
         return await db.fetch_all(
             select([distinct(PushCommit.repository_full_name)])
             .where(and_(PushCommit.repository_full_name.in_(repos),
-                        PushCommit.committed_date.between(date_from, date_to),
+                        PushCommit.committed_date.between(time_from, time_to),
                         )))
 
     async def fetch_reviews():
         return await db.fetch_all(
             select([distinct(PullRequestReview.repository_full_name)])
             .where(and_(PullRequestReview.repository_full_name.in_(repos),
-                        PullRequestReview.submitted_at.between(date_from, date_to),
+                        PullRequestReview.submitted_at.between(time_from, time_to),
                         )))
 
     async def fetch_releases():
         return await db.fetch_all(
             select([distinct(Release.repository_full_name)])
             .where(and_(Release.repository_full_name.in_(repos),
-                        Release.published_at.between(date_from, date_to),
+                        Release.published_at.between(time_from, time_to),
                         )))
 
     repos = sorted({"github.com/" + r[0] for r in chain.from_iterable(await asyncio.gather(
