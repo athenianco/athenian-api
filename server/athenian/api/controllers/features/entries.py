@@ -1,6 +1,6 @@
 from datetime import datetime
 import pickle
-from typing import Collection, Dict, List, Optional, Sequence, Tuple
+from typing import Collection, Dict, List, Optional, Sequence
 
 import aiomcache
 from databases import Database
@@ -40,7 +40,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
                                                 developers: Collection[str],
                                                 db: Database,
                                                 cache: Optional[aiomcache.Client],
-                                                ) -> List[List[Tuple[Metric, ...]]]:
+                                                ) -> List[List[List[Metric]]]:
     """Calculate pull request metrics on GitHub data."""
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     date_from, date_to = coarsen_time_interval(time_from, time_to)

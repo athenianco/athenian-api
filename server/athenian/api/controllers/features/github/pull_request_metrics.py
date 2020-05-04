@@ -194,18 +194,27 @@ class CycleCounter(PullRequestCounter):
 class AllCounter(PullRequestSumMetricCalculator[int]):
     """Count all the PRs that are active in the given time interval."""
 
+    requires_full_span = True
+
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
                 ) -> Optional[int]:
         """Calculate the actual state update."""
+        pr_started = times.created.best  # not `work_began.best`! It breaks granular measurements.
         cut_before_released = (
-            times.work_began.best < min_time and times.released and times.released.best < min_time
+            pr_started < min_time and times.released and times.released.best < min_time
         )
         cut_before_rejected = (
-            times.work_began.best < min_time and times.closed and not times.merged
+            pr_started < min_time and times.closed and not times.merged
             and times.closed.best < min_time
         )
-        cut_after = times.work_began.best >= max_time
-        return int(not (cut_before_released or cut_before_rejected or cut_after))
+        cut_after = pr_started >= max_time
+        # FIXME(vmarkovtsev): ENG-673
+        cut_old_unreleased = (
+            times.merged and not times.released and times.merged.best < min_time
+        )
+        if not (cut_before_released or cut_before_rejected or cut_after or cut_old_unreleased):
+            return 1
+        return None
 
 
 @register(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME)

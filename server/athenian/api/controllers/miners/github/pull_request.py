@@ -143,10 +143,9 @@ class PullRequestMiner:
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
         filters = [
-            sql.or_(PullRequest.updated_at.between(time_from, time_to),
-                    sql.and_(sql.or_(PullRequest.closed_at.is_(None),
-                                     PullRequest.closed_at > time_from),
-                             PullRequest.created_at < time_to)),
+            sql.and_(sql.or_(PullRequest.closed_at.is_(None),
+                             PullRequest.closed_at >= time_from),
+                     PullRequest.created_at < time_to),
             PullRequest.repository_full_name.in_(repositories),
         ]
         if len(developers) > 0:

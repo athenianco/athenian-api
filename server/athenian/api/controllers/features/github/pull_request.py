@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
+from itertools import chain
+from typing import Dict, Generic, Iterable, List, Optional, Sequence, Type
 
 from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
@@ -16,6 +17,9 @@ class PullRequestMetricCalculator(Generic[T]):
     `PullRequestMetricCalculator.analyze()` is to be implemented by the particular metric
     calculators.
     """
+
+    # This indicates whether the calc should care about PRs without events on the time interval.
+    requires_full_span = False
 
     def __init__(self):
         """Initialize a new `PullRequestMetricCalculator` instance."""
@@ -149,7 +153,7 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
         assert len(time_intervals) >= 2
         self.time_intervals = time_intervals
 
-    def __call__(self, items: Iterable[PullRequestTimes]) -> List[Tuple[Metric[T], ...]]:
+    def __call__(self, items: Iterable[PullRequestTimes]) -> List[List[Metric[T]]]:
         """
         Calculate the binned metrics.
 
@@ -158,26 +162,53 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
         """
         borders = self.time_intervals
         calcs = self.calcs
-        bins = [[] for _ in borders[:-1]]
+        dummy_bins = [[] for _ in borders[:-1]]
         items = sorted(items)
+        regulars = [(calc, i) for i, calc in enumerate(calcs) if not calc.requires_full_span]
+        full_spans = [(calc, i) for i, calc in enumerate(calcs) if calc.requires_full_span]
+        regular_bins = self._bin_regulars(items) if regulars else dummy_bins
+        full_span_bins = self._bin_full_spans(items) if full_spans else dummy_bins
+        result = []
+        for regular_bin, full_span_bin, time_from, time_to in zip(
+                regular_bins, full_span_bins, borders, borders[1:]):
+            for item in regular_bin:
+                for calc, _ in regulars:
+                    calc(item, time_from, time_to)
+            for item in full_span_bin:
+                for calc, _ in full_spans:
+                    calc(item, time_from, time_to)
+            values = [None] * len(calcs)
+            for calc, i in chain(regulars, full_spans):
+                values[i] = calc.value()
+            result.append(values)
+            for calc in calcs:
+                calc.reset()
+        return result
+
+    def _bin_regulars(self, items: Iterable[PullRequestTimes]) -> List[List[PullRequestTimes]]:
+        borders = self.time_intervals
+        bins = [[] for _ in borders[:-1]]
         pos = 0
         for item in items:
             while pos < len(borders) - 1 and item.work_began.best > borders[pos + 1]:
                 pos += 1
             endpoint = item.max_timestamp()
-            if endpoint <= borders[0]:
-                bins[0].append(item)
-            else:
-                span = pos
-                while span < len(bins) and endpoint > borders[span]:
-                    bins[span].append(item)
-                    span += 1
-        result = []
-        for bin, time_from, time_to in zip(bins, borders, borders[1:]):
-            for item in bin:
-                for calc in calcs:
-                    calc(item, time_from, time_to)
-            result.append(tuple(calc.value() for calc in calcs))
-            for calc in calcs:
-                calc.reset()
-        return result
+            span = pos
+            while span < len(bins) and endpoint > borders[span]:
+                bins[span].append(item)
+                span += 1
+        return bins
+
+    def _bin_full_spans(self, items: Iterable[PullRequestTimes]) -> List[List[PullRequestTimes]]:
+        borders = self.time_intervals
+        bins = [[] for _ in borders[:-1]]
+        pos = 0
+        for item in items:
+            while pos < len(borders) - 1 and item.work_began.best > borders[pos + 1]:
+                pos += 1
+            endpoint = item.released.best if item.released else borders[-1]
+            span = pos
+            while span < len(bins) and endpoint > borders[span]:
+                bins[span].append(item)
+                span += 1
+        return bins

@@ -1,9 +1,10 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List
+
+import pytest
 
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner
-from athenian.api.controllers.miners.github.pull_request import PullRequestTimesMiner
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.models.web import PullRequestMetricID
@@ -78,9 +79,14 @@ async def test_pr_list_miner_no_participants(mdb, release_match_setting_tag):
     assert prs
 
 
-async def test_pr_list_miner_match_metrics_all_count(mdb, release_match_setting_tag):
-    date_from = date(year=2018, month=1, day=1)
-    date_to = date(year=2019, month=1, day=1)
+@pytest.mark.parametrize("date_from, date_to", [(date(year=2018, month=1, day=1),
+                                                 date(year=2019, month=1, day=1)),
+                                                (date(year=2016, month=12, day=1),
+                                                 date(year=2016, month=12, day=15)),
+                                                (date(year=2016, month=11, day=17),
+                                                 date(year=2016, month=12, day=1))])
+async def test_pr_list_miner_match_metrics_all_count(mdb, release_match_setting_tag,
+                                                     date_from, date_to):
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
     time_to = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
     miner = await PullRequestListMiner.mine(
@@ -98,9 +104,32 @@ async def test_pr_list_miner_match_metrics_all_count(mdb, release_match_setting_
     miner.time_to = time_to
     miner.properties = set(Property)
     prs = list(miner)
-    PullRequestTimesMiner.hack = True
     metric = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_to]],
         ["src-d/go-git"], release_match_setting_tag, [], mdb, None,
     ))[0][0][0]
     assert len(prs) == metric.value
+
+
+async def test_pr_list_miner_match_metrics_all_count_david_bug(mdb, release_match_setting_tag):
+    date_from = date(year=2016, month=11, day=17)
+    date_to = date(year=2016, month=12, day=15)
+    time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+    time_middle = time_from + timedelta(days=14)
+    time_to = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
+    metric1 = (await calc_pull_request_metrics_line_github(
+        [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]],
+        ["src-d/go-git"], release_match_setting_tag, [], mdb, None,
+    ))[0][0][0].value
+    metric2 = (await calc_pull_request_metrics_line_github(
+        [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]],
+        ["src-d/go-git"], release_match_setting_tag, [], mdb, None,
+    ))[0][0][0].value
+    metric1_ext, metric2_ext = (m[0].value for m in (
+        await calc_pull_request_metrics_line_github(
+            [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]],
+            ["src-d/go-git"], release_match_setting_tag, [], mdb, None,
+        )
+    )[0])
+    assert metric1 == metric1_ext
+    assert metric2 == metric2_ext
