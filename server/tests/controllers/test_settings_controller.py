@@ -141,9 +141,12 @@ async def test_get_release_match_settings_defaults(client, headers):
         branches="{{default}}",
         tags=".*",
         match=ReleaseMatchStrategy.TAG_OR_BRANCH,
+        default_branch="master",
     )
     assert settings["github.com/src-d/go-git"] == defset
     for k, v in settings.items():
+        if v.default_branch is None:
+            v.default_branch = "master"
         assert v == defset, k
 
 
@@ -163,14 +166,18 @@ async def test_get_release_match_settings_existing(client, headers, sdb):
         branches="master",
         tags="v.*",
         match=ReleaseMatchStrategy.TAG,
+        default_branch="master",
     )
     defset = ReleaseMatchSetting(
         branches="{{default}}",
         tags=".*",
         match=ReleaseMatchStrategy.TAG_OR_BRANCH,
+        default_branch=None,
     )
     for k, v in settings.items():
         if k != "github.com/src-d/go-git":
+            if v.default_branch == "master":
+                v.default_branch = None
             assert v == defset, k
 
 

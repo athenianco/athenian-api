@@ -10,24 +10,33 @@ class ReleaseMatchSetting(Model):
     def __init__(self,
                  branches: Optional[str] = None,
                  tags: Optional[str] = None,
-                 match: Optional[str] = None):
+                 match: Optional[str] = None,
+                 default_branch: Optional[str] = None):
         """ReleaseMatchSetting - a model defined in OpenAPI
 
         :param branches: The branches of this ReleaseMatchSetting.
         :param tags: The tags of this ReleaseMatchSetting.
         :param match: The match of this ReleaseMatchSetting.
+        :param default_branch: The default_branch of this ReleaseMatchSetting.
         """
         self.openapi_types = {
             "branches": str,
             "tags": str,
             "match": str,
+            "default_branch": str,
         }
 
-        self.attribute_map = {"branches": "branches", "tags": "tags", "match": "match"}
+        self.attribute_map = {
+            "branches": "branches",
+            "tags": "tags",
+            "match": "match",
+            "default_branch": "default_branch",
+        }
 
         self._branches = branches
         self._tags = tags
         self._match = match
+        self._default_branch = default_branch
 
     @classmethod
     def from_dataclass(cls, struct) -> "ReleaseMatchSetting":
@@ -108,3 +117,26 @@ class ReleaseMatchSetting(Model):
                 (match, list(ReleaseMatchStrategy)))
 
         self._match = match
+
+    @property
+    def default_branch(self) -> str:
+        """Gets the default_branch of this ReleaseMatchSetting.
+
+        Name of the default branch of this repository.
+
+        :return: The default_branch of this ReleaseMatchSetting.
+        """  # noqa
+        return self._default_branch
+
+    @default_branch.setter
+    def default_branch(self, default_branch: str):
+        """Sets the default_branch of this ReleaseMatchSetting.
+
+        Name of the default branch of this repository.
+
+        :param default_branch: The default_branch of this ReleaseMatchSetting.
+        """  # noqa
+        if default_branch is None:
+            raise ValueError("Invalid value for `default_branch`, must not be `None`")
+
+        self._default_branch = default_branch

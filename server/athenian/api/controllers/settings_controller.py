@@ -1,6 +1,7 @@
 from aiohttp import web
 
 from athenian.api import ResponseError
+from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.settings import Match, Settings
 from athenian.api.models.web import ReleaseMatchSetting
 from athenian.api.models.web.release_match_request import ReleaseMatchRequest
@@ -11,11 +12,15 @@ async def list_release_match_settings(request: AthenianWebRequest, id: int) -> w
     """List the current release matching settings."""
     settings = Settings.from_request(request, id)
     try:
-        model = await settings.list_release_matches()
+        settings = await settings.list_release_matches()
     except ResponseError as e:
         return e.response
-    return web.json_response({k: ReleaseMatchSetting.from_dataclass(m).to_dict()
-                              for k, m in model.items()})
+    model = {k: ReleaseMatchSetting.from_dataclass(m).to_dict() for k, m in settings.items()}
+    repos = [r.split("/", 1)[1] for r in settings]
+    _, default_branches = await extract_branches(repos, request.mdb, request.cache)
+    for repo, name in default_branches.items():
+        model["github.com/" + repo]["default_branch"] = name
+    return web.json_response(model)
 
 
 async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Response:
