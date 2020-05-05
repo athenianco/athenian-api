@@ -119,9 +119,10 @@ matrix:
         - git config --global user.email "bot@athenian.co"
         - pip install bump2version
       script:
+        - set -e
         - if git diff --name-only HEAD^...HEAD | grep openapi.yaml; then spec_bump=required; fi
         - git pull --no-edit origin master
-        - if [ "$spec_bump" = "required" ] then
+        - if [ "$spec_bump" = "required" ]; then
             version_file=spec/openapi.yaml;
             current_version=$(grep -m1 '^  version:' $version_file | cut -d" " -f4);
             bumpversion --current-version $current_version patch $version_file;
