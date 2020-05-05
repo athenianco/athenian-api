@@ -152,7 +152,8 @@ class PullRequestMiner:
         filters = [
             sql.and_(sql.or_(PullRequest.closed_at.is_(None),
                              PullRequest.closed_at >= time_from),
-                     PullRequest.created_at < time_to),
+                     PullRequest.created_at < time_to,
+                     PullRequest.hidden.is_(False)),
             PullRequest.repository_full_name.in_(repositories),
         ]
         prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),

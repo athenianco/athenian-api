@@ -33,11 +33,13 @@ async def mine_contributors(repos: Collection[str],
     async def fetch_prs():
         return await db.fetch_all(
             select([PullRequest.user_login, func.count(PullRequest.user_login)])
-            .where(and_(PullRequest.repository_full_name.in_(repos), or_(
-                        PullRequest.created_at.between(time_from, time_to),
-                        and_(PullRequest.created_at < time_to, PullRequest.closed_at.is_(None)),
-                        PullRequest.closed_at.between(time_from, time_to),
-                        PullRequest.updated_at.between(time_from, time_to))))
+            .where(and_(PullRequest.repository_full_name.in_(repos),
+                        PullRequest.hidden.is_(False),
+                        or_(PullRequest.created_at.between(time_from, time_to),
+                            and_(PullRequest.created_at < time_to,
+                                 PullRequest.closed_at.is_(None)),
+                            PullRequest.closed_at.between(time_from, time_to),
+                            PullRequest.updated_at.between(time_from, time_to))))
             .group_by(PullRequest.user_login))
 
     async def fetch_comments():
