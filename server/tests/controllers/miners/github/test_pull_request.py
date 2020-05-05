@@ -110,7 +110,14 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
             cache,
         ))
         assert len(cache.mem) == cache_size
-        assert all(pr.pr[PullRequest.user_login.key] == "mcuadros" for pr in prs)
+        for pr in prs:
+            text = ""
+            for df in dataclasses.astuple(pr):
+                try:
+                    text += df.to_csv()
+                except AttributeError:
+                    text += str(df)
+            assert "mcuadros" in text
 
 
 async def test_pr_miner_iter_cache_incompatible(mdb, cache, release_match_setting_tag):

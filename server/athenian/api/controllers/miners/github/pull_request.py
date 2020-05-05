@@ -109,13 +109,16 @@ class PullRequestMiner:
         if pr_blacklist:
             to_remove.update(pr_blacklist)
         prs = dfs[0]
-        pr_filter = prs[PullRequest.repository_full_name.key].isin(repositories)
-        if len(developers) > 0:
-            pr_filter &= prs[PullRequest.user_login.key].isin(developers)
-        to_remove.update(prs.index.take(np.where(~pr_filter)[0]))
-        if to_remove:
-            for df in dfs:
-                df.drop(to_remove, inplace=True, errors="ignore")
+        if not isinstance(repositories, set):
+            repositories = set(repositories)
+        if not isinstance(developers, set):
+            developers = set(developers)
+        to_remove.update(prs.index.take(np.where(
+            np.in1d(prs[PullRequest.repository_full_name.key].values,
+                    list(repositories), assume_unique=True, invert=True),
+        )[0]))
+        to_remove.update(PullRequestMiner._find_drop_by_developers(dfs, developers))
+        PullRequestMiner._drop(dfs, to_remove)
         return result
 
     @classmethod
@@ -141,6 +144,10 @@ class PullRequestMiner:
                     ) -> Tuple[List[pd.DataFrame], Set[str], Set[str]]:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
+        if not isinstance(repositories, set):
+            repositories = set(repositories)
+        if not isinstance(developers, set):
+            developers = set(developers)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
         filters = [
             sql.and_(sql.or_(PullRequest.closed_at.is_(None),
@@ -148,8 +155,6 @@ class PullRequestMiner:
                      PullRequest.created_at < time_to),
             PullRequest.repository_full_name.in_(repositories),
         ]
-        if len(developers) > 0:
-            filters.append(PullRequest.user_login.in_(developers))
         prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                    db, PullRequest, index=PullRequest.node_id.key)
         released_prs = await map_releases_to_prs(
@@ -200,7 +205,9 @@ class PullRequestMiner:
         dfs = await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
             fetch_commits(), map_releases())
-        return [prs, *dfs], set(repositories), set(developers)
+        dfs = [prs, *dfs]
+        cls._drop(dfs, cls._find_drop_by_developers(dfs, developers))
+        return dfs, repositories, developers
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
     _deserialize_from_cache = staticmethod(_deserialize_from_cache)
@@ -219,9 +226,66 @@ class PullRequestMiner:
         old_releases = np.where(releases[Release.published_at.key] < time_from)[0]
         if len(old_releases) == 0:
             return
-        fishy = releases.index[old_releases]
-        for df in (prs, reviews, review_comments, review_requests, comments, commits, releases):
-            df.drop(fishy, inplace=True, errors="ignore")
+        cls._drop((prs, reviews, review_comments, review_requests, comments, commits, releases),
+                  releases.index[old_releases])
+
+    @classmethod
+    def _drop(cls, dfs: Collection[pd.DataFrame], pr_ids: Collection[str]) -> None:
+        if len(pr_ids) == 0:
+            return
+        for df in dfs:
+            df.drop(pr_ids,
+                    level=0 if isinstance(df.index, pd.MultiIndex) else None,
+                    inplace=True,
+                    errors="ignore")
+
+    @classmethod
+    def _find_drop_by_developers(cls, dfs: List[pd.DataFrame], developers: Set[str]) -> Set[str]:
+        if not developers:
+            return set()
+        developers = np.asarray(list(developers))
+        prs, reviews, _, _, comments, commits, releases = dfs
+        passed_pr_ids = set(prs.index.take(np.where(
+            np.in1d(prs[PullRequest.user_login.key].values, developers, assume_unique=True),
+        )[0]))
+        if len(passed_pr_ids) == len(prs):
+            return set()
+        # how about mergers?
+        passed_pr_ids.update(prs.index.take(np.where(
+            np.in1d(prs[PullRequest.merged_by_login.key].values, developers, assume_unique=True),
+        )[0]))
+        if len(passed_pr_ids) == len(prs):
+            return set()
+        # how about reviewers?
+        passed_pr_ids.update(reviews.index.get_level_values(0).take(np.where(
+            np.in1d(reviews[PullRequestReview.user_login.key].values, developers,
+                    assume_unique=True),
+        )[0]))
+        if len(passed_pr_ids) == len(prs):
+            return set()
+        # how about commenters?
+        passed_pr_ids.update(comments.index.get_level_values(0).take(np.where(
+            np.in1d(comments[PullRequestComment.user_login.key].values, developers,
+                    assume_unique=True),
+        )[0]))
+        if len(passed_pr_ids) == len(prs):
+            return set()
+        # how about commits?
+        passed_pr_ids.update(commits.index.get_level_values(0).take(np.where(
+            np.in1d(commits[PullRequestCommit.author_login.key].values, developers,
+                    assume_unique=True)
+            | np.in1d(commits[PullRequestCommit.committer_login.key].values, developers,
+                      assume_unique=True),
+        )[0]))
+        if len(passed_pr_ids) == len(prs):
+            return set()
+        # how about releasers?
+        passed_pr_ids.update(releases.index.take(np.where(
+            np.in1d(releases[Release.author.key].values, developers, assume_unique=True),
+        )[0]))
+        if len(passed_pr_ids) == len(prs):
+            return set()
+        return set(prs.index.values) - passed_pr_ids
 
     @classmethod
     async def mine(cls,
@@ -295,11 +359,8 @@ class PullRequestMiner:
         uncreated = prs.index.take(np.where(
             prs[PullRequest.created_at.key] >= time_to)[0])
         to_remove = unreleased.union(unrejected.union(uncreated))
+        cls._drop(dfs, to_remove)
         for df in dfs:
-            if not to_remove.empty:
-                df.drop(to_remove,
-                        level=0 if isinstance(df.index, pd.MultiIndex) else None,
-                        inplace=True, errors="ignore")
             cls._truncate_timestamps(df, time_to)
 
     @staticmethod

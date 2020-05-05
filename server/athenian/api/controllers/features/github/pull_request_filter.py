@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from itertools import chain
 import pickle
 from typing import Collection, Dict, Generator, List, Mapping, Optional, Set
 
@@ -18,7 +19,6 @@ from athenian.api.controllers.miners.pull_request_list_item import Participation
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewRequest, Release
-from athenian.api.models.web import PullRequestParticipant
 
 
 class PullRequestListMiner(PullRequestTimesMiner):
@@ -227,9 +227,9 @@ async def filter_pull_requests(properties: Collection[Property],
     :param repos: List of repository names without the service prefix.
     """
     date_from, date_to = coarsen_time_interval(time_from, time_to)
+    everybody = {p.split("/", 1)[1] for p in chain.from_iterable(participants.values())}
     miner = await PullRequestListMiner.mine(
-        date_from, date_to, time_from, time_to, repos, release_settings,
-        participants.get(PullRequestParticipant.STATUS_AUTHOR, []), db, cache)
+        date_from, date_to, time_from, time_to, repos, release_settings, everybody, db, cache)
     miner.properties = properties
     miner.participants = participants
     miner.time_from = time_from

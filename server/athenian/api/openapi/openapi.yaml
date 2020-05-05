@@ -1405,8 +1405,11 @@ components:
         account: 1
       properties:
         for:
-          description: Sets of developers and repositories to calculate the metrics
-            for.
+          description: |-
+            Sets of developers and repositories for which to calculate the metrics.
+            The aggregation is `AND` between repositories and developers.
+            The aggregation is `OR` inside both repositories and developers.
+            Any contribution role is matched: authors, reviewers, commenters, committers, releasers.
           items:
             $ref: '#/components/schemas/ForSet'
           type: array
@@ -2011,11 +2014,14 @@ components:
       type: object
     PullRequestWith:
       additionalProperties: false
-      description: 'Triage PRs by various developer participation. The aggregation is OR between
-        the participation groups and OR within each group. For example, if our request is
+      description: |-
+        Triage PRs by various developer participation. The aggregation is `OR` between
+        the participation groups and `OR` within each group. For example, if our request is
+        ```
         {"author": ["github.com/vmarkovtsev"], "reviewer": ["github.com/gkwillie", "github.com/mcuadros"]}
-        then the matched PRs will have @vmarkovtsev as the author or either @gkwillie or @mcuadros
-        as the reviewers.'
+        ```
+        then the matched PRs will have **@vmarkovtsev** as the author or either
+        **@gkwillie** or **@mcuadros** as the reviewers.
       example:
         author:
         - github.com/vmarkovtsev
