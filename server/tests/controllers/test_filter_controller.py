@@ -382,6 +382,32 @@ async def test_filter_prs_david_bug(client, headers):
     assert response.status == 200
 
 
+async def test_filter_prs_developer_filter(client, headers):
+    body = {
+        "date_from": "2017-07-15",
+        "date_to": "2017-12-16",
+        "account": 1,
+        "in": [],
+        "properties": [],
+        "with": {
+            "author": ["github.com/mcuadros"],
+        },
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    assert response.status == 200
+    obj = json.loads((await response.read()).decode("utf-8"))
+    prs = PullRequestSet.from_dict(obj)  # type: PullRequestSet
+    assert len(prs.data) == 27
+    for pr in prs.data:
+        passed = False
+        for part in pr.participants:
+            if part.id == "github.com/mcuadros":
+                assert PullRequestParticipant.STATUS_AUTHOR in part.status
+                passed = True
+        assert passed
+
+
 async def test_filter_commits_bypassing_prs_mcuadros(client, headers):
     body = {
         "account": 1,
