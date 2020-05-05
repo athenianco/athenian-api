@@ -234,6 +234,7 @@ class PullRequest(Base,
     head_user = Column(Text)
     # head_sha is always not null.
     head_sha = Column(Text, nullable=False)
+    hidden = Column(Boolean)
     htmlurl = Column(Text)
     labels = Column(ARRAY(Text()))
     maintainer_can_modify = Column(Boolean)

@@ -535,7 +535,8 @@ async def _find_old_released_prs(releases: pd.DataFrame,
         select([PullRequest])
         .where(and_(PullRequest.merged_at < time_boundary,
                     PullRequest.repository_full_name == repo,
-                    PullRequest.merge_commit_sha.in_(observed_commits))),
+                    PullRequest.merge_commit_sha.in_(observed_commits),
+                    PullRequest.hidden.is_(False))),
         db, PullRequest, index=PullRequest.node_id.key)
 
 

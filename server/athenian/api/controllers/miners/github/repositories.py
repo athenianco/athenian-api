@@ -10,7 +10,7 @@ from sqlalchemy import and_, distinct, or_, select
 
 from athenian.api.cache import cached
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestReview, PushCommit, Release
+    PullRequestReview, PushCommit, Release, Repository
 
 
 @cached(
@@ -33,12 +33,13 @@ async def mine_repositories(repos: Collection[str],
     async def fetch_prs():
         return await db.fetch_all(
             select([distinct(PullRequest.repository_full_name)])
-            .where(and_(PullRequest.repository_full_name.in_(repos), or_(
-                        PullRequest.created_at.between(time_from, time_to),
-                        and_(PullRequest.created_at < time_to, PullRequest.closed_at.is_(None)),
-                        PullRequest.closed_at.between(time_from, time_to),
-                        PullRequest.updated_at.between(time_from, time_to),
-                        ))))
+            .where(and_(PullRequest.repository_full_name.in_(repos),
+                        PullRequest.hidden.is_(False),
+                        or_(PullRequest.created_at.between(time_from, time_to),
+                            and_(PullRequest.created_at < time_to,
+                                 PullRequest.closed_at.is_(None)),
+                            PullRequest.closed_at.between(time_from, time_to),
+                            PullRequest.updated_at.between(time_from, time_to)))))
 
     async def fetch_comments():
         return await db.fetch_all(
@@ -68,7 +69,12 @@ async def mine_repositories(repos: Collection[str],
                         Release.published_at.between(time_from, time_to),
                         )))
 
-    repos = sorted({"github.com/" + r[0] for r in chain.from_iterable(await asyncio.gather(
-        fetch_prs(), fetch_comments(), fetch_push_commits(), fetch_reviews(),
-        fetch_releases()))})
+    repos = set(r[0] for r in chain.from_iterable(await asyncio.gather(
+        fetch_prs(), fetch_comments(), fetch_push_commits(), fetch_reviews(), fetch_releases())))
+    repos = await db.fetch_all(select([Repository.full_name])
+                               .where(and_(Repository.archived.is_(False),
+                                           Repository.disabled.is_(False),
+                                           Repository.full_name.in_(repos)))
+                               .order_by(Repository.full_name))
+    repos = ["github.com/" + r[0] for r in repos]
     return repos
