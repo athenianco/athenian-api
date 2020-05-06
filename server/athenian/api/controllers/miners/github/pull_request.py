@@ -553,6 +553,10 @@ class ReviewResolution(Enum):
     COMMENTED = "COMMENTED"
 
 
+class ImpossiblePullRequest(Exception):
+    """Raised by PullRequestTimesMiner._compile() on broken PRs."""
+
+
 class PullRequestTimesMiner(PullRequestMiner):
     """Extract the pull request update timestamps from the metadata DB."""
 
@@ -662,7 +666,7 @@ class PullRequestTimesMiner(PullRequestMiner):
         approved_at = Fallback(approved_at_value, None)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         released_at = Fallback(pr.release[Release.published_at.key], None)
-        return PullRequestTimes(
+        times = PullRequestTimes(
             created=created_at,
             first_commit=first_commit,
             last_commit_before_first_review=last_commit_before_first_review,
@@ -677,11 +681,36 @@ class PullRequestTimesMiner(PullRequestMiner):
             released=released_at,
             closed=closed_at,
         )
+        self._validate(times, pr.pr[PullRequest.htmlurl.key])
+        return times
+
+    def _validate(self, times: PullRequestTimes, url: str) -> None:
+        """Run sanity checks to ensure consistency."""
+        if not times.closed:
+            return
+        if times.last_commit and times.last_commit.best > times.closed.best:
+            self.log.error("%s is impossible: closed %s but last commit %s: delta %s",
+                           url, times.closed.best, times.last_commit.best,
+                           times.closed.best - times.last_commit.best)
+            raise ImpossiblePullRequest()
+        if times.created.best > times.closed.best:
+            self.log.error("%s is impossible: closed %s but created %s: delta %s",
+                           url, times.closed.best, times.created.best,
+                           times.closed.best - times.created.best)
+            raise ImpossiblePullRequest()
+        if times.merged and times.released and times.merged.best > times.released.best:
+            self.log.error("%s is impossible: merged %s but released %s: delta %s",
+                           url, times.merged.best, times.released.best,
+                           times.released.best - times.merged.best)
+            raise ImpossiblePullRequest()
 
     def __iter__(self) -> Generator[Tuple[Dict[str, Any], PullRequestTimes], None, None]:
         """Yield pairs of PR metadata with corresponding `PullRequestTimes`."""
         for pr in super().__iter__():
-            yield pr.pr, self._compile(pr)
+            try:
+                yield pr.pr, self._compile(pr)
+            except ImpossiblePullRequest:
+                continue
 
 
 def dtmin(*args: Union[DT, float]) -> DT:
