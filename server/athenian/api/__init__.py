@@ -380,7 +380,7 @@ def setup_context(log: logging.Logger) -> None:
         request_bodies="medium",
         release="%s@%s" % (metadata.__package__, metadata.__version__),
     )
-    sentry_sdk.utils.MAX_STRING_LENGTH = 1024
+    sentry_sdk.utils.MAX_STRING_LENGTH = 2048
     sentry_sdk.utils.MAX_FORMAT_PARAM_LENGTH = 256
     with sentry_sdk.configure_scope() as scope:
         scope.set_tag("version", metadata.__version__)
