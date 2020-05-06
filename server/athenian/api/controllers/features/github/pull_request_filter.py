@@ -12,8 +12,8 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
-from athenian.api.controllers.miners.github.pull_request import MinedPullRequest, \
-    PullRequestMiner, PullRequestTimesMiner, ReviewResolution
+from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
+    MinedPullRequest, PullRequestMiner, PullRequestTimesMiner, ReviewResolution
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting
@@ -117,7 +117,10 @@ class PullRequestListMiner(PullRequestTimesMiner):
             pass
         if not self._match_participants(participants):
             return None
-        times = super()._compile(pr)
+        try:
+            times = super()._compile(pr)
+        except ImpossiblePullRequest:
+            return None
         time_from = self.time_from
         time_to = min(self.time_to, datetime.now(timezone.utc))
         props = set()
