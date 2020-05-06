@@ -1,0 +1,54 @@
+version: "3.7"
+services:
+  api:
+    image: ${API_IMAGE:-gcr.io/athenian-1/api:latest}
+    restart: unless-stopped
+    entrypoint: ['/bin/sh']
+    command: >
+      -c "python3 -m athenian.api.models.state \
+            postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state &&
+          python3 -m athenian.api \
+            --log-level=${API_LOG_LEVEL:-INFO} \
+            --log-structured \
+            --host=0.0.0.0 \
+            --port=8080 \
+            --metadata-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata \
+            --state-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state \
+            --precomputed-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed \
+            --ui"
+    env_file: .env
+    ports:
+      - ${API_HOST_PORT:-8080}:8080
+    depends_on:
+      - postgres
+      - memcached
+
+  postgres:
+    image: postgres:9.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-api}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-api}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - db_dumps:/db_dumps
+
+  memcached:
+    image: launcher.gcr.io/google/memcached1
+    command: ['memcached', '-m', '64']
+
+  cloud_sql_proxy:
+    image: gcr.io/cloudsql-docker/gce-proxy:1.14
+    command: [
+      '/cloud_sql_proxy',
+      '-instances=${CLOUD_SQL_STAGING_INSTANCE}=tcp:0.0.0.0:5432,${CLOUD_SQL_PRODUCTION_INSTANCE}=tcp:0.0.0.0:5433',
+      '-credential_file=/secrets/cloudsql/credentials.json'
+    ]
+    volumes:
+      - ${CLOUD_SQL_PROXY_CREDENTIALS_FILE:-./credentials.json}:/secrets/cloudsql/credentials.json
+
+volumes:
+  postgres:
+    external: false
+  db_dumps:
+    external: false
