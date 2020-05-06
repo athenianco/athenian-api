@@ -3,7 +3,7 @@ import subprocess
 import sys
 from threading import Condition, Thread
 
-from athenian.api.models.state.__main__ import main as migrate
+from athenian.api.models import migrate
 from tests.conftest import db_dir
 
 
@@ -12,7 +12,12 @@ def test_integration_micro(metadata_db, aiohttp_unused_port):
     state_db = "sqlite:///%s" % state_db_path
     if state_db_path.exists():
         state_db_path.unlink()
-    migrate(state_db, exec=False)
+    migrate("state", state_db, exec=False)
+    precomputed_db_path = db_dir / "pdb.sqlite"
+    precomputed_db = "sqlite:///%s" % precomputed_db_path
+    if precomputed_db_path.exists():
+        precomputed_db_path.unlink()
+    migrate("precomputed", precomputed_db, exec=False)
     unused_port = str(aiohttp_unused_port())
     env = os.environ.copy()
     env["ATHENIAN_INVITATION_URL_PREFIX"] = "https://app.athenian.co/i/"
@@ -20,8 +25,8 @@ def test_integration_micro(metadata_db, aiohttp_unused_port):
     env["ATHENIAN_DEFAULT_USER"] = "github|60340680"
     proc = subprocess.Popen(
         [sys.executable, "-m", "athenian.api", "--ui", "--metadata-db=" + metadata_db,
-         "--state-db=" + state_db, "--precomputed-db=sqlite://", "--memcached=localhost:11211",
-         "--port=" + unused_port],
+         "--state-db=" + state_db, "--precomputed-db=" + precomputed_db,
+         "--memcached=localhost:11211", "--port=" + unused_port],
         encoding="utf-8", text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     kill_cond = Condition()
 
@@ -34,12 +39,14 @@ def test_integration_micro(metadata_db, aiohttp_unused_port):
     killer = Thread(target=kill)
     killer.start()
     wins = 0
-    n_checks = 5
+    n_checks = 6
     for line in proc.stderr:
         print(line.rstrip())
         if "Connected to the server state DB" in line:
             wins += 1
         if "Connected to the metadata DB" in line:
+            wins += 1
+        if "Connected to the precomputed DB" in line:
             wins += 1
         if "Acquired new Auth0 management token" in line:
             wins += 1

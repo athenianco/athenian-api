@@ -21,14 +21,16 @@ except ImportError:
                 return args[0]
             return lambda fn: fn
 from sqlalchemy import create_engine, func
+from sqlalchemy.ext.declarative import DeclarativeMeta
 from sqlalchemy.orm import sessionmaker
 import uvloop
 
-from athenian.api import AthenianApp, create_memcached, setup_cache_metrics
+from athenian.api import AthenianApp, create_memcached, hack_sqlite_arrays, hack_sqlite_hstore, \
+    setup_cache_metrics
 from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
-from athenian.api.models.metadata import hack_sqlite_arrays
 from athenian.api.models.metadata.github import Base as MetadataBase, PullRequest
+from athenian.api.models.precomputed.models import Base as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
 from tests.sample_db_data import fill_metadata_session, fill_state_session
 
@@ -37,11 +39,17 @@ uvloop.install()
 np.seterr(all="raise")
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".sqlite")
+pdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.precomputed.", suffix=".sqlite")
 invitation_controller.ikey = "vadim"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
 override_mdb = os.getenv("OVERRIDE_MDB")
 override_sdb = os.getenv("OVERRIDE_SDB")
+override_pdb = os.getenv("OVERRIDE_PDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
+
+
+hack_sqlite_arrays()
+hack_sqlite_hstore()
 
 
 class FakeCache:
@@ -199,7 +207,6 @@ def metadata_db() -> str:
     if override_mdb:
         conn_str = override_mdb
     else:
-        hack_sqlite_arrays()
         metadata_db_path = db_dir / "mdb.sqlite"
         conn_str = "sqlite:///%s" % metadata_db_path
     engine = create_engine(conn_str)
@@ -216,36 +223,44 @@ def metadata_db() -> str:
     return conn_str
 
 
-@pytest.fixture(scope="function")
-def state_db() -> str:
-    if override_sdb:
-        conn_str = override_sdb
+def init_own_db(letter: str, base: DeclarativeMeta):
+    override_db = globals()["override_%sdb" % letter]
+    backup_path = globals()["%sdb_backup" % letter].name
+    if override_db:
+        conn_str = override_db
+        db_path = None
     else:
-        state_db_path = db_dir / "sdb.sqlite"
-        conn_str = "sqlite:///%s" % state_db_path
-        if state_db_path.exists():
-            state_db_path.unlink()
-        if Path(sdb_backup.name).stat().st_size > 0:
-            shutil.copy(sdb_backup.name, state_db_path)
+        db_path = db_dir / ("%sdb.sqlite" % letter)
+        conn_str = "sqlite:///%s" % db_path
+        if db_path.exists():
+            db_path.unlink()
+        if Path(backup_path).stat().st_size > 0:
+            shutil.copy(backup_path, db_path)
             return conn_str
     engine = create_engine(conn_str)
-    StateBase.metadata.drop_all(engine)
-    StateBase.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
-    try:
-        fill_state_session(session)
-        session.commit()
-    finally:
-        session.close()
-    if not override_sdb:
-        os.chmod(state_db_path, 0o666)
-        shutil.copy(state_db_path, sdb_backup.name)
+    base.metadata.drop_all(engine)
+    base.metadata.create_all(engine)
+    if letter == "s":
+        session = sessionmaker(bind=engine)()
+        try:
+            fill_state_session(session)
+            session.commit()
+        finally:
+            session.close()
+    if not override_db:
+        os.chmod(db_path, 0o666)
+        shutil.copy(db_path, backup_path)
     return conn_str
 
 
 @pytest.fixture(scope="function")
+def state_db() -> str:
+    return init_own_db("s", StateBase)
+
+
+@pytest.fixture(scope="function")
 def precomputed_db() -> str:
-    return "sqlite://"
+    return init_own_db("p", PrecomputedBase)
 
 
 @pytest.fixture(scope="function")

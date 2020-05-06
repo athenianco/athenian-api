@@ -2,4 +2,6 @@
 BOTS = {
     "codecov-io",
     "coveralls",
+    "dependabot",
+    "dependabot-preview",
 }

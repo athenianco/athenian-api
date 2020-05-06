@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 
 from athenian.api.controllers import invitation_controller
 from athenian.api.invite_admin import main as main_invite
-from athenian.api.models.state.__main__ import main as main_migrate
+from athenian.api.models import migrate
 from athenian.api.models.state.models import Base
 from tests.sample_db_data import fill_state_session
 
@@ -12,7 +12,7 @@ from tests.sample_db_data import fill_state_session
 async def test_reset_sequence(state_db):
     engine = create_engine(state_db)
     Base.metadata.drop_all(engine)
-    main_migrate(url=state_db, exec=False)
+    migrate("state", url=state_db, exec=False)
     session = sessionmaker(bind=engine)()
     try:
         fill_state_session(session)
