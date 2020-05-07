@@ -1,11 +1,10 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import json
-from typing import Set
+from typing import Collection, Dict, Set
 
 from aiohttp import ClientResponse
 import dateutil
-import numpy as np
 from prometheus_client import CollectorRegistry
 import pytest
 
@@ -147,32 +146,53 @@ async def test_filter_prs_single_prop(client, headers, prop, app, filter_prs_sin
     app._cache = filter_prs_single_prop_cache
     body = {
         "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
+        "date_to": "2020-04-23",
         "account": 1,
         "in": [],
         "properties": [prop],
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, {prop})
+    await validate_prs_response(response, {prop}, {},
+                                datetime(year=2020, month=4, day=23, tzinfo=timezone.utc))
 
 
 async def test_filter_prs_all_properties(client, headers):
     body = {
         "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
+        "date_to": "2020-04-23",
         "timezone": 60,
         "account": 1,
         "in": [],
         "properties": [],
     }
+    time_to = datetime(year=2020, month=4, day=23, tzinfo=timezone.utc)
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, set(PullRequestProperty))
+    await validate_prs_response(response, set(PullRequestProperty), {}, time_to)
     del body["properties"]
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, set(PullRequestProperty))
+    await validate_prs_response(response, set(PullRequestProperty), {}, time_to)
+
+
+async def test_filter_prs_shot(client, headers):
+    body = {
+        "date_from": "2016-10-13",
+        "date_to": "2018-01-23",
+        "timezone": 60,
+        "account": 1,
+        "in": [],
+        "properties": [PullRequestProperty.MERGE_HAPPENED],
+        "with": {
+            "author": ["github.com/mcuadros"],
+        },
+    }
+    time_to = datetime(year=2018, month=1, day=24, tzinfo=timezone.utc)
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    await validate_prs_response(response, {PullRequestProperty.MERGE_HAPPENED},
+                                {"author": ["github.com/mcuadros"]}, time_to)
 
 
 @pytest.mark.parametrize("timezone, must_match", [(120, True), (60, True), (0, False)])
@@ -219,130 +239,241 @@ async def test_filter_prs_created_timezone(client, headers, timezone, must_match
     assert matched == must_match
 
 
-async def validate_prs_response(response: ClientResponse, props: Set[str]):
+open_go_git_pr_numbers = {
+    570, 816, 970, 1273, 1069, 1086, 1098, 1139, 1152, 1153, 1173, 1238, 1243, 1246, 1254, 1270,
+    1269, 1272, 1286, 1291, 1285,
+}
+
+rejected_go_git_pr_numbers = {
+    3, 8, 75, 13, 46, 52, 53, 86, 103, 85, 101, 119, 127, 129, 156, 154, 257, 291, 272, 280, 281,
+    353, 329, 330, 382, 383, 474, 392, 399, 407, 494, 419, 420, 503, 437, 446, 1186, 497, 486,
+    506, 560, 548, 575, 591, 619, 639, 670, 671, 689, 743, 699, 715, 768, 776, 782, 790, 789, 824,
+    800, 805, 819, 821, 849, 861, 863, 926, 1185, 867, 872, 880, 878, 1188, 908, 946, 940, 947,
+    952, 951, 975, 1007, 1010, 976, 988, 997, 1003, 1002, 1016, 1104, 1120, 1044, 1062, 1075, 1078,
+    1109, 1103, 1122, 1187, 1182, 1168, 1170, 1183, 1184, 1213, 1248, 1247, 1265, 1276,
+}
+
+
+force_push_dropped_go_git_pr_numbers = {
+    504, 561, 907,
+    1, 2, 5, 6, 7, 9, 10, 11, 12, 14, 15, 20, 16, 17, 18, 21, 22, 23, 25, 26, 24, 27, 28, 30, 32,
+    34, 35, 37, 39, 47, 54, 56, 55, 58, 61, 64, 66, 63, 68, 69, 70, 74, 78, 79, 83, 84, 87, 88, 89,
+    92, 93, 94, 95, 96, 97, 90, 91, 104, 105, 106, 108, 99, 100, 102, 116, 117, 118, 109, 110, 111,
+    112, 113, 114, 115, 124, 121, 122, 130, 131, 132, 133, 135, 145, 146, 147, 148, 149, 150, 151,
+    153, 136, 138, 140, 141, 142, 143, 144, 157, 158, 159, 160, 161, 162, 163, 164, 165, 176, 177,
+    178, 179, 180, 181, 182, 183, 185, 186, 187, 188, 166, 167, 168, 169, 170, 171, 172, 173, 174,
+    175, 190, 191, 192, 189, 200, 201, 204, 205, 207, 209, 210, 212, 213, 214, 215, 218, 219, 221,
+    224, 227, 229, 230, 237, 240, 241, 233, 235, 244,
+}
+
+
+will_never_be_released_go_git_pr_numbers = {
+    1180, 1195, 1204, 1205, 1206, 1208, 1214, 1225, 1226, 1235, 1231,
+}
+
+
+undead_go_git_prs = force_push_dropped_go_git_pr_numbers.union(
+    will_never_be_released_go_git_pr_numbers)
+
+
+async def validate_prs_response(response: ClientResponse,
+                                props: Set[str],
+                                parts: Dict[str, Collection[str]],
+                                time_to: datetime):
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     obj = json.loads(text)
-    users = obj["include"]["users"]
+    prs = PullRequestSet.from_dict(obj)  # type: PullRequestSet
+    users = prs.include.users
     assert len(users) > 0
-    assert len(obj["data"]) > 0
-    statuses = defaultdict(int)
-    mentioned_users = set()
-    comments = 0
-    commits = 0
-    review_comments = 0
-    release_urls = 0
-    timestamps = defaultdict(bool)
-    response_props = defaultdict(bool)
-    stage_timings = defaultdict(int)
-    stages = {"wip": 0, "review": 1, "merge": 2, "release": 3}
-    for pr in obj["data"]:
-        assert pr["repository"].startswith("github.com/"), str(pr)
-        assert pr["number"] > 0
-        assert pr["title"]
-        assert pr["size_added"] + pr["size_removed"] >= 0, str(pr)
-        assert pr["files_changed"] >= 0, str(pr)
-        assert pr["created"], str(pr)
-        for k in ("closed", "updated", "merged", "released", "review_requested", "approved"):
-            timestamps[k] |= bool(pr.get(k))
-        if pr.get("merged"):
-            assert pr["closed"], str(pr)
-        if pr.get("released"):
-            assert pr["merged"], str(pr)
-        assert props.intersection(set(pr["properties"]))
-        comments += pr["comments"]
-        commits += pr["commits"]
-        review_comments += pr["review_comments"]
-        release_urls += bool(pr.get("release_url"))
-        for prop in pr["properties"]:
-            response_props[prop] = True
-        reported_timings = np.zeros(4, dtype=int)
-        for k, v in pr["stage_timings"].items():
-            reported_timings[stages[k]] = 1
-            stage_timings[k] += int(v[:-1])
-        diff = np.diff(reported_timings)
-        assert (diff == -1).sum() <= 1 or (reported_timings[:3] == [1, 0, 1]).all(), \
-            str(pr["stage_timings"])
-        participants = pr["participants"]
-        assert len(participants) > 0
+    assert len(prs.data) > 0
+    numbers = set()
+    total_comments = total_commits = total_review_comments = total_released = total_rejected = 0
+    total_review_requests = total_reviews = 0
+    tdz = timedelta(0)
+    timings = defaultdict(lambda: tdz)
+    for pr in prs.data:
+        assert pr.title
+        assert pr.repository == "github.com/src-d/go-git", str(pr)
+
+        assert pr.number > 0, str(pr)
+        assert pr.number not in numbers, str(pr)
+        numbers.add(pr.number)
+
+        # >= because there are closed PRs with 0 commits
+        assert pr.size_added >= 0, str(pr)
+        assert pr.size_removed >= 0, str(pr)
+        assert pr.files_changed >= 0, str(pr)
+        total_comments += pr.comments
+        total_commits += pr.commits
+        total_review_comments += pr.review_comments
+        total_reviews += pr.reviews
+        if pr.files_changed > 0:
+            assert pr.commits > 0, str(pr)
+        if pr.size_added > 0 or pr.size_removed > 0:
+            assert pr.files_changed > 0, str(pr)
+        if pr.review_comments > 0:
+            assert pr.reviews > 0, str(pr)
+
+        assert pr.created, str(pr)
+        assert pr.created < time_to
+        if pr.closed is None:
+            assert pr.merged is None
+        else:
+            assert pr.closed > pr.created
+        if pr.merged:
+            assert pr.closed is not None
+            assert abs(pr.merged - pr.closed) < timedelta(seconds=60)
+
+        assert props.intersection(set(pr.properties)), str(pr)
+        assert PullRequestProperty.CREATED in pr.properties, str(pr)
+        if pr.number not in open_go_git_pr_numbers:
+            assert pr.closed is not None
+            if pr.number not in undead_go_git_prs:
+                assert PullRequestProperty.DONE in pr.properties, str(pr)
+            else:
+                assert PullRequestProperty.MERGE_HAPPENED in pr.properties
+            if pr.number not in rejected_go_git_pr_numbers and pr.number not in undead_go_git_prs:
+                assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
+            else:
+                assert PullRequestProperty.RELEASE_HAPPENED not in pr.properties
+                if pr.number in rejected_go_git_pr_numbers:
+                    assert PullRequestProperty.MERGE_HAPPENED not in pr.properties
+        else:
+            assert pr.closed is None
+
+        if PullRequestProperty.WIP in pr.properties:
+            assert PullRequestProperty.COMMIT_HAPPENED in pr.properties, str(pr)
+        if PullRequestProperty.REVIEWING in pr.properties:
+            assert PullRequestProperty.COMMIT_HAPPENED in pr.properties, str(pr)
+            assert pr.stage_timings.review is not None
+        total_review_requests += PullRequestProperty.REVIEW_REQUEST_HAPPENED in pr.properties
+        if PullRequestProperty.MERGING in pr.properties:
+            assert PullRequestProperty.APPROVE_HAPPENED in pr.properties, str(pr)
+            assert pr.stage_timings.merge is not None
+        if PullRequestProperty.RELEASING in pr.properties:
+            assert PullRequestProperty.MERGE_HAPPENED in pr.properties, str(pr)
+            assert PullRequestProperty.COMMIT_HAPPENED in pr.properties, str(pr)
+            assert pr.stage_timings.release is not None, str(pr)
+        if PullRequestProperty.DONE in pr.properties:
+            assert pr.closed is not None, str(pr)
+            if PullRequestProperty.MERGE_HAPPENED in pr.properties:
+                assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
+            else:
+                total_rejected += 1
+
+        assert pr.stage_timings.wip is not None, str(pr)
+        if pr.stage_timings.wip == tdz:
+            if pr.stage_timings.merge is None:
+                # review requested at once, no new commits, not merged
+                assert pr.stage_timings.review > tdz, str(pr)
+            else:
+                # no new commits after opening the PR
+                assert pr.stage_timings.merge > tdz, str(pr)
+        else:
+            assert pr.stage_timings.wip > tdz, str(pr)
+        assert pr.stage_timings.review is None or pr.stage_timings.review >= tdz
+        assert pr.stage_timings.merge is None or pr.stage_timings.merge >= tdz
+        assert pr.stage_timings.release is None or pr.stage_timings.release > tdz
+        timings["wip"] += pr.stage_timings.wip
+        if pr.stage_timings.review is not None:
+            timings["review"] += pr.stage_timings.review
+        if pr.stage_timings.merge is not None:
+            timings["merge"] += pr.stage_timings.merge
+        if pr.stage_timings.release is not None:
+            timings["release"] += pr.stage_timings.release
+
+        if PullRequestProperty.REVIEW_HAPPENED in pr.properties:
+            # pr.review_comments can be 0
+            assert pr.stage_timings.review is not None
+        if pr.review_comments > 0:
+            assert PullRequestProperty.REVIEW_HAPPENED in pr.properties, str(pr)
+        if PullRequestProperty.APPROVE_HAPPENED in pr.properties:
+            assert PullRequestProperty.REVIEW_HAPPENED in pr.properties, str(pr)
+        if PullRequestProperty.CHANGES_REQUEST_HAPPENED in pr.properties:
+            assert PullRequestProperty.REVIEW_HAPPENED in pr.properties, str(pr)
+        if PullRequestProperty.MERGE_HAPPENED not in pr.properties and pr.closed is not None:
+            assert PullRequestProperty.DONE in pr.properties
+            if pr.stage_timings.merge is None:
+                # https://github.com/src-d/go-git/pull/878
+                assert pr.commits == 0, str(pr)
+            else:
+                assert pr.stage_timings.merge > tdz or pr.stage_timings.review > tdz, str(pr)
+        if PullRequestProperty.RELEASE_HAPPENED in pr.properties:
+            assert PullRequestProperty.DONE in pr.properties, str(pr)
+            assert pr.released is not None, str(pr)
+            assert pr.stage_timings.merge is not None, str(pr)
+            assert pr.stage_timings.release is not None
+        if pr.released is not None:
+            assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
+            assert PullRequestProperty.DONE in pr.properties, str(pr)
+            assert pr.release_url, str(pr)
+            total_released += 1
+
+        assert len(pr.participants) > 0
         authors = 0
-        for p in participants:
-            assert p["id"].startswith("github.com/")
-            mentioned_users.add(p["id"])
-            is_author = PullRequestParticipant.STATUS_AUTHOR in p["status"]
+        reviewers = 0
+        mergers = 0
+        releasers = 0
+        inverse_participants = defaultdict(set)
+        for p in pr.participants:
+            assert p.id.startswith("github.com/")
+            is_author = PullRequestParticipant.STATUS_AUTHOR in p.status
             authors += is_author
             if is_author:
-                assert PullRequestParticipant.STATUS_REVIEWER not in p["status"], pr["number"]
-            for s in p["status"]:
-                statuses[s] += 1
-                assert s in PullRequestParticipant.STATUSES
-        if pr["number"] != 749:
+                assert PullRequestParticipant.STATUS_REVIEWER not in p.status, pr.number
+            reviewers += PullRequestParticipant.STATUS_REVIEWER in p.status
+            mergers += PullRequestParticipant.STATUS_MERGER in p.status
+            releasers += PullRequestParticipant.STATUS_RELEASER in p.status
+            for s in p.status:
+                inverse_participants[s].add(p.id)
+        if pr.number != 749:
             # the author of 749 is deleted on GitHub
             assert authors == 1
-    assert not (set(users) - mentioned_users)
-    assert commits > 0
-    assert timestamps["updated"]
-    if PullRequestProperty.WIP in props:
-        assert statuses[PullRequestParticipant.STATUS_COMMIT_COMMITTER] > 0
-        assert statuses[PullRequestParticipant.STATUS_COMMIT_AUTHOR] > 0
-        assert response_props.get(PullRequestProperty.WIP)
-        assert response_props.get(PullRequestProperty.CREATED)
-        assert response_props.get(PullRequestProperty.COMMIT_HAPPENED)
-        assert "wip" in stage_timings
-    if PullRequestProperty.REVIEWING in props:
-        assert comments > 0
-        assert review_comments > 0
-        assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-        assert response_props.get(PullRequestProperty.REVIEWING)
-        assert response_props.get(PullRequestProperty.REVIEW_HAPPENED)
-        assert response_props.get(PullRequestProperty.COMMIT_HAPPENED)
-        assert response_props.get(PullRequestProperty.REVIEW_REQUEST_HAPPENED)
-        assert response_props.get(PullRequestProperty.CHANGES_REQUEST_HAPPENED)
-        assert "wip" in stage_timings
-        assert "review" in stage_timings
-    if PullRequestProperty.MERGING in props:
-        assert timestamps["review_requested"]
-        assert timestamps["approved"]
-        assert comments > 0
-        assert review_comments >= 0
-        assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-        assert response_props.get(PullRequestProperty.MERGING)
-        assert response_props.get(PullRequestProperty.COMMIT_HAPPENED)
-        assert response_props.get(PullRequestProperty.REVIEW_HAPPENED)
-        assert response_props.get(PullRequestProperty.APPROVE_HAPPENED)
-        assert "wip" in stage_timings
-        assert "review" in stage_timings
-        assert "merge" in stage_timings
-    if PullRequestProperty.RELEASING in props:
-        assert timestamps["review_requested"]
-        assert timestamps["approved"]
-        assert comments > 0
-        assert review_comments >= 0
-        assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-        assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
-        assert response_props.get(PullRequestProperty.RELEASING)
-        assert response_props.get(PullRequestProperty.MERGE_HAPPENED)
-        assert timestamps["merged"]
-        assert "wip" in stage_timings
-        assert "review" in stage_timings
-        assert "merge" in stage_timings
-        assert "release" in stage_timings
-    if PullRequestProperty.DONE in props:
-        assert timestamps["review_requested"]
-        assert timestamps["approved"]
-        assert comments > 0
-        assert review_comments > 0
-        assert statuses[PullRequestParticipant.STATUS_REVIEWER] > 0
-        assert statuses[PullRequestParticipant.STATUS_MERGER] > 0
-        assert statuses[PullRequestParticipant.STATUS_RELEASER] > 0
-        assert response_props.get(PullRequestProperty.DONE)
-        assert response_props.get(PullRequestProperty.RELEASE_HAPPENED)
-        assert timestamps["released"]
-        assert timestamps["closed"]
-        assert "wip" in stage_timings
-        assert "review" in stage_timings
-        assert "merge" in stage_timings
-        assert "release" in stage_timings
+        if reviewers == 0:
+            assert PullRequestProperty.REVIEW_HAPPENED not in pr.properties
+            assert PullRequestProperty.APPROVE_HAPPENED not in pr.properties
+            assert PullRequestProperty.CHANGES_REQUEST_HAPPENED not in pr.properties
+        else:
+            assert PullRequestProperty.REVIEW_HAPPENED in pr.properties
+        assert mergers <= 1
+        if mergers == 1:
+            assert PullRequestProperty.MERGE_HAPPENED in pr.properties
+        assert releasers <= 1
+        if releasers == 1:
+            assert PullRequestProperty.RELEASE_HAPPENED in pr.properties
+        if parts:
+            passed = False
+            for role, p in parts.items():
+                passed |= bool(inverse_participants[role].intersection(set(p)))
+            assert passed
+        # we cannot cover all possible cases while keeping the test run time reasonable :(
+
+    assert total_comments > 0
+    assert total_commits > 0
+    if props not in ({PullRequestProperty.WIP}, {PullRequestProperty.MERGING}):
+        assert total_review_comments > 0
+    else:
+        assert total_review_comments == 0
+    if props != {PullRequestProperty.WIP}:
+        assert total_reviews > 0
+    if props not in ({PullRequestProperty.RELEASE_HAPPENED}, {PullRequestProperty.MERGE_HAPPENED},
+                     {PullRequestProperty.RELEASING}, {PullRequestProperty.MERGING},
+                     {PullRequestProperty.REVIEWING}, {PullRequestProperty.WIP}):
+        assert total_rejected > 0
+    else:
+        assert total_rejected == 0
+    if props not in ({PullRequestProperty.RELEASING}, {PullRequestProperty.MERGING},
+                     {PullRequestProperty.REVIEWING}, {PullRequestProperty.WIP}):
+        assert total_released > 0
+    else:
+        assert total_released == 0
+    if {PullRequestProperty.REVIEWING, PullRequestProperty.CHANGES_REQUEST_HAPPENED,
+            PullRequestProperty.REVIEW_HAPPENED, PullRequestProperty.APPROVE_HAPPENED,
+            PullRequestProperty.CHANGES_REQUEST_HAPPENED}.intersection(props):
+        assert total_review_requests > 0
+    for k, v in timings.items():
+        assert v > tdz, k
 
 
 @pytest.mark.parametrize("account, date_to, code",

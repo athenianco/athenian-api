@@ -12,6 +12,10 @@ T = typing.TypeVar("T")
 Class = typing.Type[T]
 
 
+class ParseError(ValueError):
+    """Value parsing error that is raised in the functions below."""
+
+
 def _deserialize(
     data: Union[dict, list, str], klass: Union[Class, str],
 ) -> Union[dict, list, Class, int, float, str, bool, datetime.date, datetime.datetime,
@@ -74,7 +78,10 @@ def deserialize_date(string: str) -> datetime.date:
     :param string: str.
     :return: date.
     """
-    return parse_datetime(string, ignoretz=True).date()
+    try:
+        return parse_datetime(string, ignoretz=True).date()
+    except Exception as e:
+        raise ParseError(string) from e
 
 
 def deserialize_datetime(string: str) -> datetime.datetime:
@@ -85,7 +92,10 @@ def deserialize_datetime(string: str) -> datetime.datetime:
     :param string: str.
     :return: datetime.
     """
-    return parse_datetime(string)
+    try:
+        return parse_datetime(string)
+    except Exception as e:
+        raise ParseError(string) from e
 
 
 def deserialize_timedelta(string: str) -> datetime.timedelta:
@@ -97,8 +107,11 @@ def deserialize_timedelta(string: str) -> datetime.timedelta:
     :return: datetime.
     """
     if not string.endswith("s"):
-        raise ValueError("Unsupported timedelta format: " + string)
-    return datetime.timedelta(seconds=int(string[:-1]))
+        raise ParseError("Unsupported timedelta format: " + string)
+    try:
+        return datetime.timedelta(seconds=int(string[:-1]))
+    except Exception as e:
+        raise ParseError(string) from e
 
 
 def deserialize_model(data: Union[dict, list], klass: Class) -> T:

@@ -126,7 +126,7 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=_serialize_for_cache,
         deserialize=_deserialize_from_cache,
-        key=lambda date_from, date_to, repositories, developers, release_settings, **_: (
+        key=lambda date_from, date_to, release_settings, **_: (
             date_from.toordinal(), date_to.toordinal(), release_settings,
         ),
         postprocess=_postprocess_cached_prs,
@@ -168,6 +168,38 @@ class PullRequestMiner:
             cls.log.info("PR blacklist cut the number of PRs from %d to %d", old_len, len(prs))
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
         cls._truncate_timestamps(prs, time_to)
+        # bypass the useless inner caching by calling __wrapped__ directly
+        dfs = await cls.mine_by_ids.__wrapped__(
+            cls, prs, time_from, time_to, release_settings, db, cache)
+        dfs = [prs, *dfs]
+        cls._drop(dfs, cls._find_drop_by_developers(dfs, developers))
+        return dfs, repositories, developers
+
+    @classmethod
+    @cached(
+        exptime=lambda cls, **_: cls.CACHE_TTL,
+        serialize=_serialize_for_cache,
+        deserialize=_deserialize_from_cache,
+        key=lambda prs, time_from, time_to, release_settings, **_: (
+            ",".join(prs.index), time_from.timestamp(), time_to.timestamp(), release_settings,
+        ),
+        postprocess=_postprocess_cached_prs,
+        version=3,
+    )
+    async def mine_by_ids(cls,
+                          prs: pd.DataFrame,
+                          time_from: datetime,
+                          time_to: datetime,
+                          release_settings: Dict[str, ReleaseMatchSetting],
+                          db: databases.Database,
+                          cache: Optional[aiomcache.Client],
+                          ) -> List[pd.DataFrame]:
+        """
+        Fetch PR metadata for certain PRs.
+
+        :param prs: pandas DataFrame with fetched PullRequest-s. Only the details about those PRs \
+                    will be loaded from the DB.
+        """
         node_ids = prs.index if len(prs) > 0 else set()
 
         async def fetch_reviews():
@@ -203,12 +235,9 @@ class PullRequestMiner:
             return await map_prs_to_releases(
                 merged_prs, time_from, time_to, release_settings, db, cache)
 
-        dfs = await asyncio.gather(
+        return await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
             fetch_commits(), map_releases())
-        dfs = [prs, *dfs]
-        cls._drop(dfs, cls._find_drop_by_developers(dfs, developers))
-        return dfs, repositories, developers
 
     _serialize_for_cache = staticmethod(_serialize_for_cache)
     _deserialize_from_cache = staticmethod(_deserialize_from_cache)
@@ -394,6 +423,9 @@ class PullRequestMiner:
         empty_df_cache = {}
         pr_columns = [PullRequest.node_id.key]
         pr_columns.extend(self._prs.columns)
+        if not self._prs.index.is_monotonic_increasing:
+            raise IndexError("PRs index must be pre-sorted ascending: "
+                             "prs.sort_index(inplace=True)")
         for pr_tuple in self._prs.itertuples():
             pr_node_id = pr_tuple.Index
             items = {"pr": dict(zip(pr_columns, pr_tuple))}
@@ -401,7 +433,7 @@ class PullRequestMiner:
                     df_fields, grouped_df_states, grouped_df_iters, dfs)):
                 if state_pr_node_id == pr_node_id:
                     if not k.endswith("s"):
-                        # must faster than gdf.iloc[0]
+                        # much faster than gdf.iloc[0]
                         gdf = {c: v for c, v in zip(gdf.columns, gdf._data.fast_xs(0))}
                     else:
                         gdf.index = gdf.index.droplevel(0)
@@ -557,10 +589,18 @@ class ImpossiblePullRequest(Exception):
     """Raised by PullRequestTimesMiner._compile() on broken PRs."""
 
 
-class PullRequestTimesMiner(PullRequestMiner):
-    """Extract the pull request update timestamps from the metadata DB."""
+class PullRequestTimesMiner:
+    """Extract the pull request event timestamps from MinedPullRequest-s."""
 
-    def _compile(self, pr: MinedPullRequest) -> PullRequestTimes:
+    log = logging.getLogger("%s.PullRequestTimesMiner" % metadata.__package__)
+
+    def __call__(self, pr: MinedPullRequest) -> PullRequestTimes:
+        """
+        Extract the pull request event timestamps from a MinedPullRequest.
+
+        May raise ImpossiblePullRequest if the PR has an "impossible" state like
+        created after closed.
+        """
         created_at = Fallback(pr.pr[PullRequest.created_at.key], None)
         merged_at = Fallback(pr.pr[PullRequest.merged_at.key], None)
         closed_at = Fallback(pr.pr[PullRequest.closed_at.key], None)
@@ -703,14 +743,6 @@ class PullRequestTimesMiner(PullRequestMiner):
                            url, times.merged.best, times.released.best,
                            times.released.best - times.merged.best)
             raise ImpossiblePullRequest()
-
-    def __iter__(self) -> Generator[Tuple[Dict[str, Any], PullRequestTimes], None, None]:
-        """Yield pairs of PR metadata with corresponding `PullRequestTimes`."""
-        for pr in super().__iter__():
-            try:
-                yield pr.pr, self._compile(pr)
-            except ImpossiblePullRequest:
-                continue
 
 
 def dtmin(*args: Union[DT, float]) -> DT:

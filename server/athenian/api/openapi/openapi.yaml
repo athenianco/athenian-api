@@ -1861,7 +1861,9 @@ components:
       type: object
     PullRequest:
       additionalProperties: false
-      description: Details of a pull request.
+      description: Details of a pull request. All the attributes, stats and events
+        correspond to "today", not `date_to`, *except for the PR stages
+        `wip`, `reviewing`, `merging`, `releasing`*, which correspond to `date_to`.
       example:
         # https://github.com/src-d/go-git/pull/1152
         repository: github.com/src-d/go-git
@@ -1922,7 +1924,7 @@ components:
           description: Number of commits in this PR.
           type: integer
         review_requested:
-          description: When the author of this PR requested a review last time.
+          description: When was the last time the author of this PR requested a review.
           format: date-time
           type: string
         approved:
@@ -1930,7 +1932,15 @@ components:
           format: date-time
           type: string
         review_comments:
-          description: Number of review comments this PR received.
+          description: |-
+            Number of review comments this PR received. A review comment is left at
+            a specific line in a specific file. In other words: review summaries are
+            *not* considered review comments; refer to `reviews`. Comments by the PR
+            author are considered as `comments`, not as `review_comments`.
+          type: integer
+        reviews:
+          description: Number of times this PR was reviewed. Reviews by the PR
+            author are not taken into account.
           type: integer
         merged:
           description: When this PR was merged.
