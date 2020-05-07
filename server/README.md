@@ -39,9 +39,9 @@ pytest
 
 ## Operations
 
-[Deployment.](DEPLOYMENT.md)
-
-[DB migration.](server/athenian/api/models/state/README.md)
+* [Deployment.](DEPLOYMENT.md)
+* [State DB migration.](server/athenian/api/models/state/README.md)
+* [Precomputed DB migration.](server/athenian/api/models/precomputed/README.md)
 
 Prometheus monitoring: `http://localhost:8080/status`.
 

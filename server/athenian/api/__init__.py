@@ -11,6 +11,7 @@ from pathlib import Path
 import signal
 import socket
 import sys
+import threading
 from typing import Callable, Optional
 
 import aiohttp.web
@@ -34,7 +35,8 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.db import measure_db_overhead
 from athenian.api.metadata import __package__
-from athenian.api.models.state import check_schema_version
+from athenian.api.models import check_schema_version, DBSchemaVersionMismatchError, \
+    hack_sqlite_arrays, hack_sqlite_hstore
 from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
@@ -412,13 +414,40 @@ def create_auth0_factory(force_default_user: bool) -> Callable[[], Auth0]:
     return factory
 
 
-def main():
+def check_schema_versions(state_db: str, precomputed_db: str, log: logging.Logger) -> bool:
+    """Validate schema versions in parallel threads."""
+    passed = True
+
+    def check(name, cs):
+        nonlocal passed
+        try:
+            check_schema_version(name, cs, log)
+        except DBSchemaVersionMismatchError as e:
+            passed = False
+            log.error("%s schema version check failed: %s", name, e)
+        except Exception:
+            passed = False
+            log.exception("while checking %s", name)
+
+    checkers = [threading.Thread(target=check, args=args)
+                for args in (("state", state_db), ("precomputed", precomputed_db))]
+    for t in checkers:
+        t.start()
+    for t in checkers:
+        t.join()
+    return passed
+
+
+def main() -> Optional[AthenianApp]:
     """Server entry point."""
     uvloop.install()
     args = parse_args()
     log = logging.getLogger(__package__)
     setup_context(log)
-    check_schema_version(args.state_db, log)
+    if not check_schema_versions(args.state_db, args.precomputed_db, log):
+        return None
+    hack_sqlite_arrays()
+    hack_sqlite_hstore()
     cache = create_memcached(args.memcached, log)
     auth0_cls = create_auth0_factory(args.force_default_user)
     app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db,

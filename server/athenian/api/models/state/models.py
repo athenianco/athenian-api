@@ -4,70 +4,12 @@ import json
 
 from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, func, Integer, JSON, \
     SmallInteger, String, TIMESTAMP, UniqueConstraint
-from sqlalchemy.ext.declarative import declarative_base
 import xxhash
 
-
-# The following two classes compensate the absent ORM layer in databases.Database.
-
-
-def always_unequal(coltype):
-    """Mark certain attributes to be always included in the execution context."""
-    coltype.compare_values = lambda _1, _2: False
-    return coltype
+from athenian.api.models import always_unequal, create_base
 
 
-class Refresheable:
-    """Mixin to invoke default() and onupdate() on all the columns."""
-
-    class Context:
-        """Pretend to be a fully-featured SQLAlchemy execution context."""
-
-        def __init__(self, parameters: dict):
-            """init"""
-            self.current_parameters = parameters
-
-        def get_current_parameters(self):
-            """Pretend to be a fully-featured context."""
-            return self.current_parameters
-
-    def create_defaults(self) -> "Refresheable":
-        """Call default() on all the columns."""
-        ctx = self.Context(self.__dict__)
-        for k, v in self.__table__.columns.items():
-            if getattr(self, k, None) is None and v.default is not None:
-                arg = v.default.arg
-                if callable(arg):
-                    arg = arg(ctx)
-                setattr(self, k, arg)
-        return self
-
-    def refresh(self) -> "Refresheable":
-        """Call onupdate() on all the columns."""
-        ctx = self.Context(self.__dict__)
-        for k, v in self.__table__.columns.items():
-            if v.onupdate is not None:
-                setattr(self, k, v.onupdate.arg(ctx))
-        return self
-
-    def touch(self, exclude=tuple()) -> "Refresheable":
-        """Enable full onupdate() in the next session.flush()."""
-        for k in self.__table__.columns.keys():
-            if k not in exclude:
-                setattr(self, k, getattr(self, k))
-        return self
-
-
-class Explodeable:
-    """Convert the model to a dict."""
-
-    def explode(self, with_primary_keys=False):
-        """Return a dict of the model data attributes."""
-        return {k: getattr(self, k) for k, v in self.__table__.columns.items()
-                if not v.primary_key or with_primary_keys}
-
-
-Base = declarative_base(cls=(Refresheable, Explodeable))
+Base = create_base()
 
 
 class RepositorySet(Base):

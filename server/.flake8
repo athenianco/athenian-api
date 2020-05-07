@@ -10,4 +10,4 @@ per-file-ignores=
     athenian/api/models/web/__init__.py:F401
     athenian/api/models/*.py:D400,D401,D403
     athenian/api/models/metadata/github/__init__.py:D101
-    athenian/api/models/state/versions/*.py:D103,D400
+    athenian/api/models/*/versions/*.py:D103,D400
