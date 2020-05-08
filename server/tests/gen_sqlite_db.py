@@ -16,7 +16,7 @@ try:
 except ImportError:
     pass
 
-from athenian.api.models.state.__main__ import main as migrate_state
+from athenian.api.models import migrate
 from tests.conftest import db_dir, metadata_db
 from tests.sample_db_data import fill_state_session
 
@@ -31,22 +31,22 @@ def parse_args():
 def main():
     args = parse_args()
     metadata_db()
-    state_db_path = db_dir / "sdb.sqlite"
-    if state_db_path.exists():
-        state_db_path.unlink()
+    for letter, name in (("s", "state"), ("p", "precomputed")):
+        db_path = db_dir / ("%sdb.sqlite" % letter)
+        if db_path.exists():
+            db_path.unlink()
+        conn_str = "sqlite:///%s" % db_path
+        migrate(name, conn_str, exec=False)
 
-    conn_str = "sqlite:///%s" % state_db_path
-    migrate_state(conn_str, exec=False)
-
-    if not args.no_state_samples:
-        engine = create_engine(conn_str)
-        session = sessionmaker(bind=engine)()
-        try:
-            fill_state_session(session)
-            session.commit()
-        finally:
-            session.close()
-    os.chmod(state_db_path, 0o666)
+        if letter == "s" and not args.no_state_samples:
+            engine = create_engine(conn_str)
+            session = sessionmaker(bind=engine)()
+            try:
+                fill_state_session(session)
+                session.commit()
+            finally:
+                session.close()
+        os.chmod(db_path, 0o666)
 
 
 if __name__ == "__main__":
