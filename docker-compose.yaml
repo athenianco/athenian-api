@@ -7,6 +7,8 @@ services:
     command: >
       -c "python3 -m athenian.api.models.state \
             postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state &&
+          python3 -m athenian.api.models.precomputed \
+            postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed &&
           python3 -m athenian.api \
             --log-level=${API_LOG_LEVEL:-INFO} \
             --log-structured \
