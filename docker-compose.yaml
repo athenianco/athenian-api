@@ -34,6 +34,8 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-api}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-api}
+    ports:
+      - 5432:5432
     volumes:
       - postgres:/var/lib/postgresql/data
       - db_dumps:/db_dumps
@@ -41,6 +43,8 @@ services:
   memcached:
     image: launcher.gcr.io/google/memcached1
     command: ['memcached', '-m', '64']
+    ports:
+      - 11211:11211
 
   cloud_sql_proxy:
     image: gcr.io/cloudsql-docker/gce-proxy:1.14
