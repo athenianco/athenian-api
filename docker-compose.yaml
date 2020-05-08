@@ -7,11 +7,16 @@ services:
     command: >
       -c "python3 -m athenian.api.models.state \
             postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state &&
+          python3 -m athenian.api.models.precomputed \
+            postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed &&
+          python3 -m athenian.api.models.metadata \
+            postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata &&
           python3 -m athenian.api \
             --log-level=${API_LOG_LEVEL:-INFO} \
             --log-structured \
             --host=0.0.0.0 \
             --port=8080 \
+            --memcached=memcached:11211 \
             --metadata-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata \
             --state-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state \
             --precomputed-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed \
@@ -29,6 +34,8 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-api}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-api}
+    ports:
+      - 5432:5432
     volumes:
       - postgres:/var/lib/postgresql/data
       - db_dumps:/db_dumps
@@ -36,6 +43,8 @@ services:
   memcached:
     image: launcher.gcr.io/google/memcached1
     command: ['memcached', '-m', '64']
+    ports:
+      - 11211:11211
 
   cloud_sql_proxy:
     image: gcr.io/cloudsql-docker/gce-proxy:1.14
