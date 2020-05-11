@@ -10,7 +10,7 @@ scipy==1.2.1
 sentry-sdk==0.14.3
 prometheus_client==0.7.1
 alembic==1.4.2
-pandas==1.0.1
+pandas==1.0.3
 pyarrow==0.17.0
 python-jose[cryptography]==3.1.0
 python-dateutil==2.8.1
