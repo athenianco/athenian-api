@@ -225,6 +225,8 @@ async def _match_releases_by_branch(repos: Iterable[str],
     for e in errors:
         if e is not None:
             raise e from None
+    if not pseudo_releases:
+        return _new_map_df()
     return pd.concat(pseudo_releases)
 
 

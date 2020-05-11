@@ -139,6 +139,21 @@ async def test_load_releases_branches(mdb, cache, branches):
     check_branch_releases(releases, 240, date_from, date_to)
 
 
+async def test_load_releases_branches_empty(mdb, cache):
+    date_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
+    date_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
+    releases = await load_releases(
+        ["src-d/go-git"],
+        date_from,
+        date_to,
+        {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="unknown", tags="", match=Match.branch)},
+        mdb,
+        cache,
+    )
+    assert len(releases) == 0
+
+
 @pytest.mark.parametrize("date_from, n", [
     (datetime(year=2017, month=10, day=4, tzinfo=timezone.utc), 45),
     (datetime(year=2017, month=9, day=4, tzinfo=timezone.utc), 1),
