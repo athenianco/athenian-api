@@ -217,12 +217,13 @@ class PullRequestListMiner:
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, properties, participants, **_: (
+    key=lambda time_from, time_to, repos, properties, participants, release_settings, **_: (
         time_from.timestamp(),
         time_to.timestamp(),
         ",".join(sorted(repos)),
         ",".join(s.name.lower() for s in sorted(set(properties))),
         sorted((k.name.lower(), sorted(set(v))) for k, v in participants.items()),
+        release_settings,
     ),
 )
 async def filter_pull_requests(properties: Collection[Property],
