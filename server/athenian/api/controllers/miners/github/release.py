@@ -226,7 +226,8 @@ async def _match_releases_by_branch(repos: Iterable[str],
         if e is not None:
             raise e from None
     if not pseudo_releases:
-        return pd.DataFrame(columns=[c.name for c in Release.__table__.columns])
+        return pd.DataFrame(
+            columns=[c.name for c in Release.__table__.columns] + [matched_by_column])
     return pd.concat(pseudo_releases)
 
 
