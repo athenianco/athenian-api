@@ -52,6 +52,8 @@ You have to manually edit the new files:
 7. Copy the class desription from the spec over those lame "DO NOT EDIT" warnings.
 8. When in doubt, look at the many examples around.
 
+Finally, run `python3 -m athenian.api.models.web` to regenerate `server/athenian/api/models/web/__init__.py`.
+
 ## Add the implementation
 
 Change the type of the request to `athenian.api.request.AthenianWebRequest` to enjoy better IDE hints.
