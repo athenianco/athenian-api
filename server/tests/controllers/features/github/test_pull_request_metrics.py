@@ -14,6 +14,7 @@ from athenian.api.controllers.features.github.pull_request_metrics import AllCou
     WorkInProgressCounter, WorkInProgressTimeCalculator
 from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestTimes, \
     PullRequestTimesMiner
+from athenian.api.controllers.settings import Match, ReleaseMatchSetting
 from athenian.api.models.web import Granularity, PullRequestMetricID
 from tests.conftest import has_memcached
 from tests.controllers.features.github.test_pull_request import ensure_dtype
@@ -198,3 +199,18 @@ async def test_calc_pull_request_metrics_line_github_cache(
     assert metrics1.value == metrics2.value
     assert metrics1.confidence_score() == metrics2.confidence_score()
     assert metrics1.confidence_min < metrics1.value < metrics1.confidence_max
+
+
+async def test_calc_pull_request_metrics_line_github_changed_releases(
+        mdb, cache, release_match_setting_tag):
+    date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
+    date_to = datetime(year=2017, month=10, day=1, tzinfo=timezone.utc)
+    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]],
+            ["src-d/go-git"], release_match_setting_tag, [], mdb, cache]
+    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    release_match_setting_tag = {
+        "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", Match.branch),
+    }
+    args[-4] = release_match_setting_tag
+    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    assert metrics1 != metrics2
