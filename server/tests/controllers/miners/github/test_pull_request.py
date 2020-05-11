@@ -8,6 +8,7 @@ import pytest
 
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
     PullRequestTimes, PullRequestTimesMiner
+from athenian.api.controllers.settings import Match, ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest
 from tests.conftest import has_memcached
 
@@ -261,4 +262,23 @@ async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_settin
     prts = list(miner)
     assert len(prts) > 0
     for prt in prts:
+        validate_pull_request_times(*prt)
+
+
+async def test_pr_times_miner_empty_releases(mdb):
+    date_from = date(year=2017, month=1, day=1)
+    date_to = date(year=2018, month=1, day=1)
+    miner = await PullRequestTimesMiner.mine(
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
+        ["src-d/go-git"],
+        {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="unknown", tags="", match=Match.branch)},
+        [],
+        mdb,
+        None,
+    )
+    for prt in miner:
         validate_pull_request_times(*prt)
