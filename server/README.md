@@ -101,6 +101,8 @@ You should have two SQLite files in `$(pwd)`: `mdb.sqlite` and `sdb.sqlite`. The
 
 Obtain Auth0 credentials for running locally: [webapp docs](https://github.com/athenianco/athenian-webapp/blob/master/docs/CONTRIBUTING.md#auth0-and-github-app-local-testing).
 
+# [Guide to adding new endpoints.](ADDING_ENDPOINTS.md)
+
 ### Running tests against a real metadata DB
 
 ```
