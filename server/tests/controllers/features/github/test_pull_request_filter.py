@@ -48,8 +48,8 @@ async def test_pr_list_miner_match_participants(mdb, release_match_setting_tag, 
                                                  date(year=2016, month=12, day=15)),
                                                 (date(year=2016, month=11, day=17),
                                                  date(year=2016, month=12, day=1))])
-async def test_pr_list_miner_match_metrics_all_count(mdb, release_match_setting_tag,
-                                                     date_from, date_to):
+async def test_pr_list_miner_match_metrics_all_count(
+        mdb, pdb, release_match_setting_tag, date_from, date_to):
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
     time_to = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
     prs = list(await filter_pull_requests(
@@ -58,7 +58,7 @@ async def test_pr_list_miner_match_metrics_all_count(mdb, release_match_setting_
     assert prs
     metric = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_to]],
-        ["src-d/go-git"], release_match_setting_tag, [], mdb, None,
+        ["src-d/go-git"], [], release_match_setting_tag, mdb, pdb, None,
     ))[0][0][0]
     assert len(prs) == metric.value
 

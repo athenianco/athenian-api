@@ -128,8 +128,9 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
              chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs)}
     avatars = await request.mdb.fetch_all(
         select([User.login, User.avatar_url]).where(User.login.in_(users)))
+    prefix = PREFIXES["github"]
     model = PullRequestSet(include=IncludedNativeUsers(users={
-        "github.com/" + r[User.login.key]: IncludedNativeUser(avatar=r[User.avatar_url.key])
+        prefix + r[User.login.key]: IncludedNativeUser(avatar=r[User.avatar_url.key])
         for r in avatars
     }), data=web_prs)
     return model_response(model)
@@ -168,6 +169,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     model = CommitsList(data=[], include=IncludedNativeUsers(users={}))
     users = model.include.users
     utc = timezone.utc
+    prefix = PREFIXES["github"]
     for commit in commits.itertuples():
         author_login = getattr(commit, PushCommit.author_login.key)
         committer_login = getattr(commit, PushCommit.committer_login.key)
@@ -179,13 +181,13 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
             size_removed=getattr(commit, PushCommit.deletions.key),
             files_changed=getattr(commit, PushCommit.changed_files.key),
             author=CommitSignature(
-                login=("github.com/" + author_login) if author_login else None,
+                login=(prefix + author_login) if author_login else None,
                 name=getattr(commit, PushCommit.author_name.key),
                 email=getattr(commit, PushCommit.author_email.key),
                 timestamp=getattr(commit, PushCommit.authored_date.key).replace(tzinfo=utc),
             ),
             committer=CommitSignature(
-                login=("github.com/" + committer_login) if committer_login else None,
+                login=(prefix + committer_login) if committer_login else None,
                 name=getattr(commit, PushCommit.committer_name.key),
                 email=getattr(commit, PushCommit.committer_email.key),
                 timestamp=getattr(commit, PushCommit.committed_date.key).replace(tzinfo=utc),

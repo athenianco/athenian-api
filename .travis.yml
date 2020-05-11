@@ -38,7 +38,6 @@ _setup_postgres: &_setup_postgres
   - psql -c "create database state template 'template0' lc_collate 'C.UTF-8';" -U postgres
   - psql -c "create database metadata template 'template0' lc_collate 'C.UTF-8';" -U postgres
   - psql -c "create database precomputed template 'template0' lc_collate 'C.UTF-8';" -U postgres
-  - psql -c "create extension hstore;" -U postgres -d precomputed
   - export OVERRIDE_SDB=postgresql://postgres:postgres@0.0.0.0:5432/state
   - export OVERRIDE_MDB=postgresql://postgres:postgres@0.0.0.0:5432/metadata
   - export OVERRIDE_PDB=postgresql://postgres:postgres@0.0.0.0:5432/precomputed

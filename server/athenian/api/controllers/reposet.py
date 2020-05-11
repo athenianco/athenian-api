@@ -14,6 +14,7 @@ from athenian.api import metadata
 from athenian.api.controllers.account import get_installation_ids, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.metadata import __package__
+from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
 from athenian.api.models.state.models import Installation, RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourceDataError, \
@@ -110,14 +111,13 @@ async def resolve_repos(repositories: List[str],
         await asyncio.gather(*[
             resolve_reposet(r, ".in[%d]" % i, uid, account, sdb_conn, cache)
             for i, r in enumerate(repositories)])))
-    prefix = "github.com/"
+    prefix = PREFIXES["github"]
     checked_repos = {r[r.startswith(prefix) and len(prefix):] for r in repos}
     checker = await access_classes["github"](account, sdb_conn, mdb_conn, cache).load()
     denied = await checker.check(checked_repos)
     if denied:
         raise ResponseError(ForbiddenError(
-            detail="the following repositories are access denied for %s: %s" %
-                   ("github.com/", denied),
+            detail="the following repositories are access denied for %s: %s" % (prefix, denied),
         ))
     if strip_prefix:
         repos = checked_repos
@@ -200,7 +200,8 @@ async def _load_account_reposets(account: int,
                     await sdb_conn.execute(insert(Installation).values(values))
             repos = await mdb_conn.fetch_all(select([InstallationRepo.repo_full_name])
                                              .where(InstallationRepo.install_id.in_(iids)))
-            repos = [("github.com/" + r[0]) for r in repos]
+            prefix = PREFIXES["github"]
+            repos = [(prefix + r[0]) for r in repos]
             rs = RepositorySet(owner=account, items=repos).create_defaults()
             rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
             logging.getLogger(__package__).info(

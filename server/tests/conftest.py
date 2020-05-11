@@ -238,7 +238,7 @@ def metadata_db() -> str:
     return conn_str
 
 
-def init_own_db(letter: str, base: DeclarativeMeta):
+def init_own_db(letter: str, base: DeclarativeMeta, init_sql: Optional[dict] = None):
     override_db = globals()["override_%sdb" % letter]
     backup_path = globals()["%sdb_backup" % letter].name
     if override_db:
@@ -254,6 +254,16 @@ def init_own_db(letter: str, base: DeclarativeMeta):
             return conn_str
     engine = create_engine(conn_str)
     base.metadata.drop_all(engine)
+    if init_sql:
+        driver = engine.url.drivername
+        if driver == "postgres":
+            driver = "postgresql"
+        try:
+            init_sql = init_sql[driver]
+        except KeyError:
+            pass
+        else:
+            engine.execute(init_sql)
     base.metadata.create_all(engine)
     if letter == "s":
         session = sessionmaker(bind=engine)()
@@ -275,7 +285,9 @@ def state_db() -> str:
 
 @pytest.fixture(scope="function")
 def precomputed_db() -> str:
-    return init_own_db("p", PrecomputedBase)
+    return init_own_db("p", PrecomputedBase, {
+        "postgresql": "create extension if not exists hstore;",
+    })
 
 
 @pytest.fixture(scope="function")

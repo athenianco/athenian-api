@@ -7,10 +7,10 @@ from databases import Database
 
 from athenian.api.cache import cached
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
-from athenian.api.controllers.features.cached_released import load_cached_released_times, \
-    store_cached_released_times
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
+from athenian.api.controllers.features.github.precomputed_prs import load_precomputed_done_times, \
+    store_precomputed_done_times
 from athenian.api.controllers.features.github.pull_request import \
     BinnedPullRequestMetricCalculator, calculators as pull_request_calculators
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
@@ -38,33 +38,35 @@ from athenian.api.models.metadata.github import PushCommit
 async def calc_pull_request_metrics_line_github(metrics: Collection[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
                                                 repos: Collection[str],
-                                                release_settings: Dict[str, ReleaseMatchSetting],
                                                 developers: Collection[str],
-                                                db: Database,
+                                                release_settings: Dict[str, ReleaseMatchSetting],
+                                                mdb: Database,
+                                                pdb: Database,
                                                 cache: Optional[aiomcache.Client],
                                                 ) -> List[List[List[Metric]]]:
     """Calculate pull request metrics on GitHub data."""
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
+    done_times = await load_precomputed_done_times(
+        time_from, time_to, repos, developers, release_settings, pdb)
+
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
     # are effectively discarded later in BinnedPullRequestMetricCalculator
-    released_times = await load_cached_released_times(
-        date_from, date_to, repos, developers, release_settings, cache)
     miner = await PullRequestMiner.mine(
-        date_from, date_to, time_from, time_to, repos, release_settings, developers, db, cache,
-        pr_blacklist=released_times)
+        date_from, date_to, time_from, time_to, repos, release_settings, developers, mdb, cache,
+        pr_blacklist=done_times)
     times_miner = PullRequestTimesMiner()
+    mined_prs = []
     mined_times = []
-    mined_prs_and_times = []
     for pr in miner:
+        mined_prs.append(pr)
         try:
             times = times_miner(pr)
         except ImpossiblePullRequest:
             continue
         mined_times.append(times)
-        mined_prs_and_times.append((pr.pr, times))
-    await store_cached_released_times(mined_prs_and_times, release_settings, cache)
-    mined_times.extend(released_times.values())
+    await store_precomputed_done_times(mined_prs, mined_times, release_settings, pdb)
+    mined_times.extend(done_times.values())
     calcs = [pull_request_calculators[m]() for m in metrics]
     return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_times) for ts in time_intervals]
 
