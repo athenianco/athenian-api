@@ -25,8 +25,8 @@ from sqlalchemy.ext.declarative import DeclarativeMeta
 from sqlalchemy.orm import sessionmaker
 import uvloop
 
-from athenian.api import AthenianApp, create_memcached, hack_sqlite_arrays, hack_sqlite_hstore, \
-    setup_cache_metrics
+from athenian.api import AthenianApp, check_collation, create_memcached, hack_sqlite_arrays, \
+    hack_sqlite_hstore, setup_cache_metrics
 from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import Base as MetadataBase, PullRequest
@@ -220,6 +220,7 @@ def metadata_db() -> str:
             session.close()
         if not override_mdb:
             os.chmod(metadata_db_path, 0o666)
+    check_collation(conn_str)
     return conn_str
 
 

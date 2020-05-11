@@ -81,7 +81,7 @@ def create_base() -> BaseType:
 slogging.trailing_dot_exceptions.add("alembic.runtime.migration")
 
 
-class DBSchemaVersionMismatchError(Exception):
+class DBSchemaMismatchError(Exception):
     """Error raised if the DB schema versions do not match."""
 
 
@@ -95,9 +95,21 @@ def check_schema_version(name: str, conn_str: str, log: logging.Logger) -> None:
         real_rev = context.get_current_revision()
     req_rev = directory.get_current_head()
     if real_rev != req_rev:
-        raise DBSchemaVersionMismatchError(
-            "%s: required: %s connected: %s" % (conn_str, req_rev, real_rev))
+        raise DBSchemaMismatchError(
+            "%s version: required: %s connected: %s" % (conn_str, req_rev, real_rev))
     log.info("%s DB schema version: %s", name, real_rev)
+
+
+def check_collation(conn_str: str) -> None:
+    """Force the PostgreSQL collation to be "C"."""
+    engine = create_engine(conn_str)
+    if engine.dialect.name not in ("postgres", "postgresql"):
+        return
+    collation = engine.scalar(
+        "select datcollate from pg_database where datname='%s';" % engine.url.database)
+    if collation.lower() != "c.utf-8":
+        raise DBSchemaMismatchError(
+            "%s collation: required: C.UTF-8 connected: %s" % (conn_str, collation))
 
 
 def migrate(name: str, url=None, exec=True):
