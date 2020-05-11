@@ -26,11 +26,12 @@ from athenian.api.models.metadata.github import PushCommit
     exptime=PullRequestTimesMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda metrics, time_intervals, repos, developers, **_: (
+    key=lambda metrics, time_intervals, repos, developers, release_settings, **_: (
         ",".join(sorted(metrics)),
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
         ",".join(sorted(repos)),
         ",".join(sorted(developers)),
+        release_settings,
     ),
 )
 async def calc_pull_request_metrics_line_github(metrics: Collection[str],
