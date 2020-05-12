@@ -17,4 +17,4 @@ async def test_load_account_reposets_transaction(sdb, mdb):
 
     items = await asyncio.gather(*(load() for _ in range(10)), return_exceptions=True)
     errors = sum(isinstance(item, ResponseError) for item in items)
-    assert errors == len(items) - 1
+    assert errors == len(items) - 1, str(items)
