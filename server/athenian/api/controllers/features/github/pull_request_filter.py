@@ -261,11 +261,23 @@ async def filter_pull_requests(properties: Collection[Property],
                 remined[pr.pr[node_id_key]] = pr
             else:
                 done.append(pr)
+        if done:
+            # updated_at can be outside of `time_to` and missed in the cache
+            updates = await db.fetch_all(
+                select([PullRequest.node_id, PullRequest.updated_at])
+                .where(PullRequest.node_id.in_([pr.pr[node_id_key] for pr in done])))
+            updates = {p[0]: p[1] for p in updates}
+            updated_at_key = PullRequest.updated_at.key
+            for pr in done:
+                ts = updates[pr.pr[node_id_key]]
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                pr.pr[updated_at_key] = ts
         if remined:
             prs = await read_sql_query(select([PullRequest])
                                        .where(PullRequest.node_id.in_(remined))
                                        .order_by(PullRequest.node_id),
-                                       db, PullRequest, index=PullRequest.node_id.key)
+                                       db, PullRequest, index=node_id_key)
             dfs = await PullRequestMiner.mine_by_ids(
                 prs, prs[PullRequest.created_at.key].min(), tomorrow, release_settings, db, cache)
             prs_today = list(PullRequestMiner(prs, *dfs))
