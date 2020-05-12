@@ -35,7 +35,7 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.db import measure_db_overhead
 from athenian.api.metadata import __package__
-from athenian.api.models import check_schema_version, DBSchemaVersionMismatchError, \
+from athenian.api.models import check_collation, check_schema_version, DBSchemaMismatchError, \
     hack_sqlite_arrays, hack_sqlite_hstore
 from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
@@ -414,7 +414,11 @@ def create_auth0_factory(force_default_user: bool) -> Callable[[], Auth0]:
     return factory
 
 
-def check_schema_versions(state_db: str, precomputed_db: str, log: logging.Logger) -> bool:
+def check_schema_versions(metadata_db: str,
+                          state_db: str,
+                          precomputed_db: str,
+                          log: logging.Logger,
+                          ) -> bool:
     """Validate schema versions in parallel threads."""
     passed = True
 
@@ -422,7 +426,8 @@ def check_schema_versions(state_db: str, precomputed_db: str, log: logging.Logge
         nonlocal passed
         try:
             check_schema_version(name, cs, log)
-        except DBSchemaVersionMismatchError as e:
+            check_collation(cs)
+        except DBSchemaMismatchError as e:
             passed = False
             log.error("%s schema version check failed: %s", name, e)
         except Exception:
@@ -431,6 +436,7 @@ def check_schema_versions(state_db: str, precomputed_db: str, log: logging.Logge
 
     checkers = [threading.Thread(target=check, args=args)
                 for args in (("state", state_db), ("precomputed", precomputed_db))]
+    checkers.append(threading.Thread(target=check_collation, args=(metadata_db,)))
     for t in checkers:
         t.start()
     for t in checkers:
@@ -444,7 +450,7 @@ def main() -> Optional[AthenianApp]:
     args = parse_args()
     log = logging.getLogger(__package__)
     setup_context(log)
-    if not check_schema_versions(args.state_db, args.precomputed_db, log):
+    if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):
         return None
     hack_sqlite_arrays()
     hack_sqlite_hstore()

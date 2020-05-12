@@ -24,7 +24,15 @@ class WorkInProgressTimeCalculator(PullRequestAverageMetricCalculator[timedelta]
             wip_end = times.first_review_request.best
         else:
             # review was probably requested but never happened
-            wip_end = times.last_commit.best
+            if times.last_commit:
+                wip_end = times.last_commit.best
+            else:
+                # 0 commits in the PR, no reviews and review requests
+                # => review time = 0
+                # => merge time = 0 (you cannot merge an empty PR)
+                # => release time = 0
+                # This PR is 100% closed.
+                wip_end = times.closed.best
         if wip_end is not None and min_time <= wip_end < max_time:
             return wip_end - times.work_began.best
         return None

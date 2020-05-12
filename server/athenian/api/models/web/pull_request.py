@@ -8,7 +8,12 @@ from athenian.api.models.web.stage_timings import StageTimings
 
 
 class PullRequest(Model):
-    """Details of a pull request."""
+    """
+    Details of a pull request.
+
+    All the attributes, stats and events correspond to "today", not `date_to`, *except for
+    the PR stages `wip`, `reviewing`, `merging`, `releasing`*, which correspond to `date_to`.
+    """
 
     def __init__(
         self,
@@ -26,6 +31,7 @@ class PullRequest(Model):
         review_requested: Optional[datetime] = None,
         approved: Optional[datetime] = None,
         review_comments: Optional[int] = None,
+        reviews: Optional[int] = None,
         merged: Optional[datetime] = None,
         released: Optional[datetime] = None,
         release_url: Optional[str] = None,
@@ -48,6 +54,7 @@ class PullRequest(Model):
         :param review_requested: The review_requested of this PullRequest.
         :param approved: The approved of this PullRequest.
         :param review_comments: The review_comments of this PullRequest.
+        :param reviews: The reviews of this PullRequest.
         :param merged: The merged of this PullRequest.
         :param released: The released of this PullRequest.
         :param release_url: The release URL of this PullRequest.
@@ -70,6 +77,7 @@ class PullRequest(Model):
             "review_requested": datetime,
             "approved": datetime,
             "review_comments": int,
+            "reviews": int,
             "merged": datetime,
             "released": datetime,
             "release_url": str,
@@ -93,6 +101,7 @@ class PullRequest(Model):
             "review_requested": "review_requested",
             "approved": "approved",
             "review_comments": "review_comments",
+            "reviews": "reviews",
             "merged": "merged",
             "released": "released",
             "release_url": "release_url",
@@ -115,6 +124,7 @@ class PullRequest(Model):
         self._review_requested = review_requested
         self._approved = approved
         self._review_comments = review_comments
+        self._reviews = reviews
         self._merged = merged
         self._released = released
         self._release_url = release_url
@@ -381,7 +391,7 @@ class PullRequest(Model):
     def review_requested(self) -> datetime:
         """Gets the review_requested of this PullRequest.
 
-        Value indicating whether the author of this PR requested a review.
+        When was the last time the author of this PR requested a review.
 
         :return: The review_requested of this PullRequest.
         """
@@ -391,7 +401,7 @@ class PullRequest(Model):
     def review_requested(self, review_requested: Optional[datetime]):
         """Sets the review_requested of this PullRequest.
 
-        When the author of this PR requested a review last time.
+        When was the last time the author of this PR requested a review.
 
         :param review_requested: The review_requested of this PullRequest.
         """
@@ -401,7 +411,7 @@ class PullRequest(Model):
     def approved(self) -> datetime:
         """Gets the approved of this PullRequest.
 
-        When the author of this PR requested a review last time.
+        When this PR was approved.
 
         :return: The approved of this PullRequest.
         """
@@ -421,7 +431,10 @@ class PullRequest(Model):
     def review_comments(self) -> int:
         """Gets the review_comments of this PullRequest.
 
-        When this PR was approved.
+        Number of review comments this PR received. A review comment is left at
+        a specific line in a specific file. In other words: review summaries are
+        *not* considered review comments; refer to `reviews`. Comments by the PR
+        author are considered as `comments`, not as `review_comments`.
 
         :return: The review_comments of this PullRequest.
         """
@@ -431,17 +444,40 @@ class PullRequest(Model):
     def review_comments(self, review_comments: Optional[int]):
         """Sets the review_comments of this PullRequest.
 
-        Value indicating whether this PR received at least one review.
+        Number of review comments this PR received. A review comment is left at
+        a specific line in a specific file. In other words: review summaries are
+        *not* considered review comments; refer to `reviews`. Comments by the PR
+        author are considered as `comments`, not as `review_comments`.
 
         :param review_comments: The review_comments of this PullRequest.
         """
         self._review_comments = review_comments
 
     @property
+    def reviews(self) -> int:
+        """Gets the reviews of this PullRequest.
+
+        Number of times this PR was reviewed. Reviews by the PR author are not taken into account.
+
+        :return: The reviews of this PullRequest.
+        """
+        return self._reviews
+
+    @reviews.setter
+    def reviews(self, reviews: Optional[int]):
+        """Sets the reviews of this PullRequest.
+
+        Number of times this PR was reviewed. Reviews by the PR author are not taken into account.
+
+        :param reviews: The reviews of this PullRequest.
+        """
+        self._reviews = reviews
+
+    @property
     def merged(self) -> datetime:
         """Gets the merged of this PullRequest.
 
-        Value indicating whether this PR was merged.
+        When this PR was merged.
 
         :return: The merged of this PullRequest.
         """
@@ -451,7 +487,7 @@ class PullRequest(Model):
     def merged(self, merged: datetime):
         """Sets the merged of this PullRequest.
 
-        Value indicating whether this PR was merged.
+        When this PR was merged.
 
         :param merged: The merged of this PullRequest.
         """
@@ -461,7 +497,7 @@ class PullRequest(Model):
     def released(self) -> datetime:
         """Gets the released of this PullRequest.
 
-        Value indicating whether this PR was released.
+        When this PR was released.
 
         :return: The released of this PullRequest.
         """
@@ -471,7 +507,7 @@ class PullRequest(Model):
     def released(self, released: datetime):
         """Sets the released of this PullRequest.
 
-        Value indicating whether this PR was released.
+        When this PR was released.
 
         :param released: The released of this PullRequest.
         """

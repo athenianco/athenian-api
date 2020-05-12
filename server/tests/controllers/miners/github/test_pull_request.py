@@ -192,7 +192,7 @@ def validate_pull_request_times(prmeta: Dict[str, Any], prt: PullRequestTimes):
 async def test_pr_times_miner_smoke(mdb, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
-    miner = await PullRequestTimesMiner.mine(
+    miner = await PullRequestMiner.mine(
         date_from,
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
@@ -203,14 +203,16 @@ async def test_pr_times_miner_smoke(mdb, release_match_setting_tag):
         mdb,
         None,
     )
-    for prt in miner:
+    times_miner = PullRequestTimesMiner()
+    prts = [(pr.pr, times_miner(pr)) for pr in miner]
+    for prt in prts:
         validate_pull_request_times(*prt)
 
 
 async def test_pr_times_miner_empty_review_comments(mdb, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
-    miner = await PullRequestTimesMiner.mine(
+    miner = await PullRequestMiner.mine(
         date_from,
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
@@ -222,14 +224,16 @@ async def test_pr_times_miner_empty_review_comments(mdb, release_match_setting_t
         None,
     )
     miner._review_comments = miner._review_comments.iloc[0:0]
-    for prt in miner:
+    times_miner = PullRequestTimesMiner()
+    prts = [(pr.pr, times_miner(pr)) for pr in miner]
+    for prt in prts:
         validate_pull_request_times(*prt)
 
 
 async def test_pr_times_miner_empty_commits(mdb, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
-    miner = await PullRequestTimesMiner.mine(
+    miner = await PullRequestMiner.mine(
         date_from,
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
@@ -241,14 +245,16 @@ async def test_pr_times_miner_empty_commits(mdb, release_match_setting_tag):
         None,
     )
     miner._commits = miner._commits.iloc[0:0]
-    for prt in miner:
+    times_miner = PullRequestTimesMiner()
+    prts = [(pr.pr, times_miner(pr)) for pr in miner]
+    for prt in prts:
         validate_pull_request_times(*prt)
 
 
 async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_setting_tag):
     date_from = date(2019, 10, 16) - timedelta(days=3)
     date_to = date(2019, 10, 16)
-    miner = await PullRequestTimesMiner.mine(
+    miner = await PullRequestMiner.mine(
         date_from,
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
@@ -259,7 +265,8 @@ async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_settin
         mdb,
         None,
     )
-    prts = list(miner)
+    times_miner = PullRequestTimesMiner()
+    prts = [(pr.pr, times_miner(pr)) for pr in miner]
     assert len(prts) > 0
     for prt in prts:
         validate_pull_request_times(*prt)
@@ -268,7 +275,7 @@ async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_settin
 async def test_pr_times_miner_empty_releases(mdb):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2018, month=1, day=1)
-    miner = await PullRequestTimesMiner.mine(
+    miner = await PullRequestMiner.mine(
         date_from,
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
@@ -280,5 +287,7 @@ async def test_pr_times_miner_empty_releases(mdb):
         mdb,
         None,
     )
-    for prt in miner:
+    times_miner = PullRequestTimesMiner()
+    prts = [(pr.pr, times_miner(pr)) for pr in miner]
+    for prt in prts:
         validate_pull_request_times(*prt)

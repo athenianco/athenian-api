@@ -17,13 +17,14 @@ import athenian.api.controllers.features.github.pull_request_metrics  # noqa
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import calc_developer_metrics
-from athenian.api.controllers.miners.github.pull_request import PullRequestTimesMiner
+from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
+    PullRequestMiner, PullRequestTimesMiner
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import PushCommit
 
 
 @cached(
-    exptime=PullRequestTimesMiner.CACHE_TTL,
+    exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda metrics, time_intervals, repos, developers, release_settings, **_: (
@@ -49,12 +50,20 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     # are effectively discarded later in BinnedPullRequestMetricCalculator
     released_times = await load_cached_released_times(
         date_from, date_to, repos, developers, release_settings, cache)
-    miner = await PullRequestTimesMiner.mine(
+    miner = await PullRequestMiner.mine(
         date_from, date_to, time_from, time_to, repos, release_settings, developers, db, cache,
         pr_blacklist=released_times)
-    mined_prs = list(miner)
-    await store_cached_released_times(mined_prs, release_settings, cache)
-    mined_times = [t for _, t in mined_prs]
+    times_miner = PullRequestTimesMiner()
+    mined_times = []
+    mined_prs_and_times = []
+    for pr in miner:
+        try:
+            times = times_miner(pr)
+        except ImpossiblePullRequest:
+            continue
+        mined_times.append(times)
+        mined_prs_and_times.append((pr.pr, times))
+    await store_cached_released_times(mined_prs_and_times, release_settings, cache)
     mined_times.extend(released_times.values())
     calcs = [pull_request_calculators[m]() for m in metrics]
     return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_times) for ts in time_intervals]

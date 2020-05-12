@@ -21,11 +21,14 @@ class ParticipationKind(IntEnum):
 class Property(IntEnum):
     """PR's modelled lifecycle stage or corresponding events between `time_from` and `time_to`."""
 
+    # stages begin
     WIP = auto()
     REVIEWING = auto()
     MERGING = auto()
     RELEASING = auto()
     DONE = auto()
+    # stages end
+    # events begin
     CREATED = auto()
     COMMIT_HAPPENED = auto()
     REVIEW_HAPPENED = auto()
@@ -34,6 +37,7 @@ class Property(IntEnum):
     CHANGES_REQUEST_HAPPENED = auto()
     MERGE_HAPPENED = auto()
     RELEASE_HAPPENED = auto()
+    # events end
 
 
 @dataclass(frozen=True)
@@ -54,6 +58,7 @@ class PullRequestListItem:
     review_requested: Optional[pd.Timestamp]
     approved: Optional[pd.Timestamp]
     review_comments: int
+    reviews: int
     merged: Optional[pd.Timestamp]
     released: Optional[pd.Timestamp]
     release_url: str

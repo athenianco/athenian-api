@@ -12,8 +12,8 @@ from athenian.api.controllers.features.github.pull_request_metrics import AllCou
     MergedCalculator, MergingCounter, MergingTimeCalculator, OpenedCalculator, ReleaseCounter, \
     ReleaseTimeCalculator, ReviewCounter, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
     WorkInProgressCounter, WorkInProgressTimeCalculator
-from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestTimes, \
-    PullRequestTimesMiner
+from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestMiner, \
+    PullRequestTimes
 from athenian.api.controllers.settings import Match, ReleaseMatchSetting
 from athenian.api.models.web import Granularity, PullRequestMetricID
 from tests.conftest import has_memcached
@@ -192,7 +192,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert await calc_pull_request_metrics_line_github.reset_cache(*args)
     if with_mine_cache_wipe:
-        assert await PullRequestTimesMiner._mine.reset_cache(
+        assert await PullRequestMiner._mine.reset_cache(
             None, date_from, date_to, ["src-d/go-git"], release_match_setting_tag, [], mdb, cache)
     metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics1.exists and metrics2.exists
@@ -214,3 +214,25 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
     args[-4] = release_match_setting_tag
     metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics1 != metrics2
+
+
+async def test_pr_list_miner_match_metrics_all_count_david_bug(mdb, release_match_setting_tag):
+    time_from = datetime(year=2016, month=11, day=17, tzinfo=timezone.utc)
+    time_middle = time_from + timedelta(days=14)
+    time_to = datetime(year=2016, month=12, day=15, tzinfo=timezone.utc)
+    metric1 = (await calc_pull_request_metrics_line_github(
+        [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]],
+        ["src-d/go-git"], release_match_setting_tag, [], mdb, None,
+    ))[0][0][0].value
+    metric2 = (await calc_pull_request_metrics_line_github(
+        [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]],
+        ["src-d/go-git"], release_match_setting_tag, [], mdb, None,
+    ))[0][0][0].value
+    metric1_ext, metric2_ext = (m[0].value for m in (
+        await calc_pull_request_metrics_line_github(
+            [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]],
+            ["src-d/go-git"], release_match_setting_tag, [], mdb, None,
+        )
+    )[0])
+    assert metric1 == metric1_ext
+    assert metric2 == metric2_ext
