@@ -167,7 +167,7 @@ class AthenianApp(connexion.AioHttpApp):
         self.api_cls = ExactServersAioHttpApi
         invitation_controller.validate_env()
         auth0_cls.ensure_static_configuration()
-        self._auth0 = auth0_cls(whitelist=[
+        self.app["auth"] = self._auth0 = auth0_cls(whitelist=[
             r"/v1/openapi.json$",
             r"/v1/ui(/|$)",
             r"/v1/invite/check/?$",
@@ -188,6 +188,9 @@ class AthenianApp(connexion.AioHttpApp):
                 pass_context_arg_name="request",
                 options={"middlewares": [self.with_db, self.add_server_name]},
             )
+            for k, v in api.subapp.items():
+                self.app[k] = v
+            api.subapp._state = self.app._state
             components = api.specification.raw["components"]
             components["schemas"] = dict(sorted(components["schemas"].items()))
         api.jsonifier.json = FriendlyJson
