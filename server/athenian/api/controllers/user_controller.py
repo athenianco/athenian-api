@@ -32,7 +32,7 @@ async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
     for user in users:
         role = admins if user[UserAccount.is_admin.key] else regulars
         role.append(user[UserAccount.user_id.key])
-    users = await request.auth.get_users(regulars + admins)
+    users = await request.app["auth"].get_users(regulars + admins)
     account = Account(regulars=[users[k] for k in regulars if k in users],
                       admins=[users[k] for k in admins if k in users])
     return model_response(account)
@@ -53,7 +53,7 @@ async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response
         god = God(**god).refresh()
         god.mapped_id = id or None
         await conn.execute(update(God).where(God.user_id == user_id).values(god.explode()))
-    user = await (await request.auth.get_user(id or user_id)).load_accounts(request.sdb)
+    user = await (await request.app["auth"].get_user(id or user_id)).load_accounts(request.sdb)
     return model_response(user)
 
 

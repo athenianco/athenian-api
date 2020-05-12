@@ -2,14 +2,17 @@ import asyncio
 from datetime import datetime
 import json
 
+from aiohttp import web
 import dateutil.parser
 import pytest
 from sqlalchemy import insert
 
+from athenian.api.controllers.user_controller import get_user
 from athenian.api.models.state.models import God
+from athenian.api.request import AthenianWebRequest
 
 
-async def test_get_user(client, headers):
+async def test_get_user_smoke(client, headers):
     response = await client.request(
         method="GET", path="/v1/user", headers=headers, json={},
     )
@@ -27,6 +30,38 @@ async def test_get_user(client, headers):
         "accounts": {"1": True, "2": False},
     }
     assert datetime.utcnow() >= dateutil.parser.parse(updated[:-1])
+
+
+@pytest.mark.parametrize("value", (True, False))
+async def test_is_default_user(client, headers, app, value):
+    async def get_is_default_user(request: AthenianWebRequest) -> web.Response:
+        return web.json_response({"is_default_user": request.is_default_user})
+
+    for route in app.app.router.routes():
+        if route.resource.canonical == "/v1/user" and route.method == "GET":
+            wrapped = route.handler
+            while hasattr(wrapped.__wrapped__, "__wrapped__"):
+                wrapped = wrapped.__wrapped__
+            wrapped.__wrapped__ = get_is_default_user
+            for cell in wrapped.__closure__:
+                if cell.cell_contents == get_user:
+                    cell.cell_contents = get_is_default_user
+    if not value:
+        _extract_token = app._auth0._extract_token
+
+        async def hacked_extract_token(token: str):
+            r = await _extract_token(token)
+            app._auth0._default_user_id = "xxx"
+            return r
+
+        app._auth0._extract_token = hacked_extract_token
+
+    response = await client.request(
+        method="GET", path="/v1/user", headers=headers, json={},
+    )
+    assert response.status == 200
+    items = json.loads((await response.read()).decode("utf-8"))
+    assert items == {"is_default_user": value}
 
 
 async def test_get_default_user(client, headers, gkwillie):

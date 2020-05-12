@@ -24,6 +24,7 @@ from athenian.api.cache import cached
 from athenian.api.models.state.models import God
 from athenian.api.models.web import GenericError
 from athenian.api.models.web.user import User
+from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 
 
@@ -343,9 +344,8 @@ class Auth0:
                 detail=user.get("description", str(user))))
         return User.from_auth0(**user)
 
-    async def _set_user(self, request, token: str) -> None:
+    async def _set_user(self, request: AthenianWebRequest, token: str) -> None:
         token_info = await self._extract_token(token)
-        request.auth = self
         request.uid = token_info["sub"]
         request.native_uid = request.uid.rsplit("|", 1)[1]
         god = await request.sdb.fetch_one(
@@ -357,6 +357,7 @@ class Auth0:
                 request.uid = mapped_id
                 request.native_uid = mapped_id.rsplit("|", 1)[1]
                 self.log.info("God mode: %s became %s", request.god_id, mapped_id)
+        request.is_default_user = request.uid == self._default_user_id
 
         async def get_user_info():
             if god is not None and request.god_id is not None:
