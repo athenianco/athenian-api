@@ -12,7 +12,7 @@ from athenian.api.controllers.account import get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.models.state.models import ReleaseSetting
-from athenian.api.models.web import ForbiddenError, InvalidRequestError, ReleaseMatchStrategy
+from athenian.api.models.web import InvalidRequestError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
 
 Match = IntEnum("Match", {ReleaseMatchStrategy.BRANCH: 0,
@@ -124,10 +124,8 @@ class Settings:
         if not tags:
             tags = ".*"
         async with self._sdb.connection() as conn:
-            if not await get_user_account_status(
-                    self._user_id, self._account, conn, self._cache):
-                raise ResponseError(ForbiddenError(
-                    detail="User %s is not an admin of %d" % (self._user_id, self._account)))
+            # check that the user belongs to the account
+            await get_user_account_status(self._user_id, self._account, conn, self._cache)
             repos = await resolve_repos(
                 repos, self._account, self._user_id, self._native_user_id,
                 conn, self._mdb, self._cache, strip_prefix=False)

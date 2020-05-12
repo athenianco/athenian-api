@@ -27,7 +27,7 @@ async def validate_settings(body, response, sdb, exhaustive: bool):
     return repos
 
 
-async def test_set_release_match_overwrite(client, headers, sdb):
+async def test_set_release_match_overwrite(client, headers, sdb, disable_default_user):
     body = {
         "repositories": ["{1}"],
         "account": 1,
@@ -50,7 +50,7 @@ async def test_set_release_match_overwrite(client, headers, sdb):
     assert repos == ["github.com/src-d/gitbase", "github.com/src-d/go-git"]
 
 
-async def test_set_release_match_different_accounts(client, headers, sdb):
+async def test_set_release_match_different_accounts(client, headers, sdb, disable_default_user):
     body1 = {
         "repositories": ["github.com/src-d/go-git"],
         "account": 1,
@@ -78,6 +78,19 @@ async def test_set_release_match_different_accounts(client, headers, sdb):
     await validate_settings(body2, response2, sdb, False)
 
 
+async def test_set_release_match_default_user(client, headers):
+    body1 = {
+        "repositories": ["github.com/src-d/go-git"],
+        "account": 1,
+        "branches": "master",
+        "tags": ".*",
+        "match": ReleaseMatchStrategy.TAG,
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body1)
+    assert response.status == 403
+
+
 @pytest.mark.parametrize("code, account, repositories, branches, tags, match", [
     (400, 1, ["{1}"], None, ".*", ReleaseMatchStrategy.BRANCH),
     (400, 1, ["{1}"], "", ".*", ReleaseMatchStrategy.TAG_OR_BRANCH),
@@ -100,7 +113,7 @@ async def test_set_release_match_different_accounts(client, headers, sdb):
     (400, 1, ["{1}"], ".*", ".*", ""),
 ])
 async def test_set_release_match_nasty_input(
-        client, headers, code, account, repositories, branches, tags, match):
+        client, headers, code, account, repositories, branches, tags, match, disable_default_user):
     body = {
         "repositories": repositories,
         "account": account,
@@ -113,7 +126,7 @@ async def test_set_release_match_nasty_input(
     assert response.status == code
 
 
-async def test_set_release_match_422(client, headers, sdb, gkwillie):
+async def test_set_release_match_422(client, headers, sdb, gkwillie, disable_default_user):
     await sdb.execute(delete(RepositorySet))
     await sdb.execute(delete(Installation))
     await sdb.execute(insert(UserAccount).values(UserAccount(
