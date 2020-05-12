@@ -173,6 +173,20 @@ async def gkwillie(app) -> User:
 
 
 @pytest.fixture(scope="function")
+def disable_default_user(app):
+    _extract_token = app._auth0._extract_token
+    default_user_id = app._auth0._default_user_id
+
+    async def hacked_extract_token(token: str):
+        app._auth0._default_user_id = default_user_id
+        r = await _extract_token(token)
+        app._auth0._default_user_id = "xxx"
+        return r
+
+    app._auth0._extract_token = hacked_extract_token
+
+
+@pytest.fixture(scope="function")
 def headers() -> Dict[str, str]:
     return {
         "Accept": "application/json",

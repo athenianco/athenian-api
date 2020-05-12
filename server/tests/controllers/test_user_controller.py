@@ -10,6 +10,7 @@ from sqlalchemy import insert
 from athenian.api.controllers.user_controller import get_user
 from athenian.api.models.state.models import God
 from athenian.api.request import AthenianWebRequest
+from tests.conftest import disable_default_user
 
 
 async def test_get_user_smoke(client, headers):
@@ -47,14 +48,7 @@ async def test_is_default_user(client, headers, app, value):
                 if cell.cell_contents == get_user:
                     cell.cell_contents = get_is_default_user
     if not value:
-        _extract_token = app._auth0._extract_token
-
-        async def hacked_extract_token(token: str):
-            r = await _extract_token(token)
-            app._auth0._default_user_id = "xxx"
-            return r
-
-        app._auth0._extract_token = hacked_extract_token
+        disable_default_user.__wrapped__(app)
 
     response = await client.request(
         method="GET", path="/v1/user", headers=headers, json={},
