@@ -3,6 +3,7 @@ import dataclasses
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict
 
+import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
 
@@ -291,3 +292,52 @@ async def test_pr_times_miner_empty_releases(mdb):
     prts = [(pr.pr, times_miner(pr)) for pr in miner]
     for prt in prts:
         validate_pull_request_times(*prt)
+
+
+async def test_pr_mine_by_ids(mdb, cache):
+    date_from = date(year=2017, month=1, day=1)
+    date_to = date(year=2018, month=1, day=1)
+    time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+    time_to = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
+    release_settings = {
+        "github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="unknown", tags="", match=Match.branch),
+    }
+    miner = await PullRequestMiner.mine(
+        date_from,
+        date_to,
+        time_from,
+        time_to,
+        ["src-d/go-git"],
+        release_settings,
+        [],
+        mdb,
+        None,
+    )
+    mined_prs = list(miner)
+    prs = pd.DataFrame([pd.Series(pr.pr) for pr in mined_prs])
+    prs.set_index(PullRequest.node_id.key, inplace=True)
+    dfs1 = await PullRequestMiner.mine_by_ids(
+        prs,
+        time_from,
+        time_to,
+        release_settings,
+        mdb,
+        cache,
+    )
+    dfs2 = await PullRequestMiner.mine_by_ids(
+        prs,
+        time_from,
+        time_to,
+        release_settings,
+        mdb,
+        cache,
+    )
+    for df1, df2 in zip(dfs1, dfs2):
+        assert (df1.fillna(0) == df2.fillna(0)).all().all()
+    for i in range(len(dfs1) - 1):
+        df = pd.concat([dataclasses.astuple(pr)[i + 1] for pr in mined_prs])
+        df.sort_index(inplace=True)
+        dfs1[i].index = dfs1[i].index.droplevel(0)
+        dfs1[i].sort_index(inplace=True)
+        assert (df.fillna(0) == dfs1[i].fillna(0)).all().all()

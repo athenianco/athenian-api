@@ -2,10 +2,8 @@ import asyncio
 import dataclasses
 from datetime import date, datetime, timezone
 from enum import Enum
-import io
 import logging
 import pickle
-import struct
 from typing import Any, Collection, Dict, Generator, Generic, List, Optional, Set, Tuple, \
     TypeVar, Union
 
@@ -66,35 +64,6 @@ class PullRequestMiner:
         self._commits = commits
         self._releases = releases
 
-    def _serialize_for_cache(objs: Tuple[List[pd.DataFrame], Set[str], Set[str]]) -> memoryview:
-        dfs, repositories, developers = objs
-        assert len(dfs) < 256
-        buf = io.BytesIO()
-        buf.close = lambda: None  # disable closing the buffer in to_pickle()
-        offsets = []
-        for df in dfs:
-            # pickle works 2-3x faster than feather/arrow
-            # for both serialization and deserialization on our data
-            df.to_pickle(buf)
-            # tracking of the offsets is not really needed for pickles, but is required by feather
-            # we don't use feather *yet* due to https://github.com/pandas-dev/pandas/issues/32587
-            offsets.append(buf.tell())
-        pickle.dump((repositories, developers), buf)
-        offsets.append(buf.tell())
-        buf.write(struct.pack("!" + "I" * len(offsets), *offsets))
-        buf.write(struct.pack("!B", len(offsets)))
-        return buf.getbuffer()
-
-    def _deserialize_from_cache(data: bytes) -> Tuple[List[pd.DataFrame], Set[str], Set[str]]:
-        data = memoryview(data)
-        size = struct.unpack("!B", data[-1:])[0]
-        offsets = (0,) + struct.unpack("!" + "I" * size, data[-size * 4 - 1:-1])
-        dfs = []
-        for beg, end in zip(offsets, offsets[1:]):
-            df = pd.read_pickle(io.BytesIO(data[beg:end]))
-            dfs.append(df)
-        return dfs[:-1], dfs[-1][0], dfs[-1][1]
-
     def _postprocess_cached_prs(result: Tuple[List[pd.DataFrame], Set[str], Set[str]],
                                 repositories: Collection[str],
                                 developers: Collection[str],
@@ -124,13 +93,13 @@ class PullRequestMiner:
     @classmethod
     @cached(
         exptime=lambda cls, **_: cls.CACHE_TTL,
-        serialize=_serialize_for_cache,
-        deserialize=_deserialize_from_cache,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
         key=lambda date_from, date_to, release_settings, **_: (
             date_from.toordinal(), date_to.toordinal(), release_settings,
         ),
         postprocess=_postprocess_cached_prs,
-        version=3,
+        version=4,
     )
     async def _mine(cls,
                     date_from: date,
@@ -175,16 +144,17 @@ class PullRequestMiner:
         cls._drop(dfs, cls._find_drop_by_developers(dfs, developers))
         return dfs, repositories, developers
 
+    _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
+
     @classmethod
     @cached(
         exptime=lambda cls, **_: cls.CACHE_TTL,
-        serialize=_serialize_for_cache,
-        deserialize=_deserialize_from_cache,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
         key=lambda prs, time_from, time_to, release_settings, **_: (
             ",".join(prs.index), time_from.timestamp(), time_to.timestamp(), release_settings,
         ),
-        postprocess=_postprocess_cached_prs,
-        version=3,
+        version=4,
     )
     async def mine_by_ids(cls,
                           prs: pd.DataFrame,
@@ -238,10 +208,6 @@ class PullRequestMiner:
         return await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
             fetch_commits(), map_releases())
-
-    _serialize_for_cache = staticmethod(_serialize_for_cache)
-    _deserialize_from_cache = staticmethod(_deserialize_from_cache)
-    _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
 
     @classmethod
     def _remove_spurious_prs(cls,
