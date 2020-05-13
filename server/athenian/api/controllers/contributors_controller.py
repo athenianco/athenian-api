@@ -14,14 +14,15 @@ async def get_contributors(request: web.Request, id: int) -> web.Response:
     :param id: Numeric identifier of the account.
 
     """
-    user = await request.user()
-
     async with request.sdb.connection() as sdb_conn:
         account_id = await sdb_conn.fetch_val(
             select([UserAccount.account_id])
-            .where(and_(UserAccount.user_id == user.id, UserAccount.account_id == id)))
+            .where(and_(UserAccount.user_id == request.uid, UserAccount.account_id == id)))
         if account_id is None:
-            err_detail = f"Account {account_id} does not exist or user {user} is not a member."
+            err_detail = (
+                f"Account {account_id} does not exist or user {request.uid} "
+                "is not a member."
+            )
             return ResponseError(NotFoundError(detail=err_detail)).response
 
         try:
