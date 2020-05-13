@@ -14,8 +14,8 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
-from athenian.api.controllers.miners.github.pull_request import dtmin, MinedPullRequest, \
-    PullRequestMiner, PullRequestTimes, PullRequestTimesMiner, ReviewResolution
+from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
+    MinedPullRequest, PullRequestMiner, PullRequestTimes, PullRequestTimesMiner, ReviewResolution
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting
@@ -207,8 +207,11 @@ class PullRequestListMiner:
     def __iter__(self) -> Generator[PullRequestListItem, None, None]:
         """Iterate over the individual pull requests."""
         for pr_time_machine, pr_today in zip(self._prs_time_machine, self._prs_today):
-            item = self._compile(pr_time_machine, self._times_miner(pr_time_machine),
-                                 pr_today, self._times_miner(pr_today))
+            try:
+                item = self._compile(pr_time_machine, self._times_miner(pr_time_machine),
+                                     pr_today, self._times_miner(pr_today))
+            except ImpossiblePullRequest:
+                continue
             if item is not None:
                 yield item
 
