@@ -16,6 +16,7 @@ from athenian.api.models.web.commit import Commit
 from athenian.api.models.web.commit_filter import CommitFilter
 from athenian.api.models.web.commit_signature import CommitSignature
 from athenian.api.models.web.commits_list import CommitsList
+from athenian.api.models.web.contributor import Contributor
 from athenian.api.models.web.created_identifier import CreatedIdentifier
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.developer_metrics_request import DeveloperMetricsRequest
@@ -52,4 +53,7 @@ from athenian.api.models.web.repository_set_create_request import RepositorySetC
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.models.web.stage_timings import StageTimings
 from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
+from athenian.api.models.web.team import Team
+from athenian.api.models.web.team_create_request import TeamCreateRequest
+from athenian.api.models.web.team_update_request import TeamUpdateRequest
 from athenian.api.models.web.user import User

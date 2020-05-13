@@ -665,7 +665,7 @@ paths:
     delete:
       operationId: delete_reposet
       parameters:
-      - description: Numeric identifier of the repository set to list.
+      - description: Numeric identifier of the repository set to delete.
         explode: false
         in: path
         name: id
@@ -747,7 +747,7 @@ paths:
     put:
       operationId: update_reposet
       parameters:
-      - description: Numeric identifier of the repository set to list.
+      - description: Numeric identifier of the repository set to update.
         explode: false
         in: path
         name: id
@@ -837,6 +837,278 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
+      x-codegen-request-body-name: body
+  /team/create:
+    post:
+      operationId: create_team
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamCreateRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedIdentifier'
+          description: Identifier of the created team.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to create a team from the specified items.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: There is an existing team with the same contents.
+      security:
+      - bearerAuth: []
+      summary: Create a team.
+      tags:
+      - team
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.team_controller
+      x-codegen-request-body-name: body
+  /team/{id}:
+    delete:
+      operationId: delete_team
+      parameters:
+      - description: Numeric identifier of the team to delete.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Empty object indicates a successful removal.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to delete the specified team.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified team was not found.
+      security:
+      - bearerAuth: []
+      summary: Delete a team.
+      tags:
+      - team
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.team_controller
+      x-codegen-request-body-name: body
+    get:
+      operationId: get_team
+      parameters:
+      - description: Numeric identifier of the team to list.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+          description: List of the members in the specified team.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to list the specified team.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified team was not found.
+      security:
+      - bearerAuth: []
+      summary: List the team's members. The user must belong to the account that owns the
+        team.
+      tags:
+      - team
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.team_controller
+      x-codegen-request-body-name: body
+    put:
+      operationId: update_team
+      parameters:
+      - description: Numeric identifier of the team to update.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamUpdateRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Empty object indicates a successful operation.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to update the specified team.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified team was not found.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: There is an existing team with the same contents.
+      security:
+      - bearerAuth: []
+      summary: Update a team.
+      tags:
+      - team
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.team_controller
+      x-codegen-request-body-name: body
+  /teams/{id}:
+    get:
+      operationId: list_teams
+      parameters:
+      - description: Numeric identifier of the account.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamList'
+          description: List the teams belonging to the specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Concurrent requests that are finishing the account registration.
+      security:
+      - bearerAuth: []
+      summary: List the teams belonging to the current user.
+      tags:
+      - team
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.team_controller
+      x-codegen-request-body-name: body
+  /contributors/{id}:
+    get:
+      operationId: get_contributors
+      parameters:
+      - description: Numeric identifier of the account.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contributors'
+          description: List of all contributors belonging to the specified account.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to list contributors belonging to the specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Concurrent requests that are finishing the account registration.
+      security:
+      - bearerAuth: []
+      summary: List all the contributors belonging to the specified account.
+      tags:
+      - contributors
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.contributors_controller
       x-codegen-request-body-name: body
   /settings/release_match:
     put:
@@ -1082,6 +1354,146 @@ components:
       - github.com/dpordomingo
       items:
         $ref: '#/components/schemas/DeveloperID'
+      type: array
+    Contributors:
+      description: List of contributors.
+      example:
+        - login: github.com/gkwillie
+          name: Groundskeeper Willie
+          email: bot@athenian.co
+          picture: https://avatars0.githubusercontent.com/u/60340680?v=4
+        - login: github.com/se7entyse7en
+          name: Lou Marvin Caraig
+          email: loumarvincaraig@gmail.com
+          picture: https://avatars1.githubusercontent.com/u/5599208?v=4
+      items:
+        $ref: '#/components/schemas/Contributor'
+      type: array
+    Contributor:
+      additionalProperties: false
+      description: Details about a developer who contributed to some repositories owned by the account.
+      example:
+        login: github.com/gkwillie
+        name: Groundskeeper Willie
+        email: bot@athenian.co
+        picture: https://avatars0.githubusercontent.com/u/60340680?v=4
+      properties:
+        login:
+          $ref: '#/components/schemas/DeveloperID'
+        name:
+          description: Full name of the contributor.
+          type: string
+        email:
+          description: Email of the conributor.
+          type: string
+        picture:
+          description: Avatar URL of the contributor.
+          type: string
+      required:
+      - email
+      - login
+      - name
+      - picture
+      type: object
+    TeamCreateRequest:
+      additionalProperties: false
+      description: Team creation request.
+      example:
+        account: 1
+        name: Engineering
+        members:
+        - github.com/gkwillie
+        - github.com/se7entyse7en
+      properties:
+        account:
+          description: Account identifier. That account will own the created team.
+          type: integer
+        name:
+          description: Name of the team.
+          type: string
+        members:
+          description: Members of the team.
+          $ref: '#/components/schemas/DeveloperSet'
+      required:
+      - account
+      - members
+      - name
+      type: object
+    TeamUpdateRequest:
+      additionalProperties: false
+      description: Team update request.
+      example:
+        id: 1
+        name: Engineering
+        members:
+        - github.com/gkwillie
+        - github.com/se7entyse7en
+      properties:
+        id:
+          description: Team identifier.
+          type: integer
+        name:
+          description: Name of the team.
+          type: string
+        members:
+          description: Members of the team.
+          $ref: '#/components/schemas/DeveloperSet'
+      required:
+      - id
+      - members
+      - name
+      type: object
+    Team:
+      description: List of team members.
+      example:
+        id: 1
+        name: Engineering
+        members:
+        - login: github.com/gkwillie
+          name: Groundskeeper Willie
+          email: bot@athenian.co
+          picture: https://avatars0.githubusercontent.com/u/60340680?v=4
+        - login: github.com/se7entyse7en
+          name: Lou Marvin Caraig
+          email: loumarvincaraig@gmail.com
+          picture: https://avatars1.githubusercontent.com/u/5599208?v=4
+      properties:
+        id:
+          description: Team identifier.
+          type: integer
+        name:
+          description: Name of the team.
+          type: string
+        members:
+          $ref: '#/components/schemas/Contributors'
+      required:
+      - id
+      - members
+      - name
+      type: object
+    TeamList:
+      description: List of teams of an account.
+      example:
+      - id: 1
+        name: Engineering
+        members:
+        - login: github.com/vmarkovtsev
+          name: Vadim Markovtsev
+          email: vadim@athenian.co
+          picture: https://avatars3.githubusercontent.com/u/2793551?v=4
+        - login: github.com/se7entyse7en
+          name: Lou Marvin Caraig
+          email: waren@athenian.co
+          picture: https://avatars1.githubusercontent.com/u/5599208?v=4
+      - id: 2
+        name: Product
+        members:
+        - login: github.com/warenlg
+          name: Waren Long
+          email: waren@athenian.co
+          picture: https://avatars2.githubusercontent.com/u/24694845?v=4
+      items:
+        $ref: '#/components/schemas/Team'
       type: array
     RepositorySet:
       description: A set of repositories. An empty list results an empty response
