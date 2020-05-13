@@ -159,14 +159,14 @@ async def test_load_releases_branches_empty(mdb, cache):
     (datetime(year=2017, month=9, day=4, tzinfo=timezone.utc), 1),
     (datetime(year=2017, month=12, day=8, tzinfo=timezone.utc), 0),
 ])
-async def test_load_releases_tag_or_branch(mdb, cache, date_from, n):
+async def test_load_releases_tag_or_branch_dates(mdb, cache, date_from, n):
     date_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
     releases = await load_releases(
         ["src-d/go-git"],
         date_from,
         date_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="master", tags="", match=Match.tag_or_branch)},
+            branches="master", tags=".*", match=Match.tag_or_branch)},
         mdb,
         cache,
     )
@@ -216,4 +216,26 @@ async def test_load_releases_empty(mdb, repos):
         mdb,
         None,
         index=Release.id.key)
+    assert releases.empty
+    date_from = datetime(year=2017, month=3, day=4, tzinfo=timezone.utc)
+    date_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
+    releases = await load_releases(
+        ["src-d/go-git"],
+        date_from,
+        date_to,
+        {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="master", tags="", match=Match.tag)},
+        mdb,
+        None,
+    )
+    assert releases.empty
+    releases = await load_releases(
+        ["src-d/go-git"],
+        date_from,
+        date_to,
+        {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="", tags=".*", match=Match.branch)},
+        mdb,
+        None,
+    )
     assert releases.empty

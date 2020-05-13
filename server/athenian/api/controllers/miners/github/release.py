@@ -134,6 +134,8 @@ async def _match_releases_by_tag(repos: Iterable[str],
         if repo_releases.empty:
             continue
         regexp = settings["github.com/" + repo].tags
+        if not regexp.endswith("$"):
+            regexp += "$"
         # note: dict.setdefault() is not good here because re.compile() will be evaluated
         try:
             regexp = regexp_cache[regexp]
@@ -161,6 +163,8 @@ async def _match_releases_by_branch(repos: Iterable[str],
         regexp = settings["github.com/" + repo].branches
         default_branch = default_branches[repo]
         regexp = regexp.replace(default_branch_alias, default_branch)
+        if not regexp.endswith("$"):
+            regexp += "$"
         # note: dict.setdefault() is not good here because re.compile() will be evaluated
         try:
             regexp = regexp_cache[regexp]
