@@ -1,7 +1,8 @@
 import asyncio
 from datetime import datetime
+from itertools import chain
 import marshal
-from typing import Collection, Optional, Tuple
+from typing import Collection, List, Optional, Tuple
 
 import aiomcache
 import databases
@@ -95,3 +96,70 @@ async def mine_contributors(repos: Collection[str],
         .where(User.login.in_(users)))
     user_details = {r[0]: (r[1], r[2]) for r in user_details}
     return users, user_details
+
+
+@cached(
+    exptime=5 * 60,
+    serialize=marshal.dumps,
+    deserialize=marshal.loads,
+    key=lambda repos, **_: (",".join(repos),),
+)
+async def mine_all_contributors(repos: Collection[str],
+                                db: databases.Database,
+                                cache: Optional[aiomcache.Client]) -> List[dict]:
+    """Discover all developers who made any important action in the given repositories."""
+    async def fetch_prs_authors():
+        return await db.fetch_all(
+            select([PullRequest.user_login])
+            .where(PullRequest.repository_full_name.in_(repos))
+            .distinct(),
+        )
+
+    async def fetch_commenters():
+        return await db.fetch_all(
+            select([PullRequestComment.user_login])
+            .where(PullRequestComment.repository_full_name.in_(repos))
+            .distinct(),
+        )
+
+    async def fetch_commit_authors():
+        return await db.fetch_all(
+            select([PushCommit.author_login])
+            .where(PushCommit.repository_full_name.in_(repos))
+            .distinct(),
+        )
+
+    async def fetch_commit_committers():
+        return await db.fetch_all(
+            select([PushCommit.committer_login])
+            .where(PushCommit.repository_full_name.in_(repos))
+            .distinct(),
+        )
+
+    async def fetch_reviewers():
+        return await db.fetch_all(
+            select([PullRequestReview.user_login])
+            .where(PullRequestReview.repository_full_name.in_(repos))
+            .distinct(),
+        )
+
+    async def fetch_releasers():
+        return await db.fetch_all(
+            select([Release.author])
+            .where(Release.repository_full_name.in_(repos))
+            .distinct(),
+        )
+
+    data = await asyncio.gather(
+        fetch_prs_authors(), fetch_commenters(), fetch_commit_authors(),
+        fetch_commit_committers(), fetch_reviewers(), fetch_releasers())
+
+    users = set(r[0] for r in chain.from_iterable(data))
+    users.discard(None)
+
+    keys = ["login", "email", "avatar_url", "name"]
+    user_details = await db.fetch_all(
+        select([getattr(User, k) for k in keys])
+        .where(User.login.in_(users)))
+
+    return [{k: ud[i] for i, k in enumerate(keys)} for ud in user_details]
