@@ -1,5 +1,3 @@
-from datetime import datetime
-
 import dateutil.parser
 from sqlalchemy import ARRAY, BigInteger, Boolean, Column, ForeignKey, Integer, Text, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
@@ -18,8 +16,6 @@ class IDMixin:
 
 class IDMixinNG:
     id = Column(Text, primary_key=True)
-    discovered_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
-    fetched_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
 
     @declared_attr
     def node_id(self):
