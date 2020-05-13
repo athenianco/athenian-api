@@ -29,7 +29,7 @@ services:
       - memcached
 
   postgres:
-    image: postgres:9.6-alpine
+    image: postgres:9.6
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-api}
