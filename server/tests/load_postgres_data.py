@@ -75,7 +75,8 @@ def main():
         run_pg_cmd_on_guest(guest_cmd, remote_postgres_password)
         print("Done!")
 
-        guest_cmd = "createdb -U %s %s" % (args.local_postgres_user, db)
+        guest_cmd = "createdb -U %s --lc-collate='C.UTF-8' -T template0 %s" % (
+            args.local_postgres_user, db)
         print("Creating database: %s" % guest_cmd)
         run_pg_cmd_on_guest(guest_cmd, remote_postgres_password)
 
