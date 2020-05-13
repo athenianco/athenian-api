@@ -1,6 +1,6 @@
 import asyncio
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 import marshal
 from typing import Collection, List, Optional
 
@@ -21,8 +21,8 @@ async def mine_contributors(repos: Collection[str],
                             cache: Optional[aiomcache.Client] = None) -> List[dict]:
     """Discover developers who made any important action in the given repositories and \
     in the given time frame."""
-    time_from = time_from or datetime(1970, 1, 1)
-    time_to = time_to or datetime.now()
+    time_from = time_from or datetime(1970, 1, 1, tzinfo=timezone.utc)
+    time_to = time_to or datetime.now(timezone.utc)
 
     return await _mine_contributors(repos, time_from, time_to, db, with_stats, cache)
 
@@ -101,18 +101,17 @@ async def _mine_contributors(repos: Collection[str],
         for row in rows:
             stats[row[0]][key] = row[1]
 
-    keys = ["login", "email", "avatar_url", "name"]
-    user_details = await db.fetch_all(
-        select([getattr(User, k) for k in keys])
-        .where(User.login.in_(stats.keys())))
+    stats.pop(None, None)
 
-    indexed_keys = list(enumerate(keys))
+    cols = [User.login, User.email, User.avatar_url, User.name]
+    user_details = await db.fetch_all(select(cols).where(User.login.in_(stats.keys())))
+
+    indexed_keys = list(enumerate(col.key for col in cols))
     contribs = []
     for ud in user_details:
         c = {k: ud[i] for i, k in indexed_keys}
         if with_stats:
             c = {**c, "stats": stats[c["login"]]}
-
         contribs.append(c)
 
     return contribs
