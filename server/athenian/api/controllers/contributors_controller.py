@@ -2,7 +2,7 @@ from aiohttp import web
 from sqlalchemy import and_, select
 
 from athenian.api.controllers.miners.access_classes import access_classes
-from athenian.api.controllers.miners.github.contributors import mine_all_contributors
+from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import Contributor, NotFoundError
 from athenian.api.response import FriendlyJson, ResponseError
@@ -31,7 +31,8 @@ async def get_contributors(request: web.Request, id: int) -> web.Response:
             return e.response
 
         repos = checker.installed_repos(with_prefix=False)
-        users = await mine_all_contributors(repos, request.mdb, request.cache)
+        users = await mine_contributors(repos, request.mdb, with_stats=False,
+                                        cache=request.cache)
 
         contributors = [
             Contributor(login=f"github.com/{u['login']}", name=u["name"],

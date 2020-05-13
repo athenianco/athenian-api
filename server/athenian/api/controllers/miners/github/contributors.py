@@ -1,8 +1,8 @@
 import asyncio
+from collections import defaultdict
 from datetime import datetime
-from itertools import chain
 import marshal
-from typing import Collection, List, Optional, Tuple
+from typing import Collection, List, Optional
 
 import aiomcache
 import databases
@@ -13,6 +13,20 @@ from athenian.api.models.metadata.github import PullRequest, PullRequestComment,
     PullRequestReview, PushCommit, Release, User
 
 
+async def mine_contributors(repos: Collection[str],
+                            db: databases.Database,
+                            time_from: Optional[datetime] = None,
+                            time_to: Optional[datetime] = None,
+                            with_stats: Optional[bool] = True,
+                            cache: Optional[aiomcache.Client] = None) -> List[dict]:
+    """Discover developers who made any important action in the given repositories and \
+    in the given time frame."""
+    time_from = time_from or datetime(1970, 1, 1)
+    time_to = time_to or datetime.now()
+
+    return await _mine_contributors(repos, time_from, time_to, db, with_stats, cache)
+
+
 @cached(
     exptime=5 * 60,
     serialize=marshal.dumps,
@@ -20,14 +34,12 @@ from athenian.api.models.metadata.github import PullRequest, PullRequestComment,
     key=lambda repos, time_from, time_to, **_: (
         ",".join(repos), time_from.timestamp(), time_to.timestamp()),
 )
-async def mine_contributors(repos: Collection[str],
-                            time_from: datetime,
-                            time_to: datetime,
-                            db: databases.Database,
-                            cache: Optional[aiomcache.Client],
-                            ) -> Tuple[dict, dict]:
-    """Discover developers who made any important action in the given repositories and \
-    in the given time frame."""
+async def _mine_contributors(repos: Collection[str],
+                             time_from: datetime,
+                             time_to: datetime,
+                             db: databases.Database,
+                             with_stats: bool,
+                             cache: Optional[aiomcache.Client]) -> List[dict]:
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
 
@@ -82,84 +94,25 @@ async def mine_contributors(repos: Collection[str],
     data = await asyncio.gather(
         fetch_prs(), fetch_comments(), fetch_commit_authors(), fetch_commit_committers(),
         fetch_reviews(), fetch_releases())
-    users = {}
+
+    stats = defaultdict(dict)
     for rows, key in zip(data, ("prs", "commenter", "commit_author", "commit_committer",
                                 "reviewer", "releaser")):
         for row in rows:
-            users.setdefault(row[0], {})[key] = row[1]
-    try:
-        del users[None]
-    except KeyError:
-        pass
-    user_details = await db.fetch_all(
-        select([User.login, User.avatar_url, User.name])
-        .where(User.login.in_(users)))
-    user_details = {r[0]: (r[1], r[2]) for r in user_details}
-    return users, user_details
-
-
-@cached(
-    exptime=5 * 60,
-    serialize=marshal.dumps,
-    deserialize=marshal.loads,
-    key=lambda repos, **_: (",".join(repos),),
-)
-async def mine_all_contributors(repos: Collection[str],
-                                db: databases.Database,
-                                cache: Optional[aiomcache.Client]) -> List[dict]:
-    """Discover all developers who made any important action in the given repositories."""
-    async def fetch_prs_authors():
-        return await db.fetch_all(
-            select([PullRequest.user_login])
-            .where(PullRequest.repository_full_name.in_(repos))
-            .distinct(),
-        )
-
-    async def fetch_commenters():
-        return await db.fetch_all(
-            select([PullRequestComment.user_login])
-            .where(PullRequestComment.repository_full_name.in_(repos))
-            .distinct(),
-        )
-
-    async def fetch_commit_authors():
-        return await db.fetch_all(
-            select([PushCommit.author_login])
-            .where(PushCommit.repository_full_name.in_(repos))
-            .distinct(),
-        )
-
-    async def fetch_commit_committers():
-        return await db.fetch_all(
-            select([PushCommit.committer_login])
-            .where(PushCommit.repository_full_name.in_(repos))
-            .distinct(),
-        )
-
-    async def fetch_reviewers():
-        return await db.fetch_all(
-            select([PullRequestReview.user_login])
-            .where(PullRequestReview.repository_full_name.in_(repos))
-            .distinct(),
-        )
-
-    async def fetch_releasers():
-        return await db.fetch_all(
-            select([Release.author])
-            .where(Release.repository_full_name.in_(repos))
-            .distinct(),
-        )
-
-    data = await asyncio.gather(
-        fetch_prs_authors(), fetch_commenters(), fetch_commit_authors(),
-        fetch_commit_committers(), fetch_reviewers(), fetch_releasers())
-
-    users = set(r[0] for r in chain.from_iterable(data))
-    users.discard(None)
+            stats[row[0]][key] = row[1]
 
     keys = ["login", "email", "avatar_url", "name"]
     user_details = await db.fetch_all(
         select([getattr(User, k) for k in keys])
-        .where(User.login.in_(users)))
+        .where(User.login.in_(stats.keys())))
 
-    return [{k: ud[i] for i, k in enumerate(keys)} for ud in user_details]
+    indexed_keys = list(enumerate(keys))
+    contribs = []
+    for ud in user_details:
+        c = {k: ud[i] for i, k in indexed_keys}
+        if with_stats:
+            c = {**c, "stats": stats[c["login"]]}
+
+        contribs.append(c)
+
+    return contribs
