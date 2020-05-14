@@ -901,12 +901,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
           description: The request was invalid.
-        403:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The user is forbidden to create a team from the specified items.
         409:
           content:
             application/json:
