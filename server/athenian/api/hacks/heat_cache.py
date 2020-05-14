@@ -19,7 +19,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
     add_logging_args(parser)
     parser.add_argument("--metadata-db", required=True,
-                        help="Metadata DB endpoint, e.g. postgresql://0.0.0.0:5432/state")
+                        help="Metadata DB endpoint, e.g. postgresql://0.0.0.0:5432/metadata")
+    parser.add_argument("--precomputed-db", required=True,
+                        help="Precomputed DB endpoint, e.g. postgresql://0.0.0.0:5432/precomputed")
     parser.add_argument("--state-db", required=True,
                         help="State DB endpoint, e.g. postgresql://0.0.0.0:5432/state")
     parser.add_argument("--memcached", required=True,
@@ -44,6 +46,8 @@ def main():
         setup_cache_metrics(cache, None)
         mdb = databases.Database(args.metadata_db)
         await mdb.connect()
+        pdb = databases.Database(args.precomputed_db)
+        await pdb.connect()
 
         for reposet in tqdm(reposets):
             repos = [r.split("/", 1)[1] for r in reposet.items]
@@ -68,9 +72,10 @@ def main():
                 ["pr-lead-time"],
                 [[time_from, time_to]],
                 repos,
-                settings,
                 [],
+                settings,
                 mdb,
+                pdb,
                 cache,
             )
 
