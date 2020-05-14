@@ -68,7 +68,7 @@ matrix:
       before_script: *_setup_postgres
       script:
         - set -e
-        - export SLACK_API_TOKEN=
+        - export SLACK_API_TOKEN=xxx
         - pytest --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py
         - set +e
     - if: commit_message !~ /Bump version/
