@@ -98,7 +98,7 @@ async def _common_filter_preprocess(filt: Union[GenericFilterRequest,
         filt.date_to += tzoffset
     return await resolve_repos(
         filt.in_, filt.account, request.uid, request.native_uid,
-        request.sdb, request.mdb, request.cache, strip_prefix=strip_prefix)
+        request.sdb, request.mdb, request.cache, request.app["slack"], strip_prefix=strip_prefix)
 
 
 async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:

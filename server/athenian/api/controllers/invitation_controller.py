@@ -145,6 +145,7 @@ async def _accept_invitation(iid, salt, request, conn):
         raise ResponseError(ForbiddenError(detail="This invitation is disabled."))
     acc_id = inv[Invitation.account_id.key]
     is_admin = acc_id == admin_backdoor
+    slack = request.app["slack"]  # type: slack.WebClient
     if is_admin:
         timestamp = await conn.fetch_val(
             select([UserAccount.created_at]).where(and_(UserAccount.user_id == request.uid,
@@ -171,6 +172,8 @@ async def _accept_invitation(iid, salt, request, conn):
                 status=HTTPStatus.LOCKED,
                 detail="Invitation was not found."))
         log.info("Created new account %d", acc_id)
+        if slack is not None:
+            await slack.post("new_account.jinja2", uid=request.uid, account=acc_id)
         status = None
     else:
         status = await conn.fetch_one(select([UserAccount.is_admin])
@@ -185,6 +188,8 @@ async def _accept_invitation(iid, salt, request, conn):
         ).create_defaults()
         await conn.execute(insert(UserAccount).values(user.explode(with_primary_keys=True)))
         log.info("Assigned user %s to account %d (admin: %s)", request.uid, acc_id, is_admin)
+        if slack is not None:
+            await slack.post("new_user.jinja2", user=await request.user(), account=acc_id)
         values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
         await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
     user = await (await request.user()).load_accounts(conn)
