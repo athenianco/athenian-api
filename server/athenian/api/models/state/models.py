@@ -14,41 +14,48 @@ Base = create_base()
 
 def create_collection_mixin(name: str):
     """Create the collections mixin according to the required column name."""
-    def count_items(ctx):
-        """Return the number of items in the collection."""
-        return len(ctx.get_current_parameters()[name])
 
-    def calc_items_checksum(ctx):
-        """Calculate the checksum of the items in the collection."""
-        return ctypes.c_longlong(xxhash.xxh64_intdigest(json.dumps(
-            ctx.get_current_parameters()[name]))).value
+    class CollectionMixin():
 
-    cols = {
-        "count_items": staticmethod(count_items),
-        "calc_items_checksum": staticmethod(calc_items_checksum),
-        name: Column(name, always_unequal(JSON()), nullable=False),
-        f"{name}_count": Column(Integer(), nullable=False, default=count_items,
-                                onupdate=count_items),
-        f"{name}_checksum": Column(always_unequal(BigInteger()), nullable=False,
-                                   default=calc_items_checksum, onupdate=calc_items_checksum),
-    }
+        @staticmethod
+        def count_items(ctx):
+            """Return the number of items in the collection."""
+            return len(ctx.get_current_parameters()[name])
 
-    return type("CollectionMixin", (), cols)
+        @staticmethod
+        def calc_items_checksum(ctx):
+            """Calculate the checksum of the items in the collection."""
+            return ctypes.c_longlong(xxhash.xxh64_intdigest(json.dumps(
+                ctx.get_current_parameters()[name]))).value
+
+    setattr(CollectionMixin, name, Column(always_unequal(JSON()), nullable=False))
+    setattr(CollectionMixin, f"{name}_count",
+            Column(Integer(), nullable=False, default=CollectionMixin.count_items,
+                   onupdate=CollectionMixin.count_items))
+    setattr(CollectionMixin, f"{name}_checksum",
+            Column(always_unequal(BigInteger()), nullable=False,
+                   default=CollectionMixin.calc_items_checksum,
+                   onupdate=CollectionMixin.calc_items_checksum))
+
+    return CollectionMixin
 
 
 def create_time_mixin(created_at: bool = False, updated_at: bool = False):
     """Create the mixin accorinding to the required columns."""
-    cols = {}
+    class TimeMixin():
+        pass
+
     if created_at:
-        cols["created_at"] = Column(TIMESTAMP(timezone=True), nullable=False,
-                                    default=lambda: datetime.now(timezone.utc),
-                                    server_default=func.now())
+        TimeMixin.created_at = Column(TIMESTAMP(timezone=True), nullable=False,
+                                      default=lambda: datetime.now(timezone.utc),
+                                      server_default=func.now())
     if updated_at:
-        cols["updated_at"] = Column(TIMESTAMP(timezone=True), nullable=False,
-                                    default=lambda: datetime.now(timezone.utc),
-                                    server_default=func.now(),
-                                    onupdate=lambda ctx: datetime.now(timezone.utc))
-    return type("TimeMixin", (), cols)
+        TimeMixin.updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
+                                      default=lambda: datetime.now(timezone.utc),
+                                      server_default=func.now(),
+                                      onupdate=lambda ctx: datetime.now(timezone.utc))
+
+    return TimeMixin
 
 
 class RepositorySet(create_time_mixin(created_at=True, updated_at=True),
