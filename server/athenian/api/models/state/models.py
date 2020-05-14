@@ -12,6 +12,42 @@ from athenian.api.models import always_unequal, create_base
 Base = create_base()
 
 
+class CollectionMixin():
+    """Mixin for collection-alike tables."""
+
+    def count_items(ctx):
+        """Return the number of items in the collection."""
+        return len(ctx.get_current_parameters()["items"])
+
+    def calc_items_checksum(ctx):
+        """Calculate the checksum of the items in the collection."""
+        return ctypes.c_longlong(xxhash.xxh64_intdigest(json.dumps(
+            ctx.get_current_parameters()["items"]))).value
+
+    items = Column(always_unequal(JSON()), nullable=False)
+    items_count = Column(Integer(), nullable=False, default=count_items, onupdate=count_items)
+    items_checksum = Column(always_unequal(BigInteger()), nullable=False,
+                            default=calc_items_checksum, onupdate=calc_items_checksum)
+
+    count_items = staticmethod(count_items)
+    calc_items_checksum = staticmethod(calc_items_checksum)
+
+
+def create_time_mixin(created_at: bool = False, updated_at: bool = False):
+    """Create the mixin accorinding to the required columns."""
+    cols = {}
+    if created_at:
+        cols["created_at"] = Column(TIMESTAMP(timezone=True), nullable=False,
+                                    default=lambda: datetime.now(timezone.utc),
+                                    server_default=func.now())
+    if updated_at:
+        cols["updated_at"] = Column(TIMESTAMP(timezone=True), nullable=False,
+                                    default=lambda: datetime.now(timezone.utc),
+                                    server_default=func.now(),
+                                    onupdate=lambda ctx: datetime.now(timezone.utc))
+    return type("TimeMixin", (), cols)
+
+
 class RepositorySet(Base):
     """A group of repositories identified by an integer."""
 
