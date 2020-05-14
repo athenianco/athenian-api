@@ -12,25 +12,28 @@ from athenian.api.models import always_unequal, create_base
 Base = create_base()
 
 
-class CollectionMixin():
-    """Mixin for collection-alike tables."""
-
+def create_collection_mixin(name: str):
+    """Create the collections mixin according to the required column name."""
     def count_items(ctx):
         """Return the number of items in the collection."""
-        return len(ctx.get_current_parameters()["items"])
+        return len(ctx.get_current_parameters()[name])
 
     def calc_items_checksum(ctx):
         """Calculate the checksum of the items in the collection."""
         return ctypes.c_longlong(xxhash.xxh64_intdigest(json.dumps(
-            ctx.get_current_parameters()["items"]))).value
+            ctx.get_current_parameters()[name]))).value
 
-    items = Column(always_unequal(JSON()), nullable=False)
-    items_count = Column(Integer(), nullable=False, default=count_items, onupdate=count_items)
-    items_checksum = Column(always_unequal(BigInteger()), nullable=False,
-                            default=calc_items_checksum, onupdate=calc_items_checksum)
+    cols = {
+        "count_items": staticmethod(count_items),
+        "calc_items_checksum": staticmethod(calc_items_checksum),
+        name: Column(name, always_unequal(JSON()), nullable=False),
+        f"{name}_count": Column(Integer(), nullable=False, default=count_items,
+                                onupdate=count_items),
+        f"{name}_checksum": Column(always_unequal(BigInteger()), nullable=False,
+                                   default=calc_items_checksum, onupdate=calc_items_checksum),
+    }
 
-    count_items = staticmethod(count_items)
-    calc_items_checksum = staticmethod(calc_items_checksum)
+    return type("CollectionMixin", (), cols)
 
 
 def create_time_mixin(created_at: bool = False, updated_at: bool = False):
@@ -49,7 +52,7 @@ def create_time_mixin(created_at: bool = False, updated_at: bool = False):
 
 
 class RepositorySet(create_time_mixin(created_at=True, updated_at=True),
-                    CollectionMixin, Base):
+                    create_collection_mixin("items"), Base):
     """A group of repositories identified by an integer."""
 
     __tablename__ = "repository_sets"
@@ -82,12 +85,13 @@ class Account(create_time_mixin(created_at=True), Base):
     id = Column(Integer(), primary_key=True)
 
 
-class Team(create_time_mixin(created_at=True, updated_at=True), CollectionMixin, Base):
+class Team(create_time_mixin(created_at=True, updated_at=True),
+           create_collection_mixin("members"), Base):
     """Group of users part of the same team."""
 
     __tablename__ = "teams"
-    __table_args__ = (UniqueConstraint("owner", "items_checksum", name="uc_team_owner_items"),
-                      UniqueConstraint("owner", "name", name="uc_team_owner_name"),
+    __table_args__ = (UniqueConstraint("owner", "members_checksum", name="uc_owner_members"),
+                      UniqueConstraint("owner", "name", name="uc_owner_name"),
                       {"sqlite_autoincrement": True})
 
     id = Column(Integer(), primary_key=True)
