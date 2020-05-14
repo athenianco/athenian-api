@@ -1,7 +1,8 @@
 import asyncio
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timezone
 import marshal
-from typing import Collection, Optional, Tuple
+from typing import Collection, List, Optional
 
 import aiomcache
 import databases
@@ -12,21 +13,33 @@ from athenian.api.models.metadata.github import PullRequest, PullRequestComment,
     PullRequestReview, PushCommit, Release, User
 
 
+async def mine_contributors(repos: Collection[str],
+                            db: databases.Database,
+                            time_from: Optional[datetime] = None,
+                            time_to: Optional[datetime] = None,
+                            with_stats: Optional[bool] = True,
+                            cache: Optional[aiomcache.Client] = None) -> List[dict]:
+    """Discover developers who made any important action in the given repositories and \
+    in the given time frame."""
+    time_from = time_from or datetime(1970, 1, 1, tzinfo=timezone.utc)
+    time_to = time_to or datetime.now(timezone.utc)
+
+    return await _mine_contributors(repos, time_from, time_to, with_stats, db, cache)
+
+
 @cached(
     exptime=5 * 60,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
-    key=lambda repos, time_from, time_to, **_: (
-        ",".join(repos), time_from.timestamp(), time_to.timestamp()),
+    key=lambda repos, time_from, time_to, with_stats, **_: (
+        ",".join(repos), time_from.timestamp(), time_to.timestamp(), with_stats),
 )
-async def mine_contributors(repos: Collection[str],
-                            time_from: datetime,
-                            time_to: datetime,
-                            db: databases.Database,
-                            cache: Optional[aiomcache.Client],
-                            ) -> Tuple[dict, dict]:
-    """Discover developers who made any important action in the given repositories and \
-    in the given time frame."""
+async def _mine_contributors(repos: Collection[str],
+                             time_from: datetime,
+                             time_to: datetime,
+                             with_stats: bool,
+                             db: databases.Database,
+                             cache: Optional[aiomcache.Client]) -> List[dict]:
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
 
@@ -81,17 +94,23 @@ async def mine_contributors(repos: Collection[str],
     data = await asyncio.gather(
         fetch_prs(), fetch_comments(), fetch_commit_authors(), fetch_commit_committers(),
         fetch_reviews(), fetch_releases())
-    users = {}
+
+    stats = defaultdict(dict)
     for rows, key in zip(data, ("prs", "commenter", "commit_author", "commit_committer",
                                 "reviewer", "releaser")):
         for row in rows:
-            users.setdefault(row[0], {})[key] = row[1]
-    try:
-        del users[None]
-    except KeyError:
-        pass
-    user_details = await db.fetch_all(
-        select([User.login, User.avatar_url, User.name])
-        .where(User.login.in_(users)))
-    user_details = {r[0]: (r[1], r[2]) for r in user_details}
-    return users, user_details
+            stats[row[0]][key] = row[1]
+
+    stats.pop(None, None)
+
+    cols = [User.login, User.email, User.avatar_url, User.name]
+    user_details = await db.fetch_all(select(cols).where(User.login.in_(stats.keys())))
+
+    contribs = []
+    for ud in user_details:
+        c = dict(ud)
+        if with_stats:
+            c["stats"] = stats[c[User.login.key]]
+        contribs.append(c)
+
+    return contribs

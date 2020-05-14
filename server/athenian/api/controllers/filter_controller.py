@@ -2,6 +2,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
+import operator
 from typing import Set, Union
 
 from aiohttp import web
@@ -17,6 +18,7 @@ from athenian.api.controllers.miners.pull_request_list_item import Participation
     PullRequestListItem
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import Settings
+from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PushCommit, Release, User
 from athenian.api.models.web import Commit, CommitSignature, CommitsList, InvalidRequestError
 from athenian.api.models.web.developer_summary import DeveloperSummary
@@ -47,14 +49,17 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         repos = await _common_filter_preprocess(filt, request)
     except ResponseError as e:
         return e.response
-    users, user_details = await mine_contributors(
-        repos, filt.date_from, filt.date_to, request.mdb, request.cache)
-    model = [DeveloperSummary(login="github.com/" + u,
-                              avatar=user_details.get(u, [None])[0],
-                              name=user_details.get(u, [None] * 2)[1],
-                              updates=DeveloperUpdates(**v),
-                              ).to_dict()
-             for u, v in sorted(users.items())]
+
+    users = await mine_contributors(
+        repos, request.mdb, time_from=filt.date_from, time_to=filt.date_to,
+        cache=request.cache)
+
+    model = [
+        DeveloperSummary(login=f"{PREFIXES['github']}{u['login']}", avatar=u["avatar_url"],
+                         name=u["name"], updates=DeveloperUpdates(**u["stats"])).to_dict()
+        for u in sorted(users, key=operator.itemgetter("login"))
+    ]
+
     return web.json_response(model, dumps=FriendlyJson.dumps)
 
 
