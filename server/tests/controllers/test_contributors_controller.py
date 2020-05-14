@@ -3,6 +3,7 @@ import json
 import pytest
 
 from athenian.api.models.web import Contributor
+from tests.conftest import has_memcached
 
 
 @pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
@@ -17,6 +18,8 @@ async def test_get_contributors_as_non_admin(client, cached, headers, app, cache
 
 async def _test_get_contributors(client, cached, headers, app, cache):
     if cached:
+        if not has_memcached:
+            raise pytest.skip("no memcached")
         app._cache = cache
 
     response = await client.request(

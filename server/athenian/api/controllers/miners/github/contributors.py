@@ -24,21 +24,21 @@ async def mine_contributors(repos: Collection[str],
     time_from = time_from or datetime(1970, 1, 1, tzinfo=timezone.utc)
     time_to = time_to or datetime.now(timezone.utc)
 
-    return await _mine_contributors(repos, time_from, time_to, db, with_stats, cache)
+    return await _mine_contributors(repos, time_from, time_to, with_stats, db, cache)
 
 
 @cached(
     exptime=5 * 60,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
-    key=lambda repos, time_from, time_to, **_: (
-        ",".join(repos), time_from.timestamp(), time_to.timestamp()),
+    key=lambda repos, time_from, time_to, with_stats, **_: (
+        ",".join(repos), time_from.timestamp(), time_to.timestamp(), with_stats),
 )
 async def _mine_contributors(repos: Collection[str],
                              time_from: datetime,
                              time_to: datetime,
-                             db: databases.Database,
                              with_stats: bool,
+                             db: databases.Database,
                              cache: Optional[aiomcache.Client]) -> List[dict]:
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
@@ -106,12 +106,11 @@ async def _mine_contributors(repos: Collection[str],
     cols = [User.login, User.email, User.avatar_url, User.name]
     user_details = await db.fetch_all(select(cols).where(User.login.in_(stats.keys())))
 
-    indexed_keys = list(enumerate(col.key for col in cols))
     contribs = []
     for ud in user_details:
-        c = {k: ud[i] for i, k in indexed_keys}
+        c = dict(ud)
         if with_stats:
-            c = {**c, "stats": stats[c["login"]]}
+            c["stats"] = stats[c[User.login.key]]
         contribs.append(c)
 
     return contribs
