@@ -82,6 +82,19 @@ class Account(create_time_mixin(created_at=True), Base):
     id = Column(Integer(), primary_key=True)
 
 
+class Team(create_time_mixin(created_at=True, updated_at=True), CollectionMixin, Base):
+    """Group of users part of the same team."""
+
+    __tablename__ = "teams"
+    __table_args__ = (UniqueConstraint("owner", "items_checksum", name="uc_team_owner_items"),
+                      UniqueConstraint("owner", "name", name="uc_team_owner_name"),
+                      {"sqlite_autoincrement": True})
+
+    id = Column(Integer(), primary_key=True)
+    name = Column(String(256), nullable=False)
+    owner = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"), nullable=False)
+
+
 class Installation(Base):
     """Mapping account -> installation_id, one-to-many."""
 
