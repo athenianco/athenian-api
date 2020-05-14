@@ -434,13 +434,22 @@ def create_slack(log: logging.Logger) -> Optional[slack.WebClient]:
     )
 
     async def post(template, **kwargs) -> None:
-        response = await slack_client.chat_postMessage(
-            channel=slack_client.channel,
-            text=slack_client.jinja2.get_template(template).render(
-                env=os.getenv("SENTRY_ENV", "development"), **kwargs))
-        if response.status_code != 200:
-            log.error("Could not send a Slack message to %s: HTTP %d: %s",
-                      slack_client.channel, response.status_code, response.data)
+        try:
+            response = await slack_client.chat_postMessage(
+                channel=slack_client.channel,
+                text=slack_client.jinja2.get_template(template).render(
+                    env=os.getenv("SENTRY_ENV", "development"), **kwargs))
+            error_name = error_data = ""
+        except Exception as e:
+            error_name = type(e).__name__
+            error_data = str(e)
+            response = None
+        if response is not None and response.status_code != 200:
+            error_name = "HTTP %d" % response.status_code
+            error_data = response.data
+        if error_name:
+            log.error("Could not send a Slack message to %s: %s: %s",
+                      slack_client.channel, error_name, error_data)
 
     slack_client.post = post
     log.info("Slack messaging to %s is enabled 👍", slack_client.channel)
