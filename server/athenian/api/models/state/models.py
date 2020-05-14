@@ -12,10 +12,10 @@ from athenian.api.models import always_unequal, create_base
 Base = create_base()
 
 
-def create_collection_mixin(name: str):
+def create_collection_mixin(name: str) -> type:
     """Create the collections mixin according to the required column name."""
 
-    class CollectionMixin():
+    class CollectionMixin:
 
         @staticmethod
         def count_items(ctx):
@@ -40,20 +40,21 @@ def create_collection_mixin(name: str):
     return CollectionMixin
 
 
-def create_time_mixin(created_at: bool = False, updated_at: bool = False):
+def create_time_mixin(created_at: bool = False, updated_at: bool = False) -> type:
     """Create the mixin accorinding to the required columns."""
-    class TimeMixin():
-        pass
+    created_at_ = created_at
+    updated_at_ = updated_at
 
-    if created_at:
-        TimeMixin.created_at = Column(TIMESTAMP(timezone=True), nullable=False,
-                                      default=lambda: datetime.now(timezone.utc),
-                                      server_default=func.now())
-    if updated_at:
-        TimeMixin.updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
-                                      default=lambda: datetime.now(timezone.utc),
-                                      server_default=func.now(),
-                                      onupdate=lambda ctx: datetime.now(timezone.utc))
+    class TimeMixin:
+        if created_at_:
+            created_at = Column(TIMESTAMP(timezone=True), nullable=False,
+                                default=lambda: datetime.now(timezone.utc),
+                                server_default=func.now())
+        if updated_at_:
+            updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
+                                default=lambda: datetime.now(timezone.utc),
+                                server_default=func.now(),
+                                onupdate=lambda ctx: datetime.now(timezone.utc))
 
     return TimeMixin
 
