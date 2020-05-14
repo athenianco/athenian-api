@@ -3,6 +3,7 @@ from sqlalchemy import and_, select
 
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.contributors import mine_contributors
+from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import Contributor, NotFoundError
 from athenian.api.response import FriendlyJson, ResponseError
@@ -36,7 +37,7 @@ async def get_contributors(request: web.Request, id: int) -> web.Response:
                                         cache=request.cache)
 
         contributors = [
-            Contributor(login=f"github.com/{u['login']}", name=u["name"],
+            Contributor(login=f"{PREFIXES['github']}{u['login']}", name=u["name"],
                         email=u["email"], picture=u["avatar_url"]).to_dict()
             for u in users
         ]
