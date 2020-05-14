@@ -5,6 +5,7 @@ from typing import Collection, Dict, List, Optional, Set
 
 import aiomcache
 import databases
+import slack
 from sqlalchemy import and_, delete, insert, select
 
 from athenian.api import ResponseError
@@ -51,7 +52,8 @@ class Settings:
                  native_user_id: str,
                  sdb: databases.Database,
                  mdb: databases.Database,
-                 cache: Optional[aiomcache.Client]):
+                 cache: Optional[aiomcache.Client],
+                 slack: Optional[slack.WebClient]):
         """Initialize a new instance of Settings class."""
         self._account = account
         self._user_id = user_id
@@ -61,13 +63,14 @@ class Settings:
         assert isinstance(mdb, databases.Database)
         self._mdb = mdb
         self._cache = cache
+        self._slack = slack
 
     @classmethod
     def from_request(cls, request: AthenianWebRequest, account: int) -> "Settings":
         """Create a new Settings class instance from the request object and the account ID."""
         return Settings(
             account=account, user_id=request.uid, native_user_id=request.native_uid,
-            sdb=request.sdb, mdb=request.mdb, cache=request.cache)
+            sdb=request.sdb, mdb=request.mdb, cache=request.cache, slack=request.app["slack"])
 
     async def list_release_matches(self, repos: Optional[Collection[str]] = None,
                                    ) -> Dict[str, ReleaseMatchSetting]:
@@ -128,7 +131,7 @@ class Settings:
             await get_user_account_status(self._user_id, self._account, conn, self._cache)
             repos = await resolve_repos(
                 repos, self._account, self._user_id, self._native_user_id,
-                conn, self._mdb, self._cache, strip_prefix=False)
+                conn, self._mdb, self._cache, self._slack, strip_prefix=False)
             values = [ReleaseSetting(repository=r,
                                      account_id=self._account,
                                      branches=branches,

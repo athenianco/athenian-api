@@ -22,10 +22,12 @@ import aiomcache
 import connexion
 from connexion.spec import OpenAPISpecification
 import databases
+import jinja2
 import pytz
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 import sentry_sdk.utils
+import slack
 import uvloop
 
 from athenian.api import metadata
@@ -232,6 +234,7 @@ class AthenianApp(connexion.AioHttpApp):
         node_name = os.getenv("NODE_NAME")
         if node_name is not None:
             self.server_name = node_name + "/" + self.server_name
+        self._slack = self.app["slack"] = create_slack(self.log)
 
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
@@ -415,6 +418,33 @@ def create_auth0_factory(force_default_user: bool) -> Callable[[], Auth0]:
 
     factory.ensure_static_configuration = Auth0.ensure_static_configuration
     return factory
+
+
+def create_slack(log: logging.Logger) -> Optional[slack.WebClient]:
+    """Initialize the Slack client to post notifications about new accounts, user, and \
+    installations."""
+    slack_token = os.getenv("SLACK_API_TOKEN")
+    if not slack_token:
+        return None
+    slack_client = slack.WebClient(token=slack_token, run_async=True)
+    slack_client.channel = os.getenv("SLACK_CHANNEL", "#updates-installations")
+    slack_client.jinja2 = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(Path(__file__).parent / "slack"),
+        autoescape=False, trim_blocks=True, lstrip_blocks=True,
+    )
+
+    async def post(template, **kwargs) -> None:
+        response = await slack_client.chat_postMessage(
+            channel=slack_client.channel,
+            text=slack_client.jinja2.get_template(template).render(
+                env=os.getenv("SENTRY_ENV", "development"), **kwargs))
+        if response.status_code != 200:
+            log.error("Could not send a Slack message to %s: HTTP %d: %s",
+                      slack_client.channel, response.status_code, response.data)
+
+    slack_client.post = post
+    log.info("Slack messaging to %s is enabled 👍", slack_client.channel)
+    return slack_client
 
 
 def check_schema_versions(metadata_db: str,

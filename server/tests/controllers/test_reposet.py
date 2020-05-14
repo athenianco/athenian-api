@@ -13,7 +13,7 @@ async def test_load_account_reposets_transaction(sdb, mdb):
     sdb._connection_context = ContextVar("connection_context")
 
     async def load():
-        return await load_account_reposets(1, "2793551", [RepositorySet], sdb, mdb, None)
+        return await load_account_reposets(1, "2793551", [RepositorySet], sdb, mdb, None, None)
 
     items = await asyncio.gather(*(load() for _ in range(10)), return_exceptions=True)
     errors = sum(isinstance(item, ResponseError) for item in items)

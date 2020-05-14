@@ -153,7 +153,8 @@ async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
     async with request.sdb.connection() as sdb_conn:
         try:
             rss = await load_account_reposets(
-                id, request.native_uid, [RepositorySet], sdb_conn, request.mdb, request.cache)
+                id, request.native_uid, [RepositorySet], sdb_conn, request.mdb, request.cache,
+                request.app["slack"])
         except ResponseError as e:
             return e.response
     items = [RepositorySetListItem(

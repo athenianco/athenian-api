@@ -7,13 +7,13 @@ from typing import List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 import aiomcache
 from asyncpg import UniqueViolationError
 import databases.core
+import slack
 from sqlalchemy import and_, insert, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
 from athenian.api.controllers.account import get_installation_ids, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
-from athenian.api.metadata import __package__
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
 from athenian.api.models.state.models import Installation, RepositorySet, UserAccount
@@ -94,6 +94,7 @@ async def resolve_repos(repositories: List[str],
                         sdb_conn: Union[databases.core.Connection, databases.Database],
                         mdb_conn: Union[databases.core.Connection, databases.Database],
                         cache: Optional[aiomcache.Client],
+                        slack: Optional[slack.WebClient],
                         strip_prefix=True,
                         ) -> Set[str]:
     """Dereference all the reposets and produce the joint list of all mentioned repos."""
@@ -105,7 +106,7 @@ async def resolve_repos(repositories: List[str],
             detail="User %s is forbidden to access account %d" % (uid, account)))
     if not repositories:
         rss = await load_account_reposets(
-            account, native_uid, [RepositorySet.id], sdb_conn, mdb_conn, cache)
+            account, native_uid, [RepositorySet.id], sdb_conn, mdb_conn, cache, slack)
         repositories = ["{%d}" % rss[0][RepositorySet.id.key]]
     repos = set(chain.from_iterable(
         await asyncio.gather(*[
@@ -130,6 +131,7 @@ async def load_account_reposets(account: int,
                                 sdb_conn: DatabaseLike,
                                 mdb_conn: DatabaseLike,
                                 cache: Optional[aiomcache.Client],
+                                slack: Optional[slack.WebClient],
                                 ) -> List[Mapping]:
     """
     Load the account's repository sets and create one if no exists.
@@ -146,9 +148,9 @@ async def load_account_reposets(account: int,
         if isinstance(mdb_conn, databases.Database):
             async with mdb_conn.connection() as _mdb_conn:
                 return await _load_account_reposets(
-                    account, native_uid, fields, _sdb_conn, _mdb_conn, cache)
+                    account, native_uid, fields, _sdb_conn, _mdb_conn, cache, slack)
         return await _load_account_reposets(
-            account, native_uid, fields, _sdb_conn, mdb_conn, cache)
+            account, native_uid, fields, _sdb_conn, mdb_conn, cache, slack)
 
     if isinstance(sdb_conn, databases.Database):
         async with sdb_conn.connection() as _sdb_conn:
@@ -162,6 +164,7 @@ async def _load_account_reposets(account: int,
                                  sdb_conn: databases.core.Connection,
                                  mdb_conn: databases.core.Connection,
                                  cache: Optional[aiomcache.Client],
+                                 slack: Optional[slack.WebClient],
                                  ) -> List[Mapping]:
     assert isinstance(sdb_conn, databases.core.Connection)
     assert isinstance(mdb_conn, databases.core.Connection)
@@ -170,6 +173,8 @@ async def _load_account_reposets(account: int,
                                    .order_by(RepositorySet.created_at))
     if rss:
         return rss
+
+    log = logging.getLogger("%s.load_account_reposets" % metadata.__package__)
 
     def raise_no_source_data():
         raise ResponseError(NoSourceDataError(
@@ -204,13 +209,16 @@ async def _load_account_reposets(account: int,
             repos = [(prefix + r[0]) for r in repos]
             rs = RepositorySet(owner=account, items=repos).create_defaults()
             rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
-            logging.getLogger(__package__).info(
+            log.info(
                 "Created the first reposet %d for account %d with %d repos on behalf of %s",
                 rs.id, account, len(repos), native_uid,
             )
+            if slack is not None:
+                await slack.post(
+                    "new_installation.jinja2", account=account, repos=repos, iids=iids)
+
             return [rs.explode(with_primary_keys=True)]
     except (UniqueViolationError, IntegrityError, OperationalError) as e:
-        logging.getLogger("%s.load_account_reposets" % metadata.__package__).error(
-            "%s: %s", type(e).__name__, e)
+        log.error("%s: %s", type(e).__name__, e)
         raise ResponseError(DatabaseConflict(
             detail="concurrent initial reposet creation")) from None

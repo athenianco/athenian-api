@@ -223,7 +223,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     try:
         repos = await resolve_repos(
             filt.in_, filt.account, request.uid, request.native_uid,
-            request.sdb, request.mdb, request.cache)
+            request.sdb, request.mdb, request.cache, request.app["slack"])
         time_intervals, tzoffset = _split_to_time_intervals(
             filt.date_from, filt.date_to, filt.granularity, filt.timezone)
     except ResponseError as e:

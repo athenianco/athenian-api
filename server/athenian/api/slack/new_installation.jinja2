@@ -1,0 +1,6 @@
+*New API installation on {{ env }}*
+
+Account {{ account }} has bound to metadata installation{{ "s" if iids|length > 1 else "" }} {{ iids | join(", ") }}:
+{% for repo in repos %}
+    * {{ repo }}
+{% endfor %}
