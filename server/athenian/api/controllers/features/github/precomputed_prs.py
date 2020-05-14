@@ -4,6 +4,7 @@ from typing import Collection, Dict, Iterable
 
 import databases
 from sqlalchemy import and_, insert, select
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api.controllers.miners.github.pull_request import MinedPullRequest, PullRequestTimes
 from athenian.api.controllers.miners.github.release import matched_by_column
@@ -108,4 +109,8 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
             developers=participants,
             data=pickle.dumps(times),
         ).create_defaults().explode(with_primary_keys=True))
-    await db.execute_many(insert(GitHubPullRequestTimes), inserted)
+    if db.url.dialect in ("postgres", "postgresql"):
+        sql = postgres_insert(GitHubPullRequestTimes).on_conflict_do_nothing()
+    else:
+        sql = insert(GitHubPullRequestTimes)
+    await db.execute_many(sql, inserted)
