@@ -20,6 +20,7 @@ from athenian.api.cache import cached, gen_cache_key, max_exptime
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.release_accelerated import update_history
 from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
+from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, PullRequest, PushCommit, Release, User
 from athenian.api.typing_utils import DatabaseLike
 
@@ -44,8 +45,9 @@ async def load_releases(repos: Iterable[str],
     repos_by_tag_only = []
     repos_by_tag_or_branch = []
     repos_by_branch = []
+    prefix = PREFIXES["github"]
     for repo in repos:
-        v = settings["github.com/" + repo]
+        v = settings[prefix + repo]
         if v.match == Match.tag:
             repos_by_tag_only.append(repo)
         elif v.match == Match.tag_or_branch:
@@ -126,6 +128,7 @@ async def _match_releases_by_tag(repos: Iterable[str],
     releases = releases[~releases.index.duplicated(keep="first")]
     regexp_cache = {}
     matched = []
+    prefix = PREFIXES["github"]
     for repo in repos:
         try:
             repo_releases = releases.loc[repo]
@@ -133,7 +136,7 @@ async def _match_releases_by_tag(repos: Iterable[str],
             continue
         if repo_releases.empty:
             continue
-        regexp = settings["github.com/" + repo].tags
+        regexp = settings[prefix + repo].tags
         if not regexp.endswith("$"):
             regexp += "$"
         # note: dict.setdefault() is not good here because re.compile() will be evaluated
@@ -159,8 +162,9 @@ async def _match_releases_by_branch(repos: Iterable[str],
     branches, default_branches = await extract_branches(repos, db, cache)
     regexp_cache = {}
     branches_matched = []
+    prefix = PREFIXES["github"]
     for repo, repo_branches in branches.groupby(Branch.repository_full_name.key):
-        regexp = settings["github.com/" + repo].branches
+        regexp = settings[prefix + repo].branches
         default_branch = default_branches[repo]
         regexp = regexp.replace(default_branch_alias, default_branch)
         if not regexp.endswith("$"):
@@ -310,7 +314,8 @@ def _gen_released_pr_cache_key(pr_id: str,
                                repo: str,
                                release_settings: Dict[str, ReleaseMatchSetting],
                                ) -> bytes:
-    return gen_cache_key("release_github|6|%s|%s", pr_id, release_settings["github.com/" + repo])
+    return gen_cache_key(
+        "release_github|6|%s|%s", pr_id, release_settings[PREFIXES["github"] + repo])
 
 
 async def _load_pr_releases_from_cache(prs: Iterable[str],
@@ -660,14 +665,15 @@ async def mine_releases(releases: pd.DataFrame,
     if stats:
         stats = pd.concat(stats, sort=False)
         people = set(chain(chain.from_iterable(stats["commit_authors"]), stats["publisher"]))
-        stats["publisher"] = "github.com/" + stats["publisher"]
-        stats["repository"] = "github.com/" + stats["repository"]
+        prefix = PREFIXES["github"]
+        stats["publisher"] = prefix + stats["publisher"]
+        stats["repository"] = prefix + stats["repository"]
         for calist in stats["commit_authors"].values:
             for i, v in enumerate(calist):
-                calist[i] = "github.com/" + v
+                calist[i] = prefix + v
         avatars = await read_sql_query(
             select(user_columns).where(User.login.in_(people)), db, user_columns)
-        avatars[User.login.key] = "github.com/" + avatars[User.login.key]
+        avatars[User.login.key] = prefix + avatars[User.login.key]
         return stats, avatars
     return pd.DataFrame(), pd.DataFrame(columns=[c.key for c in user_columns])
 

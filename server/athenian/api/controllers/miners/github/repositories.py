@@ -9,6 +9,7 @@ import databases
 from sqlalchemy import and_, distinct, or_, select
 
 from athenian.api.cache import cached
+from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestReview, PushCommit, Release, Repository
 
@@ -76,5 +77,6 @@ async def mine_repositories(repos: Collection[str],
                                            Repository.disabled.is_(False),
                                            Repository.full_name.in_(repos)))
                                .order_by(Repository.full_name))
-    repos = ["github.com/" + r[0] for r in repos]
+    prefix = PREFIXES["github"]
+    repos = [prefix + r[0] for r in repos]
     return repos

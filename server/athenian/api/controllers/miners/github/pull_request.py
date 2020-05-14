@@ -4,8 +4,8 @@ from datetime import date, datetime, timezone
 from enum import Enum
 import logging
 import pickle
-from typing import Any, Collection, Dict, Generator, Generic, List, Optional, Set, Tuple, \
-    TypeVar, Union
+from typing import Any, Collection, Dict, Generator, Generic, List, Mapping, Optional, Set, \
+    Tuple, TypeVar, Union
 
 import aiomcache
 import databases
@@ -20,7 +20,9 @@ from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.github.hardcoded import BOTS
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
+from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind
 from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
@@ -43,6 +45,36 @@ class MinedPullRequest:
     comments: pd.DataFrame
     commits: pd.DataFrame
     release: Dict[str, Any]
+
+    def participants(self, with_prefix=True) -> Mapping[ParticipationKind, Set[str]]:
+        """
+        Collect unique developer logins which are mentioned in this pull request.
+
+        :param with_prefix: Value indicating whether to prepend "github.com/" to the returned \
+                            logins.
+        """
+        prefix = PREFIXES["github"] if with_prefix else ""
+        author = self.pr[PullRequest.user_login.key]
+        merger = self.pr[PullRequest.merged_by_login.key]
+        releaser = self.release[Release.author.key]
+        participants = {
+            ParticipationKind.AUTHOR: {prefix + author} if author else set(),
+            ParticipationKind.REVIEWER: {
+                (prefix + u) for u in self.reviews[PullRequestReview.user_login.key] if u},
+            ParticipationKind.COMMENTER: {
+                (prefix + u) for u in self.comments[PullRequestComment.user_login.key] if u},
+            ParticipationKind.COMMIT_COMMITTER: {
+                (prefix + u) for u in self.commits[PullRequestCommit.committer_login.key] if u},
+            ParticipationKind.COMMIT_AUTHOR: {
+                (prefix + u) for u in self.commits[PullRequestCommit.author_login.key] if u},
+            ParticipationKind.MERGER: {prefix + merger} if merger else set(),
+            ParticipationKind.RELEASER: {prefix + releaser} if releaser else set(),
+        }
+        try:
+            participants[ParticipationKind.REVIEWER].remove(prefix + author)
+        except (KeyError, TypeError):
+            pass
+        return participants
 
 
 class PullRequestMiner:
@@ -466,8 +498,6 @@ class Fallback(Generic[T]):
 
     def __eq__(self, other: "Fallback[T]") -> bool:
         """Implement ==."""
-        if not self or not other:
-            raise ArithmeticError
         return self.best == other.best
 
     def __le__(self, other: "Fallback[T]") -> bool:

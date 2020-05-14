@@ -20,9 +20,8 @@ from athenian.api.controllers.miners.pull_request_list_item import Participation
     PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
-    Release
+from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
+    PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, Release
 
 
 class PullRequestListMiner:
@@ -53,30 +52,6 @@ class PullRequestListMiner:
         self._time_from = time_from
         self._now = datetime.now(tz=timezone.utc)
 
-    def _collect_participants(self, pr: MinedPullRequest) -> Mapping[ParticipationKind, Set[str]]:
-        prefix = self._prefix
-        author = pr.pr[PullRequest.user_login.key]
-        merger = pr.pr[PullRequest.merged_by_login.key]
-        releaser = pr.release[Release.author.key]
-        participants = {
-            ParticipationKind.AUTHOR: {prefix + author} if author else set(),
-            ParticipationKind.REVIEWER: {
-                (prefix + u) for u in pr.reviews[PullRequestReview.user_login.key] if u},
-            ParticipationKind.COMMENTER: {
-                (prefix + u) for u in pr.comments[PullRequestComment.user_login.key] if u},
-            ParticipationKind.COMMIT_COMMITTER: {
-                (prefix + u) for u in pr.commits[PullRequestCommit.committer_login.key] if u},
-            ParticipationKind.COMMIT_AUTHOR: {
-                (prefix + u) for u in pr.commits[PullRequestCommit.author_login.key] if u},
-            ParticipationKind.MERGER: {prefix + merger} if merger else set(),
-            ParticipationKind.RELEASER: {prefix + releaser} if releaser else set(),
-        }
-        try:
-            participants[ParticipationKind.REVIEWER].remove(prefix + author)
-        except (KeyError, TypeError):
-            pass
-        return participants
-
     def _match_participants(self, pr: MinedPullRequest) -> bool:
         """Check the PR participants for compatibility with self.participants.
 
@@ -85,7 +60,7 @@ class PullRequestListMiner:
         if not self._participants:
             return True
 
-        participants = self._collect_participants(pr)
+        participants = pr.participants()
         for k, v in self._participants.items():
             if participants.get(k, set()).intersection(v):
                 return True
@@ -179,7 +154,6 @@ class PullRequestListMiner:
             stage_timings[k] = calc.analyze(times_today, no_time_from, now, **kwargs)
         updated_at = pr_today.pr[PullRequest.updated_at.key]
         assert updated_at == updated_at
-        participants = self._collect_participants(pr_today)
         return PullRequestListItem(
             repository=self._prefix + pr_today.pr[PullRequest.repository_full_name.key],
             number=pr_today.pr[PullRequest.number.key],
@@ -201,7 +175,7 @@ class PullRequestListMiner:
             release_url=pr_today.release[Release.url.key],
             properties=props_today,
             stage_timings=stage_timings,
-            participants=participants,
+            participants=pr_today.participants(),
         )
 
     def __iter__(self) -> Generator[PullRequestListItem, None, None]:

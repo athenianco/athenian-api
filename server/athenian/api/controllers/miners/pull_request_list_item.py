@@ -7,7 +7,10 @@ import pandas as pd
 
 
 class ParticipationKind(IntEnum):
-    """The way the developer relates to a pull request."""
+    """The way the developer relates to a pull request.
+
+    These values are written to the precomputed DB, so be careful with changing them.
+    """
 
     AUTHOR = 1
     REVIEWER = 2

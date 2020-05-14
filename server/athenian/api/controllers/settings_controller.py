@@ -3,6 +3,7 @@ from aiohttp import web
 from athenian.api import ResponseError
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.settings import Match, Settings
+from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import ForbiddenError, ReleaseMatchSetting
 from athenian.api.models.web.release_match_request import ReleaseMatchRequest
 from athenian.api.request import AthenianWebRequest
@@ -18,8 +19,9 @@ async def list_release_match_settings(request: AthenianWebRequest, id: int) -> w
     model = {k: ReleaseMatchSetting.from_dataclass(m).to_dict() for k, m in settings.items()}
     repos = [r.split("/", 1)[1] for r in settings]
     _, default_branches = await extract_branches(repos, request.mdb, request.cache)
+    prefix = PREFIXES["github"]
     for repo, name in default_branches.items():
-        model["github.com/" + repo]["default_branch"] = name
+        model[prefix + repo]["default_branch"] = name
     return web.json_response(model)
 
 
