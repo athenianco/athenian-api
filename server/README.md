@@ -119,7 +119,7 @@ Likewise, there are `OVERRIDE_SDB` and `OVERRIDE_PDB`.
 Do not set any of those overrides to staging or, for god's sake, production endpoints!
 You will wipe the state and the precomputed objects!
 
-You can also use the services provided by the compose file throught the `unittest` Makefile target:
+You can also use the services provided by the compose file through the `unittest` Makefile target:
 ```
 DATABASE=postgres VERBOSITY=-vv make unittest
 ```
