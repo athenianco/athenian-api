@@ -136,6 +136,47 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
+  /contributors/{id}:
+    get:
+      operationId: get_contributors
+      parameters:
+      - description: Numeric identifier of the account.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contributors'
+          description: List of all contributors belonging to the specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The installation has not started yet.
+      security:
+      - bearerAuth: []
+      summary: List all the contributors belonging to the specified account.
+      tags:
+      - contributors
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.contributors_controller
+      x-codegen-request-body-name: body
   /filter/commits:
     post:
       operationId: filter_commits
@@ -955,8 +996,8 @@ paths:
           description: The specified team was not found.
       security:
       - bearerAuth: []
-      summary: List the team's members. The user must belong to the account that owns the
-        team.
+      summary: List the team's members. The user must belong to the account that owns
+        the team.
       tags:
       - team
 # {% if False %}
@@ -1062,47 +1103,6 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.team_controller
-      x-codegen-request-body-name: body
-  /contributors/{id}:
-    get:
-      operationId: get_contributors
-      parameters:
-      - description: Numeric identifier of the account.
-        explode: false
-        in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-        style: simple
-      responses:
-        200:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Contributors'
-          description: List of all contributors belonging to the specified account.
-        404:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The user does not belong to the specified account.
-        422:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The installation has not started yet.
-      security:
-      - bearerAuth: []
-      summary: List all the contributors belonging to the specified account.
-      tags:
-      - contributors
-# {% if False %}
-      - default
-# {% endif %}
-      x-openapi-router-controller: athenian.api.controllers.contributors_controller
       x-codegen-request-body-name: body
   /settings/release_match:
     put:
@@ -1216,6 +1216,24 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
+  /versions:
+    get:
+      operationId: get_versions
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Versions'
+          description: Versions of the backend components.
+      security: []
+      summary: Query the versions of the backend components.
+      tags:
+      - version
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.status_controller
 components:
   securitySchemes:
     bearerAuth:
@@ -1352,20 +1370,21 @@ components:
     Contributors:
       description: List of contributors.
       example:
-        - login: github.com/gkwillie
-          name: Groundskeeper Willie
-          email: bot@athenian.co
-          picture: https://avatars0.githubusercontent.com/u/60340680?v=4
-        - login: github.com/se7entyse7en
-          name: Lou Marvin Caraig
-          email: loumarvincaraig@gmail.com
-          picture: https://avatars1.githubusercontent.com/u/5599208?v=4
+      - login: github.com/gkwillie
+        name: Groundskeeper Willie
+        email: bot@athenian.co
+        picture: https://avatars0.githubusercontent.com/u/60340680?v=4
+      - login: github.com/se7entyse7en
+        name: Lou Marvin Caraig
+        email: loumarvincaraig@gmail.com
+        picture: https://avatars1.githubusercontent.com/u/5599208?v=4
       items:
         $ref: '#/components/schemas/Contributor'
       type: array
     Contributor:
       additionalProperties: false
-      description: Details about a developer who contributed to some repositories owned by the account.
+      description: Details about a developer who contributed to some repositories
+        owned by the account.
       example:
         login: github.com/gkwillie
         name: Groundskeeper Willie
@@ -2268,8 +2287,8 @@ components:
     PullRequest:
       additionalProperties: false
       description: Details of a pull request. All the attributes, stats and events
-        correspond to "today", not `date_to`, *except for the PR stages
-        `wip`, `reviewing`, `merging`, `releasing`*, which correspond to `date_to`.
+        correspond to "today", not `date_to`, *except for the PR stages `wip`, `reviewing`,
+        `merging`, `releasing`*, which correspond to `date_to`.
       example:
         # https://github.com/src-d/go-git/pull/1152
         repository: github.com/src-d/go-git
@@ -2345,8 +2364,8 @@ components:
             author are considered as `comments`, not as `review_comments`.
           type: integer
         reviews:
-          description: Number of times this PR was reviewed. Reviews by the PR
-            author are not taken into account.
+          description: Number of times this PR was reviewed. Reviews by the PR author
+            are not taken into account.
           type: integer
         merged:
           description: When this PR was merged.
@@ -3212,4 +3231,14 @@ components:
       - account
       - status
       - user
+      type: object
+    Versions:
+      additionalProperties: false
+      example:
+        api: v0.2.10
+      properties:
+        api:
+          type: string
+      required:
+      - api
       type: object

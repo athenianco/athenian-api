@@ -1,14 +1,23 @@
 from contextvars import ContextVar
 import time
 
-import aiohttp.web
+from aiohttp import web
 import prometheus_client
 
 from athenian.api import metadata
 from athenian.api.metadata import __package__, __version__
+from athenian.api.models.web.versions import Versions
+from athenian.api.response import model_response
 
 
-@aiohttp.web.middleware
+async def get_versions(request: web.Request) -> web.Response:
+    """Return the versions of the backend components."""
+    # TODO(vmarkovtsev): add metadata
+    model = Versions(api=metadata.__version__)
+    return model_response(model)
+
+
+@web.middleware
 async def instrument(request, handler):
     """Middleware to count requests and record the elapsed time."""
     start_time = time.time()
@@ -63,9 +72,9 @@ class StatusRenderer:
         """Record the registry where the metrics are maintained."""
         self._registry = registry
 
-    async def __call__(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
+    async def __call__(self, request: web.Request) -> web.Response:
         """Endpoint handler to output the current Prometheus state."""
-        resp = aiohttp.web.Response(body=prometheus_client.generate_latest(self._registry))
+        resp = web.Response(body=prometheus_client.generate_latest(self._registry))
         resp.content_type = prometheus_client.CONTENT_TYPE_LATEST
         return resp
 
