@@ -18,6 +18,17 @@ DOCKER_RUN_EXTRA_ARGS ?= -it
 IO_DIR ?= $(PWD)/server/tests
 ENV_FILE ?= .env
 
+ifeq ($(DATABASE),postgres)
+	export COMPOSE_PROJECT_NAME := test-athenian-api
+	export POSTGRES_HOST_PORT := 5433
+	export MEMCACHED_HOST_PORT := 11212
+	export POSTGRES_USER := api
+	export POSTGRES_PASSWORD := api
+	export OVERRIDE_SDB := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@0.0.0.0:5432/state
+	export OVERRIDE_MDB := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@0.0.0.0:5432/metadata
+	export OVERRIDE_PDB := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@0.0.0.0:5432/precomputed
+endif
+
 $(ENV_FILE):
 	echo 'SENTRY_PROJECT=' >> $(ENV_FILE)
 	echo 'SENTRY_KEY=' >> $(ENV_FILE)
@@ -60,3 +71,42 @@ clean: fixtures-clean
 .PHONY: fixtures-clean
 fixtures-clean:
 	rm -rf $(IO_DIR)/mdb.sqlite $(IO_DIR)/sdb.sqlite
+
+ifeq ($(DATABASE),postgres)
+.PHONY: unittest-args
+unittest-args:
+	@echo "Environment variables for running tests:"
+	@echo "- COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}"
+	@echo "- POSTGRES_HOST_PORT=$(POSTGRES_HOST_PORT)"
+	@echo "- MEMCACHED_HOST_PORT=$(MEMCACHED_HOST_PORT)"
+	@echo "- POSTGRES_USER=$(POSTGRES_USER)"
+	@echo "- OVERRIDE_SDB=$(OVERRIDE_SDB)"
+	@echo "- OVERRIDE_MDB=$(OVERRIDE_MDB)"
+	@echo "- OVERRIDE_PDB=$(OVERRIDE_PDB)"
+
+.PHONY: unittest-setup
+unittest-setup:
+	docker-compose -p $(COMPOSE_PROJECT_NAME) up -d postgres memcached
+	sleep 5
+	docker-compose exec postgres psql -c "create database state template 'template0' lc_collate 'C.UTF-8';" -U $(POSTGRES_USER)
+	docker-compose exec postgres psql -c "create database metadata template 'template0' lc_collate 'C.UTF-8';" -U $(POSTGRES_USER)
+	docker-compose exec postgres psql -c "create database precomputed template 'template0' lc_collate 'C.UTF-8';" -U $(POSTGRES_USER)
+
+.PHONY: unittest-cleanup
+unittest-cleanup:
+	docker-compose down -v
+
+.PHONY: unittest
+unittest: unittest-args
+	DATABASE=$(DATABASE) $(MAKE) unittest-setup
+	-cd server && PYTHONPATH=. pytest $(VERBOSITY) $(TEST)
+	DATABASE=$(DATABASE) $(MAKE) unittest-cleanup
+
+.PHONY: unittest-no-setup
+unittest-no-setup: unittest-args
+	cd server && PYTHONPATH=. pytest $(VERBOSITY) $(TEST)
+else
+.PHONY: unittest
+unittest:
+	cd server && PYTHONPATH=. pytest $(VERBOSITY) $(TEST)
+endif
