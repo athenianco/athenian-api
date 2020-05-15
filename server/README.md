@@ -119,6 +119,17 @@ Likewise, there are `OVERRIDE_SDB` and `OVERRIDE_PDB`.
 Do not set any of those overrides to staging or, for god's sake, production endpoints!
 You will wipe the state and the precomputed objects!
 
+You can also use the services provided by the compose file through the `unittest` Makefile target:
+```
+DATABASE=postgres VERBOSITY=-vv make unittest
+```
+
+To run a specific test:
+```
+DATABASE=postgres VERBOSITY=-vv TEST=tests/controllers/test_team_controller.py make unittest
+```
+
+
 ## Running the API server locally
 
 Alternatively, you can locally build and run the docker image:
