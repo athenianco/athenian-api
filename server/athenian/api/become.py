@@ -11,7 +11,7 @@ def main():
     bearer = sys.argv[1]
     user = sys.argv[2] if len(sys.argv) > 2 else ""
     if not user.startswith("github|") and user:
-        with urlopen("https://api.github.com/users/" + user) as http:
+        with urlopen("https://api.github.com/user/" + user) as http:
             user = "github|%d" % json.loads(http.read().decode())["id"]
     url = "https://api.athenian.co/v1/become"
     if user:
