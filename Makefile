@@ -24,9 +24,9 @@ ifeq ($(DATABASE),postgres)
 	export MEMCACHED_HOST_PORT := 11212
 	export POSTGRES_USER := api
 	export POSTGRES_PASSWORD := api
-	export OVERRIDE_SDB := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@0.0.0.0:5432/state
-	export OVERRIDE_MDB := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@0.0.0.0:5432/metadata
-	export OVERRIDE_PDB := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@0.0.0.0:5432/precomputed
+	export OVERRIDE_SDB := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@0.0.0.0:$(POSTGRES_HOST_PORT)/state
+	export OVERRIDE_MDB := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@0.0.0.0:$(POSTGRES_HOST_PORT)/metadata
+	export OVERRIDE_PDB := postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@0.0.0.0:$(POSTGRES_HOST_PORT)/precomputed
 endif
 
 $(ENV_FILE):
