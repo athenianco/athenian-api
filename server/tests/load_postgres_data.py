@@ -55,10 +55,12 @@ def main():
         return 1
 
     dbs = ["state", "precomputed", "metadata"]
-    remote_postgres_password = getpass.getpass(
-        prompt=("Password for CloudSQL instance of '%s' environment "
-                "of user '%s': " % (
-                    args.environment, args.remote_postgres_user)))
+    remote_postgres_password = os.environ.get("POSTGRES_PASSWORD", "")
+    if remote_postgres_password == "":
+        remote_postgres_password = getpass.getpass(
+            prompt=("Password for CloudSQL instance of '%s' environment "
+                    "of user '%s': " % (
+                        args.environment, args.remote_postgres_user)))
 
     config = conf[args.environment]
     dumps_base_path = "/db_dumps"
