@@ -45,10 +45,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    try:
-        repos = await _common_filter_preprocess(filt, request)
-    except ResponseError as e:
-        return e.response
+    repos = await _common_filter_preprocess(filt, request)
 
     users = await mine_contributors(
         repos, request.mdb, time_from=filt.date_from, time_to=filt.date_to,
@@ -70,10 +67,7 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    try:
-        repos = await _common_filter_preprocess(filt, request)
-    except ResponseError as e:
-        return e.response
+    repos = await _common_filter_preprocess(filt, request)
     repos = await mine_repositories(
         repos, filt.date_from, filt.date_to, request.mdb, request.cache)
     return web.json_response(repos)
@@ -108,18 +102,12 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    try:
-        repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
-    except ResponseError as e:
-        return e.response
+    repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
     props = set(getattr(Property, p.upper()) for p in (filt.properties or []))
     if not props:
         props = set(Property)
     participants = {ParticipationKind[k.upper()]: v for k, v in body.get("with", {}).items()}
-    try:
-        settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
-    except ResponseError as e:
-        return e.response
+    settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     prs = await filter_pull_requests(props, filt.date_from, filt.date_to,
                                      repos, settings, participants, request.mdb, request.cache)
@@ -156,10 +144,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    try:
-        repos = await _common_filter_preprocess(filt, request)
-    except ResponseError as e:
-        return e.response
+    repos = await _common_filter_preprocess(filt, request)
     with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
     log = logging.getLogger("filter_commits")
@@ -220,14 +205,8 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    try:
-        repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
-    except ResponseError as e:
-        return e.response
-    try:
-        settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
-    except ResponseError as e:
-        return e.response
+    repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
+    settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     releases = await load_releases(repos, filt.date_from - timedelta(days=365), filt.date_to,
                                    settings, request.mdb, request.cache, index=Release.id.key)

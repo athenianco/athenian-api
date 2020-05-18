@@ -26,12 +26,8 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
             )
             return ResponseError(NotFoundError(detail=err_detail)).response
 
-        try:
-            checker = await access_classes["github"](
-                account_id, sdb_conn, request.mdb, request.cache).load()
-        except ResponseError as e:
-            return e.response
-
+        checker = await access_classes["github"](
+            account_id, sdb_conn, request.mdb, request.cache).load()
         repos = checker.installed_repos(with_prefix=False)
         users = await mine_contributors(repos, request.mdb, with_stats=False,
                                         cache=request.cache)

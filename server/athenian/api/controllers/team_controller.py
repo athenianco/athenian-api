@@ -35,11 +35,8 @@ async def create_team(request: AthenianWebRequest,
     account = body.account
     name = body.name
     async with request.sdb.connection() as sdb_conn:
-        try:
-            await get_user_account_status(user, account, sdb_conn, request.cache)
-            members = _check_members(body.members)
-        except ResponseError as e:
-            return e.response
+        await get_user_account_status(user, account, sdb_conn, request.cache)
+        members = _check_members(body.members)
         t = Team(owner=account, name=name, members=members).create_defaults()
         try:
             tid = await sdb_conn.execute(insert(Team).values(t.explode()))
@@ -74,11 +71,7 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
     user = request.uid
     account = id
     async with request.sdb.connection() as sdb_conn:
-        try:
-            await get_user_account_status(user, account, sdb_conn, request.cache)
-        except ResponseError as e:
-            return e.response
-
+        await get_user_account_status(user, account, sdb_conn, request.cache)
         teams = await sdb_conn.fetch_all(select([Team]).where(Team.owner == account))
 
     all_members = await _get_all_members(teams, request.mdb, request.cache)

@@ -129,8 +129,6 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
                 acc_id, user = await _accept_invitation(iid, salt, request, conn)
         except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
             return ResponseError(DatabaseConflict(detail=str(e))).response
-        except ResponseError as e:
-            return e.response
     return model_response(InvitedUser(account=acc_id, user=user))
 
 
@@ -304,16 +302,10 @@ async def get_installation_owner(installation_id: int,
 async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the current Athenian GitHub app installation progress."""
     async with request.sdb.connection() as sdb_conn:
-        try:
-            await get_user_account_status(request.uid, id, sdb_conn, request.cache)
-        except ResponseError as e:
-            return e.response
+        await get_user_account_status(request.uid, id, sdb_conn, request.cache)
         async with request.mdb.connection() as mdb_conn:
-            try:
-                id_ids = await get_installation_delivery_ids(id, sdb_conn, mdb_conn, request.cache)
-                owner = await get_installation_owner(id_ids[0][0], mdb_conn, request.cache)
-            except ResponseError as e:
-                return e.response
+            id_ids = await get_installation_delivery_ids(id, sdb_conn, mdb_conn, request.cache)
+            owner = await get_installation_owner(id_ids[0][0], mdb_conn, request.cache)
             # we don't cache this because the number of repos can dynamically change
             models = []
             for installation_id, delivery_id in id_ids:
