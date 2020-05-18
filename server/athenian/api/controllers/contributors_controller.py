@@ -7,7 +7,7 @@ from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import Contributor, NotFoundError
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import FriendlyJson, ResponseError
+from athenian.api.response import model_response, ResponseError
 
 
 async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response:
@@ -38,7 +38,7 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
         prefix = PREFIXES["github"]
         contributors = [
             Contributor(login=f"{prefix}{u['login']}", name=u["name"],
-                        email=u["email"], picture=u["avatar_url"]).to_dict()
+                        email=u["email"], picture=u["avatar_url"])
             for u in users
         ]
-        return web.json_response(contributors, dumps=FriendlyJson.dumps)
+        return model_response(contributors)

@@ -35,7 +35,7 @@ from athenian.api.models.web.pull_request_participant import PullRequestParticip
 from athenian.api.models.web.pull_request_set import PullRequestSet
 from athenian.api.models.web.stage_timings import StageTimings
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import FriendlyJson, model_response, ResponseError
+from athenian.api.response import model_response, ResponseError
 
 
 async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -56,11 +56,11 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
 
     model = [
         DeveloperSummary(login=f"{PREFIXES['github']}{u['login']}", avatar=u["avatar_url"],
-                         name=u["name"], updates=DeveloperUpdates(**u["stats"])).to_dict()
+                         name=u["name"], updates=DeveloperUpdates(**u["stats"]))
         for u in sorted(users, key=operator.itemgetter("login"))
     ]
 
-    return web.json_response(model, dumps=FriendlyJson.dumps)
+    return model_response(model)
 
 
 async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -76,7 +76,7 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
         return e.response
     repos = await mine_repositories(
         repos, filt.date_from, filt.date_to, request.mdb, request.cache)
-    return web.json_response(repos, dumps=FriendlyJson.dumps)
+    return web.json_response(repos)
 
 
 async def _common_filter_preprocess(filt: Union[GenericFilterRequest,

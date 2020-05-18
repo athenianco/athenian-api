@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Iterable, Optional, Union
 
 from aiohttp import web
 from aiohttp.typedefs import LooseHeaders
@@ -8,13 +8,14 @@ from athenian.api.models.web.generic_error import GenericError
 from athenian.api.serialization import FriendlyJson
 
 
-def model_response(model: Model, *,
+def model_response(model: Union[Model, Iterable[Model]], *,
                    status: int = 200,
                    reason: Optional[str] = None,
                    headers: LooseHeaders = None,
                    ) -> web.Response:
     """Generate a web model_response from the given model."""
-    return web.json_response(model.to_dict(), dumps=FriendlyJson.dumps,
+    data = model.to_dict() if isinstance(model, Model) else [m.to_dict() for m in model]
+    return web.json_response(data, dumps=FriendlyJson.dumps,
                              status=status, reason=reason, headers=headers)
 
 
