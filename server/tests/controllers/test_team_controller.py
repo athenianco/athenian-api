@@ -3,7 +3,6 @@ import json
 import pytest
 from sqlalchemy import select
 
-from athenian.api import ResponseError
 from athenian.api.models.state.models import Team
 from athenian.api.models.web.team_create_request import TeamCreateRequest
 
@@ -67,7 +66,8 @@ async def test_create_team_wrong_member(client, headers, sdb):
         "type": "/errors/BadRequest",
         "title": "Bad Request",
         "status": 400,
-        "detail": "invalid members: github.com/se7entyse7en/foo, github.com/vmarkovtsev/bar",
+        "detail": "Invalid members of the team: "
+                  "github.com/se7entyse7en/foo, github.com/vmarkovtsev/bar",
     }
 
     assert len(await sdb.fetch_all(select([Team]))) == 0
@@ -80,6 +80,7 @@ async def test_create_team_same_members(client, headers, sdb):
     response = await client.request(
         method="POST", path="/v1/team/create", headers=headers, json=body,
     )
+    assert response.status == 200
 
     body = TeamCreateRequest(1, "Engineering 2",
                              ["github.com/vmarkovtsev",
@@ -91,12 +92,13 @@ async def test_create_team_same_members(client, headers, sdb):
     body = (await response.read()).decode("utf-8")
     assert response.status == 409, "Response body is : " + body
     parsed = json.loads(body)
+    detail = parsed["detail"]
+    del parsed["detail"]
+    assert "Team 'Engineering 2' already exists" in detail
     assert parsed == {
         "type": "/errors/DatabaseConflict",
         "title": "Conflict",
         "status": 409,
-        "detail": ("this team already exists: UNIQUE constraint failed: "
-                   "teams.owner, teams.members_checksum"),
     }
 
     teams = await sdb.fetch_all(select([Team]))
@@ -127,12 +129,13 @@ async def test_create_team_same_name(client, headers, sdb):
     body = (await response.read()).decode("utf-8")
     assert response.status == 409, "Response body is : " + body
     parsed = json.loads(body)
+    detail = parsed["detail"]
+    del parsed["detail"]
+    assert "Team 'Engineering' already exists" in detail
     assert parsed == {
         "type": "/errors/DatabaseConflict",
         "title": "Conflict",
         "status": 409,
-        "detail": ("this team already exists: UNIQUE constraint failed: "
-                   "teams.owner, teams.name"),
     }
 
     teams = await sdb.fetch_all(select([Team]))

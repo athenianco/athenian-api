@@ -3,8 +3,8 @@ info:
   contact:
     email: admin@athenian.co
     name: the admins by email
-  description: 'Server version: {{ server_version }} built on {{ build_date }} @
-    [{{ commit }}](https://github.com/athenianco/athenian-api/commit/{{ commit }})'
+  description: |-
+    Server version: {{ server_version }} built on {{ build_date }} @ [{{ commit }}](https://github.com/athenianco/athenian-api/commit/{{ commit }})
   license:
     name: CC-BY-4.0
   title: '{{ title }}'
@@ -879,6 +879,98 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
+  /settings/release_match:
+    put:
+      operationId: set_release_match
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseMatchRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositorySet'
+          description: List the repositories affected.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is not an admin of this account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user or the account was not found.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The installation has not started yet.
+      security:
+      - bearerAuth: []
+      summary: Set the release matching rule for a list of repositories. Only for
+        account admins.
+      tags:
+      - settings
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.settings_controller
+      x-codegen-request-body-name: body
+  /settings/release_match/{id}:
+    get:
+      operationId: list_release_match_settings
+      parameters:
+      - description: Numeric identifier of the account.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseMatchSettings'
+          description: Current release matching settings per repo.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The installation has not started yet.
+      security:
+      - bearerAuth: []
+      summary: List the current release matching settings.
+      tags:
+      - settings
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.settings_controller
+      x-codegen-request-body-name: body
   /team/create:
     post:
       operationId: create_team
@@ -909,7 +1001,7 @@ paths:
           description: There is an existing team with the same contents.
       security:
       - bearerAuth: []
-      summary: Create a team.
+      summary: Create a team. Admin is not required.
       tags:
       - team
 # {% if False %}
@@ -1097,98 +1189,6 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.team_controller
-      x-codegen-request-body-name: body
-  /settings/release_match:
-    put:
-      operationId: set_release_match
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReleaseMatchRequest'
-        x-body-name: body
-      responses:
-        200:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RepositorySet'
-          description: List the repositories affected.
-        400:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: Request is invalid.
-        403:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The user is not an admin of this account.
-        404:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The user or the account was not found.
-        422:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The installation has not started yet.
-      security:
-      - bearerAuth: []
-      summary: Set the release matching rule for a list of repositories. Only for
-        account admins.
-      tags:
-      - settings
-# {% if False %}
-      - default
-# {% endif %}
-      x-openapi-router-controller: athenian.api.controllers.settings_controller
-      x-codegen-request-body-name: body
-  /settings/release_match/{id}:
-    get:
-      operationId: list_release_match_settings
-      parameters:
-      - description: Numeric identifier of the account.
-        explode: false
-        in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-        style: simple
-      responses:
-        200:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReleaseMatchSettings'
-          description: Current release matching settings per repo.
-        404:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The user does not belong to the specified account.
-        422:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The installation has not started yet.
-      security:
-      - bearerAuth: []
-      summary: List the current release matching settings.
-      tags:
-      - settings
-# {% if False %}
-      - default
-# {% endif %}
-      x-openapi-router-controller: athenian.api.controllers.settings_controller
       x-codegen-request-body-name: body
   /user:
     get:
@@ -1419,7 +1419,6 @@ components:
           description: Name of the team.
           type: string
         members:
-          description: Members of the team.
           $ref: '#/components/schemas/DeveloperSet'
       required:
       - account
@@ -1443,7 +1442,6 @@ components:
           description: Name of the team.
           type: string
         members:
-          description: Members of the team.
           $ref: '#/components/schemas/DeveloperSet'
       required:
       - id
