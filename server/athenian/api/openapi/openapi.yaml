@@ -1174,12 +1174,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The user does not belong to the specified account.
-        409:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: Concurrent requests that are finishing the account registration.
       security:
       - bearerAuth: []
       summary: List the teams belonging to the current user.

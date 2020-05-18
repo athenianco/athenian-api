@@ -7,7 +7,6 @@ from asyncpg import UniqueViolationError
 import databases.core
 from sqlalchemy import delete, insert, update
 
-from athenian.api import FriendlyJson
 from athenian.api.controllers.account import get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
@@ -78,7 +77,7 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     except ResponseError as e:
         return e.response
     # "items" collides with dict.items() so we have to access the list via []
-    return web.json_response(rs.items, status=200)
+    return web.json_response(rs.items)
 
 
 async def _check_reposet(request: AthenianWebRequest,
@@ -141,7 +140,7 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
             except (UniqueViolationError, IntegrityError, OperationalError):
                 return ResponseError(DatabaseConflict(
                     detail="this reposet already exists")).response
-        return web.json_response(body, status=200)
+        return web.json_response(body)
 
 
 async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
@@ -162,5 +161,5 @@ async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
         created=rs[RepositorySet.created_at.key].replace(tzinfo=timezone.utc),
         updated=rs[RepositorySet.updated_at.key].replace(tzinfo=timezone.utc),
         items_count=rs[RepositorySet.items_count.key],
-    ).to_dict() for rs in rss]
-    return web.json_response(items, status=200, dumps=FriendlyJson.dumps)
+    ) for rs in rss]
+    return model_response(items)

@@ -7,7 +7,6 @@ from typing import List, Optional, Set, Tuple, Union
 
 from aiohttp import web
 
-from athenian.api import FriendlyJson
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
 from athenian.api.controllers.miners.access_classes import access_classes
@@ -240,9 +239,9 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
             bypassed_lines=s.queried_number_of_lines,
             total_commits=s.total_number_of_commits,
             total_lines=s.total_number_of_lines,
-        ).to_dict()
+        )
         for d, s in zip(time_intervals[:-1], stats)]
-    return web.json_response(model, dumps=FriendlyJson.dumps, status=200)
+    return model_response(model)
 
 
 async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web.Response:

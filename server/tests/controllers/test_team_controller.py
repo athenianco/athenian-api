@@ -1,9 +1,11 @@
 import json
+from operator import attrgetter
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import insert, select
 
 from athenian.api.models.state.models import Team
+from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
 
 
@@ -148,6 +150,78 @@ async def test_create_team_same_name(client, headers, sdb):
         "name": "Engineering",
         "owner": 1,
     })
+
+
+@pytest.mark.parametrize(
+    "initial_teams",
+    [
+        [],
+        [
+            {"owner": 1, "name": "Team 1", "members": ["github.com/se7entyse7en"]},
+            {"owner": 1, "name": "Team 2", "members": ["github.com/vmarkovtsev"]},
+        ],
+    ],
+    ids=["empty", "non-empty"],
+)
+@pytest.mark.parametrize("account", [1, 2], ids=["as admin", "as non-admin"])
+async def test_list_teams(client, headers, initial_teams, sdb, account):
+    contributors_details = {
+        # No further details because didn't contribute to repos
+        "github.com/se7entyse7en": {
+            "login": "github.com/se7entyse7en",
+        },
+        "github.com/vmarkovtsev": {
+            "login": "github.com/vmarkovtsev",
+            "email": "gmarkhor@gmail.com",
+            "name": "Vadim Markovtsev",
+            "picture": "https://avatars1.githubusercontent.com/u/2793551?s=600&v=4",
+        },
+    }
+
+    for t in initial_teams:
+        await sdb.execute(insert(Team).values(Team(**t).create_defaults().explode()))
+
+    response = await client.request(method="GET", path=f"/v1/teams/{account}", headers=headers)
+
+    body = (await response.read()).decode("utf-8")
+    teams = sorted([TeamListItem.from_dict(t) for t in json.loads(body)],
+                   key=attrgetter("id"))
+
+    for i, (actual, expected) in enumerate(zip(teams, initial_teams), 1):
+        assert actual.id == i
+        assert actual.name == expected["name"]
+        for m in actual.members:
+            assert m.to_dict() == contributors_details[m.login]
+
+
+@pytest.mark.parametrize(
+    "initial_teams",
+    [
+        [],
+        [
+            {"owner": 1, "name": "Team 1", "members": ["github.com/se7entyse7en"]},
+            {"owner": 1, "name": "Team 2", "members": ["github.com/vmarkovtsev"]},
+        ],
+    ],
+    ids=["empty", "non-empty"],
+)
+@pytest.mark.parametrize("account", [3, 4], ids=["not a member", "invalid account"])
+async def test_list_teams_wrong_account(client, headers, sdb, account, initial_teams):
+    for t in initial_teams:
+        await sdb.execute(insert(Team).values(Team(**t).create_defaults().explode()))
+
+    response = await client.request(method="GET", path=f"/v1/teams/{account}", headers=headers)
+
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 404, "Response body is : " + body
+    parsed = json.loads((await response.read()).decode("utf-8"))
+    assert parsed == {
+        "type": "/errors/NotFoundError",
+        "title": "Not Found",
+        "status": 404,
+        "detail": (f"Account {account} does not exist or user auth0|5e1f6dfb57bc640ea390557b "
+                   "is not a member."),
+    }
 
 
 def _test_same_team(actual, expected, no_timings=True):
