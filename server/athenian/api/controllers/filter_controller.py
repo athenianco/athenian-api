@@ -105,8 +105,8 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     participants = {ParticipationKind[k.upper()]: v for k, v in body.get("with", {}).items()}
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
-    prs = await filter_pull_requests(props, filt.date_from, filt.date_to,
-                                     repos, settings, participants, request.mdb, request.cache)
+    prs = await filter_pull_requests(props, filt.date_from, filt.date_to, repos, participants,
+                                     settings, request.mdb, request.pdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     users = {u.split("/", 1)[1] for u in
              chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs)}

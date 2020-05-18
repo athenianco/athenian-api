@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from itertools import chain
+import logging
 import pickle
 from typing import Collection, Dict, Generator, Iterable, Mapping, Optional, Set
 
@@ -8,9 +9,11 @@ import databases
 import pandas as pd
 from sqlalchemy import select
 
+from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
+from athenian.api.controllers.features.github.precomputed_prs import load_precomputed_done_times
 from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
@@ -28,16 +31,19 @@ class PullRequestListMiner:
     """Collect various PR metadata for displaying PRs on the frontend."""
 
     _prefix = PREFIXES["github"]
+    log = logging.getLogger("%s.PullRequestListMiner" % metadata.__version__)
 
     def __init__(self,
                  prs_time_machine: Iterable[MinedPullRequest],
                  prs_today: Iterable[MinedPullRequest],
+                 precomputed_times: Dict[str, PullRequestTimes],
                  properties: Set[Property],
                  participants: Dict[ParticipationKind, Set[str]],
                  time_from: datetime):
         """Initialize a new instance of `PullRequestListMiner`."""
         self._prs_time_machine = prs_time_machine
         self._prs_today = prs_today
+        self._precomputed_times = precomputed_times
         self._times_miner = PullRequestTimesMiner()
         self._properties = properties
         self._participants = participants
@@ -180,14 +186,23 @@ class PullRequestListMiner:
 
     def __iter__(self) -> Generator[PullRequestListItem, None, None]:
         """Iterate over the individual pull requests."""
+        evals = 0
         for pr_time_machine, pr_today in zip(self._prs_time_machine, self._prs_today):
             try:
-                item = self._compile(pr_time_machine, self._times_miner(pr_time_machine),
-                                     pr_today, self._times_miner(pr_today))
+                times_time_machine = times_today = \
+                    self._precomputed_times[pr_today.pr[PullRequest.node_id.key]]
+            except KeyError:
+                times_time_machine = self._times_miner(pr_time_machine)
+                times_today = self._times_miner(pr_today)
+                evals += 1
+            try:
+                item = self._compile(pr_time_machine, times_time_machine, pr_today, times_today)
             except ImpossiblePullRequest:
                 continue
             if item is not None:
                 yield item
+        self.log.info("Precomputed DB cut the number of PRs from %d to %d",
+                      len(self._prs_today), evals)
 
 
 @cached(
@@ -207,9 +222,10 @@ async def filter_pull_requests(properties: Collection[Property],
                                time_from: datetime,
                                time_to: datetime,
                                repos: Collection[str],
-                               release_settings: Dict[str, ReleaseMatchSetting],
                                participants: Mapping[ParticipationKind, Collection[str]],
-                               db: databases.Database,
+                               release_settings: Dict[str, ReleaseMatchSetting],
+                               mdb: databases.Database,
+                               pdb: databases.Database,
                                cache: Optional[aiomcache.Client],
                                ) -> Iterable[PullRequestListItem]:
     """Filter GitHub pull requests according to the specified criteria.
@@ -220,7 +236,7 @@ async def filter_pull_requests(properties: Collection[Property],
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     everybody = {p.split("/", 1)[1] for p in chain.from_iterable(participants.values())}
     miner_time_machine = await PullRequestMiner.mine(
-        date_from, date_to, time_from, time_to, repos, release_settings, everybody, db, cache)
+        date_from, date_to, time_from, time_to, repos, release_settings, everybody, mdb, cache)
     prs_time_machine = list(miner_time_machine)
 
     now = datetime.now(tz=timezone.utc) + timedelta(days=1)
@@ -240,7 +256,7 @@ async def filter_pull_requests(properties: Collection[Property],
                 done.append(pr)
         if done:
             # updated_at can be outside of `time_to` and missed in the cache
-            updates = await db.fetch_all(
+            updates = await mdb.fetch_all(
                 select([PullRequest.node_id, PullRequest.updated_at])
                 .where(PullRequest.node_id.in_([pr.pr[node_id_key] for pr in done])))
             updates = {p[0]: p[1] for p in updates}
@@ -254,9 +270,9 @@ async def filter_pull_requests(properties: Collection[Property],
             prs = await read_sql_query(select([PullRequest])
                                        .where(PullRequest.node_id.in_(remined))
                                        .order_by(PullRequest.node_id),
-                                       db, PullRequest, index=node_id_key)
+                                       mdb, PullRequest, index=node_id_key)
             dfs = await PullRequestMiner.mine_by_ids(
-                prs, prs[PullRequest.created_at.key].min(), tomorrow, release_settings, db, cache)
+                prs, prs[PullRequest.created_at.key].min(), tomorrow, release_settings, mdb, cache)
             prs_today = list(PullRequestMiner(prs, *dfs))
         else:
             prs_today = []
@@ -266,4 +282,10 @@ async def filter_pull_requests(properties: Collection[Property],
         prs_today = prs_time_machine
     properties = set(properties)
     participants = {k: set(v) for k, v in participants.items()}
-    return PullRequestListMiner(prs_time_machine, prs_today, properties, participants, time_from)
+    # TODO(vmarkovtsev): fine-tune this by filtering specific roles
+    all_participants = set(chain.from_iterable(participants.values()))
+    all_participants = {p.split("/", 1)[1] for p in all_participants}
+    done_times = await load_precomputed_done_times(
+        time_from, time_to, repos, all_participants, release_settings, mdb, pdb, cache)
+    return PullRequestListMiner(prs_time_machine, prs_today, done_times, properties,
+                                participants, time_from)

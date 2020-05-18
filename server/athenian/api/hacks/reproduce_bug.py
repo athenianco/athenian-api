@@ -43,9 +43,10 @@ async def main():
         time_from,
         time_to,
         repos,
-        settings,
         {},
+        settings,
         mdb,
+        pdb,
         cache,
     ))
     for pr in prs:
