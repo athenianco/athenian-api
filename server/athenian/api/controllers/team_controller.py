@@ -1,4 +1,3 @@
-from http import HTTPStatus
 from itertools import chain
 from sqlite3 import IntegrityError, OperationalError
 from typing import Dict, Iterable, List, Mapping, Optional, Union
@@ -7,14 +6,15 @@ from aiohttp import web
 import aiomcache
 from asyncpg import UniqueViolationError
 import databases
-from sqlalchemy import insert, select
+from sqlalchemy import delete, insert, select, update
 
 from athenian.api.controllers.account import get_user_account_status
 from athenian.api.controllers.miners.github.users import mine_users
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
-from athenian.api.models.web import BadRequestError, CreatedIdentifier, DatabaseConflict
+from athenian.api.models.web import BadRequestError, CreatedIdentifier, DatabaseConflict, \
+    NotFoundError
 from athenian.api.models.web.contributor import Contributor
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
@@ -30,16 +30,13 @@ async def create_team(request: AthenianWebRequest,
     :param body: Team creation request body.
 
     """
-    body = TeamCreateRequest.from_dict(body)
+    body = TeamCreateRequest.from_dict(body)  # type: TeamCreateRequest
     user = request.uid
     account = body.account
-    name = body.name
+    name = _check_name(body.name)
     async with request.sdb.connection() as sdb_conn:
-        try:
-            await get_user_account_status(user, account, sdb_conn, request.cache)
-            members = _check_members(body.members)
-        except ResponseError as e:
-            return e.response
+        await get_user_account_status(user, account, sdb_conn, request.cache)
+        members = _check_members(body.members)
         t = Team(owner=account, name=name, members=members).create_defaults()
         try:
             tid = await sdb_conn.execute(insert(Team).values(t.explode()))
@@ -55,7 +52,14 @@ async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
 
     :param id: Numeric identifier of the team to delete.
     """
-    return web.Response(status=HTTPStatus.NOT_IMPLEMENTED)
+    user = request.uid
+    async with request.sdb.connection() as sdb_conn:
+        account = await sdb_conn.fetch_val(select([Team.owner]).where(Team.id == id))
+        if account is None:
+            return ResponseError(NotFoundError("Team %d was not found." % id)).response
+        await get_user_account_status(user, account, sdb_conn, request.cache)
+        await sdb_conn.execute(delete(Team).where(Team.id == id))
+    return web.Response()
 
 
 async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
@@ -63,7 +67,18 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
 
     :param id: Numeric identifier of the team to list.
     """
-    return web.Response(status=HTTPStatus.NOT_IMPLEMENTED)
+    user = request.uid
+    async with request.sdb.connection() as sdb_conn:
+        team = await sdb_conn.fetch_one(select([Team]).where(Team.id == id))
+        if team is None:
+            return ResponseError(NotFoundError("Team %d was not found." % id)).response
+        await get_user_account_status(user, team[Team.owner.key], sdb_conn, request.cache)
+    members = await _get_all_members([team], request.mdb, request.cache)
+    model = TeamListItem(id=team[Team.id.key],
+                         name=team[Team.name.key],
+                         members=sorted((members[m] for m in team[Team.members.key]),
+                                        key=lambda u: u.login))
+    return model_response(model)
 
 
 async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
@@ -74,18 +89,14 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
     user = request.uid
     account = id
     async with request.sdb.connection() as sdb_conn:
-        try:
-            await get_user_account_status(user, account, sdb_conn, request.cache)
-        except ResponseError as e:
-            return e.response
-
-        teams = await sdb_conn.fetch_all(select([Team]).where(Team.owner == account))
+        await get_user_account_status(user, account, sdb_conn, request.cache)
+        teams = await sdb_conn.fetch_all(
+            select([Team]).where(Team.owner == account).order_by(Team.name))
 
     all_members = await _get_all_members(teams, request.mdb, request.cache)
     items = [TeamListItem(id=t[Team.id.key],
                           name=t[Team.name.key],
-                          members=[all_members[m] for m in t[Team.members.key]],
-                          )
+                          members=[all_members[m] for m in t[Team.members.key]])
              for t in teams]
     return model_response(items)
 
@@ -97,8 +108,32 @@ async def update_team(request: AthenianWebRequest, id: int,
     :param id: Numeric identifier of the team to update.
     :param body: Team update request body.
     """
-    body = TeamUpdateRequest.from_dict(body)
-    return web.Response(status=HTTPStatus.NOT_IMPLEMENTED)
+    body = TeamUpdateRequest.from_dict(body)  # type: TeamUpdateRequest
+    user = request.uid
+    name = _check_name(body.name)
+    async with request.sdb.connection() as sdb_conn:
+        account = await sdb_conn.fetch_val(select([Team.owner]).where(Team.id == id))
+        if account is None:
+            return ResponseError(NotFoundError("Team %d was not found." % id)).response
+        await get_user_account_status(user, account, sdb_conn, request.cache)
+        members = _check_members(body.members)
+        t = Team(owner=account, name=name, members=members).create_defaults()
+        try:
+            await sdb_conn.execute(update(Team).where(Team.id == id).values(t.explode()))
+        except (UniqueViolationError, IntegrityError, OperationalError) as err:
+            return ResponseError(DatabaseConflict(
+                detail="Team '%s' already exists: %s: %s" % (name, type(err).__name__, err)),
+            ).response
+    return web.Response()
+
+
+def _check_name(name: str) -> str:
+    if not name:
+        raise ResponseError(BadRequestError("Name of the team cannot be empty."))
+    if len(name) > 255:
+        raise ResponseError(BadRequestError(
+            "Name of the team cannot be longer than 255 Python chars."))
+    return name
 
 
 def _check_members(members: List[str]) -> List[str]:
@@ -110,7 +145,7 @@ def _check_members(members: List[str]) -> List[str]:
         if not m.startswith(prefix) or len(splitted) > 2 or not splitted[1]:
             invalid_members.append(m)
 
-    if invalid_members:
+    if invalid_members or len(members) == 0:
         raise ResponseError(BadRequestError(
             detail="Invalid members of the team: %s" % ", ".join(invalid_members)))
 

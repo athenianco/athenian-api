@@ -42,12 +42,9 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    try:
-        filters, repos = await _compile_repos_and_devs(filt.for_, request, filt.account)
-        time_intervals, tzoffset = _split_to_time_intervals(
-            filt.date_from, filt.date_to, filt.granularities, filt.timezone)
-    except ResponseError as e:
-        return e.response
+    filters, repos = await _compile_repos_and_devs(filt.for_, request, filt.account)
+    time_intervals, tzoffset = _split_to_time_intervals(
+        filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 
     """
     @se7entyse7en:
@@ -69,11 +66,8 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     met.metrics = filt.metrics
     met.calculated = []
     # There should not be any new exception here so we don't have to catch ResponseError.
-    try:
-        release_settings = \
-            await Settings.from_request(request, filt.account).list_release_matches(repos)
-    except ResponseError as e:
-        return e.response
+    release_settings = \
+        await Settings.from_request(request, filt.account).list_release_matches(repos)
     for service, (repos, devs, for_set) in filters:
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
@@ -219,14 +213,11 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    try:
-        repos = await resolve_repos(
-            filt.in_, filt.account, request.uid, request.native_uid,
-            request.sdb, request.mdb, request.cache, request.app["slack"])
-        time_intervals, tzoffset = _split_to_time_intervals(
-            filt.date_from, filt.date_to, filt.granularity, filt.timezone)
-    except ResponseError as e:
-        return e.response
+    repos = await resolve_repos(
+        filt.in_, filt.account, request.uid, request.native_uid,
+        request.sdb, request.mdb, request.cache, request.app["slack"])
+    time_intervals, tzoffset = _split_to_time_intervals(
+        filt.date_from, filt.date_to, filt.granularity, filt.timezone)
     with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
     stats = await METRIC_ENTRIES["github"]["code"](
@@ -251,11 +242,8 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    try:
-        # FIXME(vmarkovtsev): developer metrics + release settings???
-        filters, _ = await _compile_repos_and_devs(filt.for_, request, filt.account)
-    except ResponseError as e:
-        return e.response
+    # FIXME(vmarkovtsev): developer metrics + release settings???
+    filters, _ = await _compile_repos_and_devs(filt.for_, request, filt.account)
     if filt.date_to < filt.date_from:
         return ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",

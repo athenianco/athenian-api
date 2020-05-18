@@ -29,17 +29,11 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
     user = request.uid
     account = body.account
     async with request.sdb.connection() as sdb_conn:
-        try:
-            adm = await get_user_account_status(user, account, sdb_conn, request.cache)
-        except ResponseError as e:
-            return e.response
+        adm = await get_user_account_status(user, account, sdb_conn, request.cache)
         if not adm:
             return ResponseError(ForbiddenError(
                 detail="User %s is not an admin of the account %d" % (user, account))).response
-        try:
-            items = await _check_reposet(request, sdb_conn, body.account, body.items)
-        except ResponseError as e:
-            return e.response
+        items = await _check_reposet(request, sdb_conn, body.account, body.items)
         rs = RepositorySet(owner=account, items=items).create_defaults()
         try:
             rid = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
@@ -54,10 +48,7 @@ async def delete_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     :param id: Numeric identifier of the repository set to delete.
     :type id: int
     """
-    try:
-        _, is_admin = await fetch_reposet(id, [], request.uid, request.sdb, request.cache)
-    except ResponseError as e:
-        return e.response
+    _, is_admin = await fetch_reposet(id, [], request.uid, request.sdb, request.cache)
     if not is_admin:
         return ResponseError(ForbiddenError(
             detail="User %s may not modify reposet %d" % (request.uid, id))).response
@@ -71,11 +62,7 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     :param id: Numeric identifier of the repository set to list.
     :type id: int
     """
-    try:
-        rs, _ = await fetch_reposet(
-            id, [RepositorySet.items], request.uid, request.sdb, request.cache)
-    except ResponseError as e:
-        return e.response
+    rs, _ = await fetch_reposet(id, [RepositorySet.items], request.uid, request.sdb, request.cache)
     # "items" collides with dict.items() so we have to access the list via []
     return web.json_response(rs.items)
 
@@ -118,18 +105,12 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
     :param body: New list of repositories in the group.
     """
     async with request.sdb.connection() as sdb_conn:
-        try:
-            rs, is_admin = await fetch_reposet(
-                id, [RepositorySet], request.uid, sdb_conn, request.cache)
-        except ResponseError as e:
-            return e.response
+        rs, is_admin = await fetch_reposet(
+            id, [RepositorySet], request.uid, sdb_conn, request.cache)
         if not is_admin:
             return ResponseError(ForbiddenError(
                 detail="User %s may not modify reposet %d" % (request.uid, id))).response
-        try:
-            body = await _check_reposet(request, sdb_conn, id, body)
-        except ResponseError as e:
-            return e.response
+        body = await _check_reposet(request, sdb_conn, id, body)
         if rs.items != body:
             rs.items = body
             rs.refresh()
@@ -145,17 +126,11 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) 
 
 async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current user's repository sets."""
-    try:
-        await get_user_account_status(request.uid, id, request.sdb, request.cache)
-    except ResponseError as e:
-        return e.response
+    await get_user_account_status(request.uid, id, request.sdb, request.cache)
     async with request.sdb.connection() as sdb_conn:
-        try:
-            rss = await load_account_reposets(
-                id, request.native_uid, [RepositorySet], sdb_conn, request.mdb, request.cache,
-                request.app["slack"])
-        except ResponseError as e:
-            return e.response
+        rss = await load_account_reposets(
+            id, request.native_uid, [RepositorySet], sdb_conn, request.mdb, request.cache,
+            request.app["slack"])
     items = [RepositorySetListItem(
         id=rs[RepositorySet.id.key],
         created=rs[RepositorySet.created_at.key].replace(tzinfo=timezone.utc),

@@ -188,7 +188,7 @@ class AthenianApp(connexion.AioHttpApp):
                     "build_date": getattr(metadata, "__date__", "N/A"),
                 },
                 pass_context_arg_name="request",
-                options={"middlewares": [self.with_db, self.add_server_name]},
+                options={"middlewares": [self.i_will_survive, self.with_db, self.add_server_name]},
             )
             for k, v in api.subapp.items():
                 self.app[k] = v
@@ -291,12 +291,14 @@ class AthenianApp(connexion.AioHttpApp):
     @aiohttp.web.middleware
     async def i_will_survive(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
         """Return HTTP 503 Service Unavailable if the server is shutting down, also track \
-        the number of active connections."""
+        the number of active connections and handle ResponseError-s."""
         if self._shutting_down:
             return ResponseError(ShuttingDownError()).response
         self._requests += 1
         try:
             return await asyncio.shield(handler(request))
+        except ResponseError as e:
+            return e.response
         finally:
             self._requests -= 1
             if self._requests == 0 and self._shutting_down:
@@ -305,7 +307,6 @@ class AthenianApp(connexion.AioHttpApp):
     def _setup_survival(self):
         self._shutting_down = False
         self._requests = 0
-        self.app.middlewares.insert(0, self.i_will_survive)
 
         def initiate_graceful_shutdown(signame: str):
             self.log.warning("Received %s, waiting for pending %d requests to finish...",

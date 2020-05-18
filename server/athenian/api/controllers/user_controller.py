@@ -61,11 +61,8 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
     """Change the status of an account member: regular, admin, or banished (deleted)."""
     aucr = AccountUserChangeRequest.from_dict(body)  # type: AccountUserChangeRequest
     async with request.sdb.connection() as conn:
-        try:
-            status = await get_user_account_status(request.uid, aucr.account, conn, request.cache)
-        except ResponseError as e:
-            return e.response
-        if not status:
+        is_admin = await get_user_account_status(request.uid, aucr.account, conn, request.cache)
+        if not is_admin:
             return ResponseError(ForbiddenError(
                 detail="User %s is not an admin of account %d" % (request.uid, aucr.account)),
             ).response

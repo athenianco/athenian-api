@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import insert, select
 
 from athenian.api.models.state.models import Team
+from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
 
@@ -116,14 +117,13 @@ async def test_create_team_same_members(client, headers, sdb):
 
 
 async def test_create_team_same_name(client, headers, sdb):
-    body = TeamCreateRequest(1, "Engineering",
-                             ["github.com/se7entyse7en"]).to_dict()
+    body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/team/create", headers=headers, json=body,
     )
+    assert response.status == 200
 
-    body = TeamCreateRequest(1, "Engineering",
-                             ["github.com/vmarkovtsev"]).to_dict()
+    body = TeamCreateRequest(1, "Engineering", ["github.com/vmarkovtsev"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/team/create", headers=headers, json=body,
     )
@@ -235,3 +235,125 @@ def _test_same_team(actual, expected, no_timings=True):
         expected.pop("updated_at", None)
 
     assert actual == expected
+
+
+async def test_update_team_smoke(client, headers, sdb):
+    body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"]).to_dict()
+    response = await client.request(
+        method="POST", path="/v1/team/create", headers=headers, json=body,
+    )
+    assert response.status == 200
+
+    body = TeamUpdateRequest("Dream", ["github.com/vmarkovtsev"]).to_dict()
+    response = await client.request(
+        method="PUT", path="/v1/team/1", headers=headers, json=body,
+    )
+
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    team = await sdb.fetch_one(select([Team]).where(Team.id == 1))
+    assert team[Team.name.key] == "Dream"
+    assert team[Team.members.key] == ["github.com/vmarkovtsev"]
+
+
+@pytest.mark.parametrize("owner, id, name, members, status", [
+    (1, 1, "Engineering", [], 400),
+    (1, 1, "", ["github.com/se7entyse7en"], 400),
+    (1, 1, "$" * 256, ["github.com/se7entyse7en"], 400),
+    (1, 3, "Engineering", ["github.com/se7entyse7en"], 404),
+    (2, 1, "Engineering", ["github.com/se7entyse7en"], 200),
+    (3, 1, "Engineering", ["github.com/se7entyse7en"], 404),
+    (1, 1, "Dream", ["github.com/se7entyse7en"], 409),
+    (1, 1, "Engineering", ["github.com/eiso"], 409),
+    (2, 1, "Dream", ["github.com/se7entyse7en"], 200),
+    (2, 1, "Engineering", ["github.com/eiso"], 200),
+])
+async def test_update_team_shitty_input(client, headers, sdb, owner, id, name, members, status):
+    await sdb.execute(insert(Team).values(Team(
+        owner=owner,
+        name="Engineering",
+        members=["github.com/se7entyse7en"],
+    ).create_defaults().explode()))
+    await sdb.execute(insert(Team).values(Team(
+        owner=1,
+        name="Dream",
+        members=["github.com/eiso"],
+    ).create_defaults().explode()))
+    body = TeamUpdateRequest(name, members).to_dict()
+    response = await client.request(
+        method="PUT", path="/v1/team/%d" % id, headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == status, "Response body is : " + body
+
+
+async def test_delete_team_smoke(client, headers, sdb):
+    await sdb.execute(insert(Team).values(Team(
+        owner=1,
+        name="Engineering",
+        members=["github.com/se7entyse7en"],
+    ).create_defaults().explode()))
+    response = await client.request(
+        method="DELETE", path="/v1/team/1", headers=headers, json={},
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    teams = await sdb.fetch_all(select([Team]))
+    assert len(teams) == 0
+
+
+@pytest.mark.parametrize("owner, id, status", [
+    (1, 2, 404),
+    (2, 1, 200),
+    (3, 1, 404),
+])
+async def test_delete_team_shitty_input(client, headers, sdb, owner, id, status):
+    await sdb.execute(insert(Team).values(Team(
+        owner=owner,
+        name="Engineering",
+        members=["github.com/se7entyse7en"],
+    ).create_defaults().explode()))
+    response = await client.request(
+        method="DELETE", path="/v1/team/%d" % id, headers=headers, json={},
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == status, "Response body is : " + body
+
+
+async def test_get_team_smoke(client, headers, sdb):
+    await sdb.execute(insert(Team).values(Team(
+        owner=1,
+        name="Engineering",
+        members=["github.com/se7entyse7en", "github.com/mcuadros"],
+    ).create_defaults().explode()))
+    response = await client.request(
+        method="GET", path="/v1/team/1", headers=headers, json={},
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = json.loads(body)
+    assert body == {"id": 1, "name": "Engineering", "members": [
+        {"login": "github.com/mcuadros",
+         "name": "Máximo Cuadros",
+         "email": "mcuadros@gmail.com",
+         "picture": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4"},
+        {"login": "github.com/se7entyse7en"},
+    ]}
+
+
+@pytest.mark.parametrize("owner, id, status", [
+    (1, 2, 404),
+    (2, 1, 200),
+    (3, 1, 404),
+])
+async def test_get_team_shitty_input(client, headers, sdb, owner, id, status):
+    await sdb.execute(insert(Team).values(Team(
+        owner=owner,
+        name="Engineering",
+        members=["github.com/se7entyse7en", "github.com/mcuadros"],
+    ).create_defaults().explode()))
+    response = await client.request(
+        method="GET", path="/v1/team/%d" % id, headers=headers, json={},
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == status, "Response body is : " + body

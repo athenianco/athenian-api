@@ -99,7 +99,8 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
         for kind, people in sorted(pr.participants(with_prefix=False).items()):
             for p in people:
                 participants.setdefault(p, []).append(str(kind.value))
-        participants = {k: ",".join(v) for k, v in participants.items()}
+        # so that we can query a substring by role
+        participants = {k: ",%s," % ",".join(v) for k, v in participants.items()}
         inserted.append(GitHubPullRequestTimes(
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,

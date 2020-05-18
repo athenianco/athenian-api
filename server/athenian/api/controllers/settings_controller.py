@@ -11,11 +11,7 @@ from athenian.api.request import AthenianWebRequest
 
 async def list_release_match_settings(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current release matching settings."""
-    settings = Settings.from_request(request, id)
-    try:
-        settings = await settings.list_release_matches()
-    except ResponseError as e:
-        return e.response
+    settings = await Settings.from_request(request, id).list_release_matches()
     model = {k: ReleaseMatchSetting.from_dataclass(m).to_dict() for k, m in settings.items()}
     repos = [r.split("/", 1)[1] for r in settings]
     _, default_branches = await extract_branches(repos, request.mdb, request.cache)
@@ -32,9 +28,5 @@ async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Resp
     rule = ReleaseMatchRequest.from_dict(body)  # type: ReleaseMatchRequest
     settings = Settings.from_request(request, rule.account)
     match = Match[rule.match]
-    try:
-        repos = await settings.set_release_matches(
-            rule.repositories, rule.branches, rule.tags, match)
-    except ResponseError as e:
-        return e.response
+    repos = await settings.set_release_matches(rule.repositories, rule.branches, rule.tags, match)
     return web.json_response(sorted(repos))

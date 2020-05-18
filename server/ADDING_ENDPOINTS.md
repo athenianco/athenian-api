@@ -65,3 +65,4 @@ Tips:
 * Use `@cached` decorator for easy caching.
 * Open `async with request.*db.connection():` if you are going to make several queries to the same DB.
 * Prefer idempotent behavior (`PUT` over `PATCH`) wherever possible to simplify your life and avoid complex problems in the future.
+* Return `http.HTTPStatus.NOT_IMPLEMENTED` (501) from unimplemented endpoints.
