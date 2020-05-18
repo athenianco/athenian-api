@@ -1,13 +1,14 @@
 from http import HTTPStatus
 from itertools import chain
 from sqlite3 import IntegrityError, OperationalError
-from typing import List, Union
+from typing import Dict, Iterable, List, Mapping, Optional, Union
 
 from aiohttp import web
+import aiomcache
 from asyncpg import UniqueViolationError
+import databases
 from sqlalchemy import insert, select
 
-from athenian.api import FriendlyJson
 from athenian.api.controllers.account import get_user_account_status
 from athenian.api.controllers.miners.github.users import mine_users
 from athenian.api.models.metadata import PREFIXES
@@ -80,13 +81,13 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
 
         teams = await sdb_conn.fetch_all(select([Team]).where(Team.owner == account))
 
-    all_contributors = await _get_all_contributors(teams, request.mdb)
-    items = [TeamListItem(
-        id=t[Team.id.key], name=t[Team.name.key],
-        members=[all_contributors[m] for m in t[Team.members.key]],
-    ).to_dict() for t in teams]
-
-    return web.json_response(items, status=200, dumps=FriendlyJson.dumps)
+    all_members = await _get_all_members(teams, request.mdb, request.cache)
+    items = [TeamListItem(id=t[Team.id.key],
+                          name=t[Team.name.key],
+                          members=[all_members[m] for m in t[Team.members.key]],
+                          )
+             for t in teams]
+    return model_response(items)
 
 
 async def update_team(request: AthenianWebRequest, id: int,
@@ -116,29 +117,24 @@ def _check_members(members: List[str]) -> List[str]:
     return sorted(set(members))
 
 
-async def _get_all_contributors(teams, db):
-    all_members = set(
-        m[len(PREFIXES["github"]):]
-        for m in chain.from_iterable([dict(t)[Team.members.key] for t in teams])
-    )
-
-    fields = [User.login.key, User.email.key, User.name.key, User.avatar_url.key]
-    all_members_details = {
-        u[User.login.key]: u
-        for u in await mine_users(all_members, db, fields=fields)
-    }
-
+async def _get_all_members(teams: Iterable[Mapping],
+                           db: databases.Database,
+                           cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
+    prefix = PREFIXES["github"]
+    all_members = set(chain.from_iterable([t[Team.members.key] for t in teams]))
+    all_members = {m[len(prefix):] for m in all_members}
+    user_by_login = {u[User.login.key]: u for u in await mine_users(all_members, db, cache)}
     all_contributors = {}
     for m in all_members:
-        ud = all_members_details.get(m)
-        login = f"{PREFIXES['github']}{m}"
+        ud = user_by_login.get(m)
+        login = prefix + m
         if ud is not None:
-            c = Contributor(
-                login=login, name=ud[User.name.key],
-                email=ud[User.email.key], picture=ud[User.avatar_url.key])
+            c = Contributor(login=login,
+                            name=ud[User.name.key],
+                            email=ud[User.email.key],
+                            picture=ud[User.avatar_url.key])
         else:
             c = Contributor(login=login)
-
         all_contributors[login] = c
 
     return all_contributors
