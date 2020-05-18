@@ -808,7 +808,7 @@ paths:
             application/json:
               schema:
                 type: object
-          description: Empty object indicates a successful operation.
+          description: Empty object indicates a successful update.
         403:
           content:
             application/json:
@@ -1423,22 +1423,17 @@ components:
       additionalProperties: false
       description: Team update request.
       example:
-        id: 1
         name: Engineering
         members:
         - github.com/gkwillie
         - github.com/se7entyse7en
       properties:
-        id:
-          description: Team identifier.
-          type: integer
         name:
           description: Name of the team.
           type: string
         members:
           $ref: '#/components/schemas/DeveloperSet'
       required:
-      - id
       - members
       - name
       type: object
