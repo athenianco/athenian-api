@@ -47,7 +47,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     """Calculate pull request metrics on GitHub data."""
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     done_times = await load_precomputed_done_times(
-        time_from, time_to, repos, developers, release_settings, pdb)
+        time_from, time_to, repos, developers, release_settings, mdb, pdb, cache)
 
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
@@ -65,7 +65,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
         except ImpossiblePullRequest:
             continue
         mined_times.append(times)
-    await store_precomputed_done_times(mined_prs, mined_times, release_settings, pdb)
+    await store_precomputed_done_times(mined_prs, mined_times, release_settings, mdb, pdb, cache)
     mined_times.extend(done_times.values())
     calcs = [pull_request_calculators[m]() for m in metrics]
     return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_times) for ts in time_intervals]

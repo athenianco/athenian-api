@@ -1,14 +1,16 @@
 from datetime import datetime
 import pickle
-from typing import Collection, Dict, Iterable
+from typing import Collection, Dict, Iterable, Optional
 
+import aiomcache
 import databases
 from sqlalchemy import and_, insert, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
+from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.pull_request import MinedPullRequest, PullRequestTimes
 from athenian.api.controllers.miners.github.release import matched_by_column
-from athenian.api.controllers.settings import Match, ReleaseMatchSetting
+from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.precomputed.models import GitHubPullRequestTimes
@@ -19,12 +21,14 @@ async def load_precomputed_done_times(date_from: datetime,
                                       repos: Collection[str],
                                       developers: Collection[str],
                                       release_settings: Dict[str, ReleaseMatchSetting],
-                                      db: databases.Database,
+                                      mdb: databases.Database,
+                                      pdb: databases.Database,
+                                      cache: Optional[aiomcache.Client],
                                       ) -> Dict[str, PullRequestTimes]:
     """Load PullRequestTimes belonging to released or rejected PRs from the precomputed DB."""
     assert isinstance(date_from, datetime)
     assert isinstance(date_to, datetime)
-    postgres = db.url.dialect in ("postgres", "postgresql")
+    postgres = pdb.url.dialect in ("postgres", "postgresql")
     selected = [GitHubPullRequestTimes.pr_node_id,
                 GitHubPullRequestTimes.repository_full_name,
                 GitHubPullRequestTimes.release_match,
@@ -39,10 +43,11 @@ async def load_precomputed_done_times(date_from: datetime,
         else:
             selected.append(GitHubPullRequestTimes.developers)
             developers = set(developers)
-    rows = await db.fetch_all(select(selected).where(and_(*filters)))
+    rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
     result = {}
     ambiguous = {Match.tag.name: {}, Match.branch.name: {}}
+    _, default_branches = await extract_branches(repos, mdb, cache)
     for row in rows:
         node_id, repo, release_match, data = row[0], row[1], row[2], row[3]
         if release_match == "rejected":
@@ -57,6 +62,15 @@ async def load_precomputed_done_times(date_from: datetime,
                 dump = result
             else:
                 dump = ambiguous[match_name]
+            if match == Match.tag:
+                target = required_release_match.tags
+            elif match == Match.branch:
+                target = required_release_match.branches.replace(
+                    default_branch_alias, default_branches.get(repo, default_branch_alias))
+            else:
+                raise AssertionError("Precomputed DB may not contain Match.tag_or_branch")
+            if target != match_by:
+                continue
         if not postgres and len(developers) > 0:
             if not set(row[4]).intersection(developers):
                 continue
@@ -71,11 +85,15 @@ async def load_precomputed_done_times(date_from: datetime,
 async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
                                        times: Iterable[PullRequestTimes],
                                        release_settings: Dict[str, ReleaseMatchSetting],
-                                       db: databases.Database,
+                                       mdb: databases.Database,
+                                       pdb: databases.Database,
+                                       cache: Optional[aiomcache.Client],
                                        ) -> None:
     """Store PullRequestTimes belonging to released or rejected PRs to the precomputed DB."""
     inserted = []
     prefix = PREFIXES["github"]
+    repos = {pr.pr[PullRequest.repository_full_name.key] for pr in prs}
+    _, default_branches = await extract_branches(repos, mdb, cache)
     for pr, times in zip(prs, times):
         if not times.released:
             if not times.closed or times.merged:
@@ -88,7 +106,9 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
             release_match = release_settings[prefix + repo]
             match = Match(pr.release[matched_by_column])
             if match == Match.branch:
-                release_match = "|".join((match.name, release_match.branches))
+                branch = release_match.branches.replace(
+                    default_branch_alias, default_branches.get(repo, default_branch_alias))
+                release_match = "|".join((match.name, branch))
             elif match == Match.tag:
                 release_match = "|".join((match.name, release_match.tags))
             else:
@@ -110,8 +130,8 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
             developers=participants,
             data=pickle.dumps(times),
         ).create_defaults().explode(with_primary_keys=True))
-    if db.url.dialect in ("postgres", "postgresql"):
+    if pdb.url.dialect in ("postgres", "postgresql"):
         sql = postgres_insert(GitHubPullRequestTimes).on_conflict_do_nothing()
     else:
         sql = insert(GitHubPullRequestTimes)
-    await db.execute_many(sql, inserted)
+    await pdb.execute_many(sql, inserted)
