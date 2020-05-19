@@ -132,6 +132,8 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
         ).create_defaults().explode(with_primary_keys=True))
     if pdb.url.dialect in ("postgres", "postgresql"):
         sql = postgres_insert(GitHubPullRequestTimes).on_conflict_do_nothing()
+    elif pdb.url.dialect == "sqlite":
+        sql = insert(GitHubPullRequestTimes).prefix_with("OR IGNORE")
     else:
-        sql = insert(GitHubPullRequestTimes)
+        raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
     await pdb.execute_many(sql, inserted)
