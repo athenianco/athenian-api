@@ -55,7 +55,7 @@ def main():
         return 1
 
     dbs = ["state", "precomputed", "metadata"]
-    remote_postgres_password = os.environ.get("POSTGRES_PASSWORD", "")
+    remote_postgres_password = os.environ.get("PGPASSWORD", "")
     if remote_postgres_password == "":
         remote_postgres_password = getpass.getpass(
             prompt=("Password for CloudSQL instance of '%s' environment "
@@ -69,7 +69,7 @@ def main():
         dump_path = os.path.join(dumps_base_path, file_name)
 
         guest_cmd = (
-            "pg_dump --host cloud_sql_proxy --port=%d --username=%s "
+            "pg_dump --host cloud_sql_proxy --port=%d --no-owner --username=%s "
             "-Fc --dbname=%s > %s"
         ) % (config["port"], args.remote_postgres_user, db, dump_path)
 
