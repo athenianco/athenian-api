@@ -157,7 +157,7 @@ async def _get_all_members(teams: Iterable[Mapping],
                            cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
     prefix = PREFIXES["github"]
     all_members = set(chain.from_iterable([t[Team.members.key] for t in teams]))
-    all_members = {m[len(prefix):] for m in all_members}
+    all_members = {m.split("/", 1)[1] for m in all_members if m.startswith(prefix)}
     user_by_login = {u[User.login.key]: u for u in await mine_users(all_members, db, cache)}
     all_contributors = {}
     for m in all_members:

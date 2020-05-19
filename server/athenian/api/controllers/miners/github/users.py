@@ -1,5 +1,6 @@
+import marshal
 import pickle
-from typing import Any, Collection, List, Mapping, Optional
+from typing import Any, Collection, List, Mapping, Optional, Tuple
 
 import aiomcache
 import databases
@@ -20,3 +21,18 @@ async def mine_users(logins: Collection[str],
                      cache: Optional[aiomcache.Client]) -> List[Mapping[str, Any]]:
     """Fetch details about each GitHub user in the given list of `logins`."""
     return [dict(u) for u in await db.fetch_all(select([User]).where(User.login.in_(logins)))]
+
+
+@cached(
+    exptime=60 * 60,
+    serialize=marshal.dumps,
+    deserialize=marshal.loads,
+    key=lambda logins, **_: (",".join(sorted(logins)),),
+)
+async def mine_user_avatars(logins: Collection[str],
+                            db: databases.Database,
+                            cache: Optional[aiomcache.Client]) -> List[Tuple[str, str]]:
+    """Fetch the user profile picture URL for each login."""
+    rows = await db.fetch_all(select([User.login, User.avatar_url])
+                              .where(User.login.in_(logins)))
+    return [(u[0], u[1]) for u in rows]

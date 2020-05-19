@@ -7,13 +7,13 @@ from typing import Set, Union
 
 from aiohttp import web
 from dateutil.parser import parse as parse_datetime
-from sqlalchemy import select
 
 from athenian.api.controllers.features.github.pull_request_filter import filter_pull_requests
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.release import load_releases, mine_releases
 from athenian.api.controllers.miners.github.repositories import mine_repositories
+from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.controllers.reposet import resolve_repos
@@ -105,17 +105,16 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     participants = {ParticipationKind[k.upper()]: v for k, v in body.get("with", {}).items()}
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
-    prs = await filter_pull_requests(props, filt.date_from, filt.date_to,
-                                     repos, settings, participants, request.mdb, request.cache)
+    prs = await filter_pull_requests(
+        props, filt.date_from, filt.date_to, repos, participants, settings,
+        request.mdb, request.pdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     users = {u.split("/", 1)[1] for u in
              chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs)}
-    avatars = await request.mdb.fetch_all(
-        select([User.login, User.avatar_url]).where(User.login.in_(users)))
+    avatars = await mine_user_avatars(users, request.mdb, request.cache)
     prefix = PREFIXES["github"]
     model = PullRequestSet(include=IncludedNativeUsers(users={
-        prefix + r[User.login.key]: IncludedNativeUser(avatar=r[User.avatar_url.key])
-        for r in avatars
+        prefix + login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
     }), data=web_prs)
     return model_response(model)
 
