@@ -46,6 +46,8 @@ async def test_load_store_precomputed_done_smoke(mdb, pdb, pr_samples):
         review_comments=dummy_df,
         review_requests=dummy_df) for i in range(len(samples))]
     await store_precomputed_done_times(prs, samples, settings, mdb, pdb, None)
+    # we should not crash on repeat
+    await store_precomputed_done_times(prs, samples, settings, mdb, pdb, None)
     released_ats = sorted((t.released.best, i) for i, t in enumerate(samples[:-10]))
     time_from = released_ats[len(released_ats) // 2][0]
     time_to = released_ats[-1][0]
