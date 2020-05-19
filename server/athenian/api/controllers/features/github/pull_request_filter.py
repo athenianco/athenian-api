@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Dict, Generator, Iterable, Mapping, Optional, Set
+from typing import Collection, Dict, Generator, Iterable, List, Mapping, Optional, Set
 
 import aiomcache
 import databases
@@ -227,7 +227,7 @@ async def filter_pull_requests(properties: Collection[Property],
                                mdb: databases.Database,
                                pdb: databases.Database,
                                cache: Optional[aiomcache.Client],
-                               ) -> Iterable[PullRequestListItem]:
+                               ) -> List[PullRequestListItem]:
     """Filter GitHub pull requests according to the specified criteria.
 
     :param repos: List of repository names without the service prefix.
@@ -287,5 +287,5 @@ async def filter_pull_requests(properties: Collection[Property],
     all_participants = {p.split("/", 1)[1] for p in all_participants}
     done_times = await load_precomputed_done_times(
         time_from, time_to, repos, all_participants, release_settings, mdb, pdb, cache)
-    return PullRequestListMiner(prs_time_machine, prs_today, done_times, properties,
-                                participants, time_from)
+    return list(PullRequestListMiner(
+        prs_time_machine, prs_today, done_times, properties, participants, time_from))
