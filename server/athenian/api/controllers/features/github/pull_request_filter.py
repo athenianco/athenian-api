@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
@@ -234,11 +235,22 @@ async def filter_pull_requests(properties: Collection[Property],
     """
     # required to efficiently use the cache with timezones
     date_from, date_to = coarsen_time_interval(time_from, time_to)
-    everybody = {p.split("/", 1)[1] for p in chain.from_iterable(participants.values())}
-    miner_time_machine = await PullRequestMiner.mine(
-        date_from, date_to, time_from, time_to, repos, release_settings, everybody, mdb, cache)
+    participants = {k: set(v) for k, v in participants.items()}
+    # TODO(vmarkovtsev): fine-tune this by filtering specific roles
+    everybody = set(chain.from_iterable(participants.values()))
+    everybody = {p.split("/", 1)[1] for p in everybody}
+    tasks = (
+        PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, release_settings,
+                              everybody, mdb, cache),
+        load_precomputed_done_times(time_from, time_to, repos, everybody, release_settings,
+                                    mdb, pdb, cache),
+    )
+    miner_time_machine, done_times = await asyncio.gather(*tasks, return_exceptions=True)
+    if isinstance(miner_time_machine, Exception):
+        raise miner_time_machine from None
+    if isinstance(done_times, Exception):
+        raise done_times from None
     prs_time_machine = list(miner_time_machine)
-
     now = datetime.now(tz=timezone.utc) + timedelta(days=1)
     tomorrow = datetime(year=now.year, month=now.month, day=now.day, tzinfo=now.tzinfo)
 
@@ -281,11 +293,5 @@ async def filter_pull_requests(properties: Collection[Property],
     else:
         prs_today = prs_time_machine
     properties = set(properties)
-    participants = {k: set(v) for k, v in participants.items()}
-    # TODO(vmarkovtsev): fine-tune this by filtering specific roles
-    all_participants = set(chain.from_iterable(participants.values()))
-    all_participants = {p.split("/", 1)[1] for p in all_participants}
-    done_times = await load_precomputed_done_times(
-        time_from, time_to, repos, all_participants, release_settings, mdb, pdb, cache)
     return list(PullRequestListMiner(
         prs_time_machine, prs_today, done_times, properties, participants, time_from))
