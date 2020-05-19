@@ -1,6 +1,6 @@
 import asyncio
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import marshal
 from typing import Collection, List, Optional
 
@@ -14,15 +14,16 @@ from athenian.api.models.metadata.github import PullRequest, PullRequestComment,
 
 
 async def mine_contributors(repos: Collection[str],
+                            time_from: Optional[datetime],
+                            time_to: Optional[datetime],
                             db: databases.Database,
-                            time_from: Optional[datetime] = None,
-                            time_to: Optional[datetime] = None,
-                            with_stats: Optional[bool] = True,
-                            cache: Optional[aiomcache.Client] = None) -> List[dict]:
+                            cache: Optional[aiomcache.Client],
+                            with_stats: Optional[bool] = True) -> List[dict]:
     """Discover developers who made any important action in the given repositories and \
     in the given time frame."""
     time_from = time_from or datetime(1970, 1, 1, tzinfo=timezone.utc)
-    time_to = time_to or datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc) + timedelta(days=1)
+    time_to = time_to or datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
 
     return await _mine_contributors(repos, time_from, time_to, with_stats, db, cache)
 

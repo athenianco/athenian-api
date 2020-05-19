@@ -29,8 +29,8 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
         checker = await access_classes["github"](
             account_id, sdb_conn, request.mdb, request.cache).load()
         repos = checker.installed_repos(with_prefix=False)
-        users = await mine_contributors(repos, request.mdb, with_stats=False,
-                                        cache=request.cache)
+        users = await mine_contributors(
+            repos, None, None, request.mdb, request.cache, with_stats=False)
         prefix = PREFIXES["github"]
         contributors = [
             Contributor(login=f"{prefix}{u['login']}", name=u["name"],

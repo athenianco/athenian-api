@@ -46,17 +46,13 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     repos = await _common_filter_preprocess(filt, request)
-
     users = await mine_contributors(
-        repos, request.mdb, time_from=filt.date_from, time_to=filt.date_to,
-        cache=request.cache)
-
+        repos, filt.date_from, filt.date_to, request.mdb, request.cache)
     model = [
         DeveloperSummary(login=f"{PREFIXES['github']}{u['login']}", avatar=u["avatar_url"],
                          name=u["name"], updates=DeveloperUpdates(**u["stats"]))
         for u in sorted(users, key=operator.itemgetter("login"))
     ]
-
     return model_response(model)
 
 
