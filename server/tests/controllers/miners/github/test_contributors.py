@@ -1,19 +1,17 @@
 from operator import itemgetter
 
-import pytest
-
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from tests.conftest import has_memcached
 
 
 async def test_mine_contributors_expected_cache_miss(mdb, cache, memcached):
-    if not has_memcached:
-        raise pytest.skip("no memcached")
-    cache = memcached
+    if has_memcached:
+        cache = memcached
 
-    contribs_with_stats = await mine_contributors(["src-d/go-git"], mdb, cache=cache)
-    contribs_with_no_stats = await mine_contributors(["src-d/go-git"], mdb, with_stats=False,
-                                                     cache=cache)
+    contribs_with_stats = await mine_contributors(
+        ["src-d/go-git"], None, None, mdb, cache, with_stats=True)
+    contribs_with_no_stats = await mine_contributors(
+        ["src-d/go-git"], None, None, mdb, cache, with_stats=False)
 
     assert len(contribs_with_stats) == len(contribs_with_no_stats)
 
