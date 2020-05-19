@@ -19,6 +19,7 @@ from aiohttp.web_exceptions import HTTPFound
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
+from asyncpg import ConnectionDoesNotExistError, InterfaceError
 import connexion
 from connexion.spec import OpenAPISpecification
 import databases
@@ -270,10 +271,7 @@ class AthenianApp(connexion.AioHttpApp):
             request.cache = None
         try:
             return await handler(request)
-        except bdb.BdbQuit:
-            # breakpoint() helper
-            raise GracefulExit() from None
-        except ConnectionError as e:
+        except (ConnectionError, ConnectionDoesNotExistError, InterfaceError) as e:
             return ResponseError(GenericError(
                 type="/errors/InternalConnectivityError",
                 title=HTTPStatus.SERVICE_UNAVAILABLE.phrase,
@@ -291,12 +289,23 @@ class AthenianApp(connexion.AioHttpApp):
     @aiohttp.web.middleware
     async def i_will_survive(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
         """Return HTTP 503 Service Unavailable if the server is shutting down, also track \
-        the number of active connections and handle ResponseError-s."""
+        the number of active connections and handle ResponseError-s.
+
+        We prevent aiohttp from cancelling the handlers with _setup_survival() but there can still
+        happen unexpected intrusions by some "clever" author of the upstream code.
+        """
         if self._shutting_down:
             return ResponseError(ShuttingDownError()).response
+
+        return await asyncio.shield(self._shielded(request, handler))
+
+    async def _shielded(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
         self._requests += 1
         try:
-            return await asyncio.shield(handler(request))
+            return await handler(request)
+        except bdb.BdbQuit:
+            # breakpoint() helper
+            raise GracefulExit() from None
         except ResponseError as e:
             return e.response
         finally:
