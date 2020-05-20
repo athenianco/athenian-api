@@ -251,10 +251,9 @@ async def filter_pull_requests(properties: Collection[Property],
     if isinstance(done_times, Exception):
         raise done_times from None
     prs_time_machine = list(miner_time_machine)
-    now = datetime.now(tz=timezone.utc) + timedelta(days=1)
-    tomorrow = datetime(year=now.year, month=now.month, day=now.day, tzinfo=now.tzinfo)
+    now = datetime.now(tz=timezone.utc)
 
-    if time_to != tomorrow:
+    if time_to < now:
         merged_at_key = PullRequest.merged_at.key
         closed_at_key = PullRequest.closed_at.key
         node_id_key = PullRequest.node_id.key
@@ -284,7 +283,7 @@ async def filter_pull_requests(properties: Collection[Property],
                                        .order_by(PullRequest.node_id),
                                        mdb, PullRequest, index=node_id_key)
             dfs = await PullRequestMiner.mine_by_ids(
-                prs, prs[PullRequest.created_at.key].min(), tomorrow, release_settings, mdb, cache)
+                prs, prs[PullRequest.created_at.key].min(), now, release_settings, mdb, cache)
             prs_today = list(PullRequestMiner(prs, *dfs))
         else:
             prs_today = []
