@@ -105,6 +105,13 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     participants = {ParticipationKind[k.upper()]: v for k, v in body.get("with", {}).items()}
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
+    headers = {}
+    if request.cache is not None:
+        cache_key = filter_pull_requests.cache_key(
+            props, filt.date_from, filt.date_to, repos, participants, settings,
+            request.mdb, request.pdb, request.cache)
+        has_cache = await request.cache.get(cache_key) is not None
+        headers["X-Cache-Debug"] = "%s %s" % (has_cache, cache_key.decode())
     prs = await filter_pull_requests(
         props, filt.date_from, filt.date_to, repos, participants, settings,
         request.mdb, request.pdb, request.cache)
@@ -116,7 +123,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     model = PullRequestSet(include=IncludedNativeUsers(users={
         prefix + login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
     }), data=web_prs)
-    return model_response(model)
+    return model_response(model, headers=headers)
 
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:

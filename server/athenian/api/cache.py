@@ -78,6 +78,12 @@ def cached(exptime: Union[int, Callable[..., int]],
         signature = inspect.signature(func)
         full_name = func.__module__ + "." + func.__qualname__
 
+        def _gen_cache_key(args_dict: dict) -> bytes:
+            props = key(**args_dict)
+            assert isinstance(props, tuple), "key() must return a tuple in %s" % full_name
+            return gen_cache_key(
+                full_name + "|" + str(version) + "|" + "|".join(str(p) for p in props))
+
         # no functool.wraps() shit here! It discards the coroutine status and aiohttp notices that
         async def wrapped_cached(*args, **kwargs) -> Any:
             start_time = time.time()
@@ -85,10 +91,7 @@ def cached(exptime: Union[int, Callable[..., int]],
             client = discover_cache(**args_dict)
             cache_key = None
             if client is not None:
-                props = key(**args_dict)
-                assert isinstance(props, tuple), "key() must return a tuple in %s" % full_name
-                cache_key = gen_cache_key(
-                    full_name + "|" + str(version) + "|" + "|".join(str(p) for p in props))
+                cache_key = _gen_cache_key(args_dict)
                 try:
                     buffer = await client.get(cache_key)
                 except aiomcache.exceptions.ClientException:
@@ -159,7 +162,12 @@ def cached(exptime: Union[int, Callable[..., int]],
             except aiomcache.exceptions.ClientException:
                 log.exception("Failed to delete %s/%s in memcached", full_name, cache_key.decode())
 
+        def cache_key(*args, **kwargs) -> bytes:
+            args_dict = signature.bind(*args, **kwargs).arguments
+            return _gen_cache_key(args_dict)
+
         wrapped_cached.reset_cache = reset_cache
+        wrapped_cached.cache_key = cache_key
         return wraps(wrapped_cached, func)
 
     return wrapper_cached
