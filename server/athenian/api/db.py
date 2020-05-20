@@ -17,8 +17,8 @@ def measure_db_overhead(db: databases.Database,
             try:
                 return await func(*args, **kwargs)
             finally:
-                elapsed = app["%s_elapsed" % db_id]
-                elapsed.set(elapsed.get() + time.time() - start_time)
+                elapsed = app["db_elapsed"].get()
+                elapsed[db_id] = elapsed[db_id] + time.time() - start_time
 
         return wraps(wrapped_measure_method_overhead, func)
 
