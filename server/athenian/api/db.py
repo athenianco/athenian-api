@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 
 import aiohttp.web
@@ -9,11 +10,15 @@ from athenian.api import metadata
 from athenian.api.typing_utils import wraps
 
 
+profile_queries = os.getenv("PROFILE_QUERIES") in ("1", "true", "yes")
+
+
 def measure_db_overhead(db: databases.Database,
                         db_id: str,
                         app: aiohttp.web.Application) -> databases.Database:
     """Instrument Database to measure the time spent inside DB i/o."""
     log = logging.getLogger("%s.measure_db_overhead" % metadata.__package__)
+    _profile_queries = profile_queries
 
     def measure_method_overhead(func) -> callable:
         async def wrapped_measure_method_overhead(*args, **kwargs):
@@ -25,7 +30,11 @@ def measure_db_overhead(db: databases.Database,
                 if elapsed is None:
                     log.warning("Cannot record the %s overhead", db_id)
                 else:
-                    elapsed[db_id] = elapsed[db_id] + time.time() - start_time
+                    delta = time.time() - start_time
+                    elapsed[db_id] += delta
+                    if _profile_queries:
+                        sql = str(args[0]).replace("\n", "\\n").replace("\t", "\\t")
+                        print("%f\t%s" % (delta, sql), flush=True)
 
         return wraps(wrapped_measure_method_overhead, func)
 
