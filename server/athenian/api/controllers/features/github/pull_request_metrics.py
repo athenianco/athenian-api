@@ -309,11 +309,10 @@ class FlowRatioCalculator(PullRequestMetricCalculator[float]):
         """Calculate the current metric value."""
         opened = self._opened.value()
         closed = self._closed.value()
-        if not closed.exists:
+        if not closed.exists and not opened.exists:
             return Metric(False, None, None, None)
-        if not opened.exists:
-            return Metric(True, 0, None, None)  # yes, it is True, not False as above
-        val = opened.value / closed.value
+        # Why +1? See ENG-866
+        val = ((opened.value or 0) + 1) / ((closed.value or 0) + 1)
         return Metric(True, val, None, None)
 
     def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
