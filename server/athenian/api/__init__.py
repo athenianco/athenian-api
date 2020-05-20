@@ -199,7 +199,7 @@ class AthenianApp(connexion.AioHttpApp):
         api.jsonifier.json = FriendlyJson
         prometheus_registry = setup_status(self.app)
         self._setup_survival()
-        setup_cache_metrics(cache, prometheus_registry)
+        setup_cache_metrics(cache, self.app, prometheus_registry)
         if ui:
             def index_redirect(_):
                 raise HTTPFound("/v1/ui/")

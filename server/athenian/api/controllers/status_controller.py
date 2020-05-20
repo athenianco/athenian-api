@@ -1,3 +1,4 @@
+from collections import defaultdict
 from contextvars import ContextVar
 import time
 
@@ -24,13 +25,26 @@ async def instrument(request, handler):
     request.app["request_in_progress"] \
         .labels(__package__, __version__, request.path, request.method) \
         .inc()
+    db_elapsed = defaultdict(float)
+    request.app["db_elapsed"].set(db_elapsed)
+    cache_context = request.app["cache_context"]
+    for v in cache_context.values():
+        v.set(defaultdict(int))
     try:
-        response = await handler(request)
+        response = await handler(request)  # type: web.Response
         return response
     finally:
-        sdb_elapsed = request.app["sdb_elapsed"].get()
-        mdb_elapsed = request.app["mdb_elapsed"].get()
-        pdb_elapsed = request.app["pdb_elapsed"].get()
+        sdb_elapsed, mdb_elapsed, pdb_elapsed = \
+            db_elapsed["sdb"], db_elapsed["mdb"], db_elapsed["pdb"]
+        try:
+            response.headers.add(
+                "X-Performance-DB",
+                "s %.3f, m %.3f, p %.3f" % (sdb_elapsed, mdb_elapsed, pdb_elapsed))
+            for k, v in cache_context.items():
+                s = ["%s %d" % (f.replace("athenian.api.", ""), n) for f, n in v.get().items()]
+                response.headers.add("X-Performance-Cache-%s" % k.capitalize(), ", ".join(s))
+        except NameError:
+            pass
         request.app["state_db_latency"] \
             .labels(__package__, __version__, request.path) \
             .observe(sdb_elapsed)
@@ -145,9 +159,7 @@ def setup_status(app) -> prometheus_client.CollectorRegistry:
         buckets=db_ratio_buckets,
         registry=registry,
     )
-    app["sdb_elapsed"] = ContextVar("sdb_elapsed", default=0)
-    app["mdb_elapsed"] = ContextVar("mdb_elapsed", default=0)
-    app["pdb_elapsed"] = ContextVar("pdb_elapsed", default=0)
+    app["db_elapsed"] = ContextVar("db_elapsed", default=None)
     prometheus_client.Info("server", "API server version", registry=registry).info({
         "version": metadata.__version__,
         "commit": getattr(metadata, "__commit__", "null"),

@@ -1,3 +1,4 @@
+from contextvars import ContextVar
 import functools
 import inspect
 import logging
@@ -5,6 +6,7 @@ import pickle
 import time
 from typing import Any, ByteString, Callable, Coroutine, Optional, Tuple, Union
 
+from aiohttp import web
 import aiomcache
 from prometheus_client import CollectorRegistry, Counter, Histogram
 from prometheus_client.utils import INF
@@ -115,6 +117,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                                 log.info("%s/%s was ignored", full_name, cache_key.decode())
                                 client.metrics["ignored"].labels(
                                     __package__, __version__, full_name).inc()
+                                client.metrics["context"]["ignores"].get()[full_name] += 1
                                 ignore = True
                         if not ignore:
                             client.metrics["hits"] \
@@ -123,6 +126,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                             client.metrics["hit_latency"] \
                                 .labels(__package__, __version__, full_name) \
                                 .observe(time.time() - start_time)
+                            client.metrics["context"]["hits"].get()[full_name] += 1
                             return result
             result = await func(*args, **kwargs)
             if client is not None:
@@ -146,6 +150,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                         client.metrics["size"] \
                             .labels(__package__, __version__, full_name) \
                             .observe(len(payload))
+                        client.metrics["context"]["misses"].get()[full_name] += 1
             return result
 
         async def reset_cache(*args, **kwargs) -> bool:
@@ -173,10 +178,18 @@ def cached(exptime: Union[int, Callable[..., int]],
     return wrapper_cached
 
 
-def setup_cache_metrics(cache: Optional[aiomcache.Client], registry: CollectorRegistry):
+def setup_cache_metrics(cache: Optional[aiomcache.Client],
+                        app: web.Application,
+                        registry: CollectorRegistry) -> None:
     """Initialize the Prometheus metrics for tracking the cache interoperability."""
     if cache is None:
+        app["cache_context"] = {}
         return
+    app.setdefault("cache_context", {}).update({
+        "misses": ContextVar("cache_misses", default=None),
+        "ignores": ContextVar("cache_ignores", default=None),
+        "hits": ContextVar("cache_hits", default=None),
+    })
     cache.metrics = {
         "hits": Counter(
             "cache_hits", "Number of times the cache was useful",
@@ -216,4 +229,5 @@ def setup_cache_metrics(cache: Optional[aiomcache.Client], registry: CollectorRe
                      10000000, INF],
             registry=registry,
         ),
+        "context": app["cache_context"],
     }

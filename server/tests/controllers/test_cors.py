@@ -2,10 +2,12 @@ async def test_cors(client, headers):
     response = await client.request(
         method="GET", path="/v1/reposet/1", headers=headers, json={},
     )
-    assert response.headers["Access-Control-Expose-Headers"] == "X-Backend-Server"
+    assert set(response.headers["Access-Control-Expose-Headers"].split(",")) == \
+        {"X-Performance-DB", "X-Backend-Server"}
     assert response.headers["Access-Control-Allow-Origin"] == "http://localhost"
     assert response.headers["Access-Control-Allow-Credentials"] == "true"
     assert response.headers["X-Backend-Server"]
+    assert response.headers["X-Performance-DB"]
 
     # preflight
     headers = {
@@ -21,3 +23,12 @@ async def test_cors(client, headers):
     assert response.headers["Access-Control-Max-Age"] == "3600"
     assert response.headers["Access-Control-Allow-Origin"] == "http://localhost"
     assert response.headers["Access-Control-Allow-Credentials"] == "true"
+
+
+async def test_cors_cache(client, headers, cache):
+    response = await client.request(
+        method="GET", path="/v1/reposet/1", headers=headers, json={},
+    )
+    assert set(response.headers["Access-Control-Expose-Headers"].split(",")) == \
+        {"X-Performance-DB", "X-Backend-Server", "X-Performance-Cache-Ignores",
+         "X-Performance-Cache-Hits", "X-Performance-Cache-Misses"}
