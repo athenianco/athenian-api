@@ -342,7 +342,7 @@ async def test_calc_metrics_prs_ratio_flow(client, headers):
         if flow is None:
             assert closed is None
             continue
-        assert flow == opened / closed, "%.3f != %d / %d" % (flow, opened, closed)
+        assert flow == (opened + 1) / (closed + 1), "%.3f != %d / %d" % (flow, opened, closed)
 
 
 async def test_code_bypassing_prs_smoke(client, headers):

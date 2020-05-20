@@ -126,10 +126,10 @@ def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
     assert 0 < m.value < 1
     assert m.confidence_min is None
     assert m.confidence_max is None
-    assert m.value == open_calc.value().value / closed_calc.value().value
+    assert m.value == (open_calc.value().value + 1) / (closed_calc.value().value + 1)
 
 
-def test_pull_request_flow_ratio_no_closed():
+def test_pull_request_flow_ratio_zeros():
     calc = FlowRatioCalculator()
     m = calc.value()
     assert not m.exists
@@ -140,11 +140,25 @@ def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
     time_to = datetime.now(tz=timezone.utc)
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
-        if pr.closed and pr.closed.best < time_to:
+        if pr.closed and time_from <= pr.closed.best < time_to:
             calc(pr, time_from, time_to)
+            break
     m = calc.value()
     assert m.exists
-    assert m.value == 0
+    assert m.value == 0.5
+
+
+def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
+    calc = FlowRatioCalculator()
+    time_to = datetime.now(tz=timezone.utc) - timedelta(days=180)
+    time_from = time_to - timedelta(days=180)
+    for pr in pr_samples(100):
+        if pr.closed and pr.closed.best > time_to > pr.created.best >= time_from:
+            calc(pr, time_from, time_to)
+            break
+    m = calc.value()
+    assert m.exists
+    assert m.value == 2
 
 
 @pytest.mark.parametrize("cls",
