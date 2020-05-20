@@ -137,7 +137,9 @@ async def test_filter_contributors_nasty_input(client, headers, account, date_to
 @pytest.fixture(scope="module")
 def filter_prs_single_prop_cache():
     fc = FakeCache()
-    setup_cache_metrics(fc, CollectorRegistry(auto_describe=True))
+    setup_cache_metrics(fc, {}, CollectorRegistry(auto_describe=True))
+    for v in fc.metrics["context"].values():
+        v.set(defaultdict(int))
     return fc
 
 

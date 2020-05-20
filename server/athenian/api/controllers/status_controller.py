@@ -25,14 +25,26 @@ async def instrument(request, handler):
     request.app["request_in_progress"] \
         .labels(__package__, __version__, request.path, request.method) \
         .inc()
-    db_elapsed = defaultdict(int)
+    db_elapsed = defaultdict(float)
     request.app["db_elapsed"].set(db_elapsed)
+    cache_context = request.app["cache_context"]
+    for v in cache_context.values():
+        v.set(defaultdict(int))
     try:
-        response = await handler(request)
+        response = await handler(request)  # type: web.Response
         return response
     finally:
         sdb_elapsed, mdb_elapsed, pdb_elapsed = \
             db_elapsed["sdb"], db_elapsed["mdb"], db_elapsed["pdb"]
+        try:
+            response.headers.add(
+                "X-Performance-DB",
+                "s %.3f, m %.3f, p %.3f" % (sdb_elapsed, mdb_elapsed, pdb_elapsed))
+            for k, v in cache_context.items():
+                s = ["%s %d" % (f.replace("athenian.api.", ""), n) for f, n in v.get().items()]
+                response.headers.add("X-Performance-Cache-%s" % k.capitalize(), ", ".join(s))
+        except NameError:
+            pass
         request.app["state_db_latency"] \
             .labels(__package__, __version__, request.path) \
             .observe(sdb_elapsed)

@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 from datetime import datetime, timezone
 import logging
 import os
@@ -91,14 +92,16 @@ class FakeCache:
 
 
 @pytest.fixture(scope="function")
-def cache():
+def cache(loop, app):
     fc = FakeCache()
-    setup_cache_metrics(fc, CollectorRegistry(auto_describe=True))
+    setup_cache_metrics(fc, app.app, CollectorRegistry(auto_describe=True))
+    for v in fc.metrics["context"].values():
+        v.set(defaultdict(int))
     return fc
 
 
 @pytest.fixture(scope="function")
-def memcached(loop, request):
+def memcached(loop, xapp, request):
     client = create_memcached(override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
     trash = []
     set = client.set
@@ -113,11 +116,14 @@ def memcached(loop, request):
         async def delete_trash():
             for key in trash:
                 await client.delete(key)
+            await client.close()
 
         loop.run_until_complete(delete_trash())
 
     request.addfinalizer(shutdown)
-    setup_cache_metrics(client, CollectorRegistry(auto_describe=True))
+    setup_cache_metrics(client, xapp.app, CollectorRegistry(auto_describe=True))
+    for v in client.metrics["context"].values():
+        v.set(defaultdict(int))
     return client
 
 
@@ -130,6 +136,8 @@ def check_memcached():
             return True
         except ConnectionRefusedError:
             return False
+        finally:
+            await client.close()
 
     return asyncio.get_event_loop().run_until_complete(probe())
 
