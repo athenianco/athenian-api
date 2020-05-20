@@ -42,6 +42,14 @@ class ReleaseMatchSetting:
         return 'ReleaseMatchSetting(branches="%s", tags="%s", match=Match["%s"])' % (
             self.branches, self.tags, self.match.name)
 
+    def __lt__(self, other: "ReleaseMatchSetting") -> bool:
+        """Implement self < other to become sortable."""
+        if self.match != other.match:
+            return self.match < other.match
+        if self.tags != other.tags:
+            return self.tags < other.tags
+        return self.branches < other.branches
+
 
 class Settings:
     """User's settings."""
@@ -82,23 +90,32 @@ class Settings:
                 for cls in access_classes.values():
                     repos.update((await cls(self._account, conn, self._mdb, self._cache).load())
                                  .installed_repos())
-            settings: Dict[str, ReleaseMatchSetting] = {}
             rows = await conn.fetch_all(
                 select([ReleaseSetting]).where(and_(ReleaseSetting.account_id == self._account,
                                                     ReleaseSetting.repository.in_(repos))))
+            settings = []
+            loaded = set()
             for row in rows:
-                settings[row[ReleaseSetting.repository.key]] = ReleaseMatchSetting(
-                    branches=row[ReleaseSetting.branches.key],
-                    tags=row[ReleaseSetting.tags.key],
-                    match=Match(row[ReleaseSetting.match.key]),
-                )
+                repo = row[ReleaseSetting.repository.key]
+                loaded.add(repo)
+                settings.append((
+                    repo,
+                    ReleaseMatchSetting(
+                        branches=row[ReleaseSetting.branches.key],
+                        tags=row[ReleaseSetting.tags.key],
+                        match=Match(row[ReleaseSetting.match.key]),
+                    )))
             for repo in repos:
-                if repo not in settings:
-                    settings[repo] = ReleaseMatchSetting(
-                        branches=default_branch_alias,
-                        tags=".*",
-                        match=Match.tag_or_branch,
-                    )
+                if repo not in loaded:
+                    settings.append((
+                        repo,
+                        ReleaseMatchSetting(
+                            branches=default_branch_alias,
+                            tags=".*",
+                            match=Match.tag_or_branch,
+                        )))
+            settings.sort()
+            settings = dict(settings)
         return settings
 
     async def set_release_matches(self,
