@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 import logging
 import textwrap
-from typing import Optional, Sequence, Union
+from typing import Collection, Iterable, Mapping, Optional, Sequence, Union
 
 import pandas as pd
+from sqlalchemy import Column, DateTime
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
@@ -47,39 +48,63 @@ async def read_sql_query(sql: ClauseElement,
         logging.getLogger("%s.read_sql_query" % metadata.__package__).error(
             "%s: %s; %s", type(e).__name__, e, textwrap.shorten(str(sql), 1000))
         raise e from None
+    return wrap_sql_query(data, columns, index)
+
+
+def wrap_sql_query(data: Iterable[Mapping],
+                   columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
+                                  MetadataBase, StateBase],
+                   index: Optional[Union[str, Sequence[str]]] = None,
+                   ) -> pd.DataFrame:
+    """Turn the fetched DB records to a pandas DataFrame."""
     try:
         probe = columns[0]
     except TypeError:
+        dt_columns = _extract_datetime_columns(columns.__table__.columns)
         columns = [c.name for c in columns.__table__.columns]
     else:
         if not isinstance(probe, str):
+            dt_columns = _extract_datetime_columns(columns)
             columns = [c.key for c in columns]
+        else:
+            dt_columns = None
     frame = pd.DataFrame.from_records((r.values() for r in data),
                                       columns=columns, coerce_float=True)
     if index is not None:
         frame.set_index(index, inplace=True)
-    return postprocess_datetime(frame)
+    return postprocess_datetime(frame, columns=dt_columns)
 
 
-def postprocess_datetime(frame: pd.DataFrame) -> pd.DataFrame:
+def _extract_datetime_columns(columns: Iterable[Column]) -> Collection[str]:
+    return [c.name for c in columns if isinstance(c.type, DateTime)
+            or (isinstance(c.type, type) and issubclass(c.type, DateTime))]
+
+
+def postprocess_datetime(frame: pd.DataFrame,
+                         columns: Optional[Iterable[str]] = None) -> pd.DataFrame:
     """Ensure *inplace* that all the timestamps inside the dataframe are valid UTC or NaT.
 
     :return: Fixed dataframe - the same instance as `frame`.
     """
     utc_dt1 = datetime(1, 1, 1, tzinfo=timezone.utc)
     dt1 = datetime(1, 1, 1)
-    for col in frame.select_dtypes(include=[object]):
+    if columns is not None:
+        obj_cols = dt_cols = columns
+    else:
+        obj_cols = frame.select_dtypes(include=[object])
+        dt_cols = frame.select_dtypes(include=["datetime"])
+    for col in obj_cols:
         fc = frame[col]
         if utc_dt1 in fc:
             fc.replace(utc_dt1, pd.NaT, inplace=True)
         if dt1 in fc:
             fc.replace(dt1, pd.NaT, inplace=True)
-    for col in frame.select_dtypes(include=["datetime"]):
+    for col in dt_cols:
         fc = frame[col]
         if 0 in fc:
             fc.replace(0, pd.NaT, inplace=True)
         try:
             frame[col] = fc.dt.tz_localize(timezone.utc)
-        except TypeError:
+        except (AttributeError, TypeError):
             continue
     return frame
