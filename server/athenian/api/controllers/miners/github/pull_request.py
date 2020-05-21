@@ -59,14 +59,14 @@ class MinedPullRequest:
         releaser = self.release[Release.author.key]
         participants = {
             ParticipationKind.AUTHOR: {prefix + author} if author else set(),
-            ParticipationKind.REVIEWER: {
-                (prefix + u) for u in self.reviews[PullRequestReview.user_login.key] if u},
-            ParticipationKind.COMMENTER: {
-                (prefix + u) for u in self.comments[PullRequestComment.user_login.key] if u},
-            ParticipationKind.COMMIT_COMMITTER: {
-                (prefix + u) for u in self.commits[PullRequestCommit.committer_login.key] if u},
-            ParticipationKind.COMMIT_AUTHOR: {
-                (prefix + u) for u in self.commits[PullRequestCommit.author_login.key] if u},
+            ParticipationKind.REVIEWER: self._extract_people(
+                self.reviews, PullRequestReview.user_login.key, prefix),
+            ParticipationKind.COMMENTER: self._extract_people(
+                self.comments, PullRequestComment.user_login.key, prefix),
+            ParticipationKind.COMMIT_COMMITTER: self._extract_people(
+                self.commits, PullRequestCommit.committer_login.key, prefix),
+            ParticipationKind.COMMIT_AUTHOR: self._extract_people(
+                self.commits, PullRequestCommit.author_login.key, prefix),
             ParticipationKind.MERGER: {prefix + merger} if merger else set(),
             ParticipationKind.RELEASER: {prefix + releaser} if releaser else set(),
         }
@@ -75,6 +75,10 @@ class MinedPullRequest:
         except (KeyError, TypeError):
             pass
         return participants
+
+    @staticmethod
+    def _extract_people(df: pd.DataFrame, col: str, prefix: str) -> Set[str]:
+        return set(prefix + df[col].values[np.where(df[col].values)[0]])
 
 
 class PullRequestMiner:
