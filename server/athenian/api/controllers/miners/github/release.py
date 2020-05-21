@@ -146,6 +146,7 @@ async def _match_releases_by_tag(repos: Iterable[str],
             regexp = regexp_cache[regexp] = re.compile(regexp)
         tags_matched = repo_releases.index[repo_releases.index.str.match(regexp)]
         matched.append([(repo, tag) for tag in tags_matched])
+    # this shows up in the profile but I cannot make it faster
     releases = releases.loc[list(chain.from_iterable(matched))]
     releases.reset_index(inplace=True)
     releases[matched_by_column] = Match.tag.value

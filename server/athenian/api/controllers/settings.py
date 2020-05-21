@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import IntEnum
+from functools import lru_cache
 import re
 from typing import Collection, Dict, List, Optional, Set
 
@@ -7,6 +8,7 @@ import aiomcache
 import databases
 import slack
 from sqlalchemy import and_, delete, insert, select
+from sqlalchemy.sql import Select
 
 from athenian.api import ResponseError
 from athenian.api.controllers.account import get_user_account_status
@@ -80,6 +82,12 @@ class Settings:
             account=account, user_id=request.uid, native_user_id=request.native_uid,
             sdb=request.sdb, mdb=request.mdb, cache=request.cache, slack=request.app["slack"])
 
+    @staticmethod
+    @lru_cache(1024)
+    def _cached_release_settings_sql(account: int, repos: Collection[str]) -> Select:
+        return select([ReleaseSetting]).where(and_(ReleaseSetting.account_id == account,
+                                                   ReleaseSetting.repository.in_(repos)))
+
     async def list_release_matches(self, repos: Optional[Collection[str]] = None,
                                    ) -> Dict[str, ReleaseMatchSetting]:
         """List the current release matching settings for all related repositories."""
@@ -90,9 +98,8 @@ class Settings:
                 for cls in access_classes.values():
                     repos.update((await cls(self._account, conn, self._mdb, self._cache).load())
                                  .installed_repos())
-            rows = await conn.fetch_all(
-                select([ReleaseSetting]).where(and_(ReleaseSetting.account_id == self._account,
-                                                    ReleaseSetting.repository.in_(repos))))
+            repos = frozenset(repos)
+            rows = await conn.fetch_all(self._cached_release_settings_sql(self._account, repos))
             settings = []
             loaded = set()
             for row in rows:
