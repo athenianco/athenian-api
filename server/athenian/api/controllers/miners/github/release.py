@@ -4,7 +4,7 @@ from itertools import chain, groupby
 import marshal
 import pickle
 import re
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import aiosqlite
@@ -15,7 +15,7 @@ import pandas as pd
 from sqlalchemy import and_, desc, distinct, func, select
 from sqlalchemy.cprocessors import str_to_datetime
 
-from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
+from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query, wrap_sql_query
 from athenian.api.cache import cached, gen_cache_key, max_exptime
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.release_accelerated import update_history
@@ -596,16 +596,14 @@ async def _find_old_released_prs(releases: pd.DataFrame,
                                  time_boundary: datetime,
                                  db: DatabaseLike,
                                  cache: Optional[aiomcache.Client],
-                                 ) -> pd.DataFrame:
+                                 ) -> Iterable[Mapping]:
     observed_commits, _, _ = await _extract_released_commits(releases, time_boundary, db, cache)
     repo = releases.iloc[0][Release.repository_full_name.key] if not releases.empty else ""
-    return await read_sql_query(
-        select([PullRequest])
-        .where(and_(PullRequest.merged_at < time_boundary,
-                    PullRequest.repository_full_name == repo,
-                    PullRequest.merge_commit_sha.in_(observed_commits),
-                    PullRequest.hidden.is_(False))),
-        db, PullRequest, index=PullRequest.node_id.key)
+    return await db.fetch_all(select([PullRequest])
+                              .where(and_(PullRequest.merged_at < time_boundary,
+                                          PullRequest.repository_full_name == repo,
+                                          PullRequest.merge_commit_sha.in_(observed_commits),
+                                          PullRequest.hidden.is_(False))))
 
 
 async def _extract_released_commits(releases: pd.DataFrame,
@@ -698,7 +696,7 @@ async def map_releases_to_prs(repos: Iterable[str],
         for pr in prs:
             if isinstance(pr, Exception):
                 raise pr
-        return pd.concat(prs, sort=False)
+        return wrap_sql_query(chain.from_iterable(prs), PullRequest, index=PullRequest.node_id.key)
     return pd.DataFrame()
 
 
