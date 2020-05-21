@@ -35,7 +35,7 @@ def gen_cache_key(fmt: str, *args) -> bytes:
 def cached(exptime: Union[int, Callable[..., int]],
            serialize: Callable[[Any], ByteString],
            deserialize: Callable[[ByteString], Any],
-           key: Callable[..., Tuple],
+           key: Callable[..., Optional[Tuple]],
            cache: Optional[Callable[..., Optional[aiomcache.Client]]] = None,
            refresh_on_access=False,
            postprocess: Optional[Callable[..., Any]] = None,
@@ -49,7 +49,8 @@ def cached(exptime: Union[int, Callable[..., int]],
                     call result as "result".
     :param serialize: Call result serializer.
     :param deserialize: Cached binary deserializer to the result type.
-    :param key: Cache key selector. The decorated function's arguments are converted to **kwargs.
+    :param key: Cache key selector. The decorated function's arguments are converted to **kwargs. \
+                If it returns None then the cache is not used.
     :param cache: Cache client extractor. The decorated function's arguments are converted to \
                   **kwargs. If is None, the client is assigned to the function's "cache" argument.
     :param refresh_on_access: Reset the cache item's expiration period on each access.
@@ -80,8 +81,10 @@ def cached(exptime: Union[int, Callable[..., int]],
         signature = inspect.signature(func)
         full_name = func.__module__ + "." + func.__qualname__
 
-        def _gen_cache_key(args_dict: dict) -> bytes:
+        def _gen_cache_key(args_dict: dict) -> Optional[bytes]:
             props = key(**args_dict)
+            if props is None:
+                return None
             assert isinstance(props, tuple), "key() must return a tuple in %s" % full_name
             return gen_cache_key(
                 full_name + "|" + str(version) + "|" + "|".join(str(p) for p in props))
@@ -94,10 +97,14 @@ def cached(exptime: Union[int, Callable[..., int]],
             cache_key = None
             if client is not None:
                 cache_key = _gen_cache_key(args_dict)
-                try:
-                    buffer = await client.get(cache_key)
-                except aiomcache.exceptions.ClientException:
-                    log.exception("Failed to fetch cached %s/%s", full_name, cache_key.decode())
+                if cache_key is not None:
+                    try:
+                        buffer = await client.get(cache_key)
+                    except aiomcache.exceptions.ClientException:
+                        log.exception("Failed to fetch cached %s/%s",
+                                      full_name, cache_key.decode())
+                        buffer = None
+                else:
                     buffer = None
                 if buffer is not None:
                     try:
@@ -129,7 +136,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                             client.metrics["context"]["hits"].get()[full_name] += 1
                             return result
             result = await func(*args, **kwargs)
-            if client is not None:
+            if cache_key is not None:
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
                 try:
                     payload = serialize(result)

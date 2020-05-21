@@ -1,5 +1,4 @@
 import asyncio
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain, groupby
 import marshal
@@ -14,6 +13,7 @@ import databases
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, desc, distinct, func, select
+from sqlalchemy.cprocessors import str_to_datetime
 
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
 from athenian.api.cache import cached, gen_cache_key, max_exptime
@@ -179,64 +179,100 @@ async def _match_releases_by_branch(repos: Iterable[str],
     if not branches_matched:
         return pd.DataFrame()
     branches_matched = pd.concat(branches_matched)
-    merge_points_by_repo = defaultdict(set)
 
-    async def update_merge_points_by_repo(repo, commit_id, branch_name):
-        mp = merge_points_by_repo[repo]
-        async with db.connection() as conn:
-            mp.update(await _fetch_first_parents(commit_id, conn, cache))
-            rows = await conn.fetch_all(select([PullRequest.merge_commit_id]).where(and_(
-                PullRequest.repository_full_name == repo,
-                PullRequest.base_ref == branch_name,
-                PullRequest.merged_at.between(time_from, time_to),
-            )))
-            mp.update(r[0] for r in rows)
-
-    update_tasks = []
-    for repo, commit_id, branch_name in zip(
+    mp_tasks = [
+        _fetch_merge_points(repo, commit_id, branch_name, time_from, time_to, db, cache)
+        for repo, commit_id, branch_name in zip(
             branches_matched[Branch.repository_full_name.key].values,
             branches_matched[Branch.commit_id.key].values,
             branches_matched[Branch.branch_name.key].values,
-    ):
-        update_tasks.append(update_merge_points_by_repo(repo, commit_id, branch_name))
-    errors = await asyncio.gather(*update_tasks, return_exceptions=True)
-    for e in errors:
-        if e is not None:
-            raise e
-    pseudo_releases = []
-
-    async def fetch_merge_commits(repo, merge_points):
-        commits = await read_sql_query(
-            select([PushCommit]).where(and_(
-                PushCommit.node_id.in_(merge_points),
-                PushCommit.committed_date.between(time_from, time_to)))
-            .order_by(desc(PushCommit.commit_date)),
-            db, PushCommit)
-        gh_merge = ((commits[PushCommit.committer_name.key] == "GitHub")
-                    & (commits[PushCommit.committer_email.key] == "noreply@github.com"))
-        commits[PushCommit.author_login.key].where(
-            gh_merge, commits.loc[~gh_merge, PushCommit.committer_login.key], inplace=True)
-        pseudo_releases.append(pd.DataFrame({
-            Release.author.key: commits[PushCommit.author_login.key],
-            Release.commit_id.key: commits[PushCommit.node_id.key],
-            Release.id.key: commits[PushCommit.node_id.key] + "_" + repo,
-            Release.name.key: commits[PushCommit.sha.key],
-            Release.published_at.key: commits[PushCommit.committed_date.key],
-            Release.repository_full_name.key: repo,
-            Release.sha.key: commits[PushCommit.sha.key],
-            Release.tag.key: None,
-            Release.url.key: commits[PushCommit.url.key],
-            matched_by_column: [Match.branch.value] * len(commits),
-        }))
-    errors = await asyncio.gather(
-        *(fetch_merge_commits(*rm) for rm in merge_points_by_repo.items()), return_exceptions=True)
-    for e in errors:
-        if e is not None:
-            raise e from None
+        )
+    ]
+    merge_points = await asyncio.gather(*mp_tasks, return_exceptions=True)
+    merge_points_by_repo = {}
+    for repo, mp in zip(branches_matched[Branch.repository_full_name.key].values, merge_points):
+        if isinstance(mp, Exception):
+            raise mp from None
+        try:
+            merge_points_by_repo[repo].update(mp)
+        except KeyError:
+            merge_points_by_repo[repo] = mp
+    pseudo_releases = await asyncio.gather(
+        *(_fetch_merge_commit_releases(*rm, db, cache) for rm in merge_points_by_repo.items()),
+        return_exceptions=True)
+    for r in pseudo_releases:
+        if isinstance(r, Exception):
+            raise r from None
     if not pseudo_releases:
         return pd.DataFrame(
             columns=[c.name for c in Release.__table__.columns] + [matched_by_column])
     return pd.concat(pseudo_releases)
+
+
+@cached(
+    exptime=24 * 60 * 60,  # 1 day
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda repo, commit_id, branch_name, time_from, time_to, **_: (
+        repo, commit_id, branch_name, time_from.timestamp(), time_to.timestamp(),
+    ) if time_to <= datetime.combine(
+        datetime.now(timezone.utc).date(), datetime.min.time(), tzinfo=timezone.utc,
+    ) else None,
+    refresh_on_access=True,
+)
+async def _fetch_merge_points(repo: str,
+                              commit_id: str,
+                              branch_name: str,
+                              time_from: datetime,
+                              time_to: datetime,
+                              db: databases.Database,
+                              cache: Optional[aiomcache.Client],
+                              ) -> Set[str]:
+    async with db.connection() as conn:
+        first_parents = await _fetch_first_parents(commit_id, conn, cache)
+        # we filter afterwards to increase the cache efficiency
+        mp = {h for h, cdt in first_parents if time_from <= cdt < time_to}
+        rows = await conn.fetch_all(select([PullRequest.merge_commit_id]).where(and_(
+            PullRequest.repository_full_name == repo,
+            PullRequest.base_ref == branch_name,
+            PullRequest.merged_at.between(time_from, time_to),
+            PullRequest.merge_commit_id.isnot(None),
+        )))
+        mp.update(r[0] for r in rows)
+        return mp
+
+
+@cached(
+    exptime=24 * 60 * 60,  # 1 day
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda repo, merge_points, **_: (repo, ",".join(sorted(merge_points))),
+    refresh_on_access=True,
+)
+async def _fetch_merge_commit_releases(repo: str,
+                                       merge_points: Set[str],
+                                       db: databases.Database,
+                                       cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+    commits = await read_sql_query(
+        select([PushCommit]).where(PushCommit.node_id.in_(merge_points))
+        .order_by(desc(PushCommit.commit_date)),
+        db, PushCommit)
+    gh_merge = ((commits[PushCommit.committer_name.key] == "GitHub")
+                & (commits[PushCommit.committer_email.key] == "noreply@github.com"))
+    commits[PushCommit.author_login.key].where(
+        gh_merge, commits.loc[~gh_merge, PushCommit.committer_login.key], inplace=True)
+    return pd.DataFrame({
+        Release.author.key: commits[PushCommit.author_login.key],
+        Release.commit_id.key: commits[PushCommit.node_id.key],
+        Release.id.key: commits[PushCommit.node_id.key] + "_" + repo,
+        Release.name.key: commits[PushCommit.sha.key],
+        Release.published_at.key: commits[PushCommit.committed_date.key],
+        Release.repository_full_name.key: repo,
+        Release.sha.key: commits[PushCommit.sha.key],
+        Release.tag.key: None,
+        Release.url.key: commits[PushCommit.url.key],
+        matched_by_column: [Match.branch.value] * len(commits),
+    })
 
 
 async def map_prs_to_releases(prs: pd.DataFrame,
@@ -429,15 +465,16 @@ async def _cache_pr_releases(releases: pd.DataFrame,
 
 @cached(
     exptime=24 * 60 * 60,  # 1 day
-    serialize=marshal.dumps,
-    deserialize=marshal.loads,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
     key=lambda commit_id, **_: (commit_id,),
+    version=2,
     refresh_on_access=True,
 )
 async def _fetch_first_parents(commit_id: str,
                                conn: databases.core.Connection,
                                cache: Optional[aiomcache.Client],
-                               ) -> List[str]:
+                               ) -> List[Tuple[str, datetime]]:
     # Git parent-child is reversed github_node_commit_parents' parent-child.
     assert isinstance(conn, databases.core.Connection)
     quote = "`" if isinstance(conn.raw_connection, aiosqlite.core.Connection) else ""
@@ -445,7 +482,8 @@ async def _fetch_first_parents(commit_id: str,
         WITH RECURSIVE commit_first_parents AS (
             SELECT
                 p.child_id AS parent,
-                cc.id AS parent_id
+                cc.id AS parent_id,
+                cc.committed_date as committed_date
             FROM
                 github_node_commit_parents p
                     LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
@@ -455,7 +493,8 @@ async def _fetch_first_parents(commit_id: str,
             UNION
                 SELECT
                     p.child_id AS parent,
-                    cc.id AS parent_id
+                    cc.id AS parent_id,
+                    cc.committed_date as committed_date
                 FROM
                     github_node_commit_parents p
                         INNER JOIN commit_first_parents h ON h.parent = p.parent_id
@@ -463,10 +502,27 @@ async def _fetch_first_parents(commit_id: str,
                         LEFT JOIN github_node_commit cc ON p.child_id = cc.id
                 WHERE p.{quote}index{quote} = 0
         ) SELECT
-            parent_id
+            parent_id,
+            committed_date
         FROM
-            commit_first_parents;"""
-    first_parents = [commit_id] + [r["parent_id"] for r in await conn.fetch_all(query)]
+            commit_first_parents
+        UNION
+            SELECT
+                id as parent_id,
+                committed_date
+            FROM
+                github_node_commit
+            WHERE
+                id = '{commit_id}';"""
+    utc = timezone.utc
+    # we must use string key lookups here because integers do not work with Postgres
+    first_parents = []
+    for r in await conn.fetch_all(query):
+        cid = r["parent_id"]
+        cdt = r["committed_date"]
+        if isinstance(cdt, str):  # sqlite
+            cdt = str_to_datetime(cdt).replace(tzinfo=utc)
+        first_parents.append((cid, cdt))
     return first_parents
 
 
