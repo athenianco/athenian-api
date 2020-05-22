@@ -713,8 +713,8 @@ async def test_filter_releases_by_tag(client, headers):
         assert release.repository.startswith("github.com/"), str(release)
 
 
-async def test_filter_releases_by_branch(client, headers, cache, app):
-    app._cache = cache
+async def test_filter_releases_by_branch(client, headers, client_cache, app):
+    app._cache = client_cache
     body = {
         "account": 1,
         "date_from": "2015-01-01",

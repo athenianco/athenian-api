@@ -25,7 +25,7 @@ async def test_cors(client, headers):
     assert response.headers["Access-Control-Allow-Credentials"] == "true"
 
 
-async def test_cors_cache(client, headers, cache):
+async def test_cors_cache(client, headers, client_cache):
     response = await client.request(
         method="GET", path="/v1/reposet/1", headers=headers, json={},
     )

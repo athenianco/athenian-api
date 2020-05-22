@@ -1,15 +1,17 @@
 from datetime import datetime
+from itertools import chain
 import pickle
-from typing import Collection, Dict, Iterable, Optional
+from typing import Any, Collection, Dict, Iterable, Optional
 
 import aiomcache
 import databases
-from sqlalchemy import and_, insert, select
+from sqlalchemy import and_, insert, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.pull_request import MinedPullRequest, PullRequestTimes
 from athenian.api.controllers.miners.github.release import matched_by_column
+from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind
 from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest
@@ -29,19 +31,39 @@ async def load_precomputed_done_times(date_from: datetime,
     assert isinstance(date_from, datetime)
     assert isinstance(date_to, datetime)
     postgres = pdb.url.dialect in ("postgres", "postgresql")
-    selected = [GitHubPullRequestTimes.pr_node_id,
-                GitHubPullRequestTimes.repository_full_name,
-                GitHubPullRequestTimes.release_match,
-                GitHubPullRequestTimes.data]
-    filters = [GitHubPullRequestTimes.format_version == 1,
-               GitHubPullRequestTimes.repository_full_name.in_(repos),
-               GitHubPullRequestTimes.pr_created_at < date_to,
-               GitHubPullRequestTimes.pr_done_at >= date_from]
+    ghprt = GitHubPullRequestTimes
+    selected = [ghprt.pr_node_id,
+                ghprt.repository_full_name,
+                ghprt.release_match,
+                ghprt.data]
+    filters = [
+        ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
+        ghprt.repository_full_name.in_(repos),
+        ghprt.pr_created_at < date_to,
+        ghprt.pr_done_at >= date_from,
+    ]
     if len(developers) > 0:
         if postgres:
-            filters.append(GitHubPullRequestTimes.developers.has_any(developers))
+            developer_filters = [
+                ghprt.author.in_(developers),
+                ghprt.merger.in_(developers),
+                ghprt.releaser.in_(developers),
+                ghprt.commenters.has_any(developers),
+                ghprt.reviewers.has_any(developers),
+                ghprt.commit_authors.has_any(developers),
+                ghprt.commit_committers.has_any(developers),
+            ]
+            # do not send the same array 3 times
+            for f in developer_filters[1:3]:
+                f.right = developer_filters[0].right
+            # do not send the same array 4 times
+            for f in developer_filters[4:]:
+                f.right = developer_filters[3].right
+            filters.append(or_(*developer_filters))
         else:
-            selected.append(GitHubPullRequestTimes.developers)
+            selected.extend([
+                ghprt.author, ghprt.merger, ghprt.releaser, ghprt.reviewers, ghprt.commenters,
+                ghprt.commit_authors, ghprt.commit_committers])
             developers = set(developers)
     rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
@@ -72,7 +94,8 @@ async def load_precomputed_done_times(date_from: datetime,
             if target != match_by:
                 continue
         if not postgres and len(developers) > 0:
-            if not set(row[4]).intersection(developers):
+            pr_parts = set(chain([row[4], row[5], row[6]], row[7], row[8], row[9], row[10]))
+            if not pr_parts.intersection(developers):
                 continue
         dump[node_id] = pickle.loads(data)
     result.update(ambiguous[Match.tag.name])
@@ -115,19 +138,20 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
                 raise AssertionError("Unhandled release match strategy: " + match.name)
         else:
             release_match = "rejected"
-        participants = {}
-        for kind, people in sorted(pr.participants(with_prefix=False).items()):
-            for p in people:
-                participants.setdefault(p, []).append(str(kind.value))
-        # so that we can query a substring by role
-        participants = {k: ",%s," % ",".join(v) for k, v in participants.items()}
+        participants = pr.participants(with_prefix=False)
         inserted.append(GitHubPullRequestTimes(
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,
             repository_full_name=repo,
             pr_created_at=times.created.best,
             pr_done_at=done_at,
-            developers=participants,
+            author=_flatten_set(participants[ParticipationKind.AUTHOR]),
+            merger=_flatten_set(participants[ParticipationKind.MERGER]),
+            releaser=_flatten_set(participants[ParticipationKind.RELEASER]),
+            commenters={k: "" for k in participants[ParticipationKind.COMMENTER]},
+            reviewers={k: "" for k in participants[ParticipationKind.REVIEWER]},
+            commit_authors={k: "" for k in participants[ParticipationKind.COMMIT_AUTHOR]},
+            commit_committers={k: "" for k in participants[ParticipationKind.COMMIT_COMMITTER]},
             data=pickle.dumps(times),
         ).create_defaults().explode(with_primary_keys=True))
     if pdb.url.dialect in ("postgres", "postgresql"):
@@ -137,3 +161,10 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
     else:
         raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
     await pdb.execute_many(sql, inserted)
+
+
+def _flatten_set(s: set) -> Optional[Any]:
+    if not s:
+        return None
+    assert len(s) == 1
+    return next(iter(s))

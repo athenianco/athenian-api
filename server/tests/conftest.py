@@ -92,7 +92,16 @@ class FakeCache:
 
 
 @pytest.fixture(scope="function")
-def cache(loop, app):
+def cache(loop, xapp):
+    fc = FakeCache()
+    setup_cache_metrics(fc, xapp.app, CollectorRegistry(auto_describe=True))
+    for v in fc.metrics["context"].values():
+        v.set(defaultdict(int))
+    return fc
+
+
+@pytest.fixture(scope="function")
+def client_cache(loop, app):
     fc = FakeCache()
     setup_cache_metrics(fc, app.app, CollectorRegistry(auto_describe=True))
     for v in fc.metrics["context"].values():

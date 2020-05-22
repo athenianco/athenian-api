@@ -7,20 +7,20 @@ from tests.conftest import has_memcached
 
 
 @pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
-async def test_get_contributors_as_admin(client, cached, headers, app, cache):
-    await _test_get_contributors(client, cached, headers, app, cache)
+async def test_get_contributors_as_admin(client, cached, headers, app, client_cache):
+    await _test_get_contributors(client, cached, headers, app, client_cache)
 
 
 @pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
-async def test_get_contributors_as_non_admin(client, cached, headers, app, cache, eiso):
-    await _test_get_contributors(client, cached, headers, app, cache)
+async def test_get_contributors_as_non_admin(client, cached, headers, app, client_cache, eiso):
+    await _test_get_contributors(client, cached, headers, app, client_cache)
 
 
-async def _test_get_contributors(client, cached, headers, app, cache):
+async def _test_get_contributors(client, cached, headers, app, client_cache):
     if cached:
         if not has_memcached:
             raise pytest.skip("no memcached")
-        app._cache = cache
+        app._cache = client_cache
 
     response = await client.request(
         method="GET", path="/v1/contributors/1", headers=headers,
