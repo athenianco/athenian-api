@@ -18,6 +18,7 @@ class FilterPullRequestsRequest(Model):
         in_: Optional[List[str]] = None,
         properties: Optional[List[str]] = None,
         with_: Optional[PullRequestWith] = None,
+        exclude_inactive: Optional[bool] = None,
     ):
         """FilterPullRequestsRequest - a model defined in OpenAPI
 
@@ -28,6 +29,7 @@ class FilterPullRequestsRequest(Model):
         :param in_: The in_ of this FilterPullRequestsRequest.
         :param properties: The properties of this FilterPullRequestsRequest.
         :param with_: The with_ of this FilterPullRequestsRequest.
+        :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
         """
         self.openapi_types = {
             "account": int,
@@ -37,6 +39,7 @@ class FilterPullRequestsRequest(Model):
             "in_": List[str],
             "properties": List[str],
             "with_": PullRequestWith,
+            "exclude_inactive": bool,
         }
 
         self.attribute_map = {
@@ -47,6 +50,7 @@ class FilterPullRequestsRequest(Model):
             "in_": "in",
             "properties": "properties",
             "with_": "with",
+            "exclude_inactive": "exclude_inactive",
         }
 
         self._account = account
@@ -56,6 +60,7 @@ class FilterPullRequestsRequest(Model):
         self._in_ = in_
         self._properties = properties
         self._with_ = with_
+        self._exclude_inactive = exclude_inactive
 
     @property
     def account(self) -> int:
@@ -200,3 +205,23 @@ class FilterPullRequestsRequest(Model):
         :param with_: The with_ of this FilterPullRequestsRequest.
         """
         self._with_ = with_
+
+    @property
+    def exclude_inactive(self) -> bool:
+        """Gets the exclude_inactive of this FilterPullRequestsRequest.
+
+        Value indicating whether PRs without events in the given time frame shall be ignored.
+
+        :return: The exclude_inactive of this FilterPullRequestsRequest.
+        """
+        return self._exclude_inactive
+
+    @exclude_inactive.setter
+    def exclude_inactive(self, exclude_inactive: bool):
+        """Sets the exclude_inactive of this FilterPullRequestsRequest.
+
+        Value indicating whether PRs without events in the given time frame shall be ignored.
+
+        :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
+        """
+        self._exclude_inactive = exclude_inactive
