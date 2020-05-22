@@ -1840,6 +1840,10 @@ components:
           items:
             $ref: '#/components/schemas/Granularity'
           type: array
+        exclude_inactive:
+          description: Value indicating whether PRs without events in the given time
+            frame shall be ignored.
+          type: boolean
         account:
           description: Session account ID.
           type: integer
@@ -2010,6 +2014,9 @@ components:
           items:
             $ref: '#/components/schemas/Granularity'
           type: array
+        exclude_inactive:
+          description: Repeats `PullRequestMetricsRequest.exclude_inactive`.
+          type: boolean
       required:
       - calculated
       - date_from
@@ -2159,6 +2166,10 @@ components:
           type: array
         with:
           $ref: '#/components/schemas/PullRequestWith'
+        exclude_inactive:
+          description: Value indicating whether PRs without events in the given time
+            frame shall be ignored.
+          type: boolean
       required:
       - account
       - date_from

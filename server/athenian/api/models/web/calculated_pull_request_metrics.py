@@ -19,6 +19,7 @@ class CalculatedPullRequestMetrics(Model):
         date_to: Optional[date] = None,
         timezone: Optional[int] = None,
         granularities: Optional[List[str]] = None,
+        exclude_inactive: Optional[bool] = None,
     ):
         """CalculatedPullRequestMetrics - a model defined in OpenAPI
 
@@ -27,6 +28,7 @@ class CalculatedPullRequestMetrics(Model):
         :param date_from: The date_from of this CalculatedPullRequestMetrics.
         :param date_to: The date_to of this CalculatedPullRequestMetrics.
         :param granularities: The granularities of this CalculatedPullRequestMetrics.
+        :param exclude_inactive: The exclude_inactive of this CalculatedPullRequestMetrics.
         """
         self.openapi_types = {
             "calculated": List[CalculatedPullRequestMetricsItem],
@@ -35,6 +37,7 @@ class CalculatedPullRequestMetrics(Model):
             "date_to": date,
             "timezone": int,
             "granularities": List[str],
+            "exclude_inactive": bool,
         }
 
         self.attribute_map = {
@@ -44,6 +47,7 @@ class CalculatedPullRequestMetrics(Model):
             "date_to": "date_to",
             "timezone": "timezone",
             "granularities": "granularities",
+            "exclude_inactive": "exclude_inactive",
         }
 
         self._calculated = calculated
@@ -52,6 +56,7 @@ class CalculatedPullRequestMetrics(Model):
         self._date_to = date_to
         self._timezone = timezone
         self._granularities = granularities
+        self._exclude_inactive = exclude_inactive
 
     @property
     def calculated(self) -> List[CalculatedPullRequestMetricsItem]:
@@ -192,3 +197,23 @@ class CalculatedPullRequestMetrics(Model):
                     (i, g, Granularity.format.pattern))
 
         self._granularities = granularities
+
+    @property
+    def exclude_inactive(self) -> bool:
+        """Gets the exclude_inactive of this CalculatedPullRequestMetrics.
+
+        Repeats `PullRequestMetricsRequest.exclude_inactive`.
+
+        :return: The exclude_inactive of this CalculatedPullRequestMetrics.
+        """
+        return self._exclude_inactive
+
+    @exclude_inactive.setter
+    def exclude_inactive(self, exclude_inactive: bool):
+        """Sets the exclude_inactive of this CalculatedPullRequestMetrics.
+
+        Repeats `PullRequestMetricsRequest.exclude_inactive`.
+
+        :param exclude_inactive: The exclude_inactive of this CalculatedPullRequestMetrics.
+        """
+        self._exclude_inactive = exclude_inactive

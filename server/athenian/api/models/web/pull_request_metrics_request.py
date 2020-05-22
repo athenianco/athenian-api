@@ -19,6 +19,7 @@ class PullRequestMetricsRequest(Model):
         timezone: Optional[int] = None,
         granularities: Optional[List[str]] = None,
         account: Optional[int] = None,
+        exclude_inactive: Optional[bool] = None,
     ):
         """PullRequestMetricsRequest - a model defined in OpenAPI
 
@@ -29,6 +30,7 @@ class PullRequestMetricsRequest(Model):
         :param timezone: The timezone of this PullRequestMetricsRequest.
         :param granularities: The granularities of this PullRequestMetricsRequest.
         :param account: The account of this PullRequestMetricsRequest.
+        :param exclude_inactive: The exclude_inactive of this PullRequestMetricsRequest.
         """
         self.openapi_types = {
             "for_": List[ForSet],
@@ -38,6 +40,7 @@ class PullRequestMetricsRequest(Model):
             "timezone": int,
             "granularities": List[str],
             "account": int,
+            "exclude_inactive": bool,
         }
 
         self.attribute_map = {
@@ -48,6 +51,7 @@ class PullRequestMetricsRequest(Model):
             "timezone": "timezone",
             "granularities": "granularities",
             "account": "account",
+            "exclude_inactive": "exclude_inactive",
         }
 
         self._for_ = for_
@@ -57,6 +61,7 @@ class PullRequestMetricsRequest(Model):
         self._timezone = timezone
         self._granularities = granularities
         self._account = account
+        self._exclude_inactive = exclude_inactive
 
     @property
     def for_(self) -> List[ForSet]:
@@ -216,3 +221,23 @@ class PullRequestMetricsRequest(Model):
             raise ValueError("Invalid value for `account`, must not be `None`")
 
         self._account = account
+
+    @property
+    def exclude_inactive(self) -> bool:
+        """Gets the exclude_inactive of this PullRequestMetricsRequest.
+
+        Value indicating whether PRs without events in the given time frame shall be ignored.
+
+        :return: The exclude_inactive of this PullRequestMetricsRequest.
+        """
+        return self._exclude_inactive
+
+    @exclude_inactive.setter
+    def exclude_inactive(self, exclude_inactive: bool):
+        """Sets the exclude_inactive of this PullRequestMetricsRequest.
+
+        Value indicating whether PRs without events in the given time frame shall be ignored.
+
+        :param exclude_inactive: The exclude_inactive of this PullRequestMetricsRequest.
+        """
+        self._exclude_inactive = exclude_inactive
