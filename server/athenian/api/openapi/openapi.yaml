@@ -1767,14 +1767,17 @@ components:
         repositories:
         - github.com/athenianco/athenian-webapp
         - github.com/athenianco/athenian-api
-        developers:
-        - github.com/vmarkovtsev
-        - github.com/dpordomingo
+        with:
+          author:
+          - github.com/vmarkovtsev
+          - github.com/dpordomingo
       properties:
         repositories:
           $ref: '#/components/schemas/RepositorySet'
         developers:
           $ref: '#/components/schemas/DeveloperSet'
+        with:
+          $ref: '#/components/schemas/PullRequestWith'
       required:
       - repositories
       type: object
@@ -2380,8 +2383,7 @@ components:
             $ref: '#/components/schemas/PullRequestProperty'
           type: array
         participants:
-          description: List of developers related to this PR, always including the
-            author.
+          description: List of developers related to this PR.
           items:
             $ref: '#/components/schemas/PullRequestParticipant'
           type: array
