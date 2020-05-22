@@ -316,8 +316,8 @@ def test_encode_decode():
         assert salt_back == salt
 
 
-async def test_progress_200(client, headers, app, cache):
-    app._cache = cache
+async def test_progress_200(client, headers, app, client_cache):
+    app._cache = client_cache
     true_body = {
         "started_date": "2020-03-10T09:53:41Z", "finished_date": "2020-03-10T14:46:29Z",
         "owner": "vmarkovtsev", "repositories": 19,

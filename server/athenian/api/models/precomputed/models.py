@@ -17,7 +17,7 @@ class GitHubPullRequestTimes(Base):
         * `release_match`: the description of the release match strategy applied to this PR. \
                            Note that `pr_done_at` depends on that.
         * `pr_done_at`: PR closure timestamp if it is not merged or PR release timestamp if it is.
-        * `developers` set of developers in HSTORE so we can efficiently check the intersection.
+        * `HSTORE` a set of developers with which we can efficiently check an intersection.
         * `data`: pickle-d PullRequestTimes (may change in the future).
         * `format_version`: version of the `data` format. When the "future" happens, we will \
                             bump it.
@@ -30,9 +30,15 @@ class GitHubPullRequestTimes(Base):
     repository_full_name = Column(String(64 + 1 + 100), nullable=False)
     pr_created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     pr_done_at = Column(TIMESTAMP(timezone=True))
-    developers = Column(HSTORE(), nullable=False)
-    format_version = Column(Integer(), nullable=False, default=1, server_default="1")
-    data = Column(LargeBinary())
+    author = Column(CHAR(100))  # can be null, see @ghost
+    merger = Column(CHAR(100))
+    releaser = Column(CHAR(100))
+    reviewers = Column(HSTORE(), nullable=False, server_default="")
+    commenters = Column(HSTORE(), nullable=False, server_default="")
+    commit_authors = Column(HSTORE(), nullable=False, server_default="")
+    commit_committers = Column(HSTORE(), nullable=False, server_default="")
+    format_version = Column(Integer(), nullable=False, default=2, server_default="2")
+    data = Column(LargeBinary(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
                         default=lambda: datetime.now(timezone.utc),
                         server_default=func.now(),

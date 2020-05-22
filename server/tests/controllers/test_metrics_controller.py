@@ -14,10 +14,10 @@ from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRe
     "metric, cached",
     itertools.chain(zip(PullRequestMetricID, itertools.repeat(False)),
                     [(PullRequestMetricID.PR_WIP_TIME, True)]))
-async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, cache):
+async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, client_cache):
     """Trivial test to prove that at least something is working."""
     if cached:
-        app._cache = cache
+        app._cache = client_cache
     repeats = 1 if not cached else 2
     for _ in range(repeats):
         body = {

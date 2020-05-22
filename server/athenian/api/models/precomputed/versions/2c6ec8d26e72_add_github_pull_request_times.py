@@ -32,7 +32,7 @@ def upgrade():
         sa.Column("repository_full_name", sa.String(64 + 1 + 100), nullable=False),
         sa.Column("pr_created_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("pr_done_at", sa.TIMESTAMP(timezone=True)),
-        sa.Column("developers", HSTORE(), nullable=False),
+        sa.Column("developers", HSTORE(), nullable=False, server_default=""),
         sa.Column("format_version", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("data", sa.LargeBinary()),
         sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False,
