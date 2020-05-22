@@ -580,7 +580,7 @@ class PullRequest(Model):
     def participants(self) -> List[PullRequestParticipant]:
         """Gets the participants of this PullRequest.
 
-        List of developers related to this PR, always including the author.
+        List of developers related to this PR.
 
         :return: The participants of this PullRequest.
         """
@@ -590,7 +590,7 @@ class PullRequest(Model):
     def participants(self, participants: List[PullRequestParticipant]):
         """Sets the participants of this PullRequest.
 
-        List of developers related to this PR, always including the author.
+        List of developers related to this PR.
 
         :param participants: The participants of this PullRequest.
         """

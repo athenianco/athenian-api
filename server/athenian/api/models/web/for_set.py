@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.pull_request_with import PullRequestWith
 
 
 class ForSet(Model):
@@ -10,21 +11,29 @@ class ForSet(Model):
         self,
         repositories: Optional[List[str]] = None,
         developers: Optional[List[str]] = None,
+        with_: Optional[PullRequestWith] = None,
     ):
         """ForSet - a model defined in OpenAPI
 
         :param repositories: The repositories of this ForSet.
         :param developers: The developers of this ForSet.
+        :param with_: The with_ of this ForSet.
         """
-        self.openapi_types = {"repositories": List[str], "developers": List[str]}
+        self.openapi_types = {
+            "repositories": List[str],
+            "developers": List[str],
+            "with_": PullRequestWith,
+        }
 
         self.attribute_map = {
             "repositories": "repositories",
             "developers": "developers",
+            "with_": "with",
         }
 
         self._repositories = repositories
         self._developers = developers or []
+        self._with_ = with_
 
     @property
     def repositories(self) -> List[str]:
@@ -63,3 +72,26 @@ class ForSet(Model):
             raise ValueError("Invalid value for `developers`, must not be `None`")
 
         self._developers = developers
+
+    @property
+    def with_(self) -> PullRequestWith:
+        """Gets the with_ of this PullRequest.
+
+        List of developers related to this PR.
+
+        :return: The with_ of this PullRequest.
+        """
+        return self._with_
+
+    @with_.setter
+    def with_(self, with_: PullRequestWith):
+        """Sets the with_ of this PullRequest.
+
+        List of developers related to this PR.
+
+        :param with_: The with_ of this PullRequest.
+        """
+        if with_ is None:
+            raise ValueError("Invalid value for `with_`, must not be `None`")
+
+        self._with_ = with_
