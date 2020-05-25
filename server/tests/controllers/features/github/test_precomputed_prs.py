@@ -1,5 +1,5 @@
 import dataclasses
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Sequence
 import uuid
 
@@ -12,6 +12,11 @@ from athenian.api.controllers.miners.github.pull_request import Fallback, MinedP
 from athenian.api.controllers.miners.github.release import matched_by_column
 from athenian.api.controllers.settings import Match, ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, Release
+
+
+def gen_dummy_df(dt: datetime) -> pd.DataFrame:
+    return pd.DataFrame.from_records(
+        [["xxx", dt, dt]], columns=["user_login", "created_at", "submitted_at"])
 
 
 async def test_load_store_precomputed_done_smoke(mdb, pdb, pr_samples):
@@ -29,7 +34,6 @@ async def test_load_store_precomputed_done_smoke(mdb, pdb, pr_samples):
     names = ["one", "two", "three"]
     settings = {"github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", Match(i))
                 for i, k in enumerate(names)}
-    dummy_df = pd.DataFrame(columns=["user_login"])
     prs = [MinedPullRequest(
         pr={PullRequest.repository_full_name.key: names[i % len(names)],
             PullRequest.user_login.key: "xxx",
@@ -37,14 +41,18 @@ async def test_load_store_precomputed_done_smoke(mdb, pdb, pr_samples):
             PullRequest.node_id.key: uuid.uuid4().hex},
         release={matched_by_column: settings["github.com/" + names[i % len(names)]].match % 2,
                  Release.author.key: "zzz"},
-        comments=dummy_df,
-        commits=pd.DataFrame(columns=[
-            PullRequestCommit.committer_login.key,
-            PullRequestCommit.author_login.key,
-        ]),
-        reviews=dummy_df,
-        review_comments=dummy_df,
-        review_requests=dummy_df) for i in range(len(samples))]
+        comments=gen_dummy_df(s.first_comment_on_first_review.best),
+        commits=pd.DataFrame.from_records(
+            [["zzz", "zzz", s.first_commit.best]],
+            columns=[
+                PullRequestCommit.committer_login.key,
+                PullRequestCommit.author_login.key,
+                PullRequestCommit.committed_date.key,
+            ],
+        ),
+        reviews=gen_dummy_df(s.first_comment_on_first_review.best),
+        review_comments=gen_dummy_df(s.first_comment_on_first_review.best),
+        review_requests=gen_dummy_df(s.first_review_request.best)) for i, s in enumerate(samples)]
     await store_precomputed_done_times(prs, samples, settings, mdb, pdb, None)
     # we should not crash on repeat
     await store_precomputed_done_times(prs, samples, settings, mdb, pdb, None)
@@ -71,7 +79,6 @@ async def test_load_store_precomputed_done_filters(pr_samples, mdb, pdb, cache):
     names = ["one", "two", "three"]
     settings = {"github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", Match(i))
                 for i, k in enumerate(names)}
-    dummy_df = pd.DataFrame(columns=["user_login"])
     prs = [MinedPullRequest(
         pr={PullRequest.repository_full_name.key: names[i % len(names)],
             PullRequest.user_login.key: ["xxx", "wow"][i % 2],
@@ -79,14 +86,19 @@ async def test_load_store_precomputed_done_filters(pr_samples, mdb, pdb, cache):
             PullRequest.node_id.key: uuid.uuid4().hex},
         release={matched_by_column: settings["github.com/" + names[i % len(names)]].match % 2,
                  Release.author.key: ["foo", "zzz"][i % 2]},
-        comments=dummy_df,
-        commits=pd.DataFrame(columns=[
-            PullRequestCommit.committer_login.key,
-            PullRequestCommit.author_login.key,
-        ]),
-        reviews=dummy_df,
-        review_comments=dummy_df,
-        review_requests=dummy_df) for i in range(len(samples))]
+        comments=gen_dummy_df(s.first_comment_on_first_review.best),
+        commits=pd.DataFrame.from_records(
+            [["yyy", "yyy", s.first_commit.best]],
+            columns=[
+                PullRequestCommit.committer_login.key,
+                PullRequestCommit.author_login.key,
+                PullRequestCommit.committed_date.key,
+            ],
+        ),
+        reviews=gen_dummy_df(s.first_comment_on_first_review.best),
+        review_comments=gen_dummy_df(s.first_comment_on_first_review.best),
+        review_requests=gen_dummy_df(s.first_review_request.best))
+        for i, s in enumerate(samples)]
     await store_precomputed_done_times(prs, samples, settings, mdb, pdb, cache)
     time_from = min(s.created.best for s in samples)
     time_to = max(s.max_timestamp() for s in samples)
@@ -103,7 +115,6 @@ async def test_load_store_precomputed_done_match_by(pr_samples, mdb, pdb, cache)
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", ".*", Match.tag_or_branch),
     }
-    dummy_df = pd.DataFrame(columns=["user_login"])
     prs = [MinedPullRequest(
         pr={PullRequest.repository_full_name.key: "src-d/go-git",
             PullRequest.user_login.key: "xxx",
@@ -111,14 +122,18 @@ async def test_load_store_precomputed_done_match_by(pr_samples, mdb, pdb, cache)
             PullRequest.node_id.key: uuid.uuid4().hex},
         release={matched_by_column: 0,
                  Release.author.key: "zzz"},
-        comments=dummy_df,
-        commits=pd.DataFrame(columns=[
-            PullRequestCommit.committer_login.key,
-            PullRequestCommit.author_login.key,
-        ]),
-        reviews=dummy_df,
-        review_comments=dummy_df,
-        review_requests=dummy_df)]
+        comments=gen_dummy_df(samples[0].first_comment_on_first_review.best),
+        commits=pd.DataFrame.from_records(
+            [["zzz", "zzz", samples[0].first_commit.best]],
+            columns=[
+                PullRequestCommit.committer_login.key,
+                PullRequestCommit.author_login.key,
+                PullRequestCommit.committed_date.key,
+            ],
+        ),
+        reviews=gen_dummy_df(samples[0].first_comment_on_first_review.best),
+        review_comments=gen_dummy_df(samples[0].first_comment_on_first_review.best),
+        review_requests=gen_dummy_df(samples[0].first_review_request.best))]
     await store_precomputed_done_times(prs, samples, settings, mdb, pdb, cache)
     time_from = samples[0].created.best - timedelta(days=365)
     time_to = samples[0].released.best + timedelta(days=1)

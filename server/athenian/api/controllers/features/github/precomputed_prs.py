@@ -1,5 +1,6 @@
 from datetime import datetime
 from itertools import chain
+import json
 import pickle
 from typing import Any, Collection, Dict, Iterable, Optional
 
@@ -14,7 +15,8 @@ from athenian.api.controllers.miners.github.release import matched_by_column
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind
 from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import PullRequest
+from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
+    PullRequestCommit, PullRequestReview, PullRequestReviewRequest
 from athenian.api.models.precomputed.models import GitHubPullRequestTimes
 
 
@@ -117,13 +119,18 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
     prefix = PREFIXES["github"]
     repos = {pr.pr[PullRequest.repository_full_name.key] for pr in prs}
     _, default_branches = await extract_branches(repos, mdb, cache)
+    sqlite = pdb.url.dialect == "sqlite"
     for pr, times in zip(prs, times):
+        activity_days = set()
         if not times.released:
             if not times.closed or times.merged:
                 continue
             done_at = times.closed.best
         else:
             done_at = times.released.best
+            activity_days.add(times.released.best.date())
+        activity_days.add(times.created.best.date())
+        activity_days.add(times.closed.best.date())
         repo = pr.pr[PullRequest.repository_full_name.key]
         if pr.release[matched_by_column] is not None:
             release_match = release_settings[prefix + repo]
@@ -139,6 +146,18 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
         else:
             release_match = "rejected"
         participants = pr.participants(with_prefix=False)
+        # if they are empty the column dtype is sometimes an object so .dt raises an exception
+        if not pr.review_requests.empty:
+            activity_days.update(
+                pr.review_requests[PullRequestReviewRequest.created_at.key].dt.date)
+        if not pr.reviews.empty:
+            activity_days.update(pr.reviews[PullRequestReview.created_at.key].dt.date)
+        if not pr.comments.empty:
+            activity_days.update(pr.comments[PullRequestComment.created_at.key].dt.date)
+        if not pr.commits.empty:
+            activity_days.update(pr.commits[PullRequestCommit.committed_date.key].dt.date)
+        if sqlite:
+            activity_days = json.dumps([str(d) for d in sorted(activity_days)])
         inserted.append(GitHubPullRequestTimes(
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,
@@ -152,6 +171,7 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
             reviewers={k: "" for k in participants[ParticipationKind.REVIEWER]},
             commit_authors={k: "" for k in participants[ParticipationKind.COMMIT_AUTHOR]},
             commit_committers={k: "" for k in participants[ParticipationKind.COMMIT_COMMITTER]},
+            activity_days=activity_days,
             data=pickle.dumps(times),
         ).create_defaults().explode(with_primary_keys=True))
     if pdb.url.dialect in ("postgres", "postgresql"):
