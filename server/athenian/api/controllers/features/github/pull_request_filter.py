@@ -145,7 +145,6 @@ class PullRequestListMiner:
                 except KeyError:
                     pass
         author = pr_today.pr[PullRequest.user_id.key]
-        review_requested = times_today.first_review_request.value
         external_reviews_mask = pr_today.reviews[PullRequestReview.user_id.key].values != author
         first_review = dtmin(pr_today.reviews[PullRequestReview.created_at.key].take(
             np.where(external_reviews_mask)[0]).min())
@@ -176,7 +175,7 @@ class PullRequestListMiner:
             closed=times_today.closed.best,
             comments=len(pr_today.comments) + delta_comments,
             commits=len(pr_today.commits),
-            review_requested=review_requested,
+            review_requested=times_today.first_review_request.value,
             first_review=first_review,
             approved=times_today.approved.best,
             review_comments=review_comments,
