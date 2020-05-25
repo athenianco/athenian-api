@@ -7,6 +7,7 @@ from typing import Collection, Dict, Generator, Iterable, List, Mapping, Optiona
 
 import aiomcache
 import databases
+import numpy as np
 import pandas as pd
 from sqlalchemy import select
 
@@ -25,7 +26,7 @@ from athenian.api.controllers.miners.pull_request_list_item import Participation
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
-    PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, Release
+    PullRequestReview, PullRequestReviewComment, Release
 
 
 class PullRequestListMiner:
@@ -143,14 +144,16 @@ class PullRequestListMiner:
                     props_today.remove(p)
                 except KeyError:
                     pass
-        review_requested = \
-            dtmin(pr_today.review_requests[PullRequestReviewRequest.created_at.key].max())
         author = pr_today.pr[PullRequest.user_id.key]
+        review_requested = times_today.first_review_request.value
+        external_reviews_mask = pr_today.reviews[PullRequestReview.user_id.key].values != author
+        first_review = dtmin(pr_today.reviews[PullRequestReview.created_at.key].take(
+            np.where(external_reviews_mask)[0]).min())
         review_comments = (
             pr_today.review_comments[PullRequestReviewComment.user_id.key].values != author
         ).sum()
         delta_comments = len(pr_today.review_comments) - review_comments
-        reviews = (pr_today.reviews[PullRequestReview.user_id.key].values != author).sum()
+        reviews = external_reviews_mask.sum()
         stage_timings = {}
         no_time_from = self._no_time_from
         now = self._now
@@ -174,6 +177,7 @@ class PullRequestListMiner:
             comments=len(pr_today.comments) + delta_comments,
             commits=len(pr_today.commits),
             review_requested=review_requested,
+            first_review=first_review,
             approved=times_today.approved.best,
             review_comments=review_comments,
             reviews=reviews,

@@ -29,6 +29,7 @@ class PullRequest(Model):
         comments: Optional[int] = None,
         commits: Optional[int] = None,
         review_requested: Optional[datetime] = None,
+        first_review: Optional[datetime] = None,
         approved: Optional[datetime] = None,
         review_comments: Optional[int] = None,
         reviews: Optional[int] = None,
@@ -52,6 +53,7 @@ class PullRequest(Model):
         :param comments: The comments of this PullRequest.
         :param commits: The commits of this PullRequest.
         :param review_requested: The review_requested of this PullRequest.
+        :param first_review: The first_review of this PullRequest.
         :param approved: The approved of this PullRequest.
         :param review_comments: The review_comments of this PullRequest.
         :param reviews: The reviews of this PullRequest.
@@ -75,6 +77,7 @@ class PullRequest(Model):
             "comments": int,
             "commits": int,
             "review_requested": datetime,
+            "first_review": datetime,
             "approved": datetime,
             "review_comments": int,
             "reviews": int,
@@ -99,6 +102,7 @@ class PullRequest(Model):
             "comments": "comments",
             "commits": "commits",
             "review_requested": "review_requested",
+            "first_review": "first_review",
             "approved": "approved",
             "review_comments": "review_comments",
             "reviews": "reviews",
@@ -122,6 +126,7 @@ class PullRequest(Model):
         self._comments = comments
         self._commits = commits
         self._review_requested = review_requested
+        self._first_review = first_review
         self._approved = approved
         self._review_comments = review_comments
         self._reviews = reviews
@@ -391,7 +396,7 @@ class PullRequest(Model):
     def review_requested(self) -> datetime:
         """Gets the review_requested of this PullRequest.
 
-        When was the last time the author of this PR requested a review.
+        When was the first time the author of this PR requested a review.
 
         :return: The review_requested of this PullRequest.
         """
@@ -401,11 +406,31 @@ class PullRequest(Model):
     def review_requested(self, review_requested: Optional[datetime]):
         """Sets the review_requested of this PullRequest.
 
-        When was the last time the author of this PR requested a review.
+        When was the first time the author of this PR requested a review.
 
         :param review_requested: The review_requested of this PullRequest.
         """
         self._review_requested = review_requested
+
+    @property
+    def first_review(self) -> datetime:
+        """Gets the first_review of this PullRequest.
+
+        When the first review of this PR happened.
+
+        :return: The first_review of this PullRequest.
+        """
+        return self._first_review
+
+    @first_review.setter
+    def first_review(self, first_review: Optional[datetime]):
+        """Sets the first_review of this PullRequest.
+
+        When the first review of this PR happened.
+
+        :param first_review: The first_review of this PullRequest.
+        """
+        self._first_review = first_review
 
     @property
     def approved(self) -> datetime:

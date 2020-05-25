@@ -255,7 +255,6 @@ rejected_go_git_pr_numbers = {
     1109, 1103, 1122, 1187, 1182, 1168, 1170, 1183, 1184, 1213, 1248, 1247, 1265, 1276,
 }
 
-
 force_push_dropped_go_git_pr_numbers = {
     504, 561, 907,
     1, 2, 5, 6, 7, 9, 10, 11, 12, 14, 15, 20, 16, 17, 18, 21, 22, 23, 25, 26, 24, 27, 28, 30, 32,
@@ -268,11 +267,9 @@ force_push_dropped_go_git_pr_numbers = {
     224, 227, 229, 230, 237, 240, 241, 233, 235, 244,
 }
 
-
 will_never_be_released_go_git_pr_numbers = {
     1180, 1195, 1204, 1205, 1206, 1208, 1214, 1225, 1226, 1235, 1231,
 }
-
 
 undead_go_git_prs = force_push_dropped_go_git_pr_numbers.union(
     will_never_be_released_go_git_pr_numbers)
@@ -290,8 +287,8 @@ async def validate_prs_response(response: ClientResponse,
     assert len(users) > 0
     assert len(prs.data) > 0
     numbers = set()
-    total_comments = total_commits = total_review_comments = total_released = total_rejected = 0
-    total_review_requests = total_reviews = 0
+    total_comments = total_commits = total_review_comments = total_released = total_rejected = \
+        total_review_requests = total_reviews = 0
     tdz = timedelta(0)
     timings = defaultdict(lambda: tdz)
     for pr in prs.data:
@@ -326,6 +323,19 @@ async def validate_prs_response(response: ClientResponse,
         if pr.merged:
             assert pr.closed is not None
             assert abs(pr.merged - pr.closed) < timedelta(seconds=60)
+        if pr.review_requested is not None:
+            assert PullRequestProperty.REVIEW_REQUEST_HAPPENED in pr.properties, str(pr)
+        if PullRequestProperty.REVIEW_REQUEST_HAPPENED in pr.properties:
+            assert pr.review_requested is not None
+            assert pr.review_requested >= pr.created, str(pr)
+        if pr.first_review is not None:
+            assert PullRequestProperty.REVIEW_HAPPENED in pr.properties, str(pr)
+            assert pr.reviews > 0, str(pr)
+            assert pr.first_review > pr.created, str(pr)
+        if pr.reviews > 0:
+            assert pr.first_review is not None, str(pr)
+        if pr.approved is not None:
+            assert pr.first_review <= pr.approved, str(pr)
 
         assert props.intersection(set(pr.properties)), str(pr)
         assert PullRequestProperty.CREATED in pr.properties, str(pr)

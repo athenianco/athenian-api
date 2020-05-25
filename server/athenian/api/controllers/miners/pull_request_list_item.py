@@ -59,6 +59,7 @@ class PullRequestListItem:
     comments: int
     commits: int
     review_requested: Optional[pd.Timestamp]
+    first_review: Optional[pd.Timestamp]
     approved: Optional[pd.Timestamp]
     review_comments: int
     reviews: int

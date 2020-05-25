@@ -2344,7 +2344,11 @@ components:
           description: Number of commits in this PR.
           type: integer
         review_requested:
-          description: When was the last time the author of this PR requested a review.
+          description: When was the first time the author of this PR requested a review.
+          format: date-time
+          type: string
+        first_review:
+          description: When the first review of this PR happened.
           format: date-time
           type: string
         approved:
