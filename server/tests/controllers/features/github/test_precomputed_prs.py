@@ -62,7 +62,7 @@ async def test_load_store_precomputed_done_smoke(mdb, pdb, pr_samples):
     n = len(released_ats) - len(released_ats) // 2 + \
         sum(1 for s in samples[-10:-5] if s.closed.best >= time_from)
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, names, [], settings, mdb, pdb, None)
+        time_from, time_to, names, [], False, settings, mdb, pdb, None)
     assert len(loaded_prs) == n
     true_prs = {prs[i].pr[PullRequest.node_id.key]: samples[i] for _, i in released_ats[-n:]}
     for i, s in enumerate(samples[-10:-5]):
@@ -103,10 +103,10 @@ async def test_load_store_precomputed_done_filters(pr_samples, mdb, pdb, cache):
     time_from = min(s.created.best for s in samples)
     time_to = max(s.max_timestamp() for s in samples)
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["one"], [], settings, mdb, pdb, cache)
+        time_from, time_to, ["one"], [], False, settings, mdb, pdb, cache)
     assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[::3]}
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, names, ["wow", "zzz"], settings, mdb, pdb, cache)
+        time_from, time_to, names, ["wow", "zzz"], False, settings, mdb, pdb, cache)
     assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[1::2]}
 
 
@@ -138,34 +138,80 @@ async def test_load_store_precomputed_done_match_by(pr_samples, mdb, pdb, cache)
     time_from = samples[0].created.best - timedelta(days=365)
     time_to = samples[0].released.best + timedelta(days=1)
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 1
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", Match.branch),
     }
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 1
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("nope", ".*", Match.tag_or_branch),
     }
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 0
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", ".*", Match.tag),
     }
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 0
     prs[0].release[matched_by_column] = 1
     await store_precomputed_done_times(prs, samples, settings, mdb, pdb, cache)
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 1
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", "xxx", Match.tag),
     }
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 0
+
+
+async def test_load_store_precomputed_done_exclude_inactive(pr_samples, mdb, pdb, cache):
+    while True:
+        samples = pr_samples(2)  # type: Sequence[PullRequestTimes]
+        samples = sorted(samples, key=lambda s: s.first_comment_on_first_review.best)
+        deltas = [(samples[1].first_comment_on_first_review.best -
+                   samples[0].first_comment_on_first_review.best),
+                  samples[0].first_comment_on_first_review.best - samples[1].created.best,
+                  samples[1].created.best - samples[0].created.best]
+        if all(d > timedelta(days=2) for d in deltas):
+            break
+    settings = {"github.com/one": ReleaseMatchSetting("{{default}}", ".*", Match.tag)}
+    prs = [MinedPullRequest(
+        pr={PullRequest.repository_full_name.key: "one",
+            PullRequest.user_login.key: "xxx",
+            PullRequest.merged_by_login.key: "yyy",
+            PullRequest.node_id.key: uuid.uuid4().hex},
+        release={matched_by_column: settings["github.com/one"].match,
+                 Release.author.key: "zzz"},
+        comments=gen_dummy_df(s.first_comment_on_first_review.best),
+        commits=pd.DataFrame.from_records(
+            [["yyy", "yyy", s.first_comment_on_first_review.best]],
+            columns=[
+                PullRequestCommit.committer_login.key,
+                PullRequestCommit.author_login.key,
+                PullRequestCommit.committed_date.key,
+            ],
+        ),
+        reviews=gen_dummy_df(s.first_comment_on_first_review.best),
+        review_comments=gen_dummy_df(s.first_comment_on_first_review.best),
+        review_requests=gen_dummy_df(s.first_comment_on_first_review.best))
+        for s in samples]
+    await store_precomputed_done_times(prs, samples, settings, mdb, pdb, cache)
+    time_from = samples[1].created.best + timedelta(days=1)
+    time_to = samples[0].first_comment_on_first_review.best
+    loaded_prs = await load_precomputed_done_times(
+        time_from, time_to, ["one"], [], True, settings, mdb, pdb, cache)
+    assert len(loaded_prs) == 1
+    assert loaded_prs[prs[0].pr[PullRequest.node_id.key]] == samples[0]
+    time_from = samples[1].created.best - timedelta(days=1)
+    time_to = samples[1].created.best + timedelta(seconds=1)
+    loaded_prs = await load_precomputed_done_times(
+        time_from, time_to, ["one"], [], True, settings, mdb, pdb, cache)
+    assert len(loaded_prs) == 1
+    assert loaded_prs[prs[1].pr[PullRequest.node_id.key]] == samples[1]

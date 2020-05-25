@@ -213,12 +213,13 @@ class PullRequestListMiner:
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, properties, participants, release_settings, **_: (
+    key=lambda time_from, time_to, repos, properties, participants, exclude_inactive, release_settings, **_: (  # noqa
         time_from.timestamp(),
         time_to.timestamp(),
         ",".join(sorted(repos)),
         ",".join(s.name.lower() for s in sorted(set(properties))),
         sorted((k.name.lower(), sorted(set(v))) for k, v in participants.items()),
+        exclude_inactive,
         release_settings,
     ),
 )
@@ -227,6 +228,7 @@ async def filter_pull_requests(properties: Collection[Property],
                                time_to: datetime,
                                repos: Collection[str],
                                participants: Mapping[ParticipationKind, Collection[str]],
+                               exclude_inactive: bool,
                                release_settings: Dict[str, ReleaseMatchSetting],
                                mdb: databases.Database,
                                pdb: databases.Database,
@@ -243,10 +245,10 @@ async def filter_pull_requests(properties: Collection[Property],
     everybody = set(chain.from_iterable(participants.values()))
     everybody = {p.split("/", 1)[1] for p in everybody}
     tasks = (
-        PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, release_settings,
-                              everybody, mdb, cache),
-        load_precomputed_done_times(time_from, time_to, repos, everybody, release_settings,
-                                    mdb, pdb, cache),
+        PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, everybody,
+                              exclude_inactive, release_settings, mdb, cache),
+        load_precomputed_done_times(time_from, time_to, repos, everybody, exclude_inactive,
+                                    release_settings, mdb, pdb, cache),
     )
     miner_time_machine, done_times = await asyncio.gather(*tasks, return_exceptions=True)
     if isinstance(miner_time_machine, Exception):

@@ -189,7 +189,8 @@ class AthenianApp(connexion.AioHttpApp):
                     "build_date": getattr(metadata, "__date__", "N/A"),
                 },
                 pass_context_arg_name="request",
-                options={"middlewares": [self.i_will_survive, self.with_db, self.postprocess_response]},
+                options={"middlewares": [
+                    self.i_will_survive, self.with_db, self.postprocess_response]},
             )
             for k, v in api.subapp.items():
                 self.app[k] = v

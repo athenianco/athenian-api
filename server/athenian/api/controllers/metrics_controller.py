@@ -64,6 +64,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     met.timezone = filt.timezone
     met.granularities = filt.granularities
     met.metrics = filt.metrics
+    met.exclude_inactive = filt.exclude_inactive
     met.calculated = []
     # There should not be any new exception here so we don't have to catch ResponseError.
     release_settings = \
@@ -77,8 +78,8 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         gresults = []
         # for each metric, we find the function to calculate and call it
         for func, metrics in calcs.items():
-            mvs = await func(metrics, time_intervals, repos, devs, release_settings,
-                             request.mdb, request.pdb, request.cache)
+            mvs = await func(metrics, time_intervals, repos, devs, filt.exclude_inactive,
+                             release_settings, request.mdb, request.pdb, request.cache)
             assert len(mvs) == len(time_intervals)
             for mv, ts in zip(mvs, time_intervals):
                 assert len(mv) == len(ts) - 1
