@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import CHAR, Column, func, Integer, LargeBinary, String, Text, TIMESTAMP
+from sqlalchemy import ARRAY, CHAR, Column, func, Integer, LargeBinary, String, Text, TIMESTAMP
 from sqlalchemy.dialects.postgresql import HSTORE
 
 from athenian.api.models import create_base
@@ -37,7 +37,8 @@ class GitHubPullRequestTimes(Base):
     commenters = Column(HSTORE(), nullable=False, server_default="")
     commit_authors = Column(HSTORE(), nullable=False, server_default="")
     commit_committers = Column(HSTORE(), nullable=False, server_default="")
-    format_version = Column(Integer(), nullable=False, default=2, server_default="2")
+    activity_days = Column(ARRAY(TIMESTAMP(timezone=True)), nullable=False, server_default="{}")
+    format_version = Column(Integer(), nullable=False, default=3, server_default="3")
     data = Column(LargeBinary(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
                         default=lambda: datetime.now(timezone.utc),
