@@ -27,6 +27,7 @@ class GitHubPullRequestTimes(Base):
 
     pr_node_id = Column(CHAR(32), primary_key=True)
     release_match = Column(Text(), primary_key=True)
+    format_version = Column(Integer(), primary_key=True, default=3, server_default="3")
     repository_full_name = Column(String(64 + 1 + 100), nullable=False)
     pr_created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     pr_done_at = Column(TIMESTAMP(timezone=True))
@@ -38,7 +39,6 @@ class GitHubPullRequestTimes(Base):
     commit_authors = Column(HSTORE(), nullable=False, server_default="")
     commit_committers = Column(HSTORE(), nullable=False, server_default="")
     activity_days = Column(ARRAY(TIMESTAMP(timezone=True)), nullable=False, server_default="{}")
-    format_version = Column(Integer(), nullable=False, default=3, server_default="3")
     data = Column(LargeBinary(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
                         default=lambda: datetime.now(timezone.utc),
