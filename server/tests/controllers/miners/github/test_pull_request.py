@@ -45,6 +45,40 @@ async def test_pr_miner_iter(mdb, release_match_setting_tag):
     assert with_data["prs"] == size
 
 
+async def test_pr_miner_blacklist(mdb, release_match_setting_tag):
+    date_from = date(year=2017, month=1, day=1)
+    date_to = date(year=2017, month=1, day=12)
+    miner = await PullRequestMiner.mine(
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
+        ["src-d/go-git"],
+        [],
+        False,
+        release_match_setting_tag,
+        mdb,
+        None,
+    )
+    node_ids = [pr.pr[PullRequest.node_id.key] for pr in miner]
+    assert len(node_ids) > 0
+    miner = await PullRequestMiner.mine(
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
+        ["src-d/go-git"],
+        [],
+        False,
+        release_match_setting_tag,
+        mdb,
+        None,
+        pr_blacklist=node_ids,
+    )
+    node_ids = [pr.pr[PullRequest.node_id.key] for pr in miner]
+    assert len(node_ids) == 0
+
+
 @pytest.mark.parametrize("with_memcached", [False, True])
 async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_tag,
                                    with_memcached):

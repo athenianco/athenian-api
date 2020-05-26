@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import and_, desc, distinct, func, select
 from sqlalchemy.cprocessors import str_to_datetime
+from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query, wrap_sql_query
 from athenian.api.cache import cached, gen_cache_key, max_exptime
@@ -595,16 +596,21 @@ async def _fetch_commit_history_dag(commit_id: str,
 
 async def _find_old_released_prs(releases: pd.DataFrame,
                                  time_boundary: datetime,
+                                 pr_blacklist: Optional[BinaryExpression],
                                  db: DatabaseLike,
                                  cache: Optional[aiomcache.Client],
                                  ) -> Iterable[Mapping]:
     observed_commits, _, _ = await _extract_released_commits(releases, time_boundary, db, cache)
     repo = releases.iloc[0][Release.repository_full_name.key] if not releases.empty else ""
-    return await db.fetch_all(select([PullRequest])
-                              .where(and_(PullRequest.merged_at < time_boundary,
-                                          PullRequest.repository_full_name == repo,
-                                          PullRequest.merge_commit_sha.in_(observed_commits),
-                                          PullRequest.hidden.is_(False))))
+    filters = [
+        PullRequest.merged_at < time_boundary,
+        PullRequest.repository_full_name == repo,
+        PullRequest.merge_commit_sha.in_(observed_commits),
+        PullRequest.hidden.is_(False),
+    ]
+    if pr_blacklist is not None:
+        filters.append(pr_blacklist)
+    return await db.fetch_all(select([PullRequest]).where(and_(*filters)))
 
 
 async def _extract_released_commits(releases: pd.DataFrame,
@@ -677,7 +683,7 @@ async def map_releases_to_prs(repos: Iterable[str],
                               release_settings: Dict[str, ReleaseMatchSetting],
                               db: databases.Database,
                               cache: Optional[aiomcache.Client],
-                              ) -> pd.DataFrame:
+                              pr_blacklist: Optional[BinaryExpression] = None) -> pd.DataFrame:
     """Find pull requests which were released between `time_from` and `time_to` but merged before \
     `time_from`.
 
@@ -691,7 +697,7 @@ async def map_releases_to_prs(repos: Iterable[str],
         repos, old_from, time_to, release_settings, db, cache, index=Release.id.key)
     prs = []
     for _, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
-        prs.append(_find_old_released_prs(repo_releases, time_from, db, cache))
+        prs.append(_find_old_released_prs(repo_releases, time_from, pr_blacklist, db, cache))
     if prs:
         prs = await asyncio.gather(*prs, return_exceptions=True)
         for pr in prs:
