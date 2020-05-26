@@ -1,6 +1,5 @@
 from datetime import datetime
 from itertools import chain
-import json
 import pickle
 from typing import Any, Collection, Dict, Iterable, Optional
 
@@ -157,7 +156,7 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
         if not pr.commits.empty:
             activity_days.update(pr.commits[PullRequestCommit.committed_date.key].dt.date)
         if sqlite:
-            activity_days = json.dumps([str(d) for d in sorted(activity_days)])
+            activity_days = [d.strftime("%Y-%m-%d") for d in sorted(activity_days)]
         inserted.append(GitHubPullRequestTimes(
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,

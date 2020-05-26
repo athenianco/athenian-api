@@ -17,15 +17,14 @@ depends_on = None
 
 
 def upgrade():
-    sql = """
-    CREATE INDEX github_pull_request_times_main
-    ON github_pull_request_times
-    ("repository_full_name", "pr_created_at", "pr_done_at");
-    """
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
         session = Session(bind=bind)
-        session.execute(sql)
+        session.execute("""
+        CREATE INDEX github_pull_request_times_main
+        ON github_pull_request_times
+        ("repository_full_name", "pr_created_at", "pr_done_at");
+        """)
 
 
 def downgrade():
