@@ -17,7 +17,7 @@ from athenian.api.typing_utils import DatabaseLike
     exptime=60 * 60,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda repos, **_: tuple(repos),
+    key=lambda repos, **_: (",".join(sorted(repos)),),
 )
 async def extract_branches(repos: Iterable[str],
                            db: DatabaseLike,

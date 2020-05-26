@@ -106,8 +106,8 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     prs = await filter_pull_requests(
-        props, filt.date_from, filt.date_to, repos, participants, settings,
-        request.mdb, request.pdb, request.cache)
+        props, filt.date_from, filt.date_to, repos, participants, filt.exclude_inactive,
+        settings, request.mdb, request.pdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     users = {u.split("/", 1)[1] for u in
              chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs)}
@@ -116,9 +116,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     model = PullRequestSet(include=IncludedNativeUsers(users={
         prefix + login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
     }), data=web_prs)
-    response = model_response(model)
-    response.enable_compression()
-    return response
+    return model_response(model)
 
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:

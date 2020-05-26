@@ -1,12 +1,16 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import ARRAY, CHAR, Column, func, Integer, LargeBinary, String, Text, TIMESTAMP
-from sqlalchemy.dialects.postgresql import HSTORE
+from sqlalchemy import CHAR, Column, func, Integer, JSON, LargeBinary, String, Text, TIMESTAMP
+from sqlalchemy.dialects.postgresql import ARRAY, HSTORE
 
 from athenian.api.models import create_base
 
 
 Base = create_base()
+
+
+TSARRAY = ARRAY(TIMESTAMP(timezone=True)).with_variant(JSON(), "sqlite")
+JHSTORE = HSTORE().with_variant(JSON(), "sqlite")
 
 
 class GitHubPullRequestTimes(Base):
@@ -19,8 +23,7 @@ class GitHubPullRequestTimes(Base):
         * `pr_done_at`: PR closure timestamp if it is not merged or PR release timestamp if it is.
         * `HSTORE` a set of developers with which we can efficiently check an intersection.
         * `data`: pickle-d PullRequestTimes (may change in the future).
-        * `format_version`: version of the `data` format. When the "future" happens, we will \
-                            bump it.
+        * `format_version`: version of the table, used for smooth upgrades and downgrades.
     """
 
     __tablename__ = "github_pull_request_times"
@@ -34,11 +37,11 @@ class GitHubPullRequestTimes(Base):
     author = Column(CHAR(100))  # can be null, see @ghost
     merger = Column(CHAR(100))
     releaser = Column(CHAR(100))
-    reviewers = Column(HSTORE(), nullable=False, server_default="")
-    commenters = Column(HSTORE(), nullable=False, server_default="")
-    commit_authors = Column(HSTORE(), nullable=False, server_default="")
-    commit_committers = Column(HSTORE(), nullable=False, server_default="")
-    activity_days = Column(ARRAY(TIMESTAMP(timezone=True)), nullable=False, server_default="{}")
+    reviewers = Column(JHSTORE, nullable=False, server_default="")
+    commenters = Column(JHSTORE, nullable=False, server_default="")
+    commit_authors = Column(JHSTORE, nullable=False, server_default="")
+    commit_committers = Column(JHSTORE, nullable=False, server_default="")
+    activity_days = Column(TSARRAY, nullable=False, server_default="{}")
     data = Column(LargeBinary(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
                         default=lambda: datetime.now(timezone.utc),

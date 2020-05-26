@@ -18,10 +18,9 @@ depends_on = None
 
 def upgrade():
     bind = op.get_bind()
-    ARRAY = sa.ARRAY if bind.dialect.name != "sqlite" else sa.JSON
+    arr = sa.ARRAY(sa.TIMESTAMP(timezone=True)) if bind.dialect.name != "sqlite" else sa.JSON()
     with op.batch_alter_table("github_pull_request_times") as bop:
-        bop.add_column(sa.Column("activity_days", ARRAY(sa.TIMESTAMP(timezone=True)),
-                                 nullable=False, server_default="{}"))
+        bop.add_column(sa.Column("activity_days", arr, nullable=False, server_default="{}"))
         bop.alter_column("format_version", server_default="3")
 
 

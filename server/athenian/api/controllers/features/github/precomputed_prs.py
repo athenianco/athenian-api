@@ -1,11 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from itertools import chain
-import json
 import pickle
 from typing import Any, Collection, Dict, Iterable, Optional
 
 import aiomcache
 import databases
+from dateutil.rrule import DAILY, rrule
 from sqlalchemy import and_, insert, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
@@ -24,6 +24,7 @@ async def load_precomputed_done_times(date_from: datetime,
                                       date_to: datetime,
                                       repos: Collection[str],
                                       developers: Collection[str],
+                                      exclude_inactive: bool,
                                       release_settings: Dict[str, ReleaseMatchSetting],
                                       mdb: databases.Database,
                                       pdb: databases.Database,
@@ -67,6 +68,19 @@ async def load_precomputed_done_times(date_from: datetime,
                 ghprt.author, ghprt.merger, ghprt.releaser, ghprt.reviewers, ghprt.commenters,
                 ghprt.commit_authors, ghprt.commit_committers])
             developers = set(developers)
+    if exclude_inactive:
+        # timezones: date_from and date_to may be not exactly 00:00
+        date_from_day = datetime.combine(
+            date_from.date(), datetime.min.time(), tzinfo=timezone.utc)
+        date_to_day = datetime.combine(
+            date_to.date(), datetime.min.time(), tzinfo=timezone.utc)
+        # date_to_day will be included
+        date_range = rrule(DAILY, dtstart=date_from_day, until=date_to_day)
+        if postgres:
+            filters.append(ghprt.activity_days.overlap(list(date_range)))
+        else:
+            selected.append(ghprt.activity_days)
+            date_range = set(date_range)
     rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
     result = {}
@@ -95,10 +109,16 @@ async def load_precomputed_done_times(date_from: datetime,
                 raise AssertionError("Precomputed DB may not contain Match.tag_or_branch")
             if target != match_by:
                 continue
-        if not postgres and len(developers) > 0:
-            pr_parts = set(chain([row[4], row[5], row[6]], row[7], row[8], row[9], row[10]))
-            if not pr_parts.intersection(developers):
-                continue
+        if not postgres:
+            if len(developers) > 0:
+                pr_parts = set(chain(row[4:7], *row[7:11]))  # sqlite Record supports slices
+                if not pr_parts.intersection(developers):
+                    continue
+            if exclude_inactive:
+                activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                                 for d in row[ghprt.activity_days.key]}
+                if not activity_days.intersection(date_range):
+                    continue
         dump[node_id] = pickle.loads(data)
     result.update(ambiguous[Match.tag.name])
     for node_id, times in ambiguous[Match.branch.name].items():
@@ -157,7 +177,11 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
         if not pr.commits.empty:
             activity_days.update(pr.commits[PullRequestCommit.committed_date.key].dt.date)
         if sqlite:
-            activity_days = json.dumps([str(d) for d in sorted(activity_days)])
+            activity_days = [d.strftime("%Y-%m-%d") for d in sorted(activity_days)]
+        else:
+            # Postgres is "clever" enough to localize them otherwise
+            activity_days = [datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
+                             for d in activity_days]
         inserted.append(GitHubPullRequestTimes(
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,

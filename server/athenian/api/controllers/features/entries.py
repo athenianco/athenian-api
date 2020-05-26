@@ -27,11 +27,13 @@ from athenian.api.models.metadata.github import PushCommit
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda metrics, time_intervals, repos, developers, release_settings, **_: (
+    key=lambda metrics, time_intervals, repos, developers, exclude_inactive, release_settings, **_:
+    (
         ",".join(sorted(metrics)),
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
         ",".join(sorted(repos)),
         ",".join(sorted(developers)),
+        exclude_inactive,
         release_settings,
     ),
 )
@@ -39,6 +41,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
                                                 repos: Collection[str],
                                                 developers: Collection[str],
+                                                exclude_inactive: bool,
                                                 release_settings: Dict[str, ReleaseMatchSetting],
                                                 mdb: Database,
                                                 pdb: Database,
@@ -47,14 +50,14 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     """Calculate pull request metrics on GitHub data."""
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     done_times = await load_precomputed_done_times(
-        time_from, time_to, repos, developers, release_settings, mdb, pdb, cache)
+        time_from, time_to, repos, developers, exclude_inactive, release_settings, mdb, pdb, cache)
 
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
     # are effectively discarded later in BinnedPullRequestMetricCalculator
     miner = await PullRequestMiner.mine(
-        date_from, date_to, time_from, time_to, repos, release_settings, developers, mdb, cache,
-        pr_blacklist=done_times)
+        date_from, date_to, time_from, time_to, repos, developers, exclude_inactive,
+        release_settings, mdb, cache, pr_blacklist=done_times)
     times_miner = PullRequestTimesMiner()
     mined_prs = []
     mined_times = []

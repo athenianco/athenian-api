@@ -131,18 +131,18 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda date_from, date_to, release_settings, **_: (
-            date_from.toordinal(), date_to.toordinal(), release_settings,
+        key=lambda date_from, date_to, exclude_inactive, release_settings, **_: (
+            date_from.toordinal(), date_to.toordinal(), exclude_inactive, release_settings,
         ),
         postprocess=_postprocess_cached_prs,
-        version=4,
     )
     async def _mine(cls,
                     date_from: date,
                     date_to: date,
                     repositories: Collection[str],
-                    release_settings: Dict[str, ReleaseMatchSetting],
                     developers: Collection[str],
+                    exclude_inactive: bool,
+                    release_settings: Dict[str, ReleaseMatchSetting],
                     db: databases.Database,
                     cache: Optional[aiomcache.Client],
                     pr_blacklist: Optional[Collection[str]] = None,
@@ -190,7 +190,6 @@ class PullRequestMiner:
         key=lambda prs, time_from, time_to, release_settings, **_: (
             ",".join(prs.index), time_from.timestamp(), time_to.timestamp(), release_settings,
         ),
-        version=4,
     )
     async def mine_by_ids(cls,
                           prs: pd.DataFrame,
@@ -326,8 +325,9 @@ class PullRequestMiner:
                    time_from: datetime,
                    time_to: datetime,
                    repositories: Collection[str],
-                   release_settings: Dict[str, ReleaseMatchSetting],
                    developers: Collection[str],
+                   exclude_inactive: bool,
+                   release_settings: Dict[str, ReleaseMatchSetting],
                    db: databases.Database,
                    cache: Optional[aiomcache.Client],
                    pr_blacklist: Optional[Collection[str]] = None,
@@ -341,6 +341,8 @@ class PullRequestMiner:
         :param time_to: Precise timestamp of until when PR events are allowed to happen.
         :param repositories: PRs must belong to these repositories (prefix excluded).
         :param developers: PRs must be authored by these user IDs. An empty list means everybody.
+        :param exclude_inactive: Ors must have at least one event in the given time frame.
+        :param release_settings: Release match settings of the account.
         :param db: Metadata db instance.
         :param cache: memcached client to cache the collected data.
         :param pr_blacklist: completely ignore the existence of these PR node IDs.
@@ -349,8 +351,8 @@ class PullRequestMiner:
         date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
-        dfs, _, _ = await cls._mine(date_from, date_to, repositories, release_settings, developers,
-                                    db, cache, pr_blacklist=pr_blacklist)
+        dfs, _, _ = await cls._mine(date_from, date_to, repositories, developers, exclude_inactive,
+                                    release_settings, db, cache, pr_blacklist=pr_blacklist)
         cls._truncate_prs(dfs, time_from, time_to)
         return cls(*dfs)
 
