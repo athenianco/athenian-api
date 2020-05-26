@@ -156,22 +156,20 @@ class PullRequestMiner:
             developers = set(developers)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
         filters = [
-            sql.and_(sql.or_(PullRequest.closed_at.is_(None),
-                             PullRequest.closed_at >= time_from),
-                     PullRequest.created_at < time_to,
-                     PullRequest.hidden.is_(False)),
+            sql.or_(PullRequest.closed_at.is_(None), PullRequest.closed_at >= time_from),
+            PullRequest.created_at < time_to,
+            PullRequest.hidden.is_(False),
             PullRequest.repository_full_name.in_(repositories),
         ]
+        if pr_blacklist is not None:
+            pr_blacklist = PullRequest.node_id.notin_(pr_blacklist)
+            filters.append(pr_blacklist)
         prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                    db, PullRequest, index=PullRequest.node_id.key)
         released_prs = await map_releases_to_prs(
-            repositories, time_from, time_to, release_settings, db, cache)
+            repositories, time_from, time_to, release_settings, db, cache, pr_blacklist)
         prs = pd.concat([prs, released_prs], sort=False)
         prs = prs[~prs.index.duplicated()]
-        if pr_blacklist:
-            old_len = len(prs)
-            prs.drop(pr_blacklist, inplace=True, errors="ignore")
-            cls.log.info("PR blacklist cut the number of PRs from %d to %d", old_len, len(prs))
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
         cls._truncate_timestamps(prs, time_to)
         # bypass the useless inner caching by calling __wrapped__ directly

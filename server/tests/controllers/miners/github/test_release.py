@@ -57,7 +57,7 @@ async def test_map_prs_to_releases_empty(mdb, cache):
     assert releases.empty
 
 
-async def test_map_releases_to_prs(mdb, cache, release_match_setting_tag):
+async def test_map_releases_to_prs_smoke(mdb, cache, release_match_setting_tag):
     for _ in range(2):
         prs = await map_releases_to_prs(
             ["src-d/go-git"],
@@ -86,6 +86,21 @@ async def test_map_releases_to_prs_empty(mdb, cache, release_match_setting_tag):
         release_match_setting_tag, mdb, cache)
     assert prs.empty
     assert len(cache.mem) > 0
+
+
+async def test_map_releases_to_prs_blacklist(mdb, cache, release_match_setting_tag):
+    prs = await map_releases_to_prs(
+        ["src-d/go-git"],
+        datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
+        datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
+        release_match_setting_tag, mdb, cache,
+        pr_blacklist=PullRequest.node_id.notin_([
+            "MDExOlB1bGxSZXF1ZXN0Mjk3Mzk1Mzcz", "MDExOlB1bGxSZXF1ZXN0Mjk5NjA3MDM2",
+            "MDExOlB1bGxSZXF1ZXN0MzAxODQyNDg2", "MDExOlB1bGxSZXF1ZXN0Mjg2ODczMDAw",
+            "MDExOlB1bGxSZXF1ZXN0Mjk0NTUyNTM0", "MDExOlB1bGxSZXF1ZXN0MzAyMTMwODA3",
+            "MDExOlB1bGxSZXF1ZXN0MzAyMTI2ODgx",
+        ]))
+    assert prs.empty
 
 
 async def test_map_prs_to_releases_smoke_metrics(mdb):
