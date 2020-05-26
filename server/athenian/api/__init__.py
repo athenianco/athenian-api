@@ -401,6 +401,7 @@ def setup_context(log: logging.Logger) -> None:
         attach_stacktrace=True,
         request_bodies="medium",
         release="%s@%s" % (metadata.__package__, metadata.__version__),
+        traces_sample_rate=1.0,
     )
     sentry_sdk.utils.MAX_STRING_LENGTH = 2048
     sentry_sdk.utils.MAX_FORMAT_PARAM_LENGTH = 256

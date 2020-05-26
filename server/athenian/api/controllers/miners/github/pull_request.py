@@ -11,6 +11,7 @@ import aiomcache
 import databases
 import numpy as np
 import pandas as pd
+import sentry_sdk
 from sqlalchemy import select, sql
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
@@ -174,8 +175,9 @@ class PullRequestMiner:
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
         cls._truncate_timestamps(prs, time_to)
         # bypass the useless inner caching by calling __wrapped__ directly
-        dfs = await cls.mine_by_ids.__wrapped__(
-            cls, prs, time_from, time_to, release_settings, db, cache)
+        with sentry_sdk.start_span(op="PullRequestMiner.mine_by_ids.__wrapped__"):
+            dfs = await cls.mine_by_ids.__wrapped__(
+                cls, prs, time_from, time_to, release_settings, db, cache)
         dfs = [prs, *dfs]
         cls._drop(dfs, cls._find_drop_by_developers(dfs, developers))
         return dfs, repositories, developers

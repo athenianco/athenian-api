@@ -18,6 +18,7 @@ from connexion.lifecycle import ConnexionRequest
 from connexion.operations import secure
 from jose import jwt
 from multidict import CIMultiDict
+import sentry_sdk
 from sqlalchemy import select
 
 from athenian.api.cache import cached
@@ -359,6 +360,7 @@ class Auth0:
                 request.native_uid = mapped_id.rsplit("|", 1)[1]
                 self.log.info("God mode: %s became %s", request.god_id, mapped_id)
         request.is_default_user = request.uid == self._default_user_id
+        sentry_sdk.add_breadcrumb(category="user", message=request.uid, level="info")
 
         async def get_user_info():
             if god is not None and request.god_id is not None:
