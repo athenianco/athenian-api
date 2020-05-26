@@ -4,7 +4,7 @@ import inspect
 import logging
 import pickle
 import time
-from typing import Any, ByteString, Callable, Coroutine, Optional, Tuple, Union
+from typing import Any, ByteString, Callable, Coroutine, Mapping, Optional, Tuple, Union
 
 from aiohttp import web
 import aiomcache
@@ -186,8 +186,8 @@ def cached(exptime: Union[int, Callable[..., int]],
 
 
 def setup_cache_metrics(cache: Optional[aiomcache.Client],
-                        app: web.Application,
-                        registry: CollectorRegistry) -> None:
+                        app: Union[web.Application, Mapping],
+                        registry: Optional[CollectorRegistry]) -> None:
     """Initialize the Prometheus metrics for tracking the cache interoperability."""
     if cache is None:
         app["cache_context"] = {}
