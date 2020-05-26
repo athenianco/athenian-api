@@ -189,7 +189,7 @@ class AthenianApp(connexion.AioHttpApp):
                     "build_date": getattr(metadata, "__date__", "N/A"),
                 },
                 pass_context_arg_name="request",
-                options={"middlewares": [self.i_will_survive, self.with_db, self.add_server_name]},
+                options={"middlewares": [self.i_will_survive, self.with_db, self.postprocess_response]},
             )
             for k, v in api.subapp.items():
                 self.app[k] = v
@@ -280,10 +280,13 @@ class AthenianApp(connexion.AioHttpApp):
             )).response
 
     @aiohttp.web.middleware
-    async def add_server_name(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
+    async def postprocess_response(self, request: aiohttp.web.Request, handler,
+                                   ) -> aiohttp.web.Response:
         """Append X-Backend-Server HTTP header."""
         response = await handler(request)  # type: aiohttp.web.Response
         response.headers.add("X-Backend-Server", self.server_name)
+        if response.body is not None and len(response.body) > 1000:
+            response.enable_compression()
         return response
 
     @aiohttp.web.middleware

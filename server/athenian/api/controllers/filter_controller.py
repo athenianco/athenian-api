@@ -116,9 +116,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     model = PullRequestSet(include=IncludedNativeUsers(users={
         prefix + login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
     }), data=web_prs)
-    response = model_response(model)
-    response.enable_compression()
-    return response
+    return model_response(model)
 
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
