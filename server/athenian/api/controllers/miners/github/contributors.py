@@ -6,13 +6,16 @@ from typing import Collection, List, Optional
 
 import aiomcache
 import databases
+import sentry_sdk
 from sqlalchemy import and_, func, or_, select
 
 from athenian.api.cache import cached
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestReview, PushCommit, Release, User
+from athenian.api.tracing import sentry_span
 
 
+@sentry_span
 async def mine_contributors(repos: Collection[str],
                             time_from: Optional[datetime],
                             time_to: Optional[datetime],
@@ -28,6 +31,7 @@ async def mine_contributors(repos: Collection[str],
     return await _mine_contributors(repos, time_from, time_to, with_stats, db, cache)
 
 
+@sentry_span
 @cached(
     exptime=5 * 60,
     serialize=marshal.dumps,
@@ -44,6 +48,7 @@ async def _mine_contributors(repos: Collection[str],
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
 
+    @sentry_span
     async def fetch_prs():
         return await db.fetch_all(
             select([PullRequest.user_login, func.count(PullRequest.user_login)])
@@ -56,6 +61,7 @@ async def _mine_contributors(repos: Collection[str],
                             PullRequest.updated_at.between(time_from, time_to))))
             .group_by(PullRequest.user_login))
 
+    @sentry_span
     async def fetch_comments():
         return await db.fetch_all(
             select([PullRequestComment.user_login, func.count(PullRequestComment.user_login)])
@@ -64,6 +70,7 @@ async def _mine_contributors(repos: Collection[str],
                         ))
             .group_by(PullRequestComment.user_login))
 
+    @sentry_span
     async def fetch_commit_authors():
         return await db.fetch_all(
             select([PushCommit.author_login, func.count(PushCommit.author_login)])
@@ -71,6 +78,7 @@ async def _mine_contributors(repos: Collection[str],
                         PushCommit.committed_date.between(time_from, time_to)))
             .group_by(PushCommit.author_login))
 
+    @sentry_span
     async def fetch_commit_committers():
         return await db.fetch_all(
             select([PushCommit.committer_login, func.count(PushCommit.committer_login)])
@@ -78,6 +86,7 @@ async def _mine_contributors(repos: Collection[str],
                         PushCommit.committed_date.between(time_from, time_to)))
             .group_by(PushCommit.committer_login))
 
+    @sentry_span
     async def fetch_reviews():
         return await db.fetch_all(
             select([PullRequestReview.user_login, func.count(PullRequestReview.user_login)])
@@ -85,6 +94,7 @@ async def _mine_contributors(repos: Collection[str],
                         PullRequestReview.submitted_at.between(time_from, time_to)))
             .group_by(PullRequestReview.user_login))
 
+    @sentry_span
     async def fetch_releases():
         return await db.fetch_all(
             select([Release.author, func.count(Release.author)])
@@ -105,7 +115,8 @@ async def _mine_contributors(repos: Collection[str],
     stats.pop(None, None)
 
     cols = [User.login, User.email, User.avatar_url, User.name]
-    user_details = await db.fetch_all(select(cols).where(User.login.in_(stats.keys())))
+    with sentry_sdk.start_span(op="SELECT FROM github_users_v2_compat"):
+        user_details = await db.fetch_all(select(cols).where(User.login.in_(stats.keys())))
 
     contribs = []
     for ud in user_details:

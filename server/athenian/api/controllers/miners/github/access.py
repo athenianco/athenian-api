@@ -7,6 +7,7 @@ from athenian.api.cache import cached
 from athenian.api.controllers.account import get_installation_ids
 from athenian.api.controllers.miners.access import AccessChecker
 from athenian.api.models.metadata.github import InstallationRepo
+from athenian.api.tracing import sentry_span
 
 
 class GitHubAccessChecker(AccessChecker):
@@ -19,6 +20,7 @@ class GitHubAccessChecker(AccessChecker):
 
     SERVICE = "github"
 
+    @sentry_span
     async def load(self) -> "AccessChecker":
         """Fetch the list of accessible repositories."""
         iids = await get_installation_ids(self.account, self.sdb, self.cache)

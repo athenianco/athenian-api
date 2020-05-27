@@ -284,7 +284,8 @@ class AthenianApp(connexion.AioHttpApp):
     async def postprocess_response(self, request: aiohttp.web.Request, handler,
                                    ) -> aiohttp.web.Response:
         """Append X-Backend-Server HTTP header."""
-        response = await handler(request)  # type: aiohttp.web.Response
+        with sentry_sdk.start_span(op=handler.__qualname__):
+            response = await handler(request)  # type: aiohttp.web.Response
         response.headers.add("X-Backend-Server", self.server_name)
         if response.body is not None and len(response.body) > 1000:
             response.enable_compression()

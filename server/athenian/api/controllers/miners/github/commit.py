@@ -10,6 +10,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.models.metadata.github import NodePullRequestCommit, PushCommit
+from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
 
 
@@ -20,6 +21,7 @@ class FilterCommitsProperty(Enum):
     BYPASSING_PRS = "bypassing_prs"
 
 
+@sentry_span
 @cached(
     exptime=5 * 60,
     serialize=pickle.dumps,

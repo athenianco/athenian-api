@@ -5,8 +5,10 @@ import pandas as pd
 
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.models.metadata.github import PushCommit
+from athenian.api.tracing import sentry_span
 
 
+@sentry_span
 def calc_code_stats(queried_commits: pd.DataFrame, total_commits: pd.DataFrame,
                     time_intervals: Sequence[date]) -> List[CodeStats]:
     """

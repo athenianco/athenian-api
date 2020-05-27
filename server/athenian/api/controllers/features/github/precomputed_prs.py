@@ -18,8 +18,10 @@ from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewRequest
 from athenian.api.models.precomputed.models import GitHubPullRequestTimes
+from athenian.api.tracing import sentry_span
 
 
+@sentry_span
 async def load_precomputed_done_times(date_from: datetime,
                                       date_to: datetime,
                                       repos: Collection[str],
@@ -127,6 +129,7 @@ async def load_precomputed_done_times(date_from: datetime,
     return result
 
 
+@sentry_span
 async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
                                        times: Iterable[PullRequestTimes],
                                        release_settings: Dict[str, ReleaseMatchSetting],

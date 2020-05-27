@@ -15,6 +15,7 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.pull_request import ReviewResolution
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestReview, PullRequestReviewComment, PushCommit, Release
+from athenian.api.tracing import sentry_span
 
 
 class DeveloperTopic(Enum):
@@ -54,6 +55,7 @@ class DeveloperStats:
     review_pr_comments: int = 0
 
 
+@sentry_span
 async def _set_commits(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                        topics: Set[str],
                        devs: Sequence[str],
@@ -76,6 +78,7 @@ async def _set_commits(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
             stats_by_dev[dev][topic] = dev_lines
 
 
+@sentry_span
 async def _set_prs_created(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                            topics: Set[str],
                            devs: Sequence[str],
@@ -90,6 +93,7 @@ async def _set_prs_created(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
         stats_by_dev[dev][topic] = n
 
 
+@sentry_span
 async def _set_prs_reviewed(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                             topics: Set[str],
                             devs: Sequence[str],
@@ -104,6 +108,7 @@ async def _set_prs_reviewed(stats_by_dev: Dict[str, Dict[str, Union[int, float]]
         stats_by_dev[dev][topic] = n
 
 
+@sentry_span
 async def _set_prs_merged(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                           topics: Set[str],
                           devs: Sequence[str],
@@ -118,6 +123,7 @@ async def _set_prs_merged(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
         stats_by_dev[dev][topic] = n
 
 
+@sentry_span
 async def _set_releases(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                         topics: Set[str],
                         devs: Sequence[str],
@@ -132,6 +138,7 @@ async def _set_releases(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
         stats_by_dev[dev][topic] = n
 
 
+@sentry_span
 async def _set_reviews(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                        topics: Set[str],
                        devs: Sequence[str],
@@ -175,6 +182,7 @@ async def _set_reviews(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
             pass
 
 
+@sentry_span
 async def _set_pr_comments(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                            topics: Set[str],
                            devs: Sequence[str],
@@ -218,6 +226,7 @@ processors = [
 ]
 
 
+@sentry_span
 async def calc_developer_metrics(devs: Sequence[str],
                                  repos: Collection[str],
                                  topics: Set[DeveloperTopic],
