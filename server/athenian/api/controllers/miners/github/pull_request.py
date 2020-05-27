@@ -166,10 +166,17 @@ class PullRequestMiner:
         if pr_blacklist is not None:
             pr_blacklist = PullRequest.node_id.notin_(pr_blacklist)
             filters.append(pr_blacklist)
-        prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                   db, PullRequest, index=PullRequest.node_id.key)
-        released_prs = await map_releases_to_prs(
-            repositories, time_from, time_to, release_settings, db, cache, pr_blacklist)
+        with sentry_sdk.start_span(op="PullRequestMiner._mine/select prs"):
+            prs, released_prs = await asyncio.gather(
+                read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
+                               db, PullRequest, index=PullRequest.node_id.key),
+                map_releases_to_prs(repositories, time_from, time_to, release_settings,
+                                    db, cache, pr_blacklist),
+                return_exceptions=True)
+        if isinstance(prs, Exception):
+            raise prs from None
+        if isinstance(released_prs, Exception):
+            raise released_prs from None
         prs = pd.concat([prs, released_prs], sort=False)
         prs = prs[~prs.index.duplicated()]
         prs.sort_index(level=0, inplace=True, sort_remaining=False)

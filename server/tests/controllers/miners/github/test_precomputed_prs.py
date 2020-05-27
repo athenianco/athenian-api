@@ -5,8 +5,8 @@ import uuid
 
 import pandas as pd
 
-from athenian.api.controllers.features.github.precomputed_prs import load_precomputed_done_times, \
-    store_precomputed_done_times
+from athenian.api.controllers.miners.github.precomputed_prs import \
+    load_precomputed_done_candidates, load_precomputed_done_times, store_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import Fallback, MinedPullRequest, \
     PullRequestTimes
 from athenian.api.controllers.miners.github.release import matched_by_column
@@ -111,29 +111,7 @@ async def test_load_store_precomputed_done_filters(pr_samples, mdb, pdb, cache):
 
 
 async def test_load_store_precomputed_done_match_by(pr_samples, mdb, pdb, cache):
-    samples = pr_samples(1)  # type: Sequence[PullRequestTimes]
-    settings = {
-        "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", ".*", Match.tag_or_branch),
-    }
-    prs = [MinedPullRequest(
-        pr={PullRequest.repository_full_name.key: "src-d/go-git",
-            PullRequest.user_login.key: "xxx",
-            PullRequest.merged_by_login.key: "yyy",
-            PullRequest.node_id.key: uuid.uuid4().hex},
-        release={matched_by_column: 0,
-                 Release.author.key: "zzz"},
-        comments=gen_dummy_df(samples[0].first_comment_on_first_review.best),
-        commits=pd.DataFrame.from_records(
-            [["zzz", "zzz", samples[0].first_commit.best]],
-            columns=[
-                PullRequestCommit.committer_login.key,
-                PullRequestCommit.author_login.key,
-                PullRequestCommit.committed_date.key,
-            ],
-        ),
-        reviews=gen_dummy_df(samples[0].first_comment_on_first_review.best),
-        review_comments=gen_dummy_df(samples[0].first_comment_on_first_review.best),
-        review_requests=gen_dummy_df(samples[0].first_review_request.best))]
+    samples, prs, settings = _gen_one_pr(pr_samples)
     await store_precomputed_done_times(prs, samples, settings, mdb, pdb, cache)
     time_from = samples[0].created.best - timedelta(days=365)
     time_to = samples[0].released.best + timedelta(days=1)
@@ -215,3 +193,47 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, mdb, pdb
         time_from, time_to, ["one"], [], True, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 1
     assert loaded_prs[prs[1].pr[PullRequest.node_id.key]] == samples[1]
+
+
+def _gen_one_pr(pr_samples):
+    samples = pr_samples(1)  # type: Sequence[PullRequestTimes]
+    s = samples[0]
+    settings = {
+        "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", ".*", Match.tag_or_branch),
+    }
+    prs = [MinedPullRequest(
+        pr={PullRequest.repository_full_name.key: "src-d/go-git",
+            PullRequest.user_login.key: "xxx",
+            PullRequest.merged_by_login.key: "yyy",
+            PullRequest.node_id.key: uuid.uuid4().hex},
+        release={matched_by_column: 0,
+                 Release.author.key: "zzz"},
+        comments=gen_dummy_df(s.first_comment_on_first_review.best),
+        commits=pd.DataFrame.from_records(
+            [["zzz", "zzz", s.first_commit.best]],
+            columns=[
+                PullRequestCommit.committer_login.key,
+                PullRequestCommit.author_login.key,
+                PullRequestCommit.committed_date.key,
+            ],
+        ),
+        reviews=gen_dummy_df(s.first_comment_on_first_review.best),
+        review_comments=gen_dummy_df(s.first_comment_on_first_review.best),
+        review_requests=gen_dummy_df(s.first_review_request.best))]
+    return samples, prs, settings
+
+
+async def test_load_precomputed_done_candidates_smoke(pr_samples, mdb, pdb, cache):
+    samples, prs, settings = _gen_one_pr(pr_samples)
+    await store_precomputed_done_times(prs, samples, settings, mdb, pdb, cache)
+    time_from = samples[0].created.best
+    time_to = samples[0].released.best
+    loaded_prs = await load_precomputed_done_candidates(
+        time_from, time_to, ["one"], settings, mdb, pdb, cache)
+    assert len(loaded_prs) == 0
+    loaded_prs = await load_precomputed_done_candidates(
+        time_from, time_to, ["src-d/go-git"], settings, mdb, pdb, cache)
+    assert loaded_prs == {prs[0].pr[PullRequest.node_id.key]}
+    loaded_prs = await load_precomputed_done_candidates(
+        time_from, time_from, ["src-d/go-git"], settings, mdb, pdb, cache)
+    assert len(loaded_prs) == 0

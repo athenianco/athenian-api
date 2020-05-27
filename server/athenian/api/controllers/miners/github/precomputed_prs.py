@@ -1,13 +1,16 @@
+import asyncio
 from datetime import datetime, timezone
 from itertools import chain
 import pickle
-from typing import Any, Collection, Dict, Iterable, Optional
+from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 import aiomcache
 import databases
 from dateutil.rrule import DAILY, rrule
 from sqlalchemy import and_, insert, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.orm.attributes import InstrumentedAttribute
+from sqlalchemy.sql import ClauseElement
 
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.pull_request import MinedPullRequest, PullRequestTimes
@@ -19,6 +22,103 @@ from athenian.api.models.metadata.github import PullRequest, PullRequestComment,
     PullRequestCommit, PullRequestReview, PullRequestReviewRequest
 from athenian.api.models.precomputed.models import GitHubPullRequestTimes
 from athenian.api.tracing import sentry_span
+
+
+def _create_common_filters(date_from: datetime,
+                           date_to: datetime,
+                           repos: Collection[str]) -> List[ClauseElement]:
+    assert isinstance(date_from, datetime)
+    assert isinstance(date_to, datetime)
+    ghprt = GitHubPullRequestTimes
+    return [
+        ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
+        ghprt.repository_full_name.in_(repos),
+        ghprt.pr_created_at < date_to,
+        ghprt.pr_done_at >= date_from,
+    ]
+
+
+def _check_release_match(repo: str,
+                         release_match: str,
+                         release_settings: Dict[str, ReleaseMatchSetting],
+                         default_branches: Dict[str, str],
+                         prefix: str,
+                         result: Any,
+                         ambiguous: Dict[str, Any]) -> Optional[Any]:
+    if release_match == "rejected":
+        dump = result
+    else:
+        match_name, match_by = release_match.split("|", 1)
+        match = Match[match_name]
+        required_release_match = release_settings[prefix + repo]
+        if required_release_match.match != Match.tag_or_branch:
+            if match != required_release_match.match:
+                return None
+            dump = result
+        else:
+            dump = ambiguous[match_name]
+        if match == Match.tag:
+            target = required_release_match.tags
+        elif match == Match.branch:
+            target = required_release_match.branches.replace(
+                default_branch_alias, default_branches.get(repo, default_branch_alias))
+        else:
+            raise AssertionError("Precomputed DB may not contain Match.tag_or_branch")
+        if target != match_by:
+            return None
+    return dump
+
+
+async def _fetch_rows_and_default_branches(selected: List[InstrumentedAttribute],
+                                           filters: List[ClauseElement],
+                                           repos: Collection[str],
+                                           mdb: databases.Database,
+                                           pdb: databases.Database,
+                                           cache: Optional[aiomcache.Client],
+                                           ) -> Tuple[List[Mapping], Dict[str, str]]:
+    rows, dbt = await asyncio.gather(pdb.fetch_all(select(selected).where(and_(*filters))),
+                                     extract_branches(repos, mdb, cache),
+                                     return_exceptions=True)
+    if isinstance(rows, Exception):
+        raise rows from None
+    if isinstance(dbt, Exception):
+        raise dbt from None
+    return rows, dbt[1]
+
+
+@sentry_span
+async def load_precomputed_done_candidates(date_from: datetime,
+                                           date_to: datetime,
+                                           repos: Collection[str],
+                                           release_settings: Dict[str, ReleaseMatchSetting],
+                                           mdb: databases.Database,
+                                           pdb: databases.Database,
+                                           cache: Optional[aiomcache.Client],
+                                           ) -> Set[str]:
+    """
+    Load the set of released PR identifiers.
+
+    We find all the released PRs for a given time frame, repositories, and release match settings.
+    """
+    ghprt = GitHubPullRequestTimes
+    selected = [ghprt.pr_node_id,
+                ghprt.repository_full_name,
+                ghprt.release_match]
+    filters = _create_common_filters(date_from, date_to, repos)
+    rows, default_branches = await _fetch_rows_and_default_branches(
+        selected, filters, repos, mdb, pdb, cache)
+    prefix = PREFIXES["github"]
+    result = set()
+    ambiguous = {Match.tag.name: set(), Match.branch.name: set()}
+    for row in rows:
+        dump = _check_release_match(
+            row[1], row[2], release_settings, default_branches, prefix, result, ambiguous)
+        if dump is None:
+            continue
+        dump.add(row[0])
+    result.update(ambiguous[Match.tag.name])
+    result.update(ambiguous[Match.branch.name])
+    return result
 
 
 @sentry_span
@@ -33,20 +133,13 @@ async def load_precomputed_done_times(date_from: datetime,
                                       cache: Optional[aiomcache.Client],
                                       ) -> Dict[str, PullRequestTimes]:
     """Load PullRequestTimes belonging to released or rejected PRs from the precomputed DB."""
-    assert isinstance(date_from, datetime)
-    assert isinstance(date_to, datetime)
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     ghprt = GitHubPullRequestTimes
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match,
                 ghprt.data]
-    filters = [
-        ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
-        ghprt.repository_full_name.in_(repos),
-        ghprt.pr_created_at < date_to,
-        ghprt.pr_done_at >= date_from,
-    ]
+    filters = _create_common_filters(date_from, date_to, repos)
     if len(developers) > 0:
         if postgres:
             developer_filters = [
@@ -83,34 +176,16 @@ async def load_precomputed_done_times(date_from: datetime,
         else:
             selected.append(ghprt.activity_days)
             date_range = set(date_range)
-    rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
+    rows, default_branches = await _fetch_rows_and_default_branches(
+        selected, filters, repos, mdb, pdb, cache)
     prefix = PREFIXES["github"]
     result = {}
     ambiguous = {Match.tag.name: {}, Match.branch.name: {}}
-    _, default_branches = await extract_branches(repos, mdb, cache)
     for row in rows:
-        node_id, repo, release_match, data = row[0], row[1], row[2], row[3]
-        if release_match == "rejected":
-            dump = result
-        else:
-            match_name, match_by = release_match.split("|", 1)
-            match = Match[match_name]
-            required_release_match = release_settings[prefix + repo]
-            if required_release_match.match != Match.tag_or_branch:
-                if match != required_release_match.match:
-                    continue
-                dump = result
-            else:
-                dump = ambiguous[match_name]
-            if match == Match.tag:
-                target = required_release_match.tags
-            elif match == Match.branch:
-                target = required_release_match.branches.replace(
-                    default_branch_alias, default_branches.get(repo, default_branch_alias))
-            else:
-                raise AssertionError("Precomputed DB may not contain Match.tag_or_branch")
-            if target != match_by:
-                continue
+        dump = _check_release_match(
+            row[1], row[2], release_settings, default_branches, prefix, result, ambiguous)
+        if dump is None:
+            continue
         if not postgres:
             if len(developers) > 0:
                 pr_parts = set(chain(row[4:7], *row[7:11]))  # sqlite Record supports slices
@@ -121,7 +196,7 @@ async def load_precomputed_done_times(date_from: datetime,
                                  for d in row[ghprt.activity_days.key]}
                 if not activity_days.intersection(date_range):
                     continue
-        dump[node_id] = pickle.loads(data)
+        dump[row[0]] = pickle.loads(row[3])
     result.update(ambiguous[Match.tag.name])
     for node_id, times in ambiguous[Match.branch.name].items():
         if node_id not in result:

@@ -10,14 +10,14 @@ from athenian.api.cache import cached
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
-from athenian.api.controllers.features.github.precomputed_prs import load_precomputed_done_times, \
-    store_precomputed_done_times
 from athenian.api.controllers.features.github.pull_request import \
     BinnedPullRequestMetricCalculator, calculators as pull_request_calculators
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import calc_developer_metrics
+from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_times, \
+    store_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestMiner, PullRequestTimesMiner
 from athenian.api.controllers.settings import ReleaseMatchSetting
