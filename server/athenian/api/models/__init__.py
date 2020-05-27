@@ -89,7 +89,7 @@ def check_schema_version(name: str, conn_str: str, log: logging.Logger) -> None:
     """Raise DBSchemaVersionMismatchError if the real (connected) DB schema version \
     does not match the required (declared in the code) version."""
     directory = script.ScriptDirectory(os.path.join(os.path.dirname(__file__), name))
-    engine = create_engine(conn_str)
+    engine = create_engine(conn_str.split("?", 1)[0])
     with engine.begin() as conn:
         context = MigrationContext.configure(conn)
         real_rev = context.get_current_revision()
@@ -102,7 +102,7 @@ def check_schema_version(name: str, conn_str: str, log: logging.Logger) -> None:
 
 def check_collation(conn_str: str) -> None:
     """Force the PostgreSQL collation to be "C"."""
-    engine = create_engine(conn_str)
+    engine = create_engine(conn_str.split("?", 1)[0])
     if engine.dialect.name not in ("postgres", "postgresql"):
         return
     collation = engine.scalar(
