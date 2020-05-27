@@ -27,6 +27,7 @@ from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
+from athenian.api.tracing import sentry_span
 
 
 @dataclasses.dataclass(frozen=True)
@@ -128,6 +129,7 @@ class PullRequestMiner:
         return result
 
     @classmethod
+    @sentry_span
     @cached(
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=pickle.dumps,
@@ -183,6 +185,7 @@ class PullRequestMiner:
     _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
 
     @classmethod
+    @sentry_span
     @cached(
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=pickle.dumps,
@@ -207,34 +210,40 @@ class PullRequestMiner:
         """
         node_ids = prs.index if len(prs) > 0 else set()
 
+        @sentry_span
         async def fetch_reviews():
             return await cls._read_filtered_models(
                 db, PullRequestReview, node_ids, time_to,
                 columns=[PullRequestReview.submitted_at, PullRequestReview.user_id,
                          PullRequestReview.state, PullRequestReview.user_login])
 
+        @sentry_span
         async def fetch_review_comments():
             return await cls._read_filtered_models(
                 db, PullRequestReviewComment, node_ids, time_to,
                 columns=[PullRequestReviewComment.created_at, PullRequestReviewComment.user_id])
 
+        @sentry_span
         async def fetch_review_requests():
             return await cls._read_filtered_models(
                 db, PullRequestReviewRequest, node_ids, time_to,
                 columns=[PullRequestReviewRequest.created_at])
 
+        @sentry_span
         async def fetch_comments():
             return await cls._read_filtered_models(
                 db, PullRequestComment, node_ids, time_to,
                 columns=[PullRequestComment.created_at, PullRequestComment.user_id,
                          PullRequestComment.user_login])
 
+        @sentry_span
         async def fetch_commits():
             return await cls._read_filtered_models(
                 db, PullRequestCommit, node_ids, time_to,
                 columns=[PullRequestCommit.authored_date, PullRequestCommit.committed_date,
                          PullRequestCommit.author_login, PullRequestCommit.committer_login])
 
+        @sentry_span
         async def map_releases():
             merged_prs = prs[prs[PullRequest.merged_at.key] <= time_to]
             return await map_prs_to_releases(
@@ -319,6 +328,7 @@ class PullRequestMiner:
         return set(prs.index.values) - passed_pr_ids
 
     @classmethod
+    @sentry_span
     async def mine(cls,
                    date_from: date,
                    date_to: date,

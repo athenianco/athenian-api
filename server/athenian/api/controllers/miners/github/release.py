@@ -23,12 +23,14 @@ from athenian.api.controllers.miners.github.release_accelerated import update_hi
 from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, PullRequest, PushCommit, Release, User
+from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
 
 
 matched_by_column = "matched_by"
 
 
+@sentry_span
 async def load_releases(repos: Iterable[str],
                         time_from: datetime,
                         time_to: datetime,
@@ -277,6 +279,7 @@ async def _fetch_merge_commit_releases(repo: str,
     })
 
 
+@sentry_span
 async def map_prs_to_releases(prs: pd.DataFrame,
                               time_from: datetime,
                               time_to: datetime,
@@ -677,6 +680,7 @@ async def _extract_released_commits(releases: pd.DataFrame,
     return full_dag, new_releases, hash_to_release
 
 
+@sentry_span
 async def map_releases_to_prs(repos: Iterable[str],
                               time_from: datetime,
                               time_to: datetime,

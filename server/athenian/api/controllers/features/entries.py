@@ -4,6 +4,7 @@ from typing import Collection, Dict, List, Optional, Sequence
 
 import aiomcache
 from databases import Database
+import sentry_sdk
 
 from athenian.api.cache import cached
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
@@ -21,8 +22,10 @@ from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRe
     PullRequestMiner, PullRequestTimesMiner
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import PushCommit
+from athenian.api.tracing import sentry_span
 
 
+@sentry_span
 @cached(
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
@@ -61,19 +64,22 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     times_miner = PullRequestTimesMiner()
     mined_prs = []
     mined_times = []
-    for pr in miner:
-        mined_prs.append(pr)
-        try:
-            times = times_miner(pr)
-        except ImpossiblePullRequest:
-            continue
-        mined_times.append(times)
+    with sentry_sdk.start_span(op="PullRequestMiner.__iter__ + PullRequestTimesMiner.__call__"):
+        for pr in miner:
+            mined_prs.append(pr)
+            try:
+                times = times_miner(pr)
+            except ImpossiblePullRequest:
+                continue
+            mined_times.append(times)
     await store_precomputed_done_times(mined_prs, mined_times, release_settings, mdb, pdb, cache)
     mined_times.extend(done_times.values())
-    calcs = [pull_request_calculators[m]() for m in metrics]
-    return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_times) for ts in time_intervals]
+    with sentry_sdk.start_span(op="BinnedPullRequestMetricCalculator.__call__"):
+        calcs = [pull_request_calculators[m]() for m in metrics]
+        return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_times) for ts in time_intervals]
 
 
+@sentry_span
 async def calc_code_metrics(prop: FilterCommitsProperty,
                             time_intervals: Sequence[datetime],
                             repos: Collection[str],

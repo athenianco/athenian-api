@@ -5,7 +5,6 @@ import time
 import aiohttp.web
 import databases
 from databases.interfaces import ConnectionBackend, TransactionBackend
-import sentry_sdk
 
 from athenian.api import metadata
 from athenian.api.typing_utils import wraps
@@ -23,20 +22,19 @@ def measure_db_overhead(db: databases.Database,
 
     def measure_method_overhead(func) -> callable:
         async def wrapped_measure_method_overhead(*args, **kwargs):
-            with sentry_sdk.start_span(op=db_id):
-                start_time = time.time()
-                try:
-                    return await func(*args, **kwargs)
-                finally:
-                    elapsed = app["db_elapsed"].get()
-                    if elapsed is None:
-                        log.warning("Cannot record the %s overhead", db_id)
-                    else:
-                        delta = time.time() - start_time
-                        elapsed[db_id] += delta
-                        if _profile_queries:
-                            sql = str(args[0]).replace("\n", "\\n").replace("\t", "\\t")
-                            print("%f\t%s" % (delta, sql), flush=True)
+            start_time = time.time()
+            try:
+                return await func(*args, **kwargs)
+            finally:
+                elapsed = app["db_elapsed"].get()
+                if elapsed is None:
+                    log.warning("Cannot record the %s overhead", db_id)
+                else:
+                    delta = time.time() - start_time
+                    elapsed[db_id] += delta
+                    if _profile_queries:
+                        sql = str(args[0]).replace("\n", "\\n").replace("\t", "\\t")
+                        print("%f\t%s" % (delta, sql), flush=True)
 
         return wraps(wrapped_measure_method_overhead, func)
 

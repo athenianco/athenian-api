@@ -9,6 +9,7 @@ import aiomcache
 import databases
 import numpy as np
 import pandas as pd
+import sentry_sdk
 from sqlalchemy import select
 
 from athenian.api import metadata
@@ -27,6 +28,7 @@ from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
     PullRequestReview, PullRequestReviewComment, Release
+from athenian.api.tracing import sentry_span
 
 
 class PullRequestListMiner:
@@ -209,6 +211,7 @@ class PullRequestListMiner:
                       len(self._prs_today), evals)
 
 
+@sentry_span
 @cached(
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
@@ -297,5 +300,6 @@ async def filter_pull_requests(properties: Collection[Property],
     else:
         prs_today = prs_time_machine
     properties = set(properties)
-    return list(PullRequestListMiner(
-        prs_time_machine, prs_today, done_times, properties, participants, time_from))
+    with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
+        return list(PullRequestListMiner(
+            prs_time_machine, prs_today, done_times, properties, participants, time_from))

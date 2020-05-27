@@ -6,14 +6,17 @@ from typing import Collection, List, Optional
 
 import aiomcache
 import databases
+import sentry_sdk
 from sqlalchemy import and_, distinct, or_, select
 
 from athenian.api.cache import cached
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestReview, PushCommit, Release, Repository
+from athenian.api.tracing import sentry_span
 
 
+@sentry_span
 @cached(
     exptime=5 * 60,
     serialize=marshal.dumps,
@@ -31,6 +34,7 @@ async def mine_repositories(repos: Collection[str],
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
 
+    @sentry_span
     async def fetch_prs():
         return await db.fetch_all(
             select([distinct(PullRequest.repository_full_name)])
@@ -42,6 +46,7 @@ async def mine_repositories(repos: Collection[str],
                             PullRequest.closed_at.between(time_from, time_to),
                             PullRequest.updated_at.between(time_from, time_to)))))
 
+    @sentry_span
     async def fetch_comments():
         return await db.fetch_all(
             select([distinct(PullRequestComment.repository_full_name)])
@@ -49,6 +54,7 @@ async def mine_repositories(repos: Collection[str],
                         PullRequestComment.created_at.between(time_from, time_to),
                         )))
 
+    @sentry_span
     async def fetch_push_commits():
         return await db.fetch_all(
             select([distinct(PushCommit.repository_full_name)])
@@ -56,6 +62,7 @@ async def mine_repositories(repos: Collection[str],
                         PushCommit.committed_date.between(time_from, time_to),
                         )))
 
+    @sentry_span
     async def fetch_reviews():
         return await db.fetch_all(
             select([distinct(PullRequestReview.repository_full_name)])
@@ -63,6 +70,7 @@ async def mine_repositories(repos: Collection[str],
                         PullRequestReview.submitted_at.between(time_from, time_to),
                         )))
 
+    @sentry_span
     async def fetch_releases():
         return await db.fetch_all(
             select([distinct(Release.repository_full_name)])
@@ -72,11 +80,12 @@ async def mine_repositories(repos: Collection[str],
 
     repos = set(r[0] for r in chain.from_iterable(await asyncio.gather(
         fetch_prs(), fetch_comments(), fetch_push_commits(), fetch_reviews(), fetch_releases())))
-    repos = await db.fetch_all(select([Repository.full_name])
-                               .where(and_(Repository.archived.is_(False),
-                                           Repository.disabled.is_(False),
-                                           Repository.full_name.in_(repos)))
-                               .order_by(Repository.full_name))
+    with sentry_sdk.start_span(op="SELECT FROM github_repositories_v2_compat"):
+        repos = await db.fetch_all(select([Repository.full_name])
+                                   .where(and_(Repository.archived.is_(False),
+                                               Repository.disabled.is_(False),
+                                               Repository.full_name.in_(repos)))
+                                   .order_by(Repository.full_name))
     prefix = PREFIXES["github"]
     repos = [prefix + r[0] for r in repos]
     return repos

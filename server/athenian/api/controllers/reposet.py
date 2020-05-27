@@ -21,9 +21,11 @@ from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourc
     NotFoundError
 from athenian.api.models.web.generic_error import DatabaseConflict
 from athenian.api.response import ResponseError
+from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
 
 
+@sentry_span
 async def resolve_reposet(repo: str,
                           pointer: str,
                           uid: str,
@@ -59,6 +61,7 @@ async def resolve_reposet(repo: str,
     return rs.items
 
 
+@sentry_span
 async def fetch_reposet(
     id: int,
     columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
@@ -87,6 +90,7 @@ async def fetch_reposet(
     return RepositorySet(**rs), adm
 
 
+@sentry_span
 async def resolve_repos(repositories: List[str],
                         account: int,
                         uid: str,
@@ -125,6 +129,7 @@ async def resolve_repos(repositories: List[str],
     return repos
 
 
+@sentry_span
 async def load_account_reposets(account: int,
                                 native_uid: str,
                                 fields: list,
