@@ -127,7 +127,8 @@ async def _match_releases_by_tag(repos: Iterable[str],
     releases = await read_sql_query(
         select([Release])
         .where(and_(Release.published_at.between(time_from, time_to),
-                    Release.repository_full_name.in_(repos)))
+                    Release.repository_full_name.in_(repos),
+                    Release.commit_id.isnot(None)))
         .order_by(desc(Release.published_at)),
         db, Release, index=[Release.repository_full_name.key, Release.tag.key])
     releases = releases[~releases.index.duplicated(keep="first")]
