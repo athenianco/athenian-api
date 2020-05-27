@@ -16,10 +16,10 @@ from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
-from athenian.api.controllers.features.github.precomputed_prs import load_precomputed_done_times
 from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
+from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
     MinedPullRequest, PullRequestMiner, PullRequestTimes, PullRequestTimesMiner, ReviewResolution
 from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
