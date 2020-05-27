@@ -98,7 +98,8 @@ class PullRequestListMiner:
             props.add(Property.CREATED)
         if (pr.commits[PullRequestCommit.committed_date.key] > time_from).any():
             props.add(Property.COMMIT_HAPPENED)
-        if ((pr.reviews[PullRequestReview.submitted_at.key] > time_from)
+        review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.key]
+        if ((review_submitted_ats > time_from)
                 & (pr.reviews[PullRequestReview.user_login.key] != author)).any():
             props.add(Property.REVIEW_HAPPENED)
         if times.first_review_request.value is not None and \
@@ -110,8 +111,9 @@ class PullRequestListMiner:
             props.add(Property.MERGE_HAPPENED)
         if times.released and times.released.best > time_from:
             props.add(Property.RELEASE_HAPPENED)
-        if ((pr.reviews[PullRequestReview.state.key] == ReviewResolution.CHANGES_REQUESTED.value)
-                & (pr.reviews[PullRequestReview.submitted_at.key] > time_from)).any():  # noqa
+        review_states = pr.reviews[PullRequestReview.state.key]
+        if ((review_states.values == ReviewResolution.CHANGES_REQUESTED.value)
+                & (review_submitted_ats > time_from).values).any():
             props.add(Property.CHANGES_REQUEST_HAPPENED)
         return props
 
