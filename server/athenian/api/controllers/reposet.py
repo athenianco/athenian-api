@@ -25,7 +25,6 @@ from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
 
 
-@sentry_span
 async def resolve_reposet(repo: str,
                           pointer: str,
                           uid: str,
