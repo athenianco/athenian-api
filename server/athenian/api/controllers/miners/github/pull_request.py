@@ -616,6 +616,9 @@ class PullRequestTimesMiner:
     """Extract the pull request event timestamps from MinedPullRequest-s."""
 
     log = logging.getLogger("%s.PullRequestTimesMiner" % metadata.__package__)
+    dummy_reviews = pd.Series(["INVALID", pd.NaT],
+                              index=[PullRequestReview.state.key,
+                                     PullRequestReview.submitted_at.key])
 
     def __call__(self, pr: MinedPullRequest) -> PullRequestTimes:
         """
@@ -702,11 +705,12 @@ class PullRequestTimesMiner:
             reviews_before_merge = pr.reviews
         # the most recent review for each reviewer
         if reviews_before_merge.empty:
-            grouped_reviews = reviews_before_merge
+            # express lane
+            grouped_reviews = self.dummy_reviews
         elif reviews_before_merge[PullRequestReview.user_id.key].nunique() == 1:
             # fast lane
-            grouped_reviews = reviews_before_merge.take([
-                reviews_before_merge[PullRequestReview.submitted_at.key].values.argmax()])
+            grouped_reviews = reviews_before_merge._ixs(
+                reviews_before_merge[PullRequestReview.submitted_at.key].values.argmax())
         else:
             grouped_reviews = reviews_before_merge \
                 .take(np.where(reviews_before_merge[PullRequestReview.state.key] !=
@@ -715,14 +719,25 @@ class PullRequestTimesMiner:
                              ascending=False, ignore_index=True) \
                 .groupby(PullRequestReview.user_id.key, sort=False, as_index=False) \
                 .head(1)  # the most recent review for each reviewer
-        if (grouped_reviews[PullRequestReview.state.key].values
-                == ReviewResolution.CHANGES_REQUESTED.value).any():
+        grouped_reviews_states = grouped_reviews[PullRequestReview.state.key]
+        if isinstance(grouped_reviews_states, str):
+            changes_requested = grouped_reviews_states == ReviewResolution.CHANGES_REQUESTED.value
+        else:
+            changes_requested = (
+                grouped_reviews_states.values == ReviewResolution.CHANGES_REQUESTED.value
+            ).any()
+        if changes_requested:
             # merged with negative reviews
             approved_at_value = None
         else:
-            approved_at_value = grouped_reviews[PullRequestReview.submitted_at.key].take(
-                np.where(grouped_reviews[PullRequestReview.state.key].values ==
-                         ReviewResolution.APPROVED.value)[0]).max()
+            if isinstance(grouped_reviews_states, str):
+                if grouped_reviews_states == ReviewResolution.APPROVED.value:
+                    approved_at_value = grouped_reviews[PullRequestReview.submitted_at.key]
+                else:
+                    approved_at_value = pd.NaT
+            else:
+                approved_at_value = grouped_reviews[PullRequestReview.submitted_at.key].take(
+                    np.where(grouped_reviews_states == ReviewResolution.APPROVED.value)[0]).max()
             if approved_at_value == approved_at_value and closed_at:
                 # similar to last_review
                 approved_at_value = min(approved_at_value, closed_at.best)
