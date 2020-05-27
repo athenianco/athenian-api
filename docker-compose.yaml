@@ -42,7 +42,7 @@ services:
 
   memcached:
     image: launcher.gcr.io/google/memcached1
-    command: ['memcached', '-m', '64']
+    command: ['memcached', '-m', '1024M', '-I', '128M']
     ports:
       - ${MEMCACHED_HOST_PORT:-11211}:11211
 
