@@ -71,15 +71,17 @@ async def load_releases(repos: Iterable[str],
     for r in result:
         if isinstance(r, Exception):
             raise r
-    result = pd.concat(result) if result else pd.DataFrame()
-    if len(result.columns) == 0:
-        # can happen if no such repositories were found
-        result = pd.DataFrame(columns=[c.name for c in Release.__table__.columns])
+    result = pd.concat(result) if result else _dummy_releases_df()
     if index is not None:
         result.set_index(index, inplace=True)
     else:
         result.reset_index(drop=True, inplace=True)
     return result
+
+
+def _dummy_releases_df():
+    return pd.DataFrame(
+        columns=[c.name for c in Release.__table__.columns] + [matched_by_column])
 
 
 tag_by_branch_probe_lookaround = timedelta(weeks=4)
@@ -125,7 +127,8 @@ async def _match_releases_by_tag(repos: Iterable[str],
     releases = await read_sql_query(
         select([Release])
         .where(and_(Release.published_at.between(time_from, time_to),
-                    Release.repository_full_name.in_(repos)))
+                    Release.repository_full_name.in_(repos),
+                    Release.commit_id.isnot(None)))
         .order_by(desc(Release.published_at)),
         db, Release, index=[Release.repository_full_name.key, Release.tag.key])
     releases = releases[~releases.index.duplicated(keep="first")]
@@ -181,7 +184,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
         branches_matched.append(
             repo_branches[repo_branches[Branch.branch_name.key].str.match(regexp)])
     if not branches_matched:
-        return pd.DataFrame()
+        return _dummy_releases_df()
     branches_matched = pd.concat(branches_matched)
 
     mp_tasks = [
@@ -208,8 +211,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
         if isinstance(r, Exception):
             raise r from None
     if not pseudo_releases:
-        return pd.DataFrame(
-            columns=[c.name for c in Release.__table__.columns] + [matched_by_column])
+        return _dummy_releases_df()
     return pd.concat(pseudo_releases)
 
 
@@ -708,7 +710,8 @@ async def map_releases_to_prs(repos: Iterable[str],
             if isinstance(pr, Exception):
                 raise pr
         return wrap_sql_query(chain.from_iterable(prs), PullRequest, index=PullRequest.node_id.key)
-    return pd.DataFrame()
+    return pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
+                                 if c.name != PullRequest.node_id.key])
 
 
 async def mine_releases(releases: pd.DataFrame,
