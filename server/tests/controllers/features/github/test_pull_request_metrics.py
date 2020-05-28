@@ -253,3 +253,28 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
     )[0])
     assert metric1 == metric1_ext
     assert metric2 == metric2_ext
+
+
+async def test_calc_pull_request_metrics_line_github_exclude_inactive(
+        mdb, pdb, cache, release_match_setting_tag):
+    date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
+    date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
+    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]],
+            ["src-d/go-git"], [], False, release_match_setting_tag, mdb, pdb, cache]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    assert metrics.value == 7
+    args[4] = True
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    assert metrics.value == 6
+    date_from = datetime(year=2017, month=5, day=23, tzinfo=timezone.utc)
+    date_to = datetime(year=2017, month=5, day=25, tzinfo=timezone.utc)
+    args[0] = [PullRequestMetricID.PR_RELEASE_COUNT]
+    args[1] = [[date_from, date_to]]
+    args[4] = False
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    assert metrics.value == 71
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    assert metrics.value == 71
+    args[4] = True
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    assert metrics.value == 71

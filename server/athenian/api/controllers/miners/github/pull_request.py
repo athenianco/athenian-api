@@ -181,7 +181,7 @@ class PullRequestMiner:
             raise prs from None
         if isinstance(released_prs, Exception):
             raise released_prs from None
-        prs = pd.concat([prs, released_prs], sort=False)
+        prs = pd.concat([prs, released_prs], copy=False)
         prs = prs[~prs.index.duplicated()]
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
         cls._truncate_timestamps(prs, time_to)
@@ -191,6 +191,8 @@ class PullRequestMiner:
                 cls, prs, time_from, time_to, release_settings, db, cache)
         dfs = [prs, *dfs]
         cls._drop(dfs, cls._find_drop_by_developers(dfs, developers))
+        if exclude_inactive:
+            cls._drop(dfs, cls._find_drop_by_inactive(dfs, time_from, time_to))
         return dfs, repositories, developers
 
     _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
@@ -263,6 +265,45 @@ class PullRequestMiner:
         return await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
             fetch_commits(), map_releases())
+
+    @classmethod
+    @sentry_span
+    async def mine(cls,
+                   date_from: date,
+                   date_to: date,
+                   time_from: datetime,
+                   time_to: datetime,
+                   repositories: Collection[str],
+                   developers: Collection[str],
+                   exclude_inactive: bool,
+                   release_settings: Dict[str, ReleaseMatchSetting],
+                   db: databases.Database,
+                   cache: Optional[aiomcache.Client],
+                   pr_blacklist: Optional[Collection[str]] = None,
+                   ) -> "PullRequestMiner":
+        """
+        Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
+
+        :param date_from: Fetch PRs created starting from this date, inclusive.
+        :param date_to: Fetch PRs created ending with this date, inclusive.
+        :param time_from: Precise timestamp of since when PR events are allowed to happen.
+        :param time_to: Precise timestamp of until when PR events are allowed to happen.
+        :param repositories: PRs must belong to these repositories (prefix excluded).
+        :param developers: PRs must be authored by these user IDs. An empty list means everybody.
+        :param exclude_inactive: Ors must have at least one event in the given time frame.
+        :param release_settings: Release match settings of the account.
+        :param db: Metadata db instance.
+        :param cache: memcached client to cache the collected data.
+        :param pr_blacklist: completely ignore the existence of these PR node IDs.
+        """
+        date_from_with_time = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+        date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
+        assert time_from >= date_from_with_time
+        assert time_to <= date_to_with_time
+        dfs, _, _ = await cls._mine(date_from, date_to, repositories, developers, exclude_inactive,
+                                    release_settings, db, cache, pr_blacklist=pr_blacklist)
+        cls._truncate_prs(dfs, time_from, time_to)
+        return cls(*dfs)
 
     @classmethod
     def _remove_spurious_prs(cls,
@@ -339,43 +380,29 @@ class PullRequestMiner:
         return set(prs.index.values) - passed_pr_ids
 
     @classmethod
-    @sentry_span
-    async def mine(cls,
-                   date_from: date,
-                   date_to: date,
-                   time_from: datetime,
-                   time_to: datetime,
-                   repositories: Collection[str],
-                   developers: Collection[str],
-                   exclude_inactive: bool,
-                   release_settings: Dict[str, ReleaseMatchSetting],
-                   db: databases.Database,
-                   cache: Optional[aiomcache.Client],
-                   pr_blacklist: Optional[Collection[str]] = None,
-                   ) -> "PullRequestMiner":
-        """
-        Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
-
-        :param date_from: Fetch PRs created starting from this date, inclusive.
-        :param date_to: Fetch PRs created ending with this date, inclusive.
-        :param time_from: Precise timestamp of since when PR events are allowed to happen.
-        :param time_to: Precise timestamp of until when PR events are allowed to happen.
-        :param repositories: PRs must belong to these repositories (prefix excluded).
-        :param developers: PRs must be authored by these user IDs. An empty list means everybody.
-        :param exclude_inactive: Ors must have at least one event in the given time frame.
-        :param release_settings: Release match settings of the account.
-        :param db: Metadata db instance.
-        :param cache: memcached client to cache the collected data.
-        :param pr_blacklist: completely ignore the existence of these PR node IDs.
-        """
-        date_from_with_time = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
-        date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
-        assert time_from >= date_from_with_time
-        assert time_to <= date_to_with_time
-        dfs, _, _ = await cls._mine(date_from, date_to, repositories, developers, exclude_inactive,
-                                    release_settings, db, cache, pr_blacklist=pr_blacklist)
-        cls._truncate_prs(dfs, time_from, time_to)
-        return cls(*dfs)
+    def _find_drop_by_inactive(cls,
+                               dfs: List[pd.DataFrame],
+                               time_from: datetime,
+                               time_to: datetime) -> Collection[str]:
+        prs, reviews, review_comments, review_requests, comments, commits, releases = dfs
+        activities = [
+            prs[PullRequest.created_at.key],
+            prs[PullRequest.closed_at.key],
+            review_requests[PullRequestReviewRequest.created_at.key],
+            reviews[PullRequestReview.created_at.key],
+            comments[PullRequestComment.created_at.key],
+            commits[PullRequestCommit.committed_date.key],
+            releases[Release.published_at.key],
+        ]
+        for df in activities:
+            if df.index.nlevels > 1:
+                df.index = df.index.droplevel(1)
+            df.name = "timestamp"
+        activities = pd.concat(activities, copy=False)
+        active_prs = activities.index.take(np.where(
+            activities.between(time_from, time_to))[0]).drop_duplicates()
+        inactive_prs = prs.index.difference(active_prs)
+        return inactive_prs
 
     @staticmethod
     async def _read_filtered_models(conn: Union[databases.core.Connection, databases.Database],
