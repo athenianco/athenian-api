@@ -58,6 +58,8 @@ matrix:
         - (! grep -R 'athenian\.api\.models' athenian/api/models/state/versions)
         - (! grep -R 'athenian\.api\.models' athenian/api/models/precomputed/versions)
         - pytest --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py
+        - PYTHONPATH=. python3 tests/gen_sqlite_db.py
+        - python3 -m athenian.api.hacks.heat_cache --metadata-db=sqlite:///tests/mdb.sqlite --state-db=sqlite:///tests/sdb.sqlite --precomputed-db=sqlite:///tests/pdb.sqlite --memcached=0.0.0.0:11211
         - set +e
     - if: commit_message !~ /Bump version/
       stage: main
@@ -111,9 +113,10 @@ matrix:
       before_script: *_setup_postgres
       script:
         - docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
-        - docker run --network=host --rm --entrypoint python3 ${GOOGLE_DOCKER_IMAGE} -m athenian.api.models.state postgres://postgres:@0.0.0.0:5432/state
-        - docker run --network=host --rm --entrypoint python3 ${GOOGLE_DOCKER_IMAGE} -m athenian.api.models.precomputed postgres://postgres:@0.0.0.0:5432/precomputed
-        - docker run --network=host -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ --rm --entrypoint python3 ${GOOGLE_DOCKER_IMAGE} -m athenian.api.invite_admin postgres://postgres:@0.0.0.0:5432/state
+        - run="docker run --network=host --rm --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ ${GOOGLE_DOCKER_IMAGE}"
+        - $run -m athenian.api.models.state postgres://postgres:@0.0.0.0:5432/state
+        - $run -m athenian.api.models.precomputed postgres://postgres:@0.0.0.0:5432/precomputed
+        - $run -m athenian.api.invite_admin postgres://postgres:@0.0.0.0:5432/state
     - if: branch = master AND type != pull_request AND commit_message !~ /Bump version/
       stage: bump-version
       name: Bump the version
