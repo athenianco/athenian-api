@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 import logging
 
@@ -9,7 +10,8 @@ from sqlalchemy import and_, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from tqdm import tqdm
 
-from athenian.api import add_logging_args, create_memcached, setup_cache_metrics, setup_context
+from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
+    setup_cache_metrics, setup_context
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
 from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
 from athenian.api.models.state.models import ReleaseSetting, RepositorySet
@@ -36,6 +38,8 @@ def main():
     args = parse_args()
     setup_context(log)
     sentry_sdk.add_breadcrumb(category="origin", message="heater", level="info")
+    if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):
+        return 1
     engine = create_engine(args.state_db)
     session = sessionmaker(bind=engine)()  # type: Session
     reposets = session.query(RepositorySet).all()
@@ -47,6 +51,8 @@ def main():
     async def async_run():
         cache = create_memcached(args.memcached, log)
         setup_cache_metrics(cache, {}, None)
+        for v in cache.metrics["context"].values():
+            v.set(defaultdict(int))
         mdb = databases.Database(args.metadata_db)
         await mdb.connect()
         pdb = databases.Database(args.precomputed_db)
@@ -76,6 +82,7 @@ def main():
                 [[time_from, time_to]],
                 repos,
                 [],
+                False,
                 settings,
                 mdb,
                 pdb,
