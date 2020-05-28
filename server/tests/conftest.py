@@ -9,7 +9,6 @@ import tempfile
 import time
 from typing import Dict, List, Optional, Union
 
-import databases
 import numpy as np
 from prometheus_client import CollectorRegistry
 try:
@@ -27,7 +26,7 @@ from sqlalchemy.orm import sessionmaker
 import uvloop
 
 from athenian.api import AthenianApp, check_collation, create_memcached, hack_sqlite_arrays, \
-    hack_sqlite_hstore, setup_cache_metrics
+    hack_sqlite_hstore, ParallelDatabase, setup_cache_metrics
 from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import Base as MetadataBase, PullRequest
@@ -309,20 +308,20 @@ def precomputed_db() -> str:
 
 @pytest.fixture(scope="function")
 async def mdb(metadata_db, loop):
-    db = databases.Database(metadata_db)
+    db = ParallelDatabase(metadata_db)
     await db.connect()
     return db
 
 
 @pytest.fixture(scope="function")
 async def sdb(state_db, loop):
-    db = databases.Database(state_db)
+    db = ParallelDatabase(state_db)
     await db.connect()
     return db
 
 
 @pytest.fixture(scope="function")
 async def pdb(precomputed_db, loop):
-    db = databases.Database(precomputed_db)
+    db = ParallelDatabase(precomputed_db)
     await db.connect()
     return db
