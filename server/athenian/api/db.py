@@ -3,7 +3,7 @@ import os
 import time
 
 import aiohttp.web
-import databases
+import databases.core
 from databases.interfaces import ConnectionBackend, TransactionBackend
 
 from athenian.api import metadata
@@ -61,3 +61,11 @@ def measure_db_overhead(db: databases.Database,
 
     db._backend.connection = wrapped_backend_connection
     return db
+
+
+class ParallelDatabase(databases.Database):
+    """Override connection() to ignore the task context and spawn a new Connection every time."""
+
+    def connection(self) -> "databases.core.Connection":
+        """Bypass self._connection_context."""
+        return databases.core.Connection(self._backend)

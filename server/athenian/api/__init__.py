@@ -36,7 +36,7 @@ from athenian.api.auth import Auth0
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
-from athenian.api.db import measure_db_overhead
+from athenian.api.db import measure_db_overhead, ParallelDatabase
 from athenian.api.metadata import __package__
 from athenian.api.models import check_collation, check_schema_version, DBSchemaMismatchError, \
     hack_sqlite_arrays, hack_sqlite_hstore
@@ -212,7 +212,7 @@ class AthenianApp(connexion.AioHttpApp):
 
         async def connect_to_db(name: str, shortcut: str, db_conn: str, db_options: dict):
             try:
-                db = databases.Database(db_conn, **(db_options or {}))
+                db = ParallelDatabase(db_conn, **(db_options or {}))
                 await db.connect()
             except Exception as e:
                 if isinstance(e, asyncio.CancelledError):
