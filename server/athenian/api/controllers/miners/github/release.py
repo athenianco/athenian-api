@@ -190,7 +190,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
             repo_branches[repo_branches[Branch.branch_name.key].str.match(regexp)])
     if not branches_matched:
         return _dummy_releases_df()
-    branches_matched = pd.concat(branches_matched)
+    branches_matched = pd.concat(branches_matched, copy=False)
 
     mp_tasks = [
         _fetch_merge_points(repo, commit_id, branch_name, time_from, time_to, db, cache)
@@ -217,7 +217,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
             raise r from None
     if not pseudo_releases:
         return _dummy_releases_df()
-    return pd.concat(pseudo_releases)
+    return pd.concat(pseudo_releases, copy=False)
 
 
 @cached(
@@ -321,7 +321,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
             )
         releases_old = await load_releases(
             repos, earliest_merge, time_from, consistent_release_settings, db, cache)
-        releases = pd.concat([releases_new, releases_old])
+        releases = pd.concat([releases_new, releases_old], copy=False)
         releases.reset_index(drop=True, inplace=True)
     if cache is not None:
         matched_bys = _extract_matched_bys_from_releases(releases)
@@ -736,7 +736,7 @@ async def mine_releases(releases: pd.DataFrame,
             raise s from None
     user_columns = [User.login, User.avatar_url]
     if stats:
-        stats = pd.concat(stats, sort=False)
+        stats = pd.concat(stats, copy=False)
         people = set(chain(chain.from_iterable(stats["commit_authors"]), stats["publisher"]))
         prefix = PREFIXES["github"]
         stats["publisher"] = prefix + stats["publisher"]

@@ -100,3 +100,17 @@ async def test_pr_list_miner_release_cache_participants(
         [Property.RELEASING], time_from, time_to, ["src-d/go-git"], participants, False,
         release_match_setting_tag, None, None, cache))
     assert len(prs1) == len(prs2)
+
+
+async def test_pr_list_miner_exclude_inactive(
+        mdb, pdb, release_match_setting_tag, cache):
+    time_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2017, month=1, day=11, tzinfo=timezone.utc)
+    prs1 = list(await filter_pull_requests(
+        set(Property), time_from, time_to, ["src-d/go-git"], {}, False,
+        release_match_setting_tag, mdb, pdb, cache))
+    assert len(prs1) == 7
+    prs1 = list(await filter_pull_requests(
+        set(Property), time_from, time_to, ["src-d/go-git"], {}, True,
+        release_match_setting_tag, mdb, pdb, cache))
+    assert len(prs1) == 6

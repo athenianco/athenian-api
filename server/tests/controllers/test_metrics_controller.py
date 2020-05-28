@@ -345,6 +345,29 @@ async def test_calc_metrics_prs_ratio_flow(client, headers):
         assert flow == (opened + 1) / (closed + 1), "%.3f != %d / %d" % (flow, opened, closed)
 
 
+async def test_calc_metrics_prs_exclude_inactive(client, headers):
+    body = {
+        "date_from": "2017-01-01",
+        "date_to": "2017-01-11",
+        "for": [{
+            "repositories": [
+                "github.com/src-d/go-git",
+            ],
+        }],
+        "granularities": ["all"],
+        "account": 1,
+        "metrics": [PullRequestMetricID.PR_ALL_COUNT],
+        "exclude_inactive": True,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
+    assert cm.calculated[0].values[0].values[0] == 6
+
+
 async def test_code_bypassing_prs_smoke(client, headers):
     body = {
         "account": 1,

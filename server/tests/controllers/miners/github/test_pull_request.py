@@ -60,8 +60,13 @@ async def test_pr_miner_blacklist(mdb, release_match_setting_tag):
         mdb,
         None,
     )
-    node_ids = [pr.pr[PullRequest.node_id.key] for pr in miner]
-    assert len(node_ids) > 0
+    node_ids = {pr.pr[PullRequest.node_id.key] for pr in miner}
+    assert node_ids == {
+        "MDExOlB1bGxSZXF1ZXN0MTAwMTI4Nzg0", "MDExOlB1bGxSZXF1ZXN0MTAwMjc5MDU4",
+        "MDExOlB1bGxSZXF1ZXN0MTAwNjQ5MDk4", "MDExOlB1bGxSZXF1ZXN0MTAwNjU5OTI4",
+        "MDExOlB1bGxSZXF1ZXN0OTI3NzM4NzY=", "MDExOlB1bGxSZXF1ZXN0OTUyMzA0Njg=",
+        "MDExOlB1bGxSZXF1ZXN0OTg1NTIxMTc=",
+    }
     miner = await PullRequestMiner.mine(
         date_from,
         date_to,
@@ -388,3 +393,26 @@ async def test_pr_mine_by_ids(mdb, cache):
         dfs1[i].index = dfs1[i].index.droplevel(0)
         dfs1[i].sort_index(inplace=True)
         assert (df.fillna(0) == dfs1[i].fillna(0)).all().all()
+
+
+async def test_pr_miner_exclude_inactive(mdb, release_match_setting_tag):
+    date_from = date(year=2017, month=1, day=1)
+    date_to = date(year=2017, month=1, day=12)
+    miner = await PullRequestMiner.mine(
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
+        ["src-d/go-git"],
+        [],
+        True,
+        release_match_setting_tag,
+        mdb,
+        None,
+    )
+    node_ids = {pr.pr[PullRequest.node_id.key] for pr in miner}
+    assert node_ids == {
+        "MDExOlB1bGxSZXF1ZXN0MTAwMTI4Nzg0", "MDExOlB1bGxSZXF1ZXN0MTAwMjc5MDU4",
+        "MDExOlB1bGxSZXF1ZXN0MTAwNjQ5MDk4", "MDExOlB1bGxSZXF1ZXN0MTAwNjU5OTI4",
+        "MDExOlB1bGxSZXF1ZXN0OTg1NTIxMTc=", "MDExOlB1bGxSZXF1ZXN0OTUyMzA0Njg=",
+    }

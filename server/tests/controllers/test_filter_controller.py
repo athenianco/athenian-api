@@ -551,6 +551,23 @@ async def test_filter_prs_developer_filter(client, headers):
         assert passed
 
 
+async def test_filter_prs_exclude_inactive(client, headers):
+    body = {
+        "date_from": "2017-01-01",
+        "date_to": "2017-01-11",
+        "account": 1,
+        "in": [],
+        "properties": [],
+        "exclude_inactive": True,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    assert response.status == 200
+    obj = json.loads((await response.read()).decode("utf-8"))
+    prs = PullRequestSet.from_dict(obj)  # type: PullRequestSet
+    assert len(prs.data) == 6
+
+
 async def test_filter_commits_bypassing_prs_mcuadros(client, headers):
     body = {
         "account": 1,
