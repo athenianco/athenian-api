@@ -273,6 +273,7 @@ class AthenianApp(connexion.AioHttpApp):
         try:
             return await handler(request)
         except (ConnectionError, ConnectionDoesNotExistError, InterfaceError) as e:
+            sentry_sdk.capture_exception(e)
             return ResponseError(GenericError(
                 type="/errors/InternalConnectivityError",
                 title=HTTPStatus.SERVICE_UNAVAILABLE.phrase,
@@ -287,8 +288,12 @@ class AthenianApp(connexion.AioHttpApp):
         with sentry_sdk.start_span(op=handler.__qualname__):
             response = await handler(request)  # type: aiohttp.web.Response
         response.headers.add("X-Backend-Server", self.server_name)
-        if getattr(response, "body", None) is not None and len(response.body) > 1000:
-            response.enable_compression()
+        try:
+            if len(response.body) > 1000:
+                response.enable_compression()
+        except (AttributeError, TypeError):
+            # static files
+            pass
         return response
 
     @aiohttp.web.middleware
