@@ -1,9 +1,9 @@
-from typing import List, Optional
+from typing import Iterator, List, Mapping, Optional
 
 from athenian.api.models.web.base_model_ import Model
 
 
-class PullRequestWith(Model):
+class PullRequestWith(Model, Mapping):
     """Triage PRs by various developer participation."""
 
     def __init__(
@@ -39,8 +39,8 @@ class PullRequestWith(Model):
         self.attribute_map = {
             "author": "author",
             "reviewer": "reviewer",
-            "commit_author": "commit-author",
-            "commit_committer": "commit-committer",
+            "commit_author": "commit_author",
+            "commit_committer": "commit_committer",
             "commenter": "commenter",
             "merger": "merger",
             "releaser": "releaser",
@@ -165,3 +165,15 @@ class PullRequestWith(Model):
         :param releaser: The releaser of this PullRequestWith.
         """
         self._releaser = releaser
+
+    def __getitem__(self, k: str) -> Optional[List[str]]:
+        """Implement []."""
+        return getattr(self, k)
+
+    def __len__(self) -> int:
+        """Implement len()."""
+        return len(self.attribute_map)
+
+    def __iter__(self) -> Iterator[str]:
+        """Implement iter()."""
+        return iter(self.attribute_map)

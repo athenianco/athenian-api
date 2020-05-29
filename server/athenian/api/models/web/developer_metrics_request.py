@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
-from athenian.api.models.web.for_set import ForSet
+from athenian.api.models.web.for_set_developers import ForSetDevelopers
 
 
 class DeveloperMetricsRequest(Model):
@@ -11,7 +11,7 @@ class DeveloperMetricsRequest(Model):
 
     def __init__(
         self,
-        for_: Optional[List[ForSet]] = None,
+        for_: Optional[List[ForSetDevelopers]] = None,
         metrics: Optional[List[str]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
@@ -28,7 +28,7 @@ class DeveloperMetricsRequest(Model):
         :param account: The account of this DeveloperMetricsRequest.
         """
         self.openapi_types = {
-            "for_": List[ForSet],
+            "for_": List[ForSetDevelopers],
             "metrics": List[str],
             "date_from": date,
             "date_to": date,
@@ -53,7 +53,7 @@ class DeveloperMetricsRequest(Model):
         self._account = account
 
     @property
-    def for_(self) -> List[ForSet]:
+    def for_(self) -> List[ForSetDevelopers]:
         """Gets the for_ of this DeveloperMetricsRequest.
 
         Sets of developers and repositories to calculate the metrics for.
@@ -63,7 +63,7 @@ class DeveloperMetricsRequest(Model):
         return self._for_
 
     @for_.setter
-    def for_(self, for_: List[ForSet]):
+    def for_(self, for_: List[ForSetDevelopers]):
         """Sets the for_ of this DeveloperMetricsRequest.
 
         Sets of developers and repositories to calculate the metrics for.

@@ -7,7 +7,7 @@ import pytest
 
 from athenian.api import FriendlyJson
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRequestMetrics, \
-    CodeBypassingPRsMeasurement, DeveloperMetricID, PullRequestMetricID
+    CodeBypassingPRsMeasurement, DeveloperMetricID, PullRequestMetricID, PullRequestWith
 
 
 @pytest.mark.parametrize(
@@ -52,21 +52,23 @@ async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, clie
 
 async def test_calc_metrics_prs_all_time(client, headers):
     """https://athenianco.atlassian.net/browse/ENG-116"""
-    body = {
-        "for": [
-            {
-                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
-                "repositories": [
-                    "github.com/src-d/go-git",
-                ],
-            },
-            {
-                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
-                "repositories": [
-                    "github.com/src-d/go-git",
-                ],
-            },
+    devs = ["github.com/vmarkovtsev", "github.com/mcuadros"]
+    for_block = {
+        "with": {
+            "author": devs,
+            "merger": devs,
+            "releaser": devs,
+            "commenter": devs,
+            "reviewer": devs,
+            "commit_author": devs,
+            "commit_committer": devs,
+        },
+        "repositories": [
+            "github.com/src-d/go-git",
         ],
+    }
+    body = {
+        "for": [for_block, for_block],
         "metrics": [PullRequestMetricID.PR_WIP_TIME,
                     PullRequestMetricID.PR_REVIEW_TIME,
                     PullRequestMetricID.PR_MERGING_TIME,
@@ -94,7 +96,7 @@ async def test_calc_metrics_prs_all_time(client, headers):
     gcounts = defaultdict(int)
     assert len(cm.calculated) == 6
     for calc in cm.calculated:
-        assert calc.for_.developers == ["github.com/vmarkovtsev", "github.com/mcuadros"]
+        assert calc.for_.with_ == PullRequestWith(**for_block["with"])
         assert calc.for_.repositories == ["github.com/src-d/go-git"]
         gcounts[calc.granularity] += 1
         nonzero = defaultdict(int)
@@ -366,6 +368,32 @@ async def test_calc_metrics_prs_exclude_inactive(client, headers):
     assert response.status == 200, "Response body is : " + body
     cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
     assert cm.calculated[0].values[0].values[0] == 6
+
+
+async def test_calc_metrics_prs_filter_authors(client, headers):
+    body = {
+        "date_from": "2017-01-01",
+        "date_to": "2017-01-11",
+        "for": [{
+            "repositories": [
+                "github.com/src-d/go-git",
+            ],
+            "with": {
+                "author": ["github.com/mcuadros"],
+            },
+        }],
+        "granularities": ["all"],
+        "account": 1,
+        "metrics": [PullRequestMetricID.PR_ALL_COUNT],
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
+    assert cm.calculated[0].values[0].values[0] == 1
 
 
 async def test_code_bypassing_prs_smoke(client, headers):
