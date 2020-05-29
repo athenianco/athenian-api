@@ -392,6 +392,15 @@ def setup_context(log: logging.Logger) -> None:
         return
     sentry_env = os.getenv("SENTRY_ENV", "development")
     log.info("Sentry: https://[secure]@sentry.io/%s#%s" % (sentry_project, sentry_env))
+
+    def filter_sentry_events(event: dict, hint) -> Optional[dict]:
+        status_transaction = "athenian.api.controllers.status_controller.StatusRenderer.__call__"
+        if event["type"] == "transaction" and event["transaction"] == status_transaction:
+            event.clear()
+            event.update({"type": "transaction", "transaction": status_transaction})
+            return None
+        return event
+
     sentry_sdk.init(
         environment=sentry_env,
         dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),
@@ -402,7 +411,8 @@ def setup_context(log: logging.Logger) -> None:
         attach_stacktrace=True,
         request_bodies="medium",
         release="%s@%s" % (metadata.__package__, metadata.__version__),
-        traces_sample_rate=1.0,
+        traces_sample_rate=float(os.getenv("SENTRY_SAMPLING_RATE", "0.1")),
+        before_send=filter_sentry_events,
     )
     sentry_sdk.utils.MAX_STRING_LENGTH = 2048
     sentry_sdk.utils.MAX_FORMAT_PARAM_LENGTH = 256
