@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 import logging
 import pickle
-from typing import Any, Collection, Dict, Generator, Generic, List, Mapping, Optional, Set, \
+from typing import Any, Collection, Dict, Generator, Generic, List, Optional, Set, \
     Tuple, TypeVar, Union
 
 import aiomcache
@@ -21,9 +21,8 @@ from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.github.hardcoded import BOTS
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
-from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind
+from athenian.api.controllers.miners.pull_request_list_item import Participants, ParticipationKind
 from athenian.api.controllers.settings import ReleaseMatchSetting
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
@@ -48,39 +47,34 @@ class MinedPullRequest:
     commits: pd.DataFrame
     release: Dict[str, Any]
 
-    def participants(self, with_prefix=True) -> Mapping[ParticipationKind, Set[str]]:
-        """
-        Collect unique developer logins which are mentioned in this pull request.
-
-        :param with_prefix: Value indicating whether to prepend "github.com/" to the returned \
-                            logins.
-        """
-        prefix = PREFIXES["github"] if with_prefix else ""
+    def participants(self) -> Participants:
+        """Collect unique developer logins that are mentioned in this pull request."""
         author = self.pr[PullRequest.user_login.key]
         merger = self.pr[PullRequest.merged_by_login.key]
         releaser = self.release[Release.author.key]
         participants = {
-            ParticipationKind.AUTHOR: {prefix + author} if author else set(),
+            ParticipationKind.AUTHOR: {author} if author else set(),
             ParticipationKind.REVIEWER: self._extract_people(
-                self.reviews, PullRequestReview.user_login.key, prefix),
+                self.reviews, PullRequestReview.user_login.key),
             ParticipationKind.COMMENTER: self._extract_people(
-                self.comments, PullRequestComment.user_login.key, prefix),
+                self.comments, PullRequestComment.user_login.key),
             ParticipationKind.COMMIT_COMMITTER: self._extract_people(
-                self.commits, PullRequestCommit.committer_login.key, prefix),
+                self.commits, PullRequestCommit.committer_login.key),
             ParticipationKind.COMMIT_AUTHOR: self._extract_people(
-                self.commits, PullRequestCommit.author_login.key, prefix),
-            ParticipationKind.MERGER: {prefix + merger} if merger else set(),
-            ParticipationKind.RELEASER: {prefix + releaser} if releaser else set(),
+                self.commits, PullRequestCommit.author_login.key),
+            ParticipationKind.MERGER: {merger} if merger else set(),
+            ParticipationKind.RELEASER: {releaser} if releaser else set(),
         }
         try:
-            participants[ParticipationKind.REVIEWER].remove(prefix + author)
+            participants[ParticipationKind.REVIEWER].remove(author)
         except (KeyError, TypeError):
             pass
         return participants
 
     @staticmethod
-    def _extract_people(df: pd.DataFrame, col: str, prefix: str) -> Set[str]:
-        return set(prefix + df[col].values[np.where(df[col].values)[0]])
+    def _extract_people(df: pd.DataFrame, col: str) -> Set[str]:
+        values = df[col].values
+        return set(values[np.where(values)[0]])
 
 
 class PullRequestMiner:
@@ -102,30 +96,27 @@ class PullRequestMiner:
         self._commits = commits
         self._releases = releases
 
-    def _postprocess_cached_prs(result: Tuple[List[pd.DataFrame], Set[str], Set[str]],
-                                repositories: Collection[str],
-                                developers: Collection[str],
+    def _postprocess_cached_prs(result: Tuple[List[pd.DataFrame], Set[str], Participants],
+                                repositories: Set[str],
+                                participants: Participants,
                                 pr_blacklist: Optional[Collection[str]] = None,
-                                **_) -> Tuple[List[pd.DataFrame], Set[str], Set[str]]:
-        dfs, cached_repositories, cached_developers = result
-        if set(repositories) - cached_repositories:
+                                **_) -> Tuple[List[pd.DataFrame], Set[str], Participants]:
+        dfs, cached_repositories, cached_participants = result
+        if repositories - cached_repositories:
             raise CancelCache()
-        if cached_developers and (not developers or set(developers) - cached_developers):
+        cls = PullRequestMiner
+        if not cls._check_participants_compatibility(cached_participants, participants):
             raise CancelCache()
         to_remove = set()
         if pr_blacklist:
             to_remove.update(pr_blacklist)
         prs = dfs[0]
-        if not isinstance(repositories, set):
-            repositories = set(repositories)
-        if not isinstance(developers, set):
-            developers = set(developers)
         to_remove.update(prs.index.take(np.where(
             np.in1d(prs[PullRequest.repository_full_name.key].values,
                     list(repositories), assume_unique=True, invert=True),
         )[0]))
-        to_remove.update(PullRequestMiner._find_drop_by_developers(dfs, developers))
-        PullRequestMiner._drop(dfs, to_remove)
+        to_remove.update(cls._find_drop_by_participants(dfs, participants))
+        cls._drop(dfs, to_remove)
         return result
 
     @classmethod
@@ -138,24 +129,22 @@ class PullRequestMiner:
             date_from.toordinal(), date_to.toordinal(), exclude_inactive, release_settings,
         ),
         postprocess=_postprocess_cached_prs,
+        version=2,
     )
     async def _mine(cls,
                     date_from: date,
                     date_to: date,
-                    repositories: Collection[str],
-                    developers: Collection[str],
+                    repositories: Set[str],
+                    participants: Participants,
                     exclude_inactive: bool,
                     release_settings: Dict[str, ReleaseMatchSetting],
                     db: databases.Database,
                     cache: Optional[aiomcache.Client],
                     pr_blacklist: Optional[Collection[str]] = None,
-                    ) -> Tuple[List[pd.DataFrame], Set[str], Set[str]]:
+                    ) -> Tuple[List[pd.DataFrame], Set[str], Participants]:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
-        if not isinstance(repositories, set):
-            repositories = set(repositories)
-        if not isinstance(developers, set):
-            developers = set(developers)
+        assert isinstance(repositories, set)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
         filters = [
             sql.or_(PullRequest.closed_at.is_(None), PullRequest.closed_at >= time_from),
@@ -166,6 +155,18 @@ class PullRequestMiner:
         if pr_blacklist is not None:
             pr_blacklist = PullRequest.node_id.notin_(pr_blacklist)
             filters.append(pr_blacklist)
+        if len(participants) == 1:
+            if ParticipationKind.AUTHOR in participants:
+                filters.append(PullRequest.user_login.in_(participants[ParticipationKind.AUTHOR]))
+            elif ParticipationKind.MERGER in participants:
+                filters.append(
+                    PullRequest.merged_by_login.in_(participants[ParticipationKind.MERGER]))
+        elif len(participants) == 2 and ParticipationKind.AUTHOR in participants and \
+                ParticipationKind.MERGER in participants:
+            filters.append(sql.or_(
+                PullRequest.user_login.in_(participants[ParticipationKind.AUTHOR]),
+                PullRequest.merged_by_login.in_(participants[ParticipationKind.MERGER]),
+            ))
 
         @sentry_span
         async def fetch_prs() -> pd.DataFrame:
@@ -174,13 +175,15 @@ class PullRequestMiner:
 
         prs, released_prs = await asyncio.gather(
             fetch_prs(),
-            map_releases_to_prs(repositories, time_from, time_to, release_settings,
-                                db, cache, pr_blacklist),
+            map_releases_to_prs(
+                repositories, time_from, time_to,
+                participants.get(ParticipationKind.AUTHOR, []),
+                participants.get(ParticipationKind.MERGER, []),
+                release_settings, db, cache, pr_blacklist),
             return_exceptions=True)
-        if isinstance(prs, Exception):
-            raise prs from None
-        if isinstance(released_prs, Exception):
-            raise released_prs from None
+        for r in (prs, released_prs):
+            if isinstance(r, Exception):
+                raise r from None
         prs = pd.concat([prs, released_prs], copy=False)
         prs = prs[~prs.index.duplicated()]
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
@@ -190,10 +193,10 @@ class PullRequestMiner:
             dfs = await cls.mine_by_ids.__wrapped__(
                 cls, prs, time_from, time_to, release_settings, db, cache)
         dfs = [prs, *dfs]
-        cls._drop(dfs, cls._find_drop_by_developers(dfs, developers))
+        cls._drop(dfs, cls._find_drop_by_participants(dfs, participants))
         if exclude_inactive:
             cls._drop(dfs, cls._find_drop_by_inactive(dfs, time_from, time_to))
-        return dfs, repositories, developers
+        return dfs, repositories, participants
 
     _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
 
@@ -262,9 +265,13 @@ class PullRequestMiner:
             return await map_prs_to_releases(
                 merged_prs, time_from, time_to, release_settings, db, cache)
 
-        return await asyncio.gather(
+        dfs = await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
-            fetch_commits(), map_releases())
+            fetch_commits(), map_releases(), return_exceptions=True)
+        for df in dfs:
+            if isinstance(df, Exception):
+                raise df from None
+        return dfs
 
     @classmethod
     @sentry_span
@@ -273,8 +280,8 @@ class PullRequestMiner:
                    date_to: date,
                    time_from: datetime,
                    time_to: datetime,
-                   repositories: Collection[str],
-                   developers: Collection[str],
+                   repositories: Set[str],
+                   participants: Participants,
                    exclude_inactive: bool,
                    release_settings: Dict[str, ReleaseMatchSetting],
                    db: databases.Database,
@@ -289,7 +296,8 @@ class PullRequestMiner:
         :param time_from: Precise timestamp of since when PR events are allowed to happen.
         :param time_to: Precise timestamp of until when PR events are allowed to happen.
         :param repositories: PRs must belong to these repositories (prefix excluded).
-        :param developers: PRs must be authored by these user IDs. An empty list means everybody.
+        :param participants: PRs must have these user IDs in the specified participation roles
+                             (OR aggregation). An empty dict means everybody.
         :param exclude_inactive: Ors must have at least one event in the given time frame.
         :param release_settings: Release match settings of the account.
         :param db: Metadata db instance.
@@ -300,10 +308,23 @@ class PullRequestMiner:
         date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
-        dfs, _, _ = await cls._mine(date_from, date_to, repositories, developers, exclude_inactive,
-                                    release_settings, db, cache, pr_blacklist=pr_blacklist)
+        dfs, _, _ = await cls._mine(
+            date_from, date_to, repositories, participants, exclude_inactive,
+            release_settings, db, cache, pr_blacklist=pr_blacklist)
         cls._truncate_prs(dfs, time_from, time_to)
         return cls(*dfs)
+
+    @staticmethod
+    def _check_participants_compatibility(cached_participants: Participants,
+                                          participants: Participants) -> bool:
+        if not cached_participants:
+            return True
+        if not participants:
+            return False
+        for k, v in participants.items():
+            if v - cached_participants.get(k, set()):
+                return False
+        return True
 
     @classmethod
     def _remove_spurious_prs(cls,
@@ -332,52 +353,51 @@ class PullRequestMiner:
                     errors="ignore")
 
     @classmethod
-    def _find_drop_by_developers(cls, dfs: List[pd.DataFrame], developers: Set[str]) -> Set[str]:
-        if not developers:
-            return set()
-        developers = np.asarray(list(developers))
-        prs, reviews, _, _, comments, commits, releases = dfs
-        passed_pr_ids = set(prs.index.take(np.where(
-            np.in1d(prs[PullRequest.user_login.key].values, developers, assume_unique=True),
-        )[0]))
-        if len(passed_pr_ids) == len(prs):
-            return set()
-        # how about mergers?
-        passed_pr_ids.update(prs.index.take(np.where(
-            np.in1d(prs[PullRequest.merged_by_login.key].values, developers, assume_unique=True),
-        )[0]))
-        if len(passed_pr_ids) == len(prs):
-            return set()
-        # how about reviewers?
-        passed_pr_ids.update(reviews.index.get_level_values(0).take(np.where(
-            np.in1d(reviews[PullRequestReview.user_login.key].values, developers,
-                    assume_unique=True),
-        )[0]))
-        if len(passed_pr_ids) == len(prs):
-            return set()
-        # how about commenters?
-        passed_pr_ids.update(comments.index.get_level_values(0).take(np.where(
-            np.in1d(comments[PullRequestComment.user_login.key].values, developers,
-                    assume_unique=True),
-        )[0]))
-        if len(passed_pr_ids) == len(prs):
-            return set()
-        # how about commits?
-        passed_pr_ids.update(commits.index.get_level_values(0).take(np.where(
-            np.in1d(commits[PullRequestCommit.author_login.key].values, developers,
-                    assume_unique=True)
-            | np.in1d(commits[PullRequestCommit.committer_login.key].values, developers,
-                      assume_unique=True),
-        )[0]))
-        if len(passed_pr_ids) == len(prs):
-            return set()
-        # how about releasers?
-        passed_pr_ids.update(releases.index.take(np.where(
-            np.in1d(releases[Release.author.key].values, developers, assume_unique=True),
-        )[0]))
-        if len(passed_pr_ids) == len(prs):
-            return set()
-        return set(prs.index.values) - passed_pr_ids
+    def _find_drop_by_participants(cls,
+                                   dfs: List[pd.DataFrame],
+                                   participants: Participants,
+                                   ) -> Collection[str]:
+        if not participants:
+            return []
+        prs, reviews, review_comments, review_requests, comments, commits, releases = dfs
+        passed = []
+        for df, col, pk in ((prs, PullRequest.user_login, ParticipationKind.AUTHOR),
+                            (prs, PullRequest.merged_by_login, ParticipationKind.MERGER),
+                            (releases, Release.author, ParticipationKind.RELEASER)):
+            col_parts = participants.get(pk)
+            if not col_parts:
+                continue
+            passed.append(df.index.take(np.where(df[col.key].isin(col_parts))[0]))
+
+        reviewers = participants.get(ParticipationKind.REVIEWER)
+        if reviewers:
+            ulkr = PullRequestReview.user_login.key
+            ulkp = PullRequest.user_login.key
+            user_logins = pd.merge(reviews[ulkr].droplevel(1), prs[ulkp],
+                                   left_index=True, right_index=True, how="left", copy=False)
+            ulkr += "_x"
+            ulkp += "_y"
+            passed.append(user_logins.index.take(np.where(
+                (user_logins[ulkr] != user_logins[ulkp]) & user_logins[ulkr].isin(reviewers),
+            )[0]).unique())
+        for df, col, pk in (
+                (comments, PullRequestComment.user_login, ParticipationKind.COMMENTER),
+                (commits, PullRequestCommit.author_login, ParticipationKind.COMMIT_AUTHOR),
+                (commits, PullRequestCommit.committer_login, ParticipationKind.COMMIT_COMMITTER)):
+            col_parts = participants.get(pk)
+            if not col_parts:
+                continue
+            passed.append(df.index.get_level_values(0).take(np.where(
+                df[col.key].isin(col_parts))[0]).unique())
+        while len(passed) > 1:
+            new_passed = []
+            for i in range(0, len(passed), 2):
+                if i + 1 < len(passed):
+                    new_passed.append(passed[i].union(passed[i + 1]))
+                else:
+                    new_passed.append(passed[i])
+            passed = new_passed
+        return prs.index.difference(passed[0])
 
     @classmethod
     def _find_drop_by_inactive(cls,

@@ -284,8 +284,8 @@ async def validate_prs_response(response: ClientResponse,
     obj = json.loads(text)
     prs = PullRequestSet.from_dict(obj)  # type: PullRequestSet
     users = prs.include.users
-    assert len(users) > 0
-    assert len(prs.data) > 0
+    assert len(users) > 0, text
+    assert len(prs.data) > 0, text
     numbers = set()
     total_comments = total_commits = total_review_comments = total_released = total_rejected = \
         total_review_requests = total_reviews = 0

@@ -12,13 +12,14 @@ from athenian.api.controllers.features.entries import METRIC_ENTRIES
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
+from athenian.api.controllers.miners.pull_request_list_item import Participants, ParticipationKind
 from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
     CalculatedPullRequestMetricValues, CodeBypassingPRsMeasurement, CodeFilter, \
-    DeveloperMetricsRequest, ForSet, Granularity
+    DeveloperMetricsRequest, ForSet, ForSetDevelopers, Granularity
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 # from athenian.api.models.no_source_data_error import NoSourceDataError
@@ -26,8 +27,8 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
 #           service                  developers
-Filter = Tuple[str, Tuple[Set[str], List[str], ForSet]]
-#                       repositories          originals
+Filter = Tuple[str, Tuple[Set[str], Participants, ForSet]]
+#                       repositories             originals
 
 
 async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -137,7 +138,7 @@ def _split_to_time_intervals(date_from: date,
     return [split(g, ".granularities[%d]" % i) for i, g in enumerate(granularities)], tzoffset
 
 
-async def _compile_repos_and_devs(for_sets: List[ForSet],
+async def _compile_repos_and_devs(for_sets: List[Union[ForSet, ForSetDevelopers]],
                                   request: AthenianWebRequest,
                                   account: int,
                                   ) -> (List[Filter], List[str]):
@@ -159,7 +160,6 @@ async def _compile_repos_and_devs(for_sets: List[ForSet],
     async with sdb.connection() as sdb_conn:
         for i, for_set in enumerate(for_sets):
             repos = set()
-            devs = []
             service = None
             for repo in chain.from_iterable(await asyncio.gather(*[
                     resolve_reposet(r, ".for[%d].repositories[%d]" % (i, j), user, account, sdb,
@@ -194,15 +194,30 @@ async def _compile_repos_and_devs(for_sets: List[ForSet],
                     pointer=".for[%d].repositories" % i,
                     status=HTTPStatus.FORBIDDEN,
                 ))
-            for dev in (for_set.developers or []):
-                for key, prefix in PREFIXES.items():
-                    if dev.startswith(prefix):
-                        if service != key:
+            devs = {}
+            prefix = PREFIXES[service]
+            if isinstance(for_set, ForSet) and for_set.with_:
+                for k, v in for_set.with_.items():
+                    if not v:
+                        continue
+                    devs[ParticipationKind[k.upper()]] = dk = set()
+                    for dev in v:
+                        if not dev.startswith(prefix):
                             raise ResponseError(InvalidRequestError(
-                                detail='mixed providers are not allowed in the same "for" element',
-                                pointer=".for[%d].developers" % i,
+                                detail='providers in "with" and "repositories" do not match',
+                                pointer=".for[%d].with" % i,
                             ))
-                        devs.append(dev[len(prefix):])
+                        dk.add(dev[len(prefix):])
+            else:
+                # DEPRECATED for /metrics/prs but not for /metrics/developers
+                for dev in (for_set.developers or []):
+                    if not dev.startswith(prefix):
+                        raise ResponseError(InvalidRequestError(
+                            detail='providers in "developers" and "repositories" do not match',
+                            pointer=".for[%d].developers" % i,
+                        ))
+                    for pk in ParticipationKind:
+                        devs.setdefault(pk, set()).add(dev[len(prefix):])
             filters.append((service, (repos, devs, for_set)))
     return filters, all_repos
 
@@ -265,6 +280,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
         time_from += tzoffset
         time_to += tzoffset
     for service, (repos, devs, for_set) in filters:
+        devs = devs[ParticipationKind.AUTHOR]  # any key is fine, for example AUTHOR
         stats = await METRIC_ENTRIES[service]["developers"](
             devs, repos, topics, time_from, time_to, request.mdb, request.cache)
         met.calculated.append(CalculatedDeveloperMetricsItem(

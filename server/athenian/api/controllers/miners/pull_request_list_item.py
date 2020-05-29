@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import auto, IntEnum
-from typing import Collection, Dict, Mapping, Optional
+from typing import Dict, Mapping, Optional, Set
 
 import pandas as pd
 
@@ -19,6 +19,9 @@ class ParticipationKind(IntEnum):
     COMMIT_COMMITTER = 5
     MERGER = 6
     RELEASER = 7
+
+
+Participants = Mapping[ParticipationKind, Set[str]]
 
 
 class Property(IntEnum):
@@ -67,5 +70,5 @@ class PullRequestListItem:
     released: Optional[pd.Timestamp]
     release_url: str
     stage_timings: Dict[str, timedelta]
-    properties: Collection[Property]
-    participants: Mapping[ParticipationKind, Collection[str]]
+    properties: Set[Property]
+    participants: Participants

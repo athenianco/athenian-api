@@ -10,6 +10,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
 from athenian.api.controllers.miners.github.pull_request import Fallback, MinedPullRequest, \
     PullRequestTimes
 from athenian.api.controllers.miners.github.release import matched_by_column
+from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind
 from athenian.api.controllers.settings import Match, ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, Release
 
@@ -62,7 +63,7 @@ async def test_load_store_precomputed_done_smoke(mdb, pdb, pr_samples):
     n = len(released_ats) - len(released_ats) // 2 + \
         sum(1 for s in samples[-10:-5] if s.closed.best >= time_from)
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, names, [], False, settings, mdb, pdb, None)
+        time_from, time_to, names, {}, False, settings, mdb, pdb, None)
     assert len(loaded_prs) == n
     true_prs = {prs[i].pr[PullRequest.node_id.key]: samples[i] for _, i in released_ats[-n:]}
     for i, s in enumerate(samples[-10:-5]):
@@ -103,11 +104,17 @@ async def test_load_store_precomputed_done_filters(pr_samples, mdb, pdb, cache):
     time_from = min(s.created.best for s in samples)
     time_to = max(s.max_timestamp() for s in samples)
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["one"], [], False, settings, mdb, pdb, cache)
+        time_from, time_to, ["one"], {}, False, settings, mdb, pdb, cache)
     assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[::3]}
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, names, ["wow", "zzz"], False, settings, mdb, pdb, cache)
+        time_from, time_to, names, {ParticipationKind.AUTHOR: {"wow"},
+                                    ParticipationKind.RELEASER: {"zzz"}},
+        False, settings, mdb, pdb, cache)
     assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[1::2]}
+    loaded_prs = await load_precomputed_done_times(
+        time_from, time_to, names, {ParticipationKind.COMMIT_AUTHOR: {"yyy"}},
+        False, settings, mdb, pdb, cache)
+    assert len(loaded_prs) == len(prs)
 
 
 async def test_load_store_precomputed_done_match_by(pr_samples, mdb, pdb, cache):
@@ -116,36 +123,36 @@ async def test_load_store_precomputed_done_match_by(pr_samples, mdb, pdb, cache)
     time_from = samples[0].created.best - timedelta(days=365)
     time_to = samples[0].released.best + timedelta(days=1)
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], {}, False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 1
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", Match.branch),
     }
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], {}, False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 1
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("nope", ".*", Match.tag_or_branch),
     }
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], {}, False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 0
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", ".*", Match.tag),
     }
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], {}, False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 0
     prs[0].release[matched_by_column] = 1
     await store_precomputed_done_times(prs, samples, settings, mdb, pdb, cache)
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], {}, False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 1
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", "xxx", Match.tag),
     }
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["src-d/go-git"], [], False, settings, mdb, pdb, cache)
+        time_from, time_to, ["src-d/go-git"], {}, False, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 0
 
 
@@ -184,13 +191,13 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, mdb, pdb
     time_from = samples[1].created.best + timedelta(days=1)
     time_to = samples[0].first_comment_on_first_review.best
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["one"], [], True, settings, mdb, pdb, cache)
+        time_from, time_to, ["one"], {}, True, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 1
     assert loaded_prs[prs[0].pr[PullRequest.node_id.key]] == samples[0]
     time_from = samples[1].created.best - timedelta(days=1)
     time_to = samples[1].created.best + timedelta(seconds=1)
     loaded_prs = await load_precomputed_done_times(
-        time_from, time_to, ["one"], [], True, settings, mdb, pdb, cache)
+        time_from, time_to, ["one"], {}, True, settings, mdb, pdb, cache)
     assert len(loaded_prs) == 1
     assert loaded_prs[prs[1].pr[PullRequest.node_id.key]] == samples[1]
 

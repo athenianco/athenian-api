@@ -102,15 +102,15 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     props = set(getattr(Property, p.upper()) for p in (filt.properties or []))
     if not props:
         props = set(Property)
-    participants = {ParticipationKind[k.upper()]: v for k, v in body.get("with", {}).items()}
+    participants = {ParticipationKind[k.upper()]: {d.split("/", 1)[1] for d in v}
+                    for k, v in (filt.with_ or {}).items() if v}
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
-    repos = [r.split("/", 1)[1] for r in repos]
+    repos = {r.split("/", 1)[1] for r in repos}
     prs = await filter_pull_requests(
         props, filt.date_from, filt.date_to, repos, participants, filt.exclude_inactive,
         settings, request.mdb, request.pdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
-    users = {u.split("/", 1)[1] for u in
-             chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs)}
+    users = list(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
     avatars = await mine_user_avatars(users, request.mdb, request.cache)
     prefix = PREFIXES["github"]
     model = PullRequestSet(include=IncludedNativeUsers(users={
@@ -124,10 +124,11 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
     props["properties"] = sorted(p.name.lower() for p in pr.properties)
     props["stage_timings"] = StageTimings(**pr.stage_timings)
     participants = defaultdict(list)
+    prefix = PREFIXES["github"]
     for pk, pids in sorted(pr.participants.items()):
         pkweb = pk.name.lower()
         for pid in pids:
-            participants[pid].append(pkweb)
+            participants[prefix + pid].append(pkweb)
     props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
     return WebPullRequest(**props)
 

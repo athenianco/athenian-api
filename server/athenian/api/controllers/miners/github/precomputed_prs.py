@@ -1,6 +1,5 @@
 import asyncio
 from datetime import datetime, timezone
-from itertools import chain
 import pickle
 from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
@@ -15,7 +14,7 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.pull_request import MinedPullRequest, PullRequestTimes
 from athenian.api.controllers.miners.github.release import matched_by_column
-from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind
+from athenian.api.controllers.miners.pull_request_list_item import Participants, ParticipationKind
 from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
@@ -125,7 +124,7 @@ async def load_precomputed_done_candidates(date_from: datetime,
 async def load_precomputed_done_times(date_from: datetime,
                                       date_to: datetime,
                                       repos: Collection[str],
-                                      developers: Collection[str],
+                                      participants: Participants,
                                       exclude_inactive: bool,
                                       release_settings: Dict[str, ReleaseMatchSetting],
                                       mdb: databases.Database,
@@ -140,29 +139,36 @@ async def load_precomputed_done_times(date_from: datetime,
                 ghprt.release_match,
                 ghprt.data]
     filters = _create_common_filters(date_from, date_to, repos)
-    if len(developers) > 0:
+    if len(participants) > 0:
         if postgres:
-            developer_filters = [
-                ghprt.author.in_(developers),
-                ghprt.merger.in_(developers),
-                ghprt.releaser.in_(developers),
-                ghprt.commenters.has_any(developers),
-                ghprt.reviewers.has_any(developers),
-                ghprt.commit_authors.has_any(developers),
-                ghprt.commit_committers.has_any(developers),
-            ]
-            # do not send the same array 3 times
-            for f in developer_filters[1:3]:
-                f.right = developer_filters[0].right
-            # do not send the same array 4 times
-            for f in developer_filters[4:]:
-                f.right = developer_filters[3].right
-            filters.append(or_(*developer_filters))
+            developer_filters_single = []
+            for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
+                            (ghprt.merger, ParticipationKind.MERGER),
+                            (ghprt.releaser, ParticipationKind.RELEASER)):
+                col_parts = participants.get(pk)
+                if not col_parts:
+                    continue
+                developer_filters_single.append(col.in_(col_parts))
+            # do not send the same array several times
+            for f in developer_filters_single[1:]:
+                f.right = developer_filters_single[0].right
+            developer_filters_multiple = []
+            for col, pk in ((ghprt.commenters, ParticipationKind.COMMENTER),
+                            (ghprt.reviewers, ParticipationKind.REVIEWER),
+                            (ghprt.commit_authors, ParticipationKind.COMMIT_AUTHOR),
+                            (ghprt.commit_committers, ParticipationKind.COMMIT_COMMITTER)):
+                col_parts = participants.get(pk)
+                if not col_parts:
+                    continue
+                developer_filters_multiple.append(col.has_any(col_parts))
+            # do not send the same array several times
+            for f in developer_filters_multiple[1:]:
+                f.right = developer_filters_multiple[0].right
+            filters.append(or_(*developer_filters_single, *developer_filters_multiple))
         else:
             selected.extend([
                 ghprt.author, ghprt.merger, ghprt.releaser, ghprt.reviewers, ghprt.commenters,
                 ghprt.commit_authors, ghprt.commit_committers])
-            developers = set(developers)
     if exclude_inactive:
         # timezones: date_from and date_to may be not exactly 00:00
         date_from_day = datetime.combine(
@@ -187,9 +193,25 @@ async def load_precomputed_done_times(date_from: datetime,
         if dump is None:
             continue
         if not postgres:
-            if len(developers) > 0:
-                pr_parts = set(chain(row[4:7], *row[7:11]))  # sqlite Record supports slices
-                if not pr_parts.intersection(developers):
+            if len(participants) > 0:
+                passed = False
+                for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
+                                (ghprt.merger, ParticipationKind.MERGER),
+                                (ghprt.releaser, ParticipationKind.RELEASER)):
+                    dev = row[col.key]
+                    if dev and dev in participants.get(pk, set()):
+                        passed = True
+                        break
+                if not passed:
+                    for col, pk in ((ghprt.reviewers, ParticipationKind.REVIEWER),
+                                    (ghprt.commenters, ParticipationKind.COMMENTER),
+                                    (ghprt.commit_authors, ParticipationKind.COMMIT_AUTHOR),
+                                    (ghprt.commit_committers, ParticipationKind.COMMIT_COMMITTER)):
+                        devs = set(row[col.key])
+                        if devs.intersection(participants.get(pk, set())):
+                            passed = True
+                            break
+                if not passed:
                     continue
             if exclude_inactive:
                 activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -243,7 +265,7 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
                 raise AssertionError("Unhandled release match strategy: " + match.name)
         else:
             release_match = "rejected"
-        participants = pr.participants(with_prefix=False)
+        participants = pr.participants()
         # if they are empty the column dtype is sometimes an object so .dt raises an exception
         if not pr.review_requests.empty:
             activity_days.update(

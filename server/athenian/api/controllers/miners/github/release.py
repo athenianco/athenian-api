@@ -4,7 +4,7 @@ from itertools import chain, groupby
 import marshal
 import pickle
 import re
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import aiosqlite
@@ -13,7 +13,7 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, distinct, func, select
+from sqlalchemy import and_, desc, distinct, func, or_, select
 from sqlalchemy.cprocessors import str_to_datetime
 from sqlalchemy.sql.elements import BinaryExpression
 
@@ -606,6 +606,8 @@ async def _fetch_commit_history_dag(commit_id: str,
 
 async def _find_old_released_prs(releases: pd.DataFrame,
                                  time_boundary: datetime,
+                                 authors: Collection[str],
+                                 mergers: Collection[str],
                                  pr_blacklist: Optional[BinaryExpression],
                                  db: DatabaseLike,
                                  cache: Optional[aiomcache.Client],
@@ -618,6 +620,15 @@ async def _find_old_released_prs(releases: pd.DataFrame,
         PullRequest.merge_commit_sha.in_(observed_commits),
         PullRequest.hidden.is_(False),
     ]
+    if len(authors) and len(mergers):
+        filters.append(or_(
+            PullRequest.user_login.in_(authors),
+            PullRequest.merged_by_login.in_(mergers),
+        ))
+    elif len(authors):
+        filters.append(PullRequest.user_login.in_(authors))
+    elif len(mergers):
+        filters.append(PullRequest.merged_by_login.in_(mergers))
     if pr_blacklist is not None:
         filters.append(pr_blacklist)
     return await db.fetch_all(select([PullRequest]).where(and_(*filters)))
@@ -691,6 +702,8 @@ async def _extract_released_commits(releases: pd.DataFrame,
 async def map_releases_to_prs(repos: Iterable[str],
                               time_from: datetime,
                               time_to: datetime,
+                              authors: Collection[str],
+                              mergers: Collection[str],
                               release_settings: Dict[str, ReleaseMatchSetting],
                               db: databases.Database,
                               cache: Optional[aiomcache.Client],
@@ -698,7 +711,10 @@ async def map_releases_to_prs(repos: Iterable[str],
     """Find pull requests which were released between `time_from` and `time_to` but merged before \
     `time_from`.
 
-    :return: dataframe with found PRs.
+    :param authors: Required PR authors.
+    :param mergers: Required PR mergers.
+    :return: pd.DataFrame with found PRs that were created before `time_from` and released \
+             between `time_from` and `time_to`.
     """
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
@@ -708,7 +724,8 @@ async def map_releases_to_prs(repos: Iterable[str],
         repos, old_from, time_to, release_settings, db, cache, index=Release.id.key)
     prs = []
     for _, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
-        prs.append(_find_old_released_prs(repo_releases, time_from, pr_blacklist, db, cache))
+        prs.append(_find_old_released_prs(
+            repo_releases, time_from, authors, mergers, pr_blacklist, db, cache))
     if prs:
         prs = await asyncio.gather(*prs, return_exceptions=True)
         for pr in prs:

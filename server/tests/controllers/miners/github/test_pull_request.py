@@ -9,6 +9,7 @@ import pytest
 
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
     PullRequestTimes, PullRequestTimesMiner
+from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind
 from athenian.api.controllers.settings import Match, ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest
 from tests.conftest import has_memcached
@@ -22,8 +23,8 @@ async def test_pr_miner_iter(mdb, release_match_setting_tag):
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         release_match_setting_tag,
         mdb,
@@ -53,8 +54,8 @@ async def test_pr_miner_blacklist(mdb, release_match_setting_tag):
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         release_match_setting_tag,
         mdb,
@@ -72,8 +73,8 @@ async def test_pr_miner_blacklist(mdb, release_match_setting_tag):
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         release_match_setting_tag,
         mdb,
@@ -98,8 +99,8 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         release_match_setting_tag,
         mdb,
@@ -113,8 +114,8 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         release_match_setting_tag,
         None,
@@ -133,8 +134,8 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        ["mcuadros"],
+        {"src-d/go-git"},
+        {ParticipationKind.AUTHOR: {"mcuadros"}, ParticipationKind.MERGER: {"mcuadros"}},
         False,
         release_match_setting_tag,
         None,
@@ -148,8 +149,8 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
             date_to,
             datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
             datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-            ["src-d/go-git"],
-            ["mcuadros"],
+            {"src-d/go-git"},
+            {ParticipationKind.AUTHOR: {"mcuadros"}, ParticipationKind.MERGER: {"mcuadros"}},
             False,
             release_match_setting_tag,
             None,
@@ -174,8 +175,8 @@ async def test_pr_miner_iter_cache_incompatible(mdb, cache, release_match_settin
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         release_match_setting_tag,
         mdb,
@@ -187,13 +188,45 @@ async def test_pr_miner_iter_cache_incompatible(mdb, cache, release_match_settin
             date_to,
             datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
             datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-            ["src-d/gitbase"],
-            [],
+            {"src-d/gitbase"},
+            {},
             False,
             release_match_setting_tag,
             None,
             cache,
         )
+
+
+@pytest.mark.parametrize("pk", [[v] for v in ParticipationKind] + [list(ParticipationKind)])
+async def test_pr_miner_participant_filters(mdb, release_match_setting_tag, pk):
+    date_from = date(year=2015, month=1, day=1)
+    date_to = date(year=2020, month=1, day=1)
+    miner = await PullRequestMiner.mine(
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
+        {"src-d/go-git"},
+        {v: {"mcuadros"} for v in pk},
+        False,
+        release_match_setting_tag,
+        mdb,
+        None,
+    )
+    count = 0
+    for pr in miner:
+        count += 1
+        participants = pr.participants()
+        if len(pk) == 1:
+            assert "mcuadros" in participants[pk[0]], str(pr.pr)
+        else:
+            mentioned = False
+            for v in pk:
+                if "mcuadros" in participants[v]:
+                    mentioned = True
+                    break
+            assert mentioned, str(pr.pr)
+    assert count > 0
 
 
 def validate_pull_request_times(prmeta: Dict[str, Any], prt: PullRequestTimes):
@@ -244,8 +277,8 @@ async def test_pr_times_miner_smoke(mdb, release_match_setting_tag):
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         release_match_setting_tag,
         mdb,
@@ -265,8 +298,8 @@ async def test_pr_times_miner_empty_review_comments(mdb, release_match_setting_t
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         release_match_setting_tag,
         mdb,
@@ -287,8 +320,8 @@ async def test_pr_times_miner_empty_commits(mdb, release_match_setting_tag):
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         release_match_setting_tag,
         mdb,
@@ -309,8 +342,8 @@ async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_settin
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         release_match_setting_tag,
         mdb,
@@ -331,8 +364,8 @@ async def test_pr_times_miner_empty_releases(mdb):
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="unknown", tags="", match=Match.branch)},
@@ -359,8 +392,8 @@ async def test_pr_mine_by_ids(mdb, cache):
         date_to,
         time_from,
         time_to,
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         False,
         release_settings,
         mdb,
@@ -403,8 +436,8 @@ async def test_pr_miner_exclude_inactive(mdb, release_match_setting_tag):
         date_to,
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
-        ["src-d/go-git"],
-        [],
+        {"src-d/go-git"},
+        {},
         True,
         release_match_setting_tag,
         mdb,

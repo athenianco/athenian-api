@@ -1,9 +1,8 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
-from itertools import chain
 import logging
 import pickle
-from typing import Collection, Dict, Generator, Iterable, List, Mapping, Optional, Set
+from typing import Dict, Generator, Iterable, List, Optional, Set
 
 import aiomcache
 import databases
@@ -22,7 +21,7 @@ from athenian.api.controllers.features.github.pull_request_metrics import \
 from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
     MinedPullRequest, PullRequestMiner, PullRequestTimes, PullRequestTimesMiner, ReviewResolution
-from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
+from athenian.api.controllers.miners.pull_request_list_item import Participants, Property, \
     PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
@@ -42,7 +41,6 @@ class PullRequestListMiner:
                  prs_today: Iterable[MinedPullRequest],
                  precomputed_times: Dict[str, PullRequestTimes],
                  properties: Set[Property],
-                 participants: Dict[ParticipationKind, Set[str]],
                  time_from: datetime):
         """Initialize a new instance of `PullRequestListMiner`."""
         self._prs_time_machine = prs_time_machine
@@ -50,7 +48,6 @@ class PullRequestListMiner:
         self._precomputed_times = precomputed_times
         self._times_miner = PullRequestTimesMiner()
         self._properties = properties
-        self._participants = participants
         self._calcs = {
             "wip": (WorkInProgressTimeCalculator(), Property.WIP),
             "review": (ReviewTimeCalculator(), Property.REVIEWING),
@@ -61,20 +58,6 @@ class PullRequestListMiner:
         assert isinstance(time_from, datetime)
         self._time_from = time_from
         self._now = datetime.now(tz=timezone.utc)
-
-    def _match_participants(self, pr: MinedPullRequest) -> bool:
-        """Check the PR participants for compatibility with self.participants.
-
-        :return: True whether the PR satisfies the participants filter, otherwise False.
-        """
-        if not self._participants:
-            return True
-
-        participants = pr.participants()
-        for k, v in self._participants.items():
-            if participants.get(k, set()).intersection(v):
-                return True
-        return False
 
     @classmethod
     def _collect_properties(cls,
@@ -132,8 +115,6 @@ class PullRequestListMiner:
         :param times_today: Facts about the PR as of datetime.now().
         """
         assert pr_time_machine.pr[PullRequest.node_id.key] == pr_today.pr[PullRequest.node_id.key]
-        if not self._match_participants(pr_time_machine):
-            return None
         props_time_machine = self._collect_properties(
             times_time_machine, pr_time_machine, self._time_from)
         if not self._properties.intersection(props_time_machine):
@@ -222,17 +203,18 @@ class PullRequestListMiner:
         time_from.timestamp(),
         time_to.timestamp(),
         ",".join(sorted(repos)),
-        ",".join(s.name.lower() for s in sorted(set(properties))),
-        sorted((k.name.lower(), sorted(set(v))) for k, v in participants.items()),
+        ",".join(s.name.lower() for s in sorted(properties)),
+        sorted((k.name.lower(), sorted(v)) for k, v in participants.items()),
         exclude_inactive,
         release_settings,
     ),
+    version=2,
 )
-async def filter_pull_requests(properties: Collection[Property],
+async def filter_pull_requests(properties: Set[Property],
                                time_from: datetime,
                                time_to: datetime,
-                               repos: Collection[str],
-                               participants: Mapping[ParticipationKind, Collection[str]],
+                               repos: Set[str],
+                               participants: Participants,
                                exclude_inactive: bool,
                                release_settings: Dict[str, ReleaseMatchSetting],
                                mdb: databases.Database,
@@ -243,16 +225,14 @@ async def filter_pull_requests(properties: Collection[Property],
 
     :param repos: List of repository names without the service prefix.
     """
+    assert isinstance(properties, set)
+    assert isinstance(repos, set)
     # required to efficiently use the cache with timezones
     date_from, date_to = coarsen_time_interval(time_from, time_to)
-    participants = {k: set(v) for k, v in participants.items()}
-    # TODO(vmarkovtsev): fine-tune this by filtering specific roles
-    everybody = set(chain.from_iterable(participants.values()))
-    everybody = {p.split("/", 1)[1] for p in everybody}
     tasks = (
-        PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, everybody,
+        PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, participants,
                               exclude_inactive, release_settings, mdb, cache),
-        load_precomputed_done_times(time_from, time_to, repos, everybody, exclude_inactive,
+        load_precomputed_done_times(time_from, time_to, repos, participants, exclude_inactive,
                                     release_settings, mdb, pdb, cache),
     )
     miner_time_machine, done_times = await asyncio.gather(*tasks, return_exceptions=True)
@@ -301,7 +281,6 @@ async def filter_pull_requests(properties: Collection[Property],
         prs_today += done
     else:
         prs_today = prs_time_machine
-    properties = set(properties)
     with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
         return list(PullRequestListMiner(
-            prs_time_machine, prs_today, done_times, properties, participants, time_from))
+            prs_time_machine, prs_today, done_times, properties, time_from))

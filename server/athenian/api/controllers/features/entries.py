@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 import pickle
-from typing import Collection, Dict, List, Optional, Sequence
+from typing import Collection, Dict, List, Optional, Sequence, Set
 
 import aiomcache
 from databases import Database
@@ -21,6 +21,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     load_precomputed_done_candidates, load_precomputed_done_times, store_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestMiner, PullRequestTimesMiner
+from athenian.api.controllers.miners.pull_request_list_item import Participants
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import PushCommit
 from athenian.api.tracing import sentry_span
@@ -31,20 +32,20 @@ from athenian.api.tracing import sentry_span
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda metrics, time_intervals, repos, developers, exclude_inactive, release_settings, **_:
+    key=lambda metrics, time_intervals, repositories, participants, exclude_inactive, release_settings, **_:  # noqa
     (
         ",".join(sorted(metrics)),
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
-        ",".join(sorted(repos)),
-        ",".join(sorted(developers)),
+        ",".join(sorted(repositories)),
+        ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
         exclude_inactive,
         release_settings,
     ),
 )
 async def calc_pull_request_metrics_line_github(metrics: Collection[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
-                                                repos: Collection[str],
-                                                developers: Collection[str],
+                                                repositories: Set[str],
+                                                participants: Participants,
                                                 exclude_inactive: bool,
                                                 release_settings: Dict[str, ReleaseMatchSetting],
                                                 mdb: Database,
@@ -52,14 +53,15 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
                                                 cache: Optional[aiomcache.Client],
                                                 ) -> List[List[List[Metric]]]:
     """Calculate pull request metrics on GitHub data."""
+    assert isinstance(repositories, set)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     precomputed_tasks = [
-        load_precomputed_done_times(time_from, time_to, repos, developers, exclude_inactive,
-                                    release_settings, mdb, pdb, cache),
+        load_precomputed_done_times(time_from, time_to, repositories, participants,
+                                    exclude_inactive, release_settings, mdb, pdb, cache),
     ]
     if exclude_inactive:
         precomputed_tasks.append(load_precomputed_done_candidates(
-            time_from, time_to, repos, release_settings, mdb, pdb, cache))
+            time_from, time_to, repositories, release_settings, mdb, pdb, cache))
         done_times, blacklist = await asyncio.gather(*precomputed_tasks, return_exceptions=True)
         for r in (done_times, blacklist):
             if isinstance(r, Exception):
@@ -71,7 +73,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
     # are effectively discarded later in BinnedPullRequestMetricCalculator
     miner = await PullRequestMiner.mine(
-        date_from, date_to, time_from, time_to, repos, developers, exclude_inactive,
+        date_from, date_to, time_from, time_to, repositories, participants, exclude_inactive,
         release_settings, mdb, cache, pr_blacklist=blacklist)
     times_miner = PullRequestTimesMiner()
     mined_prs = []

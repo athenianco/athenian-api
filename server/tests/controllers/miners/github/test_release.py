@@ -63,6 +63,7 @@ async def test_map_releases_to_prs_smoke(mdb, cache, release_match_setting_tag):
             ["src-d/go-git"],
             datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
             datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
+            [], [],
             release_match_setting_tag, mdb, cache)
         assert len(prs) == 7
         assert (prs[PullRequest.merged_at.key] < pd.Timestamp(
@@ -76,14 +77,14 @@ async def test_map_releases_to_prs_empty(mdb, cache, release_match_setting_tag):
         ["src-d/go-git"],
         datetime(year=2019, month=11, day=1, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-        release_match_setting_tag, mdb, cache)
+        [], [], release_match_setting_tag, mdb, cache)
     assert prs.empty
     assert len(cache.mem) == 0
     prs = await map_releases_to_prs(
         ["src-d/go-git"],
         datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-        release_match_setting_tag, mdb, cache)
+        [], [], release_match_setting_tag, mdb, cache)
     assert prs.empty
     assert len(cache.mem) > 0
 
@@ -93,7 +94,7 @@ async def test_map_releases_to_prs_blacklist(mdb, cache, release_match_setting_t
         ["src-d/go-git"],
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-        release_match_setting_tag, mdb, cache,
+        [], [], release_match_setting_tag, mdb, cache,
         pr_blacklist=PullRequest.node_id.notin_([
             "MDExOlB1bGxSZXF1ZXN0Mjk3Mzk1Mzcz", "MDExOlB1bGxSZXF1ZXN0Mjk5NjA3MDM2",
             "MDExOlB1bGxSZXF1ZXN0MzAxODQyNDg2", "MDExOlB1bGxSZXF1ZXN0Mjg2ODczMDAw",
@@ -101,6 +102,19 @@ async def test_map_releases_to_prs_blacklist(mdb, cache, release_match_setting_t
             "MDExOlB1bGxSZXF1ZXN0MzAyMTI2ODgx",
         ]))
     assert prs.empty
+
+
+@pytest.mark.parametrize("authors, mergers, n", [(["mcuadros"], [], 42),
+                                                 ([], ["mcuadros"], 147),
+                                                 (["mcuadros"], ["mcuadros"], 147)])
+async def test_map_releases_to_prs_authors_mergers(
+        mdb, cache, release_match_setting_tag, authors, mergers, n):
+    prs = await map_releases_to_prs(
+        ["src-d/go-git"],
+        datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
+        datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
+        authors, mergers, release_match_setting_tag, mdb, cache)
+    assert prs.size == n
 
 
 async def test_map_prs_to_releases_smoke_metrics(mdb):
@@ -213,6 +227,7 @@ async def test_map_releases_to_prs_branches(mdb):
         ["src-d/go-git"],
         date_from,
         date_to,
+        [], [],
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags="", match=Match.branch)},
         mdb,

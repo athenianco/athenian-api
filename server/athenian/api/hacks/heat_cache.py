@@ -59,7 +59,7 @@ def main():
         await pdb.connect()
 
         for reposet in tqdm(reposets):
-            repos = [r.split("/", 1)[1] for r in reposet.items]
+            repos = {r.split("/", 1)[1] for r in reposet.items}
             settings = {}
             rows = session.query(ReleaseSetting).filter(and_(
                 ReleaseSetting.account_id == reposet.owner,
@@ -81,7 +81,7 @@ def main():
                 ["pr-lead-time"],
                 [[time_from, time_to]],
                 repos,
-                [],
+                {},
                 False,
                 settings,
                 mdb,
