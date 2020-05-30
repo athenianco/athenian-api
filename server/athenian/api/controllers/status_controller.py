@@ -82,13 +82,19 @@ async def instrument(request, handler):
 class StatusRenderer:
     """Render the status page with Prometheus."""
 
-    def __init__(self, registry: prometheus_client.CollectorRegistry):
+    def __init__(self, registry: prometheus_client.CollectorRegistry, cache_ttl=1):
         """Record the registry where the metrics are maintained."""
         self._registry = registry
+        self._body = b""
+        self._ts = time.time() - cache_ttl
+        self._cache_ttl = cache_ttl
 
     async def __call__(self, request: web.Request) -> web.Response:
         """Endpoint handler to output the current Prometheus state."""
-        resp = web.Response(body=prometheus_client.generate_latest(self._registry))
+        if time.time() - self._ts > self._cache_ttl:
+            self._body = prometheus_client.generate_latest(self._registry)
+            self._ts = time.time()
+        resp = web.Response(body=self._body)
         resp.content_type = prometheus_client.CONTENT_TYPE_LATEST
         return resp
 
