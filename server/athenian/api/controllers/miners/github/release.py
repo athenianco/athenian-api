@@ -561,7 +561,7 @@ async def _fetch_commit_history_dag(repo: str,
     else:
         dag = await tasks[0]
     if dag is not None:
-        dag = pickle.loads(dag)
+        dag = marshal.loads(dag)
         need_update = False
         for commit_sha in commit_shas:
             if commit_sha not in dag:
@@ -619,7 +619,7 @@ async def _fetch_commit_history_dag(repo: str,
         # initial commit(s)
         return {sha: [] for sha in commit_shas}
     else:
-        values = GitHubCommitHistory(repository_full_name=repo, dag=pickle.dumps(dag)) \
+        values = GitHubCommitHistory(repository_full_name=repo, dag=marshal.dumps(dag)) \
             .create_defaults().explode(with_primary_keys=True)
         if pdb.url.dialect in ("postgres", "postgresql"):
             sql = postgres_insert(GitHubCommitHistory).values(values)
