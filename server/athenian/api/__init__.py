@@ -400,7 +400,7 @@ def setup_context(log: logging.Logger) -> None:
 
     def filter_sentry_events(event: dict, hint) -> Optional[dict]:
         status_transaction = "athenian.api.controllers.status_controller.StatusRenderer.__call__"
-        if event["type"] == "transaction" and event["transaction"] == status_transaction:
+        if event.get("type", "") == "transaction" and event["transaction"] == status_transaction:
             event.clear()
             event.update({"type": "transaction", "transaction": status_transaction})
             return None
