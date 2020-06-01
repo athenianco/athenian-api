@@ -1,13 +1,14 @@
 from datetime import datetime, timedelta, timezone
 from typing import Dict
 
+from databases import Database
 import pandas as pd
 import pytest
 from sqlalchemy import select, sql
 
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.controllers.miners.github.release import load_releases, map_prs_to_releases, \
-    map_releases_to_prs
+from athenian.api.controllers.miners.github.release import _fetch_commit_history_dag, \
+    load_releases, map_prs_to_releases, map_releases_to_prs
 from athenian.api.controllers.settings import Match, ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest, Release
 
@@ -19,14 +20,14 @@ def generate_repo_settings(prs: pd.DataFrame) -> Dict[str, ReleaseMatchSetting]:
     }
 
 
-async def test_map_prs_to_releases_cache(mdb, cache):
+async def test_map_prs_to_releases_cache(mdb, pdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1126),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
     for i in range(2):
         releases = await map_prs_to_releases(prs, time_from, time_to,
-                                             generate_repo_settings(prs), mdb, cache)
+                                             generate_repo_settings(prs), mdb, pdb, cache)
         assert len(cache.mem) > 0
         assert len(releases) == 1, str(i)
         assert releases.iloc[0][Release.published_at.key] == \
@@ -34,37 +35,37 @@ async def test_map_prs_to_releases_cache(mdb, cache):
         assert releases.iloc[0][Release.author.key] == "mcuadros"
         assert releases.iloc[0][Release.url.key] == "https://github.com/src-d/go-git/releases/tag/v4.12.0"  # noqa
     releases = await map_prs_to_releases(prs, time_to, time_to,
-                                         generate_repo_settings(prs), mdb, None)
+                                         generate_repo_settings(prs), mdb, pdb, None)
     # the PR was merged and released in the past, we must detect that
     assert len(releases) == 1
     assert releases.iloc[0][Release.url.key] == "https://github.com/src-d/go-git/releases/tag/v4.12.0"  # noqa
 
 
-async def test_map_prs_to_releases_empty(mdb, cache):
+async def test_map_prs_to_releases_empty(mdb, pdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1231),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
     for _ in range(2):
         releases = await map_prs_to_releases(prs, time_from, time_to,
-                                             generate_repo_settings(prs), mdb, cache)
+                                             generate_repo_settings(prs), mdb, pdb, cache)
         assert len(cache.mem) == 0
         assert releases.empty
     prs = prs.iloc[:0]
     releases = await map_prs_to_releases(prs, time_from, time_to,
-                                         generate_repo_settings(prs), mdb, cache)
+                                         generate_repo_settings(prs), mdb, pdb, cache)
     assert len(cache.mem) == 0
     assert releases.empty
 
 
-async def test_map_releases_to_prs_smoke(mdb, cache, release_match_setting_tag):
+async def test_map_releases_to_prs_smoke(mdb, pdb, cache, release_match_setting_tag):
     for _ in range(2):
         prs = await map_releases_to_prs(
             ["src-d/go-git"],
             datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
             datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
             [], [],
-            release_match_setting_tag, mdb, cache)
+            release_match_setting_tag, mdb, pdb, cache)
         assert len(prs) == 7
         assert (prs[PullRequest.merged_at.key] < pd.Timestamp(
             "2019-07-31 00:00:00", tzinfo=timezone.utc)).all()
@@ -72,29 +73,32 @@ async def test_map_releases_to_prs_smoke(mdb, cache, release_match_setting_tag):
             "2019-06-19 00:00:00", tzinfo=timezone.utc)).all()
 
 
-async def test_map_releases_to_prs_empty(mdb, cache, release_match_setting_tag):
+async def test_map_releases_to_prs_empty(mdb, pdb, cache, release_match_setting_tag):
     prs = await map_releases_to_prs(
         ["src-d/go-git"],
-        datetime(year=2019, month=11, day=1, tzinfo=timezone.utc),
+        datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-        [], [], release_match_setting_tag, mdb, cache)
+        [], [], release_match_setting_tag, mdb, pdb, cache)
     assert prs.empty
     assert len(cache.mem) == 0
     prs = await map_releases_to_prs(
         ["src-d/go-git"],
         datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-        [], [], release_match_setting_tag, mdb, cache)
+        [], [], {
+            "github.com/src-d/go-git": ReleaseMatchSetting(
+                branches="master", tags=".*", match=Match.branch),
+        }, mdb, pdb, cache)
     assert prs.empty
     assert len(cache.mem) > 0
 
 
-async def test_map_releases_to_prs_blacklist(mdb, cache, release_match_setting_tag):
+async def test_map_releases_to_prs_blacklist(mdb, pdb, cache, release_match_setting_tag):
     prs = await map_releases_to_prs(
         ["src-d/go-git"],
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-        [], [], release_match_setting_tag, mdb, cache,
+        [], [], release_match_setting_tag, mdb, pdb, cache,
         pr_blacklist=PullRequest.node_id.notin_([
             "MDExOlB1bGxSZXF1ZXN0Mjk3Mzk1Mzcz", "MDExOlB1bGxSZXF1ZXN0Mjk5NjA3MDM2",
             "MDExOlB1bGxSZXF1ZXN0MzAxODQyNDg2", "MDExOlB1bGxSZXF1ZXN0Mjg2ODczMDAw",
@@ -108,16 +112,16 @@ async def test_map_releases_to_prs_blacklist(mdb, cache, release_match_setting_t
                                                  ([], ["mcuadros"], 147),
                                                  (["mcuadros"], ["mcuadros"], 147)])
 async def test_map_releases_to_prs_authors_mergers(
-        mdb, cache, release_match_setting_tag, authors, mergers, n):
+        mdb, pdb, cache, release_match_setting_tag, authors, mergers, n):
     prs = await map_releases_to_prs(
         ["src-d/go-git"],
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-        authors, mergers, release_match_setting_tag, mdb, cache)
+        authors, mergers, release_match_setting_tag, mdb, pdb, cache)
     assert prs.size == n
 
 
-async def test_map_prs_to_releases_smoke_metrics(mdb):
+async def test_map_prs_to_releases_smoke_metrics(mdb, pdb):
     time_from = datetime(year=2015, month=10, day=13, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
     filters = [
@@ -134,8 +138,26 @@ async def test_map_prs_to_releases_smoke_metrics(mdb):
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
     releases = await map_prs_to_releases(prs, time_from, time_to,
-                                         generate_repo_settings(prs), mdb, None)
-    assert len(releases[Release.url.key].unique()) > 1
+                                         generate_repo_settings(prs), mdb, pdb, None)
+    assert set(releases[Release.url.key].unique()) == {
+        "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc10",
+        "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc11",
+        "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc13",
+        "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc12",
+        "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc14",
+        "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc15",
+        "https://github.com/src-d/go-git/releases/tag/v4.0.0",
+        "https://github.com/src-d/go-git/releases/tag/v4.2.0",
+        "https://github.com/src-d/go-git/releases/tag/v4.1.1",
+        "https://github.com/src-d/go-git/releases/tag/v4.2.1",
+        "https://github.com/src-d/go-git/releases/tag/v4.5.0",
+        "https://github.com/src-d/go-git/releases/tag/v4.11.0",
+        "https://github.com/src-d/go-git/releases/tag/v4.7.1",
+        "https://github.com/src-d/go-git/releases/tag/v4.8.0",
+        "https://github.com/src-d/go-git/releases/tag/v4.10.0",
+        "https://github.com/src-d/go-git/releases/tag/v4.12.0",
+        "https://github.com/src-d/go-git/releases/tag/v4.13.0",
+    }
 
 
 def check_branch_releases(releases: pd.DataFrame, n: int, date_from: datetime, date_to: datetime):
@@ -220,7 +242,7 @@ async def test_load_releases_tag_or_branch_initial(mdb):
     check_branch_releases(releases, 17, date_from, date_to)
 
 
-async def test_map_releases_to_prs_branches(mdb):
+async def test_map_releases_to_prs_branches(mdb, pdb):
     date_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
     prs = await map_releases_to_prs(
@@ -231,6 +253,7 @@ async def test_map_releases_to_prs_branches(mdb):
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags="", match=Match.branch)},
         mdb,
+        pdb,
         None)
     assert prs.empty
 
@@ -269,3 +292,48 @@ async def test_load_releases_empty(mdb, repos):
         None,
     )
     assert releases.empty
+
+
+async def test_fetch_commit_history_smoke(mdb, pdb):
+    dag = await _fetch_commit_history_dag(
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
+        mdb, pdb)
+    ground_truth = {
+        "31eae7b619d166c366bf5df4991f04ba8cebea0a": ["b977a025ca21e3b5ca123d8093bd7917694f6da7",
+                                                     "d2a38b4a5965d529566566640519d03d2bd10f6c"],
+        "b977a025ca21e3b5ca123d8093bd7917694f6da7": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
+        "d2a38b4a5965d529566566640519d03d2bd10f6c": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
+        "35b585759cbf29f8ec428ef89da20705d59f99ec": ["c2bbf9fe8009b22d0f390f3c8c3f13937067590f"],
+        "c2bbf9fe8009b22d0f390f3c8c3f13937067590f": ["fc9f0643b21cfe571046e27e0c4565f3a1ee96c8"],
+        "fc9f0643b21cfe571046e27e0c4565f3a1ee96c8": ["c088fd6a7e1a38e9d5a9815265cb575bb08d08ff"],
+        "c088fd6a7e1a38e9d5a9815265cb575bb08d08ff": ["5fddbeb678bd2c36c5e5c891ab8f2b143ced5baf"],
+        "5fddbeb678bd2c36c5e5c891ab8f2b143ced5baf": ["5d7303c49ac984a9fec60523f2d5297682e16646"],
+        "5d7303c49ac984a9fec60523f2d5297682e16646": [],
+    }
+    assert dag == ground_truth
+    dag = await _fetch_commit_history_dag(
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
+        Database("sqlite://"), pdb,
+        commit_shas=["31eae7b619d166c366bf5df4991f04ba8cebea0a",
+                     "d2a38b4a5965d529566566640519d03d2bd10f6c"])
+    assert dag == ground_truth
+    with pytest.raises(Exception):
+        await _fetch_commit_history_dag(
+            "src-d/go-git",
+            ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
+            Database("sqlite://"), pdb,
+            commit_shas=["31eae7b619d166c366bf5df4991f04ba8cebea0a",
+                         "1353ccd6944ab41082099b79979ded3223db98ec"])
+
+
+async def test_fetch_commit_history_initial_commit(mdb, pdb):
+    dag = await _fetch_commit_history_dag(
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
+        mdb, pdb)
+    assert dag == {"5d7303c49ac984a9fec60523f2d5297682e16646": []}

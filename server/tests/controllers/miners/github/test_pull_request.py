@@ -15,7 +15,7 @@ from athenian.api.models.metadata.github import PullRequest
 from tests.conftest import has_memcached
 
 
-async def test_pr_miner_iter(mdb, release_match_setting_tag):
+async def test_pr_miner_iter_smoke(mdb, pdb, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestMiner.mine(
@@ -28,6 +28,7 @@ async def test_pr_miner_iter(mdb, release_match_setting_tag):
         False,
         release_match_setting_tag,
         mdb,
+        pdb,
         None,
     )
     with_data = defaultdict(int)
@@ -46,7 +47,7 @@ async def test_pr_miner_iter(mdb, release_match_setting_tag):
     assert with_data["prs"] == size
 
 
-async def test_pr_miner_blacklist(mdb, release_match_setting_tag):
+async def test_pr_miner_blacklist(mdb, pdb, release_match_setting_tag):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2017, month=1, day=12)
     miner = await PullRequestMiner.mine(
@@ -59,6 +60,7 @@ async def test_pr_miner_blacklist(mdb, release_match_setting_tag):
         False,
         release_match_setting_tag,
         mdb,
+        pdb,
         None,
     )
     node_ids = {pr.pr[PullRequest.node_id.key] for pr in miner}
@@ -78,6 +80,7 @@ async def test_pr_miner_blacklist(mdb, release_match_setting_tag):
         False,
         release_match_setting_tag,
         mdb,
+        pdb,
         None,
         pr_blacklist=node_ids,
     )
@@ -86,7 +89,7 @@ async def test_pr_miner_blacklist(mdb, release_match_setting_tag):
 
 
 @pytest.mark.parametrize("with_memcached", [False, True])
-async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_tag,
+async def test_pr_miner_iter_cache(mdb, pdb, cache, memcached, release_match_setting_tag,
                                    with_memcached):
     if with_memcached:
         if not has_memcached:
@@ -104,6 +107,7 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
         False,
         release_match_setting_tag,
         mdb,
+        pdb,
         cache,
     )
     if not with_memcached:
@@ -118,6 +122,7 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
         {},
         False,
         release_match_setting_tag,
+        None,
         None,
         cache,
     )
@@ -139,6 +144,7 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
         False,
         release_match_setting_tag,
         None,
+        None,
         cache,
     )
     if not with_memcached:
@@ -154,6 +160,7 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
             False,
             release_match_setting_tag,
             None,
+            None,
             cache,
         ))
         assert len(cache.mem) == cache_size
@@ -167,7 +174,7 @@ async def test_pr_miner_iter_cache(mdb, cache, memcached, release_match_setting_
             assert "mcuadros" in text
 
 
-async def test_pr_miner_iter_cache_incompatible(mdb, cache, release_match_setting_tag):
+async def test_pr_miner_iter_cache_incompatible(mdb, pdb, cache, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     await PullRequestMiner.mine(
@@ -180,6 +187,7 @@ async def test_pr_miner_iter_cache_incompatible(mdb, cache, release_match_settin
         False,
         release_match_setting_tag,
         mdb,
+        pdb,
         cache,
     )
     with pytest.raises(AttributeError):
@@ -193,12 +201,13 @@ async def test_pr_miner_iter_cache_incompatible(mdb, cache, release_match_settin
             False,
             release_match_setting_tag,
             None,
+            None,
             cache,
         )
 
 
 @pytest.mark.parametrize("pk", [[v] for v in ParticipationKind] + [list(ParticipationKind)])
-async def test_pr_miner_participant_filters(mdb, release_match_setting_tag, pk):
+async def test_pr_miner_participant_filters(mdb, pdb, release_match_setting_tag, pk):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestMiner.mine(
@@ -211,6 +220,7 @@ async def test_pr_miner_participant_filters(mdb, release_match_setting_tag, pk):
         False,
         release_match_setting_tag,
         mdb,
+        pdb,
         None,
     )
     count = 0
@@ -269,7 +279,7 @@ def validate_pull_request_times(prmeta: Dict[str, Any], prt: PullRequestTimes):
             assert prt.closed
 
 
-async def test_pr_times_miner_smoke(mdb, release_match_setting_tag):
+async def test_pr_times_miner_smoke(mdb, pdb, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestMiner.mine(
@@ -282,6 +292,7 @@ async def test_pr_times_miner_smoke(mdb, release_match_setting_tag):
         False,
         release_match_setting_tag,
         mdb,
+        pdb,
         None,
     )
     times_miner = PullRequestTimesMiner()
@@ -290,7 +301,7 @@ async def test_pr_times_miner_smoke(mdb, release_match_setting_tag):
         validate_pull_request_times(*prt)
 
 
-async def test_pr_times_miner_empty_review_comments(mdb, release_match_setting_tag):
+async def test_pr_times_miner_empty_review_comments(mdb, pdb, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestMiner.mine(
@@ -303,6 +314,7 @@ async def test_pr_times_miner_empty_review_comments(mdb, release_match_setting_t
         False,
         release_match_setting_tag,
         mdb,
+        pdb,
         None,
     )
     miner._review_comments = miner._review_comments.iloc[0:0]
@@ -312,7 +324,7 @@ async def test_pr_times_miner_empty_review_comments(mdb, release_match_setting_t
         validate_pull_request_times(*prt)
 
 
-async def test_pr_times_miner_empty_commits(mdb, release_match_setting_tag):
+async def test_pr_times_miner_empty_commits(mdb, pdb, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner = await PullRequestMiner.mine(
@@ -325,6 +337,7 @@ async def test_pr_times_miner_empty_commits(mdb, release_match_setting_tag):
         False,
         release_match_setting_tag,
         mdb,
+        pdb,
         None,
     )
     miner._commits = miner._commits.iloc[0:0]
@@ -334,7 +347,7 @@ async def test_pr_times_miner_empty_commits(mdb, release_match_setting_tag):
         validate_pull_request_times(*prt)
 
 
-async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_setting_tag):
+async def test_pr_times_miner_bug_less_timestamp_float(mdb, pdb, release_match_setting_tag):
     date_from = date(2019, 10, 16) - timedelta(days=3)
     date_to = date(2019, 10, 16)
     miner = await PullRequestMiner.mine(
@@ -347,6 +360,7 @@ async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_settin
         False,
         release_match_setting_tag,
         mdb,
+        pdb,
         None,
     )
     times_miner = PullRequestTimesMiner()
@@ -356,7 +370,7 @@ async def test_pr_times_miner_bug_less_timestamp_float(mdb, release_match_settin
         validate_pull_request_times(*prt)
 
 
-async def test_pr_times_miner_empty_releases(mdb):
+async def test_pr_times_miner_empty_releases(mdb, pdb):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2018, month=1, day=1)
     miner = await PullRequestMiner.mine(
@@ -370,6 +384,7 @@ async def test_pr_times_miner_empty_releases(mdb):
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="unknown", tags="", match=Match.branch)},
         mdb,
+        pdb,
         None,
     )
     times_miner = PullRequestTimesMiner()
@@ -378,7 +393,7 @@ async def test_pr_times_miner_empty_releases(mdb):
         validate_pull_request_times(*prt)
 
 
-async def test_pr_mine_by_ids(mdb, cache):
+async def test_pr_mine_by_ids(mdb, pdb, cache):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2018, month=1, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -397,6 +412,7 @@ async def test_pr_mine_by_ids(mdb, cache):
         False,
         release_settings,
         mdb,
+        pdb,
         None,
     )
     mined_prs = list(miner)
@@ -408,6 +424,7 @@ async def test_pr_mine_by_ids(mdb, cache):
         time_to,
         release_settings,
         mdb,
+        pdb,
         cache,
     )
     dfs2 = await PullRequestMiner.mine_by_ids(
@@ -416,6 +433,7 @@ async def test_pr_mine_by_ids(mdb, cache):
         time_to,
         release_settings,
         mdb,
+        pdb,
         cache,
     )
     for df1, df2 in zip(dfs1, dfs2):
@@ -428,7 +446,7 @@ async def test_pr_mine_by_ids(mdb, cache):
         assert (df.fillna(0) == dfs1[i].fillna(0)).all().all()
 
 
-async def test_pr_miner_exclude_inactive(mdb, release_match_setting_tag):
+async def test_pr_miner_exclude_inactive(mdb, pdb, release_match_setting_tag):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2017, month=1, day=12)
     miner = await PullRequestMiner.mine(
@@ -441,6 +459,7 @@ async def test_pr_miner_exclude_inactive(mdb, release_match_setting_tag):
         True,
         release_match_setting_tag,
         mdb,
+        pdb,
         None,
     )
     node_ids = {pr.pr[PullRequest.node_id.key] for pr in miner}

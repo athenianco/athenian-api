@@ -11,6 +11,7 @@ Base = create_base()
 
 TSARRAY = ARRAY(TIMESTAMP(timezone=True)).with_variant(JSON(), "sqlite")
 JHSTORE = HSTORE().with_variant(JSON(), "sqlite")
+RepositoryFullName = String(64 + 1 + 100)  # user / project taken from the official GitHub docs
 
 
 class GitHubPullRequestTimes(Base):
@@ -31,7 +32,7 @@ class GitHubPullRequestTimes(Base):
     pr_node_id = Column(CHAR(32), primary_key=True)
     release_match = Column(Text(), primary_key=True)
     format_version = Column(Integer(), primary_key=True, default=3, server_default="3")
-    repository_full_name = Column(String(64 + 1 + 100), nullable=False)
+    repository_full_name = Column(RepositoryFullName, nullable=False)
     pr_created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     pr_done_at = Column(TIMESTAMP(timezone=True))
     author = Column(CHAR(100))  # can be null, see @ghost
@@ -47,3 +48,20 @@ class GitHubPullRequestTimes(Base):
                         default=lambda: datetime.now(timezone.utc),
                         server_default=func.now(),
                         onupdate=lambda ctx: datetime.now(timezone.utc))
+
+
+class GitHubCommitHistory(Base):
+    """
+    Mined Git commit graph.
+
+    We save one graph per repository. There are (rare) cases when the same commit has different
+    parents in different branches, but we ignore them.
+    Format: 40 char -> [40 char] * n mapping, pickled.
+    Direction: HEAD -> ROOT. In other words, this is the *reverse* Git commit relationship.
+    """
+
+    __tablename__ = "github_commit_history"
+
+    repository_full_name = Column(RepositoryFullName, primary_key=True)
+    format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
+    dag = Column(LargeBinary(), nullable=False)
