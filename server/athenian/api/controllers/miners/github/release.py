@@ -13,8 +13,9 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, distinct, func, or_, select
+from sqlalchemy import and_, desc, distinct, func, insert, or_, select
 from sqlalchemy.cprocessors import str_to_datetime
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query, wrap_sql_query
@@ -24,8 +25,8 @@ from athenian.api.controllers.miners.github.release_accelerated import update_hi
 from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, PullRequest, PushCommit, Release, User
+from athenian.api.models.precomputed.models import GitHubCommitHistory
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike
 
 
 matched_by_column = "matched_by"
@@ -291,12 +292,14 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               time_from: datetime,
                               time_to: datetime,
                               release_settings: Dict[str, ReleaseMatchSetting],
-                              db: databases.Database,
+                              mdb: databases.Database,
+                              pdb: databases.Database,
                               cache: Optional[aiomcache.Client],
                               ) -> pd.DataFrame:
     """Match the merged pull requests to the nearest releases that include them."""
     assert isinstance(time_to, datetime)
-    assert isinstance(db, databases.Database)
+    assert isinstance(mdb, databases.Database)
+    assert isinstance(pdb, databases.Database)
     pr_releases = _new_map_df()
     if prs.empty:
         return pr_releases
@@ -304,12 +307,12 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     earliest_merge = prs[PullRequest.merged_at.key].min() - timedelta(minutes=1)
     if earliest_merge >= time_from:
         releases = await load_releases(
-            repos, earliest_merge, time_to, release_settings, db, cache)
+            repos, earliest_merge, time_to, release_settings, mdb, cache)
     else:
         # we have to load releases in two separate batches: before and after time_from
         # that's because the release strategy can change depending on the time range
         # see ENG-710 and ENG-725
-        releases_new = await load_releases(repos, time_from, time_to, release_settings, db, cache)
+        releases_new = await load_releases(repos, time_from, time_to, release_settings, mdb, cache)
         matched_bys = _extract_matched_bys_from_releases(releases_new)
         # these matching rules must be applied in the past to stay consistent
         consistent_release_settings = {}
@@ -320,7 +323,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                 match=Match(matched_bys.get(k.split("/", 1)[1], setting.match)),
             )
         releases_old = await load_releases(
-            repos, earliest_merge, time_from, consistent_release_settings, db, cache)
+            repos, earliest_merge, time_from, consistent_release_settings, mdb, cache)
         releases = pd.concat([releases_new, releases_old], copy=False)
         releases.reset_index(drop=True, inplace=True)
     if cache is not None:
@@ -329,7 +332,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
             prs.index, prs[PullRequest.repository_full_name.key].values, matched_bys,
             release_settings, cache))
     merged_prs = prs[~prs.index.isin(pr_releases.index)]
-    missed_releases = await _map_prs_to_releases(merged_prs, releases, db, cache)
+    missed_releases = await _map_prs_to_releases(merged_prs, releases, mdb, pdb)
     if cache is not None:
         await _cache_pr_releases(missed_releases, release_settings, cache)
     return pr_releases.append(missed_releases)
@@ -392,11 +395,11 @@ async def _load_pr_releases_from_cache(prs: Iterable[str],
 
 async def _map_prs_to_releases(prs: pd.DataFrame,
                                releases: pd.DataFrame,
-                               db: databases.Database,
-                               cache: Optional[aiomcache.Client],
+                               mdb: databases.Database,
+                               pdb: databases.Database,
                                ) -> pd.DataFrame:
     releases = dict(list(releases.groupby(Release.repository_full_name.key, sort=False)))
-    histories = await _fetch_release_histories(releases, db, cache)
+    histories = await _fetch_release_histories(releases, mdb, pdb)
     released_prs = []
     for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.key, sort=False):
         try:
@@ -411,7 +414,10 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                 items = history[merge_sha]
             except KeyError:
                 continue
-            r = repo_releases.xs(items[0])
+            ri = items[0]
+            if ri < 0:
+                continue
+            r = repo_releases.xs(ri)
             released_prs.append((pr_id,
                                  r[Release.published_at.key],
                                  r[Release.author.key],
@@ -426,32 +432,21 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
 
 
 async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
-                                   db: databases.Database,
-                                   cache: Optional[aiomcache.Client],
+                                   mdb: databases.Database,
+                                   pdb: databases.Database,
                                    ) -> Dict[str, Dict[str, List[str]]]:
     histories = {}
 
     async def fetch_release_history(repo, repo_releases):
-        histories[repo] = history = {}
+        dag = await _fetch_commit_history_dag(
+            repo, repo_releases[Release.commit_id.key].values, mdb, pdb,
+            commit_shas=repo_releases[Release.sha.key].values)
+        histories[repo] = history = {k: [-1, *v] for k, v in dag.items()}
         release_hashes = set(repo_releases[Release.sha.key].values)
-        for rel_index, rel_commit_id, rel_sha in zip(
-                repo_releases.index.values,
-                repo_releases[Release.commit_id.key].values,
-                repo_releases[Release.sha.key].values):
-            if rel_sha in history:
-                update_history(history, rel_sha, rel_index, release_hashes)
-                continue
-            async with db.connection() as conn:
-                dag = await _fetch_commit_history_dag(rel_commit_id, conn, cache)
-            for c, edges in dag.items():
-                items = history.get(c)
-                if items is None:
-                    history[c] = [rel_index, *edges]
-                    continue
-                items[0] = rel_index
-                for v in edges:
-                    if v not in items:
-                        items.append(v)
+        for rel_index, rel_sha in zip(repo_releases.index.values,
+                                      repo_releases[Release.sha.key].values):
+            assert rel_sha in history
+            update_history(history, rel_sha, rel_index, release_hashes)
 
     errors = await asyncio.gather(*(fetch_release_history(*r) for r in releases.items()),
                                   return_exceptions=True)
@@ -538,22 +533,44 @@ async def _fetch_first_parents(commit_id: str,
     return first_parents
 
 
-@cached(
-    exptime=max_exptime,
-    serialize=marshal.dumps,
-    deserialize=marshal.loads,
-    key=lambda commit_id, **_: (commit_id,),
-    refresh_on_access=True,
-)
-async def _fetch_commit_history_dag(commit_id: str,
-                                    conn: databases.core.Connection,
-                                    cache: Optional[aiomcache.Client],
+async def _fetch_commit_history_dag(repo: str,
+                                    commit_ids: Iterable[str],
+                                    mdb: databases.Database,
+                                    pdb: databases.Database,
+                                    commit_shas: Optional[Iterable[str]] = None,
                                     ) -> Dict[str, List[str]]:
-    # How about limiting the history by some certain date?
-    # That would speed up the things but then we'll not be able to cache it.
-    # Credits: @dennwc
     # Git parent-child is reversed github_node_commit_parents' parent-child.
-    assert isinstance(conn, databases.core.Connection)
+    assert isinstance(mdb, databases.Database)
+    assert isinstance(pdb, databases.Database)
+
+    default_version = GitHubCommitHistory.__table__ \
+        .columns[GitHubCommitHistory.format_version.key].default.arg
+    tasks = [
+        pdb.fetch_val(select([GitHubCommitHistory.dag])
+                      .where(and_(GitHubCommitHistory.repository_full_name == repo,
+                                  GitHubCommitHistory.format_version == default_version))),
+    ]
+    if commit_shas is None:
+        tasks.append(mdb.fetch_all(select([PushCommit.sha])
+                                   .where(PushCommit.node_id.in_(commit_ids))))
+        dag, commit_shas = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in (dag, commit_shas):
+            if isinstance(r, Exception):
+                raise r from None
+        commit_shas = [row[PushCommit.sha.key] for row in commit_shas]
+    else:
+        dag = await tasks[0]
+    if dag is not None:
+        dag = pickle.loads(dag)
+        need_update = False
+        for commit_sha in commit_shas:
+            if commit_sha not in dag:
+                need_update = True
+                break
+        if not need_update:
+            return dag
+
+    # query credits: @dennwc
     query = f"""
     WITH RECURSIVE commit_history AS (
         SELECT
@@ -565,7 +582,7 @@ async def _fetch_commit_history_dag(commit_id: str,
                 LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
                 LEFT JOIN github_node_commit cc ON p.child_id = cc.id
         WHERE
-            p.parent_id = '{commit_id}'
+            p.parent_id IN ('{"', '".join(commit_ids)}')
         UNION
             SELECT
                 p.child_id AS parent,
@@ -582,12 +599,13 @@ async def _fetch_commit_history_dag(commit_id: str,
     FROM
         commit_history;"""
     dag = {}
-    if isinstance(conn.raw_connection, asyncpg.connection.Connection):
-        # this works much faster then iterate() / fetch_all()
-        async with conn._query_lock:
-            rows = await conn.raw_connection.fetch(query)
-    else:
-        rows = await conn.fetch_all(query)
+    async with mdb.connection() as conn:
+        if isinstance(conn.raw_connection, asyncpg.connection.Connection):
+            # this works much faster then iterate() / fetch_all()
+            async with conn._query_lock:
+                rows = await conn.raw_connection.fetch(query)
+        else:
+            rows = await conn.fetch_all(query)
     for r in rows:
         # reverse the order so that parent-child matches github_node_commit_parents again
         child, parent = r
@@ -598,9 +616,20 @@ async def _fetch_commit_history_dag(commit_id: str,
             dag[parent] = [child]
         dag.setdefault(child, [])
     if not dag:
-        # initial commit
-        sha = await conn.fetch_val(select([PushCommit.sha]).where(PushCommit.node_id == commit_id))
-        return {sha: []}
+        # initial commit(s)
+        return {sha: [] for sha in commit_shas}
+    else:
+        values = GitHubCommitHistory(repository_full_name=repo, dag=pickle.dumps(dag)) \
+            .create_defaults().explode(with_primary_keys=True)
+        if pdb.url.dialect in ("postgres", "postgresql"):
+            sql = postgres_insert(GitHubCommitHistory).values(values)
+            sql = sql.on_conflict_do_update(constraint=GitHubCommitHistory.__table__.primary_key,
+                                            set_={GitHubCommitHistory.dag.key: sql.excluded.dag})
+        elif pdb.url.dialect == "sqlite":
+            sql = insert(GitHubCommitHistory).values(values).prefix_with("OR REPLACE")
+        else:
+            raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
+        await pdb.execute(sql)
     return dag
 
 
@@ -609,10 +638,10 @@ async def _find_old_released_prs(releases: pd.DataFrame,
                                  authors: Collection[str],
                                  mergers: Collection[str],
                                  pr_blacklist: Optional[BinaryExpression],
-                                 db: DatabaseLike,
-                                 cache: Optional[aiomcache.Client],
+                                 mdb: databases.Database,
+                                 pdb: databases.Database,
                                  ) -> Iterable[Mapping]:
-    observed_commits, _, _ = await _extract_released_commits(releases, time_boundary, db, cache)
+    observed_commits, _, _ = await _extract_released_commits(releases, time_boundary, mdb, pdb)
     repo = releases.iloc[0][Release.repository_full_name.key] if not releases.empty else ""
     filters = [
         PullRequest.merged_at < time_boundary,
@@ -631,33 +660,37 @@ async def _find_old_released_prs(releases: pd.DataFrame,
         filters.append(PullRequest.merged_by_login.in_(mergers))
     if pr_blacklist is not None:
         filters.append(pr_blacklist)
-    return await db.fetch_all(select([PullRequest]).where(and_(*filters)))
+    return await mdb.fetch_all(select([PullRequest]).where(and_(*filters)))
 
 
 async def _extract_released_commits(releases: pd.DataFrame,
                                     time_boundary: datetime,
-                                    db: DatabaseLike,
-                                    cache: Optional[aiomcache.Client],
+                                    mdb: databases.Database,
+                                    pdb: databases.Database,
                                     ) -> Tuple[Dict[str, List[str]], pd.DataFrame, Dict[str, str]]:
-    if isinstance(db, databases.Database):
-        async with db.connection() as conn:
-            return await _extract_released_commits(releases, time_boundary, conn, cache)
+    repo = releases[Release.repository_full_name.key].unique()
+    assert len(repo) == 1
+    repo = repo[0]
     resolved_releases = set()
-    full_dag = {}
     hash_to_release = {h: rid for rid, h in zip(releases.index, releases[Release.sha.key].values)}
     new_releases = releases[releases[Release.published_at.key] >= time_boundary]
     boundary_releases = set()
-    for rid, commit_id, root in zip(new_releases.index,
-                                    new_releases[Release.commit_id.key].values,
-                                    new_releases[Release.sha.key].values):
+    dag = await _fetch_commit_history_dag(
+        repo, new_releases[Release.commit_id.key].values, mdb, pdb,
+        commit_shas=new_releases[Release.sha.key].values,
+    )
+
+    for rid, root in zip(new_releases.index, new_releases[Release.sha.key].values):
         if rid in resolved_releases:
             continue
-        dag = await _fetch_commit_history_dag(commit_id, db, cache)
         parents = [root]
+        visited = set()
         while parents:
             x = parents.pop()
-            if x in full_dag:
+            if x in visited:
                 continue
+            else:
+                visited.add(x)
             try:
                 xrid = hash_to_release[x]
             except KeyError:
@@ -669,19 +702,14 @@ async def _extract_released_commits(releases: pd.DataFrame,
                 else:
                     boundary_releases.add(xrid)
                     continue
-            children = dag[x]
-            x_children = full_dag.setdefault(x, [])
-            for c in children:
-                if c not in x_children:
-                    x_children.append(c)
-            parents.extend(children)
+            parents.extend(dag[x])
+
     # we need to traverse full history from boundary_releases and subtract it from the full DAG
     ignored_commits = set()
     for rid in boundary_releases:
         release = releases.loc[rid]
         if release[Release.sha.key] in ignored_commits:
             continue
-        dag = await _fetch_commit_history_dag(release[Release.commit_id.key], db, cache)
         parents = [release[Release.sha.key]]
         while parents:
             x = parents.pop()
@@ -692,10 +720,10 @@ async def _extract_released_commits(releases: pd.DataFrame,
             parents.extend(children)
     for c in ignored_commits:
         try:
-            del full_dag[c]
+            del dag[c]
         except KeyError:
             continue
-    return full_dag, new_releases, hash_to_release
+    return dag, new_releases, hash_to_release
 
 
 @sentry_span
@@ -705,7 +733,8 @@ async def map_releases_to_prs(repos: Iterable[str],
                               authors: Collection[str],
                               mergers: Collection[str],
                               release_settings: Dict[str, ReleaseMatchSetting],
-                              db: databases.Database,
+                              mdb: databases.Database,
+                              pdb: databases.Database,
                               cache: Optional[aiomcache.Client],
                               pr_blacklist: Optional[BinaryExpression] = None) -> pd.DataFrame:
     """Find pull requests which were released between `time_from` and `time_to` but merged before \
@@ -718,14 +747,15 @@ async def map_releases_to_prs(repos: Iterable[str],
     """
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
-    assert isinstance(db, databases.Database)
+    assert isinstance(mdb, databases.Database)
+    assert isinstance(pdb, databases.Database)
     old_from = time_from - timedelta(days=365)  # find PRs not older than 365 days before time_from
     releases = await load_releases(
-        repos, old_from, time_to, release_settings, db, cache, index=Release.id.key)
+        repos, old_from, time_to, release_settings, mdb, cache, index=Release.id.key)
     prs = []
     for _, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
         prs.append(_find_old_released_prs(
-            repo_releases, time_from, authors, mergers, pr_blacklist, db, cache))
+            repo_releases, time_from, authors, mergers, pr_blacklist, mdb, pdb))
     if prs:
         prs = await asyncio.gather(*prs, return_exceptions=True)
         for pr in prs:
@@ -738,13 +768,15 @@ async def map_releases_to_prs(repos: Iterable[str],
 
 async def mine_releases(releases: pd.DataFrame,
                         time_boundary: datetime,
-                        db: databases.Database,
+                        mdb: databases.Database,
+                        pdb: databases.Database,
                         cache: Optional[aiomcache.Client]) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Collect details about each release published after `time_boundary` and calculate added \
     and deleted line statistics."""
-    assert isinstance(db, databases.Database)
+    assert isinstance(mdb, databases.Database)
+    assert isinstance(pdb, databases.Database)
     miners = (
-        _mine_monorepo_releases(repo_releases, time_boundary, db, cache)
+        _mine_monorepo_releases(repo_releases, time_boundary, mdb, pdb, cache)
         for _, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False)
     )
     stats = await asyncio.gather(*miners, return_exceptions=True)
@@ -762,7 +794,7 @@ async def mine_releases(releases: pd.DataFrame,
             for i, v in enumerate(calist):
                 calist[i] = prefix + v
         avatars = await read_sql_query(
-            select(user_columns).where(User.login.in_(people)), db, user_columns)
+            select(user_columns).where(User.login.in_(people)), mdb, user_columns)
         avatars[User.login.key] = prefix + avatars[User.login.key]
         return stats, avatars
     return pd.DataFrame(), pd.DataFrame(columns=[c.key for c in user_columns])
@@ -775,13 +807,13 @@ async def mine_releases(releases: pd.DataFrame,
     key=lambda releases, **_: (sorted(releases.index),),
     refresh_on_access=True,
 )
-async def _mine_monorepo_releases(
-        releases: pd.DataFrame,
-        time_boundary: datetime,
-        db: DatabaseLike,
-        cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+async def _mine_monorepo_releases(releases: pd.DataFrame,
+                                  time_boundary: datetime,
+                                  mdb: databases.Database,
+                                  pdb: databases.Database,
+                                  cache: Optional[aiomcache.Client]) -> pd.DataFrame:
     dag, new_releases, hash_to_release = await _extract_released_commits(
-        releases, time_boundary, db, cache)
+        releases, time_boundary, mdb, pdb)
     stop_hashes = set(new_releases[Release.sha.key])
     owned_commits = {}  # type: Dict[str, Set[str]]
     neighbours = {}  # type: Dict[str, Set[str]]
@@ -809,13 +841,13 @@ async def _mine_monorepo_releases(
             select(commit_df_columns)
             .where(and_(PushCommit.repository_full_name == repo,
                         PushCommit.sha.in_(included_commits))),
-            db, commit_df_columns)
+            mdb, commit_df_columns)
         try:
             previous_published_at = max(releases.loc[hash_to_release[n], Release.published_at.key]
                                         for n in neighbours[sha] if n in hash_to_release)
         except ValueError:
             # no previous releases
-            previous_published_at = await db.fetch_val(
+            previous_published_at = await mdb.fetch_val(
                 select([func.min(PushCommit.committed_date)])
                 .where(and_(PushCommit.repository_full_name.in_(repo),
                             PushCommit.sha.in_(included_commits))))

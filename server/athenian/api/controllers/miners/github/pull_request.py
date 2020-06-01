@@ -138,7 +138,8 @@ class PullRequestMiner:
                     participants: Participants,
                     exclude_inactive: bool,
                     release_settings: Dict[str, ReleaseMatchSetting],
-                    db: databases.Database,
+                    mdb: databases.Database,
+                    pdb: databases.Database,
                     cache: Optional[aiomcache.Client],
                     pr_blacklist: Optional[Collection[str]] = None,
                     ) -> Tuple[List[pd.DataFrame], Set[str], Participants]:
@@ -171,7 +172,7 @@ class PullRequestMiner:
         @sentry_span
         async def fetch_prs() -> pd.DataFrame:
             return await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                        db, PullRequest, index=PullRequest.node_id.key)
+                                        mdb, PullRequest, index=PullRequest.node_id.key)
 
         prs, released_prs = await asyncio.gather(
             fetch_prs(),
@@ -179,7 +180,7 @@ class PullRequestMiner:
                 repositories, time_from, time_to,
                 participants.get(ParticipationKind.AUTHOR, []),
                 participants.get(ParticipationKind.MERGER, []),
-                release_settings, db, cache, pr_blacklist),
+                release_settings, mdb, pdb, cache, pr_blacklist),
             return_exceptions=True)
         for r in (prs, released_prs):
             if isinstance(r, Exception):
@@ -191,7 +192,7 @@ class PullRequestMiner:
         # bypass the useless inner caching by calling __wrapped__ directly
         with sentry_sdk.start_span(op="PullRequestMiner.mine_by_ids.__wrapped__"):
             dfs = await cls.mine_by_ids.__wrapped__(
-                cls, prs, time_from, time_to, release_settings, db, cache)
+                cls, prs, time_from, time_to, release_settings, mdb, pdb, cache)
         dfs = [prs, *dfs]
         cls._drop(dfs, cls._find_drop_by_participants(dfs, participants))
         if exclude_inactive:
@@ -215,7 +216,8 @@ class PullRequestMiner:
                           time_from: datetime,
                           time_to: datetime,
                           release_settings: Dict[str, ReleaseMatchSetting],
-                          db: databases.Database,
+                          mdb: databases.Database,
+                          pdb: databases.Database,
                           cache: Optional[aiomcache.Client],
                           ) -> List[pd.DataFrame]:
         """
@@ -229,33 +231,33 @@ class PullRequestMiner:
         @sentry_span
         async def fetch_reviews():
             return await cls._read_filtered_models(
-                db, PullRequestReview, node_ids, time_to,
+                mdb, PullRequestReview, node_ids, time_to,
                 columns=[PullRequestReview.submitted_at, PullRequestReview.user_id,
                          PullRequestReview.state, PullRequestReview.user_login])
 
         @sentry_span
         async def fetch_review_comments():
             return await cls._read_filtered_models(
-                db, PullRequestReviewComment, node_ids, time_to,
+                mdb, PullRequestReviewComment, node_ids, time_to,
                 columns=[PullRequestReviewComment.created_at, PullRequestReviewComment.user_id])
 
         @sentry_span
         async def fetch_review_requests():
             return await cls._read_filtered_models(
-                db, PullRequestReviewRequest, node_ids, time_to,
+                mdb, PullRequestReviewRequest, node_ids, time_to,
                 columns=[PullRequestReviewRequest.created_at])
 
         @sentry_span
         async def fetch_comments():
             return await cls._read_filtered_models(
-                db, PullRequestComment, node_ids, time_to,
+                mdb, PullRequestComment, node_ids, time_to,
                 columns=[PullRequestComment.created_at, PullRequestComment.user_id,
                          PullRequestComment.user_login])
 
         @sentry_span
         async def fetch_commits():
             return await cls._read_filtered_models(
-                db, PullRequestCommit, node_ids, time_to,
+                mdb, PullRequestCommit, node_ids, time_to,
                 columns=[PullRequestCommit.authored_date, PullRequestCommit.committed_date,
                          PullRequestCommit.author_login, PullRequestCommit.committer_login])
 
@@ -263,7 +265,7 @@ class PullRequestMiner:
         async def map_releases():
             merged_prs = prs[prs[PullRequest.merged_at.key] <= time_to]
             return await map_prs_to_releases(
-                merged_prs, time_from, time_to, release_settings, db, cache)
+                merged_prs, time_from, time_to, release_settings, mdb, pdb, cache)
 
         dfs = await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
@@ -284,7 +286,8 @@ class PullRequestMiner:
                    participants: Participants,
                    exclude_inactive: bool,
                    release_settings: Dict[str, ReleaseMatchSetting],
-                   db: databases.Database,
+                   mdb: databases.Database,
+                   pdb: databases.Database,
                    cache: Optional[aiomcache.Client],
                    pr_blacklist: Optional[Collection[str]] = None,
                    ) -> "PullRequestMiner":
@@ -300,7 +303,8 @@ class PullRequestMiner:
                              (OR aggregation). An empty dict means everybody.
         :param exclude_inactive: Ors must have at least one event in the given time frame.
         :param release_settings: Release match settings of the account.
-        :param db: Metadata db instance.
+        :param mdb: Metadata db instance.
+        :param pdb: Precomputed db instance.
         :param cache: memcached client to cache the collected data.
         :param pr_blacklist: completely ignore the existence of these PR node IDs.
         """
@@ -310,7 +314,7 @@ class PullRequestMiner:
         assert time_to <= date_to_with_time
         dfs, _, _ = await cls._mine(
             date_from, date_to, repositories, participants, exclude_inactive,
-            release_settings, db, cache, pr_blacklist=pr_blacklist)
+            release_settings, mdb, pdb, cache, pr_blacklist=pr_blacklist)
         cls._truncate_prs(dfs, time_from, time_to)
         return cls(*dfs)
 

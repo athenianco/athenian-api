@@ -231,7 +231,7 @@ async def filter_pull_requests(properties: Set[Property],
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     tasks = (
         PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, participants,
-                              exclude_inactive, release_settings, mdb, cache),
+                              exclude_inactive, release_settings, mdb, pdb, cache),
         load_precomputed_done_times(time_from, time_to, repos, participants, exclude_inactive,
                                     release_settings, mdb, pdb, cache),
     )
@@ -273,7 +273,7 @@ async def filter_pull_requests(properties: Set[Property],
                                        .order_by(PullRequest.node_id),
                                        mdb, PullRequest, index=node_id_key)
             dfs = await PullRequestMiner.mine_by_ids(
-                prs, prs[PullRequest.created_at.key].min(), now, release_settings, mdb, cache)
+                prs, prs[PullRequest.created_at.key].min(), now, release_settings, mdb, pdb, cache)
             prs_today = list(PullRequestMiner(prs, *dfs))
         else:
             prs_today = []
