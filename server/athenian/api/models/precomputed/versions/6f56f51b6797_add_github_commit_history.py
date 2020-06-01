@@ -22,6 +22,8 @@ def upgrade():
         sa.Column("repository_full_name", sa.String(64 + 1 + 100), primary_key=True),
         sa.Column("format_version", sa.Integer(), primary_key=True, server_default="1"),
         sa.Column("dag", sa.LargeBinary(), nullable=False),
+        sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False,
+                  server_default=sa.func.now()),
     )
 
 

@@ -623,8 +623,10 @@ async def _fetch_commit_history_dag(repo: str,
             .create_defaults().explode(with_primary_keys=True)
         if pdb.url.dialect in ("postgres", "postgresql"):
             sql = postgres_insert(GitHubCommitHistory).values(values)
-            sql = sql.on_conflict_do_update(constraint=GitHubCommitHistory.__table__.primary_key,
-                                            set_={GitHubCommitHistory.dag.key: sql.excluded.dag})
+            sql = sql.on_conflict_do_update(
+                constraint=GitHubCommitHistory.__table__.primary_key,
+                set_={GitHubCommitHistory.dag.key: sql.excluded.dag,
+                      GitHubCommitHistory.updated_at.key: sql.excluded.updated_at})
         elif pdb.url.dialect == "sqlite":
             sql = insert(GitHubCommitHistory).values(values).prefix_with("OR REPLACE")
         else:
