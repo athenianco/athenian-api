@@ -36,7 +36,7 @@ from athenian.api.auth import Auth0
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
-from athenian.api.db import measure_db_overhead, ParallelDatabase
+from athenian.api.db import add_pdb_metrics_context, measure_db_overhead, ParallelDatabase
 from athenian.api.metadata import __package__
 from athenian.api.models import check_collation, check_schema_version, DBSchemaMismatchError, \
     hack_sqlite_arrays, hack_sqlite_hstore
@@ -209,6 +209,7 @@ class AthenianApp(connexion.AioHttpApp):
         self._enable_cors()
         self._cache = cache
         self.mdb = self.sdb = self.pdb = None  # type: Optional[databases.Database]
+        pdbctx = add_pdb_metrics_context(self.app)
 
         async def connect_to_db(name: str, shortcut: str, db_conn: str, db_options: dict):
             try:
@@ -221,6 +222,8 @@ class AthenianApp(connexion.AioHttpApp):
                 raise GracefulExit() from None
             self.log.info("Connected to the %s DB on %s", name, db_conn)
             setattr(self, shortcut, measure_db_overhead(db, shortcut, self.app))
+            if shortcut == "pdb":
+                self.pdb.metrics = pdbctx
 
         self.app.on_shutdown.append(self.shutdown)
         # schedule the DB connections when the server starts
@@ -258,7 +261,7 @@ class AthenianApp(connexion.AioHttpApp):
 
     @aiohttp.web.middleware
     async def with_db(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
-        """Add "mdb" and "sdb" attributes to every incoming request."""
+        """Add "mdb", "pdb", "sdb", and "cache" attributes to every incoming request."""
         for db in ("mdb", "sdb", "pdb"):
             if getattr(self, db) is None:
                 await self._db_futures[db]

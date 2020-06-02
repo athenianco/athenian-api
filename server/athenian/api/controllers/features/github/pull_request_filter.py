@@ -58,6 +58,17 @@ class PullRequestListMiner:
         assert isinstance(time_from, datetime)
         self._time_from = time_from
         self._now = datetime.now(tz=timezone.utc)
+        self._precomputed_hits = self._precomputed_misses = 0
+
+    @property
+    def precomputed_hits(self) -> int:
+        """Return the number of used precomputed PullRequestTimes."""
+        return self._precomputed_hits
+
+    @property
+    def precomputed_misses(self) -> int:
+        """Return the number of times PullRequestTimes was calculated from scratch."""
+        return self._precomputed_misses
 
     @classmethod
     def _collect_properties(cls,
@@ -190,8 +201,8 @@ class PullRequestListMiner:
                 continue
             if item is not None:
                 yield item
-        self.log.info("Precomputed DB cut the number of PRs from %d to %d",
-                      len(self._prs_today), evals)
+        self._precomputed_hits = len(self._prs_today) - evals
+        self._precomputed_misses = evals
 
 
 @sentry_span
@@ -281,6 +292,9 @@ async def filter_pull_requests(properties: Set[Property],
         prs_today += done
     else:
         prs_today = prs_time_machine
+    miner = PullRequestListMiner(prs_time_machine, prs_today, done_times, properties, time_from)
     with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
-        return list(PullRequestListMiner(
-            prs_time_machine, prs_today, done_times, properties, time_from))
+        prs = list(miner)
+    pdb.metrics["hits"].get()["filter_pull_requests/times"] = miner.precomputed_hits
+    pdb.metrics["misses"].get()["filter_pull_requests/times"] = miner.precomputed_misses
+    return prs
