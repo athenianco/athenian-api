@@ -568,8 +568,10 @@ async def _fetch_commit_history_dag(repo: str,
                 need_update = True
                 break
         if not need_update:
+            pdb.metrics["hits"].get()["_fetch_commit_history_dag"] += 1
             return dag
 
+    pdb.metrics["misses"].get()["_fetch_commit_history_dag"] += 1
     # query credits: @dennwc
     query = f"""
     WITH RECURSIVE commit_history AS (

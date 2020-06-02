@@ -1,5 +1,6 @@
 from collections import defaultdict
 from contextvars import ContextVar
+from itertools import chain
 import time
 
 from aiohttp import web
@@ -28,7 +29,8 @@ async def instrument(request, handler):
     db_elapsed = defaultdict(float)
     request.app["db_elapsed"].set(db_elapsed)
     cache_context = request.app["cache_context"]
-    for v in cache_context.values():
+    pdb_context = request.app["pdb_context"]
+    for v in chain(cache_context.values(), pdb_context.values()):
         v.set(defaultdict(int))
     try:
         response = await handler(request)  # type: web.Response
@@ -43,6 +45,9 @@ async def instrument(request, handler):
             for k, v in cache_context.items():
                 s = ["%s %d" % (f.replace("athenian.api.", ""), n) for f, n in v.get().items()]
                 response.headers.add("X-Performance-Cache-%s" % k.capitalize(), ", ".join(s))
+            for k, v in pdb_context.items():
+                s = ["%s %d" % p for p in v.get().items()]
+                response.headers.add("X-Performance-Precomputed-%s" % k.capitalize(), ", ".join(s))
         except NameError:
             pass
         request.app["state_db_latency"] \

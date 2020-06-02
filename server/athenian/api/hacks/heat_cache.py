@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 from collections import defaultdict
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
 import logging
 
@@ -57,6 +58,10 @@ def main():
         await mdb.connect()
         pdb = databases.Database(args.precomputed_db)
         await pdb.connect()
+        pdb.metrics = {
+            "hits": ContextVar("pdb_hits", default=defaultdict(int)),
+            "misses": ContextVar("pdb_misses", default=defaultdict(int)),
+        }
 
         for reposet in tqdm(reposets):
             repos = {r.split("/", 1)[1] for r in reposet.items}

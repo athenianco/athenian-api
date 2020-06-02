@@ -1,3 +1,4 @@
+from contextvars import ContextVar
 import logging
 import os
 import time
@@ -61,6 +62,15 @@ def measure_db_overhead(db: databases.Database,
 
     db._backend.connection = wrapped_backend_connection
     return db
+
+
+def add_pdb_metrics_context(app: aiohttp.web.Application) -> dict:
+    """Create and attach the precomputed DB metrics context."""
+    ctx = app["pdb_context"] = {
+        "hits": ContextVar("pdb_hits", default=None),
+        "misses": ContextVar("pdb_misses", default=None),
+    }
+    return ctx
 
 
 class ParallelDatabase(databases.Database):

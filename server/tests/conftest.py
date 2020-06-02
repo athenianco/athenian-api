@@ -1,5 +1,6 @@
 import asyncio
 from collections import defaultdict
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import logging
 import os
@@ -323,5 +324,9 @@ async def sdb(state_db, loop):
 @pytest.fixture(scope="function")
 async def pdb(precomputed_db, loop):
     db = ParallelDatabase(precomputed_db)
+    db.metrics = {
+        "hits": ContextVar("pdb_hits", default=defaultdict(int)),
+        "misses": ContextVar("pdb_misses", default=defaultdict(int)),
+    }
     await db.connect()
     return db
