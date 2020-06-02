@@ -56,7 +56,7 @@ class GitHubCommitHistory(Base):
 
     We save one graph per repository. There are (rare) cases when the same commit has different
     parents in different branches, but we ignore them.
-    Format: 40 char -> [40 char] * n mapping, pickled.
+    Format: 40 char -> [40 char] * n mapping, marshal-ed.
     Direction: HEAD -> ROOT. In other words, this is the *reverse* Git commit relationship.
     """
 
@@ -65,6 +65,25 @@ class GitHubCommitHistory(Base):
     repository_full_name = Column(RepositoryFullName, primary_key=True)
     format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
     dag = Column(LargeBinary(), nullable=False)
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        server_default=func.now(),
+                        onupdate=lambda ctx: datetime.now(timezone.utc))
+
+
+class GitHubCommitFirstParents(Base):
+    """
+    Mined Git commit first parents - commits that follow the main branch.
+
+    We save first parent commit node identifiers and their commit timestamps per repo.
+    They are independently pickled and their byte streams are concatenated to `commits`.
+    """
+
+    __tablename__ = "github_commit_first_parents"
+
+    repository_full_name = Column(RepositoryFullName, primary_key=True)
+    format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
+    commits = Column(LargeBinary(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
                         default=lambda: datetime.now(timezone.utc),
                         server_default=func.now(),

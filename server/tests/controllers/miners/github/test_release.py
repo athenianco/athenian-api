@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import marshal
 from typing import Dict
 
 from databases import Database
@@ -8,9 +9,10 @@ from sqlalchemy import select, sql
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.controllers.miners.github.release import _fetch_commit_history_dag, \
-    load_releases, map_prs_to_releases, map_releases_to_prs
+    _fetch_first_parents, load_releases, map_prs_to_releases, map_releases_to_prs
 from athenian.api.controllers.settings import Match, ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest, Release
+from athenian.api.models.precomputed.models import GitHubCommitFirstParents
 
 
 def generate_repo_settings(prs: pd.DataFrame) -> Dict[str, ReleaseMatchSetting]:
@@ -80,7 +82,7 @@ async def test_map_releases_to_prs_empty(mdb, pdb, cache, release_match_setting_
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
         [], [], release_match_setting_tag, mdb, pdb, cache)
     assert prs.empty
-    assert len(cache.mem) == 0
+    assert len(cache.mem) == 1
     prs = await map_releases_to_prs(
         ["src-d/go-git"],
         datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
@@ -90,7 +92,7 @@ async def test_map_releases_to_prs_empty(mdb, pdb, cache, release_match_setting_
                 branches="master", tags=".*", match=Match.branch),
         }, mdb, pdb, cache)
     assert prs.empty
-    assert len(cache.mem) > 0
+    assert len(cache.mem) == 6
 
 
 async def test_map_releases_to_prs_blacklist(mdb, pdb, cache, release_match_setting_tag):
@@ -175,7 +177,7 @@ def check_branch_releases(releases: pd.DataFrame, n: int, date_from: datetime, d
 
 
 @pytest.mark.parametrize("branches", ["{{default}}", "master", "m.*"])
-async def test_load_releases_branches(mdb, cache, branches):
+async def test_load_releases_branches(mdb, pdb, cache, branches):
     date_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
     date_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
     releases = await load_releases(
@@ -185,12 +187,13 @@ async def test_load_releases_branches(mdb, cache, branches):
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches=branches, tags="", match=Match.branch)},
         mdb,
+        pdb,
         cache,
     )
     check_branch_releases(releases, 240, date_from, date_to)
 
 
-async def test_load_releases_branches_empty(mdb, cache):
+async def test_load_releases_branches_empty(mdb, pdb, cache):
     date_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
     date_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
     releases = await load_releases(
@@ -200,6 +203,7 @@ async def test_load_releases_branches_empty(mdb, cache):
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="unknown", tags="", match=Match.branch)},
         mdb,
+        pdb,
         cache,
     )
     assert len(releases) == 0
@@ -210,7 +214,7 @@ async def test_load_releases_branches_empty(mdb, cache):
     (datetime(year=2017, month=9, day=4, tzinfo=timezone.utc), 1),
     (datetime(year=2017, month=12, day=8, tzinfo=timezone.utc), 0),
 ])
-async def test_load_releases_tag_or_branch_dates(mdb, cache, date_from, n):
+async def test_load_releases_tag_or_branch_dates(mdb, pdb, cache, date_from, n):
     date_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
     releases = await load_releases(
         ["src-d/go-git"],
@@ -219,6 +223,7 @@ async def test_load_releases_tag_or_branch_dates(mdb, cache, date_from, n):
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags=".*", match=Match.tag_or_branch)},
         mdb,
+        pdb,
         cache,
     )
     if n > 1:
@@ -227,7 +232,7 @@ async def test_load_releases_tag_or_branch_dates(mdb, cache, date_from, n):
         assert len(releases) == n
 
 
-async def test_load_releases_tag_or_branch_initial(mdb):
+async def test_load_releases_tag_or_branch_initial(mdb, pdb):
     date_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2015, month=10, day=22, tzinfo=timezone.utc)
     releases = await load_releases(
@@ -237,6 +242,7 @@ async def test_load_releases_tag_or_branch_initial(mdb):
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags="", match=Match.branch)},
         mdb,
+        pdb,
         None,
     )
     check_branch_releases(releases, 17, date_from, date_to)
@@ -259,7 +265,7 @@ async def test_map_releases_to_prs_branches(mdb, pdb):
 
 
 @pytest.mark.parametrize("repos", [["src-d/gitbase"], []])
-async def test_load_releases_empty(mdb, repos):
+async def test_load_releases_empty(mdb, pdb, repos):
     releases = await load_releases(
         repos,
         datetime(year=2020, month=6, day=30, tzinfo=timezone.utc),
@@ -267,6 +273,7 @@ async def test_load_releases_empty(mdb, repos):
         {"github.com/src-d/gitbase": ReleaseMatchSetting(
             branches=".*", tags=".*", match=Match.branch)},
         mdb,
+        pdb,
         None,
         index=Release.id.key)
     assert releases.empty
@@ -279,6 +286,7 @@ async def test_load_releases_empty(mdb, repos):
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags="", match=Match.tag)},
         mdb,
+        pdb,
         None,
     )
     assert releases.empty
@@ -289,6 +297,7 @@ async def test_load_releases_empty(mdb, repos):
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="", tags=".*", match=Match.branch)},
         mdb,
+        pdb,
         None,
     )
     assert releases.empty
@@ -296,10 +305,13 @@ async def test_load_releases_empty(mdb, repos):
 
 async def test_fetch_commit_history_smoke(mdb, pdb):
     dag = await _fetch_commit_history_dag(
+        None,
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
          "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
-        mdb, pdb)
+        ["d2a38b4a5965d529566566640519d03d2bd10f6c",
+         "31eae7b619d166c366bf5df4991f04ba8cebea0a"],
+        mdb, pdb, None)
     ground_truth = {
         "31eae7b619d166c366bf5df4991f04ba8cebea0a": ["b977a025ca21e3b5ca123d8093bd7917694f6da7",
                                                      "d2a38b4a5965d529566566640519d03d2bd10f6c"],
@@ -314,26 +326,155 @@ async def test_fetch_commit_history_smoke(mdb, pdb):
     }
     assert dag == ground_truth
     dag = await _fetch_commit_history_dag(
+        marshal.dumps(dag),
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
          "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
-        Database("sqlite://"), pdb,
-        commit_shas=["31eae7b619d166c366bf5df4991f04ba8cebea0a",
-                     "d2a38b4a5965d529566566640519d03d2bd10f6c"])
+        ["31eae7b619d166c366bf5df4991f04ba8cebea0a",
+         "d2a38b4a5965d529566566640519d03d2bd10f6c"],
+        Database("sqlite://"), pdb, None)
     assert dag == ground_truth
     with pytest.raises(Exception):
         await _fetch_commit_history_dag(
+            marshal.dumps(dag),
             "src-d/go-git",
             ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
              "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
+            ["31eae7b619d166c366bf5df4991f04ba8cebea0a",
+             "1353ccd6944ab41082099b79979ded3223db98ec"],
             Database("sqlite://"), pdb,
-            commit_shas=["31eae7b619d166c366bf5df4991f04ba8cebea0a",
-                         "1353ccd6944ab41082099b79979ded3223db98ec"])
+            None,
+        )
 
 
 async def test_fetch_commit_history_initial_commit(mdb, pdb):
     dag = await _fetch_commit_history_dag(
+        None,
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
-        mdb, pdb)
+        ["5d7303c49ac984a9fec60523f2d5297682e16646"],
+        mdb, pdb, None)
     assert dag == {"5d7303c49ac984a9fec60523f2d5297682e16646": []}
+
+
+async def test_fetch_commit_history_cache(mdb, pdb, cache):
+    dag = await _fetch_commit_history_dag(
+        None,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
+        ["d2a38b4a5965d529566566640519d03d2bd10f6c",
+         "31eae7b619d166c366bf5df4991f04ba8cebea0a"],
+        mdb, pdb, cache)
+    ground_truth = {
+        "31eae7b619d166c366bf5df4991f04ba8cebea0a": ["b977a025ca21e3b5ca123d8093bd7917694f6da7",
+                                                     "d2a38b4a5965d529566566640519d03d2bd10f6c"],
+        "b977a025ca21e3b5ca123d8093bd7917694f6da7": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
+        "d2a38b4a5965d529566566640519d03d2bd10f6c": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
+        "35b585759cbf29f8ec428ef89da20705d59f99ec": ["c2bbf9fe8009b22d0f390f3c8c3f13937067590f"],
+        "c2bbf9fe8009b22d0f390f3c8c3f13937067590f": ["fc9f0643b21cfe571046e27e0c4565f3a1ee96c8"],
+        "fc9f0643b21cfe571046e27e0c4565f3a1ee96c8": ["c088fd6a7e1a38e9d5a9815265cb575bb08d08ff"],
+        "c088fd6a7e1a38e9d5a9815265cb575bb08d08ff": ["5fddbeb678bd2c36c5e5c891ab8f2b143ced5baf"],
+        "5fddbeb678bd2c36c5e5c891ab8f2b143ced5baf": ["5d7303c49ac984a9fec60523f2d5297682e16646"],
+        "5d7303c49ac984a9fec60523f2d5297682e16646": [],
+    }
+    assert dag == ground_truth
+    dag = await _fetch_commit_history_dag(
+        None,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+         "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw=="],
+        ["d2a38b4a5965d529566566640519d03d2bd10f6c",
+         "31eae7b619d166c366bf5df4991f04ba8cebea0a"],
+        None, None, cache)
+    assert dag == ground_truth
+
+
+async def test_fetch_first_parents_smoke(mdb, pdb):
+    fp = await _fetch_first_parents(
+        None,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
+        datetime(2015, 4, 5),
+        datetime(2015, 5, 20),
+        mdb, pdb, None)
+    ground_truth = {
+        "MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng==",
+        "MDY6Q29tbWl0NDQ3MzkwNDQ6NWZkZGJlYjY3OGJkMmMzNmM1ZTVjODkxYWI4ZjJiMTQzY2VkNWJhZg==",
+        "MDY6Q29tbWl0NDQ3MzkwNDQ6YzA4OGZkNmE3ZTFhMzhlOWQ1YTk4MTUyNjVjYjU3NWJiMDhkMDhmZg==",
+    }
+    assert fp == ground_truth
+    obj = await pdb.fetch_val(select([GitHubCommitFirstParents.commits]))
+    fp = await _fetch_first_parents(
+        obj,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
+        datetime(2015, 4, 5),
+        datetime(2015, 5, 20),
+        Database("sqlite://"), pdb, None)
+    assert fp == ground_truth
+    with pytest.raises(Exception):
+        await _fetch_first_parents(
+            obj,
+            "src-d/go-git",
+            ["MDY6Q29tbWl0NDQ3MzkwNDQ6OTQwNDYwZjU0MjJiMDJmMDEzNTEzOTZhZjcwM2U5YjYzZTg1OTZhZQ=="],
+            datetime(2015, 4, 5),
+            datetime(2015, 5, 20),
+            Database("sqlite://"), pdb, None)
+
+
+async def test_fetch_first_parents_initial_commit(mdb, pdb):
+    fp = await _fetch_first_parents(
+        None,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
+        datetime(2015, 4, 5),
+        datetime(2015, 5, 20),
+        mdb, pdb, None)
+    assert fp == {
+        "MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng==",
+    }
+    fp = await _fetch_first_parents(
+        None,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
+        datetime(2015, 3, 5),
+        datetime(2015, 3, 20),
+        mdb, pdb, None)
+    assert fp == set()
+
+
+async def test_fetch_first_parents_cache(mdb, pdb, cache):
+    await _fetch_first_parents(
+        None,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
+        datetime(2015, 4, 5),
+        datetime(2015, 5, 20),
+        mdb, pdb, cache)
+    ground_truth = {
+        "MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng==",
+        "MDY6Q29tbWl0NDQ3MzkwNDQ6NWZkZGJlYjY3OGJkMmMzNmM1ZTVjODkxYWI4ZjJiMTQzY2VkNWJhZg==",
+        "MDY6Q29tbWl0NDQ3MzkwNDQ6YzA4OGZkNmE3ZTFhMzhlOWQ1YTk4MTUyNjVjYjU3NWJiMDhkMDhmZg==",
+    }
+    fp = await _fetch_first_parents(
+        None,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+         "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw=="],
+        datetime(2015, 4, 5),
+        datetime(2015, 5, 20),
+        None, None, cache)
+    assert fp == ground_truth
+    with pytest.raises(Exception):
+        await _fetch_first_parents(
+            None,
+            "src-d/go-git",
+            ["MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw=="],
+            datetime(2015, 4, 6),
+            datetime(2015, 5, 20),
+            None, None, cache)
