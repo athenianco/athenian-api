@@ -446,6 +446,26 @@ async def test_fetch_first_parents_initial_commit(mdb, pdb):
     assert fp == set()
 
 
+async def test_fetch_first_parents_index_error(mdb, pdb):
+    fp1 = await _fetch_first_parents(
+        None,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
+        datetime(2015, 4, 5),
+        datetime(2015, 5, 20),
+        mdb, pdb, None)
+    data = await pdb.fetch_val(select([GitHubCommitFirstParents.commits]))
+    assert data
+    fp2 = await _fetch_first_parents(
+        data,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWZkZGJlYjY3OGJkMmMzNmM1ZTVjODkxYWI4ZjJiMTQzY2VkNWJhZg=="],
+        datetime(2015, 4, 5),
+        datetime(2015, 5, 20),
+        mdb, pdb, None)
+    assert fp1 != fp2
+
+
 async def test_fetch_first_parents_cache(mdb, pdb, cache):
     await _fetch_first_parents(
         None,
