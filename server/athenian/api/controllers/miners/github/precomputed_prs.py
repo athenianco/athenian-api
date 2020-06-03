@@ -216,6 +216,7 @@ async def load_precomputed_done_times(date_from: datetime,
     refresh_on_access=True,
 )
 async def load_precomputed_pr_releases(prs: Iterable[str],
+                                       time_to: datetime,
                                        matched_bys: Dict[str, ReleaseMatch],
                                        default_branches: Dict[str, str],
                                        release_settings: Dict[str, ReleaseMatchSetting],
@@ -230,7 +231,9 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
     prs = await pdb.fetch_all(
         select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
                 ghprt.repository_full_name, ghprt.release_match])
-        .where(and_(ghprt.pr_node_id.in_(prs), ghprt.releaser.isnot(None))))
+        .where(and_(ghprt.pr_node_id.in_(prs),
+                    ghprt.releaser.isnot(None),
+                    ghprt.pr_done_at < time_to)))
     prefix = PREFIXES["github"]
     records = []
     utc = timezone.utc

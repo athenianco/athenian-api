@@ -256,6 +256,7 @@ async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, 
     for i in range(2):
         released_prs = await load_precomputed_pr_releases(
             [pr.pr[PullRequest.node_id.key] for pr in prs],
+            max(s.released.best for s in samples) + timedelta(days=1),
             {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
             default_branches, settings, pdb if i == 0 else None, cache)
         for s, pr in zip(samples, prs):
@@ -267,16 +268,29 @@ async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, 
                 pr.pr[PullRequest.repository_full_name.key]
 
 
+async def test_load_precomputed_pr_releases_time_to(pr_samples, default_branches, pdb):
+    samples, prs, settings = _gen_one_pr(pr_samples)
+    await store_precomputed_done_times(prs, samples, default_branches, settings, pdb)
+    released_prs = await load_precomputed_pr_releases(
+        [pr.pr[PullRequest.node_id.key] for pr in prs],
+        min(s.released.best for s in samples),
+        {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
+        default_branches, settings, pdb, None)
+    assert released_prs.empty
+
+
 async def test_load_precomputed_pr_releases_release_mismatch(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
     await store_precomputed_done_times(prs, samples, default_branches, settings, pdb)
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
+        max(s.released.best for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
         default_branches, settings, pdb, None)
     assert released_prs.empty
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
+        max(s.released.best for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
         {"src-d/go-git": "xxx"}, settings, pdb, None)
     assert released_prs.empty
@@ -288,11 +302,13 @@ async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pd
     await store_precomputed_done_times(prs, samples, default_branches, settings, pdb)
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
+        max(s.released.best for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
         {}, settings, pdb, None)
     assert len(released_prs) == len(prs)
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
+        max(s.released.best for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
         {}, {"github.com/src-d/go-git": ReleaseMatchSetting(
             tags="v.*", branches="", match=ReleaseMatch.tag),
