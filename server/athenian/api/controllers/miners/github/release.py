@@ -545,8 +545,12 @@ async def _fetch_first_parents(data: Optional[bytes],
     if data is not None:
         f = BytesIO(data)
         first_parents = pickle.load(f)
-        need_update = \
-            (first_parents[np.searchsorted(first_parents, commit_ids)] != commit_ids).any()
+        try:
+            need_update = \
+                (first_parents[np.searchsorted(first_parents, commit_ids)] != commit_ids).any()
+        except IndexError:
+            # np.searchsorted can return len(first_parents)
+            need_update = True
         if not need_update:
             timestamps = pickle.load(f)
         else:
