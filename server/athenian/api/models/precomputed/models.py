@@ -38,6 +38,7 @@ class GitHubPullRequestTimes(Base):
     author = Column(CHAR(100))  # can be null, see @ghost
     merger = Column(CHAR(100))
     releaser = Column(CHAR(100))
+    release_url = Column(Text())
     reviewers = Column(JHSTORE, nullable=False, server_default="")
     commenters = Column(JHSTORE, nullable=False, server_default="")
     commit_authors = Column(JHSTORE, nullable=False, server_default="")

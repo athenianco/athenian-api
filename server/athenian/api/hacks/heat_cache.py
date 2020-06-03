@@ -14,7 +14,8 @@ from tqdm import tqdm
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
     setup_cache_metrics, setup_context
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
-from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
+from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
+    ReleaseMatchSetting
 from athenian.api.models.state.models import ReleaseSetting, RepositorySet
 
 
@@ -73,14 +74,14 @@ def main():
                 settings[row.repository] = ReleaseMatchSetting(
                     branches=row.branches,
                     tags=row.tags,
-                    match=Match(row.match),
+                    match=ReleaseMatch(row.match),
                 )
             for repo in reposet.items:
                 if repo not in settings:
                     settings[repo] = ReleaseMatchSetting(
                         branches=default_branch_alias,
                         tags=".*",
-                        match=Match.tag_or_branch,
+                        match=ReleaseMatch.tag_or_branch,
                     )
             await calc_pull_request_metrics_line_github(
                 ["pr-lead-time"],

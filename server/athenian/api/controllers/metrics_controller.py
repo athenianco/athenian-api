@@ -12,7 +12,7 @@ from athenian.api.controllers.features.entries import METRIC_ENTRIES
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
-from athenian.api.controllers.miners.pull_request_list_item import Participants, ParticipationKind
+from athenian.api.controllers.miners.types import Participants, ParticipationKind
 from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES

@@ -15,13 +15,14 @@ from athenian.api.controllers.features.github.pull_request import \
     BinnedPullRequestMetricCalculator, calculators as pull_request_calculators
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
 from athenian.api.controllers.features.metric import Metric
+from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import calc_developer_metrics
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_precomputed_done_candidates, load_precomputed_done_times, store_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestMiner, PullRequestTimesMiner
-from athenian.api.controllers.miners.pull_request_list_item import Participants
+from athenian.api.controllers.miners.types import Participants
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import PushCommit
 from athenian.api.tracing import sentry_span
@@ -55,13 +56,15 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     """Calculate pull request metrics on GitHub data."""
     assert isinstance(repositories, set)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
+    branches, default_branches = await extract_branches(repositories, mdb, cache)
     precomputed_tasks = [
-        load_precomputed_done_times(time_from, time_to, repositories, participants,
-                                    exclude_inactive, release_settings, mdb, pdb, cache),
+        load_precomputed_done_times(
+            time_from, time_to, repositories, participants, default_branches, exclude_inactive,
+            release_settings, pdb),
     ]
     if exclude_inactive:
         precomputed_tasks.append(load_precomputed_done_candidates(
-            time_from, time_to, repositories, release_settings, mdb, pdb, cache))
+            time_from, time_to, repositories, default_branches, release_settings, pdb))
         done_times, blacklist = await asyncio.gather(*precomputed_tasks, return_exceptions=True)
         for r in (done_times, blacklist):
             if isinstance(r, Exception):
@@ -74,8 +77,9 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
     # are effectively discarded later in BinnedPullRequestMetricCalculator
     miner = await PullRequestMiner.mine(
-        date_from, date_to, time_from, time_to, repositories, participants, exclude_inactive,
-        release_settings, mdb, pdb, cache, pr_blacklist=blacklist)
+        date_from, date_to, time_from, time_to, repositories, participants,
+        branches, default_branches, exclude_inactive, release_settings,
+        mdb, pdb, cache, pr_blacklist=blacklist)
     times_miner = PullRequestTimesMiner()
     mined_prs = []
     mined_times = []
@@ -89,7 +93,8 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
             mined_times.append(times)
     pdb.metrics["misses"].get()["load_precomputed_done_times"] += len(mined_times)
     # we don't care if exclude_inactive is True or False here
-    await store_precomputed_done_times(mined_prs, mined_times, release_settings, mdb, pdb, cache)
+    await store_precomputed_done_times(
+        mined_prs, mined_times, default_branches, release_settings, pdb)
     mined_times.extend(done_times.values())
     with sentry_sdk.start_span(op="BinnedPullRequestMetricCalculator.__call__"):
         calcs = [pull_request_calculators[m]() for m in metrics]

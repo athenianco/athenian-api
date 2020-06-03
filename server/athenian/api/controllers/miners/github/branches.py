@@ -37,6 +37,6 @@ async def extract_branches(repos: Iterable[str],
         except (IndexError, ValueError):
             log.error('failed to find the default branch for "%s": only have %s',
                       repo, repo_branches[[Branch.branch_name.key, Branch.is_default.key]])
-            continue
+            default_branch = ""
         default_branches[repo] = default_branch
     return branches, default_branches

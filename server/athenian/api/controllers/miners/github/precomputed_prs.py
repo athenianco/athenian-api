@@ -1,24 +1,25 @@
-import asyncio
 from datetime import datetime, timezone
 import pickle
-from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Set, Tuple
+from typing import Any, Collection, Dict, Iterable, List, Optional, Set
 
 import aiomcache
 import databases
 from dateutil.rrule import DAILY, rrule
+import pandas as pd
 from sqlalchemy import and_, insert, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
-from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
-from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.github.pull_request import MinedPullRequest, PullRequestTimes
-from athenian.api.controllers.miners.github.release import matched_by_column
-from athenian.api.controllers.miners.pull_request_list_item import Participants, ParticipationKind
-from athenian.api.controllers.settings import default_branch_alias, Match, ReleaseMatchSetting
+from athenian.api.cache import cached
+from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
+    new_released_prs_df
+from athenian.api.controllers.miners.types import MinedPullRequest, Participants, \
+    ParticipationKind, PullRequestTimes
+from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
+    ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestCommit, PullRequestReview, PullRequestReviewRequest
+    PullRequestCommit, PullRequestReview, PullRequestReviewRequest, Release
 from athenian.api.models.precomputed.models import GitHubPullRequestTimes
 from athenian.api.tracing import sentry_span
 
@@ -48,17 +49,17 @@ def _check_release_match(repo: str,
         dump = result
     else:
         match_name, match_by = release_match.split("|", 1)
-        match = Match[match_name]
+        match = ReleaseMatch[match_name]
         required_release_match = release_settings[prefix + repo]
-        if required_release_match.match != Match.tag_or_branch:
+        if required_release_match.match != ReleaseMatch.tag_or_branch:
             if match != required_release_match.match:
                 return None
             dump = result
         else:
             dump = ambiguous[match_name]
-        if match == Match.tag:
+        if match == ReleaseMatch.tag:
             target = required_release_match.tags
-        elif match == Match.branch:
+        elif match == ReleaseMatch.branch:
             target = required_release_match.branches.replace(
                 default_branch_alias, default_branches.get(repo, default_branch_alias))
         else:
@@ -68,31 +69,13 @@ def _check_release_match(repo: str,
     return dump
 
 
-async def _fetch_rows_and_default_branches(selected: List[InstrumentedAttribute],
-                                           filters: List[ClauseElement],
-                                           repos: Collection[str],
-                                           mdb: databases.Database,
-                                           pdb: databases.Database,
-                                           cache: Optional[aiomcache.Client],
-                                           ) -> Tuple[List[Mapping], Dict[str, str]]:
-    rows, dbt = await asyncio.gather(pdb.fetch_all(select(selected).where(and_(*filters))),
-                                     extract_branches(repos, mdb, cache),
-                                     return_exceptions=True)
-    if isinstance(rows, Exception):
-        raise rows from None
-    if isinstance(dbt, Exception):
-        raise dbt from None
-    return rows, dbt[1]
-
-
 @sentry_span
 async def load_precomputed_done_candidates(date_from: datetime,
                                            date_to: datetime,
                                            repos: Collection[str],
+                                           default_branches: Dict[str, str],
                                            release_settings: Dict[str, ReleaseMatchSetting],
-                                           mdb: databases.Database,
                                            pdb: databases.Database,
-                                           cache: Optional[aiomcache.Client],
                                            ) -> Set[str]:
     """
     Load the set of released PR identifiers.
@@ -104,19 +87,18 @@ async def load_precomputed_done_candidates(date_from: datetime,
                 ghprt.repository_full_name,
                 ghprt.release_match]
     filters = _create_common_filters(date_from, date_to, repos)
-    rows, default_branches = await _fetch_rows_and_default_branches(
-        selected, filters, repos, mdb, pdb, cache)
+    rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
     result = set()
-    ambiguous = {Match.tag.name: set(), Match.branch.name: set()}
+    ambiguous = {ReleaseMatch.tag.name: set(), ReleaseMatch.branch.name: set()}
     for row in rows:
         dump = _check_release_match(
             row[1], row[2], release_settings, default_branches, prefix, result, ambiguous)
         if dump is None:
             continue
         dump.add(row[0])
-    result.update(ambiguous[Match.tag.name])
-    result.update(ambiguous[Match.branch.name])
+    result.update(ambiguous[ReleaseMatch.tag.name])
+    result.update(ambiguous[ReleaseMatch.branch.name])
     return result
 
 
@@ -125,11 +107,10 @@ async def load_precomputed_done_times(date_from: datetime,
                                       date_to: datetime,
                                       repos: Collection[str],
                                       participants: Participants,
+                                      default_branches: Dict[str, str],
                                       exclude_inactive: bool,
                                       release_settings: Dict[str, ReleaseMatchSetting],
-                                      mdb: databases.Database,
                                       pdb: databases.Database,
-                                      cache: Optional[aiomcache.Client],
                                       ) -> Dict[str, PullRequestTimes]:
     """Load PullRequestTimes belonging to released or rejected PRs from the precomputed DB."""
     postgres = pdb.url.dialect in ("postgres", "postgresql")
@@ -182,11 +163,10 @@ async def load_precomputed_done_times(date_from: datetime,
         else:
             selected.append(ghprt.activity_days)
             date_range = set(date_range)
-    rows, default_branches = await _fetch_rows_and_default_branches(
-        selected, filters, repos, mdb, pdb, cache)
+    rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
     result = {}
-    ambiguous = {Match.tag.name: {}, Match.branch.name: {}}
+    ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     for row in rows:
         dump = _check_release_match(
             row[1], row[2], release_settings, default_branches, prefix, result, ambiguous)
@@ -219,26 +199,74 @@ async def load_precomputed_done_times(date_from: datetime,
                 if not activity_days.intersection(date_range):
                     continue
         dump[row[0]] = pickle.loads(row[3])
-    result.update(ambiguous[Match.tag.name])
-    for node_id, times in ambiguous[Match.branch.name].items():
+    result.update(ambiguous[ReleaseMatch.tag.name])
+    for node_id, times in ambiguous[ReleaseMatch.branch.name].items():
         if node_id not in result:
             result[node_id] = times
     return result
 
 
+@cached(
+    exptime=60 * 60,  # 1 hour
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda prs, default_branches, release_settings, **_: (
+        ",".join(sorted(prs)), sorted(default_branches.items()), release_settings,
+    ),
+    refresh_on_access=True,
+)
+async def load_precomputed_pr_releases(prs: Iterable[str],
+                                       matched_bys: Dict[str, ReleaseMatch],
+                                       default_branches: Dict[str, str],
+                                       release_settings: Dict[str, ReleaseMatchSetting],
+                                       pdb: databases.Database,
+                                       cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+    """
+    Load the releases mentioned in the specified PRs.
+
+    Each PR is represented by a node_id, a repository name, and a required release match.
+    """
+    ghprt = GitHubPullRequestTimes
+    prs = await pdb.fetch_all(
+        select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
+                ghprt.repository_full_name, ghprt.release_match])
+        .where(and_(ghprt.pr_node_id.in_(prs), ghprt.releaser.isnot(None))))
+    prefix = PREFIXES["github"]
+    records = []
+    utc = timezone.utc
+    for pr in prs:
+        repo = pr[ghprt.repository_full_name.key]
+        match_name, match_by = pr[ghprt.release_match.key].split("|", 1)
+        release_match = ReleaseMatch[match_name]
+        if release_match != matched_bys[repo]:
+            continue
+        if release_match == ReleaseMatch.tag:
+            if match_by != release_settings[prefix + repo].tags:
+                continue
+        elif release_match == ReleaseMatch.branch:
+            branches = release_settings[prefix + repo].branches.replace(
+                default_branch_alias, default_branches[repo])
+            if match_by != branches:
+                continue
+        else:
+            raise AssertionError("Unsupported release match in the precomputed DB: " + match_name)
+        records.append((pr[ghprt.pr_node_id.key], pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
+                        pr[ghprt.releaser.key].rstrip(), pr[ghprt.release_url.key],
+                        pr[ghprt.repository_full_name.key],
+                        ReleaseMatch[pr[ghprt.release_match.key].split("|", 1)[0]]))
+    return new_released_prs_df(records)
+
+
 @sentry_span
 async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
                                        times: Iterable[PullRequestTimes],
+                                       default_branches: Dict[str, str],
                                        release_settings: Dict[str, ReleaseMatchSetting],
-                                       mdb: databases.Database,
                                        pdb: databases.Database,
-                                       cache: Optional[aiomcache.Client],
                                        ) -> None:
     """Store PullRequestTimes belonging to released or rejected PRs to the precomputed DB."""
     inserted = []
     prefix = PREFIXES["github"]
-    repos = {pr.pr[PullRequest.repository_full_name.key] for pr in prs}
-    _, default_branches = await extract_branches(repos, mdb, cache)
     sqlite = pdb.url.dialect == "sqlite"
     for pr, times in zip(prs, times):
         activity_days = set()
@@ -254,12 +282,12 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
         repo = pr.pr[PullRequest.repository_full_name.key]
         if pr.release[matched_by_column] is not None:
             release_match = release_settings[prefix + repo]
-            match = Match(pr.release[matched_by_column])
-            if match == Match.branch:
+            match = ReleaseMatch(pr.release[matched_by_column])
+            if match == ReleaseMatch.branch:
                 branch = release_match.branches.replace(
                     default_branch_alias, default_branches.get(repo, default_branch_alias))
                 release_match = "|".join((match.name, branch))
-            elif match == Match.tag:
+            elif match == ReleaseMatch.tag:
                 release_match = "|".join((match.name, release_match.tags))
             else:
                 raise AssertionError("Unhandled release match strategy: " + match.name)
@@ -288,6 +316,7 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
             repository_full_name=repo,
             pr_created_at=times.created.best,
             pr_done_at=done_at,
+            release_url=pr.release[Release.url.key],
             author=_flatten_set(participants[ParticipationKind.AUTHOR]),
             merger=_flatten_set(participants[ParticipationKind.MERGER]),
             releaser=_flatten_set(participants[ParticipationKind.RELEASER]),

@@ -5,7 +5,7 @@ from athenian.api.controllers.features.github.pull_request import \
     PullRequestAverageMetricCalculator, PullRequestCounter, PullRequestMetricCalculator, \
     PullRequestSumMetricCalculator, register
 from athenian.api.controllers.features.metric import Metric
-from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
+from athenian.api.controllers.miners.types import PullRequestTimes
 from athenian.api.models.web import PullRequestMetricID
 
 
