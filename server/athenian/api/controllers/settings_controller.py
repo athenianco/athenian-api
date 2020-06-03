@@ -2,7 +2,7 @@ from aiohttp import web
 
 from athenian.api import ResponseError
 from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.settings import Match, Settings
+from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import ForbiddenError, ReleaseMatchSetting
 from athenian.api.models.web.release_match_request import ReleaseMatchRequest
@@ -27,6 +27,6 @@ async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Resp
         return ResponseError(ForbiddenError("%s is the default user" % request.uid)).response
     rule = ReleaseMatchRequest.from_dict(body)  # type: ReleaseMatchRequest
     settings = Settings.from_request(request, rule.account)
-    match = Match[rule.match]
+    match = ReleaseMatch[rule.match]
     repos = await settings.set_release_matches(rule.repositories, rule.branches, rule.tags, match)
     return web.json_response(sorted(repos))

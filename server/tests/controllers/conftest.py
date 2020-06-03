@@ -3,15 +3,33 @@ from datetime import timedelta, timezone
 import faker
 import pytest
 
-from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestTimes
-from athenian.api.controllers.settings import Match, ReleaseMatchSetting
+from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.types import Fallback, PullRequestTimes
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 
 
 @pytest.fixture(scope="module")
 def release_match_setting_tag():
     return {
-        "github.com/src-d/go-git": ReleaseMatchSetting(branches="", tags=".*", match=Match.tag),
+        "github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="", tags=".*", match=ReleaseMatch.tag),
     }
+
+
+@pytest.fixture(scope="module")
+def default_branches():
+    return {"src-d/go-git": "master"}
+
+
+_branches = None
+
+
+@pytest.fixture(scope="function")
+async def branches(mdb):
+    global _branches
+    if _branches is None:
+        _branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
+    return _branches
 
 
 @pytest.fixture

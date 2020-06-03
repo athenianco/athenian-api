@@ -9,7 +9,7 @@ from prometheus_client import CollectorRegistry
 import pytest
 
 from athenian.api import setup_cache_metrics
-from athenian.api.controllers.miners.pull_request_list_item import Property
+from athenian.api.controllers.miners.types import Property
 from athenian.api.models.web import CommitsList, PullRequestSet
 from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant

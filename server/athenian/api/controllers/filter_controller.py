@@ -9,12 +9,13 @@ from aiohttp import web
 from dateutil.parser import parse as parse_datetime
 
 from athenian.api.controllers.features.github.pull_request_filter import filter_pull_requests
+from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.release import load_releases, mine_releases
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
-from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property, \
+from athenian.api.controllers.miners.types import ParticipationKind, Property, \
     PullRequestListItem
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import Settings
@@ -204,9 +205,10 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
-    releases = await load_releases(repos, filt.date_from - timedelta(days=365), filt.date_to,
-                                   settings, request.mdb, request.pdb, request.cache,
-                                   index=Release.id.key)
+    branches, default_branches = await extract_branches(repos, request.mdb, request.cache)
+    releases = await load_releases(
+        repos, branches, default_branches, filt.date_from - timedelta(days=365), filt.date_to,
+        settings, request.mdb, request.pdb, request.cache, index=Release.id.key)
     stats, avatars = await mine_releases(
         releases, filt.date_from, request.mdb, request.pdb, request.cache)
     data = [FilteredRelease(**items) for _, items in stats.iterrows()]

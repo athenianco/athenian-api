@@ -18,11 +18,12 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
+from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
-    MinedPullRequest, PullRequestMiner, PullRequestTimes, PullRequestTimesMiner, ReviewResolution
-from athenian.api.controllers.miners.pull_request_list_item import Participants, Property, \
-    PullRequestListItem
+    PullRequestMiner, PullRequestTimesMiner, ReviewResolution
+from athenian.api.controllers.miners.types import MinedPullRequest, Participants, Property, \
+    PullRequestListItem, PullRequestTimes
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
@@ -240,11 +241,13 @@ async def filter_pull_requests(properties: Set[Property],
     assert isinstance(repos, set)
     # required to efficiently use the cache with timezones
     date_from, date_to = coarsen_time_interval(time_from, time_to)
+    branches, default_branches = await extract_branches(repos, mdb, cache)
     tasks = (
         PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, participants,
-                              exclude_inactive, release_settings, mdb, pdb, cache),
-        load_precomputed_done_times(time_from, time_to, repos, participants, exclude_inactive,
-                                    release_settings, mdb, pdb, cache),
+                              branches, default_branches, exclude_inactive, release_settings,
+                              mdb, pdb, cache),
+        load_precomputed_done_times(time_from, time_to, repos, participants, default_branches,
+                                    exclude_inactive, release_settings, pdb),
     )
     miner_time_machine, done_times = await asyncio.gather(*tasks, return_exceptions=True)
     if isinstance(miner_time_machine, Exception):
@@ -284,7 +287,8 @@ async def filter_pull_requests(properties: Set[Property],
                                        .order_by(PullRequest.node_id),
                                        mdb, PullRequest, index=node_id_key)
             dfs = await PullRequestMiner.mine_by_ids(
-                prs, prs[PullRequest.created_at.key].min(), now, release_settings, mdb, pdb, cache)
+                prs, branches, default_branches, prs[PullRequest.created_at.key].min(), now,
+                release_settings, mdb, pdb, cache)
             prs_today = list(PullRequestMiner(prs, *dfs))
         else:
             prs_today = []

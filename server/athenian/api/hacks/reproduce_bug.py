@@ -9,8 +9,8 @@ import databases
 from athenian.api import create_memcached, setup_cache_metrics
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github  # noqa
 from athenian.api.controllers.features.github.pull_request_filter import filter_pull_requests
-from athenian.api.controllers.miners.pull_request_list_item import Property
-from athenian.api.controllers.settings import Match, ReleaseMatchSetting
+from athenian.api.controllers.miners.types import Property
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.web import PullRequestMetricID  # noqa
 
 
@@ -39,7 +39,7 @@ async def main():
     repos = ["classified"]
     # TODO(vmarkovtsev): load these from the settings
     settings = {
-        "github.com/" + r: ReleaseMatchSetting("{{default}}", ".*", Match.tag_or_branch)
+        "github.com/" + r: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag_or_branch)
         for r in repos
     }
     # """

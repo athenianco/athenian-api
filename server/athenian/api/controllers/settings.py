@@ -18,10 +18,10 @@ from athenian.api.models.state.models import ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
 
-Match = IntEnum("Match", {ReleaseMatchStrategy.BRANCH: 0,
-                          ReleaseMatchStrategy.TAG: 1,
-                          ReleaseMatchStrategy.TAG_OR_BRANCH: 2})
-Match.__doc__ = """Supported release matching strategies."""
+ReleaseMatch = IntEnum("Match", {ReleaseMatchStrategy.BRANCH: 0,
+                                 ReleaseMatchStrategy.TAG: 1,
+                                 ReleaseMatchStrategy.TAG_OR_BRANCH: 2})
+ReleaseMatch.__doc__ = """Supported release matching strategies."""
 
 default_branch_alias = "{{default}}"
 
@@ -32,7 +32,7 @@ class ReleaseMatchSetting:
 
     branches: str
     tags: str
-    match: Match
+    match: ReleaseMatch
 
     def __str__(self) -> str:
         """Return the compact string representation of the object."""
@@ -110,7 +110,7 @@ class Settings:
                     ReleaseMatchSetting(
                         branches=row[ReleaseSetting.branches.key],
                         tags=row[ReleaseSetting.tags.key],
-                        match=Match(row[ReleaseSetting.match.key]),
+                        match=ReleaseMatch(row[ReleaseSetting.match.key]),
                     )))
             for repo in repos:
                 if repo not in loaded:
@@ -119,7 +119,7 @@ class Settings:
                         ReleaseMatchSetting(
                             branches=default_branch_alias,
                             tags=".*",
-                            match=Match.tag_or_branch,
+                            match=ReleaseMatch.tag_or_branch,
                         )))
             settings.sort()
             settings = dict(settings)
@@ -129,12 +129,12 @@ class Settings:
                                   repos: List[str],
                                   branches: str,
                                   tags: str,
-                                  match: Match,
+                                  match: ReleaseMatch,
                                   ) -> Set[str]:
         """Set the release matching rule for a list of repositories."""
-        for propname, s in (("branches", Match.branch), ("tags", Match.tag)):
+        for propname, s in (("branches", ReleaseMatch.branch), ("tags", ReleaseMatch.tag)):
             propval = locals()[propname]
-            if match in (s, Match.tag_or_branch) and not propval:
+            if match in (s, ReleaseMatch.tag_or_branch) and not propval:
                 raise ResponseError(InvalidRequestError(
                     "." + propname,
                     detail='Value may not be empty given "match" = "%s"' % match.name),

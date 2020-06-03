@@ -5,7 +5,7 @@ from typing import Dict, Generic, Iterable, List, Optional, Sequence, Type
 from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
-from athenian.api.controllers.miners.github.pull_request import PullRequestTimes
+from athenian.api.controllers.miners.types import PullRequestTimes
 
 
 class PullRequestMetricCalculator(Generic[T]):

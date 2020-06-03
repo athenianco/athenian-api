@@ -10,7 +10,7 @@ from athenian.api.controllers.features.github.pull_request import \
     PullRequestMedianMetricCalculator
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
-from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestTimes
+from athenian.api.controllers.miners.types import Fallback, PullRequestTimes
 
 
 @pytest.fixture

@@ -1,11 +1,9 @@
 import asyncio
-import dataclasses
 from datetime import date, datetime, timezone
 from enum import Enum
 import logging
 import pickle
-from typing import Any, Collection, Dict, Generator, Generic, List, Optional, Set, \
-    Tuple, TypeVar, Union
+from typing import Collection, Dict, Generator, List, Optional, Set, Tuple, Union
 
 import aiomcache
 import databases
@@ -21,60 +19,13 @@ from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.github.hardcoded import BOTS
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
-from athenian.api.controllers.miners.pull_request_list_item import Participants, ParticipationKind
+from athenian.api.controllers.miners.types import DT, Fallback, MinedPullRequest, Participants, \
+    ParticipationKind, PullRequestTimes
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
 from athenian.api.tracing import sentry_span
-
-
-@dataclasses.dataclass(frozen=True)
-class MinedPullRequest:
-    """All the relevant information we are able to load from the metadata DB about a PR.
-
-    All the DataFrame-s have a two-layered index:
-    1. pull request id
-    2. own id
-    The artificial first index layer makes it is faster to select data belonging to a certain PR.
-    """
-
-    pr: Dict[str, Any]
-    reviews: pd.DataFrame
-    review_comments: pd.DataFrame
-    review_requests: pd.DataFrame
-    comments: pd.DataFrame
-    commits: pd.DataFrame
-    release: Dict[str, Any]
-
-    def participants(self) -> Participants:
-        """Collect unique developer logins that are mentioned in this pull request."""
-        author = self.pr[PullRequest.user_login.key]
-        merger = self.pr[PullRequest.merged_by_login.key]
-        releaser = self.release[Release.author.key]
-        participants = {
-            ParticipationKind.AUTHOR: {author} if author else set(),
-            ParticipationKind.REVIEWER: self._extract_people(
-                self.reviews, PullRequestReview.user_login.key),
-            ParticipationKind.COMMENTER: self._extract_people(
-                self.comments, PullRequestComment.user_login.key),
-            ParticipationKind.COMMIT_COMMITTER: self._extract_people(
-                self.commits, PullRequestCommit.committer_login.key),
-            ParticipationKind.COMMIT_AUTHOR: self._extract_people(
-                self.commits, PullRequestCommit.author_login.key),
-            ParticipationKind.MERGER: {merger} if merger else set(),
-            ParticipationKind.RELEASER: {releaser} if releaser else set(),
-        }
-        try:
-            participants[ParticipationKind.REVIEWER].remove(author)
-        except (KeyError, TypeError):
-            pass
-        return participants
-
-    @staticmethod
-    def _extract_people(df: pd.DataFrame, col: str) -> Set[str]:
-        values = df[col].values
-        return set(values[np.where(values)[0]])
 
 
 class PullRequestMiner:
@@ -136,6 +87,8 @@ class PullRequestMiner:
                     date_to: date,
                     repositories: Set[str],
                     participants: Participants,
+                    branches: pd.DataFrame,
+                    default_branches: Dict[str, str],
                     exclude_inactive: bool,
                     release_settings: Dict[str, ReleaseMatchSetting],
                     mdb: databases.Database,
@@ -177,7 +130,7 @@ class PullRequestMiner:
         prs, released_prs = await asyncio.gather(
             fetch_prs(),
             map_releases_to_prs(
-                repositories, time_from, time_to,
+                repositories, branches, default_branches, time_from, time_to,
                 participants.get(ParticipationKind.AUTHOR, []),
                 participants.get(ParticipationKind.MERGER, []),
                 release_settings, mdb, pdb, cache, pr_blacklist),
@@ -192,7 +145,8 @@ class PullRequestMiner:
         # bypass the useless inner caching by calling __wrapped__ directly
         with sentry_sdk.start_span(op="PullRequestMiner.mine_by_ids.__wrapped__"):
             dfs = await cls.mine_by_ids.__wrapped__(
-                cls, prs, time_from, time_to, release_settings, mdb, pdb, cache)
+                cls, prs, branches, default_branches, time_from, time_to, release_settings,
+                mdb, pdb, cache)
         dfs = [prs, *dfs]
         cls._drop(dfs, cls._find_drop_by_participants(dfs, participants))
         if exclude_inactive:
@@ -213,6 +167,8 @@ class PullRequestMiner:
     )
     async def mine_by_ids(cls,
                           prs: pd.DataFrame,
+                          branches: pd.DataFrame,
+                          default_branches: Dict[str, str],
                           time_from: datetime,
                           time_to: datetime,
                           release_settings: Dict[str, ReleaseMatchSetting],
@@ -265,7 +221,8 @@ class PullRequestMiner:
         async def map_releases():
             merged_prs = prs[prs[PullRequest.merged_at.key] <= time_to]
             return await map_prs_to_releases(
-                merged_prs, time_from, time_to, release_settings, mdb, pdb, cache)
+                merged_prs, branches, default_branches, time_from, time_to, release_settings,
+                mdb, pdb, cache)
 
         dfs = await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
@@ -284,6 +241,8 @@ class PullRequestMiner:
                    time_to: datetime,
                    repositories: Set[str],
                    participants: Participants,
+                   branches: pd.DataFrame,
+                   default_branches: Dict[str, str],
                    exclude_inactive: bool,
                    release_settings: Dict[str, ReleaseMatchSetting],
                    mdb: databases.Database,
@@ -301,6 +260,8 @@ class PullRequestMiner:
         :param repositories: PRs must belong to these repositories (prefix excluded).
         :param participants: PRs must have these user IDs in the specified participation roles
                              (OR aggregation). An empty dict means everybody.
+        :param branches: Preloaded DataFrame with branches in the specified repositories.
+        :param default_branches: Mapping from repository names to their default branch names.
         :param exclude_inactive: Ors must have at least one event in the given time frame.
         :param release_settings: Release match settings of the account.
         :param mdb: Metadata db instance.
@@ -313,8 +274,8 @@ class PullRequestMiner:
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
         dfs, _, _ = await cls._mine(
-            date_from, date_to, repositories, participants, exclude_inactive,
-            release_settings, mdb, pdb, cache, pr_blacklist=pr_blacklist)
+            date_from, date_to, repositories, participants, branches, default_branches,
+            exclude_inactive, release_settings, mdb, pdb, cache, pr_blacklist=pr_blacklist)
         cls._truncate_prs(dfs, time_from, time_to)
         return cls(*dfs)
 
@@ -527,128 +488,6 @@ class PullRequestMiner:
                     else:
                         items[k] = {c: None for c in df.columns}
             yield MinedPullRequest(**items)
-
-
-T = TypeVar("T")
-
-
-class Fallback(Generic[T]):
-    """
-    A value with a "plan B".
-
-    The idea is to return the backup in `Fallback.best` if the primary value is absent (None).
-    We can check whether the primary value exists by `Fallback.value is None`.
-    """
-
-    def __init__(self, value: Optional[T], fallback: Union[None, T, "Fallback[T]"]):
-        """Initialize a new instance of `Fallback`."""
-        if value != value:  # NaN check
-            value = None
-        self.__value = value
-        self.__fallback = fallback
-
-    @property
-    def best(self) -> Optional[T]:
-        """The "best effort" value, either the primary or the backup one."""  # noqa: D401
-        if self.__value is not None:
-            return self.__value
-        if isinstance(self.__fallback, Fallback):
-            return self.__fallback.best
-        return self.__fallback
-
-    def __str__(self) -> str:
-        """str()."""
-        return "Fallback(%s, %s)" % (self.value, self.best)
-
-    def __repr__(self) -> str:
-        """repr()."""
-        return "Fallback(%r, %r)" % (self.value, self.best)
-
-    def __bool__(self) -> bool:
-        """Return the value indicating whether there is any value, either primary or backup."""
-        return self.best is not None
-
-    def __lt__(self, other: "Fallback[T]") -> bool:
-        """Implement <."""
-        if not self or not other:
-            raise ArithmeticError
-        return self.best < other.best
-
-    def __eq__(self, other: "Fallback[T]") -> bool:
-        """Implement ==."""
-        return self.best == other.best
-
-    def __le__(self, other: "Fallback[T]") -> bool:
-        """Implement <=."""
-        if not self or not other:
-            raise ArithmeticError
-        return self.best <= other.best
-
-    @property
-    def value(self) -> Optional[T]:
-        """The primary value."""  # noqa: D401
-        return self.__value
-
-    @classmethod
-    def max(cls, *args: "Fallback[T]") -> "Fallback[T]":
-        """Calculate the maximum of several Fallback.best-s."""
-        return cls.agg(max, *args)
-
-    @classmethod
-    def min(cls, *args: "Fallback[T]") -> "Fallback[T]":
-        """Calculate the minimum of several Fallback.best-s."""
-        return cls.agg(min, *args)
-
-    @classmethod
-    def agg(cls, func: callable, *args: "Fallback[T]") -> "Fallback[T]":
-        """Calculate an aggregation of several Fallback.best-s."""
-        try:
-            return cls(func(arg.best for arg in args if arg.best is not None), None)
-        except ValueError:
-            return cls(None, None)
-
-
-DT = Union[pd.Timestamp, datetime, None]
-
-
-@dataclasses.dataclass(frozen=True)
-class PullRequestTimes:
-    """Various PR update timestamps."""
-
-    @property
-    def work_began(self) -> Fallback[DT]:  # PR_B   noqa: D102
-        return Fallback.min(self.created, self.first_commit)
-
-    created: Fallback[DT]                                # PR_C
-    first_commit: Fallback[DT]                           # PR_CC
-    last_commit_before_first_review: Fallback[DT]        # PR_CFR
-    last_commit: Fallback[DT]                            # PR_LC
-    merged: Fallback[DT]                                 # PR_M
-    closed: Fallback[DT]                                 # PR_CL
-    first_comment_on_first_review: Fallback[DT]          # PR_W
-    first_review_request: Fallback[DT]                   # PR_S
-    approved: Fallback[DT]                               # PR_A
-    last_review: Fallback[DT]                            # PR_LR
-    first_passed_checks: Fallback[DT]                    # PR_VS
-    last_passed_checks: Fallback[DT]                     # PR_VF
-    released: Fallback[DT]                               # PR_R
-
-    def max_timestamp(self) -> DT:
-        """Find the maximum timestamp contained in the struct."""
-        return Fallback.max(*self.__dict__.values()).best
-
-    def __str__(self) -> str:
-        """Format for human-readability."""
-        return "{\n\t%s\n}" % ",\n\t".join(
-            "%s: %s" % (k, v.best) for k, v in dataclasses.asdict(self).items())
-
-    def __lt__(self, other: "PullRequestTimes") -> bool:
-        """Order by `work_began`."""
-        return self.work_began.best < other.work_began.best
-
-    def __hash__(self) -> int:
-        """Implement hash()."""
-        return hash(str(self))
 
 
 class ReviewResolution(Enum):

@@ -4,8 +4,8 @@ import pytest
 
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request_filter import filter_pull_requests
-from athenian.api.controllers.miners.pull_request_list_item import ParticipationKind, Property
-from athenian.api.controllers.settings import Match, ReleaseMatchSetting
+from athenian.api.controllers.miners.types import ParticipationKind, Property
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.web import PullRequestMetricID
 
 
@@ -72,7 +72,7 @@ async def test_pr_list_miner_release_settings(
         release_match_setting_tag, mdb, pdb, cache))
     assert prs1
     release_match_setting_tag = {
-        "github.com/src-d/go-git": ReleaseMatchSetting("master", "unknown", Match.branch),
+        "github.com/src-d/go-git": ReleaseMatchSetting("master", "unknown", ReleaseMatch.branch),
     }
     prs2 = list(await filter_pull_requests(
         {Property.RELEASING}, time_from, time_to, {"src-d/go-git"}, {}, False,

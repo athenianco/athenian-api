@@ -12,9 +12,9 @@ from athenian.api.controllers.features.github.pull_request_metrics import AllCou
     MergedCalculator, MergingCounter, MergingTimeCalculator, OpenedCalculator, ReleaseCounter, \
     ReleaseTimeCalculator, ReviewCounter, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
     WorkInProgressCounter, WorkInProgressTimeCalculator
-from athenian.api.controllers.miners.github.pull_request import Fallback, PullRequestMiner, \
-    PullRequestTimes
-from athenian.api.controllers.settings import Match, ReleaseMatchSetting
+from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
+from athenian.api.controllers.miners.types import Fallback, PullRequestTimes
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.web import Granularity, PullRequestMetricID
 from tests.conftest import has_memcached
 from tests.controllers.features.github.test_pull_request import ensure_dtype
@@ -194,8 +194,8 @@ def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
 @pytest.mark.parametrize("with_memcached, with_mine_cache_wipe",
                          itertools.product(*([[False, True]] * 2)))
 async def test_calc_pull_request_metrics_line_github_cache(
-        mdb, pdb, cache, memcached, with_memcached, release_match_setting_tag,
-        with_mine_cache_wipe):
+        branches, default_branches, mdb, pdb, cache, memcached, with_memcached,
+        release_match_setting_tag, with_mine_cache_wipe):
     if with_memcached:
         if not has_memcached:
             raise pytest.skip("no memcached")
@@ -208,7 +208,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
     assert await calc_pull_request_metrics_line_github.reset_cache(*args)
     if with_mine_cache_wipe:
         assert await PullRequestMiner._mine.reset_cache(
-            None, date_from, date_to, {"src-d/go-git"}, {}, False,
+            None, date_from, date_to, {"src-d/go-git"}, {}, branches, default_branches, False,
             release_match_setting_tag, mdb, pdb, cache)
     metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics1.exists and metrics2.exists
@@ -225,7 +225,7 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
             {"src-d/go-git"}, {}, False, release_match_setting_tag, mdb, pdb, cache]
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     release_match_setting_tag = {
-        "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", Match.branch),
+        "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
     }
     args[-4] = release_match_setting_tag
     metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
