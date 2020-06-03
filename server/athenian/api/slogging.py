@@ -191,7 +191,10 @@ class StructuredHandler(logging.Handler):
             "thread": reduce_thread_id(record.thread),
         }
         if record.exc_info is not None:
-            obj["error"] = traceback.format_exception(*record.exc_info)[1:]
+            try:
+                obj["error"] = traceback.format_exception(*record.exc_info)[1:]
+            except TypeError:
+                obj["error"] = record.exc_info
         try:
             obj["context"] = self.local.context
         except AttributeError:

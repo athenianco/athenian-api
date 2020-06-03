@@ -376,7 +376,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
         releases.reset_index(drop=True, inplace=True)
     matched_bys = _extract_matched_bys_from_releases(releases)
     precomputed_pr_releases = await load_precomputed_pr_releases(
-        prs.index, matched_bys, default_branches, release_settings, pdb, cache)
+        prs.index, time_to, matched_bys, default_branches, release_settings, pdb, cache)
     pdb.metrics["hits"].get()["map_prs_to_releases"] = len(precomputed_pr_releases)
     pr_releases.append(precomputed_pr_releases)
     merged_prs = prs[~prs.index.isin(pr_releases.index)]
