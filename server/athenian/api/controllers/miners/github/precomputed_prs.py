@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+import logging
 import pickle
 from typing import Any, Collection, Dict, Iterable, List, Optional, Set
 
@@ -12,6 +13,7 @@ from sqlalchemy import and_, insert, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
 
+from athenian.api import metadata
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
@@ -230,6 +232,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
 
     Each PR is represented by a node_id, a repository name, and a required release match.
     """
+    log = logging.getLogger("%s.load_precomputed_pr_releases" % metadata.__package__)
     ghprt = GitHubPullRequestTimes
     prs = await pdb.fetch_all(
         select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
@@ -244,7 +247,12 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
         repo = pr[ghprt.repository_full_name.key]
         match_name, match_by = pr[ghprt.release_match.key].split("|", 1)
         release_match = ReleaseMatch[match_name]
-        if release_match != matched_bys[repo]:
+        try:
+            if release_match != matched_bys[repo]:
+                continue
+        except KeyError:
+            # pdb thinks this PR was released but our current release matching settings disagree
+            log.warning("Alternative release matching detected: %s", dict(pr))
             continue
         if release_match == ReleaseMatch.tag:
             if match_by != release_settings[prefix + repo].tags:
