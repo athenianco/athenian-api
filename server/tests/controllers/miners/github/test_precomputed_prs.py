@@ -1,13 +1,17 @@
 import dataclasses
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Sequence
 import uuid
 
 import pandas as pd
+from sqlalchemy import select
 
-from athenian.api.controllers.miners.github.precomputed_prs import \
+from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_precomputed_done_candidates, load_precomputed_done_times, load_precomputed_pr_releases, \
-    store_precomputed_done_times
+    store_precomputed_done_times, update_unreleased_prs
+from athenian.api.controllers.miners.github.release import extract_matched_bys_from_releases, \
+    load_releases
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import Fallback, MinedPullRequest, ParticipationKind, \
     PullRequestTimes
@@ -314,3 +318,60 @@ async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pd
             tags="v.*", branches="", match=ReleaseMatch.tag),
         }, pdb, None)
     assert released_prs.empty
+
+
+async def test_discover_update_unreleased_prs(
+        mdb, pdb, default_branches, release_match_setting_tag):
+    prs = await read_sql_query(
+        select([PullRequest]).where(PullRequest.number.in_(range(1000, 1010))),
+        mdb, PullRequest, index=PullRequest.node_id.key)
+    utc = timezone.utc
+    releases = await load_releases(
+        ["src-d/go-git"], None, default_branches,
+        datetime(2018, 9, 1, tzinfo=utc),
+        datetime(2018, 11, 1, tzinfo=utc),
+        release_match_setting_tag,
+        mdb, pdb, None)
+    assert len(releases) == 2
+    await update_unreleased_prs(prs, releases, extract_matched_bys_from_releases(releases),
+                                default_branches, release_match_setting_tag, pdb)
+    releases = await load_releases(
+        ["src-d/go-git"], None, default_branches,
+        datetime(2018, 11, 1, tzinfo=utc),
+        datetime(2018, 11, 20, tzinfo=utc),
+        release_match_setting_tag,
+        mdb, pdb, None)
+    assert len(releases) == 1
+    await update_unreleased_prs(prs, releases, extract_matched_bys_from_releases(releases),
+                                default_branches, release_match_setting_tag, pdb)
+    unreleased_prs = await discover_unreleased_prs(
+        prs, releases, extract_matched_bys_from_releases(releases),
+        default_branches, release_match_setting_tag, pdb)
+    assert set(prs.index) == set(unreleased_prs)
+    releases = await load_releases(
+        ["src-d/go-git"], None, default_branches,
+        datetime(2018, 9, 1, tzinfo=utc),
+        datetime(2018, 11, 1, tzinfo=utc),
+        release_match_setting_tag,
+        mdb, pdb, None)
+    if pdb.url.dialect != "sqlite":
+        unreleased_prs = await discover_unreleased_prs(
+            prs, releases, extract_matched_bys_from_releases(releases),
+            default_branches, release_match_setting_tag, pdb)
+        assert set(prs.index) == set(unreleased_prs)
+    unreleased_prs = await discover_unreleased_prs(
+        prs, releases, extract_matched_bys_from_releases(releases),
+        default_branches, {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="", tags="v.*", match=ReleaseMatch.tag)}, pdb)
+    assert len(unreleased_prs) == 0
+    releases = await load_releases(
+        ["src-d/go-git"], None, default_branches,
+        datetime(2019, 1, 29, tzinfo=utc),
+        datetime(2019, 2, 1, tzinfo=utc),
+        release_match_setting_tag,
+        mdb, pdb, None)
+    assert len(releases) == 2
+    unreleased_prs = await discover_unreleased_prs(
+        prs, releases, extract_matched_bys_from_releases(releases),
+        default_branches, release_match_setting_tag, pdb)
+    assert len(unreleased_prs) == 0

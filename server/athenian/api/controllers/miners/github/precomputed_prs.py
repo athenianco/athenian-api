@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 import pickle
 from typing import Any, Collection, Dict, Iterable, List, Optional, Set
@@ -5,6 +6,7 @@ from typing import Any, Collection, Dict, Iterable, List, Optional, Set
 import aiomcache
 import databases
 from dateutil.rrule import DAILY, rrule
+import numpy as np
 import pandas as pd
 from sqlalchemy import and_, insert, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
@@ -20,7 +22,7 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewRequest, Release
-from athenian.api.models.precomputed.models import GitHubPullRequestTimes
+from athenian.api.models.precomputed.models import GitHubMergedCommit, GitHubPullRequestTimes
 from athenian.api.tracing import sentry_span
 
 
@@ -289,7 +291,7 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
             match = ReleaseMatch(pr.release[matched_by_column])
             if match == ReleaseMatch.branch:
                 branch = release_match.branches.replace(
-                    default_branch_alias, default_branches.get(repo, default_branch_alias))
+                    default_branch_alias, default_branches[repo])
                 release_match = "|".join((match.name, branch))
             elif match == ReleaseMatch.tag:
                 release_match = "|".join((match.name, release_match.tags))
@@ -345,3 +347,120 @@ def _flatten_set(s: set) -> Optional[Any]:
         return None
     assert len(s) == 1
     return next(iter(s))
+
+
+@sentry_span
+async def discover_unreleased_prs(prs: pd.DataFrame,
+                                  releases: pd.DataFrame,
+                                  matched_bys: Dict[str, ReleaseMatch],
+                                  default_branches: Dict[str, str],
+                                  release_settings: Dict[str, ReleaseMatchSetting],
+                                  pdb: databases.Database) -> List[str]:
+    """
+    Load the list PR node identifiers which we are sure are not released in one of `releases`.
+
+    For each merged PR we maintain the set of releases that do include that PR.
+    """
+    filters = []
+    prefix = PREFIXES["github"]
+    postgres = pdb.url.dialect in ("postgres", "postgresql")
+    for repo in prs[PullRequest.repository_full_name.key].unique():
+        try:
+            matched_by = matched_bys[repo]
+        except KeyError:
+            # no new releases
+            continue
+        release_setting = release_settings[prefix + repo]
+        if matched_by == ReleaseMatch.tag:
+            release_match = "tag|" + release_setting.tags
+        elif matched_by == ReleaseMatch.branch:
+            branch = release_setting.branches.replace(
+                default_branch_alias, default_branches[repo])
+            release_match = "branch|" + branch
+        else:
+            raise AssertionError("Unsupported release match %s" % matched_by)
+        repo_filters = [GitHubMergedCommit.repository_full_name == repo,
+                        GitHubMergedCommit.release_match == release_match]
+        if postgres:
+            repo_releases = releases[Release.id.key].take(
+                np.where(releases[Release.repository_full_name.key] == repo)[0])
+            repo_filters.append(GitHubMergedCommit.checked_releases.has_all(repo_releases))
+        filters.append(and_(*repo_filters))
+    selected = [GitHubMergedCommit.pr_node_id]
+    if not postgres:
+        selected.extend(
+            [GitHubMergedCommit.checked_releases, GitHubMergedCommit.repository_full_name])
+    rows = await pdb.fetch_all(
+        select(selected)
+        .where(and_(GitHubMergedCommit.pr_node_id.in_(prs.index),
+                    or_(*filters))))
+    if not postgres:
+        filtered_rows = []
+        grouped = {}
+        for r in rows:
+            grouped.setdefault(r[GitHubMergedCommit.repository_full_name.key], []).append(r)
+        for repo, rows in grouped.items():
+            repo_releases = set(releases[Release.id.key].take(
+                np.where(releases[Release.repository_full_name.key] == repo)[0]))
+            for r in rows:
+                if not (repo_releases - set(r[GitHubMergedCommit.checked_releases.key])):
+                    filtered_rows.append(r)
+        rows = filtered_rows
+    return [r[GitHubMergedCommit.pr_node_id.key] for r in rows]
+
+
+@sentry_span
+async def update_unreleased_prs(prs: pd.DataFrame,
+                                releases: pd.DataFrame,
+                                matched_bys: Dict[str, ReleaseMatch],
+                                default_branches: Dict[str, str],
+                                release_settings: Dict[str, ReleaseMatchSetting],
+                                pdb: databases.Database) -> None:
+    """Append new releases which do *not* include the specified PRs."""
+    updates = []
+    prefix = PREFIXES["github"]
+    postgres = pdb.url.dialect in ("postgres", "postgresql")
+    if not postgres:
+        assert pdb.url.dialect == "sqlite"
+    for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.key, sort=False):
+        try:
+            matched_by = matched_bys[repo]
+        except KeyError:
+            # no new releases
+            continue
+        repo_releases = {r: "" for r in releases[Release.id.key].take(
+            np.where(releases[Release.repository_full_name.key] == repo)[0])}
+        release_setting = release_settings[prefix + repo]
+        if matched_by == ReleaseMatch.tag:
+            release_match = "tag|" + release_setting.tags
+        elif matched_by == ReleaseMatch.branch:
+            branch = release_setting.branches.replace(
+                default_branch_alias, default_branches[repo])
+            release_match = "branch|" + branch
+        else:
+            raise AssertionError("Unsupported release match %s" % matched_by)
+        if postgres:
+            sql = postgres_insert(GitHubMergedCommit)
+            sql = sql.on_conflict_do_update(
+                constraint=GitHubMergedCommit.__table__.primary_key,
+                set_={
+                    GitHubMergedCommit.checked_releases.key:
+                        GitHubMergedCommit.checked_releases + sql.excluded.checked_releases,
+                    GitHubMergedCommit.updated_at.key: sql.excluded.updated_at,
+                },
+            )
+        else:
+            # this is wrong but we just cannot update SQLite properly
+            # nothing will break though
+            sql = insert(GitHubMergedCommit).prefix_with("OR REPLACE")
+        values = [
+            GitHubMergedCommit(pr_node_id=node_id, release_match=release_match,
+                               repository_full_name=repo, checked_releases=repo_releases)
+            .create_defaults().explode(with_primary_keys=True)
+            for node_id in repo_prs.index.values
+        ]
+        updates.append(pdb.execute_many(sql, values))
+    errors = await asyncio.gather(*updates, return_exceptions=True)
+    for r in errors:
+        if isinstance(r, Exception):
+            raise r from None

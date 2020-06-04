@@ -50,6 +50,25 @@ async def test_map_prs_to_releases_cache(branches, default_branches, mdb, pdb, c
     assert released_prs.iloc[0][Release.url.key] == tag
 
 
+async def test_map_prs_to_releases_pdb(branches, default_branches, mdb, pdb, cache):
+    prs = await read_sql_query(select([PullRequest]).where(PullRequest.number.in_((1126, 1180))),
+                               mdb, PullRequest, index=PullRequest.node_id.key)
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    time_from = time_to - timedelta(days=5 * 365)
+    settings = generate_repo_settings(prs)
+    releases = await load_releases(
+        ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
+        mdb, pdb, None)
+    matched_bys = extract_matched_bys_from_releases(releases)
+    released_prs = await map_prs_to_releases(
+        prs, releases, matched_bys, default_branches, time_to, settings, mdb, pdb, None)
+    assert len(released_prs) == 1
+    released_prs = await map_prs_to_releases(
+        prs, releases, matched_bys, default_branches, time_to, settings,
+        Database("sqlite://"), pdb, None)
+    assert len(released_prs) == 1
+
+
 async def test_map_prs_to_releases_empty(branches, default_branches, mdb, pdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1231),
                                mdb, PullRequest, index=PullRequest.node_id.key)
