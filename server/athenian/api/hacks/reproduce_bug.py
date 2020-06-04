@@ -1,5 +1,6 @@
 import asyncio
 from collections import defaultdict
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import logging  # noqa
 import os
@@ -24,19 +25,23 @@ async def main():
     else:
         cache = None
     password = os.getenv("POSTGRES_PASSWORD")
-    mdb = databases.Database(
-        "postgresql://production-cloud-sql:%s@0.0.0.0:5432/metadata" % password)
+    addr = "production-cloud-sql:%s@0.0.0.0:5432" % password
+    # addr = "postgres:postgres@0.0.0.0:5433"
+    mdb = databases.Database("postgresql://%s/metadata" % addr)
     await mdb.connect()
     if os.getenv("DISABLE_PDB"):
         pdb = databases.Database("sqlite:///tests/pdb.sqlite")
     else:
-        pdb = databases.Database(
-            "postgresql://production-cloud-sql:%s@0.0.0.0:5432/precomputed" % password)
+        pdb = databases.Database("postgresql://%s/precomputed" % addr)
     await pdb.connect()
+    pdb.metrics = {
+        "hits": ContextVar("pdb_hits", default=defaultdict(int)),
+        "misses": ContextVar("pdb_misses", default=defaultdict(int)),
+    }
 
-    time_from = datetime(2020, 5, 13, tzinfo=timezone.utc)
-    time_to = datetime(2020, 5, 27, tzinfo=timezone.utc)
-    repos = ["classified"]
+    time_from = datetime(2020, 4, 23, tzinfo=timezone.utc)
+    time_to = datetime(2020, 5, 7, tzinfo=timezone.utc)
+    repos = {"classified"}
     # TODO(vmarkovtsev): load these from the settings
     settings = {
         "github.com/" + r: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag_or_branch)
@@ -44,7 +49,7 @@ async def main():
     }
     # """
     prs = list(await filter_pull_requests(
-        [Property.RELEASE_HAPPENED],
+        {Property.RELEASE_HAPPENED},
         time_from,
         time_to,
         repos,
