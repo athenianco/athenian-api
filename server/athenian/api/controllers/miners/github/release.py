@@ -20,7 +20,8 @@ from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query, wrap_sql_query
 from athenian.api.cache import cached
-from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_pr_releases
+from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
+    load_precomputed_pr_releases, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_accelerated import update_history
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
@@ -53,6 +54,7 @@ async def load_releases(repos: Iterable[str],
     """
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
+    assert time_from <= time_to
     repos_by_tag_only = []
     repos_by_tag_or_branch = []
     repos_by_branch = []
@@ -249,7 +251,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
         pseudo_releases.append(pd.DataFrame({
             Release.author.key: commits[PushCommit.author_login.key],
             Release.commit_id.key: commits[PushCommit.node_id.key],
-            Release.id.key: commits[PushCommit.node_id.key] + "_" + repo,
+            Release.id.key: commits[PushCommit.node_id.key],
             Release.name.key: commits[PushCommit.sha.key],
             Release.published_at.key: commits[PushCommit.committed_date.key],
             Release.repository_full_name.key: repo,
@@ -349,14 +351,27 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     pr_releases = new_released_prs_df()
     if prs.empty:
         return pr_releases
-    precomputed_pr_releases = await load_precomputed_pr_releases(
-        prs.index, time_to, matched_bys, default_branches, release_settings, pdb, cache)
-    pdb.metrics["hits"].get()["map_prs_to_releases"] = len(precomputed_pr_releases)
-    pr_releases = pr_releases.append(precomputed_pr_releases)
-    merged_prs = prs[~prs.index.isin(pr_releases.index)]
-    missed_releases = await _map_prs_to_releases(merged_prs, releases, mdb, pdb, cache)
-    pdb.metrics["misses"].get()["map_prs_to_releases"] = len(missed_releases)
-    return pr_releases.append(missed_releases)
+    tasks = [
+        discover_unreleased_prs(
+            prs, releases, matched_bys, default_branches, release_settings, pdb),
+        load_precomputed_pr_releases(
+            prs.index, time_to, matched_bys, default_branches, release_settings, pdb, cache),
+    ]
+    unreleased_prs, precomputed_pr_releases = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (unreleased_prs, precomputed_pr_releases):
+        if isinstance(r, Exception):
+            raise r from None
+    pdb.metrics["hits"].get()["map_prs_to_releases/released"] = len(precomputed_pr_releases)
+    pdb.metrics["hits"].get()["map_prs_to_releases/unreleased"] = len(unreleased_prs)
+    pr_releases.append(precomputed_pr_releases)
+    merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
+    missed_released_prs = await _map_prs_to_releases(merged_prs, releases, mdb, pdb, cache)
+    still_unreleased = merged_prs.loc[merged_prs.index.difference(missed_released_prs.index)]
+    pdb.metrics["misses"].get()["map_prs_to_releases/released"] = len(missed_released_prs)
+    pdb.metrics["misses"].get()["map_prs_to_releases/unreleased"] = len(still_unreleased)
+    await update_unreleased_prs(
+        still_unreleased, releases, matched_bys, default_branches, release_settings, pdb)
+    return pr_releases.append(missed_released_prs)
 
 
 def extract_matched_bys_from_releases(releases: pd.DataFrame) -> Dict[str, ReleaseMatch]:

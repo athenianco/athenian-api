@@ -14,7 +14,16 @@ JHSTORE = HSTORE().with_variant(JSON(), "sqlite")
 RepositoryFullName = String(64 + 1 + 100)  # user / project taken from the official GitHub docs
 
 
-class GitHubPullRequestTimes(Base):
+class UpdatedMixin:
+    """Declare "updated_at" column."""
+
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
+                        default=lambda: datetime.now(timezone.utc),
+                        server_default=func.now(),
+                        onupdate=lambda ctx: datetime.now(timezone.utc))
+
+
+class GitHubPullRequestTimes(Base, UpdatedMixin):
     """
     Mined PullRequestTimes.
 
@@ -45,13 +54,9 @@ class GitHubPullRequestTimes(Base):
     commit_committers = Column(JHSTORE, nullable=False, server_default="")
     activity_days = Column(TSARRAY, nullable=False, server_default="{}")
     data = Column(LargeBinary(), nullable=False)
-    updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
-                        default=lambda: datetime.now(timezone.utc),
-                        server_default=func.now(),
-                        onupdate=lambda ctx: datetime.now(timezone.utc))
 
 
-class GitHubCommitHistory(Base):
+class GitHubCommitHistory(Base, UpdatedMixin):
     """
     Mined Git commit graph.
 
@@ -66,13 +71,9 @@ class GitHubCommitHistory(Base):
     repository_full_name = Column(RepositoryFullName, primary_key=True)
     format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
     dag = Column(LargeBinary(), nullable=False)
-    updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
-                        default=lambda: datetime.now(timezone.utc),
-                        server_default=func.now(),
-                        onupdate=lambda ctx: datetime.now(timezone.utc))
 
 
-class GitHubCommitFirstParents(Base):
+class GitHubCommitFirstParents(Base, UpdatedMixin):
     """
     Mined Git commit first parents - commits that follow the main branch.
 
@@ -85,7 +86,20 @@ class GitHubCommitFirstParents(Base):
     repository_full_name = Column(RepositoryFullName, primary_key=True)
     format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
     commits = Column(LargeBinary(), nullable=False)
-    updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
-                        default=lambda: datetime.now(timezone.utc),
-                        server_default=func.now(),
-                        onupdate=lambda ctx: datetime.now(timezone.utc))
+
+
+class GitHubMergedCommit(Base, UpdatedMixin):
+    """
+    Mined releases that do *not* contain the given pull request.
+
+    `pr_node_id` is a merged but not released yet PR node identifier.
+    According to `release_match`, any release with a node id in `checked_releases` does not
+    contain that PR.
+    """
+
+    __tablename__ = "github_merged_commits"
+
+    pr_node_id = Column(CHAR(32), primary_key=True)
+    release_match = Column(Text(), primary_key=True)
+    repository_full_name = Column(RepositoryFullName, nullable=False)
+    checked_releases = Column(JHSTORE, nullable=False, server_default="")
