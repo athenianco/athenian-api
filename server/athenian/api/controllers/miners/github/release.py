@@ -75,7 +75,8 @@ async def load_releases(repos: Iterable[str],
             mdb, pdb, cache))
     if repos_by_branch:
         result.append(_match_releases_by_branch(
-            repos, branches, default_branches, time_from, time_to, settings, mdb, pdb, cache))
+            repos_by_branch, branches, default_branches, time_from, time_to, settings,
+            mdb, pdb, cache))
     result = await asyncio.gather(*result, return_exceptions=True)
     for r in result:
         if isinstance(r, Exception):
@@ -259,7 +260,8 @@ async def _match_releases_by_branch(repos: Iterable[str],
         }))
     if not pseudo_releases:
         return _dummy_releases_df()
-    return pd.concat(pseudo_releases, copy=False)
+    pseudo_releases = pd.concat(pseudo_releases, copy=False)
+    return pseudo_releases
 
 
 @cached(
