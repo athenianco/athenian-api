@@ -22,6 +22,8 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
     PullRequestMiner, PullRequestTimesMiner, ReviewResolution
+from athenian.api.controllers.miners.github.release import extract_matched_bys_from_releases, \
+    load_releases
 from athenian.api.controllers.miners.types import MinedPullRequest, Participants, Property, \
     PullRequestListItem, PullRequestTimes
 from athenian.api.controllers.settings import ReleaseMatchSetting
@@ -282,12 +284,23 @@ async def filter_pull_requests(properties: Set[Property],
                     ts = ts.replace(tzinfo=timezone.utc)
                 pr.pr[updated_at_key] = ts
         if remined:
-            prs = await read_sql_query(select([PullRequest])
-                                       .where(PullRequest.node_id.in_(remined))
-                                       .order_by(PullRequest.node_id),
-                                       mdb, PullRequest, index=node_id_key)
+            tasks = [
+                read_sql_query(select([PullRequest])
+                               .where(PullRequest.node_id.in_(remined))
+                               .order_by(PullRequest.node_id),
+                               mdb, PullRequest, index=node_id_key),
+                # `time_to` is in the place of `time_from` because we know that these PRs
+                # were not released before `time_to`
+                load_releases(repos, branches, default_branches, time_to, now, release_settings,
+                              mdb, pdb, cache),
+            ]
+            prs, releases = await asyncio.gather(*tasks, return_exceptions=True)
+            for r in (prs, releases):
+                if isinstance(r, Exception):
+                    raise r from None
+            matched_bys = extract_matched_bys_from_releases(releases)
             dfs = await PullRequestMiner.mine_by_ids(
-                prs, branches, default_branches, prs[PullRequest.created_at.key].min(), now,
+                prs, now, releases, matched_bys, default_branches,
                 release_settings, mdb, pdb, cache)
             prs_today = list(PullRequestMiner(prs, *dfs))
         else:

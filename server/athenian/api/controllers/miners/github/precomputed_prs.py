@@ -206,6 +206,7 @@ async def load_precomputed_done_times(date_from: datetime,
     return result
 
 
+@sentry_span
 @cached(
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,

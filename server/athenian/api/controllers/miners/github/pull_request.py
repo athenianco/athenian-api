@@ -21,7 +21,7 @@ from athenian.api.controllers.miners.github.release import map_prs_to_releases, 
     map_releases_to_prs
 from athenian.api.controllers.miners.types import DT, Fallback, MinedPullRequest, Participants, \
     ParticipationKind, PullRequestTimes
-from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
@@ -127,7 +127,7 @@ class PullRequestMiner:
             return await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                         mdb, PullRequest, index=PullRequest.node_id.key)
 
-        prs, released_prs = await asyncio.gather(
+        prs, released = await asyncio.gather(
             fetch_prs(),
             map_releases_to_prs(
                 repositories, branches, default_branches, time_from, time_to,
@@ -135,9 +135,10 @@ class PullRequestMiner:
                 participants.get(ParticipationKind.MERGER, []),
                 release_settings, mdb, pdb, cache, pr_blacklist),
             return_exceptions=True)
-        for r in (prs, released_prs):
+        for r in (prs, released):
             if isinstance(r, Exception):
                 raise r from None
+        released_prs, releases, matched_bys = released
         prs = pd.concat([prs, released_prs], copy=False)
         prs = prs[~prs.index.duplicated()]
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
@@ -145,8 +146,8 @@ class PullRequestMiner:
         # bypass the useless inner caching by calling __wrapped__ directly
         with sentry_sdk.start_span(op="PullRequestMiner.mine_by_ids.__wrapped__"):
             dfs = await cls.mine_by_ids.__wrapped__(
-                cls, prs, branches, default_branches, time_from, time_to, release_settings,
-                mdb, pdb, cache)
+                cls, prs, time_to, releases, matched_bys, default_branches,
+                release_settings, mdb, pdb, cache)
         dfs = [prs, *dfs]
         cls._drop(dfs, cls._find_drop_by_participants(dfs, participants))
         if exclude_inactive:
@@ -161,16 +162,16 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda prs, time_from, time_to, release_settings, **_: (
-            ",".join(prs.index), time_from.timestamp(), time_to.timestamp(), release_settings,
+        key=lambda prs, releases, time_to, **_: (
+            ",".join(prs.index), ",".join(releases[Release.id.key].values), time_to.timestamp(),
         ),
     )
     async def mine_by_ids(cls,
                           prs: pd.DataFrame,
-                          branches: pd.DataFrame,
-                          default_branches: Dict[str, str],
-                          time_from: datetime,
                           time_to: datetime,
+                          releases: pd.DataFrame,
+                          matched_bys: Dict[str, ReleaseMatch],
+                          default_branches: Dict[str, str],
                           release_settings: Dict[str, ReleaseMatchSetting],
                           mdb: databases.Database,
                           pdb: databases.Database,
@@ -221,7 +222,7 @@ class PullRequestMiner:
         async def map_releases():
             merged_prs = prs[prs[PullRequest.merged_at.key] <= time_to]
             return await map_prs_to_releases(
-                merged_prs, branches, default_branches, time_from, time_to, release_settings,
+                merged_prs, releases, matched_bys, default_branches, time_to, release_settings,
                 mdb, pdb, cache)
 
         dfs = await asyncio.gather(

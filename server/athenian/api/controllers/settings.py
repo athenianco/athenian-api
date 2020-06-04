@@ -18,9 +18,9 @@ from athenian.api.models.state.models import ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
 
-ReleaseMatch = IntEnum("Match", {ReleaseMatchStrategy.BRANCH: 0,
-                                 ReleaseMatchStrategy.TAG: 1,
-                                 ReleaseMatchStrategy.TAG_OR_BRANCH: 2})
+ReleaseMatch = IntEnum("ReleaseMatch", {ReleaseMatchStrategy.BRANCH: 0,
+                                        ReleaseMatchStrategy.TAG: 1,
+                                        ReleaseMatchStrategy.TAG_OR_BRANCH: 2})
 ReleaseMatch.__doc__ = """Supported release matching strategies."""
 
 default_branch_alias = "{{default}}"
