@@ -333,9 +333,9 @@ async def _fetch_commits(commits: List[str],
 
 @sentry_span
 async def map_prs_to_releases(prs: pd.DataFrame,
-                              branches: pd.DataFrame,
+                              releases: pd.DataFrame,
+                              matched_bys: Dict[str, ReleaseMatch],
                               default_branches: Dict[str, str],
-                              time_from: datetime,
                               time_to: datetime,
                               release_settings: Dict[str, ReleaseMatchSetting],
                               mdb: databases.Database,
@@ -349,45 +349,18 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     pr_releases = new_released_prs_df()
     if prs.empty:
         return pr_releases
-    repos = prs[PullRequest.repository_full_name.key].unique()
-    earliest_merge = prs[PullRequest.merged_at.key].min() - timedelta(minutes=1)
-    if earliest_merge >= time_from:
-        releases = await load_releases(
-            repos, branches, default_branches, earliest_merge, time_to, release_settings,
-            mdb, pdb, cache)
-    else:
-        # we have to load releases in two separate batches: before and after time_from
-        # that's because the release strategy can change depending on the time range
-        # see ENG-710 and ENG-725
-        releases_new = await load_releases(
-            repos, branches, default_branches, time_from, time_to, release_settings,
-            mdb, pdb, cache)
-        matched_bys = _extract_matched_bys_from_releases(releases_new)
-        # these matching rules must be applied in the past to stay consistent
-        consistent_release_settings = {}
-        for k, setting in release_settings.items():
-            consistent_release_settings[k] = ReleaseMatchSetting(
-                tags=setting.tags,
-                branches=setting.branches,
-                match=ReleaseMatch(matched_bys.get(k.split("/", 1)[1], setting.match)),
-            )
-        releases_old = await load_releases(
-            repos, branches, default_branches, earliest_merge, time_from,
-            consistent_release_settings, mdb, pdb, cache)
-        releases = pd.concat([releases_new, releases_old], copy=False)
-        releases.reset_index(drop=True, inplace=True)
-    matched_bys = _extract_matched_bys_from_releases(releases)
     precomputed_pr_releases = await load_precomputed_pr_releases(
         prs.index, time_to, matched_bys, default_branches, release_settings, pdb, cache)
     pdb.metrics["hits"].get()["map_prs_to_releases"] = len(precomputed_pr_releases)
-    pr_releases.append(precomputed_pr_releases)
+    pr_releases = pr_releases.append(precomputed_pr_releases)
     merged_prs = prs[~prs.index.isin(pr_releases.index)]
     missed_releases = await _map_prs_to_releases(merged_prs, releases, mdb, pdb, cache)
     pdb.metrics["misses"].get()["map_prs_to_releases"] = len(missed_releases)
     return pr_releases.append(missed_releases)
 
 
-def _extract_matched_bys_from_releases(releases: pd.DataFrame) -> Dict[str, ReleaseMatch]:
+def extract_matched_bys_from_releases(releases: pd.DataFrame) -> Dict[str, ReleaseMatch]:
+    """Determine the used release match strategy for each repository."""
     return {
         r: ReleaseMatch(g.iat[0, 1]) for r, g in releases[
             [Release.repository_full_name.key, matched_by_column]
@@ -802,29 +775,64 @@ async def map_releases_to_prs(repos: Iterable[str],
                               mdb: databases.Database,
                               pdb: databases.Database,
                               cache: Optional[aiomcache.Client],
-                              pr_blacklist: Optional[BinaryExpression] = None) -> pd.DataFrame:
+                              pr_blacklist: Optional[BinaryExpression] = None,
+                              ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, ReleaseMatch]]:
     """Find pull requests which were released between `time_from` and `time_to` but merged before \
     `time_from`.
 
     :param authors: Required PR authors.
     :param mergers: Required PR mergers.
     :return: pd.DataFrame with found PRs that were created before `time_from` and released \
-             between `time_from` and `time_to`.
+             between `time_from` and `time_to` \
+             + \
+             pd.DataFrame with the discovered releases between `time_from` and `time_to` \
+             + \
+             `matched_bys` so that we don't have to compute that mapping again.
     """
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
-    old_from = time_from - timedelta(days=365)  # find PRs not older than 365 days before time_from
+
+    # we have to load releases in two separate batches: before and after time_from
+    # that's because the release strategy can change depending on the time range
+    # see ENG-710 and ENG-725
     tasks = [
-        load_releases(repos, branches, default_branches, old_from, time_to, release_settings,
-                      mdb, pdb, cache, index=Release.id.key),
+        load_releases(repos, branches, default_branches, time_from, time_to, release_settings,
+                      mdb, pdb, cache),
         _fetch_precomputed_commit_histories(repos, pdb),
     ]
-    releases, pdags = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (releases, pdags):
+    releases_new, pdags = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (releases_new, pdags):
         if isinstance(r, Exception):
             raise r from None
+    matched_bys = extract_matched_bys_from_releases(releases_new)
+    # these matching rules must be applied in the past to stay consistent
+    prefix = PREFIXES["github"]
+    consistent_release_settings = {}
+    for repo in matched_bys:
+        setting = release_settings[prefix + repo]
+        consistent_release_settings[prefix + repo] = ReleaseMatchSetting(
+            tags=setting.tags,
+            branches=setting.branches,
+            match=ReleaseMatch(matched_bys[repo]),
+        )
+
+    # let's try to find the releases not older than 5 weeks before `time_from`
+    lookbehind_time_from = time_from - timedelta(days=5 * 7)
+    releases_old = await load_releases(
+        matched_bys, branches, default_branches, lookbehind_time_from, time_from,
+        consistent_release_settings, mdb, pdb, cache)
+    hard_repos = set(matched_bys) - set(releases_old[Release.repository_full_name.key].unique())
+    if hard_repos:
+        # no previous releases were discovered for `hard_repos`, go deeper in history (~7 months)
+        releases_old_hard = await load_releases(
+            hard_repos, branches, default_branches, time_from - timedelta(days=7 * 30),
+            lookbehind_time_from, consistent_release_settings, mdb, pdb, cache)
+        releases_old = releases_old.append(releases_old_hard)
+
+    releases = releases_new.append(releases_old)
+    releases.reset_index(drop=True, inplace=True)
     prs = []
     for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
         prs.append(_find_old_released_prs(
@@ -835,9 +843,17 @@ async def map_releases_to_prs(repos: Iterable[str],
         for pr in prs:
             if isinstance(pr, Exception):
                 raise pr
-        return wrap_sql_query(chain.from_iterable(prs), PullRequest, index=PullRequest.node_id.key)
-    return pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
-                                 if c.name != PullRequest.node_id.key])
+        return (
+            wrap_sql_query(chain.from_iterable(prs), PullRequest, index=PullRequest.node_id.key),
+            releases_new,
+            matched_bys,
+        )
+    return (
+        pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
+                              if c.name != PullRequest.node_id.key]),
+        releases_new,
+        matched_bys,
+    )
 
 
 async def mine_releases(releases: pd.DataFrame,

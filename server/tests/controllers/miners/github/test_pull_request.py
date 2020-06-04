@@ -9,6 +9,8 @@ import pytest
 
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
     PullRequestTimesMiner
+from athenian.api.controllers.miners.github.release import extract_matched_bys_from_releases, \
+    load_releases
 from athenian.api.controllers.miners.types import ParticipationKind, PullRequestTimes
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest
@@ -441,11 +443,16 @@ async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
     mined_prs = list(miner)
     prs = pd.DataFrame([pd.Series(pr.pr) for pr in mined_prs])
     prs.set_index(PullRequest.node_id.key, inplace=True)
+    releases = await load_releases(
+        ["src-d/go-git"], branches, default_branches, time_from, time_to, release_settings,
+        mdb, pdb, cache)
+    matched_bys = extract_matched_bys_from_releases(releases)
     dfs1 = await PullRequestMiner.mine_by_ids(
         prs,
-        branches, default_branches,
-        time_from,
         time_to,
+        releases,
+        matched_bys,
+        default_branches,
         release_settings,
         mdb,
         pdb,
@@ -453,9 +460,10 @@ async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
     )
     dfs2 = await PullRequestMiner.mine_by_ids(
         prs,
-        branches, default_branches,
-        time_from,
         time_to,
+        releases,
+        matched_bys,
+        default_branches,
         release_settings,
         mdb,
         pdb,
