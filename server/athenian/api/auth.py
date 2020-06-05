@@ -145,17 +145,15 @@ class Auth0:
                     if proto is None:
                         continue
                     transports += 1
-                    orig_lost = proto.connection_lost
-                    orig_eof_received = proto.eof_received
 
-                    def connection_lost(exc):
+                    def connection_lost(orig_lost, exc):
                         orig_lost(exc)
                         nonlocal transports
                         transports -= 1
                         if transports == 0:
                             all_is_lost.set()
 
-                    def eof_received():
+                    def eof_received(orig_eof_received):
                         try:
                             orig_eof_received()
                         except AttributeError:
@@ -164,8 +162,9 @@ class Auth0:
                             # Jeez, asyncio sucks sometimes.
                             pass
 
-                    proto.connection_lost = connection_lost
-                    proto.eof_received = eof_received
+                    proto.connection_lost = functools.partial(
+                        connection_lost, proto.connection_lost)
+                    proto.eof_received = functools.partial(eof_received, proto.eof_received)
         await session.close()
         if transports > 0:
             await all_is_lost.wait()
