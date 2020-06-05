@@ -20,4 +20,5 @@ class PullRequestProperty(Model, metaclass=Enum):
     MERGE_HAPPENED = "merge_happened"
     RELEASING = "releasing"
     RELEASE_HAPPENED = "release_happened"
+    REJECTION_HAPPENED = "rejection_happened"
     DONE = "done"

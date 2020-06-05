@@ -1,8 +1,9 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
+from functools import partial
 import logging
 import pickle
-from typing import Dict, Generator, Iterable, List, Optional, Set
+from typing import Callable, Dict, Generator, Iterable, List, Optional, Set, Union
 
 import aiomcache
 import databases
@@ -106,6 +107,8 @@ class PullRequestListMiner:
             props.add(Property.APPROVE_HAPPENED)
         if times.merged and times.merged.best > time_from:
             props.add(Property.MERGE_HAPPENED)
+        if not times.merged and times.closed and times.closed.best > time_from:
+            props.add(Property.REJECTION_HAPPENED)
         if times.released and times.released.best > time_from:
             props.add(Property.RELEASE_HAPPENED)
         review_states = pr.reviews[PullRequestReview.state.key]
@@ -118,7 +121,7 @@ class PullRequestListMiner:
                  pr_time_machine: MinedPullRequest,
                  times_time_machine: PullRequestTimes,
                  pr_today: MinedPullRequest,
-                 times_today: PullRequestTimes,
+                 times_today: Union[PullRequestTimes, Callable[[], PullRequestTimes]],
                  ) -> Optional[PullRequestListItem]:
         """
         Match the PR to the required participants and properties.
@@ -133,6 +136,8 @@ class PullRequestListMiner:
             times_time_machine, pr_time_machine, self._time_from)
         if not self._properties.intersection(props_time_machine):
             return None
+        if callable(times_today):
+            times_today = times_today()
         props_today = self._collect_properties(times_today, pr_today, self._no_time_from)
         for p in range(Property.WIP, Property.DONE + 1):
             p = Property(p)
@@ -196,7 +201,7 @@ class PullRequestListMiner:
                     self._precomputed_times[pr_today.pr[PullRequest.node_id.key]]
             except KeyError:
                 times_time_machine = self._times_miner(pr_time_machine)
-                times_today = self._times_miner(pr_today)
+                times_today = partial(self._times_miner, pr_today)
                 evals += 1
             try:
                 item = self._compile(pr_time_machine, times_time_machine, pr_today, times_today)

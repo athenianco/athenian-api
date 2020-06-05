@@ -372,6 +372,7 @@ async def validate_prs_response(response: ClientResponse,
             if PullRequestProperty.MERGE_HAPPENED in pr.properties:
                 assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
             else:
+                assert PullRequestProperty.REJECTION_HAPPENED in pr.properties, str(pr)
                 total_rejected += 1
 
         assert pr.stage_timings.wip is not None, str(pr)
@@ -476,7 +477,8 @@ async def validate_prs_response(response: ClientResponse,
     else:
         assert total_rejected == 0
     if props not in ({PullRequestProperty.RELEASING}, {PullRequestProperty.MERGING},
-                     {PullRequestProperty.REVIEWING}, {PullRequestProperty.WIP}):
+                     {PullRequestProperty.REJECTION_HAPPENED}, {PullRequestProperty.REVIEWING},
+                     {PullRequestProperty.WIP}):
         assert total_released > 0
     else:
         assert total_released == 0

@@ -47,6 +47,7 @@ class Property(IntEnum):
     REVIEW_REQUEST_HAPPENED = auto()
     CHANGES_REQUEST_HAPPENED = auto()
     MERGE_HAPPENED = auto()
+    REJECTION_HAPPENED = auto()
     RELEASE_HAPPENED = auto()
     # events end
 

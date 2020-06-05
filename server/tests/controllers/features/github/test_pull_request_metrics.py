@@ -9,9 +9,10 @@ from athenian.api.controllers.features.entries import calc_pull_request_metrics_
 from athenian.api.controllers.features.github.pull_request import BinnedPullRequestMetricCalculator
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
     ClosedCalculator, CycleCounter, FlowRatioCalculator, LeadCounter, LeadTimeCalculator, \
-    MergedCalculator, MergingCounter, MergingTimeCalculator, OpenedCalculator, ReleaseCounter, \
-    ReleaseTimeCalculator, ReviewCounter, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
-    WorkInProgressCounter, WorkInProgressTimeCalculator
+    MergedCalculator, MergingCounter, MergingTimeCalculator, OpenedCalculator, \
+    RejectedCalculator, ReleaseCounter, ReleaseTimeCalculator, ReviewCounter, \
+    ReviewTimeCalculator, WaitFirstReviewTimeCalculator, WorkInProgressCounter, \
+    WorkInProgressTimeCalculator
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import Fallback, PullRequestTimes
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
@@ -71,14 +72,21 @@ def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa
         assert calc.analyze(pr, time_from, time_to) is None
 
 
-@pytest.mark.parametrize("cls", [OpenedCalculator, MergedCalculator, ClosedCalculator])
+@pytest.mark.parametrize("cls", [OpenedCalculator, MergedCalculator, RejectedCalculator,
+                                 ClosedCalculator])
 def test_pull_request_metrics_float_binned(pr_samples, cls):  # noqa: F811
     time_from = (datetime.now(tz=timezone.utc) - timedelta(days=365 * 3 // 2)).date()
     time_to = (datetime.now(tz=timezone.utc) - timedelta(days=365 // 2)).date()
     time_intervals = [datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc)
                       for i in Granularity.split("month", time_from, time_to)]
     binned = BinnedPullRequestMetricCalculator([cls()], time_intervals)
-    result = binned(pr_samples(1000))
+    samples = pr_samples(1000)
+    if issubclass(cls, RejectedCalculator):
+        for i, s in enumerate(samples):
+            data = vars(s)
+            data["merged"] = Fallback(None, None)
+            samples[i] = PullRequestTimes(**data)
+    result = binned(samples)
     # the last interval is null and that's intended
     for i, m in enumerate(result[:-1]):
         assert m[0].exists, str(i)
