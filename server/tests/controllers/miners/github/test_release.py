@@ -91,6 +91,19 @@ async def test_map_prs_to_releases_empty(branches, default_branches, mdb, pdb, c
     assert released_prs.empty
 
 
+async def test_map_releases_to_prs_early_merges(
+        branches, default_branches, mdb, pdb, release_match_setting_tag):
+    prs, releases, matched_bys = await map_releases_to_prs(
+        ["src-d/go-git"],
+        branches, default_branches,
+        datetime(year=2018, month=1, day=7, tzinfo=timezone.utc),
+        datetime(year=2018, month=1, day=9, tzinfo=timezone.utc),
+        [], [],
+        release_match_setting_tag, mdb, pdb, None)
+    assert (prs[PullRequest.merged_at.key] >
+            datetime(year=2017, month=9, day=4, tzinfo=timezone.utc)).all()
+
+
 async def test_map_releases_to_prs_smoke(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
     for _ in range(2):

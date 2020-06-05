@@ -1,4 +1,5 @@
 import asyncio
+import bisect
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from itertools import chain
@@ -809,6 +810,33 @@ async def map_releases_to_prs(repos: Iterable[str],
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
 
+    matched_bys, pdags, releases, releases_new = await _find_releases_for_matching_prs(
+        repos, time_to, time_from, branches, default_branches, release_settings, pdb, mdb, cache)
+    prs = []
+    for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
+        prs.append(_find_old_released_prs(
+            repo_releases, pdags.get(repo), time_from, authors, mergers, pr_blacklist,
+            mdb, pdb, cache))
+    if prs:
+        prs = await asyncio.gather(*prs, return_exceptions=True)
+        for pr in prs:
+            if isinstance(pr, Exception):
+                raise pr
+        return (
+            wrap_sql_query(chain.from_iterable(prs), PullRequest, index=PullRequest.node_id.key),
+            releases_new,
+            matched_bys,
+        )
+    return (
+        pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
+                              if c.name != PullRequest.node_id.key]),
+        releases_new,
+        matched_bys,
+    )
+
+
+async def _find_releases_for_matching_prs(repos, time_to, time_from, branches, default_branches,
+                                          release_settings, pdb, mdb, cache):
     # we have to load releases in two separate batches: before and after time_from
     # that's because the release strategy can change depending on the time range
     # see ENG-710 and ENG-725
@@ -832,43 +860,47 @@ async def map_releases_to_prs(repos: Iterable[str],
             branches=setting.branches,
             match=ReleaseMatch(matched_bys[repo]),
         )
-
     # let's try to find the releases not older than 5 weeks before `time_from`
     lookbehind_time_from = time_from - timedelta(days=5 * 7)
-    releases_old = await load_releases(
-        matched_bys, branches, default_branches, lookbehind_time_from, time_from,
-        consistent_release_settings, mdb, pdb, cache)
+    tasks = [
+        mdb.fetch_all(select([PushCommit.repository_full_name,
+                              func.min(PushCommit.committed_date).label("min")])
+                      .where(PushCommit.repository_full_name.in_(matched_bys))
+                      .group_by(PushCommit.repository_full_name)),
+        load_releases(matched_bys, branches, default_branches, lookbehind_time_from, time_from,
+                      consistent_release_settings, mdb, pdb, cache),
+    ]
+    repo_births, releases_old = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (repo_births, releases_old):
+        if isinstance(r, Exception):
+            raise r from None
     hard_repos = set(matched_bys) - set(releases_old[Release.repository_full_name.key].unique())
     if hard_repos:
-        # no previous releases were discovered for `hard_repos`, go deeper in history (~7 months)
-        releases_old_hard = await load_releases(
-            hard_repos, branches, default_branches, time_from - timedelta(days=7 * 30),
-            lookbehind_time_from, consistent_release_settings, mdb, pdb, cache)
-        releases_old = releases_old.append(releases_old_hard)
-
+        repo_births = sorted(
+            (row["min"], row[PushCommit.repository_full_name.key])
+            for row in repo_births
+            if row[PushCommit.repository_full_name.key] in hard_repos
+        )
+        repo_births_dates = [rb[0].replace(tzinfo=timezone.utc) for rb in repo_births]
+        repo_births_names = [rb[1] for rb in repo_births]
+        del repo_births
+        deeper_step = timedelta(days=6 * 31)
+        while hard_repos:
+            # no previous releases were discovered for `hard_repos`, go deeper in history
+            hard_repos = hard_repos.intersection(
+                repo_births_names[:bisect.bisect_right(repo_births_dates, lookbehind_time_from)])
+            if not hard_repos:
+                break
+            releases_old_hard = await load_releases(
+                hard_repos, branches, default_branches, lookbehind_time_from - deeper_step,
+                lookbehind_time_from, consistent_release_settings, mdb, pdb, cache)
+            releases_old = releases_old.append(releases_old_hard)
+            hard_repos -= set(releases_old_hard[Release.repository_full_name.key].unique())
+            del releases_old_hard
+            lookbehind_time_from -= deeper_step
     releases = releases_new.append(releases_old)
     releases.reset_index(drop=True, inplace=True)
-    prs = []
-    for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
-        prs.append(_find_old_released_prs(
-            repo_releases, pdags.get(repo), time_from, authors, mergers, pr_blacklist,
-            mdb, pdb, cache))
-    if prs:
-        prs = await asyncio.gather(*prs, return_exceptions=True)
-        for pr in prs:
-            if isinstance(pr, Exception):
-                raise pr
-        return (
-            wrap_sql_query(chain.from_iterable(prs), PullRequest, index=PullRequest.node_id.key),
-            releases_new,
-            matched_bys,
-        )
-    return (
-        pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
-                              if c.name != PullRequest.node_id.key]),
-        releases_new,
-        matched_bys,
-    )
+    return matched_bys, pdags, releases, releases_new
 
 
 async def mine_releases(releases: pd.DataFrame,
