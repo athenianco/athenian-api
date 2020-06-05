@@ -88,7 +88,7 @@ class GitHubCommitFirstParents(Base, UpdatedMixin):
     commits = Column(LargeBinary(), nullable=False)
 
 
-class GitHubMergedCommit(Base, UpdatedMixin):
+class GitHubMergedPullRequest(Base, UpdatedMixin):
     """
     Mined releases that do *not* contain the given pull request.
 
@@ -97,7 +97,7 @@ class GitHubMergedCommit(Base, UpdatedMixin):
     contain that PR.
     """
 
-    __tablename__ = "github_merged_commits"
+    __tablename__ = "github_merged_pull_requests"
 
     pr_node_id = Column(CHAR(32), primary_key=True)
     release_match = Column(Text(), primary_key=True)

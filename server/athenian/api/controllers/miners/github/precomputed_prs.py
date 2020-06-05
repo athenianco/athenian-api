@@ -24,7 +24,7 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewRequest, Release
-from athenian.api.models.precomputed.models import GitHubMergedCommit, GitHubPullRequestTimes
+from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitHubPullRequestTimes
 from athenian.api.tracing import sentry_span
 
 
@@ -387,34 +387,34 @@ async def discover_unreleased_prs(prs: pd.DataFrame,
             release_match = "branch|" + branch
         else:
             raise AssertionError("Unsupported release match %s" % matched_by)
-        repo_filters = [GitHubMergedCommit.repository_full_name == repo,
-                        GitHubMergedCommit.release_match == release_match]
+        repo_filters = [GitHubMergedPullRequest.repository_full_name == repo,
+                        GitHubMergedPullRequest.release_match == release_match]
         if postgres:
             repo_releases = releases[Release.id.key].take(
                 np.where(releases[Release.repository_full_name.key] == repo)[0])
-            repo_filters.append(GitHubMergedCommit.checked_releases.has_all(repo_releases))
+            repo_filters.append(GitHubMergedPullRequest.checked_releases.has_all(repo_releases))
         filters.append(and_(*repo_filters))
-    selected = [GitHubMergedCommit.pr_node_id]
+    selected = [GitHubMergedPullRequest.pr_node_id]
     if not postgres:
-        selected.extend(
-            [GitHubMergedCommit.checked_releases, GitHubMergedCommit.repository_full_name])
+        selected.extend([GitHubMergedPullRequest.checked_releases,
+                         GitHubMergedPullRequest.repository_full_name])
     rows = await pdb.fetch_all(
         select(selected)
-        .where(and_(GitHubMergedCommit.pr_node_id.in_(prs.index),
+        .where(and_(GitHubMergedPullRequest.pr_node_id.in_(prs.index),
                     or_(*filters))))
     if not postgres:
         filtered_rows = []
         grouped = {}
         for r in rows:
-            grouped.setdefault(r[GitHubMergedCommit.repository_full_name.key], []).append(r)
+            grouped.setdefault(r[GitHubMergedPullRequest.repository_full_name.key], []).append(r)
         for repo, rows in grouped.items():
             repo_releases = set(releases[Release.id.key].take(
                 np.where(releases[Release.repository_full_name.key] == repo)[0]))
             for r in rows:
-                if not (repo_releases - set(r[GitHubMergedCommit.checked_releases.key])):
+                if not (repo_releases - set(r[GitHubMergedPullRequest.checked_releases.key])):
                     filtered_rows.append(r)
         rows = filtered_rows
-    return [r[GitHubMergedCommit.pr_node_id.key] for r in rows]
+    return [r[GitHubMergedPullRequest.pr_node_id.key] for r in rows]
 
 
 @sentry_span
@@ -448,22 +448,22 @@ async def update_unreleased_prs(prs: pd.DataFrame,
         else:
             raise AssertionError("Unsupported release match %s" % matched_by)
         if postgres:
-            sql = postgres_insert(GitHubMergedCommit)
+            sql = postgres_insert(GitHubMergedPullRequest)
             sql = sql.on_conflict_do_update(
-                constraint=GitHubMergedCommit.__table__.primary_key,
+                constraint=GitHubMergedPullRequest.__table__.primary_key,
                 set_={
-                    GitHubMergedCommit.checked_releases.key:
-                        GitHubMergedCommit.checked_releases + sql.excluded.checked_releases,
-                    GitHubMergedCommit.updated_at.key: sql.excluded.updated_at,
+                    GitHubMergedPullRequest.checked_releases.key:
+                        GitHubMergedPullRequest.checked_releases + sql.excluded.checked_releases,
+                    GitHubMergedPullRequest.updated_at.key: sql.excluded.updated_at,
                 },
             )
         else:
             # this is wrong but we just cannot update SQLite properly
             # nothing will break though
-            sql = insert(GitHubMergedCommit).prefix_with("OR REPLACE")
+            sql = insert(GitHubMergedPullRequest).prefix_with("OR REPLACE")
         values = [
-            GitHubMergedCommit(pr_node_id=node_id, release_match=release_match,
-                               repository_full_name=repo, checked_releases=repo_releases)
+            GitHubMergedPullRequest(pr_node_id=node_id, release_match=release_match,
+                                    repository_full_name=repo, checked_releases=repo_releases)
             .create_defaults().explode(with_primary_keys=True)
             for node_id in repo_prs.index.values
         ]
