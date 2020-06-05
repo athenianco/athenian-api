@@ -271,6 +271,18 @@ class MergedCalculator(PullRequestSumMetricCalculator[int]):
         return None
 
 
+@register(PullRequestMetricID.PR_REJECTED)
+class RejectedCalculator(PullRequestSumMetricCalculator[int]):
+    """Number of rejected PRs."""
+
+    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+                ) -> Optional[int]:
+        """Calculate the actual state update."""
+        if times.closed and not times.merged and min_time <= times.closed.best < max_time:
+            return 1
+        return None
+
+
 @register(PullRequestMetricID.PR_CLOSED)
 class ClosedCalculator(PullRequestSumMetricCalculator[int]):
     """Number of closed PRs."""

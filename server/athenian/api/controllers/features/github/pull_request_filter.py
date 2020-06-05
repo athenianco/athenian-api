@@ -107,6 +107,8 @@ class PullRequestListMiner:
             props.add(Property.APPROVE_HAPPENED)
         if times.merged and times.merged.best > time_from:
             props.add(Property.MERGE_HAPPENED)
+        if not times.merged and times.closed and times.closed.best > time_from:
+            props.add(Property.REJECTION_HAPPENED)
         if times.released and times.released.best > time_from:
             props.add(Property.RELEASE_HAPPENED)
         review_states = pr.reviews[PullRequestReview.state.key]

@@ -39,8 +39,8 @@ async def main():
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
     }
 
-    time_from = datetime(2020, 4, 23, tzinfo=timezone.utc)
-    time_to = datetime(2020, 5, 7, tzinfo=timezone.utc)
+    time_from = datetime(2020, 5, 22, tzinfo=timezone.utc)
+    time_to = datetime(2020, 6, 5, tzinfo=timezone.utc)
     repos = {"classified"}
     # TODO(vmarkovtsev): load these from the settings
     settings = {
@@ -49,7 +49,7 @@ async def main():
     }
     # """
     prs = list(await filter_pull_requests(
-        {Property.RELEASE_HAPPENED},
+        set(Property),
         time_from,
         time_to,
         repos,
