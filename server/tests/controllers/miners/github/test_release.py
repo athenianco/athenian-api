@@ -5,15 +5,18 @@ from typing import Dict
 from databases import Database
 import pandas as pd
 import pytest
-from sqlalchemy import select, sql
+from sqlalchemy import delete, select, sql
 
 from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.controllers.miners.github.precomputed_prs import store_precomputed_done_times
+from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
+    PullRequestTimesMiner
 from athenian.api.controllers.miners.github.release import _fetch_commit_history_dag, \
     _fetch_first_parents, extract_matched_bys_from_releases, load_releases, map_prs_to_releases, \
     map_releases_to_prs
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest, Release
-from athenian.api.models.precomputed.models import GitHubCommitFirstParents
+from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
 
 
 def generate_repo_settings(prs: pd.DataFrame) -> Dict[str, ReleaseMatchSetting]:
@@ -89,6 +92,49 @@ async def test_map_prs_to_releases_empty(branches, default_branches, mdb, pdb, c
         prs, releases, matched_bys, default_branches, time_to, settings, mdb, pdb, cache)
     assert len(cache.mem) == 2
     assert released_prs.empty
+
+
+async def test_map_prs_to_releases_precomputed_released(
+        branches, default_branches, mdb, pdb, release_match_setting_tag):
+    time_to = datetime(year=2019, month=8, day=2, tzinfo=timezone.utc)
+    time_from = time_to - timedelta(days=2)
+
+    miner = await PullRequestMiner.mine(
+        time_from.date(),
+        time_to.date(),
+        time_from,
+        time_to,
+        {"src-d/go-git"},
+        {},
+        branches, default_branches,
+        False,
+        release_match_setting_tag,
+        mdb,
+        pdb,
+        None,
+    )
+    times_miner = PullRequestTimesMiner()
+    true_prs = [pr for pr in miner if pr.release[Release.published_at.key] is not None]
+    times = [times_miner(pr) for pr in true_prs]
+    prs = pd.DataFrame([pr.pr for pr in true_prs]).set_index(PullRequest.node_id.key)
+    releases = await load_releases(
+        ["src-d/go-git"], branches, default_branches, time_from, time_to,
+        release_match_setting_tag, mdb, pdb, None)
+    matched_bys = extract_matched_bys_from_releases(releases)
+
+    await pdb.execute(delete(GitHubCommitHistory))
+    with pytest.raises(Exception):
+        await map_prs_to_releases(
+            prs, releases, matched_bys, default_branches, time_to, release_match_setting_tag,
+            Database("sqlite://"), pdb, None)
+
+    await store_precomputed_done_times(
+        true_prs, times, default_branches, release_match_setting_tag, pdb)
+
+    released_prs = await map_prs_to_releases(
+        prs, releases, matched_bys, default_branches, time_to, release_match_setting_tag,
+        Database("sqlite://"), pdb, None)
+    assert len(released_prs) == len(prs)
 
 
 async def test_map_releases_to_prs_early_merges(

@@ -273,7 +273,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
 
 @sentry_span
 async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
-                                       times: Iterable[PullRequestTimes],
+                                       pr_times: Iterable[PullRequestTimes],
                                        default_branches: Dict[str, str],
                                        release_settings: Dict[str, ReleaseMatchSetting],
                                        pdb: databases.Database,
@@ -282,7 +282,7 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
     inserted = []
     prefix = PREFIXES["github"]
     sqlite = pdb.url.dialect == "sqlite"
-    for pr, times in zip(prs, times):
+    for pr, times in zip(prs, pr_times):
         activity_days = set()
         if not times.released:
             if not times.closed or times.merged:
