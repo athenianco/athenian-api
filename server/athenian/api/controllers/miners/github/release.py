@@ -364,7 +364,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
             raise r from None
     pdb.metrics["hits"].get()["map_prs_to_releases/released"] = len(precomputed_pr_releases)
     pdb.metrics["hits"].get()["map_prs_to_releases/unreleased"] = len(unreleased_prs)
-    pr_releases.append(precomputed_pr_releases)
+    pr_releases = precomputed_pr_releases
     merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
     missed_released_prs = await _map_prs_to_releases(merged_prs, releases, mdb, pdb, cache)
     still_unreleased = merged_prs.loc[merged_prs.index.difference(missed_released_prs.index)]
@@ -391,6 +391,8 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                                pdb: databases.Database,
                                cache: Optional[aiomcache.Client],
                                ) -> pd.DataFrame:
+    if prs.empty:
+        return new_released_prs_df()
     releases = dict(list(releases.groupby(Release.repository_full_name.key, sort=False)))
     histories = await _fetch_release_histories(releases, mdb, pdb, cache)
     released_prs = []
