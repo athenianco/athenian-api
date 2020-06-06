@@ -1,6 +1,7 @@
 from collections import defaultdict
 from contextvars import ContextVar
 from itertools import chain
+import logging
 import time
 
 from aiohttp import web
@@ -17,6 +18,10 @@ async def get_versions(request: web.Request) -> web.Response:
     # TODO(vmarkovtsev): add metadata
     model = Versions(api=metadata.__version__)
     return model_response(model)
+
+
+elapsed_error_threshold = 60
+_log = logging.getLogger("%s.elapsed" % metadata.__package__)
 
 
 @web.middleware
@@ -43,10 +48,11 @@ async def instrument(request, handler):
                 "X-Performance-DB",
                 "s %.3f, m %.3f, p %.3f" % (sdb_elapsed, mdb_elapsed, pdb_elapsed))
             for k, v in cache_context.items():
-                s = ["%s %d" % (f.replace("athenian.api.", ""), n) for f, n in v.get().items()]
+                s = sorted("%s %d" % (f.replace("athenian.api.", ""), n)
+                           for f, n in v.get().items())
                 response.headers.add("X-Performance-Cache-%s" % k.capitalize(), ", ".join(s))
             for k, v in pdb_context.items():
-                s = ["%s %d" % p for p in v.get().items()]
+                s = sorted("%s %d" % p for p in v.get().items())
                 response.headers.add("X-Performance-Precomputed-%s" % k.capitalize(), ", ".join(s))
         except NameError:
             pass
@@ -79,6 +85,8 @@ async def instrument(request, handler):
             code = response.status
         except NameError:
             code = 500
+        if elapsed > elapsed_error_threshold:
+            _log.error("%s took %.0fs", request.path, elapsed)
         request.app["request_count"] \
             .labels(__package__, __version__, request.method, request.path, code) \
             .inc()
