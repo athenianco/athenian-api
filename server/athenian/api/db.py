@@ -73,6 +73,33 @@ def add_pdb_metrics_context(app: aiohttp.web.Application) -> dict:
     return ctx
 
 
+pdb_metrics_logger = logging.getLogger("%s.pdb" % metadata.__package__)
+
+
+def set_pdb_hits(pdb: databases.Database, topic: str, value: int) -> None:
+    """Assign the `topic` precomputed DB hits to `value`."""
+    pdb.metrics["hits"].get()[topic] = value
+    pdb_metrics_logger.info("hits/%s: %d", topic, value)
+
+
+def set_pdb_misses(pdb: databases.Database, topic: str, value: int) -> None:
+    """Assign the `topic` precomputed DB misses to `value`."""
+    pdb.metrics["misses"].get()[topic] = value
+    pdb_metrics_logger.info("misses/%s: %d", topic, value)
+
+
+def add_pdb_hits(pdb: databases.Database, topic: str, value: int) -> None:
+    """Increase the `topic` precomputed hits by `value`."""
+    pdb.metrics["hits"].get()[topic] += value
+    pdb_metrics_logger.info("hits/%s: +%d", topic, value)
+
+
+def add_pdb_misses(pdb: databases.Database, topic: str, value: int) -> None:
+    """Increase the `topic` precomputed misses by `value`."""
+    pdb.metrics["misses"].get()[topic] += value
+    pdb_metrics_logger.info("misses/%s: +%d", topic, value)
+
+
 class ParallelDatabase(databases.Database):
     """Override connection() to ignore the task context and spawn a new Connection every time."""
 

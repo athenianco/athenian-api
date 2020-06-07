@@ -28,6 +28,7 @@ from athenian.api.controllers.miners.github.release import extract_matched_bys_f
 from athenian.api.controllers.miners.types import MinedPullRequest, Participants, Property, \
     PullRequestListItem, PullRequestTimes
 from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.db import set_pdb_hits, set_pdb_misses
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
     PullRequestReview, PullRequestReviewComment, Release
@@ -317,6 +318,6 @@ async def filter_pull_requests(properties: Set[Property],
     miner = PullRequestListMiner(prs_time_machine, prs_today, done_times, properties, time_from)
     with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
         prs = list(miner)
-    pdb.metrics["hits"].get()["filter_pull_requests/times"] = miner.precomputed_hits
-    pdb.metrics["misses"].get()["filter_pull_requests/times"] = miner.precomputed_misses
+    set_pdb_hits(pdb, "filter_pull_requests/times", miner.precomputed_hits)
+    set_pdb_misses(pdb, "filter_pull_requests/times", miner.precomputed_misses)
     return prs

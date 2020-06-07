@@ -28,6 +28,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
     new_released_prs_df
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
+from athenian.api.db import add_pdb_hits, add_pdb_misses, set_pdb_hits, set_pdb_misses
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, PullRequest, PushCommit, Release, User
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
@@ -362,14 +363,14 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     for r in (unreleased_prs, precomputed_pr_releases):
         if isinstance(r, Exception):
             raise r from None
-    pdb.metrics["hits"].get()["map_prs_to_releases/released"] = len(precomputed_pr_releases)
-    pdb.metrics["hits"].get()["map_prs_to_releases/unreleased"] = len(unreleased_prs)
+    set_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
+    set_pdb_hits(pdb, "map_prs_to_releases/unreleased", len(unreleased_prs))
     pr_releases = precomputed_pr_releases
     merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
     missed_released_prs = await _map_prs_to_releases(merged_prs, releases, mdb, pdb, cache)
     still_unreleased = merged_prs.loc[merged_prs.index.difference(missed_released_prs.index)]
-    pdb.metrics["misses"].get()["map_prs_to_releases/released"] = len(missed_released_prs)
-    pdb.metrics["misses"].get()["map_prs_to_releases/unreleased"] = len(still_unreleased)
+    set_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
+    set_pdb_misses(pdb, "map_prs_to_releases/unreleased", len(still_unreleased))
     await update_unreleased_prs(
         still_unreleased, releases, matched_bys, default_branches, release_settings, pdb)
     return pr_releases.append(missed_released_prs)
@@ -507,7 +508,7 @@ async def _fetch_first_parents(data: Optional[bytes],
         need_update = True
 
     if need_update:
-        pdb.metrics["misses"].get()["_fetch_first_parents"] += 1
+        add_pdb_misses(pdb, "_fetch_first_parents", 1)
         quote = "`" if mdb.url.dialect == "sqlite" else ""
         query = f"""
             WITH RECURSIVE commit_first_parents AS (
@@ -581,7 +582,7 @@ async def _fetch_first_parents(data: Optional[bytes],
             raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
         await pdb.execute(sql)
     else:  # if need_update
-        pdb.metrics["hits"].get()["_fetch_first_parents"] += 1
+        add_pdb_hits(pdb, "_fetch_first_parents", 1)
 
     time_from = time_from.replace(tzinfo=None)
     time_to = time_to.replace(tzinfo=None)
@@ -616,10 +617,10 @@ async def _fetch_commit_history_dag(dag: Optional[bytes],
                 need_update = True
                 break
         if not need_update:
-            pdb.metrics["hits"].get()["_fetch_commit_history_dag"] += 1
+            add_pdb_hits(pdb, "_fetch_commit_history_dag", 1)
             return dag
 
-    pdb.metrics["misses"].get()["_fetch_commit_history_dag"] += 1
+    add_pdb_misses(pdb, "_fetch_commit_history_dag", 1)
     # query credits: @dennwc
     query = f"""
     WITH RECURSIVE commit_history AS (
