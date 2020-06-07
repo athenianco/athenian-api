@@ -86,7 +86,7 @@ async def instrument(request, handler):
         except NameError:
             code = 500
         if elapsed > elapsed_error_threshold:
-            _log.error("%s took %.0fs", request.path, elapsed)
+            _log.error("%s took %ds -> HTTP %d", request.path, int(elapsed), code)
         request.app["request_count"] \
             .labels(__package__, __version__, request.method, request.path, code) \
             .inc()
