@@ -24,6 +24,7 @@ from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRe
     PullRequestMiner, PullRequestTimesMiner
 from athenian.api.controllers.miners.types import Participants
 from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.models.metadata.github import PushCommit
 from athenian.api.tracing import sentry_span
 
@@ -71,7 +72,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
                 raise r from None
     else:
         done_times = blacklist = await precomputed_tasks[0]
-    pdb.metrics["hits"].get()["load_precomputed_done_times"] += len(done_times)
+    add_pdb_hits(pdb, "load_precomputed_done_times", len(done_times))
 
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
@@ -91,7 +92,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
             except ImpossiblePullRequest:
                 continue
             mined_times.append(times)
-    pdb.metrics["misses"].get()["load_precomputed_done_times"] += len(mined_times)
+    add_pdb_misses(pdb, "load_precomputed_done_times", len(mined_times))
     # we don't care if exclude_inactive is True or False here
     await store_precomputed_done_times(
         mined_prs, mined_times, default_branches, release_settings, pdb)
