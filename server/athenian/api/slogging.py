@@ -27,9 +27,10 @@ import re
 import sys
 import threading
 import traceback
-from typing import Callable, Dict, Sequence, Tuple, Union
+from typing import Callable, Tuple, Union
 
-import numpy
+import numpy as np
+from numpy.core.arrayprint import _default_array_repr
 import xxhash
 import yaml
 
@@ -71,6 +72,11 @@ def reduce_thread_id(thread_id: int) -> str:
     return xxhash.xxh32(thread_id.to_bytes(8, "little")).hexdigest()[:4]
 
 
+def repr_array(arr: np.ndarray) -> str:
+    """repr() with shape."""
+    return "array(shape=%r, %s" % (arr.shape, _default_array_repr(arr).split("(", 1)[1])
+
+
 def with_logger(cls):
     """Add a logger as static attribute to a class."""
     cls._log = logging.getLogger(cls.__name__)
@@ -100,43 +106,6 @@ def check_trailing_dot(func: Callable) -> Callable:
         args[-1] = record
         return func(*args)
     return decorated_with_check_trailing_dot
-
-
-class NumpyLogRecord(logging.LogRecord):
-    """LogRecord with the special handling of numpy arrays which shortens the long ones."""
-
-    @staticmethod
-    def array2string(arr: numpy.ndarray) -> str:
-        """Format numpy array as a string."""
-        shape = str(arr.shape)[1:-1]
-        if shape.endswith(","):
-            shape = shape[:-1]
-        return numpy.array2string(arr, threshold=11) + "%s[%s]" % (arr.dtype, shape)
-
-    def getMessage(self):
-        """
-        Return the message for this LogRecord.
-
-        Return the message for this LogRecord after merging any user-supplied \
-        arguments with the message.
-        """
-        if isinstance(self.msg, numpy.ndarray):
-            msg = self.array2string(self.msg)
-        else:
-            msg = str(self.msg)
-        if self.args:
-            a2s = self.array2string
-            if isinstance(self.args, Dict):
-                args = {k: (a2s(v) if isinstance(v, numpy.ndarray) else v)
-                        for (k, v) in self.args.items()}
-            elif isinstance(self.args, Sequence):
-                args = tuple((a2s(a) if isinstance(a, numpy.ndarray) else a)
-                             for a in self.args)
-            else:
-                raise TypeError("Unexpected input '%s' with type '%s'" % (self.args,
-                                                                          type(self.args)))
-            msg = msg % args
-        return msg
 
 
 class AwesomeFormatter(logging.Formatter):
@@ -235,11 +204,11 @@ def setup(level: Union[str, int], structured: bool, config_path: str = None):
 
     sys.stdout, sys.stderr = (ensure_utf8_stream(s)
                               for s in (sys.stdout, sys.stderr))
+    np.set_string_function(repr_array)
 
     # basicConfig is only called to make sure there is at least one handler for the root logger.
     # All the output level setting is down right afterwards.
     logging.basicConfig()
-    logging.setLogRecordFactory(NumpyLogRecord)
     logging.captureWarnings(True)
     if config_path is not None and os.path.isfile(config_path):
         with open(config_path) as fh:
