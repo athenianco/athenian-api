@@ -10,8 +10,10 @@ import sentry_sdk
 from sqlalchemy import and_, func, or_, select
 
 from athenian.api.cache import cached
-from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestReview, PushCommit, Release, User
+from athenian.api.models.metadata.github import (PullRequest,
+                                                 PullRequestComment,
+                                                 PullRequestReview, PushCommit,
+                                                 Release, User)
 from athenian.api.tracing import sentry_span
 
 
@@ -48,17 +50,21 @@ async def _mine_contributors(repos: Collection[str],
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
 
+    common_prs_where = and_(
+        PullRequest.repository_full_name.in_(repos),
+        PullRequest.hidden.is_(False),
+        or_(PullRequest.created_at.between(time_from, time_to),
+            and_(PullRequest.created_at < time_to,
+                 PullRequest.closed_at.is_(None)),
+            PullRequest.closed_at.between(time_from, time_to),
+            PullRequest.updated_at.between(time_from, time_to)),
+    )
+
     @sentry_span
     async def fetch_authors():
         return await db.fetch_all(
             select([PullRequest.user_login, func.count(PullRequest.user_login)])
-            .where(and_(PullRequest.repository_full_name.in_(repos),
-                        PullRequest.hidden.is_(False),
-                        or_(PullRequest.created_at.between(time_from, time_to),
-                            and_(PullRequest.created_at < time_to,
-                                 PullRequest.closed_at.is_(None)),
-                            PullRequest.closed_at.between(time_from, time_to),
-                            PullRequest.updated_at.between(time_from, time_to))))
+            .where(common_prs_where)
             .group_by(PullRequest.user_login))
 
     @sentry_span
@@ -95,6 +101,13 @@ async def _mine_contributors(repos: Collection[str],
             .group_by(PullRequestComment.user_login))
 
     @sentry_span
+    async def fetch_mergers():
+        return await db.fetch_all(
+            select([PullRequest.merged_by_login, func.count(PullRequest.merged_by_login)])
+            .where(common_prs_where)
+            .group_by(PullRequest.merged_by_login))
+
+    @sentry_span
     async def fetch_releasers():
         return await db.fetch_all(
             select([Release.author, func.count(Release.author)])
@@ -105,11 +118,11 @@ async def _mine_contributors(repos: Collection[str],
     data = await asyncio.gather(
         fetch_authors(), fetch_reviewers(),
         fetch_commit_authors(), fetch_commit_committers(),
-        fetch_commenters(), fetch_releasers())
+        fetch_commenters(), fetch_mergers(), fetch_releasers())
 
     stats = defaultdict(dict)
     for rows, key in zip(data, ("prs", "reviewer", "commit_author", "commit_committer",
-                                "commenter", "releaser")):
+                                "commenter", "merger", "releaser")):
         for row in rows:
             stats[row[0]][key] = row[1]
 
