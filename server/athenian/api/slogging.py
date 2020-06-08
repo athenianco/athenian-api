@@ -153,7 +153,7 @@ class StructuredHandler(logging.Handler):
         """Print the log record formatted as JSON to stdout."""
         created = datetime.datetime.fromtimestamp(record.created, timezone)
         msg = self.format(record)
-        if "GET /status" in msg:
+        if "GET /status" in msg or "before send dropped event" in msg:
             # these aiohttp access logs are annoying
             level = "debug"
         else:

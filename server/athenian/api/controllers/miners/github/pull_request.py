@@ -76,11 +76,11 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda date_from, date_to, exclude_inactive, release_settings, **_: (
+        key=lambda date_from, date_to, exclude_inactive, release_settings, pr_blacklist=None, **_: (  # noqa
             date_from.toordinal(), date_to.toordinal(), exclude_inactive, release_settings,
+            ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []),
         ),
         postprocess=_postprocess_cached_prs,
-        version=2,
     )
     async def _mine(cls,
                     date_from: date,

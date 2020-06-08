@@ -126,7 +126,10 @@ def cached(exptime: Union[int, Callable[..., int]],
                                     __package__, __version__, full_name).inc()
                                 client.metrics["context"]["ignores"].get()[full_name] += 1
                                 ignore = True
+                            else:
+                                log.debug("%s/postprocess passed OK", full_name)
                         if not ignore:
+                            log.debug("%s cache hit", full_name)
                             client.metrics["hits"] \
                                 .labels(__package__, __version__, full_name) \
                                 .inc()
@@ -135,6 +138,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                                 .observe(time.time() - start_time)
                             client.metrics["context"]["hits"].get()[full_name] += 1
                             return result
+            log.debug("%s cache miss", full_name)
             result = await func(*args, **kwargs)
             if cache_key is not None:
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
