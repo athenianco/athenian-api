@@ -1,7 +1,7 @@
 import asyncio
+import marshal
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-import marshal
 from typing import Collection, List, Optional
 
 import aiomcache
@@ -49,7 +49,7 @@ async def _mine_contributors(repos: Collection[str],
     assert isinstance(time_to, datetime)
 
     @sentry_span
-    async def fetch_prs():
+    async def fetch_authors():
         return await db.fetch_all(
             select([PullRequest.user_login, func.count(PullRequest.user_login)])
             .where(and_(PullRequest.repository_full_name.in_(repos),
@@ -62,13 +62,12 @@ async def _mine_contributors(repos: Collection[str],
             .group_by(PullRequest.user_login))
 
     @sentry_span
-    async def fetch_comments():
+    async def fetch_reviewers():
         return await db.fetch_all(
-            select([PullRequestComment.user_login, func.count(PullRequestComment.user_login)])
-            .where(and_(PullRequestComment.repository_full_name.in_(repos),
-                        PullRequestComment.created_at.between(time_from, time_to),
-                        ))
-            .group_by(PullRequestComment.user_login))
+            select([PullRequestReview.user_login, func.count(PullRequestReview.user_login)])
+            .where(and_(PullRequestReview.repository_full_name.in_(repos),
+                        PullRequestReview.submitted_at.between(time_from, time_to)))
+            .group_by(PullRequestReview.user_login))
 
     @sentry_span
     async def fetch_commit_authors():
@@ -87,15 +86,16 @@ async def _mine_contributors(repos: Collection[str],
             .group_by(PushCommit.committer_login))
 
     @sentry_span
-    async def fetch_reviews():
+    async def fetch_commenters():
         return await db.fetch_all(
-            select([PullRequestReview.user_login, func.count(PullRequestReview.user_login)])
-            .where(and_(PullRequestReview.repository_full_name.in_(repos),
-                        PullRequestReview.submitted_at.between(time_from, time_to)))
-            .group_by(PullRequestReview.user_login))
+            select([PullRequestComment.user_login, func.count(PullRequestComment.user_login)])
+            .where(and_(PullRequestComment.repository_full_name.in_(repos),
+                        PullRequestComment.created_at.between(time_from, time_to),
+                        ))
+            .group_by(PullRequestComment.user_login))
 
     @sentry_span
-    async def fetch_releases():
+    async def fetch_releasers():
         return await db.fetch_all(
             select([Release.author, func.count(Release.author)])
             .where(and_(Release.repository_full_name.in_(repos),
@@ -103,12 +103,13 @@ async def _mine_contributors(repos: Collection[str],
             .group_by(Release.author))
 
     data = await asyncio.gather(
-        fetch_prs(), fetch_comments(), fetch_commit_authors(), fetch_commit_committers(),
-        fetch_reviews(), fetch_releases())
+        fetch_authors(), fetch_reviewers(),
+        fetch_commit_authors(), fetch_commit_committers(),
+        fetch_commenters(), fetch_releasers())
 
     stats = defaultdict(dict)
-    for rows, key in zip(data, ("prs", "commenter", "commit_author", "commit_committer",
-                                "reviewer", "releaser")):
+    for rows, key in zip(data, ("prs", "reviewer", "commit_author", "commit_committer",
+                                "commenter", "releaser")):
         for row in rows:
             stats[row[0]][key] = row[1]
 
