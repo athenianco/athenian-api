@@ -23,14 +23,42 @@ async def mine_contributors(repos: Collection[str],
                             time_to: Optional[datetime],
                             db: databases.Database,
                             cache: Optional[aiomcache.Client],
-                            with_stats: Optional[bool] = True) -> List[dict]:
+                            with_stats: Optional[bool] = True,
+                            as_roles: List[str] = None) -> List[dict]:
     """Discover developers who made any important action in the given repositories and \
     in the given time frame."""
     time_from = time_from or datetime(1970, 1, 1, tzinfo=timezone.utc)
     now = datetime.now(timezone.utc) + timedelta(days=1)
     time_to = time_to or datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
 
-    return await _mine_contributors(repos, time_from, time_to, with_stats, db, cache)
+    if as_roles:
+        fetch_stats = True
+    else:
+        fetch_stats = with_stats
+
+    contribs = await _mine_contributors(repos, time_from, time_to, fetch_stats, db, cache)
+    if not as_roles:
+        return contribs
+
+    # Doing this in post-processing to avoid decreasing cache hits. Otherwise we could
+    # consider caching the different `fetch_*` functions indidually as a inner caching
+    # layer if this becomes a bottleneck.
+    filtered_contribs = []
+    # We could get rid of these re-mapping, maybe worth looking at it along with the
+    # definition of `DeveloperUpdates`
+    role_mapping = {"author": "prs"}
+    for c in contribs:
+        has_active_role = sum(c["stats"].get(role_mapping.get(role, role), 0)
+                              for role in as_roles) > 0
+        if not has_active_role:
+            continue
+
+        if not with_stats:
+            c.pop("stats")
+
+        filtered_contribs.append(c)
+
+    return filtered_contribs
 
 
 @sentry_span
