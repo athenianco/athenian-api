@@ -51,10 +51,17 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     repos = await _common_filter_preprocess(filt, request)
     users = await mine_contributors(
-        repos, filt.date_from, filt.date_to, request.mdb, request.cache)
+        repos, filt.date_from, filt.date_to, request.mdb, request.cache,
+        as_roles=filt.as_)
     model = [
-        DeveloperSummary(login=f"{PREFIXES['github']}{u['login']}", avatar=u["avatar_url"],
-                         name=u["name"], updates=DeveloperUpdates(**u["stats"]))
+        DeveloperSummary(
+            login=f"{PREFIXES['github']}{u['login']}", avatar=u["avatar_url"],
+            name=u["name"], updates=DeveloperUpdates(**{
+                k: v for k, v in u["stats"].items()
+                # TODO(se7entyse7en): make `DeveloperUpdates` support all the stats we can get instead of doing this filtering. See also `mine_contributors`.  # noqa
+                if k in DeveloperUpdates.openapi_types
+            }),
+        )
         for u in sorted(users, key=operator.itemgetter("login"))
     ]
     return model_response(model)
