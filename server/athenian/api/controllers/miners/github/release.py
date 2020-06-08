@@ -437,8 +437,11 @@ async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
 
     async def fetch_release_history(repo, repo_releases):
         dag = await _fetch_commit_history_dag(
-            pdags.get(repo), repo, repo_releases[Release.commit_id.key].values,
-            repo_releases[Release.sha.key].values, mdb, pdb, cache)
+            pdags.get(repo), repo,
+            repo_releases[Release.commit_id.key].values,
+            repo_releases[Release.sha.key].values,
+            repo_releases[Release.published_at.key].values,
+            mdb, pdb, cache)
         histories[repo] = history = {k: [-1, *v] for k, v in dag.items()}
         release_hashes = set(repo_releases[Release.sha.key].values)
         for rel_index, rel_sha in zip(repo_releases.index.values,
@@ -599,8 +602,9 @@ async def _fetch_first_parents(data: Optional[bytes],
 )
 async def _fetch_commit_history_dag(dag: Optional[bytes],
                                     repo: str,
-                                    commit_ids: Iterable[str],
-                                    commit_shas: Iterable[str],
+                                    commit_ids: np.ndarray,
+                                    commit_shas: np.ndarray,
+                                    commit_dates: np.ndarray,
                                     mdb: databases.Database,
                                     pdb: databases.Database,
                                     cache: Optional[aiomcache.Client],
@@ -621,43 +625,29 @@ async def _fetch_commit_history_dag(dag: Optional[bytes],
             return dag
 
     add_pdb_misses(pdb, "_fetch_commit_history_dag", 1)
-    # query credits: @dennwc
-    query = f"""
-    WITH RECURSIVE commit_history AS (
-        SELECT
-            p.child_id AS parent,
-            pc.oid AS child_oid,
-            cc.oid AS parent_oid
-        FROM
-            github_node_commit_parents p
-                LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
-                LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-        WHERE
-            p.parent_id IN ('{"', '".join(commit_ids)}')
-        UNION
-            SELECT
-                p.child_id AS parent,
-                pc.oid AS child_oid,
-                cc.oid AS parent_oid
-            FROM
-                github_node_commit_parents p
-                    INNER JOIN commit_history h ON h.parent = p.parent_id
-                    LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
-                    LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-    ) SELECT
-        parent_oid,
-        child_oid
-    FROM
-        commit_history;"""
-    dag = {}
-    async with mdb.connection() as conn:
-        if isinstance(conn.raw_connection, asyncpg.connection.Connection):
-            # this works much faster then iterate() / fetch_all()
-            async with conn._query_lock:
-                rows = await conn.raw_connection.fetch(query)
+    threshold = 50
+    if len(commit_ids) > threshold:
+        order = np.argsort(commit_dates)
+        _commit_ids = commit_ids[order]
+        _commit_shas = commit_shas.astype("U40")[order]
+    else:
+        _commit_ids = commit_ids
+        _commit_shas = commit_shas
+    raw_dag = set()
+    while len(_commit_ids) > threshold:
+        rows = await _fetch_commit_history_edges([_commit_ids[-1]], mdb)
+        if len(rows) > 0:
+            raw_dag.update(rows)
+            left_mask = ~np.isin(_commit_shas, np.fromiter((r[1] for r in rows), "U40", len(rows)))
+            _commit_shas = _commit_shas[left_mask]
+            _commit_ids = _commit_ids[left_mask]
         else:
-            rows = await conn.fetch_all(query)
-    for child, parent in rows:
+            _commit_ids = _commit_ids[:-1]
+            _commit_shas = _commit_shas[:-1]
+    if len(_commit_ids) > 0:
+        raw_dag.update(await _fetch_commit_history_edges(_commit_ids, mdb))
+    dag = {}
+    for child, parent in raw_dag:
         # reverse the order so that parent-child matches github_node_commit_parents again
         try:
             dag[parent].append(child)
@@ -683,6 +673,45 @@ async def _fetch_commit_history_dag(dag: Optional[bytes],
             raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
         await pdb.execute(sql)
     return dag
+
+
+async def _fetch_commit_history_edges(commit_ids: Iterable[str],
+                                      mdb: databases.Database) -> List[Tuple]:
+    # query credits: @dennwc
+    query = f"""
+            WITH RECURSIVE commit_history AS (
+                SELECT
+                    p.child_id AS parent,
+                    pc.oid AS child_oid,
+                    cc.oid AS parent_oid
+                FROM
+                    github_node_commit_parents p
+                        LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
+                        LEFT JOIN github_node_commit cc ON p.child_id = cc.id
+                WHERE
+                    p.parent_id IN ('{"', '".join(commit_ids)}')
+                UNION
+                    SELECT
+                        p.child_id AS parent,
+                        pc.oid AS child_oid,
+                        cc.oid AS parent_oid
+                    FROM
+                        github_node_commit_parents p
+                            INNER JOIN commit_history h ON h.parent = p.parent_id
+                            LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
+                            LEFT JOIN github_node_commit cc ON p.child_id = cc.id
+            ) SELECT
+                parent_oid,
+                child_oid
+            FROM
+                commit_history;"""
+    async with mdb.connection() as conn:
+        if isinstance(conn.raw_connection, asyncpg.connection.Connection):
+            # this works much faster then iterate() / fetch_all()
+            async with conn._query_lock:
+                return await conn.raw_connection.fetch(query)
+        else:
+            return [tuple(r) for r in await conn.fetch_all(query)]
 
 
 async def _find_old_released_prs(releases: pd.DataFrame,
@@ -733,8 +762,11 @@ async def _extract_released_commits(releases: pd.DataFrame,
     new_releases = releases[releases[Release.published_at.key] >= time_boundary]
     boundary_releases = set()
     dag = await _fetch_commit_history_dag(
-        pdag, repo, new_releases[Release.commit_id.key].values,
-        new_releases[Release.sha.key].values, mdb, pdb, cache)
+        pdag, repo,
+        new_releases[Release.commit_id.key].values,
+        new_releases[Release.sha.key].values,
+        new_releases[Release.published_at.key].values,
+        mdb, pdb, cache)
 
     for rid, root in zip(new_releases.index, new_releases[Release.sha.key].values):
         if rid in resolved_releases:
