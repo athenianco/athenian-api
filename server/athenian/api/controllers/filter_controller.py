@@ -111,7 +111,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         props, filt.date_from, filt.date_to, repos, participants, filt.exclude_inactive,
         settings, request.mdb, request.pdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
-    users = list(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
+    users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
     avatars = await mine_user_avatars(users, request.mdb, request.cache)
     prefix = PREFIXES["github"]
     model = PullRequestSet(include=IncludedNativeUsers(users={

@@ -247,6 +247,7 @@ async def filter_pull_requests(properties: Set[Property],
     """
     assert isinstance(properties, set)
     assert isinstance(repos, set)
+    log = logging.getLogger("%s.filter_pull_requests" % metadata.__package__)
     # required to efficiently use the cache with timezones
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     branches, default_branches = await extract_branches(repos, mdb, cache)
@@ -320,4 +321,5 @@ async def filter_pull_requests(properties: Set[Property],
         prs = list(miner)
     set_pdb_hits(pdb, "filter_pull_requests/times", miner.precomputed_hits)
     set_pdb_misses(pdb, "filter_pull_requests/times", miner.precomputed_misses)
+    log.debug("return %d PRs", len(prs))
     return prs
