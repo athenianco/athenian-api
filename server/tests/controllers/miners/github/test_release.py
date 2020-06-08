@@ -3,6 +3,7 @@ import marshal
 from typing import Dict
 
 from databases import Database
+import numpy as np
 import pandas as pd
 import pytest
 from sqlalchemy import delete, select, sql
@@ -470,10 +471,13 @@ async def test_fetch_commit_history_smoke(mdb, pdb):
          "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
         ["d2a38b4a5965d529566566640519d03d2bd10f6c",
          "31eae7b619d166c366bf5df4991f04ba8cebea0a"],
+        [0, 0],
         mdb, pdb, None)
+    dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"] = set(
+        dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"])
     ground_truth = {
-        "31eae7b619d166c366bf5df4991f04ba8cebea0a": ["b977a025ca21e3b5ca123d8093bd7917694f6da7",
-                                                     "d2a38b4a5965d529566566640519d03d2bd10f6c"],
+        "31eae7b619d166c366bf5df4991f04ba8cebea0a": {"b977a025ca21e3b5ca123d8093bd7917694f6da7",
+                                                     "d2a38b4a5965d529566566640519d03d2bd10f6c"},
         "b977a025ca21e3b5ca123d8093bd7917694f6da7": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
         "d2a38b4a5965d529566566640519d03d2bd10f6c": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
         "35b585759cbf29f8ec428ef89da20705d59f99ec": ["c2bbf9fe8009b22d0f390f3c8c3f13937067590f"],
@@ -491,6 +495,7 @@ async def test_fetch_commit_history_smoke(mdb, pdb):
          "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
         ["31eae7b619d166c366bf5df4991f04ba8cebea0a",
          "d2a38b4a5965d529566566640519d03d2bd10f6c"],
+        [0, 0],
         Database("sqlite://"), pdb, None)
     assert dag == ground_truth
     with pytest.raises(Exception):
@@ -501,6 +506,7 @@ async def test_fetch_commit_history_smoke(mdb, pdb):
              "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
             ["31eae7b619d166c366bf5df4991f04ba8cebea0a",
              "1353ccd6944ab41082099b79979ded3223db98ec"],
+            [0, 0],
             Database("sqlite://"), pdb,
             None,
         )
@@ -512,6 +518,7 @@ async def test_fetch_commit_history_initial_commit(mdb, pdb):
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
         ["5d7303c49ac984a9fec60523f2d5297682e16646"],
+        [0],
         mdb, pdb, None)
     assert dag == {"5d7303c49ac984a9fec60523f2d5297682e16646": []}
 
@@ -524,10 +531,13 @@ async def test_fetch_commit_history_cache(mdb, pdb, cache):
          "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
         ["d2a38b4a5965d529566566640519d03d2bd10f6c",
          "31eae7b619d166c366bf5df4991f04ba8cebea0a"],
+        [0, 0],
         mdb, pdb, cache)
+    dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"] = set(
+        dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"])
     ground_truth = {
-        "31eae7b619d166c366bf5df4991f04ba8cebea0a": ["b977a025ca21e3b5ca123d8093bd7917694f6da7",
-                                                     "d2a38b4a5965d529566566640519d03d2bd10f6c"],
+        "31eae7b619d166c366bf5df4991f04ba8cebea0a": {"b977a025ca21e3b5ca123d8093bd7917694f6da7",
+                                                     "d2a38b4a5965d529566566640519d03d2bd10f6c"},
         "b977a025ca21e3b5ca123d8093bd7917694f6da7": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
         "d2a38b4a5965d529566566640519d03d2bd10f6c": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
         "35b585759cbf29f8ec428ef89da20705d59f99ec": ["c2bbf9fe8009b22d0f390f3c8c3f13937067590f"],
@@ -545,8 +555,27 @@ async def test_fetch_commit_history_cache(mdb, pdb, cache):
          "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw=="],
         ["d2a38b4a5965d529566566640519d03d2bd10f6c",
          "31eae7b619d166c366bf5df4991f04ba8cebea0a"],
+        [0, 0],
         None, None, cache)
+    dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"] = set(
+        dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"])
     assert dag == ground_truth
+
+
+async def test_fetch_commit_history_many(mdb, pdb):
+    commit_ids = [
+        "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+        "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="] * 50
+    commit_shas = ["d2a38b4a5965d529566566640519d03d2bd10f6c",
+                   "31eae7b619d166c366bf5df4991f04ba8cebea0a"] * 50
+    dag = await _fetch_commit_history_dag(
+        None,
+        "src-d/go-git",
+        np.asarray(commit_ids),
+        np.asarray(commit_shas),
+        np.zeros(len(commit_ids)),
+        mdb, pdb, None)
+    assert dag
 
 
 async def test_fetch_first_parents_smoke(mdb, pdb):
