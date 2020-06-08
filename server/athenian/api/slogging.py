@@ -152,9 +152,15 @@ class StructuredHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
         """Print the log record formatted as JSON to stdout."""
         created = datetime.datetime.fromtimestamp(record.created, timezone)
+        msg = self.format(record)
+        if "GET /status" in msg:
+            # these aiohttp access logs are annoying
+            level = "debug"
+        else:
+            level = record.levelname.lower()
         obj = {
-            "level": record.levelname.lower(),
-            "msg": self.format(record),
+            "level": level,
+            "msg": msg,
             "source": "%s:%d" % (record.filename, record.lineno),
             "time": format_datetime(created),
             "thread": reduce_thread_id(record.thread),
