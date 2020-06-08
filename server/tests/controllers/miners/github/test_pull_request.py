@@ -186,7 +186,7 @@ async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, 
 
 async def test_pr_miner_iter_cache_incompatible(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
-    date_from = date(year=2015, month=1, day=1)
+    date_from = date(year=2018, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     await PullRequestMiner.mine(
         date_from,
@@ -217,6 +217,46 @@ async def test_pr_miner_iter_cache_incompatible(
             None,
             cache,
         )
+
+
+async def test_pr_miner_cache_pr_blacklist(
+        branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
+    """https://athenianco.atlassian.net/browse/DEV-206"""
+    date_from = date(year=2018, month=1, day=11)
+    date_to = date(year=2018, month=1, day=12)
+    args = (
+        date_from,
+        date_to,
+        datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
+        datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
+        {"src-d/go-git"},
+        {},
+        branches, default_branches,
+        False,
+        release_match_setting_tag,
+        mdb,
+        pdb,
+        cache,
+    )
+    """
+        There are 5 PRs:
+
+        "MDExOlB1bGxSZXF1ZXN0MTM4MzExODAx",
+        "MDExOlB1bGxSZXF1ZXN0MTU1NDg2ODkz",
+        "MDExOlB1bGxSZXF1ZXN0MTYwODI1NTE4",
+        "MDExOlB1bGxSZXF1ZXN0MTYyMDE1NTI4",
+        "MDExOlB1bGxSZXF1ZXN0MTYyNDM2MzEx",
+    """
+    prs = list(await PullRequestMiner.mine(
+        *args, pr_blacklist=["MDExOlB1bGxSZXF1ZXN0MTYyNDM2MzEx"]))
+    assert {pr.pr[PullRequest.node_id.key] for pr in prs} == {
+        "MDExOlB1bGxSZXF1ZXN0MTM4MzExODAx", "MDExOlB1bGxSZXF1ZXN0MTU1NDg2ODkz",
+        "MDExOlB1bGxSZXF1ZXN0MTYwODI1NTE4", "MDExOlB1bGxSZXF1ZXN0MTYyMDE1NTI4"}
+    prs = list(await PullRequestMiner.mine(
+        *args, pr_blacklist=["MDExOlB1bGxSZXF1ZXN0MTM4MzExODAx"]))
+    assert {pr.pr[PullRequest.node_id.key] for pr in prs} == {
+        "MDExOlB1bGxSZXF1ZXN0MTYyNDM2MzEx", "MDExOlB1bGxSZXF1ZXN0MTU1NDg2ODkz",
+        "MDExOlB1bGxSZXF1ZXN0MTYwODI1NTE4", "MDExOlB1bGxSZXF1ZXN0MTYyMDE1NTI4"}
 
 
 @pytest.mark.parametrize("pk", [[v] for v in ParticipationKind] + [list(ParticipationKind)])
