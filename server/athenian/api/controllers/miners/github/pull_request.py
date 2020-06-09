@@ -572,9 +572,12 @@ class PullRequestTimesMiner:
                 pr.reviews[PullRequestReview.state.key].values != ReviewResolution.COMMENTED.value
             # it is possible to approve/reject after closing the PR
             # you start the review, then somebody closes the PR, then you submit the review
-            last_review_at = review_submitted_ats.take(
-                np.where((review_submitted_ats.values <= closed_at.best.to_numpy()) |
-                         not_review_comments)[0]).max()
+            try:
+                last_review_at = pd.Timestamp(review_submitted_ats.values[
+                    (review_submitted_ats.values <= closed_at.best.to_numpy())
+                    | not_review_comments].max(), tz=timezone.utc)
+            except ValueError:
+                last_review_at = pd.NaT
             if last_review_at == last_review_at:
                 # we don't want dtmin() here - what if there was no review at all?
                 last_review_at = min(last_review_at, closed_at.best)
@@ -603,13 +606,19 @@ class PullRequestTimesMiner:
             grouped_reviews = reviews_before_merge._ixs(
                 reviews_before_merge[PullRequestReview.submitted_at.key].values.argmax())
         else:
-            grouped_reviews = reviews_before_merge \
+            # the most recent review for each reviewer
+            latest_review_ixs = np.where(
+                reviews_before_merge[[PullRequestReview.user_id.key,
+                                      PullRequestReview.submitted_at.key]]
                 .take(np.where(reviews_before_merge[PullRequestReview.state.key] !=
-                               ReviewResolution.COMMENTED.value)[0]) \
+                               ReviewResolution.COMMENTED.value)[0])
                 .sort_values([PullRequestReview.submitted_at.key],
-                             ascending=False, ignore_index=True) \
-                .groupby(PullRequestReview.user_id.key, sort=False, as_index=False) \
-                .head(1)  # the most recent review for each reviewer
+                             ascending=False, ignore_index=True)
+                .groupby(PullRequestReview.user_id.key, sort=False, as_index=False)
+                ._cumcount_array())[0]
+            grouped_reviews = {
+                k: reviews_before_merge[k].take(latest_review_ixs)
+                for k in (PullRequestReview.state.key, PullRequestReview.submitted_at.key)}
         grouped_reviews_states = grouped_reviews[PullRequestReview.state.key]
         if isinstance(grouped_reviews_states, str):
             changes_requested = grouped_reviews_states == ReviewResolution.CHANGES_REQUESTED.value

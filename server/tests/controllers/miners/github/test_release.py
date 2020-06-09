@@ -270,11 +270,7 @@ async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, mdb
     time_from = datetime(year=2015, month=10, day=13, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
     filters = [
-        sql.or_(sql.and_(PullRequest.updated_at >= time_from,
-                         PullRequest.updated_at < time_to),
-                sql.and_(sql.or_(PullRequest.closed_at.is_(None),
-                                 PullRequest.closed_at > time_from),
-                         PullRequest.created_at < time_to)),
+        sql.and_(PullRequest.merged_at > time_from, PullRequest.created_at < time_to),
         PullRequest.repository_full_name.in_(["src-d/go-git"]),
         PullRequest.user_login.in_(["mcuadros", "vmarkovtsev"]),
     ]

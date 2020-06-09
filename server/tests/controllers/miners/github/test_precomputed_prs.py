@@ -4,7 +4,7 @@ from typing import Sequence
 import uuid
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
@@ -323,8 +323,10 @@ async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pd
 async def test_discover_update_unreleased_prs(
         mdb, pdb, default_branches, release_match_setting_tag):
     prs = await read_sql_query(
-        select([PullRequest]).where(PullRequest.number.in_(range(1000, 1010))),
+        select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
+                                         PullRequest.merged_at.isnot(None))),
         mdb, PullRequest, index=PullRequest.node_id.key)
+    prs[prs[PullRequest.merged_at.key].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
     releases = await load_releases(
         ["src-d/go-git"], None, default_branches,

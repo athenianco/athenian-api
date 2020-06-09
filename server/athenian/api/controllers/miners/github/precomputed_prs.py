@@ -463,9 +463,11 @@ async def update_unreleased_prs(prs: pd.DataFrame,
             sql = insert(GitHubMergedPullRequest).prefix_with("OR REPLACE")
         values = [
             GitHubMergedPullRequest(pr_node_id=node_id, release_match=release_match,
-                                    repository_full_name=repo, checked_releases=repo_releases)
+                                    repository_full_name=repo, checked_releases=repo_releases,
+                                    merged_at=merged_at)
             .create_defaults().explode(with_primary_keys=True)
-            for node_id in repo_prs.index.values
+            for node_id, merged_at in zip(repo_prs.index.values,
+                                          repo_prs[PullRequest.merged_at.key])
         ]
         updates.append(pdb.execute_many(sql, values))
     errors = await asyncio.gather(*updates, return_exceptions=True)
