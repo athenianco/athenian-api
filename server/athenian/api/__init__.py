@@ -96,9 +96,9 @@ def parse_args() -> argparse.Namespace:
                         help="memcached (users profiles, preprocessed metadata cache) address, "
                              "for example, 0.0.0.0:11211")
     parser.add_argument("--ui", action="store_true", help="Enable the REST UI.")
-    parser.add_argument("--force-default-user", action="store_true",
-                        help="Bypass user authorization and execute all requests on behalf of the "
-                             "default user.")
+    parser.add_argument("--force-user",
+                        help="Bypass user authorization and execute all requests on behalf of "
+                             "this user.")
     return parser.parse_args()
 
 
@@ -447,10 +447,10 @@ def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Clien
     return aiomcache.Client(host, port)
 
 
-def create_auth0_factory(force_default_user: bool) -> Callable[[], Auth0]:
+def create_auth0_factory(force_user: str) -> Callable[[], Auth0]:
     """Create the factory of Auth0 instances."""
     def factory(**kwargs):
-        return Auth0(**kwargs, force_default_user=force_default_user)
+        return Auth0(**kwargs, force_user=force_user)
 
     factory.ensure_static_configuration = Auth0.ensure_static_configuration
     return factory
@@ -533,7 +533,7 @@ def main() -> Optional[AthenianApp]:
     hack_sqlite_arrays()
     hack_sqlite_hstore()
     cache = create_memcached(args.memcached, log)
-    auth0_cls = create_auth0_factory(args.force_default_user)
+    auth0_cls = create_auth0_factory(args.force_user)
     app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db,
                       pdb_conn=args.precomputed_db, ui=args.ui, auth0_cls=auth0_cls, cache=cache)
     app.run(host=args.host, port=args.port, use_default_access_log=True, handle_signals=False,
