@@ -101,5 +101,6 @@ class GitHubMergedPullRequest(Base, UpdatedMixin):
 
     pr_node_id = Column(CHAR(32), primary_key=True)
     release_match = Column(Text(), primary_key=True)
+    merged_at = Column(TIMESTAMP(timezone=True), nullable=False)
     repository_full_name = Column(RepositoryFullName, nullable=False)
     checked_releases = Column(JHSTORE, nullable=False, server_default="")
