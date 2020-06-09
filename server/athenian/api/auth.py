@@ -43,7 +43,7 @@ class Auth0:
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
                  client_secret=AUTH0_CLIENT_SECRET, whitelist: Sequence[str] = tuple(),
                  default_user=DEFAULT_USER, cache: Optional[aiomcache.Client] = None, lazy=False,
-                 force_default_user=False):
+                 force_user: str = ""):
         """
         Create a new Auth0 middleware.
 
@@ -61,8 +61,8 @@ class Auth0:
         :param cache: memcached client to cache the user profiles.
         :param lazy: Value that indicates whether Auth0 Management API tokens and JWKS data \
                      must be asynchronously requested at first related method call.
-        :param force_default_user: Ignore all the incoming bearer tokens and pretend the default \
-                                   user.
+        :param force_user: Ignore all the incoming bearer tokens and make all requests on behalf \
+                           of this user ID.
         """
         self._domain = domain
         self._audience = audience
@@ -74,9 +74,9 @@ class Auth0:
             raise EnvironmentError("Auth0 default user is not set. Specify ATHENIAN_DEFAULT_USER.")
         self._default_user_id = default_user
         self._default_user = None  # type: Optional[User]
-        self.force_default_user = force_default_user
-        if force_default_user:
-            self.log.warning("Forced default user authorization mode")
+        self.force_user = force_user
+        if force_user:
+            self.log.warning("Forced user authorization mode: %s", force_user)
         self._session = aiohttp.ClientSession()
         self._kids_event = asyncio.Event()
         if not lazy:
@@ -187,7 +187,7 @@ class Auth0:
         def verify_security(auth_funcs, required_scopes, function):
             @functools.wraps(function)
             async def wrapper(request: ConnexionRequest):
-                if "Authorization" not in request.headers or self.force_default_user:
+                if "Authorization" not in request.headers or self.force_user:
                     # Otherwise we will never reach self.extract_token and self._set_user
                     request.headers = CIMultiDict(request.headers)
                     request.headers["Authorization"] = "Bearer null"
@@ -370,7 +370,7 @@ class Auth0:
 
     async def _extract_token(self, token: str) -> Dict[str, Any]:
         if token == "null":
-            return {"sub": self._default_user_id}
+            return {"sub": self.force_user or self._default_user_id}
         try:
             unverified_header = jwt.get_unverified_header(token)
         except jwt.JWTError as e:
