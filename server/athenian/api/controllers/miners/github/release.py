@@ -524,7 +524,9 @@ async def _fetch_first_parents(data: Optional[bytes],
                         LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
                         LEFT JOIN github_node_commit cc ON p.child_id = cc.id
                 WHERE
-                    p.parent_id IN ('{"', '".join(commit_ids)}') AND p.{quote}index{quote} = 0
+                        p.parent_id IN ('{"', '".join(commit_ids)}')
+                    AND p.{quote}index{quote} = 0
+                    AND cc.id IS NOT NULL
                 UNION
                     SELECT
                         p.child_id AS parent,
@@ -535,7 +537,7 @@ async def _fetch_first_parents(data: Optional[bytes],
                             INNER JOIN commit_first_parents h ON h.parent = p.parent_id
                             LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
                             LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-                    WHERE p.{quote}index{quote} = 0
+                    WHERE p.{quote}index{quote} = 0 AND cc.id IS NOT NULL
             ) SELECT
                 parent_id,
                 committed_date
