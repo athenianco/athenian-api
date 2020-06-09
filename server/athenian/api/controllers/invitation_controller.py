@@ -301,6 +301,8 @@ async def get_installation_owner(installation_id: int,
 
 async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the current Athenian GitHub app installation progress."""
+    mdb_sqlite = request.mdb.url.dialect == "sqlite"
+    idle_threshold = timedelta(hours=3)
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status(request.uid, id, sdb_conn, request.cache)
         async with request.mdb.connection() as mdb_conn:
@@ -319,14 +321,19 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
                                                 total=r[FetchProgress.nodes_total.key])
                           for r in rows]
                 started_date = min(r[FetchProgress.created_at.key] for r in rows)
-                if started_date is not None:
+                if mdb_sqlite:
                     started_date = started_date.replace(tzinfo=timezone.utc)
-                if any(t.fetched < t.total for t in tables):
-                    finished_date = None
-                else:
-                    finished_date = max(r[FetchProgress.updated_at.key] for r in rows)
-                if finished_date is not None:
+                finished_date = max(r[FetchProgress.updated_at.key] for r in rows)
+                if mdb_sqlite:
                     finished_date = finished_date.replace(tzinfo=timezone.utc)
+                pending = any(t.fetched < t.total for t in tables)
+                if datetime.now(tz=timezone.utc) - finished_date > idle_threshold:
+                    for table in tables:
+                        table.total = table.fetched
+                    if pending:
+                        finished_date += idle_threshold  # don't fool the user
+                elif pending:
+                    finished_date = None
                 model = InstallationProgress(started_date=started_date,
                                              finished_date=finished_date,
                                              owner=owner,
