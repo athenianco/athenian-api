@@ -10,6 +10,7 @@ import tempfile
 import time
 from typing import Dict, List, Optional, Union
 
+import nest_asyncio
 import numpy as np
 from prometheus_client import CollectorRegistry
 try:
@@ -36,6 +37,8 @@ from athenian.api.models.state.models import Base as StateBase
 from tests.sample_db_data import fill_metadata_session, fill_state_session
 
 
+if os.getenv("NEST"):
+    nest_asyncio.apply()
 uvloop.install()
 np.seterr(all="raise")
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
