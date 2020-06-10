@@ -46,7 +46,7 @@ async def load_releases(repos: Iterable[str],
                         pdb: databases.Database,
                         cache: Optional[aiomcache.Client],
                         index: Optional[Union[str, Sequence[str]]] = None,
-                        ) -> pd.DataFrame:
+                        ) -> Tuple[pd.DataFrame, Dict[str, ReleaseMatch]]:
     """
     Fetch releases from the metadata DB according to the match settings.
 
@@ -57,22 +57,25 @@ async def load_releases(repos: Iterable[str],
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
     assert time_from <= time_to
-    repos_by_tag_only = []
+    repos_by_tag = []
     repos_by_tag_or_branch = []
     repos_by_branch = []
     prefix = PREFIXES["github"]
     for repo in repos:
         v = settings[prefix + repo]
         if v.match == ReleaseMatch.tag:
-            repos_by_tag_only.append(repo)
+            repos_by_tag.append(repo)
         elif v.match == ReleaseMatch.tag_or_branch:
             repos_by_tag_or_branch.append(repo)
         elif v.match == ReleaseMatch.branch:
             repos_by_branch.append(repo)
     result = []
-    if repos_by_tag_only:
+    applied_matches = {}
+    if repos_by_tag:
         result.append(_match_releases_by_tag(
-            repos_by_tag_only, time_from, time_to, settings, mdb))
+            repos_by_tag, time_from, time_to, settings, mdb))
+        for k in repos_by_tag:
+            applied_matches[k] = ReleaseMatch.tag
     if repos_by_tag_or_branch:
         result.append(_match_releases_by_tag_or_branch(
             repos_by_tag_or_branch, branches, default_branches, time_from, time_to, settings,
@@ -81,16 +84,22 @@ async def load_releases(repos: Iterable[str],
         result.append(_match_releases_by_branch(
             repos_by_branch, branches, default_branches, time_from, time_to, settings,
             mdb, pdb, cache))
+        for k in repos_by_branch:
+            applied_matches[k] = ReleaseMatch.branch
     result = await asyncio.gather(*result, return_exceptions=True)
-    for r in result:
+    for i, r in enumerate(result):
         if isinstance(r, Exception):
             raise r
+        if isinstance(r, tuple):
+            r, am = r
+            result[i] = r
+            applied_matches.update(am)
     result = pd.concat(result) if result else _dummy_releases_df()
     if index is not None:
         result.set_index(index, inplace=True)
     else:
         result.reset_index(drop=True, inplace=True)
-    return result
+    return result, applied_matches
 
 
 def _dummy_releases_df():
@@ -111,7 +120,7 @@ async def _match_releases_by_tag_or_branch(repos: Iterable[str],
                                            mdb: databases.Database,
                                            pdb: databases.Database,
                                            cache: Optional[aiomcache.Client],
-                                           ) -> pd.DataFrame:
+                                           ) -> Tuple[pd.DataFrame, Dict[str, ReleaseMatch]]:
     probe = await read_sql_query(
         select([distinct(Release.repository_full_name)])
         .where(and_(Release.repository_full_name.in_(repos),
@@ -133,7 +142,9 @@ async def _match_releases_by_tag_or_branch(repos: Iterable[str],
     for m in matched:
         if isinstance(m, Exception):
             raise m
-    return pd.concat(matched)
+    applied_matches = {**{k: ReleaseMatch.tag for k in repos_by_tag},
+                       **{k: ReleaseMatch.branch for k in repos_by_branch}}
+    return pd.concat(matched), applied_matches
 
 
 @sentry_span
@@ -374,16 +385,6 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     await update_unreleased_prs(
         still_unreleased, releases, matched_bys, default_branches, release_settings, pdb)
     return pr_releases.append(missed_released_prs)
-
-
-def extract_matched_bys_from_releases(releases: pd.DataFrame) -> Dict[str, ReleaseMatch]:
-    """Determine the used release match strategy for each repository."""
-    return {
-        r: ReleaseMatch(g.iat[0, 1]) for r, g in releases[
-            [Release.repository_full_name.key, matched_by_column]
-        ].groupby(Release.repository_full_name.key, sort=False, as_index=False)
-        if len(g) > 0
-    }
 
 
 async def _map_prs_to_releases(prs: pd.DataFrame,
@@ -886,7 +887,7 @@ async def _find_releases_for_matching_prs(repos, time_to, time_from, branches, d
     for r in (releases_new, pdags):
         if isinstance(r, Exception):
             raise r from None
-    matched_bys = extract_matched_bys_from_releases(releases_new)
+    releases_new, matched_bys = releases_new
     # these matching rules must be applied in the past to stay consistent
     prefix = PREFIXES["github"]
     consistent_release_settings = {}
@@ -911,6 +912,7 @@ async def _find_releases_for_matching_prs(repos, time_to, time_from, branches, d
     for r in (repo_births, releases_old):
         if isinstance(r, Exception):
             raise r from None
+    releases_old = releases_old[0]
     hard_repos = set(matched_bys) - set(releases_old[Release.repository_full_name.key].unique())
     if hard_repos:
         repo_births = sorted(
@@ -928,7 +930,7 @@ async def _find_releases_for_matching_prs(repos, time_to, time_from, branches, d
                 repo_births_names[:bisect.bisect_right(repo_births_dates, lookbehind_time_from)])
             if not hard_repos:
                 break
-            releases_old_hard = await load_releases(
+            releases_old_hard, _ = await load_releases(
                 hard_repos, branches, default_branches, lookbehind_time_from - deeper_step,
                 lookbehind_time_from, consistent_release_settings, mdb, pdb, cache)
             releases_old = releases_old.append(releases_old_hard)

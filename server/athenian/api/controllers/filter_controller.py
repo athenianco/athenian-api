@@ -206,7 +206,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     branches, default_branches = await extract_branches(repos, request.mdb, request.cache)
-    releases = await load_releases(
+    releases, _ = await load_releases(
         repos, branches, default_branches, filt.date_from - timedelta(days=365), filt.date_to,
         settings, request.mdb, request.pdb, request.cache, index=Release.id.key)
     stats, avatars = await mine_releases(
