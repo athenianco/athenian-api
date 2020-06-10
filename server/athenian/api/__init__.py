@@ -38,6 +38,7 @@ from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.db import add_pdb_metrics_context, measure_db_overhead, ParallelDatabase
+from athenian.api.faster_pandas import patch_pandas
 from athenian.api.metadata import __package__
 from athenian.api.models import check_collation, check_schema_version, DBSchemaMismatchError, \
     hack_sqlite_arrays, hack_sqlite_hstore
@@ -532,6 +533,7 @@ def main() -> Optional[AthenianApp]:
         return None
     hack_sqlite_arrays()
     hack_sqlite_hstore()
+    patch_pandas()
     cache = create_memcached(args.memcached, log)
     auth0_cls = create_auth0_factory(args.force_user)
     app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db,

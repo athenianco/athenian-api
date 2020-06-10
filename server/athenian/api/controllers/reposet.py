@@ -225,4 +225,4 @@ async def _load_account_reposets(account: int,
     except (UniqueViolationError, IntegrityError, OperationalError) as e:
         log.error("%s: %s", type(e).__name__, e)
         raise ResponseError(DatabaseConflict(
-            detail="concurrent initial reposet creation")) from None
+            detail="concurrent or duplicate initial reposet creation")) from None
