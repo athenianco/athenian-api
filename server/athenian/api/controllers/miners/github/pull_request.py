@@ -448,47 +448,75 @@ class PullRequestMiner:
         df_fields.remove("pr")
         dfs = []
         grouped_df_iters = []
+        index_backup = []
         for k in df_fields:
-            df = getattr(self, "_" + (k if k.endswith("s") else k + "s"))
+            plural = k.endswith("s")
+            df = getattr(self, "_" + (k if plural else k + "s"))
             dfs.append(df)
-            grouped_df_iters.append(iter(df.groupby(level=0, sort=True, as_index=False)))
-        grouped_df_states = []
-        for i in grouped_df_iters:
-            try:
-                grouped_df_states.append(next(i))
-            except StopIteration:
-                grouped_df_states.append((None, None))
-        empty_df_cache = {}
-        pr_columns = [PullRequest.node_id.key]
-        pr_columns.extend(self._prs.columns)
-        if not self._prs.index.is_monotonic_increasing:
-            raise IndexError("PRs index must be pre-sorted ascending: "
-                             "prs.sort_index(inplace=True)")
-        for pr_tuple in self._prs.itertuples():
-            pr_node_id = pr_tuple.Index
-            items = {"pr": dict(zip(pr_columns, pr_tuple))}
-            for i, (k, (state_pr_node_id, gdf), git, df) in enumerate(zip(
-                    df_fields, grouped_df_states, grouped_df_iters, dfs)):
-                if state_pr_node_id == pr_node_id:
-                    if not k.endswith("s"):
-                        # much faster than gdf.iloc[0]
-                        gdf = {c: v for c, v in zip(gdf.columns, gdf._data.fast_xs(0))}
-                    else:
-                        gdf.index = gdf.index.droplevel(0)
-                    items[k] = gdf
-                    try:
-                        grouped_df_states[i] = next(git)
-                    except StopIteration:
-                        grouped_df_states[i] = None, None
-                else:
-                    if k.endswith("s"):
+            # our very own groupby() allows us to call take() with reduced overhead
+            node_ids = df.index.get_level_values(0).values
+            if df.index.nlevels > 1:
+                # this is not really required but it makes iteration deterministic
+                order_keys = (node_ids + df.index.get_level_values(1).values).astype("U")
+                node_ids = node_ids.astype("U")
+            else:
+                order_keys = node_ids = node_ids.astype("U")
+            node_ids_order = np.argsort(order_keys)
+            node_ids = node_ids[node_ids_order]
+            node_ids_backtrack = np.arange(0, len(df))[node_ids_order]
+            node_ids_unique_counts = np.unique(node_ids, return_counts=True)[1]
+            node_ids_group_counts = np.zeros(len(node_ids_unique_counts) + 1, dtype=int)
+            np.cumsum(node_ids_unique_counts, out=node_ids_group_counts[1:])
+            keys = node_ids[node_ids_group_counts[:-1]]
+            groups = np.split(node_ids_backtrack, node_ids_group_counts[1:-1])
+            grouped_df_iters.append(iter(zip(keys, groups)))
+            if plural:
+                index_backup.append(df.index)
+                df.index = df.index.droplevel(0)
+            else:
+                index_backup.append(None)
+        try:
+            grouped_df_states = []
+            for i in grouped_df_iters:
+                try:
+                    grouped_df_states.append(next(i))
+                except StopIteration:
+                    grouped_df_states.append((None, None))
+            empty_df_cache = {}
+            pr_columns = [PullRequest.node_id.key]
+            pr_columns.extend(self._prs.columns)
+            if not self._prs.index.is_monotonic_increasing:
+                raise IndexError("PRs index must be pre-sorted ascending: "
+                                 "prs.sort_index(inplace=True)")
+            for pr_tuple in self._prs.itertuples():
+                pr_node_id = pr_tuple.Index
+                items = {"pr": dict(zip(pr_columns, pr_tuple))}
+                for i, (k, (state_pr_node_id, gdf), git, df) in enumerate(zip(
+                        df_fields, grouped_df_states, grouped_df_iters, dfs)):
+                    if state_pr_node_id == pr_node_id:
+                        if not k.endswith("s"):
+                            # much faster than df.iloc[gdf[0]]
+                            gdf = {c: v for c, v in zip(df.columns, df._data.fast_xs(gdf[0]))}
+                        else:
+                            gdf = df.take(gdf)
+                        items[k] = gdf
                         try:
-                            items[k] = empty_df_cache[k]
-                        except KeyError:
-                            items[k] = empty_df_cache[k] = df.iloc[:0].copy()
+                            grouped_df_states[i] = next(git)
+                        except StopIteration:
+                            grouped_df_states[i] = None, None
                     else:
-                        items[k] = {c: None for c in df.columns}
-            yield MinedPullRequest(**items)
+                        if k.endswith("s"):
+                            try:
+                                items[k] = empty_df_cache[k]
+                            except KeyError:
+                                items[k] = empty_df_cache[k] = df.iloc[:0].copy()
+                        else:
+                            items[k] = {c: None for c in df.columns}
+                yield MinedPullRequest(**items)
+        finally:
+            for df, index in zip(dfs, index_backup):
+                if index is not None:
+                    df.index = index
 
 
 class ReviewResolution(Enum):
