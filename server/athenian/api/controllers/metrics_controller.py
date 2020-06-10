@@ -78,9 +78,14 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
             calcs[sentries[m]].append(m)
         gresults = []
         # for each metric, we find the function to calculate and call it
+        tasks = []
         for func, metrics in calcs.items():
-            mvs = await func(metrics, time_intervals, repos, devs, filt.exclude_inactive,
-                             release_settings, request.mdb, request.pdb, request.cache)
+            tasks.append(func(metrics, time_intervals, repos, devs, filt.exclude_inactive,
+                              release_settings, request.mdb, request.pdb, request.cache))
+        all_mvs = await asyncio.gather(*tasks, return_exceptions=True)
+        for metrics, mvs in zip(calcs.values(), all_mvs):
+            if isinstance(mvs, Exception):
+                raise mvs from None
             assert len(mvs) == len(time_intervals)
             for mv, ts in zip(mvs, time_intervals):
                 assert len(mv) == len(ts) - 1
@@ -279,10 +284,15 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
         tzoffset = timedelta(minutes=-filt.timezone)
         time_from += tzoffset
         time_to += tzoffset
+    tasks = []
+    for_sets = []
     for service, (repos, devs, for_set) in filters:
         devs = devs[ParticipationKind.AUTHOR]  # any key is fine, for example AUTHOR
-        stats = await METRIC_ENTRIES[service]["developers"](
-            devs, repos, topics, time_from, time_to, request.mdb, request.cache)
+        tasks.append(METRIC_ENTRIES[service]["developers"](
+            devs, repos, topics, time_from, time_to, request.mdb, request.cache))
+        for_sets.append(for_set)
+    all_stats = await asyncio.gather(*tasks, return_exceptions=True)
+    for stats, for_set in zip(all_stats, for_sets):
         met.calculated.append(CalculatedDeveloperMetricsItem(
             for_=for_set,
             values=[[getattr(s, DeveloperTopic(t).name) for t in filt.metrics] for s in stats],
