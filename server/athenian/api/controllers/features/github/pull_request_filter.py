@@ -23,8 +23,7 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
     PullRequestMiner, PullRequestTimesMiner, ReviewResolution
-from athenian.api.controllers.miners.github.release import extract_matched_bys_from_releases, \
-    load_releases
+from athenian.api.controllers.miners.github.release import load_releases
 from athenian.api.controllers.miners.types import MinedPullRequest, Participants, Property, \
     PullRequestListItem, PullRequestTimes
 from athenian.api.controllers.settings import ReleaseMatchSetting
@@ -305,7 +304,7 @@ async def filter_pull_requests(properties: Set[Property],
             for r in (prs, releases):
                 if isinstance(r, Exception):
                     raise r from None
-            matched_bys = extract_matched_bys_from_releases(releases)
+            releases, matched_bys = releases
             dfs = await PullRequestMiner.mine_by_ids(
                 prs, now, releases, matched_bys, default_branches,
                 release_settings, mdb, pdb, cache)
