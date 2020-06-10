@@ -43,7 +43,7 @@ def patch_pandas():
     Block.ftype = property(fast_ftype)
 
     original_get_take_nd_function = algorithms._get_take_nd_function
-    cached_get_take_nd_function = lru_cache(algorithms._get_take_nd_function)
+    cached_get_take_nd_function = lru_cache()(algorithms._get_take_nd_function)
 
     def _get_take_nd_function(ndim: int, arr_dtype, out_dtype, axis: int = 0, mask_info=None):
         if mask_info is None or not mask_info[1]:
@@ -52,4 +52,4 @@ def patch_pandas():
 
     algorithms._get_take_nd_function = _get_take_nd_function
 
-    datetimes._validate_dt64_dtype = lru_cache(datetimes._validate_dt64_dtype)
+    datetimes._validate_dt64_dtype = lru_cache()(datetimes._validate_dt64_dtype)

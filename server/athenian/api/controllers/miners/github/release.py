@@ -379,11 +379,12 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     pr_releases = precomputed_pr_releases
     merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
     missed_released_prs = await _map_prs_to_releases(merged_prs, releases, mdb, pdb, cache)
-    still_unreleased = merged_prs.loc[merged_prs.index.difference(missed_released_prs.index)]
     set_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
-    set_pdb_misses(pdb, "map_prs_to_releases/unreleased", len(still_unreleased))
+    set_pdb_misses(pdb, "map_prs_to_releases/unreleased",
+                   len(merged_prs) - len(missed_released_prs))
     await update_unreleased_prs(
-        still_unreleased, releases, matched_bys, default_branches, release_settings, pdb)
+        merged_prs, missed_released_prs, releases, matched_bys, default_branches,
+        release_settings, pdb)
     return pr_releases.append(missed_released_prs)
 
 

@@ -104,3 +104,5 @@ class GitHubMergedPullRequest(Base, UpdatedMixin):
     merged_at = Column(TIMESTAMP(timezone=True), nullable=False)
     repository_full_name = Column(RepositoryFullName, nullable=False)
     checked_releases = Column(JHSTORE, nullable=False, server_default="")
+    author = Column(CHAR(100))  # can be null, see @ghost
+    merger = Column(CHAR(100))  # @ghost can merge, too

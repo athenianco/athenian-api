@@ -2,18 +2,19 @@ import asyncio
 from datetime import datetime, timezone
 import logging
 import pickle
-from typing import Any, Collection, Dict, Iterable, List, Optional, Set
+from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Set
 
 import aiomcache
 import databases
 from dateutil.rrule import DAILY, rrule
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, insert, or_, select
+from sqlalchemy import and_, insert, join, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
+from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
@@ -28,17 +29,17 @@ from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitH
 from athenian.api.tracing import sentry_span
 
 
-def _create_common_filters(date_from: datetime,
-                           date_to: datetime,
+def _create_common_filters(time_from: datetime,
+                           time_to: datetime,
                            repos: Collection[str]) -> List[ClauseElement]:
-    assert isinstance(date_from, datetime)
-    assert isinstance(date_to, datetime)
+    assert isinstance(time_from, datetime)
+    assert isinstance(time_to, datetime)
     ghprt = GitHubPullRequestTimes
     return [
         ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
         ghprt.repository_full_name.in_(repos),
-        ghprt.pr_created_at < date_to,
-        ghprt.pr_done_at >= date_from,
+        ghprt.pr_created_at < time_to,
+        ghprt.pr_done_at >= time_from,
     ]
 
 
@@ -74,8 +75,8 @@ def _check_release_match(repo: str,
 
 
 @sentry_span
-async def load_precomputed_done_candidates(date_from: datetime,
-                                           date_to: datetime,
+async def load_precomputed_done_candidates(time_from: datetime,
+                                           time_to: datetime,
                                            repos: Collection[str],
                                            default_branches: Dict[str, str],
                                            release_settings: Dict[str, ReleaseMatchSetting],
@@ -90,7 +91,7 @@ async def load_precomputed_done_candidates(date_from: datetime,
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match]
-    filters = _create_common_filters(date_from, date_to, repos)
+    filters = _create_common_filters(time_from, time_to, repos)
     rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
     result = set()
@@ -106,9 +107,63 @@ async def load_precomputed_done_candidates(date_from: datetime,
     return result
 
 
+def _build_participants_filters(participants: Participants,
+                                filters: list,
+                                selected: list,
+                                postgres: bool) -> None:
+    ghprt = GitHubPullRequestTimes
+    if postgres:
+        developer_filters_single = []
+        for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
+                        (ghprt.merger, ParticipationKind.MERGER),
+                        (ghprt.releaser, ParticipationKind.RELEASER)):
+            col_parts = participants.get(pk)
+            if not col_parts:
+                continue
+            developer_filters_single.append(col.in_(col_parts))
+        # do not send the same array several times
+        for f in developer_filters_single[1:]:
+            f.right = developer_filters_single[0].right
+        developer_filters_multiple = []
+        for col, pk in ((ghprt.commenters, ParticipationKind.COMMENTER),
+                        (ghprt.reviewers, ParticipationKind.REVIEWER),
+                        (ghprt.commit_authors, ParticipationKind.COMMIT_AUTHOR),
+                        (ghprt.commit_committers, ParticipationKind.COMMIT_COMMITTER)):
+            col_parts = participants.get(pk)
+            if not col_parts:
+                continue
+            developer_filters_multiple.append(col.has_any(col_parts))
+        # do not send the same array several times
+        for f in developer_filters_multiple[1:]:
+            f.right = developer_filters_multiple[0].right
+        filters.append(or_(*developer_filters_single, *developer_filters_multiple))
+    else:
+        selected.extend([
+            ghprt.author, ghprt.merger, ghprt.releaser, ghprt.reviewers, ghprt.commenters,
+            ghprt.commit_authors, ghprt.commit_committers])
+
+
+def _check_participants(row: Mapping, participants: Participants) -> bool:
+    ghprt = GitHubPullRequestTimes
+    for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
+                    (ghprt.merger, ParticipationKind.MERGER),
+                    (ghprt.releaser, ParticipationKind.RELEASER)):
+        dev = row[col.key]
+        if dev and dev in participants.get(pk, set()):
+            return True
+    for col, pk in ((ghprt.reviewers, ParticipationKind.REVIEWER),
+                    (ghprt.commenters, ParticipationKind.COMMENTER),
+                    (ghprt.commit_authors, ParticipationKind.COMMIT_AUTHOR),
+                    (ghprt.commit_committers, ParticipationKind.COMMIT_COMMITTER)):
+        devs = set(row[col.key])
+        if devs.intersection(participants.get(pk, set())):
+            return True
+    return False
+
+
 @sentry_span
-async def load_precomputed_done_times(date_from: datetime,
-                                      date_to: datetime,
+async def load_precomputed_done_times(time_from: datetime,
+                                      time_to: datetime,
                                       repos: Collection[str],
                                       participants: Participants,
                                       default_branches: Dict[str, str],
@@ -123,43 +178,15 @@ async def load_precomputed_done_times(date_from: datetime,
                 ghprt.repository_full_name,
                 ghprt.release_match,
                 ghprt.data]
-    filters = _create_common_filters(date_from, date_to, repos)
+    filters = _create_common_filters(time_from, time_to, repos)
     if len(participants) > 0:
-        if postgres:
-            developer_filters_single = []
-            for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
-                            (ghprt.merger, ParticipationKind.MERGER),
-                            (ghprt.releaser, ParticipationKind.RELEASER)):
-                col_parts = participants.get(pk)
-                if not col_parts:
-                    continue
-                developer_filters_single.append(col.in_(col_parts))
-            # do not send the same array several times
-            for f in developer_filters_single[1:]:
-                f.right = developer_filters_single[0].right
-            developer_filters_multiple = []
-            for col, pk in ((ghprt.commenters, ParticipationKind.COMMENTER),
-                            (ghprt.reviewers, ParticipationKind.REVIEWER),
-                            (ghprt.commit_authors, ParticipationKind.COMMIT_AUTHOR),
-                            (ghprt.commit_committers, ParticipationKind.COMMIT_COMMITTER)):
-                col_parts = participants.get(pk)
-                if not col_parts:
-                    continue
-                developer_filters_multiple.append(col.has_any(col_parts))
-            # do not send the same array several times
-            for f in developer_filters_multiple[1:]:
-                f.right = developer_filters_multiple[0].right
-            filters.append(or_(*developer_filters_single, *developer_filters_multiple))
-        else:
-            selected.extend([
-                ghprt.author, ghprt.merger, ghprt.releaser, ghprt.reviewers, ghprt.commenters,
-                ghprt.commit_authors, ghprt.commit_committers])
+        _build_participants_filters(participants, filters, selected, postgres)
     if exclude_inactive:
         # timezones: date_from and date_to may be not exactly 00:00
         date_from_day = datetime.combine(
-            date_from.date(), datetime.min.time(), tzinfo=timezone.utc)
+            time_from.date(), datetime.min.time(), tzinfo=timezone.utc)
         date_to_day = datetime.combine(
-            date_to.date(), datetime.min.time(), tzinfo=timezone.utc)
+            time_to.date(), datetime.min.time(), tzinfo=timezone.utc)
         # date_to_day will be included
         date_range = rrule(DAILY, dtstart=date_from_day, until=date_to_day)
         if postgres:
@@ -177,26 +204,8 @@ async def load_precomputed_done_times(date_from: datetime,
         if dump is None:
             continue
         if not postgres:
-            if len(participants) > 0:
-                passed = False
-                for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
-                                (ghprt.merger, ParticipationKind.MERGER),
-                                (ghprt.releaser, ParticipationKind.RELEASER)):
-                    dev = row[col.key]
-                    if dev and dev in participants.get(pk, set()):
-                        passed = True
-                        break
-                if not passed:
-                    for col, pk in ((ghprt.reviewers, ParticipationKind.REVIEWER),
-                                    (ghprt.commenters, ParticipationKind.COMMENTER),
-                                    (ghprt.commit_authors, ParticipationKind.COMMIT_AUTHOR),
-                                    (ghprt.commit_committers, ParticipationKind.COMMIT_COMMITTER)):
-                        devs = set(row[col.key])
-                        if devs.intersection(participants.get(pk, set())):
-                            passed = True
-                            break
-                if not passed:
-                    continue
+            if len(participants) > 0 and not _check_participants(row, participants):
+                continue
             if exclude_inactive:
                 activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
                                  for d in row[ghprt.activity_days.key]}
@@ -418,26 +427,37 @@ async def discover_unreleased_prs(prs: pd.DataFrame,
 
 
 @sentry_span
-async def update_unreleased_prs(prs: pd.DataFrame,
+async def update_unreleased_prs(merged_prs: pd.DataFrame,
+                                released_prs: pd.DataFrame,
                                 releases: pd.DataFrame,
                                 matched_bys: Dict[str, ReleaseMatch],
                                 default_branches: Dict[str, str],
                                 release_settings: Dict[str, ReleaseMatchSetting],
                                 pdb: databases.Database) -> None:
-    """Append new releases which do *not* include the specified PRs."""
+    """
+    Append new releases which do *not* include the specified merged PRs.
+
+    :param merged_prs: Merged PRs to update in the pdb.
+    :param released_prs: Released PR, we shouldn't write their releases in the pdb. However, \
+                         any earlier release in `releases` should be appended.
+    :param releases: All the releases that were considered in mapping `merged_prs` to \
+                     `released_prs`.
+    """
     updates = []
     prefix = PREFIXES["github"]
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     if not postgres:
         assert pdb.url.dialect == "sqlite"
-    for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.key, sort=False):
+    release_dates_by_pr = dict(zip(released_prs.index, released_prs[Release.published_at.key]))
+    for repo, repo_prs in merged_prs.groupby(PullRequest.repository_full_name.key, sort=False):
         try:
             matched_by = matched_bys[repo]
         except KeyError:
             # no new releases
             continue
-        repo_releases = {r: "" for r in releases[Release.id.key].take(
-            np.where(releases[Release.repository_full_name.key] == repo)[0])}
+        repo_releases = releases[[Release.id.key, Release.published_at.key]].take(
+            np.where(releases[Release.repository_full_name.key] == repo)[0])
+        repo_releases_dict = {r: "" for r in repo_releases[Release.id.key].values}
         release_setting = release_settings[prefix + repo]
         if matched_by == ReleaseMatch.tag:
             release_match = "tag|" + release_setting.tags
@@ -461,16 +481,88 @@ async def update_unreleased_prs(prs: pd.DataFrame,
             # this is wrong but we just cannot update SQLite properly
             # nothing will break though
             sql = insert(GitHubMergedPullRequest).prefix_with("OR REPLACE")
-        values = [
-            GitHubMergedPullRequest(pr_node_id=node_id, release_match=release_match,
-                                    repository_full_name=repo, checked_releases=repo_releases,
-                                    merged_at=merged_at)
-            .create_defaults().explode(with_primary_keys=True)
-            for node_id, merged_at in zip(repo_prs.index.values,
-                                          repo_prs[PullRequest.merged_at.key])
-        ]
+        values = []
+        for node_id, merged_at, author, merger in zip(
+                repo_prs.index.values, repo_prs[PullRequest.merged_at.key],
+                repo_prs[PullRequest.user_login.key].values,
+                repo_prs[PullRequest.merged_by_login.key].values):
+            release_date = release_dates_by_pr.get(node_id)
+            if release_date is None:
+                pr_releases = repo_releases_dict
+            else:
+                pr_releases = {
+                    r: "" for r in repo_releases[Release.id.key].values[
+                        repo_releases[Release.published_at.key] < release_date]
+                }
+            values.append(GitHubMergedPullRequest(
+                pr_node_id=node_id,
+                release_match=release_match,
+                repository_full_name=repo,
+                checked_releases=pr_releases,
+                merged_at=merged_at,
+                author=author,
+                merger=merger,
+            ).create_defaults().explode(with_primary_keys=True))
         updates.append(pdb.execute_many(sql, values))
     errors = await asyncio.gather(*updates, return_exceptions=True)
     for r in errors:
         if isinstance(r, Exception):
             raise r from None
+
+
+@sentry_span
+@cached(
+    exptime=60 * 60,  # 1 hour
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda time_from, time_to, repos, participants, default_branches, release_settings, **_: (
+        time_from.timestamp(), time_to.timestamp(), ",".join(sorted(repos)),
+        sorted((k.name.lower(), sorted(v)) for k, v in participants.items()),
+        sorted(default_branches.items()), release_settings,
+    ),
+    refresh_on_access=True,
+)
+async def load_old_merged_unreleased_prs(time_from: datetime,
+                                         time_to: datetime,
+                                         repos: Collection[str],
+                                         participants: Participants,
+                                         default_branches: Dict[str, str],
+                                         release_settings: Dict[str, ReleaseMatchSetting],
+                                         mdb: databases.Database,
+                                         pdb: databases.Database,
+                                         cache: Optional[aiomcache.Client],
+                                         ) -> pd.DataFrame:
+    """Discover PRs which were merged before `time_from` and still not released."""
+    selected = [GitHubMergedPullRequest.pr_node_id,
+                GitHubMergedPullRequest.repository_full_name,
+                GitHubMergedPullRequest.release_match]
+    filters = [
+        or_(GitHubPullRequestTimes.pr_done_at.is_(None),
+            GitHubPullRequestTimes.pr_done_at >= time_to),
+        GitHubMergedPullRequest.repository_full_name.in_(repos),
+        GitHubMergedPullRequest.merged_at < time_from,
+    ]
+    for role, col in ((ParticipationKind.AUTHOR, GitHubMergedPullRequest.author),
+                      (ParticipationKind.MERGER, GitHubMergedPullRequest.merger)):
+        people = participants.get(role)
+        if people:
+            filters.append(col.in_(people))
+    body = join(GitHubMergedPullRequest, GitHubPullRequestTimes, and_(
+        GitHubPullRequestTimes.pr_node_id == GitHubMergedPullRequest.pr_node_id,
+        GitHubPullRequestTimes.release_match == GitHubMergedPullRequest.release_match,
+        GitHubPullRequestTimes.repository_full_name.in_(repos),
+        GitHubPullRequestTimes.pr_created_at < time_from,
+    ), isouter=True)
+    rows = await pdb.fetch_all(select(selected).select_from(body).where(and_(*filters)))
+    prefix = PREFIXES["github"]
+    ambiguous = {ReleaseMatch.tag.name: set(), ReleaseMatch.branch.name: set()}
+    node_ids = []
+    for row in rows:
+        dump = _check_release_match(
+            row[1], row[2], release_settings, default_branches, prefix, "whatever", ambiguous)
+        if dump is None:
+            continue
+        # we do not care about the exact release match
+        node_ids.append(row[0])
+    return await read_sql_query(select([PullRequest]).where(PullRequest.node_id.in_(node_ids)),
+                                mdb, PullRequest, index=PullRequest.node_id.key)
