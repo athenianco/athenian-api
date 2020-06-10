@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -243,10 +244,14 @@ async def calc_developer_metrics(devs: Sequence[str],
     assert isinstance(time_from, datetime) and time_from.tzinfo.utcoffset(time_from) == zerotd
     assert isinstance(time_to, datetime) and time_to.tzinfo.utcoffset(time_to) == zerotd
     stats_by_dev = defaultdict(dict)
-    async with db.connection() as conn:
-        for key, setter in processors:
-            if key.intersection(topics):
-                await setter(stats_by_dev, topics, devs, repos, time_from, time_to, conn, cache)
+    tasks = []
+    for key, setter in processors:
+        if key.intersection(topics):
+            tasks.append(setter(stats_by_dev, topics, devs, repos, time_from, time_to, db, cache))
+    errors = await asyncio.gather(*tasks, return_exceptions=True)
+    for err in errors:
+        if isinstance(err, Exception):
+            raise err from None
     return [DeveloperStats(**stats_by_dev[dev]) for dev in devs]
 
 
