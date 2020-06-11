@@ -305,7 +305,7 @@ async def filter_pull_requests(properties: Set[Property],
                     raise r from None
             releases, matched_bys = releases
             dfs = await PullRequestMiner.mine_by_ids(
-                prs, now, releases, matched_bys, default_branches,
+                prs, [], now, releases, matched_bys, default_branches,
                 release_settings, mdb, pdb, cache)
             prs_today = list(PullRequestMiner(prs, *dfs))
         else:

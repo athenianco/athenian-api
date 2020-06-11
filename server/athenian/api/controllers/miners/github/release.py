@@ -28,7 +28,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
     new_released_prs_df
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
-from athenian.api.db import add_pdb_hits, add_pdb_misses, set_pdb_hits, set_pdb_misses
+from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, PullRequest, PushCommit, Release, User
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
@@ -374,13 +374,13 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     for r in (unreleased_prs, precomputed_pr_releases):
         if isinstance(r, Exception):
             raise r from None
-    set_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
-    set_pdb_hits(pdb, "map_prs_to_releases/unreleased", len(unreleased_prs))
+    add_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
+    add_pdb_hits(pdb, "map_prs_to_releases/unreleased", len(unreleased_prs))
     pr_releases = precomputed_pr_releases
     merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
     missed_released_prs = await _map_prs_to_releases(merged_prs, releases, mdb, pdb, cache)
-    set_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
-    set_pdb_misses(pdb, "map_prs_to_releases/unreleased",
+    add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
+    add_pdb_misses(pdb, "map_prs_to_releases/unreleased",
                    len(merged_prs) - len(missed_released_prs))
     await update_unreleased_prs(
         merged_prs, missed_released_prs, releases, matched_bys, default_branches,
@@ -764,6 +764,7 @@ async def _extract_released_commits(releases: pd.DataFrame,
     resolved_releases = set()
     hash_to_release = {h: rid for rid, h in zip(releases.index, releases[Release.sha.key].values)}
     new_releases = releases[releases[Release.published_at.key] >= time_boundary]
+    assert not new_releases.empty, "you must check this before calling me"
     boundary_releases = set()
     dag = await _fetch_commit_history_dag(
         pdag, repo,
@@ -850,12 +851,13 @@ async def map_releases_to_prs(repos: Iterable[str],
     assert isinstance(pdb, databases.Database)
 
     matched_bys, pdags, releases, releases_new = await _find_releases_for_matching_prs(
-        repos, time_to, time_from, branches, default_branches, release_settings, pdb, mdb, cache)
+        repos, time_from, time_to, branches, default_branches, release_settings, pdb, mdb, cache)
     prs = []
     for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
-        prs.append(_find_old_released_prs(
-            repo_releases, pdags.get(repo), time_from, authors, mergers, pr_blacklist,
-            mdb, pdb, cache))
+        if (repo_releases[Release.published_at.key] >= time_from).any():
+            prs.append(_find_old_released_prs(
+                repo_releases, pdags.get(repo), time_from, authors, mergers, pr_blacklist,
+                mdb, pdb, cache))
     if prs:
         prs = await asyncio.gather(*prs, return_exceptions=True)
         for pr in prs:
@@ -874,7 +876,7 @@ async def map_releases_to_prs(repos: Iterable[str],
     )
 
 
-async def _find_releases_for_matching_prs(repos, time_to, time_from, branches, default_branches,
+async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, default_branches,
                                           release_settings, pdb, mdb, cache):
     # we have to load releases in two separate batches: before and after time_from
     # that's because the release strategy can change depending on the time range
@@ -957,6 +959,7 @@ async def mine_releases(releases: pd.DataFrame,
     miners = (
         _mine_monorepo_releases(repo_releases, pdags.get(repo), time_boundary, mdb, pdb, cache)
         for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False)
+        if (repo_releases[Release.published_at.key] >= time_boundary).any()
     )
     stats = await asyncio.gather(*miners, return_exceptions=True)
     for s in stats:

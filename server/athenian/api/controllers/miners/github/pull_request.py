@@ -17,6 +17,8 @@ from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.github.hardcoded import BOTS
+from athenian.api.controllers.miners.github.precomputed_prs import \
+    load_inactive_merged_unreleased_prs
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
 from athenian.api.controllers.miners.types import DT, Fallback, MinedPullRequest, Participants, \
@@ -127,26 +129,35 @@ class PullRequestMiner:
             return await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
                                         mdb, PullRequest, index=PullRequest.node_id.key)
 
-        prs, released = await asyncio.gather(
+        tasks = [
             fetch_prs(),
             map_releases_to_prs(
                 repositories, branches, default_branches, time_from, time_to,
                 participants.get(ParticipationKind.AUTHOR, []),
                 participants.get(ParticipationKind.MERGER, []),
                 release_settings, mdb, pdb, cache, pr_blacklist),
-            return_exceptions=True)
-        for r in (prs, released):
+        ]
+        if not exclude_inactive:
+            tasks.append(load_inactive_merged_unreleased_prs(
+                time_from, time_to, repositories, participants, default_branches,
+                release_settings, mdb, pdb, cache))
+        else:
+            async def dummy_unreleased():
+                return pd.DataFrame()
+            tasks.append(dummy_unreleased())
+        prs, released, unreleased = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in (prs, released, unreleased):
             if isinstance(r, Exception):
                 raise r from None
         released_prs, releases, matched_bys = released
-        prs = pd.concat([prs, released_prs], copy=False)
+        prs = pd.concat([prs, released_prs, unreleased], copy=False)
         prs = prs[~prs.index.duplicated()]
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
         cls._truncate_timestamps(prs, time_to)
         # bypass the useless inner caching by calling __wrapped__ directly
         with sentry_sdk.start_span(op="PullRequestMiner.mine_by_ids.__wrapped__"):
             dfs = await cls.mine_by_ids.__wrapped__(
-                cls, prs, time_to, releases, matched_bys, default_branches,
+                cls, prs, unreleased.index, time_to, releases, matched_bys, default_branches,
                 release_settings, mdb, pdb, cache)
         dfs = [prs, *dfs]
         cls._drop(dfs, cls._find_drop_by_participants(dfs, participants))
@@ -162,12 +173,14 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda prs, releases, time_to, **_: (
-            ",".join(prs.index), ",".join(releases[Release.id.key].values), time_to.timestamp(),
+        key=lambda prs, unreleased, releases, time_to, **_: (
+            ",".join(prs.index), ",".join(unreleased),
+            ",".join(releases[Release.id.key].values), time_to.timestamp(),
         ),
     )
     async def mine_by_ids(cls,
                           prs: pd.DataFrame,
+                          unreleased: Collection[str],
                           time_to: datetime,
                           releases: pd.DataFrame,
                           matched_bys: Dict[str, ReleaseMatch],
@@ -220,7 +233,8 @@ class PullRequestMiner:
 
         @sentry_span
         async def map_releases():
-            merged_prs = prs[prs[PullRequest.merged_at.key] <= time_to]
+            merged_prs = prs.take(np.where(
+                (prs[PullRequest.merged_at.key] <= time_to) & ~prs.index.isin(unreleased))[0])
             return await map_prs_to_releases(
                 merged_prs, releases, matched_bys, default_branches, time_to, release_settings,
                 mdb, pdb, cache)

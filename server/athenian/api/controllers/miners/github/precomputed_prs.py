@@ -22,6 +22,7 @@ from athenian.api.controllers.miners.types import MinedPullRequest, Participants
     ParticipationKind, PullRequestTimes
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
+from athenian.api.db import add_pdb_hits
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewRequest, Release
@@ -522,16 +523,16 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
     ),
     refresh_on_access=True,
 )
-async def load_old_merged_unreleased_prs(time_from: datetime,
-                                         time_to: datetime,
-                                         repos: Collection[str],
-                                         participants: Participants,
-                                         default_branches: Dict[str, str],
-                                         release_settings: Dict[str, ReleaseMatchSetting],
-                                         mdb: databases.Database,
-                                         pdb: databases.Database,
-                                         cache: Optional[aiomcache.Client],
-                                         ) -> pd.DataFrame:
+async def load_inactive_merged_unreleased_prs(time_from: datetime,
+                                              time_to: datetime,
+                                              repos: Collection[str],
+                                              participants: Participants,
+                                              default_branches: Dict[str, str],
+                                              release_settings: Dict[str, ReleaseMatchSetting],
+                                              mdb: databases.Database,
+                                              pdb: databases.Database,
+                                              cache: Optional[aiomcache.Client],
+                                              ) -> pd.DataFrame:
     """Discover PRs which were merged before `time_from` and still not released."""
     selected = [GitHubMergedPullRequest.pr_node_id,
                 GitHubMergedPullRequest.repository_full_name,
@@ -564,5 +565,8 @@ async def load_old_merged_unreleased_prs(time_from: datetime,
             continue
         # we do not care about the exact release match
         node_ids.append(row[0])
-    return await read_sql_query(select([PullRequest]).where(PullRequest.node_id.in_(node_ids)),
+    add_pdb_hits(pdb, "inactive_merged_unreleased", len(node_ids))
+    return await read_sql_query(select([PullRequest])
+                                .where(PullRequest.node_id.in_(node_ids))
+                                .order_by(PullRequest.node_id),
                                 mdb, PullRequest, index=PullRequest.node_id.key)
