@@ -48,7 +48,7 @@ def main():
     time_to = datetime.combine(date.today() + timedelta(days=1),
                                datetime.min.time(),
                                tzinfo=timezone.utc)
-    time_from = time_to - timedelta(days=30)
+    time_from = time_to - timedelta(days=365)
 
     async def async_run():
         cache = create_memcached(args.memcached, log)
