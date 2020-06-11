@@ -23,7 +23,9 @@ async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, clie
         body = {
             "for": [
                 {
-                    "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                    "with": {
+                        "author": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                    },
                     "repositories": [
                         "github.com/src-d/go-git",
                     ],
@@ -144,7 +146,7 @@ async def test_calc_metrics_prs_access_denied(client, headers):
     body = {
         "for": [
             {
-                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "with": {"commit_committer": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
                 "repositories": [
                     "github.com/src-d/go-git",
                     "github.com/athenianco/athenian-api",
@@ -165,7 +167,7 @@ async def test_calc_metrics_prs_access_denied(client, headers):
 
 
 @pytest.mark.parametrize(("devs", "date_from"),
-                         ([{"developers": []}, "2019-11-28"], [{}, "2018-09-28"]))
+                         ([{"with": {}}, "2019-11-28"], [{}, "2018-09-28"]))
 async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, headers):
     """https://athenianco.atlassian.net/browse/ENG-126"""
     body = {
@@ -198,13 +200,13 @@ async def test_calc_metrics_prs_nasty_input(client, headers, account, date_to, c
     body = {
         "for": [
             {
-                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "with": {"merger": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
                 "repositories": [
                     "{1}",
                 ],
             },
             {
-                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "with": {"releaser": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
                 "repositories": [
                     "github.com/src-d/go-git",
                 ],
@@ -228,7 +230,7 @@ async def test_calc_metrics_prs_reposet(client, headers):
     body = {
         "for": [
             {
-                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "with": {"author": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
                 "repositories": ["{1}"],
             },
         ],
@@ -264,7 +266,8 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric):
     body = {
         "for": [
             {
-                "developers": ["github.com/vmarkovtsev", "github.com/mcuadros"],
+                "with": {k: ["github.com/vmarkovtsev", "github.com/mcuadros"]
+                         for k in PullRequestWith().openapi_types},
                 "repositories": ["{1}"],
             },
         ],
@@ -294,7 +297,7 @@ async def test_calc_metrics_prs_index_error(client, headers):
     body = {
         "for": [
             {
-                "developers": [],
+                "with": {},
                 "repositories": ["github.com/src-d/go-git"],
             },
         ],
@@ -540,3 +543,35 @@ async def test_developer_metrics_nasty_input(client, headers, account, date_to, 
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == code
+
+
+async def test_developer_metrics_order(client, headers):
+    """https://athenianco.atlassian.net/browse/DEV-247"""
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [
+            {"repositories": ["{1}"], "developers": [
+                "github.com/mcuadros", "github.com/smola"]},
+        ],
+        "metrics": [DeveloperMetricID.PRS_CREATED],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert result.calculated[0].for_.developers == body["for"][0]["developers"]
+    assert result.calculated[0].values == [[14], [8]]
+    body["for"][0]["developers"] = list(reversed(body["for"][0]["developers"]))
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert result.calculated[0].for_.developers == body["for"][0]["developers"]
+    assert result.calculated[0].values == [[8], [14]]

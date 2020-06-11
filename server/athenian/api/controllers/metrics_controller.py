@@ -26,9 +26,9 @@ from athenian.api.models.web.pull_request_metrics_request import PullRequestMetr
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
-#           service                  developers
-Filter = Tuple[str, Tuple[Set[str], Participants, ForSet]]
-#                       repositories             originals
+#           service                          developers
+Filter = Tuple[str, Tuple[Set[str], Union[Participants, List[str]], ForSet]]
+#                       repositories                               originals
 
 
 async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -199,10 +199,11 @@ async def _compile_repos_and_devs(for_sets: List[Union[ForSet, ForSetDevelopers]
                     pointer=".for[%d].repositories" % i,
                     status=HTTPStatus.FORBIDDEN,
                 ))
-            devs = {}
             prefix = PREFIXES[service]
-            if isinstance(for_set, ForSet) and for_set.with_:
-                for k, v in for_set.with_.items():
+            if isinstance(for_set, ForSet):
+                # /metrics/prs
+                devs = {}
+                for k, v in (for_set.with_ or {}).items():
                     if not v:
                         continue
                     devs[ParticipationKind[k.upper()]] = dk = set()
@@ -214,15 +215,15 @@ async def _compile_repos_and_devs(for_sets: List[Union[ForSet, ForSetDevelopers]
                             ))
                         dk.add(dev[len(prefix):])
             else:
-                # DEPRECATED for /metrics/prs but not for /metrics/developers
-                for dev in (for_set.developers or []):
+                # /metrics/developers
+                devs = []
+                for dev in for_set.developers:
                     if not dev.startswith(prefix):
                         raise ResponseError(InvalidRequestError(
                             detail='providers in "developers" and "repositories" do not match',
                             pointer=".for[%d].developers" % i,
                         ))
-                    for pk in ParticipationKind:
-                        devs.setdefault(pk, set()).add(dev[len(prefix):])
+                    devs.append(dev[len(prefix):])
             filters.append((service, (repos, devs, for_set)))
     return filters, all_repos
 
@@ -287,7 +288,6 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     tasks = []
     for_sets = []
     for service, (repos, devs, for_set) in filters:
-        devs = devs[ParticipationKind.AUTHOR]  # any key is fine, for example AUTHOR
         tasks.append(METRIC_ENTRIES[service]["developers"](
             devs, repos, topics, time_from, time_to, request.mdb, request.cache))
         for_sets.append(for_set)
