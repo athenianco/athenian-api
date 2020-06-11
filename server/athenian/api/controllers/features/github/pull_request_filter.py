@@ -227,7 +227,6 @@ class PullRequestListMiner:
         exclude_inactive,
         release_settings,
     ),
-    version=2,
 )
 async def filter_pull_requests(properties: Set[Property],
                                time_from: datetime,

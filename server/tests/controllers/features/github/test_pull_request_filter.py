@@ -63,8 +63,7 @@ async def test_pr_list_miner_match_metrics_all_count(
     assert len(prs) == metric.value
 
 
-async def test_pr_list_miner_release_settings(
-        mdb, pdb, release_match_setting_tag, time_from_to, cache):
+async def test_pr_list_miner_release_settings(mdb, pdb, release_match_setting_tag, cache):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2019, month=1, day=1, tzinfo=timezone.utc)
     prs1 = list(await filter_pull_requests(

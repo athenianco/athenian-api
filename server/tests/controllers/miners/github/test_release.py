@@ -688,3 +688,23 @@ async def test_fetch_first_parents_cache(mdb, pdb, cache):
             datetime(2015, 4, 6),
             datetime(2015, 5, 20),
             None, None, cache)
+
+
+"""
+https://athenianco.atlassian.net/browse/DEV-250
+
+async def test_map_prs_to_releases_miguel(mdb, pdb, release_match_setting_tag, cache):
+    miguel_pr = await read_sql_query(select([PullRequest]).where(PullRequest.number == 907),
+                                     mdb, PullRequest, index=PullRequest.node_id.key)
+    # https://github.com/src-d/go-git/pull/907
+    assert len(miguel_pr) == 1
+    time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
+    releases, matched_bys = await load_releases(
+        ["src-d/go-git"], None, None, time_from, time_to,
+        release_match_setting_tag, mdb, pdb, cache)
+    released_prs = await map_prs_to_releases(
+        miguel_pr, releases, matched_bys, {}, time_to,
+        release_match_setting_tag, mdb, pdb, cache)
+    assert len(released_prs) == 1
+"""
