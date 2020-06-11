@@ -1,11 +1,13 @@
 from datetime import date, datetime, timezone
 
 import pytest
+from sqlalchemy import delete
 
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request_filter import filter_pull_requests
 from athenian.api.controllers.miners.types import ParticipationKind, Property
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.models.precomputed.models import GitHubMergedPullRequest
 from athenian.api.models.web import PullRequestMetricID
 
 
@@ -56,6 +58,7 @@ async def test_pr_list_miner_match_metrics_all_count(
         set(Property), time_from, time_to, {"src-d/go-git"}, {}, False, release_match_setting_tag,
         mdb, pdb, None))
     assert prs
+    await pdb.execute(delete(GitHubMergedPullRequest))  # ignore inactive unreleased
     metric = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_to]],
         {"src-d/go-git"}, {}, False, release_match_setting_tag, mdb, pdb, None,

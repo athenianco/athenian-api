@@ -487,6 +487,7 @@ async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
         mdb, pdb, cache)
     dfs1 = await PullRequestMiner.mine_by_ids(
         prs,
+        [],
         time_to,
         releases,
         matched_bys,
@@ -498,6 +499,7 @@ async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
     )
     dfs2 = await PullRequestMiner.mine_by_ids(
         prs,
+        [],
         time_to,
         releases,
         matched_bys,
@@ -541,3 +543,29 @@ async def test_pr_miner_exclude_inactive(
         "MDExOlB1bGxSZXF1ZXN0MTAwNjQ5MDk4", "MDExOlB1bGxSZXF1ZXN0MTAwNjU5OTI4",
         "MDExOlB1bGxSZXF1ZXN0OTg1NTIxMTc=", "MDExOlB1bGxSZXF1ZXN0OTUyMzA0Njg=",
     }
+
+
+async def test_pr_miner_unreleased_pdb(mdb, pdb, release_match_setting_tag):
+    time_from = datetime(2018, 11, 1, tzinfo=timezone.utc)
+    time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
+    miner_incomplete = await PullRequestMiner.mine(
+        time_from.date(), time_to.date(), time_from, time_to,
+        {"src-d/go-git"}, {}, None, {}, False,
+        release_match_setting_tag, mdb, pdb, None)
+    time_from_lookback = time_from - timedelta(days=60)
+    # populate pdb
+    await PullRequestMiner.mine(
+        time_from_lookback.date(), time_to.date(), time_from_lookback, time_to,
+        {"src-d/go-git"}, {}, None, {}, False,
+        release_match_setting_tag, mdb, pdb, None)
+    miner_complete = await PullRequestMiner.mine(
+        time_from.date(), time_to.date(), time_from, time_to,
+        {"src-d/go-git"}, {}, None, {}, False,
+        release_match_setting_tag, mdb, pdb, None)
+    assert len(miner_incomplete._prs) == 19
+    assert len(miner_complete._prs) == 19 + 42
+    miner_active = await PullRequestMiner.mine(
+        time_from.date(), time_to.date(), time_from, time_to,
+        {"src-d/go-git"}, {}, None, {}, True,
+        release_match_setting_tag, mdb, pdb, None)
+    assert len(miner_active._prs) <= 19
