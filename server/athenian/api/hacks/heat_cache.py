@@ -83,17 +83,21 @@ def main():
                         tags=".*",
                         match=ReleaseMatch.tag_or_branch,
                     )
-            await calc_pull_request_metrics_line_github(
-                ["pr-lead-time"],
-                [[time_from, time_to]],
-                repos,
-                {},
-                False,
-                settings,
-                mdb,
-                pdb,
-                cache,
-            )
+            sentry_sdk.add_breadcrumb(category="account", message=str(reposet.owner), level="info")
+            try:
+                await calc_pull_request_metrics_line_github(
+                    ["pr-lead-time"],
+                    [[time_from, time_to]],
+                    repos,
+                    {},
+                    False,
+                    settings,
+                    mdb,
+                    pdb,
+                    cache,
+                )
+            except Exception as e:
+                sentry_sdk.capture_exception(e)
 
     asyncio.run(async_run())
 
