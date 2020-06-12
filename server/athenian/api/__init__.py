@@ -411,6 +411,10 @@ def setup_context(log: logging.Logger) -> None:
             return None
         return event
 
+    if sentry_env != "development":
+        traces_sample_rate = float(os.getenv("SENTRY_SAMPLING_RATE", "0.1"))
+    else:
+        traces_sample_rate = 0
     sentry_sdk.init(
         environment=sentry_env,
         dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),
@@ -422,7 +426,7 @@ def setup_context(log: logging.Logger) -> None:
         attach_stacktrace=True,
         request_bodies="medium",
         release="%s@%s" % (metadata.__package__, metadata.__version__),
-        traces_sample_rate=float(os.getenv("SENTRY_SAMPLING_RATE", "0.1")),
+        traces_sample_rate=traces_sample_rate,
         before_send=filter_sentry_events,
     )
     sentry_sdk.utils.MAX_STRING_LENGTH = 2048
