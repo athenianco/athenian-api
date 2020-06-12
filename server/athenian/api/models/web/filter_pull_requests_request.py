@@ -184,6 +184,9 @@ class FilterPullRequestsRequest(Model):
 
         :param properties: The properties of this FilterPullRequestsRequest.
         """
+        if properties is None:
+            raise ValueError("Invalid value for `properties`, must not be `None`")
+
         for stage in properties:
             if stage not in PullRequestProperty:
                 raise ValueError("Invalid property: %s" % stage)

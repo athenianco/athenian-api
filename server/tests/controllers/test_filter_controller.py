@@ -177,7 +177,7 @@ async def test_filter_prs_all_properties(client, headers):
     del body["properties"]
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, set(PullRequestProperty), {}, time_to)
+    assert response.status == 400
 
 
 async def test_filter_prs_shot(client, headers):
