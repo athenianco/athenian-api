@@ -179,7 +179,7 @@ class FilterContributorsRequest(Model):
 
         :param as_: The as_ of this FilterContributorsRequest.
         """
-        allowed_values = [
+        allowed_values = {
             "author",
             "reviewer",
             "commit_author",
@@ -187,12 +187,12 @@ class FilterContributorsRequest(Model):
             "commenter",
             "merger",
             "releaser",
-        ]  # noqa: E501
-        if not set(as_).issubset(set(allowed_values)):
+        }
+        if not set(as_).issubset(allowed_values):
             raise ValueError(
-                "Invalid values for `as_` [{0}], must be a subset of [{1}]".format(
-                    ", ".join(map(str, set(as_) - set(allowed_values))),
-                    ", ".join(map(str, allowed_values)),
+                "Invalid values for `as_` [%s], must be a subset of [%s]" % (
+                    ", ".join(set(as_) - allowed_values),
+                    ", ".join(allowed_values),
                 ),
             )
 
