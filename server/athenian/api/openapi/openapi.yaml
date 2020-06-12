@@ -2247,6 +2247,7 @@ components:
       - date_from
       - date_to
       - in
+      - properties
       - exclude_inactive
       type: object
     PullRequestProperty:
