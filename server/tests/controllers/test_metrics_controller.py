@@ -35,6 +35,7 @@ async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, clie
             "date_from": "2015-10-13",
             "date_to": "2020-01-23",
             "granularities": ["week"],
+            "exclude_inactive": False,
             "account": 1,
         }
         response = await client.request(
@@ -82,6 +83,7 @@ async def test_calc_metrics_prs_all_time(client, headers):
         "date_to": "2019-03-15",
         "timezone": 60,
         "granularities": ["day", "week", "month"],
+        "exclude_inactive": False,
         "account": 1,
     }
     response = await client.request(
@@ -157,6 +159,7 @@ async def test_calc_metrics_prs_access_denied(client, headers):
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
         "granularities": ["month"],
+        "exclude_inactive": False,
         "account": 1,
     }
     response = await client.request(
@@ -180,6 +183,7 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
             ],
         }],
         "granularities": ["month"],
+        "exclude_inactive": False,
         "account": 1,
         "metrics": list(PullRequestMetricID),
     }
@@ -216,6 +220,7 @@ async def test_calc_metrics_prs_nasty_input(client, headers, account, date_to, c
         "date_from": "2015-10-13",
         "date_to": date_to,
         "granularities": ["week"],
+        "exclude_inactive": False,
         "account": account,
     }
     response = await client.request(
@@ -238,6 +243,7 @@ async def test_calc_metrics_prs_reposet(client, headers):
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularities": ["all"],
+        "exclude_inactive": False,
         "account": 1,
     }
     response = await client.request(
@@ -275,6 +281,7 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric):
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularities": ["month"],
+        "exclude_inactive": False,
         "account": 1,
     }
     response = await client.request(
@@ -309,6 +316,7 @@ async def test_calc_metrics_prs_index_error(client, headers):
         "date_from": "2019-02-25",
         "date_to": "2019-02-28",
         "granularities": ["week"],
+        "exclude_inactive": False,
         "account": 1,
     }
     response = await client.request(
@@ -328,6 +336,7 @@ async def test_calc_metrics_prs_ratio_flow(client, headers):
             ],
         }],
         "granularities": ["month"],
+        "exclude_inactive": False,
         "account": 1,
         "metrics": [PullRequestMetricID.PR_FLOW_RATIO, PullRequestMetricID.PR_OPENED,
                     PullRequestMetricID.PR_CLOSED],
