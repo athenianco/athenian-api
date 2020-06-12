@@ -25,6 +25,7 @@ from athenian.api.models.web import Commit, CommitSignature, CommitsList, Invali
 from athenian.api.models.web.developer_summary import DeveloperSummary
 from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
+from athenian.api.models.web.filter_contributors_request import FilterContributorsRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
 from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.filtered_releases import FilteredReleases
@@ -42,7 +43,7 @@ from athenian.api.response import model_response, ResponseError
 async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find developers that made an action within the given timeframe."""
     try:
-        filt = GenericFilterRequest.from_dict(body)  # type: GenericFilterRequest
+        filt = FilterContributorsRequest.from_dict(body)  # type: FilterContributorsRequest
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response

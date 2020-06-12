@@ -23,6 +23,7 @@ from athenian.api.models.web.developer_metrics_request import DeveloperMetricsRe
 from athenian.api.models.web.developer_summary import DeveloperSummary
 from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
+from athenian.api.models.web.filter_contributors_request import FilterContributorsRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
 from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.filtered_releases import FilteredReleases
