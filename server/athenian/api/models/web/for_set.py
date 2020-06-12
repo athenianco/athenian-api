@@ -10,29 +10,24 @@ class ForSet(Model):
     def __init__(
         self,
         repositories: Optional[List[str]] = None,
-        developers: Optional[List[str]] = None,
         with_: Optional[PullRequestWith] = None,
     ):
         """ForSet - a model defined in OpenAPI
 
         :param repositories: The repositories of this ForSet.
-        :param developers: The developers of this ForSet.
         :param with_: The with of this ForSet.
         """
         self.openapi_types = {
             "repositories": List[str],
-            "developers": List[str],
             "with_": PullRequestWith,
         }
 
         self.attribute_map = {
             "repositories": "repositories",
-            "developers": "developers",
             "with_": "with",
         }
 
         self._repositories = repositories
-        self._developers = developers or []
         self._with_ = with_
 
     @property
@@ -53,25 +48,6 @@ class ForSet(Model):
             raise ValueError("Invalid value for `repositories`, must not be `None`")
 
         self._repositories = repositories
-
-    @property
-    def developers(self) -> List[str]:
-        """Gets the developers of this ForSet.
-
-        :return: The developers of this ForSet.
-        """
-        return self._developers
-
-    @developers.setter
-    def developers(self, developers: List[str]):
-        """Sets the developers of this ForSet.
-
-        :param developers: The developers of this ForSet.
-        """
-        if developers is None:
-            raise ValueError("Invalid value for `developers`, must not be `None`")
-
-        self._developers = developers
 
     @property
     def with_(self) -> PullRequestWith:

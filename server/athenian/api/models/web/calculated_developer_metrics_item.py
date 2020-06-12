@@ -1,21 +1,21 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.for_set import ForSet
+from athenian.api.models.web.for_set_developers import ForSetDevelopers
 
 
 class CalculatedDeveloperMetricsItem(Model):
     """Measured developer metrics for each `DeveloperMetricsRequest.for`."""
 
     def __init__(self,
-                 for_: Optional[ForSet] = None,
+                 for_: Optional[ForSetDevelopers] = None,
                  values: Optional[List[List[object]]] = None):
         """CalculatedDeveloperMetricsItem - a model defined in OpenAPI
 
         :param for_: The for_ of this CalculatedDeveloperMetricsItem.
         :param values: The values of this CalculatedDeveloperMetricsItem.
         """
-        self.openapi_types = {"for_": ForSet, "values": List[List[object]]}
+        self.openapi_types = {"for_": ForSetDevelopers, "values": List[List[object]]}
 
         self.attribute_map = {"for_": "for", "values": "values"}
 
@@ -23,7 +23,7 @@ class CalculatedDeveloperMetricsItem(Model):
         self._values = values
 
     @property
-    def for_(self) -> ForSet:
+    def for_(self) -> ForSetDevelopers:
         """Gets the for_ of this CalculatedDeveloperMetricsItem.
 
         :return: The for_ of this CalculatedDeveloperMetricsItem.
@@ -31,7 +31,7 @@ class CalculatedDeveloperMetricsItem(Model):
         return self._for_
 
     @for_.setter
-    def for_(self, for_: ForSet):
+    def for_(self, for_: ForSetDevelopers):
         """Sets the for_ of this CalculatedDeveloperMetricsItem.
 
         :param for_: The for_ of this CalculatedDeveloperMetricsItem.

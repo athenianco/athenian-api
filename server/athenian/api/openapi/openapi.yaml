@@ -1777,8 +1777,6 @@ components:
       properties:
         repositories:
           $ref: '#/components/schemas/RepositorySet'
-        developers:
-          $ref: '#/components/schemas/DeveloperSet'
         with:
           $ref: '#/components/schemas/PullRequestWith'
       required:
@@ -1878,6 +1876,7 @@ components:
       - for
       - granularities
       - metrics
+      - exclude_inactive
       type: object
     CalculatedPullRequestMetricsItem:
       additionalProperties: false
@@ -2047,6 +2046,7 @@ components:
       - date_to
       - granularities
       - metrics
+      - exclude_inactive
       type: object
     CalculatedPullRequestMetricValues:
       additionalProperties: false
@@ -2247,6 +2247,7 @@ components:
       - date_from
       - date_to
       - in
+      - exclude_inactive
       type: object
     PullRequestProperty:
       description: |-
@@ -3001,7 +3002,7 @@ components:
           - github.com/dpordomingo
       properties:
         for:
-          $ref: '#/components/schemas/ForSet'
+          $ref: '#/components/schemas/ForSetDevelopers'
         values:
           description: The sequence matches `CalculatedDeveloperMetricsItem.for.developers`.
           items:

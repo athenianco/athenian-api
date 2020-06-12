@@ -152,6 +152,7 @@ async def test_filter_prs_single_prop(client, headers, prop, app, filter_prs_sin
         "account": 1,
         "in": [],
         "properties": [prop],
+        "exclude_inactive": False,
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
@@ -167,6 +168,7 @@ async def test_filter_prs_all_properties(client, headers):
         "account": 1,
         "in": [],
         "properties": [],
+        "exclude_inactive": False,
     }
     time_to = datetime(year=2020, month=4, day=23, tzinfo=timezone.utc)
     response = await client.request(
@@ -189,6 +191,7 @@ async def test_filter_prs_shot(client, headers):
         "with": {
             "author": ["github.com/mcuadros"],
         },
+        "exclude_inactive": False,
     }
     time_to = datetime(year=2018, month=1, day=24, tzinfo=timezone.utc)
     response = await client.request(
@@ -206,6 +209,7 @@ async def test_filter_prs_merged_timezone(client, headers, timezone, must_match)
         "account": 1,
         "in": [],
         "properties": [PullRequestProperty.MERGE_HAPPENED],
+        "exclude_inactive": False,
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
@@ -228,6 +232,7 @@ async def test_filter_prs_created_timezone(client, headers, timezone, must_match
         "account": 1,
         "in": [],
         "properties": [],
+        "exclude_inactive": False,
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
@@ -500,6 +505,7 @@ async def test_filter_prs_nasty_input(client, headers, account, date_to, code):
         "account": account,
         "in": [],
         "properties": [],
+        "exclude_inactive": False,
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
@@ -521,6 +527,7 @@ async def test_filter_prs_david_bug(client, headers):
             "commenter": ["github.com/Junnplus"],
             "merger": ["github.com/Junnplus"],
         },
+        "exclude_inactive": False,
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
@@ -537,6 +544,7 @@ async def test_filter_prs_developer_filter(client, headers):
         "with": {
             "author": ["github.com/mcuadros"],
         },
+        "exclude_inactive": False,
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
