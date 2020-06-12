@@ -24,9 +24,9 @@ async def main():
             v.set(defaultdict(int))
     else:
         cache = None
-    password = os.getenv("POSTGRES_PASSWORD")
-    addr = "production-cloud-sql:%s@0.0.0.0:5432" % password
-    # addr = "postgres:postgres@0.0.0.0:5433"
+    # password = os.getenv("POSTGRES_PASSWORD")
+    # addr = "production-cloud-sql:%s@0.0.0.0:5432" % password
+    addr = "postgres:postgres@0.0.0.0:5433"
     mdb = databases.Database("postgresql://%s/metadata" % addr)
     await mdb.connect()
     if os.getenv("DISABLE_PDB"):
@@ -39,7 +39,7 @@ async def main():
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
     }
 
-    time_from = datetime(2020, 5, 22, tzinfo=timezone.utc)
+    time_from = datetime(2019, 6, 5, tzinfo=timezone.utc)
     time_to = datetime(2020, 6, 5, tzinfo=timezone.utc)
     repos = {"classified"}
     # TODO(vmarkovtsev): load these from the settings
@@ -65,10 +65,10 @@ async def main():
     """
     metrics = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_REVIEW_TIME],
-        [[time_from, time_to]], repos, [], settings, mdb, pdb, cache,
+        [[time_from, time_to]], repos, {}, False, settings, mdb, pdb, cache,
     ))
     print(metrics)
-    """
+    # """
     # breakpoint()
     print()
 
