@@ -117,14 +117,18 @@ matrix:
         - docker load -i $HOME/docker/images.tar || true
         - docker image list
       install:
+        - pip3 install codecov
         - docker build --cache-from ${GOOGLE_DOCKER_IMAGE}:latest --build-arg COMMIT=$TRAVIS_COMMIT -t ${GOOGLE_DOCKER_IMAGE} .
       before_script: *_setup_postgres
       script:
         - docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
-        - run="docker run --network=host --rm --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ ${GOOGLE_DOCKER_IMAGE}"
+        - docker build -t test --build-arg base=${GOOGLE_DOCKER_IMAGE} server/tests
+        - run="docker run --network=host --rm -v $(pwd):/io -w /io --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ test -m coverage run -a"
         - $run -m athenian.api.models.state postgres://postgres:@0.0.0.0:5432/state
         - $run -m athenian.api.models.precomputed postgres://postgres:@0.0.0.0:5432/precomputed
         - $run -m athenian.api.invite_admin postgres://postgres:@0.0.0.0:5432/state
+      after_success:
+        - codecov
     - if: branch = master AND type != pull_request AND commit_message !~ /Bump version/
       stage: bump-version
       name: Bump the version

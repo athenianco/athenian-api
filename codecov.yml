@@ -1,0 +1,3 @@
+comment: false
+ignore:
+  - server/athenian/api/hacks/reproduce_bug.py
