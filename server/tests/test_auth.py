@@ -28,6 +28,7 @@ async def test_cache_userinfo(cache, loop):
     profile = {
         "sub": "auth0|5e1f6e2e8bfa520ea5290741",
         "email": "eiso@athenian.co",
+        "nickname": "eiso",
         "name": "Eiso Kant",
         "updated_at": "2020-02-01T12:00:00Z",
         "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
@@ -37,3 +38,4 @@ async def test_cache_userinfo(cache, loop):
                     pickle.dumps(user))
     user = await auth0._get_user_info("whatever")
     assert user.name == "Eiso Kant"
+    assert user.login == "eiso"

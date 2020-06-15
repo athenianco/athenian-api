@@ -1555,6 +1555,7 @@ components:
       example:
         id: github|60340680
         native_id: 60340680
+        login: gkwillie
         name: Groundskeeper Willie
         email: bot@athenian.co
         picture: https://avatars0.githubusercontent.com/u/60340680?v=4
@@ -1565,6 +1566,9 @@ components:
           type: string
         native_id:
           description: Auth backend user identifier.
+          type: string
+        login:
+          description: Auth backend user login name.
           type: string
         name:
           description: Full name of the user.
@@ -1591,6 +1595,7 @@ components:
       required:
       - email
       - id
+      - login
       - name
       - native_id
       - picture
@@ -1602,6 +1607,7 @@ components:
         user:
           id: github|60340680
           native_id: 60340680
+          login: gkwillie
           name: Groundskeeper Willie
           email: bot@athenian.co
           picture: https://avatars0.githubusercontent.com/u/60340680?v=4
@@ -1622,23 +1628,31 @@ components:
       description: Account members. "updated" and "accounts" are not populated.
       example:
         regulars:
-        - id: 248289761001
+        - id: github|24828976
+          native_id: 24828976
+          login: jjdoe
           name: Jane Josephine Doe
           email: janedoe@exampleco.com
           picture: http://exampleco.com/janedoe/me.jpg
           updated: 2020-01-23T12:00:00Z
-        - id: 248289761001
+        - id: github|24828976
+          native_id: 24828976
+          login: jjdoe
           name: Jane Josephine Doe
           email: janedoe@exampleco.com
           picture: http://exampleco.com/janedoe/me.jpg
           updated: 2020-01-23T12:00:00Z
         admins:
-        - id: 248289761001
+        - id: github|24828976
+          native_id: 24828976
+          login: jjdoe
           name: Jane Josephine Doe
           email: janedoe@exampleco.com
           picture: http://exampleco.com/janedoe/me.jpg
           updated: 2020-01-23T12:00:00Z
-        - id: 248289761001
+        - id: github|24828976
+          native_id: 24828976
+          login: jjdoe
           name: Jane Josephine Doe
           email: janedoe@exampleco.com
           picture: http://exampleco.com/janedoe/me.jpg
