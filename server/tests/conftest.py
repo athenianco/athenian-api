@@ -10,7 +10,13 @@ import tempfile
 import time
 from typing import Dict, List, Optional, Union
 
-import nest_asyncio
+try:
+    import nest_asyncio
+except ImportError:
+    class nest_asyncio:
+        @staticmethod
+        def apply():
+            pass
 import numpy as np
 from prometheus_client import CollectorRegistry
 try:
