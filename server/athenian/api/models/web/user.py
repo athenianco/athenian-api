@@ -16,6 +16,7 @@ class User(Model):
         self,
         id: Optional[str] = None,
         native_id: Optional[str] = None,
+        login: Optional[str] = None,
         name: Optional[str] = None,
         email: Optional[str] = None,
         picture: Optional[str] = None,
@@ -26,6 +27,7 @@ class User(Model):
 
         :param id: The id of this User.
         :param native_id: The native_id of this User.
+        :param login: The login of this user.
         :param name: The name of this User.
         :param email: The email of this User.
         :param picture: The picture of this User.
@@ -35,6 +37,7 @@ class User(Model):
         self.openapi_types = {
             "id": str,
             "native_id": str,
+            "login": str,
             "name": str,
             "email": str,
             "picture": str,
@@ -45,6 +48,7 @@ class User(Model):
         self.attribute_map = {
             "id": "id",
             "native_id": "native_id",
+            "login": "login",
             "name": "name",
             "email": "email",
             "picture": "picture",
@@ -54,6 +58,7 @@ class User(Model):
 
         self._id = id
         self._native_id = native_id
+        self._login = login
         self._name = name
         self._email = email
         self._picture = picture
@@ -61,9 +66,9 @@ class User(Model):
         self._accounts = accounts
 
     @classmethod
-    def from_auth0(cls, name: str, picture: str, updated_at: str, email: Optional[str] = None,
-                   sub: Optional[str] = None, user_id: Optional[str] = None,
-                   identities: Optional[List[dict]] = None, **_):
+    def from_auth0(cls, name: str, nickname: str, picture: str, updated_at: str,
+                   email: Optional[str] = None, sub: Optional[str] = None,
+                   user_id: Optional[str] = None, identities: Optional[List[dict]] = None, **_):
         """Create a new User object from Auth0 /userinfo."""
         if sub is None and user_id is None:
             raise TypeError('Either "sub" or "user_id" must be set to create a User.')
@@ -75,6 +80,7 @@ class User(Model):
         return cls(
             id=id,
             native_id=native_id,
+            login=nickname,
             email=email,
             name=name,
             picture=picture,
@@ -152,6 +158,29 @@ class User(Model):
             raise ValueError("Invalid value for `native_id`, must not be `None`")
 
         self._native_id = native_id
+
+    @property
+    def login(self) -> str:
+        """Gets the login of this User.
+
+        Full login of the user.
+
+        :return: The login of this User.
+        """
+        return self._login
+
+    @login.setter
+    def login(self, login: str):
+        """Sets the login of this User.
+
+        Full login of the user.
+
+        :param login: The login of this User.
+        """
+        if login is None:
+            raise ValueError("Invalid value for `login`, must not be `None`")
+
+        self._login = login
 
     @property
     def name(self) -> str:

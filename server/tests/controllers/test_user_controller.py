@@ -68,6 +68,7 @@ async def test_get_default_user(client, headers, gkwillie):
     del items["updated"]
     assert items == {
         "id": "github|60340680",
+        "login": "gkwillie",
         "name": "Groundskeeper Willie",
         "native_id": "60340680",
         "picture": "https://avatars0.githubusercontent.com/u/60340680?v=4",
@@ -118,6 +119,7 @@ async def test_become(client, headers, sdb):
     del body1["updated"]
     assert body1 == {
         "id": "auth0|5e1f6e2e8bfa520ea5290741",
+        "login": "eiso",
         "email": "eiso@athenian.co",
         "name": "Eiso Kant",
         "native_id": "5e1f6e2e8bfa520ea5290741",
@@ -131,6 +133,7 @@ async def test_become(client, headers, sdb):
     del body3["updated"]
     assert body3 == {
         "id": "auth0|5e1f6dfb57bc640ea390557b",
+        "login": "vadim",
         "email": "vadim@athenian.co",
         "name": "Vadim Markovtsev",
         "native_id": "5e1f6dfb57bc640ea390557b",
