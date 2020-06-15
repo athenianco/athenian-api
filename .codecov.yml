@@ -3,11 +3,11 @@ ignore:
   - server/athenian/api/hacks/reproduce_bug.py
 coverage:
   status:
+    patch: off
     project:
       default:
         target: auto
         threshold: 0%
-        base: auto
         informational: true
         paths:
           - "server/athenian/api"
