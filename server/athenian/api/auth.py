@@ -103,6 +103,8 @@ class Auth0:
         if self._mgmt_loop is None:
             self._mgmt_loop = asyncio.ensure_future(self._acquire_management_token_loop())
         await self._mgmt_event.wait()
+        if not self._mgmt_token:
+            raise LookupError("Could not acquire the Auth0 Management token.")
         return self._mgmt_token
 
     async def default_user(self) -> User:
