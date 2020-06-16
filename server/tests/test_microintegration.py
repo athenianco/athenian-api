@@ -21,6 +21,8 @@ def test_integration_micro(metadata_db, aiohttp_unused_port):
     unused_port = str(aiohttp_unused_port())
     env = os.environ.copy()
     env["ATHENIAN_INVITATION_URL_PREFIX"] = "https://app.athenian.co/i/"
+    env["ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE"] = \
+        "https://installation.athenian.co/jira/%s/atlassian-connect.json"
     env["ATHENIAN_INVITATION_KEY"] = "secret"
     env["ATHENIAN_DEFAULT_USER"] = "github|60340680"
     proc = subprocess.Popen(

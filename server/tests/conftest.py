@@ -53,6 +53,8 @@ sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".
 pdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.precomputed.", suffix=".sqlite")
 invitation_controller.ikey = "vadim"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
+invitation_controller.jira_url_template = \
+    "https://installation.athenian.co/jira/%s/atlassian-connect.json"
 override_mdb = os.getenv("OVERRIDE_MDB")
 override_sdb = os.getenv("OVERRIDE_SDB")
 override_pdb = os.getenv("OVERRIDE_PDB")

@@ -40,6 +40,7 @@ ikey = os.getenv("ATHENIAN_INVITATION_KEY")
 admin_backdoor = (1 << 24) - 1
 url_prefix = os.getenv("ATHENIAN_INVITATION_URL_PREFIX")
 accept_admin_cooldown = timedelta(minutes=1)
+jira_url_template = os.getenv("ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE")
 
 
 def validate_env():
@@ -48,34 +49,41 @@ def validate_env():
         raise EnvironmentError("ATHENIAN_INVITATION_KEY environment variable must be set")
     if url_prefix is None:
         raise EnvironmentError("ATHENIAN_INVITATION_URL_PREFIX environment variable must be set")
+    if jira_url_template is None:
+        raise EnvironmentError(
+            "ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE environment variable must be set")
 
 
 async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
     """Generate a new regular member invitation URL."""
-    sdb = request.sdb
-    status = await sdb.fetch_one(
+    async with request.sdb.connection() as sdb_conn:
+        await _check_admin_access(request.uid, id, sdb_conn)
+        existing = await sdb_conn.fetch_one(
+            select([Invitation.id, Invitation.salt])
+            .where(and_(Invitation.is_active, Invitation.account_id == id)))
+        if existing is not None:
+            invitation_id = existing[Invitation.id.key]
+            salt = existing[Invitation.salt.key]
+        else:
+            # create a new invitation
+            salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
+            inv = Invitation(salt=salt, account_id=id, created_by=request.uid).create_defaults()
+            invitation_id = await sdb_conn.execute(insert(Invitation).values(inv.explode()))
+        slug = encode_slug(invitation_id, salt)
+        model = InvitationLink(url=url_prefix + slug)
+        return model_response(model)
+
+
+async def _check_admin_access(uid: str, account: int, sdb_conn: databases.core.Connection):
+    status = await sdb_conn.fetch_one(
         select([UserAccount.is_admin])
-        .where(and_(UserAccount.user_id == request.uid, UserAccount.account_id == id)))
+        .where(and_(UserAccount.user_id == uid, UserAccount.account_id == account)))
     if status is None:
-        return ResponseError(NotFoundError(
-            detail="User %s is not in the account %d" % (request.uid, id))).response
+        raise ResponseError(NotFoundError(
+            detail="User %s is not in the account %d" % (uid, account)))
     if not status[UserAccount.is_admin.key]:
-        return ResponseError(ForbiddenError(
-            detail="User %s is not an admin of the account %d" % (request.uid, id))).response
-    existing = await sdb.fetch_one(
-        select([Invitation.id, Invitation.salt])
-        .where(and_(Invitation.is_active, Invitation.account_id == id)))
-    if existing is not None:
-        invitation_id = existing[Invitation.id.key]
-        salt = existing[Invitation.salt.key]
-    else:
-        # create a new invitation
-        salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
-        inv = Invitation(salt=salt, account_id=id, created_by=request.uid).create_defaults()
-        invitation_id = await sdb.execute(insert(Invitation).values(inv.explode()))
-    slug = encode_slug(invitation_id, salt)
-    model = InvitationLink(url=url_prefix + slug)
-    return model_response(model)
+        raise ResponseError(ForbiddenError(
+            detail="User %s is not an admin of the account %d" % (uid, account)))
 
 
 def encode_slug(iid: int, salt: int) -> str:
@@ -353,3 +361,19 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
                                          repositories=sum(m.repositories for m in models),
                                          tables=sorted(tables.values()))
             return model_response(model)
+
+
+async def gen_jira_link(request: AthenianWebRequest, id: int) -> web.Response:
+    """Generate JIRA integration installation link."""
+    async with request.sdb.connection() as sdb_conn:
+        await _check_admin_access(request.uid, id, sdb_conn)
+        secret = await sdb_conn.fetch_val(select([Account.secret]).where(Account.id == id))
+        if secret is None:
+            salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
+            secret = encode_slug(id, salt)
+            await sdb_conn.execute(update(Account).where(Account.id == id).values({
+                Account.secret_salt: salt,
+                Account.secret: secret,
+            }))
+        model = InvitationLink(url=jira_url_template % secret)
+        return model_response(model)

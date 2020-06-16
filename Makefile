@@ -41,6 +41,7 @@ $(ENV_FILE):
 	echo 'ATHENIAN_DEFAULT_USER=github|60340680' >> $(ENV_FILE)
 	echo 'ATHENIAN_INVITATION_KEY=we-are-the-best' >> $(ENV_FILE)
 	echo 'ATHENIAN_INVITATION_URL_PREFIX=http://localhost:3000/i/' >> $(ENV_FILE)
+	echo 'ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE=https://installation.athenian.co/jira/%s/atlassian-connect.json' >> $(ENV_FILE)
 	echo 'ATHENIAN_DEV_ID=' >> $(ENV_FILE)
 
 # Why do we touch?

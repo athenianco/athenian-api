@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import json
 from random import randint
+import re
 
 import pytest
 from sqlalchemy import and_, delete, insert, select, update
@@ -400,3 +401,23 @@ async def test_progress_idle(client, headers, mdb):
     finally:
         await mdb.execute(update(FetchProgress).values({
             FetchProgress.nodes_total: FetchProgress.nodes_total / 2}))
+
+
+async def test_gen_jira_link_smoke(client, headers):
+    response = await client.request(
+        method="GET", path="/v1/invite/jira/1", headers=headers, json={},
+    )
+    assert response.status == 200
+    body = json.loads((await response.read()).decode("utf-8"))
+    url = body["url"]
+    assert re.match(invitation_controller.jira_url_template % "[a-z0-9]{8}", url)
+    body = json.loads((await response.read()).decode("utf-8"))
+    assert url == body["url"]
+
+
+@pytest.mark.parametrize("account, code", [(2, 403), (10, 404)])
+async def test_gen_jira_link_errors(client, headers, account, code):
+    response = await client.request(
+        method="GET", path="/v1/invite/jira/%d" % account, headers=headers, json={},
+    )
+    assert response.status == code

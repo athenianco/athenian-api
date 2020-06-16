@@ -95,6 +95,8 @@ class Account(create_time_mixin(created_at=True), Base):
     __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(Integer(), primary_key=True)
+    secret_salt = Column(Integer())
+    secret = Column(String(8))
 
 
 class Team(create_time_mixin(created_at=True, updated_at=True),
