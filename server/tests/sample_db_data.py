@@ -89,12 +89,15 @@ def fill_state_session(session: sqlalchemy.orm.Session):
     session.add(UserAccount(
         user_id="auth0|5e1f6e2e8bfa520ea5290741", account_id=1, is_admin=False))
     session.add(RepositorySet(
-        owner=1,
+        name="all",
+        owner_id=1,
         items=["github.com/src-d/gitbase", "github.com/src-d/go-git"]))
     session.add(RepositorySet(
-        owner=2,
+        name="all",
+        owner_id=2,
         items=["github.com/src-d/hercules", "github.com/athenianco/athenian-api"]))
     session.add(RepositorySet(
-        owner=3,
+        name="all",
+        owner_id=3,
         items=["github.com/athenianco/athenian-webapp", "github.com/athenianco/athenian-api"]))
     session.add(Invitation(salt=777, account_id=3, created_by="auth0|5e1f6e2e8bfa520ea5290741"))

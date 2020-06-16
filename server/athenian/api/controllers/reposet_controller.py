@@ -5,7 +5,7 @@ from typing import List, Optional
 from aiohttp import web
 from asyncpg import UniqueViolationError
 import databases.core
-from sqlalchemy import delete, insert, update
+from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.controllers.account import get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
@@ -13,7 +13,7 @@ from athenian.api.controllers.reposet import fetch_reposet, load_account_reposet
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import BadRequestError, CreatedIdentifier, DatabaseConflict, \
-    ForbiddenError
+    ForbiddenError, RepositorySetWithName
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.request import AthenianWebRequest
@@ -31,14 +31,21 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
     async with request.sdb.connection() as sdb_conn:
         adm = await get_user_account_status(user, account, sdb_conn, request.cache)
         if not adm:
-            return ResponseError(ForbiddenError(
-                detail="User %s is not an admin of the account %d" % (user, account))).response
+            raise ResponseError(ForbiddenError(
+                detail="User %s is not an admin of the account %d" % (user, account)))
+        dupe_id = await sdb_conn.fetch_val(select([RepositorySet.id])
+                                           .where(and_(RepositorySet.owner_id == account,
+                                                       RepositorySet.name == body.name)))
+        if dupe_id is not None:
+            raise ResponseError(DatabaseConflict(
+                detail="there is an existing reposet %s with the same name" % dupe_id))
         items = await _check_reposet(request, sdb_conn, body.account, body.items)
-        rs = RepositorySet(owner=account, items=items).create_defaults()
+        rs = RepositorySet(name=body.name, owner_id=account, items=items).create_defaults()
         try:
             rid = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
         except (UniqueViolationError, IntegrityError, OperationalError):
-            return ResponseError(DatabaseConflict(detail="this reposet already exists")).response
+            raise ResponseError(DatabaseConflict(
+                detail="there is an existing reposet with the same items"))
         return model_response(CreatedIdentifier(rid))
 
 
@@ -62,9 +69,10 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     :param id: Numeric identifier of the repository set to list.
     :type id: int
     """
-    rs, _ = await fetch_reposet(id, [RepositorySet.items], request.uid, request.sdb, request.cache)
+    rs, _ = await fetch_reposet(id, [RepositorySet.name, RepositorySet.items],
+                                request.uid, request.sdb, request.cache)
     # "items" collides with dict.items() so we have to access the list via []
-    return web.json_response(rs.items)
+    return model_response(RepositorySetWithName(name=rs.name, items=rs.items))
 
 
 async def _check_reposet(request: AthenianWebRequest,
@@ -97,31 +105,44 @@ async def _check_reposet(request: AthenianWebRequest,
     return sorted(set(body))
 
 
-async def update_reposet(request: AthenianWebRequest, id: int, body: List[str]) -> web.Response:
+async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
     """Update a repository set.
 
     :param id: Numeric identifier of the repository set to update.
     :type id: int
-    :param body: New list of repositories in the group.
+    :param body: New reposet definition.
     """
+    body = RepositorySetWithName.from_dict(body)  # type: RepositorySetWithName
     async with request.sdb.connection() as sdb_conn:
         rs, is_admin = await fetch_reposet(
             id, [RepositorySet], request.uid, sdb_conn, request.cache)
         if not is_admin:
-            return ResponseError(ForbiddenError(
-                detail="User %s may not modify reposet %d" % (request.uid, id))).response
-        body = await _check_reposet(request, sdb_conn, id, body)
-        if rs.items != body:
-            rs.items = body
+            raise ResponseError(ForbiddenError(
+                detail="User %s may not modify reposet %d" % (request.uid, id)))
+        new_items = await _check_reposet(request, sdb_conn, id, body.items)
+        changed = False
+        if body.name != rs.name:
+            dupe_id = await sdb_conn.fetch_val(select([RepositorySet.id])
+                                               .where(and_(RepositorySet.owner_id == rs.owner_id,
+                                                           RepositorySet.name == body.name)))
+            if dupe_id is not None:
+                raise ResponseError(DatabaseConflict(
+                    detail="there is an existing reposet %s with the same name" % dupe_id))
+            rs.name = body.name
+            changed = True
+        if new_items != rs.items:
+            rs.items = new_items
             rs.refresh()
+            changed = True
+        if changed:
             try:
                 await sdb_conn.execute(update(RepositorySet)
                                        .where(RepositorySet.id == id)
                                        .values(rs.explode()))
             except (UniqueViolationError, IntegrityError, OperationalError):
-                return ResponseError(DatabaseConflict(
-                    detail="this reposet already exists")).response
-        return web.json_response(body)
+                raise ResponseError(DatabaseConflict(
+                    detail="there is an existing reposet with the same items"))
+        return model_response(body)
 
 
 async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
@@ -133,6 +154,7 @@ async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
             request.app["slack"])
     items = [RepositorySetListItem(
         id=rs[RepositorySet.id.key],
+        name=rs[RepositorySet.name.key],
         created=rs[RepositorySet.created_at.key].replace(tzinfo=timezone.utc),
         updated=rs[RepositorySet.updated_at.key].replace(tzinfo=timezone.utc),
         items_count=rs[RepositorySet.items_count.key],

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from athenian.api import ResponseError
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.models.state.models import RepositorySet
-from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
+from athenian.api.models.web import RepositorySetCreateRequest, RepositorySetWithName
 
 
 async def test_delete_repository_set(client, app, headers):
@@ -48,9 +48,10 @@ async def test_get_repository_set(client, reposet, headers, checked):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    body = json.loads(body)
-    assert len(body) == 2
-    assert checked in body or checked in body
+    body = RepositorySetWithName.from_dict(json.loads(body))
+    assert len(body.items) == 2
+    assert checked in body.items
+    assert body.name == "all"
 
 
 async def test_get_repository_set_404(client, headers):
@@ -71,18 +72,18 @@ async def test_get_repository_set_bad_account(client, headers):
     assert response.status == 404, "Response body is : " + body
 
 
-async def test_set_repository_set(client, headers):
-    body = ["github.com/src-d/hercules"]
+async def test_set_repository_set_smoke(client, headers):
+    body = {"name": "xxx", "items": ["github.com/src-d/hercules"]}
     response = await client.request(
         method="PUT", path="/v1/reposet/1", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    assert body == '["github.com/src-d/hercules"]'
+    assert json.loads(body) == {"name": "xxx", "items": ["github.com/src-d/hercules"]}
 
 
 async def test_set_repository_set_404(client, headers):
-    body = ["github.com/src-d/hercules"]
+    body = {"name": "xxx", "items": ["github.com/src-d/hercules"]}
     response = await client.request(
         method="PUT", path="/v1/reposet/10", headers=headers, json=body,
     )
@@ -91,7 +92,7 @@ async def test_set_repository_set_404(client, headers):
 
 
 async def test_set_repository_set_same(client, headers):
-    body = ["github.com/src-d/go-git", "github.com/src-d/gitbase"]
+    body = {"name": "xxx", "items": ["github.com/src-d/go-git", "github.com/src-d/gitbase"]}
     response = await client.request(
         method="PUT", path="/v1/reposet/1", headers=headers, json=body,
     )
@@ -99,11 +100,18 @@ async def test_set_repository_set_same(client, headers):
 
 
 async def test_set_repository_set_409(client, headers):
-    body = RepositorySetCreateRequest(1, ["github.com/src-d/go-git"]).to_dict()
+    body = RepositorySetCreateRequest(
+        1, name="xxx", items=["github.com/src-d/go-git"]).to_dict()
     await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
-    body = ["github.com/src-d/go-git"]
+    body = RepositorySetWithName(name="yyy", items=["github.com/src-d/go-git"]).to_dict()
+    response = await client.request(
+        method="PUT", path="/v1/reposet/1", headers=headers, json=body,
+    )
+    assert response.status == 409
+    body["name"] = "xxx"
+    body["items"] = ["github.com/src-d/go-git", "github.com/src-d/gitbase"]
     response = await client.request(
         method="PUT", path="/v1/reposet/1", headers=headers, json=body,
     )
@@ -112,7 +120,7 @@ async def test_set_repository_set_409(client, headers):
 
 @pytest.mark.parametrize("reposet", [2, 3])
 async def test_set_repository_set_bad_account(client, reposet, headers):
-    body = ["github.com/src-d/hercules"]
+    body = {"name": "xxx", "items": ["github.com/src-d/hercules"]}
     response = await client.request(
         method="PUT", path="/v1/reposet/%d" % reposet, headers=headers, json=body,
     )
@@ -121,7 +129,7 @@ async def test_set_repository_set_bad_account(client, reposet, headers):
 
 
 async def test_set_repository_set_access_denied(client, headers):
-    body = ["github.com/athenianco/athenian-api"]
+    body = {"name": "xxx", "items": ["github.com/athenianco/athenian-api"]}
     response = await client.request(
         method="PUT", path="/v1/reposet/1", headers=headers, json=body,
     )
@@ -129,8 +137,9 @@ async def test_set_repository_set_access_denied(client, headers):
     assert response.status == 403, "Response body is : " + body
 
 
-async def test_create_repository_set(client, headers):
-    body = RepositorySetCreateRequest(1, ["github.com/src-d/hercules"]).to_dict()
+async def test_create_repository_set_smoke(client, headers):
+    body = RepositorySetCreateRequest(
+        1, name="xxx", items=["github.com/src-d/hercules"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
@@ -141,8 +150,14 @@ async def test_create_repository_set(client, headers):
 
 
 async def test_create_repository_set_409(client, headers):
-    body = RepositorySetCreateRequest(1, ["github.com/src-d/go-git", "github.com/src-d/gitbase"],
-                                      ).to_dict()
+    body = RepositorySetCreateRequest(
+        1, name="xxx", items=["github.com/src-d/go-git", "github.com/src-d/gitbase"]).to_dict()
+    response = await client.request(
+        method="POST", path="/v1/reposet/create", headers=headers, json=body,
+    )
+    assert response.status == 409
+    body = RepositorySetCreateRequest(
+        1, name="all", items=["github.com/src-d/go-git"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
@@ -151,7 +166,8 @@ async def test_create_repository_set_409(client, headers):
 
 @pytest.mark.parametrize("account", [2, 3, 10])
 async def test_create_repository_set_bad_account(client, account, headers):
-    body = RepositorySetCreateRequest(account, ["github.com/src-d/hercules"]).to_dict()
+    body = RepositorySetCreateRequest(
+        account, name="xxx", items=["github.com/src-d/hercules"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
@@ -160,7 +176,8 @@ async def test_create_repository_set_bad_account(client, account, headers):
 
 
 async def test_create_repository_set_access_denied(client, headers):
-    body = RepositorySetCreateRequest(1, ["github.com/athenianco/athenian-api"]).to_dict()
+    body = RepositorySetCreateRequest(
+        1, name="xxx", items=["github.com/athenianco/athenian-api"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
@@ -177,6 +194,7 @@ async def test_list_repository_sets(client, account, headers):
     items = json.loads(body)
     assert len(items) > 0
     assert items[0]["id"] == account
+    assert items[0]["name"] == "all"
     assert items[0]["items_count"] == 2
     assert items[0]["created"] != ""
     assert items[0]["updated"] != ""
@@ -199,6 +217,7 @@ async def test_list_repository_sets_installation(client, sdb, headers):
     items = json.loads(body)
     assert len(items) == 1
     assert items[0]["id"] == 4
+    assert items[0]["name"] == "all"
     assert items[0]["items_count"] == 19
     assert items[0]["created"] != ""
     assert items[0]["updated"] != ""

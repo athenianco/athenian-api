@@ -37,7 +37,7 @@ async def create_team(request: AthenianWebRequest,
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status(user, account, sdb_conn, request.cache)
         members = _check_members(body.members)
-        t = Team(owner=account, name=name, members=members).create_defaults()
+        t = Team(owner_id=account, name=name, members=members).create_defaults()
         try:
             tid = await sdb_conn.execute(insert(Team).values(t.explode()))
         except (UniqueViolationError, IntegrityError, OperationalError) as err:
@@ -54,7 +54,7 @@ async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
     """
     user = request.uid
     async with request.sdb.connection() as sdb_conn:
-        account = await sdb_conn.fetch_val(select([Team.owner]).where(Team.id == id))
+        account = await sdb_conn.fetch_val(select([Team.owner_id]).where(Team.id == id))
         if account is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
         await get_user_account_status(user, account, sdb_conn, request.cache)
@@ -72,7 +72,7 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
         team = await sdb_conn.fetch_one(select([Team]).where(Team.id == id))
         if team is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
-        await get_user_account_status(user, team[Team.owner.key], sdb_conn, request.cache)
+        await get_user_account_status(user, team[Team.owner_id.key], sdb_conn, request.cache)
     members = await _get_all_members([team], request.mdb, request.cache)
     model = TeamListItem(id=team[Team.id.key],
                          name=team[Team.name.key],
@@ -91,7 +91,7 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status(user, account, sdb_conn, request.cache)
         teams = await sdb_conn.fetch_all(
-            select([Team]).where(Team.owner == account).order_by(Team.name))
+            select([Team]).where(Team.owner_id == account).order_by(Team.name))
 
     all_members = await _get_all_members(teams, request.mdb, request.cache)
     items = [TeamListItem(id=t[Team.id.key],
@@ -112,12 +112,12 @@ async def update_team(request: AthenianWebRequest, id: int,
     user = request.uid
     name = _check_name(body.name)
     async with request.sdb.connection() as sdb_conn:
-        account = await sdb_conn.fetch_val(select([Team.owner]).where(Team.id == id))
+        account = await sdb_conn.fetch_val(select([Team.owner_id]).where(Team.id == id))
         if account is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
         await get_user_account_status(user, account, sdb_conn, request.cache)
         members = _check_members(body.members)
-        t = Team(owner=account, name=name, members=members).create_defaults()
+        t = Team(owner_id=account, name=name, members=members).create_defaults()
         try:
             await sdb_conn.execute(update(Team).where(Team.id == id).values(t.explode()))
         except (UniqueViolationError, IntegrityError, OperationalError) as err:

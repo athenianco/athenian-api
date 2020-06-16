@@ -125,9 +125,11 @@ matrix:
         - docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
         - docker build -t test --build-arg base=${GOOGLE_DOCKER_IMAGE} server/tests
         - run="docker run --network=host --rm -v $(pwd):/io -w /io --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ test -m coverage"
-        - $run run -m athenian.api.models.state postgres://postgres:@0.0.0.0:5432/state
-        - $run run -m athenian.api.models.precomputed postgres://postgres:@0.0.0.0:5432/precomputed
-        - $run run -m athenian.api.invite_admin postgres://postgres:@0.0.0.0:5432/state
+        - $run run -a -m athenian.api.models.state postgres://postgres:@0.0.0.0:5432/state
+        - $run run -a -m athenian.api.invite_admin postgres://postgres:@0.0.0.0:5432/state
+        - $run run -a /usr/local/bin/alembic downgrade 34eafe9e7cd9
+        - $run run -a -m athenian.api.models.precomputed postgres://postgres:@0.0.0.0:5432/precomputed
+        - $run run -a /usr/local/bin/alembic downgrade c863ffad47fb
         - $run combine
         - $run xml
         - docker rmi test

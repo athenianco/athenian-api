@@ -760,7 +760,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RepositorySet'
+                $ref: '#/components/schemas/RepositorySetWithName'
           description: List of repositories in the specified set.
         403:
           content:
@@ -800,7 +800,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RepositorySet'
+              $ref: '#/components/schemas/RepositorySetWithName'
         x-body-name: body
       responses:
         200:
@@ -1495,11 +1495,28 @@ components:
       description: A set of repositories. An empty list results an empty response
         in contrary to DeveloperSet. Duplicates are automatically ignored.
       example:
-      - github.com/athenianco/athenian-webapp
-      - github.com/athenianco/athenian-api
+        - github.com/athenianco/athenian-webapp
+        - github.com/athenianco/athenian-api
       items:
         $ref: '#/components/schemas/RepositoryID'
       type: array
+    RepositorySetWithName:
+      additionalProperties: false
+      description: A set of repositories. An empty list results an empty response
+        in contrary to DeveloperSet. Duplicates are automatically ignored.
+      example:
+        name: all
+        items:
+        - github.com/athenianco/athenian-webapp
+        - github.com/athenianco/athenian-api
+      properties:
+        name:
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/RepositoryID'
+          type: array
+      type: object
     RepositorySetList:
       description: List of repository sets owned by a user.
       items:
@@ -1513,16 +1530,23 @@ components:
         items:
         - github.com/athenianco/athenian-webapp
         - github.com/athenianco/athenian-api
+        name: users
       properties:
         account:
           description: Account identifier. That account will own the created repository
             set. The user must be an admin of the account.
           type: integer
         items:
-          $ref: '#/components/schemas/RepositorySet'
+          items:
+            $ref: '#/components/schemas/RepositoryID'
+          type: array
+        name:
+          description: Unique editable identifier of the repository set.
+          type: string
       required:
       - account
       - items
+      - name
       type: object
     RepositorySetListItem:
       additionalProperties: false
@@ -1531,11 +1555,15 @@ components:
         items_count: 6
         created: 2020-01-23T04:56:07.000+00:00
         id: 1
+        name: all
         updated: 2020-01-23T04:56:07.000+00:00
       properties:
         id:
           description: Repository set identifier.
           type: integer
+        name:
+          description: Repository set name.
+          type: string
         created:
           description: Date and time of creation of the repository set.
           format: date-time
@@ -1887,10 +1915,10 @@ components:
       - account
       - date_from
       - date_to
+      - exclude_inactive
       - for
       - granularities
       - metrics
-      - exclude_inactive
       type: object
     CalculatedPullRequestMetricsItem:
       additionalProperties: false
@@ -2058,9 +2086,9 @@ components:
       - calculated
       - date_from
       - date_to
+      - exclude_inactive
       - granularities
       - metrics
-      - exclude_inactive
       type: object
     CalculatedPullRequestMetricValues:
       additionalProperties: false
@@ -2174,8 +2202,8 @@ components:
         in:
         - '{1}'
         as:
-          - author
-          - committer
+        - author
+        - committer
       properties:
         account:
           description: Session account ID.
@@ -2260,9 +2288,9 @@ components:
       - account
       - date_from
       - date_to
+      - exclude_inactive
       - in
       - properties
-      - exclude_inactive
       type: object
     PullRequestProperty:
       description: |-
