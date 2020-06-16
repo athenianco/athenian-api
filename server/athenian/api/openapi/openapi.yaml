@@ -492,6 +492,48 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.invitation_controller
       x-codegen-request-body-name: body
+  /invite/jira/{id}:
+    get:
+      operationId: gen_jira_link
+      parameters:
+      - description: Numeric identifier of the account who is installing JIRA integration.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationLink'
+          description: The invitation link has been generated successfully.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to invite for this account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account was not found.
+      security:
+      - bearerAuth: []
+      summary: Generate a JIRA integration installation link. The caller must be an admin
+        of the specified account.
+      tags:
+      - registration
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.invitation_controller
+      x-codegen-request-body-name: body
   /invite/progress/{id}:
     get:
       operationId: eval_invitation_progress
