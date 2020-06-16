@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import json
 
 from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, func, Integer, JSON, \
-    SmallInteger, String, TIMESTAMP, UniqueConstraint
+    SmallInteger, String, Text, TIMESTAMP, UniqueConstraint
 import xxhash
 
 from athenian.api.models import always_unequal, create_base
@@ -16,6 +16,7 @@ def create_collection_mixin(name: str) -> type:
     """Create the collections mixin according to the required column name."""
 
     class CollectionMixin:
+        name = Column(String(256), nullable=False)
 
         @staticmethod
         def count_items(ctx):
@@ -64,13 +65,16 @@ class RepositorySet(create_time_mixin(created_at=True, updated_at=True),
     """A group of repositories identified by an integer."""
 
     __tablename__ = "repository_sets"
-    __table_args__ = (UniqueConstraint("owner", "items_checksum", name="uc_owner_items"),
+    __table_args__ = (UniqueConstraint("owner_id", "items_checksum", name="uc_owner_items"),
+                      UniqueConstraint("owner_id", "name", name="uc_owner_name2"),
                       {"sqlite_autoincrement": True})
 
     id = Column(Integer(), primary_key=True)
-    owner = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"), nullable=False)
+    owner_id = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"),
+                      nullable=False)
     updates_count = Column(always_unequal(Integer()), nullable=False, default=1,
                            onupdate=lambda ctx: ctx.get_current_parameters()["updates_count"] + 1)
+    tracking_re = Column(Text(), nullable=False, default=".*", server_default=".*")
 
 
 class UserAccount(create_time_mixin(created_at=True), Base):
@@ -98,13 +102,13 @@ class Team(create_time_mixin(created_at=True, updated_at=True),
     """Group of users part of the same team."""
 
     __tablename__ = "teams"
-    __table_args__ = (UniqueConstraint("owner", "members_checksum", name="uc_owner_members"),
-                      UniqueConstraint("owner", "name", name="uc_owner_name"),
+    __table_args__ = (UniqueConstraint("owner_id", "members_checksum", name="uc_owner_members"),
+                      UniqueConstraint("owner_id", "name", name="uc_owner_name"),
                       {"sqlite_autoincrement": True})
 
     id = Column(Integer(), primary_key=True)
-    name = Column(String(256), nullable=False)
-    owner = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"), nullable=False)
+    owner_id = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"),
+                      nullable=False)
 
 
 class Installation(Base):

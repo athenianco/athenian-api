@@ -9,18 +9,30 @@ class RepositorySetCreateRequest(Model):
     Do not edit the class manually.
     """
 
-    def __init__(self, account: Optional[int] = None, items: Optional[List[str]] = None):
+    def __init__(self,
+                 account: Optional[int] = None,
+                 items: Optional[List[str]] = None,
+                 name: Optional[str] = None):
         """RepositorySetCreateRequest - a model defined in OpenAPI
 
         :param account: The account of this RepositorySetCreateRequest.
         :param items: The items of this RepositorySetCreateRequest.
         """
-        self.openapi_types = {"account": int, "items": List[str]}
+        self.openapi_types = {
+            "account": int,
+            "items": List[str],
+            "name": str,
+        }
 
-        self.attribute_map = {"account": "account", "items": "items"}
+        self.attribute_map = {
+            "account": "account",
+            "items": "items",
+            "name": "name",
+        }
 
         self._account = account
         self._items = items
+        self._name = name
 
     @property
     def account(self) -> int:
@@ -46,6 +58,29 @@ class RepositorySetCreateRequest(Model):
             raise ValueError("Invalid value for `account`, must not be `None`")
 
         self._account = account
+
+    @property
+    def name(self) -> int:
+        """Gets the name of this RepositorySetCreateRequest.
+
+        Unique editable identifier of the repository set.
+
+        :return: The name of this RepositorySetCreateRequest.
+        """
+        return self._name
+
+    @name.setter
+    def name(self, name: int):
+        """Sets the name of this RepositorySetCreateRequest.
+
+        Unique editable identifier of the repository set.
+
+        :param name: The name of this RepositorySetCreateRequest.
+        """
+        if name is None:
+            raise ValueError("Invalid value for `name`, must not be `None`")
+
+        self._name = name
 
     @property
     def items(self) -> List[str]:

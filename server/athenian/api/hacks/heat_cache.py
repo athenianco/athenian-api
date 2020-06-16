@@ -68,7 +68,7 @@ def main():
             repos = {r.split("/", 1)[1] for r in reposet.items}
             settings = {}
             rows = session.query(ReleaseSetting).filter(and_(
-                ReleaseSetting.account_id == reposet.owner,
+                ReleaseSetting.account_id == reposet.owner_id,
                 ReleaseSetting.repository.in_(reposet.items)))
             for row in rows:
                 settings[row.repository] = ReleaseMatchSetting(
@@ -83,7 +83,8 @@ def main():
                         tags=".*",
                         match=ReleaseMatch.tag_or_branch,
                     )
-            sentry_sdk.add_breadcrumb(category="account", message=str(reposet.owner), level="info")
+            sentry_sdk.add_breadcrumb(
+                category="account", message=str(reposet.owner_id), level="info")
             try:
                 await calc_pull_request_metrics_line_github(
                     ["pr-lead-time"],

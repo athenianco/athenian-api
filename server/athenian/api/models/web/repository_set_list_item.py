@@ -13,6 +13,7 @@ class RepositorySetListItem(Model):
     def __init__(
         self,
         id: Optional[int] = None,
+        name: Optional[str] = None,
         created: Optional[datetime] = None,
         updated: Optional[datetime] = None,
         items_count: Optional[int] = None,
@@ -20,12 +21,14 @@ class RepositorySetListItem(Model):
         """RepositorySetListItem - a model defined in OpenAPI
 
         :param id: The id of this RepositorySetListItem.
+        :param name: The name of this RepositorySetListItem.
         :param created: The created of this RepositorySetListItem.
         :param updated: The updated of this RepositorySetListItem.
         :param items_count: The items_count of this RepositorySetListItem.
         """
         self.openapi_types = {
             "id": int,
+            "name": str,
             "created": datetime,
             "updated": datetime,
             "items_count": int,
@@ -33,12 +36,14 @@ class RepositorySetListItem(Model):
 
         self.attribute_map = {
             "id": "id",
+            "name": "name",
             "created": "created",
             "updated": "updated",
             "items_count": "items_count",
         }
 
         self._id = id
+        self._name = name
         self._created = created
         self._updated = updated
         self._items_count = items_count
@@ -48,7 +53,6 @@ class RepositorySetListItem(Model):
         """Gets the epository set identifier of this RepositorySetListItem.
 
         :return: The id of this RepositorySetListItem.
-        :rtype: int
         """
         return self._id
 
@@ -57,9 +61,24 @@ class RepositorySetListItem(Model):
         """Sets the repository set identifier of this RepositorySetListItem.
 
         :param id: The id of this RepositorySetListItem.
-        :type id: int
         """
         self._id = id
+
+    @property
+    def name(self) -> str:
+        """Gets the epository set identifier of this RepositorySetListItem.
+
+        :return: The name of this RepositorySetListItem.
+        """
+        return self._name
+
+    @name.setter
+    def name(self, name: str):
+        """Sets the repository set identifier of this RepositorySetListItem.
+
+        :param name: The name of this RepositorySetListItem.
+        """
+        self._name = name
 
     @property
     def created(self) -> datetime:
@@ -68,7 +87,6 @@ class RepositorySetListItem(Model):
         Date and time of creation of the repository set.
 
         :return: The created of this RepositorySetListItem.
-        :rtype: date
         """
         return self._created
 
@@ -79,7 +97,6 @@ class RepositorySetListItem(Model):
         Date and time of creation of the repository set.
 
         :param created: The created of this RepositorySetListItem.
-        :type created: date
         """
         self._created = created
 
@@ -90,7 +107,6 @@ class RepositorySetListItem(Model):
         Date and time of the last change of the repository set.
 
         :return: The updated of this RepositorySetListItem.
-        :rtype: date
         """
         return self._updated
 
@@ -101,7 +117,6 @@ class RepositorySetListItem(Model):
         Date and time of the last change of the repository set.
 
         :param updated: The updated of this RepositorySetListItem.
-        :type updated: date
         """
         self._updated = updated
 
@@ -112,7 +127,6 @@ class RepositorySetListItem(Model):
         Number of repositories in the set.
 
         :return: The items_count of this RepositorySetListItem.
-        :rtype: int
         """
         return self._items_count
 
@@ -123,6 +137,5 @@ class RepositorySetListItem(Model):
         Number of repositories in the set.
 
         :param items_count: The items_count of this RepositorySetListItem.
-        :type items_count: int
         """
         self._items_count = items_count

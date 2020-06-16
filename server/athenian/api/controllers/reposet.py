@@ -53,7 +53,7 @@ async def resolve_reposet(repo: str,
             pointer=pointer,
         ))
     rs, _ = await fetch_reposet(set_id, [RepositorySet.items], uid, db, cache)
-    if rs.owner != account:
+    if rs.owner_id != account:
         raise ResponseError(ForbiddenError(
             detail="User %s is not allowed to reference reposet %d in this query" %
                    (uid, set_id)))
@@ -76,15 +76,15 @@ async def fetch_reposet(
     """
     if not columns or columns[0] is not RepositorySet:
         for col in columns:
-            if col is RepositorySet.owner:
+            if col is RepositorySet.owner_id:
                 break
         else:
             columns = list(columns)
-            columns.append(RepositorySet.owner)
+            columns.append(RepositorySet.owner_id)
     rs = await sdb.fetch_one(select(columns).where(RepositorySet.id == id))
     if rs is None or len(rs) == 0:
         raise ResponseError(NotFoundError(detail="Repository set %d does not exist" % id))
-    account = rs[RepositorySet.owner.key]
+    account = rs[RepositorySet.owner_id.key]
     adm = await get_user_account_status(uid, account, sdb, cache)
     return RepositorySet(**rs), adm
 
@@ -173,7 +173,7 @@ async def _load_account_reposets(account: int,
     assert isinstance(sdb_conn, databases.core.Connection)
     assert isinstance(mdb_conn, databases.core.Connection)
     rss = await sdb_conn.fetch_all(select(fields)
-                                   .where(RepositorySet.owner == account)
+                                   .where(RepositorySet.owner_id == account)
                                    .order_by(RepositorySet.created_at))
     if rss:
         return rss
@@ -211,7 +211,7 @@ async def _load_account_reposets(account: int,
                                              .where(InstallationRepo.install_id.in_(iids)))
             prefix = PREFIXES["github"]
             repos = [(prefix + r[0]) for r in repos]
-            rs = RepositorySet(owner=account, items=repos).create_defaults()
+            rs = RepositorySet(name="all", owner_id=account, items=repos).create_defaults()
             rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
             log.info(
                 "Created the first reposet %d for account %d with %d repos on behalf of %s",

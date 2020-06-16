@@ -28,7 +28,7 @@ async def test_create_team(client, headers, sdb, account):
         "members_checksum": -112991949876077516,
         "members_count": 1,
         "name": "Engineering",
-        "owner": account,
+        "owner_id": account,
     })
 
 
@@ -112,7 +112,7 @@ async def test_create_team_same_members(client, headers, sdb):
         "members_checksum": 1112332547918387545,
         "members_count": 2,
         "name": "Engineering 1",
-        "owner": 1,
+        "owner_id": 1,
     })
 
 
@@ -148,7 +148,7 @@ async def test_create_team_same_name(client, headers, sdb):
         "members_checksum": -112991949876077516,
         "members_count": 1,
         "name": "Engineering",
-        "owner": 1,
+        "owner_id": 1,
     })
 
 
@@ -157,8 +157,8 @@ async def test_create_team_same_name(client, headers, sdb):
     [
         [],
         [
-            {"owner": 1, "name": "Team 1", "members": ["github.com/se7entyse7en"]},
-            {"owner": 1, "name": "Team 2", "members": ["github.com/vmarkovtsev"]},
+            {"owner_id": 1, "name": "Team 1", "members": ["github.com/se7entyse7en"]},
+            {"owner_id": 1, "name": "Team 2", "members": ["github.com/vmarkovtsev"]},
         ],
     ],
     ids=["empty", "non-empty"],
@@ -199,8 +199,8 @@ async def test_list_teams(client, headers, initial_teams, sdb, account):
     [
         [],
         [
-            {"owner": 1, "name": "Team 1", "members": ["github.com/se7entyse7en"]},
-            {"owner": 1, "name": "Team 2", "members": ["github.com/vmarkovtsev"]},
+            {"owner_id": 1, "name": "Team 1", "members": ["github.com/se7entyse7en"]},
+            {"owner_id": 1, "name": "Team 2", "members": ["github.com/vmarkovtsev"]},
         ],
     ],
     ids=["empty", "non-empty"],
@@ -270,12 +270,12 @@ async def test_update_team_smoke(client, headers, sdb):
 ])
 async def test_update_team_shitty_input(client, headers, sdb, owner, id, name, members, status):
     await sdb.execute(insert(Team).values(Team(
-        owner=owner,
+        owner_id=owner,
         name="Engineering",
         members=["github.com/se7entyse7en"],
     ).create_defaults().explode()))
     await sdb.execute(insert(Team).values(Team(
-        owner=1,
+        owner_id=1,
         name="Dream",
         members=["github.com/eiso"],
     ).create_defaults().explode()))
@@ -289,7 +289,7 @@ async def test_update_team_shitty_input(client, headers, sdb, owner, id, name, m
 
 async def test_delete_team_smoke(client, headers, sdb):
     await sdb.execute(insert(Team).values(Team(
-        owner=1,
+        owner_id=1,
         name="Engineering",
         members=["github.com/se7entyse7en"],
     ).create_defaults().explode()))
@@ -309,7 +309,7 @@ async def test_delete_team_smoke(client, headers, sdb):
 ])
 async def test_delete_team_shitty_input(client, headers, sdb, owner, id, status):
     await sdb.execute(insert(Team).values(Team(
-        owner=owner,
+        owner_id=owner,
         name="Engineering",
         members=["github.com/se7entyse7en"],
     ).create_defaults().explode()))
@@ -322,7 +322,7 @@ async def test_delete_team_shitty_input(client, headers, sdb, owner, id, status)
 
 async def test_get_team_smoke(client, headers, sdb):
     await sdb.execute(insert(Team).values(Team(
-        owner=1,
+        owner_id=1,
         name="Engineering",
         members=["github.com/se7entyse7en", "github.com/mcuadros"],
     ).create_defaults().explode()))
@@ -348,7 +348,7 @@ async def test_get_team_smoke(client, headers, sdb):
 ])
 async def test_get_team_shitty_input(client, headers, sdb, owner, id, status):
     await sdb.execute(insert(Team).values(Team(
-        owner=owner,
+        owner_id=owner,
         name="Engineering",
         members=["github.com/se7entyse7en", "github.com/mcuadros"],
     ).create_defaults().explode()))
