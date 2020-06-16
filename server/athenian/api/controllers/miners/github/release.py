@@ -859,7 +859,8 @@ async def map_releases_to_prs(repos: Iterable[str],
                 repo_releases, pdags.get(repo), time_from, authors, mergers, pr_blacklist,
                 mdb, pdb, cache))
     if prs:
-        prs = await asyncio.gather(*prs, return_exceptions=True)
+        with sentry_sdk.start_span(op="_find_old_released_prs"):
+            prs = await asyncio.gather(*prs, return_exceptions=True)
         for pr in prs:
             if isinstance(pr, Exception):
                 raise pr

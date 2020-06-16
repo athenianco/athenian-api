@@ -49,6 +49,7 @@ class PullRequestMiner:
         self._commits = commits
         self._releases = releases
 
+    @sentry_span
     def _postprocess_cached_prs(result: Tuple[List[pd.DataFrame], Set[str], Participants],
                                 repositories: Set[str],
                                 participants: Participants,
@@ -307,6 +308,7 @@ class PullRequestMiner:
         return True
 
     @classmethod
+    @sentry_span
     def _remove_spurious_prs(cls,
                              time_from: datetime,
                              prs: pd.DataFrame,
@@ -333,6 +335,7 @@ class PullRequestMiner:
                     errors="ignore")
 
     @classmethod
+    @sentry_span
     def _find_drop_by_participants(cls,
                                    dfs: List[pd.DataFrame],
                                    participants: Participants,
@@ -380,6 +383,7 @@ class PullRequestMiner:
         return prs.index.difference(passed[0])
 
     @classmethod
+    @sentry_span
     def _find_drop_by_inactive(cls,
                                dfs: List[pd.DataFrame],
                                time_from: datetime,
@@ -422,6 +426,7 @@ class PullRequestMiner:
         return df
 
     @classmethod
+    @sentry_span
     def _truncate_prs(cls, dfs: List[pd.DataFrame], time_from: datetime, time_to: datetime,
                       ) -> None:
         """
