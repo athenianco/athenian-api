@@ -113,13 +113,23 @@ class Team(create_time_mixin(created_at=True, updated_at=True),
                       nullable=False)
 
 
-class Installation(Base):
+class AccountGitHubInstallation(Base):
     """Mapping account -> installation_id, one-to-many."""
 
-    __tablename__ = "installations"
+    __tablename__ = "account_github_installations"
 
     id = Column(BigInteger(), primary_key=True, autoincrement=False)
     account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_installation_id_owner"),
+                        nullable=False)
+
+
+class AccountJiraInstallation(Base):
+    """Mapping account -> installation_id, one-to-many."""
+
+    __tablename__ = "account_jira_installations"
+
+    id = Column(BigInteger(), primary_key=True, autoincrement=False)
+    account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_installation_id_owner2"),
                         nullable=False)
 
 
