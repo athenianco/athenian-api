@@ -25,8 +25,8 @@ from athenian.api.controllers.miners.types import DT, Fallback, MinedPullRequest
     ParticipationKind, PullRequestTimes
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
-    PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
-    Release
+    PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewComment, \
+    PullRequestReviewRequest, Release
 from athenian.api.tracing import sentry_span
 
 
@@ -39,7 +39,7 @@ class PullRequestMiner:
 
     def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
                  review_requests: pd.DataFrame, comments: pd.DataFrame, commits: pd.DataFrame,
-                 releases: pd.DataFrame):
+                 releases: pd.DataFrame, labels: pd.DataFrame):
         """Initialize a new instance of `PullRequestMiner`."""
         self._prs = prs
         self._reviews = reviews
@@ -48,6 +48,7 @@ class PullRequestMiner:
         self._comments = comments
         self._commits = commits
         self._releases = releases
+        self._labels = labels
 
     @sentry_span
     def _postprocess_cached_prs(result: Tuple[List[pd.DataFrame], Set[str], Participants],
@@ -139,8 +140,9 @@ class PullRequestMiner:
                 release_settings, mdb, pdb, cache, pr_blacklist),
         ]
         if not exclude_inactive:
+            # TODO(vmarkovtsev): labels
             tasks.append(load_inactive_merged_unreleased_prs(
-                time_from, time_to, repositories, participants, default_branches,
+                time_from, time_to, repositories, participants, [], default_branches,
                 release_settings, mdb, pdb, cache))
         else:
             async def dummy_unreleased():
@@ -178,6 +180,7 @@ class PullRequestMiner:
             ",".join(prs.index), ",".join(unreleased),
             ",".join(releases[Release.id.key].values), time_to.timestamp(),
         ),
+        version=2,
     )
     async def mine_by_ids(cls,
                           prs: pd.DataFrame,
@@ -240,9 +243,15 @@ class PullRequestMiner:
                 merged_prs, releases, matched_bys, default_branches, time_to, release_settings,
                 mdb, pdb, cache)
 
+        @sentry_span
+        async def fetch_labels():
+            return await cls._read_filtered_models(
+                mdb, PullRequestLabel, node_ids, time_to,
+                columns=[PullRequestLabel.name], created_at=False)
+
         dfs = await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
-            fetch_commits(), map_releases(), return_exceptions=True)
+            fetch_commits(), map_releases(), fetch_labels(), return_exceptions=True)
         for df in dfs:
             if isinstance(df, Exception):
                 raise df from None
@@ -342,7 +351,7 @@ class PullRequestMiner:
                                    ) -> Collection[str]:
         if not participants:
             return []
-        prs, reviews, review_comments, review_requests, comments, commits, releases = dfs
+        prs, reviews, review_comments, review_requests, comments, commits, releases, _ = dfs
         passed = []
         for df, col, pk in ((prs, PullRequest.user_login, ParticipationKind.AUTHOR),
                             (prs, PullRequest.merged_by_login, ParticipationKind.MERGER),
@@ -388,7 +397,7 @@ class PullRequestMiner:
                                dfs: List[pd.DataFrame],
                                time_from: datetime,
                                time_to: datetime) -> Collection[str]:
-        prs, reviews, review_comments, review_requests, comments, commits, releases = dfs
+        prs, reviews, review_comments, review_requests, comments, commits, releases, _ = dfs
         activities = [
             prs[PullRequest.created_at.key],
             prs[PullRequest.closed_at.key],
@@ -414,12 +423,17 @@ class PullRequestMiner:
                                     node_ids: Collection[str],
                                     time_to: datetime,
                                     columns: Optional[List[InstrumentedAttribute]] = None,
+                                    created_at=True,
                                     ) -> pd.DataFrame:
         if columns is not None:
             columns = [model_cls.pull_request_node_id, model_cls.node_id] + columns
-        df = await read_sql_query(select(columns or [model_cls]).where(
-            sql.and_(model_cls.pull_request_node_id.in_(node_ids),
-                     model_cls.created_at < time_to)),
+        node_id_filter = model_cls.pull_request_node_id.in_(node_ids)
+        if created_at:
+            filters = sql.and_(node_id_filter, model_cls.created_at < time_to)
+        else:
+            filters = node_id_filter
+        df = await read_sql_query(
+            select(columns or [model_cls]).where(filters),
             con=conn,
             columns=columns or model_cls,
             index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
@@ -434,7 +448,7 @@ class PullRequestMiner:
 
         This is used to correctly handle timezone offsets.
         """
-        prs, releases = dfs[0], dfs[-1]
+        prs, _, _, _, _, _, releases, _ = dfs
         # filter out PRs which were released before `time_from`
         unreleased = releases.index.take(np.where(
             releases[Release.published_at.key] < time_from)[0])

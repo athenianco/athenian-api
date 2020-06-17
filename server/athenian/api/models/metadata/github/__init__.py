@@ -44,6 +44,11 @@ class ParentChildMixin:
     parent_id = Column(Text, primary_key=True)
     child_id = Column(Text, primary_key=True)
 
+
+class PullRequestMixin:
+    pull_request_node_id = Column(Text, nullable=False)
+
+
 # -- TABLES --
 
 
@@ -93,10 +98,9 @@ class PullRequestComment(Base,
                          UpdatedMixin,
                          UserMixin,
                          RepositoryMixin,
+                         PullRequestMixin,
                          ):
     __tablename__ = "github_pull_request_comments_compat"
-
-    pull_request_node_id = Column(Text, nullable=False)
 
 
 class PullRequestReviewComment(Base,
@@ -104,15 +108,18 @@ class PullRequestReviewComment(Base,
                                UpdatedMixin,
                                UserMixin,
                                RepositoryMixin,
+                               PullRequestMixin,
                                ):
     __tablename__ = "github_pull_request_review_comments_compat"
 
-    pull_request_node_id = Column(Text, nullable=False)
 
-
-class PullRequestCommit(Base, RepositoryMixin):
+class PullRequestCommit(Base,
+                        RepositoryMixin,
+                        ):
     __tablename__ = "github_pull_request_commits_compat"
 
+    pull_request_node_id = Column(Text, primary_key=True)
+    sha = Column(Text, primary_key=True)
     node_id = Column(Text, nullable=False)
     commit_node_id = Column(Text, nullable=False)
     author_login = Column(Text)
@@ -121,8 +128,6 @@ class PullRequestCommit(Base, RepositoryMixin):
     committer_login = Column(Text)
     commit_date = Column(Text, nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
-    pull_request_node_id = Column(Text, primary_key=True)
-    sha = Column(Text, primary_key=True)
     created_at = synonym("committed_date")
 
     def parse_author_date(self):
@@ -150,10 +155,10 @@ PullRequestCommit.created_at.key = "committed_date"
 class PullRequestReview(Base,
                         IDMixin,
                         UserMixin,
+                        PullRequestMixin,
                         ):
     __tablename__ = "github_pull_request_reviews_compat"
 
-    pull_request_node_id = Column(Text, nullable=False)
     state = Column(Text, nullable=False)
     submitted_at = Column(TIMESTAMP(timezone=True), nullable=False)
     repository_full_name = Column(Text)
@@ -256,7 +261,9 @@ class User(Base,
     name = Column(Text)
 
 
-class Release(Base, RepositoryMixin):
+class Release(Base,
+              RepositoryMixin,
+              ):
     __tablename__ = "github_releases_compat"
 
     id = Column(Text, primary_key=True)
@@ -282,7 +289,9 @@ class NodeCommit(Base):
 NodeCommit.sha.key = "oid"
 
 
-class NodeCommitParent(Base, ParentChildMixin):
+class NodeCommitParent(Base,
+                       ParentChildMixin,
+                       ):
     __tablename__ = "github_node_commit_parents"
 
     index = Column(Integer, nullable=False)
@@ -296,7 +305,9 @@ class NodePullRequestCommit(Base):
     pull_request = Column(Text, nullable=False)
 
 
-class Branch(Base, RepositoryMixin):
+class Branch(Base,
+             RepositoryMixin,
+             ):
     __tablename__ = "github_branches_compat"
 
     repo_id = Column(Text, primary_key=True)
@@ -305,3 +316,17 @@ class Branch(Base, RepositoryMixin):
     is_default = Column(Boolean, nullable=False)
     commit_id = Column(Text, nullable=False)
     commit_sha = Column(Text, nullable=False)
+
+
+class PullRequestLabel(Base,
+                       IDMixin,
+                       UpdatedMixin,
+                       RepositoryMixin,
+                       PullRequestMixin,
+                       ):
+    __tablename__ = "github_pull_request_labels_compat"
+
+    name = Column(Text, nullable=False)
+    description = Column(Text)
+    color = Column(Text, nullable=False)
+    url = Column(Text, nullable=False)

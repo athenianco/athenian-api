@@ -382,8 +382,9 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
     add_pdb_misses(pdb, "map_prs_to_releases/unreleased",
                    len(merged_prs) - len(missed_released_prs))
+    # TODO(vmarkovtsev): load the labels of merged_prs from mdb
     await update_unreleased_prs(
-        merged_prs, missed_released_prs, releases, matched_bys, default_branches,
+        merged_prs, missed_released_prs, releases, {}, matched_bys, default_branches,
         release_settings, pdb)
     return pr_releases.append(missed_released_prs)
 

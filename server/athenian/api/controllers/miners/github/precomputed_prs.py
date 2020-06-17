@@ -25,7 +25,7 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
 from athenian.api.db import add_pdb_hits
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestCommit, PullRequestReview, PullRequestReviewRequest, Release
+    PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewRequest, Release
 from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitHubPullRequestTimes
 from athenian.api.tracing import sentry_span
 
@@ -144,6 +144,16 @@ def _build_participants_filters(participants: Participants,
             ghprt.commit_authors, ghprt.commit_committers])
 
 
+def _build_labels_filters(labels: Collection[str],
+                          filters: list,
+                          selected: list,
+                          postgres: bool) -> None:
+    if postgres:
+        filters.append(GitHubPullRequestTimes.labels.has_any(labels))
+    else:
+        selected.append(GitHubPullRequestTimes.labels)
+
+
 def _check_participants(row: Mapping, participants: Participants) -> bool:
     ghprt = GitHubPullRequestTimes
     for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
@@ -167,6 +177,7 @@ async def load_precomputed_done_times(time_from: datetime,
                                       time_to: datetime,
                                       repos: Collection[str],
                                       participants: Participants,
+                                      labels: Collection[str],
                                       default_branches: Dict[str, str],
                                       exclude_inactive: bool,
                                       release_settings: Dict[str, ReleaseMatchSetting],
@@ -182,6 +193,10 @@ async def load_precomputed_done_times(time_from: datetime,
     filters = _create_common_filters(time_from, time_to, repos)
     if len(participants) > 0:
         _build_participants_filters(participants, filters, selected, postgres)
+    if len(labels) > 0:
+        _build_labels_filters(labels, filters, selected, postgres)
+        if not postgres and not isinstance(labels, set):
+            labels = set(labels)
     if exclude_inactive:
         # timezones: date_from and date_to may be not exactly 00:00
         date_from_day = datetime.combine(
@@ -206,6 +221,8 @@ async def load_precomputed_done_times(time_from: datetime,
             continue
         if not postgres:
             if len(participants) > 0 and not _check_participants(row, participants):
+                continue
+            if len(labels) > 0 and not labels.intersection(row[ghprt.labels.key]):
                 continue
             if exclude_inactive:
                 activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -340,6 +357,7 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
             repository_full_name=repo,
             pr_created_at=times.created.best,
             pr_done_at=done_at,
+            number=pr.pr[PullRequest.number.key],
             release_url=pr.release[Release.url.key],
             author=_flatten_set(participants[ParticipationKind.AUTHOR]),
             merger=_flatten_set(participants[ParticipationKind.MERGER]),
@@ -348,6 +366,7 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
             reviewers={k: "" for k in participants[ParticipationKind.REVIEWER]},
             commit_authors={k: "" for k in participants[ParticipationKind.COMMIT_AUTHOR]},
             commit_committers={k: "" for k in participants[ParticipationKind.COMMIT_COMMITTER]},
+            labels={label: "" for label in pr.labels[PullRequestLabel.name.key]},
             activity_days=activity_days,
             data=pickle.dumps(times),
         ).create_defaults().explode(with_primary_keys=True))
@@ -431,6 +450,7 @@ async def discover_unreleased_prs(prs: pd.DataFrame,
 async def update_unreleased_prs(merged_prs: pd.DataFrame,
                                 released_prs: pd.DataFrame,
                                 releases: pd.DataFrame,
+                                labels: Dict[str, List[str]],
                                 matched_bys: Dict[str, ReleaseMatch],
                                 default_branches: Dict[str, str],
                                 release_settings: Dict[str, ReleaseMatchSetting],
@@ -439,7 +459,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
     Append new releases which do *not* include the specified merged PRs.
 
     :param merged_prs: Merged PRs to update in the pdb.
-    :param released_prs: Released PR, we shouldn't write their releases in the pdb. However, \
+    :param released_prs: Released PRs, we shouldn't write their releases in the pdb. However, \
                          any earlier release in `releases` should be appended.
     :param releases: All the releases that were considered in mapping `merged_prs` to \
                      `released_prs`.
@@ -503,6 +523,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                 merged_at=merged_at,
                 author=author,
                 merger=merger,
+                labels={label: "" for label in labels.get(node_id, [])},
             ).create_defaults().explode(with_primary_keys=True))
         updates.append(pdb.execute_many(sql, values))
     errors = await asyncio.gather(*updates, return_exceptions=True)
@@ -527,6 +548,7 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
                                               time_to: datetime,
                                               repos: Collection[str],
                                               participants: Participants,
+                                              labels: Collection[str],
                                               default_branches: Dict[str, str],
                                               release_settings: Dict[str, ReleaseMatchSetting],
                                               mdb: databases.Database,
@@ -534,6 +556,7 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
                                               cache: Optional[aiomcache.Client],
                                               ) -> pd.DataFrame:
     """Discover PRs which were merged before `time_from` and still not released."""
+    postgres = pdb.url.dialect in ("postgres", "postgresql")
     selected = [GitHubMergedPullRequest.pr_node_id,
                 GitHubMergedPullRequest.repository_full_name,
                 GitHubMergedPullRequest.release_match]
@@ -548,6 +571,13 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
         people = participants.get(role)
         if people:
             filters.append(col.in_(people))
+    if len(labels) > 0:
+        if postgres:
+            filters.append(GitHubMergedPullRequest.labels.has_any(labels))
+        else:
+            selected.append(GitHubMergedPullRequest.labels)
+            if not isinstance(labels, set):
+                labels = set(labels)
     body = join(GitHubMergedPullRequest, GitHubPullRequestTimes, and_(
         GitHubPullRequestTimes.pr_node_id == GitHubMergedPullRequest.pr_node_id,
         GitHubPullRequestTimes.release_match == GitHubMergedPullRequest.release_match,
@@ -564,6 +594,9 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
         if dump is None:
             continue
         # we do not care about the exact release match
+        if len(labels) > 0 and not postgres and \
+                not labels.intersection(row[GitHubMergedPullRequest.labels.key]):
+            continue
         node_ids.append(row[0])
     add_pdb_hits(pdb, "inactive_merged_unreleased", len(node_ids))
     return await read_sql_query(select([PullRequest])

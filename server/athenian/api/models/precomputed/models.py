@@ -44,6 +44,7 @@ class GitHubPullRequestTimes(Base, UpdatedMixin):
     repository_full_name = Column(RepositoryFullName, nullable=False)
     pr_created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     pr_done_at = Column(TIMESTAMP(timezone=True))
+    number = Column(Integer(), nullable=False)
     author = Column(CHAR(100))  # can be null, see @ghost
     merger = Column(CHAR(100))
     releaser = Column(CHAR(100))
@@ -52,6 +53,7 @@ class GitHubPullRequestTimes(Base, UpdatedMixin):
     commenters = Column(JHSTORE, nullable=False, server_default="")
     commit_authors = Column(JHSTORE, nullable=False, server_default="")
     commit_committers = Column(JHSTORE, nullable=False, server_default="")
+    labels = Column(JHSTORE, nullable=False, server_default="")
     activity_days = Column(TSARRAY, nullable=False, server_default="{}")
     data = Column(LargeBinary(), nullable=False)
 
@@ -106,3 +108,4 @@ class GitHubMergedPullRequest(Base, UpdatedMixin):
     checked_releases = Column(JHSTORE, nullable=False, server_default="")
     author = Column(CHAR(100))  # can be null, see @ghost
     merger = Column(CHAR(100))  # @ghost can merge, too
+    labels = Column(JHSTORE, nullable=False, server_default="")
