@@ -1,5 +1,5 @@
 import dateutil.parser
-from sqlalchemy import ARRAY, BigInteger, Boolean, Column, ForeignKey, Integer, Text, TIMESTAMP
+from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, Integer, Text, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import synonym
 
@@ -195,7 +195,6 @@ class PullRequest(Base,
     head_ref = Column(Text, nullable=False)
     hidden = Column(Boolean)
     htmlurl = Column(Text)
-    labels = Column(ARRAY(Text()))
     merge_commit_id = Column(Text)
     merge_commit_sha = Column(Text)
     merged = Column(Boolean)

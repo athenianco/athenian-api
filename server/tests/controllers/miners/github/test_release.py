@@ -223,9 +223,9 @@ async def test_map_releases_to_prs_blacklist(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
 
 
-@pytest.mark.parametrize("authors, mergers, n", [(["mcuadros"], [], 42),
-                                                 ([], ["mcuadros"], 147),
-                                                 (["mcuadros"], ["mcuadros"], 147)])
+@pytest.mark.parametrize("authors, mergers, n", [(["mcuadros"], [], 2),
+                                                 ([], ["mcuadros"], 7),
+                                                 (["mcuadros"], ["mcuadros"], 7)])
 async def test_map_releases_to_prs_authors_mergers(
         branches, default_branches, mdb, pdb, cache,
         release_match_setting_tag, authors, mergers, n):
@@ -235,7 +235,7 @@ async def test_map_releases_to_prs_authors_mergers(
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
         authors, mergers, release_match_setting_tag, mdb, pdb, cache)
-    assert prs.size == n
+    assert len(prs) == n
     assert len(releases) == 2
     assert set(releases[Release.sha.key]) == {
         "0d1a009cbb604db18be960db5f1525b99a55d727",
