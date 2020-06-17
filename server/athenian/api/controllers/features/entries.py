@@ -60,8 +60,8 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     branches, default_branches = await extract_branches(repositories, mdb, cache)
     precomputed_tasks = [
         load_precomputed_done_times(
-            time_from, time_to, repositories, participants, default_branches, exclude_inactive,
-            release_settings, pdb),
+            time_from, time_to, repositories, participants, [],
+            default_branches, exclude_inactive, release_settings, pdb),
     ]
     if exclude_inactive:
         precomputed_tasks.append(load_precomputed_done_candidates(

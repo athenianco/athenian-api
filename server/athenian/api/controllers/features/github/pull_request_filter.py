@@ -253,7 +253,8 @@ async def filter_pull_requests(properties: Set[Property],
         PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, participants,
                               branches, default_branches, exclude_inactive, release_settings,
                               mdb, pdb, cache),
-        load_precomputed_done_times(time_from, time_to, repos, participants, default_branches,
+        # TODO(vmarkovtsev): labels
+        load_precomputed_done_times(time_from, time_to, repos, participants, [], default_branches,
                                     exclude_inactive, release_settings, pdb),
     )
     miner_time_machine, done_times = await asyncio.gather(*tasks, return_exceptions=True)

@@ -511,12 +511,15 @@ async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
     )
     for df1, df2 in zip(dfs1, dfs2):
         assert (df1.fillna(0) == df2.fillna(0)).all().all()
-    for i in range(len(dfs1) - 1):
+    for i, df1 in enumerate(dfs1):
+        if i == len(dfs1) - 2:
+            # releases
+            continue
         df = pd.concat([dataclasses.astuple(pr)[i + 1] for pr in mined_prs])
         df.sort_index(inplace=True)
-        dfs1[i].index = dfs1[i].index.droplevel(0)
-        dfs1[i].sort_index(inplace=True)
-        assert (df.fillna(0) == dfs1[i].fillna(0)).all().all()
+        df1.index = df1.index.droplevel(0)
+        df1.sort_index(inplace=True)
+        assert (df.fillna(0) == df1.fillna(0)).all().all()
 
 
 async def test_pr_miner_exclude_inactive(

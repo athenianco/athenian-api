@@ -97,6 +97,7 @@ class MinedPullRequest:
     comments: pd.DataFrame
     commits: pd.DataFrame
     release: Dict[str, Any]
+    labels: pd.DataFrame
 
     def participants(self) -> Participants:
         """Collect unique developer logins that are mentioned in this pull request."""
