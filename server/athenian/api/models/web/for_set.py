@@ -11,24 +11,29 @@ class ForSet(Model):
         self,
         repositories: Optional[List[str]] = None,
         with_: Optional[PullRequestWith] = None,
+        labels: Optional[List[str]] = None,
     ):
         """ForSet - a model defined in OpenAPI
 
         :param repositories: The repositories of this ForSet.
         :param with_: The with of this ForSet.
+        :param labels: The labels of this ForSet.
         """
         self.openapi_types = {
             "repositories": List[str],
             "with_": PullRequestWith,
+            "labels": List[str],
         }
 
         self.attribute_map = {
             "repositories": "repositories",
             "with_": "with",
+            "labels": "labels",
         }
 
         self._repositories = repositories
         self._with_ = with_
+        self._labels = labels
 
     @property
     def repositories(self) -> List[str]:
@@ -67,7 +72,20 @@ class ForSet(Model):
 
         :param with_: The with_ of this PullRequest.
         """
-        if with_ is None:
-            raise ValueError("Invalid value for `with_`, must not be `None`")
-
         self._with_ = with_
+
+    @property
+    def labels(self) -> List[str]:
+        """Gets the labels of this ForSet.
+
+        :return: The labels of this ForSet.
+        """
+        return self._labels
+
+    @labels.setter
+    def labels(self, labels: List[str]):
+        """Sets the labels of this ForSet.
+
+        :param labels: The labels of this ForSet.
+        """
+        self._labels = labels

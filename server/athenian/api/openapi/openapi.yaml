@@ -8,7 +8,7 @@ info:
   license:
     name: CC-BY-4.0
   title: '{{ title }}'
-  version: 1.0.55
+  version: 1.0.54
 servers:
 - description: '{{ server_description }} - {{ server_url }}'
   url: '{{ server_url }}/v1'
@@ -1858,11 +1858,18 @@ components:
           author:
           - github.com/vmarkovtsev
           - github.com/dpordomingo
+        labels:
+        - bug
       properties:
         repositories:
           $ref: '#/components/schemas/RepositorySet'
         with:
           $ref: '#/components/schemas/PullRequestWith'
+        labels:
+          description: At least one of these labels must be present in each returned PR.
+          items:
+            type: string
+          type: array
       required:
       - repositories
       type: object
