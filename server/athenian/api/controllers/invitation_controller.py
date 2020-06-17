@@ -20,7 +20,7 @@ from sqlalchemy import and_, delete, func, insert, select, update
 
 from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
-from athenian.api.controllers.account import get_installation_ids, get_user_account_status
+from athenian.api.controllers.account import get_github_installation_ids, get_user_account_status
 from athenian.api.models.metadata.github import FetchProgress, Installation, InstallationOwner, \
     InstallationRepo
 from athenian.api.models.state.models import Account, Invitation, UserAccount
@@ -275,7 +275,7 @@ async def get_installation_delivery_ids(account: int,
                                         cache: Optional[aiomcache.Client],
                                         ) -> List[Tuple[int, str]]:
     """Load the app installation and delivery IDs for the given account."""
-    installation_ids = await get_installation_ids(account, sdb_conn, cache)
+    installation_ids = await get_github_installation_ids(account, sdb_conn, cache)
     dids = await mdb_conn.fetch_all(
         select([Installation.id, Installation.delivery_id])
         .where(Installation.id.in_(installation_ids)))

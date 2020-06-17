@@ -12,11 +12,11 @@ from sqlalchemy import and_, insert, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
-from athenian.api.controllers.account import get_installation_ids, get_user_account_status
+from athenian.api.controllers.account import get_github_installation_ids, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
-from athenian.api.models.state.models import Installation, RepositorySet, UserAccount
+from athenian.api.models.state.models import AccountGitHubInstallation, RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourceDataError, \
     NotFoundError
 from athenian.api.models.web.generic_error import DatabaseConflict
@@ -188,7 +188,7 @@ async def _load_account_reposets(account: int,
         async with sdb_conn.transaction():
             # new account, discover their repos from the installation and create the first reposet
             try:
-                iids = await get_installation_ids(account, sdb_conn, cache)
+                iids = await get_github_installation_ids(account, sdb_conn, cache)
             except ResponseError:
                 iids = await mdb_conn.fetch_all(
                     select([InstallationOwner.install_id])
@@ -196,17 +196,18 @@ async def _load_account_reposets(account: int,
                 iids = {r[0] for r in iids}
                 if not iids:
                     raise_no_source_data()
-                owned_iids = await sdb_conn.fetch_all(select([Installation.id])
-                                                      .where(Installation.id.in_(iids)))
+                owned_iids = await sdb_conn.fetch_all(
+                    select([AccountGitHubInstallation.id])
+                    .where(AccountGitHubInstallation.id.in_(iids)))
                 owned_iids = {r[0] for r in owned_iids}
                 iids -= owned_iids
                 if not iids:
                     raise_no_source_data()
                 for iid in iids:
                     # we don't expect many installations for the same account so don't go parallel
-                    values = Installation(id=iid, account_id=account).explode(
+                    values = AccountGitHubInstallation(id=iid, account_id=account).explode(
                         with_primary_keys=True)
-                    await sdb_conn.execute(insert(Installation).values(values))
+                    await sdb_conn.execute(insert(AccountGitHubInstallation).values(values))
             repos = await mdb_conn.fetch_all(select([InstallationRepo.repo_full_name])
                                              .where(InstallationRepo.install_id.in_(iids)))
             prefix = PREFIXES["github"]

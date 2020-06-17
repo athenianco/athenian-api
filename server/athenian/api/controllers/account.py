@@ -5,7 +5,7 @@ import aiomcache
 from sqlalchemy import and_, select
 
 from athenian.api.cache import cached, max_exptime
-from athenian.api.models.state.models import Installation, UserAccount
+from athenian.api.models.state.models import AccountGitHubInstallation, UserAccount
 from athenian.api.models.web import NoSourceDataError, NotFoundError
 from athenian.api.response import ResponseError
 from athenian.api.typing_utils import DatabaseLike
@@ -19,13 +19,13 @@ from athenian.api.typing_utils import DatabaseLike
     key=lambda account, **_: (account,),
     refresh_on_access=True,
 )
-async def get_installation_ids(account: int,
-                               sdb_conn: DatabaseLike,
-                               cache: Optional[aiomcache.Client],
-                               ) -> Tuple[int, ...]:
+async def get_github_installation_ids(account: int,
+                                      sdb_conn: DatabaseLike,
+                                      cache: Optional[aiomcache.Client],
+                                      ) -> Tuple[int, ...]:
     """Fetch the Athenian metadata installation ID for the given account ID."""
-    iids = await sdb_conn.fetch_all(
-        select([Installation.id]).where(Installation.account_id == account))
+    iids = await sdb_conn.fetch_all(select([AccountGitHubInstallation.id])
+                                    .where(AccountGitHubInstallation.account_id == account))
     if len(iids) == 0:
         raise ResponseError(NoSourceDataError(
             detail="The account installation has not finished yet."))

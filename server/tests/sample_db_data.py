@@ -8,8 +8,8 @@ import sqlalchemy.orm
 
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import Base
-from athenian.api.models.state.models import Account, Installation, Invitation, RepositorySet, \
-    UserAccount
+from athenian.api.models.state.models import Account, AccountGitHubInstallation, Invitation, \
+    RepositorySet, UserAccount
 
 
 def fill_metadata_session(session: sqlalchemy.orm.Session):
@@ -79,7 +79,7 @@ def fill_state_session(session: sqlalchemy.orm.Session):
     session.add(Account())
     session.add(Account(id=invitation_controller.admin_backdoor))
     session.flush()
-    session.add(Installation(id=6366825, account_id=1))
+    session.add(AccountGitHubInstallation(id=6366825, account_id=1))
     session.add(UserAccount(
         user_id="auth0|5e1f6dfb57bc640ea390557b", account_id=1, is_admin=True))
     session.add(UserAccount(
