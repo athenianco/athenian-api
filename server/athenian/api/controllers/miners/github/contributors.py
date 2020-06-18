@@ -119,16 +119,6 @@ async def _mine_contributors(repos: Collection[str],
                         Release.published_at.between(time_from, time_to)))
             .group_by(Release.author))
 
-    def clean_stats(contribs, with_stats):
-        for c in contribs:
-            if not with_stats:
-                c.pop("stats")
-            else:
-                # We could get rid of these re-mapping, maybe worth looking at it along with the
-                # definition of `DeveloperUpdates`
-                if "author" in c["stats"]:
-                    c["stats"]["prs"] = c["stats"].pop("author")
-
     as_roles = as_roles or ("author", "reviewer", "commit_author", "commit_committer",
                             "commenter", "merger", "releaser")
     locals_ = locals()
@@ -149,10 +139,17 @@ async def _mine_contributors(repos: Collection[str],
     for ud in user_details:
         c = dict(ud)
         c["stats"] = stats[c[User.login.key]]
+        if as_roles and sum(c["stats"].get(role, 0) for role in as_roles) == 0:
+            continue
+
+        if "author" in c["stats"]:
+            # We could get rid of these re-mapping, maybe worth looking at it along with the
+            # definition of `DeveloperUpdates`
+            c["stats"]["prs"] = c["stats"].pop("author")
+
+        if not with_stats:
+            c.pop("stats")
+
         contribs.append(c)
 
-    filtered_contribs = contribs if not as_roles else [
-        c for c in contribs if sum(c["stats"].get(role, 0) for role in as_roles) > 0]
-    clean_stats(filtered_contribs, with_stats)
-
-    return filtered_contribs
+    return contribs
