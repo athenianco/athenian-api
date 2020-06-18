@@ -1,9 +1,8 @@
 from operator import itemgetter
 
-from tests.conftest import has_memcached
-
 from athenian.api.controllers.miners.github.contributors import \
     mine_contributors
+from tests.conftest import has_memcached
 
 
 async def test_mine_contributors_expected_cache_miss_with_stats(mdb, cache, memcached):

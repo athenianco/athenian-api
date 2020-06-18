@@ -1,7 +1,7 @@
 import asyncio
-import marshal
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+import marshal
 from typing import Collection, List, Optional
 
 import aiomcache
