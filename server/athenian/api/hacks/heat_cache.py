@@ -49,6 +49,7 @@ def main():
                                datetime.min.time(),
                                tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=365)
+    return_code = 0
 
     async def async_run():
         cache = create_memcached(args.memcached, log)
@@ -91,6 +92,7 @@ def main():
                     [[time_from, time_to]],
                     repos,
                     {},
+                    set(),
                     False,
                     settings,
                     mdb,
@@ -99,8 +101,11 @@ def main():
                 )
             except Exception as e:
                 sentry_sdk.capture_exception(e)
+                nonlocal return_code
+                return_code = 1
 
     asyncio.run(async_run())
+    return return_code
 
 
 if __name__ == "__main__":
