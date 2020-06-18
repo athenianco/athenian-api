@@ -112,6 +112,7 @@ async def test_map_prs_to_releases_precomputed_released(
         time_to,
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,

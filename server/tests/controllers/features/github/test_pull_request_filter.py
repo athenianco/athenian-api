@@ -61,7 +61,7 @@ async def test_pr_list_miner_match_metrics_all_count(
     await pdb.execute(delete(GitHubMergedPullRequest))  # ignore inactive unreleased
     metric = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_to]],
-        {"src-d/go-git"}, {}, False, release_match_setting_tag, mdb, pdb, None,
+        {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, None,
     ))[0][0][0]
     assert len(prs) == metric.value
 

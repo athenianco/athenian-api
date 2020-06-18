@@ -34,12 +34,13 @@ from athenian.api.tracing import sentry_span
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda metrics, time_intervals, repositories, participants, exclude_inactive, release_settings, **_:  # noqa
+    key=lambda metrics, time_intervals, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
     (
         ",".join(sorted(metrics)),
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
         ",".join(sorted(repositories)),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+        ",".join(sorted(labels)),
         exclude_inactive,
         release_settings,
     ),
@@ -48,6 +49,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
                                                 repositories: Set[str],
                                                 participants: Participants,
+                                                labels: Set[str],
                                                 exclude_inactive: bool,
                                                 release_settings: Dict[str, ReleaseMatchSetting],
                                                 mdb: Database,
@@ -60,7 +62,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     branches, default_branches = await extract_branches(repositories, mdb, cache)
     precomputed_tasks = [
         load_precomputed_done_times(
-            time_from, time_to, repositories, participants, [],
+            time_from, time_to, repositories, participants, labels,
             default_branches, exclude_inactive, release_settings, pdb),
     ]
     if exclude_inactive:
@@ -78,7 +80,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
     # are effectively discarded later in BinnedPullRequestMetricCalculator
     miner = await PullRequestMiner.mine(
-        date_from, date_to, time_from, time_to, repositories, participants,
+        date_from, date_to, time_from, time_to, repositories, participants, labels,
         branches, default_branches, exclude_inactive, release_settings,
         mdb, pdb, cache, pr_blacklist=blacklist)
     times_miner = PullRequestTimesMiner()

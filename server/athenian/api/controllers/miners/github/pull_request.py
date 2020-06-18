@@ -51,16 +51,20 @@ class PullRequestMiner:
         self._labels = labels
 
     @sentry_span
-    def _postprocess_cached_prs(result: Tuple[List[pd.DataFrame], Set[str], Participants],
-                                repositories: Set[str],
-                                participants: Participants,
-                                pr_blacklist: Optional[Collection[str]] = None,
-                                **_) -> Tuple[List[pd.DataFrame], Set[str], Participants]:
-        dfs, cached_repositories, cached_participants = result
+    def _postprocess_cached_prs(
+            result: Tuple[List[pd.DataFrame], Set[str], Participants, Set[str]],
+            repositories: Set[str],
+            participants: Participants,
+            labels: Set[str],
+            pr_blacklist: Optional[Collection[str]] = None,
+            **_) -> Tuple[List[pd.DataFrame], Set[str], Participants]:
+        dfs, cached_repositories, cached_participants, cached_labels = result
         if repositories - cached_repositories:
             raise CancelCache()
         cls = PullRequestMiner
         if not cls._check_participants_compatibility(cached_participants, participants):
+            raise CancelCache()
+        if cached_labels and (not labels or labels - cached_labels):
             raise CancelCache()
         to_remove = set()
         if pr_blacklist:
@@ -71,6 +75,7 @@ class PullRequestMiner:
                     list(repositories), assume_unique=True, invert=True),
         )[0]))
         to_remove.update(cls._find_drop_by_participants(dfs, participants))
+        to_remove.update(cls._find_drop_by_labels(prs, dfs[-1], labels))
         cls._drop(dfs, to_remove)
         return result
 
@@ -85,12 +90,14 @@ class PullRequestMiner:
             ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []),
         ),
         postprocess=_postprocess_cached_prs,
+        version=2,
     )
     async def _mine(cls,
                     date_from: date,
                     date_to: date,
                     repositories: Set[str],
                     participants: Participants,
+                    labels: Set[str],
                     branches: pd.DataFrame,
                     default_branches: Dict[str, str],
                     exclude_inactive: bool,
@@ -99,10 +106,11 @@ class PullRequestMiner:
                     pdb: databases.Database,
                     cache: Optional[aiomcache.Client],
                     pr_blacklist: Optional[Collection[str]] = None,
-                    ) -> Tuple[List[pd.DataFrame], Set[str], Participants]:
+                    ) -> Tuple[List[pd.DataFrame], Set[str], Participants, Set[str]]:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
         assert isinstance(repositories, set)
+        assert isinstance(labels, set)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
         filters = [
             sql.or_(PullRequest.closed_at.is_(None), PullRequest.closed_at >= time_from),
@@ -163,10 +171,12 @@ class PullRequestMiner:
                 cls, prs, unreleased.index, time_to, releases, matched_bys, default_branches,
                 release_settings, mdb, pdb, cache)
         dfs = [prs, *dfs]
-        cls._drop(dfs, cls._find_drop_by_participants(dfs, participants))
+        to_drop = cls._find_drop_by_participants(dfs, participants)
+        to_drop |= cls._find_drop_by_labels(prs, dfs[-1], labels)
         if exclude_inactive:
-            cls._drop(dfs, cls._find_drop_by_inactive(dfs, time_from, time_to))
-        return dfs, repositories, participants
+            to_drop |= cls._find_drop_by_inactive(dfs, time_from, time_to)
+        cls._drop(dfs, to_drop)
+        return dfs, repositories, participants, labels
 
     _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
 
@@ -266,6 +276,7 @@ class PullRequestMiner:
                    time_to: datetime,
                    repositories: Set[str],
                    participants: Participants,
+                   labels: Set[str],
                    branches: pd.DataFrame,
                    default_branches: Dict[str, str],
                    exclude_inactive: bool,
@@ -283,8 +294,9 @@ class PullRequestMiner:
         :param time_from: Precise timestamp of since when PR events are allowed to happen.
         :param time_to: Precise timestamp of until when PR events are allowed to happen.
         :param repositories: PRs must belong to these repositories (prefix excluded).
-        :param participants: PRs must have these user IDs in the specified participation roles
+        :param participants: PRs must have these user IDs in the specified participation roles \
                              (OR aggregation). An empty dict means everybody.
+        :param labels: PRs must be labeled with at least one name from this set.
         :param branches: Preloaded DataFrame with branches in the specified repositories.
         :param default_branches: Mapping from repository names to their default branch names.
         :param exclude_inactive: Ors must have at least one event in the given time frame.
@@ -298,8 +310,8 @@ class PullRequestMiner:
         date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
-        dfs, _, _ = await cls._mine(
-            date_from, date_to, repositories, participants, branches, default_branches,
+        dfs, _, _, _ = await cls._mine(
+            date_from, date_to, repositories, participants, labels, branches, default_branches,
             exclude_inactive, release_settings, mdb, pdb, cache, pr_blacklist=pr_blacklist)
         cls._truncate_prs(dfs, time_from, time_to)
         return cls(*dfs)
@@ -348,9 +360,9 @@ class PullRequestMiner:
     def _find_drop_by_participants(cls,
                                    dfs: List[pd.DataFrame],
                                    participants: Participants,
-                                   ) -> Collection[str]:
+                                   ) -> pd.Index:
         if not participants:
-            return []
+            return pd.Index([])
         prs, reviews, review_comments, review_requests, comments, commits, releases, _ = dfs
         passed = []
         for df, col, pk in ((prs, PullRequest.user_login, ParticipationKind.AUTHOR),
@@ -393,10 +405,22 @@ class PullRequestMiner:
 
     @classmethod
     @sentry_span
+    def _find_drop_by_labels(cls,
+                             prs: pd.DataFrame,
+                             df_labels: pd.DataFrame,
+                             labels: Set[str]) -> pd.Index:
+        if not labels:
+            return pd.Index([])
+        return prs.index.unique().difference(df_labels.index.get_level_values(0).take(
+            np.where(np.in1d(df_labels[PullRequestLabel.name.key].values, list(labels)))[0],
+        ).unique())
+
+    @classmethod
+    @sentry_span
     def _find_drop_by_inactive(cls,
                                dfs: List[pd.DataFrame],
                                time_from: datetime,
-                               time_to: datetime) -> Collection[str]:
+                               time_to: datetime) -> pd.Index:
         prs, reviews, review_comments, review_requests, comments, commits, releases, _ = dfs
         activities = [
             prs[PullRequest.created_at.key],

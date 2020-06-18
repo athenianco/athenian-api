@@ -250,7 +250,7 @@ async def filter_pull_requests(properties: Set[Property],
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     branches, default_branches = await extract_branches(repos, mdb, cache)
     tasks = (
-        PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, participants,
+        PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, participants, set(),
                               branches, default_branches, exclude_inactive, release_settings,
                               mdb, pdb, cache),
         # TODO(vmarkovtsev): labels
