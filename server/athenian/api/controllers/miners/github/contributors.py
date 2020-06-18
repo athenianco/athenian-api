@@ -119,9 +119,15 @@ async def _mine_contributors(repos: Collection[str],
                         Release.published_at.between(time_from, time_to)))
             .group_by(Release.author))
 
-    def strip_stats(contribs):
+    def clean_stats(contribs, with_stats):
         for c in contribs:
-            c.pop("stats")
+            if not with_stats:
+                c.pop("stats")
+            else:
+                # We could get rid of these re-mapping, maybe worth looking at it along with the
+                # definition of `DeveloperUpdates`
+                if "author" in c["stats"]:
+                    c["stats"]["prs"] = c["stats"].pop("author")
 
     data = await asyncio.gather(
         fetch_authors(), fetch_reviewers(),
@@ -129,7 +135,7 @@ async def _mine_contributors(repos: Collection[str],
         fetch_commenters(), fetch_mergers(), fetch_releasers())
 
     stats = defaultdict(dict)
-    for rows, key in zip(data, ("prs", "reviewer", "commit_author", "commit_committer",
+    for rows, key in zip(data, ("author", "reviewer", "commit_author", "commit_committer",
                                 "commenter", "merger", "releaser")):
         for row in rows:
             stats[row[0]][key] = row[1]
@@ -146,27 +152,8 @@ async def _mine_contributors(repos: Collection[str],
         c["stats"] = stats[c[User.login.key]]
         contribs.append(c)
 
-    filtered_contribs = _filter_contributors_by_roles(contribs, as_roles)
-    if not with_stats:
-        strip_stats(filtered_contribs)
-
-    return filtered_contribs
-
-
-def _filter_contributors_by_roles(contribs: List[dict], as_roles: List[str]) -> List[dict]:
-    if not as_roles:
-        return contribs
-
-    filtered_contribs = []
-    # We could get rid of these re-mapping, maybe worth looking at it along with the
-    # definition of `DeveloperUpdates`
-    role_mapping = {"author": "prs"}
-    for c in contribs:
-        has_active_role = sum(c["stats"].get(role_mapping.get(role, role), 0)
-                              for role in as_roles) > 0
-        if not has_active_role:
-            continue
-
-        filtered_contribs.append(c)
+    filtered_contribs = contribs if not as_roles else [
+        c for c in contribs if sum(c["stats"].get(role, 0) for role in as_roles) > 0]
+    clean_stats(filtered_contribs, with_stats)
 
     return filtered_contribs
