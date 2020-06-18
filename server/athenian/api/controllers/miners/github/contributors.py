@@ -65,14 +65,14 @@ async def _mine_contributors(repos: Collection[str],
     )
 
     @sentry_span
-    async def fetch_authors():
+    async def fetch_author():
         return await db.fetch_all(
             select([PullRequest.user_login, func.count(PullRequest.user_login)])
             .where(common_prs_where)
             .group_by(PullRequest.user_login))
 
     @sentry_span
-    async def fetch_reviewers():
+    async def fetch_reviewer():
         return await db.fetch_all(
             select([PullRequestReview.user_login, func.count(PullRequestReview.user_login)])
             .where(and_(PullRequestReview.repository_full_name.in_(repos),
@@ -80,7 +80,7 @@ async def _mine_contributors(repos: Collection[str],
             .group_by(PullRequestReview.user_login))
 
     @sentry_span
-    async def fetch_commit_authors():
+    async def fetch_commit_author():
         return await db.fetch_all(
             select([PushCommit.author_login, func.count(PushCommit.author_login)])
             .where(and_(PushCommit.repository_full_name.in_(repos),
@@ -88,7 +88,7 @@ async def _mine_contributors(repos: Collection[str],
             .group_by(PushCommit.author_login))
 
     @sentry_span
-    async def fetch_commit_committers():
+    async def fetch_commit_committer():
         return await db.fetch_all(
             select([PushCommit.committer_login, func.count(PushCommit.committer_login)])
             .where(and_(PushCommit.repository_full_name.in_(repos),
@@ -96,7 +96,7 @@ async def _mine_contributors(repos: Collection[str],
             .group_by(PushCommit.committer_login))
 
     @sentry_span
-    async def fetch_commenters():
+    async def fetch_commenter():
         return await db.fetch_all(
             select([PullRequestComment.user_login, func.count(PullRequestComment.user_login)])
             .where(and_(PullRequestComment.repository_full_name.in_(repos),
@@ -105,14 +105,14 @@ async def _mine_contributors(repos: Collection[str],
             .group_by(PullRequestComment.user_login))
 
     @sentry_span
-    async def fetch_mergers():
+    async def fetch_merger():
         return await db.fetch_all(
             select([PullRequest.merged_by_login, func.count(PullRequest.merged_by_login)])
             .where(common_prs_where)
             .group_by(PullRequest.merged_by_login))
 
     @sentry_span
-    async def fetch_releasers():
+    async def fetch_releaser():
         return await db.fetch_all(
             select([Release.author, func.count(Release.author)])
             .where(and_(Release.repository_full_name.in_(repos),
@@ -129,14 +129,13 @@ async def _mine_contributors(repos: Collection[str],
                 if "author" in c["stats"]:
                     c["stats"]["prs"] = c["stats"].pop("author")
 
-    data = await asyncio.gather(
-        fetch_authors(), fetch_reviewers(),
-        fetch_commit_authors(), fetch_commit_committers(),
-        fetch_commenters(), fetch_mergers(), fetch_releasers())
-
+    as_roles = as_roles or ("author", "reviewer", "commit_author", "commit_committer",
+                            "commenter", "merger", "releaser")
+    locals_ = locals()
+    fetchers = {k: locals_[f"fetch_{k}"]() for k in as_roles}
+    data = await asyncio.gather(*fetchers.values())
     stats = defaultdict(dict)
-    for rows, key in zip(data, ("author", "reviewer", "commit_author", "commit_committer",
-                                "commenter", "merger", "releaser")):
+    for rows, key in zip(data, fetchers.keys()):
         for row in rows:
             stats[row[0]][key] = row[1]
 
