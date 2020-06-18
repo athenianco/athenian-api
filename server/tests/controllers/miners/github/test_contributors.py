@@ -6,7 +6,7 @@ from athenian.api.controllers.miners.github.contributors import \
     mine_contributors
 
 
-async def test_mine_contributors_expected_cache_miss(mdb, cache, memcached):
+async def test_mine_contributors_expected_cache_miss_with_stats(mdb, cache, memcached):
     if has_memcached:
         cache = memcached
 
@@ -17,6 +17,20 @@ async def test_mine_contributors_expected_cache_miss(mdb, cache, memcached):
 
     assert len(contribs_with_stats) == len(contribs_with_no_stats)
     _assert_contribs_equal(contribs_with_stats, contribs_with_no_stats, [True, False])
+
+
+async def test_mine_contributors_expected_cache_miss_with_different_roles(mdb, cache, memcached):
+    if has_memcached:
+        cache = memcached
+
+    cache = memcached
+    authors = await mine_contributors(
+        ["src-d/go-git"], None, None, mdb, cache, with_stats=True, as_roles=["author"])
+    mergers = await mine_contributors(
+        ["src-d/go-git"], None, None, mdb, cache, with_stats=True, as_roles=["merger"])
+
+    assert len(authors) == 172
+    assert len(mergers) == 8
 
 
 async def test_mine_contributors_with_empty_and_all_roles(mdb):
