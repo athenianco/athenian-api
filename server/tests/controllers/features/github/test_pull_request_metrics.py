@@ -211,13 +211,13 @@ async def test_calc_pull_request_metrics_line_github_cache(
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
     args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]],
-            {"src-d/go-git"}, {}, False, release_match_setting_tag, mdb, pdb, cache)
+            {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, cache)
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert await calc_pull_request_metrics_line_github.reset_cache(*args)
     if with_mine_cache_wipe:
         assert await PullRequestMiner._mine.reset_cache(
-            None, date_from, date_to, {"src-d/go-git"}, {}, branches, default_branches, False,
-            release_match_setting_tag, mdb, pdb, cache)
+            None, date_from, date_to, {"src-d/go-git"}, {}, set(), branches, default_branches,
+            False, release_match_setting_tag, mdb, pdb, cache)
     metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics1.exists and metrics2.exists
     assert metrics1.value == metrics2.value
@@ -230,7 +230,7 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=10, day=1, tzinfo=timezone.utc)
     args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]],
-            {"src-d/go-git"}, {}, False, release_match_setting_tag, mdb, pdb, cache]
+            {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, cache]
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     release_match_setting_tag = {
         "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
@@ -247,16 +247,16 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
     time_to = datetime(year=2016, month=12, day=15, tzinfo=timezone.utc)
     metric1 = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]],
-        {"src-d/go-git"}, {}, False, release_match_setting_tag, mdb, pdb, None,
+        {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, None,
     ))[0][0][0].value
     metric2 = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]],
-        {"src-d/go-git"}, {}, False, release_match_setting_tag, mdb, pdb, None,
+        {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, None,
     ))[0][0][0].value
     metric1_ext, metric2_ext = (m[0].value for m in (
         await calc_pull_request_metrics_line_github(
             [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]],
-            {"src-d/go-git"}, {}, False, release_match_setting_tag, mdb, pdb, None,
+            {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, None,
         )
     )[0])
     assert metric1 == metric1_ext
@@ -268,21 +268,21 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
     args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]],
-            {"src-d/go-git"}, {}, False, release_match_setting_tag, mdb, pdb, cache]
+            {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, cache]
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics.value == 7
-    args[4] = True
+    args[5] = True
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics.value == 6
     date_from = datetime(year=2017, month=5, day=23, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=5, day=25, tzinfo=timezone.utc)
     args[0] = [PullRequestMetricID.PR_RELEASE_COUNT]
     args[1] = [[date_from, date_to]]
-    args[4] = False
+    args[5] = False
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics.value == 71
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics.value == 71
-    args[4] = True
+    args[5] = True
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics.value == 71

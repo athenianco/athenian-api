@@ -27,6 +27,7 @@ async def test_pr_miner_iter_smoke(
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -60,6 +61,7 @@ async def test_pr_miner_blacklist(branches, default_branches, mdb, pdb, release_
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -81,6 +83,7 @@ async def test_pr_miner_blacklist(branches, default_branches, mdb, pdb, release_
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -109,6 +112,7 @@ async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, 
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -126,6 +130,7 @@ async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, 
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -148,6 +153,7 @@ async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, 
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {ParticipationKind.AUTHOR: {"mcuadros"}, ParticipationKind.MERGER: {"mcuadros"}},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -165,6 +171,7 @@ async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, 
             datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
             {"src-d/go-git"},
             {ParticipationKind.AUTHOR: {"mcuadros"}, ParticipationKind.MERGER: {"mcuadros"}},
+            set(),
             branches, default_branches,
             False,
             release_match_setting_tag,
@@ -194,6 +201,7 @@ async def test_pr_miner_iter_cache_incompatible(
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -209,6 +217,7 @@ async def test_pr_miner_iter_cache_incompatible(
             datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
             {"src-d/gitbase"},
             {},
+            set(),
             branches, default_branches,
             False,
             release_match_setting_tag,
@@ -230,6 +239,7 @@ async def test_pr_miner_cache_pr_blacklist(
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -270,6 +280,7 @@ async def test_pr_miner_participant_filters(
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {v: {"mcuadros"} for v in pk},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -344,6 +355,7 @@ async def test_pr_times_miner_smoke(
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -368,6 +380,7 @@ async def test_pr_times_miner_empty_review_comments(
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -393,6 +406,7 @@ async def test_pr_times_miner_empty_commits(
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -418,6 +432,7 @@ async def test_pr_times_miner_bug_less_timestamp_float(
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -442,6 +457,7 @@ async def test_pr_times_miner_empty_releases(branches, default_branches, mdb, pd
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
@@ -472,6 +488,7 @@ async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
         time_to,
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         False,
         release_settings,
@@ -533,6 +550,7 @@ async def test_pr_miner_exclude_inactive(
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
         {},
+        set(),
         branches, default_branches,
         True,
         release_match_setting_tag,
@@ -553,22 +571,55 @@ async def test_pr_miner_unreleased_pdb(mdb, pdb, release_match_setting_tag):
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     miner_incomplete = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
-        {"src-d/go-git"}, {}, None, {}, False,
+        {"src-d/go-git"}, {}, set(), None, {}, False,
         release_match_setting_tag, mdb, pdb, None)
     time_from_lookback = time_from - timedelta(days=60)
     # populate pdb
     await PullRequestMiner.mine(
         time_from_lookback.date(), time_to.date(), time_from_lookback, time_to,
-        {"src-d/go-git"}, {}, None, {}, False,
+        {"src-d/go-git"}, {}, set(), None, {}, False,
         release_match_setting_tag, mdb, pdb, None)
     miner_complete = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
-        {"src-d/go-git"}, {}, None, {}, False,
+        {"src-d/go-git"}, {}, set(), None, {}, False,
         release_match_setting_tag, mdb, pdb, None)
     assert len(miner_incomplete._prs) == 19
     assert len(miner_complete._prs) == 19 + 42
     miner_active = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
-        {"src-d/go-git"}, {}, None, {}, True,
+        {"src-d/go-git"}, {}, set(), None, {}, True,
         release_match_setting_tag, mdb, pdb, None)
     assert len(miner_active._prs) <= 19
+
+
+async def test_pr_miner_labels(mdb, pdb, release_match_setting_tag, cache):
+    time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
+    time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
+    miner = await PullRequestMiner.mine(
+        time_from.date(), time_to.date(), time_from, time_to,
+        {"src-d/go-git"}, {}, {"bug", "enhancement"}, None, {}, False,
+        release_match_setting_tag, mdb, pdb, None)
+    prs = list(miner)
+    assert {pr.pr[PullRequest.number.key] for pr in prs} == {887, 921, 958, 947, 950, 949}
+    miner = await PullRequestMiner.mine(
+        time_from.date(), time_to.date(), time_from, time_to,
+        {"src-d/go-git"}, {}, {"bug", "enhancement"}, None, {}, False,
+        release_match_setting_tag, mdb, pdb, cache)
+    prs = list(miner)
+    assert {pr.pr[PullRequest.number.key] for pr in prs} == {887, 921, 958, 947, 950, 949}
+    miner = await PullRequestMiner.mine(
+        time_from.date(), time_to.date(), time_from, time_to,
+        {"src-d/go-git"}, {}, {"bug", "plumbing"}, None, {}, False,
+        release_match_setting_tag, mdb, pdb, cache)
+    prs = list(miner)
+    assert {pr.pr[PullRequest.number.key] for pr in prs} == {921, 940, 946, 950, 958}
+    await PullRequestMiner.mine(
+        time_from.date(), time_to.date(), time_from, time_to,
+        {"src-d/go-git"}, {}, set(), None, {}, False,
+        release_match_setting_tag, mdb, pdb, cache)
+    miner = await PullRequestMiner.mine(
+        time_from.date(), time_to.date(), time_from, time_to,
+        {"src-d/go-git"}, {}, {"bug", "plumbing"}, None, {}, False,
+        release_match_setting_tag, None, None, cache)
+    prs = list(miner)
+    assert {pr.pr[PullRequest.number.key] for pr in prs} == {921, 940, 946, 950, 958}

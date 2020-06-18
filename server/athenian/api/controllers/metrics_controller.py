@@ -3,13 +3,14 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from itertools import chain
-from typing import List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from aiohttp import web
+import databases.core
 
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
-from athenian.api.controllers.miners.access_classes import access_classes
+from athenian.api.controllers.miners.access_classes import access_classes, AccessChecker
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
 from athenian.api.controllers.miners.types import Participants, ParticipationKind
@@ -26,9 +27,13 @@ from athenian.api.models.web.pull_request_metrics_request import PullRequestMetr
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
-#           service                          developers
-Filter = Tuple[str, Tuple[Set[str], Union[Participants, List[str]], ForSet]]
-#                       repositories                               originals
+#               service                 developers            originals
+FilterPRs = Tuple[str, Tuple[Set[str], Participants, Set[str], ForSet]]
+#                          repositories               labels
+
+#                service               developers
+FilterDevs = Tuple[str, Tuple[Set[str], List[str], ForSetDevelopers]]
+#                           repositories               originals
 
 
 async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -43,7 +48,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    filters, repos = await _compile_repos_and_devs(filt.for_, request, filt.account)
+    filters, repos = await _compile_repos_and_devs_prs(filt.for_, request, filt.account)
     time_intervals, tzoffset = _split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 
@@ -70,7 +75,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     # There should not be any new exception here so we don't have to catch ResponseError.
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(repos)
-    for service, (repos, devs, for_set) in filters:
+    for service, (repos, devs, labels, for_set) in filters:
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
         sentries = METRIC_ENTRIES[service]
@@ -80,7 +85,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         # for each metric, we find the function to calculate and call it
         tasks = []
         for func, metrics in calcs.items():
-            tasks.append(func(metrics, time_intervals, repos, devs, filt.exclude_inactive,
+            tasks.append(func(metrics, time_intervals, repos, devs, labels, filt.exclude_inactive,
                               release_settings, request.mdb, request.pdb, request.cache))
         all_mvs = await asyncio.gather(*tasks, return_exceptions=True)
         for metrics, mvs in zip(calcs.values(), all_mvs):
@@ -143,89 +148,124 @@ def _split_to_time_intervals(date_from: date,
     return [split(g, ".granularities[%d]" % i) for i, g in enumerate(granularities)], tzoffset
 
 
-async def _compile_repos_and_devs(for_sets: List[Union[ForSet, ForSetDevelopers]],
-                                  request: AthenianWebRequest,
-                                  account: int,
-                                  ) -> (List[Filter], List[str]):
+async def _compile_repos_and_devs_prs(for_sets: List[ForSet],
+                                      request: AthenianWebRequest,
+                                      account: int,
+                                      ) -> (List[FilterPRs], List[str]):
     """
-    Build the list of Filter-s for a given list of ForSet-s.
+    Build the list of filters for a given list of ForSet-s.
 
     Repository sets are dereferenced. Access permissions are checked.
+
+    :param for_sets: Paired lists of repositories, developers, and PR labels.
+    :param request: Our incoming request to take the metadata DB, the user ID, the cache.
+    :param account: Account ID on behalf of which we are loading reposets.
+    :return: Resulting list of filters and the set of all repositories after dereferencing, \
+             with service prefixes.
+    """
+    filters = []
+    checkers = {}
+    all_repos = set()
+    async with request.sdb.connection() as sdb_conn:
+        for i, for_set in enumerate(for_sets):
+            repos, service = await _extract_repos(
+                request, account, for_set, i, all_repos, checkers, sdb_conn)
+            prefix = PREFIXES[service]
+            devs = {}
+            for k, v in (for_set.with_ or {}).items():
+                if not v:
+                    continue
+                devs[ParticipationKind[k.upper()]] = dk = set()
+                for dev in v:
+                    if not dev.startswith(prefix):
+                        raise ResponseError(InvalidRequestError(
+                            detail='providers in "with" and "repositories" do not match',
+                            pointer=".for[%d].with" % i,
+                        ))
+                    dk.add(dev[len(prefix):])
+            filters.append((service, (repos, devs, set(for_set.labels or []), for_set)))
+    return filters, all_repos
+
+
+async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
+                                       request: AthenianWebRequest,
+                                       account: int,
+                                       ) -> (List[FilterDevs], List[str]):
+    """
+    Build the list of filters for a given list of ForSetDevelopers'.
+
+    Repository sets are de-referenced. Access permissions are checked.
 
     :param for_sets: Paired lists of repositories and developers.
     :param request: Our incoming request to take the metadata DB, the user ID, the cache.
     :param account: Account ID on behalf of which we are loading reposets.
-    :return: Resulting list of Filter-s and the list of all repositories after dereferencing, \
+    :return: Resulting list of filters and the list of all repositories after dereferencing, \
              with service prefixes.
     """
     filters = []
-    sdb, user = request.sdb, request.uid
     checkers = {}
-    all_repos = []
-    async with sdb.connection() as sdb_conn:
+    all_repos = set()
+    async with request.sdb.connection() as sdb_conn:
         for i, for_set in enumerate(for_sets):
-            repos = set()
-            service = None
-            for repo in chain.from_iterable(await asyncio.gather(*[
-                    resolve_reposet(r, ".for[%d].repositories[%d]" % (i, j), user, account, sdb,
-                                    request.cache)
-                    for j, r in enumerate(for_set.repositories)])):
-                for key, prefix in PREFIXES.items():
-                    if repo.startswith(prefix):
-                        if service is None:
-                            service = key
-                        elif service != key:
-                            raise ResponseError(InvalidRequestError(
-                                detail='mixed providers are not allowed in the same "for" element',
-                                pointer=".for[%d].repositories" % i,
-                            ))
-                        repos.add(repo[len(prefix):])
-                        all_repos.append(repo)
-            if service is None:
-                raise ResponseError(InvalidRequestError(
-                    detail='the provider of a "for" element is unsupported or the set is empty',
-                    pointer=".for[%d].repositories" % i,
-                ))
-            checker = checkers.get(service)
-            if checker is None:
-                checker = await access_classes[service](
-                    account, sdb_conn, request.mdb, request.cache).load()
-                checkers[service] = checker
-            denied = await checker.check(repos)
-            if denied:
-                raise ResponseError(InvalidRequestError(
-                    detail="the following repositories are access denied for %s: %s" %
-                           (service, denied),
-                    pointer=".for[%d].repositories" % i,
-                    status=HTTPStatus.FORBIDDEN,
-                ))
+            repos, service = await _extract_repos(
+                request, account, for_set, i, all_repos, checkers, sdb_conn)
             prefix = PREFIXES[service]
-            if isinstance(for_set, ForSet):
-                # /metrics/prs
-                devs = {}
-                for k, v in (for_set.with_ or {}).items():
-                    if not v:
-                        continue
-                    devs[ParticipationKind[k.upper()]] = dk = set()
-                    for dev in v:
-                        if not dev.startswith(prefix):
-                            raise ResponseError(InvalidRequestError(
-                                detail='providers in "with" and "repositories" do not match',
-                                pointer=".for[%d].with" % i,
-                            ))
-                        dk.add(dev[len(prefix):])
-            else:
-                # /metrics/developers
-                devs = []
-                for dev in for_set.developers:
-                    if not dev.startswith(prefix):
-                        raise ResponseError(InvalidRequestError(
-                            detail='providers in "developers" and "repositories" do not match',
-                            pointer=".for[%d].developers" % i,
-                        ))
-                    devs.append(dev[len(prefix):])
+            devs = []
+            for dev in for_set.developers:
+                if not dev.startswith(prefix):
+                    raise ResponseError(InvalidRequestError(
+                        detail='providers in "developers" and "repositories" do not match',
+                        pointer=".for[%d].developers" % i,
+                    ))
+                devs.append(dev[len(prefix):])
             filters.append((service, (repos, devs, for_set)))
     return filters, all_repos
+
+
+async def _extract_repos(request: AthenianWebRequest,
+                         account: int,
+                         for_set: Union[ForSet, ForSetDevelopers],
+                         for_set_index: int,
+                         all_repos: Set[str],
+                         checkers: Dict[str, AccessChecker],
+                         sdb: databases.core.Connection) -> Tuple[Set[str], str]:
+    user = request.uid
+    repos = set()
+    service = None
+    for repo in chain.from_iterable(await asyncio.gather(
+            *[resolve_reposet(r, ".for[%d].repositories[%d]" % (for_set_index, j), user, account,
+                              sdb, request.cache)
+              for j, r in enumerate(for_set.repositories)])):
+        for key, prefix in PREFIXES.items():
+            if repo.startswith(prefix):
+                if service is None:
+                    service = key
+                elif service != key:
+                    raise ResponseError(InvalidRequestError(
+                        detail='mixed providers are not allowed in the same "for" element',
+                        pointer=".for[%d].repositories" % for_set_index,
+                    ))
+                repos.add(repo[len(prefix):])
+                all_repos.add(repo)
+    if service is None:
+        raise ResponseError(InvalidRequestError(
+            detail='the provider of a "for" element is unsupported or the set is empty',
+            pointer=".for[%d].repositories" % for_set_index,
+        ))
+    checker = checkers.get(service)
+    if checker is None:
+        checker = await access_classes[service](
+            account, sdb, request.mdb, request.cache).load()
+        checkers[service] = checker
+    denied = await checker.check(repos)
+    if denied:
+        raise ResponseError(InvalidRequestError(
+            detail="the following repositories are access denied for %s: %s" %
+                   (service, denied),
+            pointer=".for[%d].repositories" % for_set_index,
+            status=HTTPStatus.FORBIDDEN,
+        ))
+    return repos, service
 
 
 async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -265,7 +305,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     # FIXME(vmarkovtsev): developer metrics + release settings???
-    filters, _ = await _compile_repos_and_devs(filt.for_, request, filt.account)
+    filters, _ = await _compile_repos_and_devs_devs(filt.for_, request, filt.account)
     if filt.date_to < filt.date_from:
         return ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
