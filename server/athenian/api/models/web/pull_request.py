@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.stage_timings import StageTimings
@@ -39,6 +40,7 @@ class PullRequest(Model):
         stage_timings: Optional[StageTimings] = None,
         properties: Optional[List[str]] = None,
         participants: Optional[List[PullRequestParticipant]] = None,
+        labels: Optional[List[PullRequestLabel]] = None,
     ):
         """PullRequest - a model defined in OpenAPI
 
@@ -63,6 +65,7 @@ class PullRequest(Model):
         :param stage_timings: The stage timings of this PullRequest.
         :param properties: The properties of this PullRequest.
         :param participants: The participants of this PullRequest.
+        :param labels: The labels of this PullRequest.
         """
         self.openapi_types = {
             "repository": str,
@@ -87,6 +90,7 @@ class PullRequest(Model):
             "stage_timings": StageTimings,
             "properties": List[str],
             "participants": List[PullRequestParticipant],
+            "labels": List[PullRequestLabel],
         }
 
         self.attribute_map = {
@@ -112,6 +116,7 @@ class PullRequest(Model):
             "stage_timings": "stage_timings",
             "properties": "properties",
             "participants": "participants",
+            "labels": "labels",
         }
 
         self._repository = repository
@@ -136,6 +141,7 @@ class PullRequest(Model):
         self._stage_timings = stage_timings
         self._properties = properties
         self._participants = participants
+        self._labels = labels
 
     def __lt__(self, other: "PullRequest") -> bool:
         """Compute self < other."""
@@ -623,3 +629,23 @@ class PullRequest(Model):
             raise ValueError("Invalid value for `participants`, must not be `None`")
 
         self._participants = participants
+
+    @property
+    def labels(self) -> List[PullRequestLabel]:
+        """Gets the labels of this PullRequest.
+
+        List of developers related to this PR.
+
+        :return: The labels of this PullRequest.
+        """
+        return self._labels
+
+    @labels.setter
+    def labels(self, labels: List[PullRequestLabel]):
+        """Sets the labels of this PullRequest.
+
+        List of developers related to this PR.
+
+        :param labels: The labels of this PullRequest.
+        """
+        self._labels = labels

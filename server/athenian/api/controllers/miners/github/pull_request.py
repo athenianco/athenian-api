@@ -148,9 +148,8 @@ class PullRequestMiner:
                 release_settings, mdb, pdb, cache, pr_blacklist),
         ]
         if not exclude_inactive:
-            # TODO(vmarkovtsev): labels
             tasks.append(load_inactive_merged_unreleased_prs(
-                time_from, time_to, repositories, participants, [], default_branches,
+                time_from, time_to, repositories, participants, labels, default_branches,
                 release_settings, mdb, pdb, cache))
         else:
             async def dummy_unreleased():
@@ -257,7 +256,9 @@ class PullRequestMiner:
         async def fetch_labels():
             return await cls._read_filtered_models(
                 mdb, PullRequestLabel, node_ids, time_to,
-                columns=[PullRequestLabel.name], created_at=False)
+                columns=[PullRequestLabel.name, PullRequestLabel.description,
+                         PullRequestLabel.color],
+                created_at=False)
 
         dfs = await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),

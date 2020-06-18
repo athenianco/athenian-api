@@ -2,7 +2,7 @@ import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import auto, IntEnum
-from typing import Any, Dict, Generic, Mapping, Optional, Set, TypeVar, Union
+from typing import Any, Dict, Generic, List, Mapping, Optional, Set, TypeVar, Union
 
 import numpy as np
 import pandas as pd
@@ -53,6 +53,15 @@ class Property(IntEnum):
 
 
 @dataclass(frozen=True)
+class Label:
+    """Pull request label."""
+
+    name: str
+    description: Optional[str]
+    color: str
+
+
+@dataclass(frozen=True)
 class PullRequestListItem:
     """General PR properties used to list PRs on the frontend."""
 
@@ -78,6 +87,7 @@ class PullRequestListItem:
     stage_timings: Dict[str, timedelta]
     properties: Set[Property]
     participants: Participants
+    labels: List[Label]
 
 
 @dataclasses.dataclass(frozen=True)

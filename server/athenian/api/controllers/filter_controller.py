@@ -1,4 +1,5 @@
 from collections import defaultdict
+import dataclasses
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
@@ -33,6 +34,7 @@ from athenian.api.models.web.generic_filter_request import GenericFilterRequest
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
 from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
+from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_set import PullRequestSet
 from athenian.api.models.web.stage_timings import StageTimings
@@ -109,8 +111,8 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = {r.split("/", 1)[1] for r in repos}
     prs = await filter_pull_requests(
-        props, filt.date_from, filt.date_to, repos, participants, filt.exclude_inactive,
-        settings, request.mdb, request.pdb, request.cache)
+        props, filt.date_from, filt.date_to, repos, participants, set(filt.labels or []),
+        filt.exclude_inactive, settings, request.mdb, request.pdb, request.cache)
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
     avatars = await mine_user_avatars(users, request.mdb, request.cache)
@@ -132,6 +134,8 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
         for pid in pids:
             participants[prefix + pid].append(pkweb)
     props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
+    if pr.labels is not None:
+        props["labels"] = [PullRequestLabel(**dataclasses.asdict(label)) for label in pr.labels]
     return WebPullRequest(**props)
 
 

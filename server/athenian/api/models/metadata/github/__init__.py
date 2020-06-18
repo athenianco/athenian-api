@@ -333,4 +333,3 @@ class PullRequestLabel(Base,
     name = Column(Text, nullable=False)
     description = Column(Text)
     color = Column(Text, nullable=False)
-    url = Column(Text, nullable=False)

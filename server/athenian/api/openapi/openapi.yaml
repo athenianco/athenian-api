@@ -525,8 +525,8 @@ paths:
           description: The account was not found.
       security:
       - bearerAuth: []
-      summary: Generate a JIRA integration installation link. The caller must be an admin
-        of the specified account.
+      summary: Generate a JIRA integration installation link. The caller must be an
+        admin of the specified account.
       tags:
       - registration
 # {% if False %}
@@ -1537,8 +1537,8 @@ components:
       description: A set of repositories. An empty list results an empty response
         in contrary to DeveloperSet. Duplicates are automatically ignored.
       example:
-        - github.com/athenianco/athenian-webapp
-        - github.com/athenianco/athenian-api
+      - github.com/athenianco/athenian-webapp
+      - github.com/athenianco/athenian-api
       items:
         $ref: '#/components/schemas/RepositoryID'
       type: array
@@ -1866,7 +1866,8 @@ components:
         with:
           $ref: '#/components/schemas/PullRequestWith'
         labels:
-          description: At least one of these labels must be present in each returned PR.
+          description: At least one of these labels must be present in each analyzed
+            PR.
           items:
             type: string
           type: array
@@ -2329,6 +2330,12 @@ components:
           type: array
         with:
           $ref: '#/components/schemas/PullRequestWith'
+        labels:
+          description: At least one of these labels must be present in each returned
+            PR.
+          items:
+            type: string
+          type: array
         exclude_inactive:
           description: Value indicating whether PRs without events in the given time
             frame shall be ignored.
@@ -2555,6 +2562,11 @@ components:
           items:
             $ref: '#/components/schemas/PullRequestParticipant'
           type: array
+        labels:
+          description: List of PR labels.
+          items:
+            $ref: '#/components/schemas/PullRequestLabel'
+          type: array
       required:
       - comments
       - commits
@@ -2637,6 +2649,23 @@ components:
           $ref: '#/components/schemas/DeveloperSet'
         releaser:
           $ref: '#/components/schemas/DeveloperSet'
+      type: object
+    PullRequestLabel:
+      additionalProperties: false
+      description: Pull request label.
+      example:
+        name: bug
+        color: fc2929
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        color:
+          type: string
+      required:
+      - color
+      - name
       type: object
     FilterCommitsRequest:
       additionalProperties: false
