@@ -200,6 +200,26 @@ async def test_filter_prs_shot(client, headers):
                                 {"author": ["github.com/mcuadros"]}, time_to)
 
 
+async def test_filter_prs_labels(client, headers):
+    body = {
+        "date_from": "2018-09-01",
+        "date_to": "2018-11-30",
+        "timezone": 0,
+        "account": 1,
+        "in": [],
+        "properties": [PullRequestProperty.MERGE_HAPPENED],
+        "labels": ["bug"],
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    assert response.status == 200
+    prs = PullRequestSet.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert len(prs.data) == 2
+    for pr in prs.data:
+        assert "bug" in {label.name for label in pr.labels}
+
+
 @pytest.mark.parametrize("timezone, must_match", [(120, True), (60, True), (0, False)])
 async def test_filter_prs_merged_timezone(client, headers, timezone, must_match):
     body = {

@@ -42,6 +42,7 @@ from athenian.api.models.web.invitation_link import InvitationLink
 from athenian.api.models.web.invited_user import InvitedUser
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
 from athenian.api.models.web.pull_request import PullRequest
+from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from functools import partial
 import logging
 import pickle
-from typing import Callable, Dict, Generator, Iterable, List, Optional, Set, Union
+from typing import Callable, Dict, Generator, Iterable, List, Optional, Set, Tuple, Union
 
 import aiomcache
 import databases
@@ -24,12 +24,12 @@ from athenian.api.controllers.miners.github.precomputed_prs import load_precompu
 from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
     PullRequestMiner, PullRequestTimesMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release import load_releases
-from athenian.api.controllers.miners.types import MinedPullRequest, Participants, Property, \
-    PullRequestListItem, PullRequestTimes
+from athenian.api.controllers.miners.types import Label, MinedPullRequest, Participants, \
+    Property, PullRequestListItem, PullRequestTimes
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import set_pdb_hits, set_pdb_misses
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
+from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, PullRequestLabel, \
     PullRequestReview, PullRequestReviewComment, Release
 from athenian.api.tracing import sentry_span
 
@@ -167,6 +167,16 @@ class PullRequestListMiner:
             stage_timings[k] = calc.analyze(times_today, no_time_from, now, **kwargs)
         updated_at = pr_today.pr[PullRequest.updated_at.key]
         assert updated_at == updated_at
+        if pr_today.labels.empty:
+            labels = None
+        else:
+            labels = [
+                Label(name=name, description=description, color=color)
+                for name, description, color in zip(
+                    pr_today.labels[PullRequestLabel.name.key].values,
+                    pr_today.labels[PullRequestLabel.description.key].values,
+                    pr_today.labels[PullRequestLabel.color.key].values,
+                )]
         return PullRequestListItem(
             repository=self._prefix + pr_today.pr[PullRequest.repository_full_name.key],
             number=pr_today.pr[PullRequest.number.key],
@@ -190,6 +200,7 @@ class PullRequestListMiner:
             properties=props_today,
             stage_timings=stage_timings,
             participants=pr_today.participants(),
+            labels=labels,
         )
 
     def __iter__(self) -> Generator[PullRequestListItem, None, None]:
@@ -214,16 +225,89 @@ class PullRequestListMiner:
 
 
 @sentry_span
+async def _refresh_prs_to_today(prs_time_machine: List[MinedPullRequest],
+                                time_to: datetime,
+                                repos: Set[str],
+                                branches: pd.DataFrame,
+                                default_branches: Dict[str, str],
+                                release_settings: Dict[str, ReleaseMatchSetting],
+                                mdb: databases.Database,
+                                pdb: databases.Database,
+                                cache: Optional[aiomcache.Client],
+                                ) -> Tuple[List[MinedPullRequest], List[MinedPullRequest]]:
+    now = datetime.now(tz=timezone.utc)
+    merged_at_key = PullRequest.merged_at.key
+    closed_at_key = PullRequest.closed_at.key
+    node_id_key = PullRequest.node_id.key
+    remined = {}
+    done = []
+    for pr in prs_time_machine:
+        if (pr.release[Release.published_at.key] is None and
+                (not pd.isnull(pr.pr[merged_at_key]) or pd.isnull(pr.pr[closed_at_key]))):
+            remined[pr.pr[node_id_key]] = pr
+        else:
+            done.append(pr)
+    tasks = []
+    if done:
+        # updated_at can be outside of `time_to` and missed in the cache
+        tasks.append(mdb.fetch_all(
+            select([PullRequest.node_id, PullRequest.updated_at])
+            .where(PullRequest.node_id.in_([pr.pr[node_id_key] for pr in done]))))
+    if remined:
+        tasks.extend([
+            read_sql_query(select([PullRequest])
+                           .where(PullRequest.node_id.in_(remined))
+                           .order_by(PullRequest.node_id),
+                           mdb, PullRequest, index=node_id_key),
+            # `time_to` is in the place of `time_from` because we know that these PRs
+            # were not released before `time_to`
+            load_releases(repos, branches, default_branches, time_to, now, release_settings,
+                          mdb, pdb, cache),
+        ])
+    if tasks:
+        task_results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in task_results:
+            if isinstance(r, Exception):
+                raise r from None
+    else:
+        task_results = []
+    if done:
+        updates = task_results[0]
+        updates = {p[0]: p[1] for p in updates}
+        updated_at_key = PullRequest.updated_at.key
+        for pr in done:
+            ts = updates[pr.pr[node_id_key]]
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            pr.pr[updated_at_key] = ts
+    if remined:
+        prs, releases = task_results[-2:]
+        releases, matched_bys = releases
+        dfs = await PullRequestMiner.mine_by_ids(
+            prs, [], now, releases, matched_bys, default_branches,
+            release_settings, mdb, pdb, cache)
+        prs_today = list(PullRequestMiner(prs, *dfs))
+    else:
+        prs_today = []
+    # reorder prs_time_machine without really changing the contents
+    prs_time_machine = [remined[pr.pr[node_id_key]] for pr in prs_today] + done
+    prs_today += done
+    return prs_today, prs_time_machine
+
+
+@sentry_span
 @cached(
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, properties, participants, exclude_inactive, release_settings, **_: (  # noqa
+    key=lambda time_from, time_to, repos, properties, participants, labels, exclude_inactive, release_settings, **_: (  # noqa
         time_from.timestamp(),
         time_to.timestamp(),
         ",".join(sorted(repos)),
         ",".join(s.name.lower() for s in sorted(properties)),
         sorted((k.name.lower(), sorted(v)) for k, v in participants.items()),
+        # TODO(vmarkovtsev): get rid of the labels here using postprocess()
+        ",".join(sorted(labels)),
         exclude_inactive,
         release_settings,
     ),
@@ -233,6 +317,7 @@ async def filter_pull_requests(properties: Set[Property],
                                time_to: datetime,
                                repos: Set[str],
                                participants: Participants,
+                               labels: Set[str],
                                exclude_inactive: bool,
                                release_settings: Dict[str, ReleaseMatchSetting],
                                mdb: databases.Database,
@@ -245,17 +330,17 @@ async def filter_pull_requests(properties: Set[Property],
     """
     assert isinstance(properties, set)
     assert isinstance(repos, set)
+    assert isinstance(labels, set)
     log = logging.getLogger("%s.filter_pull_requests" % metadata.__package__)
     # required to efficiently use the cache with timezones
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     branches, default_branches = await extract_branches(repos, mdb, cache)
     tasks = (
-        PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, participants, set(),
+        PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, participants, labels,
                               branches, default_branches, exclude_inactive, release_settings,
                               mdb, pdb, cache),
-        # TODO(vmarkovtsev): labels
-        load_precomputed_done_times(time_from, time_to, repos, participants, [], default_branches,
-                                    exclude_inactive, release_settings, pdb),
+        load_precomputed_done_times(time_from, time_to, repos, participants, labels,
+                                    default_branches, exclude_inactive, release_settings, pdb),
     )
     miner_time_machine, done_times = await asyncio.gather(*tasks, return_exceptions=True)
     if isinstance(miner_time_machine, Exception):
@@ -263,56 +348,10 @@ async def filter_pull_requests(properties: Set[Property],
     if isinstance(done_times, Exception):
         raise done_times from None
     prs_time_machine = list(miner_time_machine)
-    now = datetime.now(tz=timezone.utc)
-
-    if time_to < now:
-        merged_at_key = PullRequest.merged_at.key
-        closed_at_key = PullRequest.closed_at.key
-        node_id_key = PullRequest.node_id.key
-        remined = {}
-        done = []
-        for pr in prs_time_machine:
-            if (pr.release[Release.published_at.key] is None and
-                    (not pd.isnull(pr.pr[merged_at_key]) or pd.isnull(pr.pr[closed_at_key]))):
-                remined[pr.pr[node_id_key]] = pr
-            else:
-                done.append(pr)
-        if done:
-            # updated_at can be outside of `time_to` and missed in the cache
-            updates = await mdb.fetch_all(
-                select([PullRequest.node_id, PullRequest.updated_at])
-                .where(PullRequest.node_id.in_([pr.pr[node_id_key] for pr in done])))
-            updates = {p[0]: p[1] for p in updates}
-            updated_at_key = PullRequest.updated_at.key
-            for pr in done:
-                ts = updates[pr.pr[node_id_key]]
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-                pr.pr[updated_at_key] = ts
-        if remined:
-            tasks = [
-                read_sql_query(select([PullRequest])
-                               .where(PullRequest.node_id.in_(remined))
-                               .order_by(PullRequest.node_id),
-                               mdb, PullRequest, index=node_id_key),
-                # `time_to` is in the place of `time_from` because we know that these PRs
-                # were not released before `time_to`
-                load_releases(repos, branches, default_branches, time_to, now, release_settings,
-                              mdb, pdb, cache),
-            ]
-            prs, releases = await asyncio.gather(*tasks, return_exceptions=True)
-            for r in (prs, releases):
-                if isinstance(r, Exception):
-                    raise r from None
-            releases, matched_bys = releases
-            dfs = await PullRequestMiner.mine_by_ids(
-                prs, [], now, releases, matched_bys, default_branches,
-                release_settings, mdb, pdb, cache)
-            prs_today = list(PullRequestMiner(prs, *dfs))
-        else:
-            prs_today = []
-        prs_time_machine = [remined[pr.pr[node_id_key]] for pr in prs_today] + done
-        prs_today += done
+    if time_to < datetime.now(tz=timezone.utc):
+        prs_today, prs_time_machine = await _refresh_prs_to_today(
+            prs_time_machine, time_to, repos, branches, default_branches, release_settings,
+            mdb, pdb, cache)
     else:
         prs_today = prs_time_machine
     miner = PullRequestListMiner(prs_time_machine, prs_today, done_times, properties, time_from)

@@ -623,3 +623,33 @@ async def test_pr_miner_labels(mdb, pdb, release_match_setting_tag, cache):
         release_match_setting_tag, None, None, cache)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.key] for pr in prs} == {921, 940, 946, 950, 958}
+    miner = await PullRequestMiner.mine(
+        time_from.date(), time_to.date(), time_from, time_to,
+        {"src-d/go-git"}, {}, {"bug"}, None, {}, False,
+        release_match_setting_tag, None, None, cache)
+    prs = list(miner)
+    assert {pr.pr[PullRequest.number.key] for pr in prs} == {921, 950, 958}
+
+
+async def test_pr_miner_labels_unreleased(mdb, pdb, release_match_setting_tag):
+    time_from = datetime(2018, 11, 1, tzinfo=timezone.utc)
+    time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
+    time_from_lookback = time_from - timedelta(days=60)
+    # populate pdb
+    await PullRequestMiner.mine(
+        time_from_lookback.date(), time_to.date(), time_from_lookback, time_to,
+        {"src-d/go-git"}, {}, set(), None, {}, False,
+        release_match_setting_tag, mdb, pdb, None)
+    miner_complete = await PullRequestMiner.mine(
+        time_from.date(), time_to.date(), time_from, time_to,
+        {"src-d/go-git"}, {}, {"bug"}, None, {}, False,
+        release_match_setting_tag, mdb, pdb, None,
+        pr_blacklist=["MDExOlB1bGxSZXF1ZXN0MjA5MjA0MDQz",
+                      "MDExOlB1bGxSZXF1ZXN0MjE2MTA0NzY1",
+                      "MDExOlB1bGxSZXF1ZXN0MjEzODQ1NDUx"])
+    assert len(miner_complete._prs) == 3
+    miner_complete = await PullRequestMiner.mine(
+        time_from.date(), time_to.date(), time_from, time_to,
+        {"src-d/go-git"}, {}, {"bug"}, None, {}, True,
+        release_match_setting_tag, mdb, pdb, None)
+    assert len(miner_complete._prs) == 0
