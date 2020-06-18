@@ -30,7 +30,8 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import Branch, PullRequest, PushCommit, Release, User
+from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, \
+    PushCommit, Release, User
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
 from athenian.api.tracing import sentry_span
 
@@ -378,13 +379,19 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     add_pdb_hits(pdb, "map_prs_to_releases/unreleased", len(unreleased_prs))
     pr_releases = precomputed_pr_releases
     merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
-    missed_released_prs = await _map_prs_to_releases(merged_prs, releases, mdb, pdb, cache)
+    tasks = [
+        _map_prs_to_releases(merged_prs, releases, mdb, pdb, cache),
+        _fetch_labels(merged_prs.index, mdb),
+    ]
+    missed_released_prs, labels = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (missed_released_prs, labels):
+        if isinstance(r, Exception):
+            raise r from None
     add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
     add_pdb_misses(pdb, "map_prs_to_releases/unreleased",
                    len(merged_prs) - len(missed_released_prs))
-    # TODO(vmarkovtsev): load the labels of merged_prs from mdb
     await update_unreleased_prs(
-        merged_prs, missed_released_prs, releases, {}, matched_bys, default_branches,
+        merged_prs, missed_released_prs, releases, labels, matched_bys, default_branches,
         release_settings, pdb)
     return pr_releases.append(missed_released_prs)
 
@@ -428,6 +435,18 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
         released_prs[Release.published_at.key],
         prs.loc[released_prs.index, PullRequest.merged_at.key])
     return postprocess_datetime(released_prs)
+
+
+@sentry_span
+async def _fetch_labels(node_ids: Iterable[str], mdb: databases.Database) -> Dict[str, List[str]]:
+    rows = await mdb.fetch_all(
+        select([PullRequestLabel.pull_request_node_id, PullRequestLabel.name])
+        .where(PullRequestLabel.pull_request_node_id.in_(node_ids)))
+    labels = {}
+    for row in rows:
+        node_id, label = row[0], row[1]
+        labels.setdefault(node_id, []).append(label)
+    return labels
 
 
 async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],

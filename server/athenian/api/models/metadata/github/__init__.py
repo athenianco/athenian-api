@@ -49,6 +49,10 @@ class PullRequestMixin:
     pull_request_node_id = Column(Text, nullable=False)
 
 
+class PullRequestPKMixin:
+    pull_request_node_id = Column(Text, primary_key=True)
+
+
 # -- TABLES --
 
 
@@ -115,10 +119,10 @@ class PullRequestReviewComment(Base,
 
 class PullRequestCommit(Base,
                         RepositoryMixin,
+                        PullRequestPKMixin,
                         ):
     __tablename__ = "github_pull_request_commits_compat"
 
-    pull_request_node_id = Column(Text, primary_key=True)
     sha = Column(Text, primary_key=True)
     node_id = Column(Text, nullable=False)
     commit_node_id = Column(Text, nullable=False)
@@ -322,7 +326,7 @@ class PullRequestLabel(Base,
                        IDMixin,
                        UpdatedMixin,
                        RepositoryMixin,
-                       PullRequestMixin,
+                       PullRequestPKMixin,
                        ):
     __tablename__ = "github_pull_request_labels_compat"
 

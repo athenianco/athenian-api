@@ -537,10 +537,10 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, participants, default_branches, release_settings, **_: (
+    key=lambda time_from, time_to, repos, participants, labels, default_branches, release_settings, **_: (  # noqa
         time_from.timestamp(), time_to.timestamp(), ",".join(sorted(repos)),
         sorted((k.name.lower(), sorted(v)) for k, v in participants.items()),
-        sorted(default_branches.items()), release_settings,
+        ",".join(sorted(labels)), sorted(default_branches.items()), release_settings,
     ),
     refresh_on_access=True,
 )

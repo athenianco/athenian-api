@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from sqlalchemy import delete, select, sql
+from sqlalchemy.schema import CreateTable
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.controllers.miners.github.precomputed_prs import store_precomputed_done_times
@@ -15,7 +16,7 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release import _fetch_commit_history_dag, \
     _fetch_first_parents, load_releases, map_prs_to_releases, map_releases_to_prs
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
-from athenian.api.models.metadata.github import PullRequest, Release
+from athenian.api.models.metadata.github import PullRequest, PullRequestLabel, Release
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
 
 
@@ -64,10 +65,18 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, mdb, pdb, cac
     released_prs = await map_prs_to_releases(
         prs, releases, matched_bys, default_branches, time_to, settings, mdb, pdb, None)
     assert len(released_prs) == 1
-    released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, default_branches, time_to, settings,
-        Database("sqlite://"), pdb, None)
-    assert len(released_prs) == 1
+    dummy_mdb = Database("sqlite://", force_rollback=True)
+    await dummy_mdb.connect()
+    try:
+        # https://github.com/encode/databases/issues/40
+        await dummy_mdb.execute(CreateTable(PullRequestLabel.__table__).compile(
+            dialect=dummy_mdb._backend._dialect).string)
+        released_prs = await map_prs_to_releases(
+            prs, releases, matched_bys, default_branches, time_to, settings,
+            dummy_mdb, pdb, None)
+        assert len(released_prs) == 1
+    finally:
+        await dummy_mdb.disconnect()
 
 
 async def test_map_prs_to_releases_empty(branches, default_branches, mdb, pdb, cache):
@@ -119,18 +128,26 @@ async def test_map_prs_to_releases_precomputed_released(
         release_match_setting_tag, mdb, pdb, None)
 
     await pdb.execute(delete(GitHubCommitHistory))
-    with pytest.raises(Exception):
-        await map_prs_to_releases(
+    dummy_mdb = Database("sqlite://", force_rollback=True)
+    await dummy_mdb.connect()
+    try:
+        # https://github.com/encode/databases/issues/40
+        await dummy_mdb.execute(CreateTable(PullRequestLabel.__table__).compile(
+            dialect=dummy_mdb._backend._dialect).string)
+        with pytest.raises(Exception):
+            await map_prs_to_releases(
+                prs, releases, matched_bys, default_branches, time_to, release_match_setting_tag,
+                dummy_mdb, pdb, None)
+
+        await store_precomputed_done_times(
+            true_prs, times, default_branches, release_match_setting_tag, pdb)
+
+        released_prs = await map_prs_to_releases(
             prs, releases, matched_bys, default_branches, time_to, release_match_setting_tag,
-            Database("sqlite://"), pdb, None)
-
-    await store_precomputed_done_times(
-        true_prs, times, default_branches, release_match_setting_tag, pdb)
-
-    released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, default_branches, time_to, release_match_setting_tag,
-        Database("sqlite://"), pdb, None)
-    assert len(released_prs) == len(prs)
+            dummy_mdb, pdb, None)
+        assert len(released_prs) == len(prs)
+    finally:
+        await dummy_mdb.disconnect()
 
 
 async def test_map_releases_to_prs_early_merges(

@@ -129,6 +129,10 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
         time_from, time_to, names, {ParticipationKind.COMMIT_AUTHOR: {"yyy"}}, [],
         default_branches, False, settings, pdb)
     assert len(loaded_prs) == len(prs)
+    loaded_prs = await load_precomputed_done_times(
+        time_from, time_to, names, {}, ["bug", "xxx"],
+        default_branches, False, settings, pdb)
+    assert len(loaded_prs) == len(prs) / 2
 
 
 async def test_load_store_precomputed_done_match_by(pr_samples, default_branches, pdb):
@@ -463,3 +467,25 @@ async def test_load_old_merged_unreleased_prs_smoke(mdb, pdb, release_match_sett
         {ParticipationKind.MERGER: {"mcuadros"}}, [], {}, release_match_setting_tag,
         mdb, pdb, cache)
     assert unreleased_prs.empty
+
+
+async def test_load_old_merged_unreleased_prs_labels(mdb, pdb, release_match_setting_tag, cache):
+    metrics_time_from = datetime(2018, 5, 1, tzinfo=timezone.utc)
+    metrics_time_to = datetime(2019, 1, 1, tzinfo=timezone.utc)
+    await calc_pull_request_metrics_line_github(
+        [PullRequestMetricID.PR_OPENED], [[metrics_time_from, metrics_time_to]],
+        {"src-d/go-git"}, {}, False, release_match_setting_tag, mdb, pdb, cache,
+    )
+    unreleased_time_from = datetime(2018, 9, 19, tzinfo=timezone.utc)
+    unreleased_time_to = datetime(2018, 9, 30, tzinfo=timezone.utc)
+    unreleased_prs = await load_inactive_merged_unreleased_prs(
+        unreleased_time_from, unreleased_time_to, {"src-d/go-git"},
+        {}, ["bug", "plumbing"], {}, release_match_setting_tag,
+        mdb, pdb, cache)
+    assert list(unreleased_prs.index) == ["MDExOlB1bGxSZXF1ZXN0MjE2MTA0NzY1",
+                                          "MDExOlB1bGxSZXF1ZXN0MjEzODQ1NDUx"]
+    unreleased_prs = await load_inactive_merged_unreleased_prs(
+        unreleased_time_from, unreleased_time_to, {"src-d/go-git"},
+        {}, ["enhancement"], {}, release_match_setting_tag,
+        mdb, pdb, cache)
+    assert list(unreleased_prs.index) == ["MDExOlB1bGxSZXF1ZXN0MjEzODQwMDc3"]
