@@ -30,35 +30,9 @@ async def mine_contributors(repos: Collection[str],
     time_from = time_from or datetime(1970, 1, 1, tzinfo=timezone.utc)
     now = datetime.now(timezone.utc) + timedelta(days=1)
     time_to = time_to or datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    as_roles = as_roles or []
 
-    if as_roles:
-        fetch_stats = True
-    else:
-        fetch_stats = with_stats
-
-    contribs = await _mine_contributors(repos, time_from, time_to, fetch_stats, db, cache)
-    if not as_roles:
-        return contribs
-
-    # Doing this in post-processing to avoid decreasing cache hits. Otherwise we could
-    # consider caching the different `fetch_*` functions indidually as a inner caching
-    # layer if this becomes a bottleneck.
-    filtered_contribs = []
-    # We could get rid of these re-mapping, maybe worth looking at it along with the
-    # definition of `DeveloperUpdates`
-    role_mapping = {"author": "prs"}
-    for c in contribs:
-        has_active_role = sum(c["stats"].get(role_mapping.get(role, role), 0)
-                              for role in as_roles) > 0
-        if not has_active_role:
-            continue
-
-        if not with_stats:
-            c.pop("stats")
-
-        filtered_contribs.append(c)
-
-    return filtered_contribs
+    return await _mine_contributors(repos, time_from, time_to, with_stats, as_roles, db, cache)
 
 
 @sentry_span
@@ -66,13 +40,15 @@ async def mine_contributors(repos: Collection[str],
     exptime=5 * 60,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
-    key=lambda repos, time_from, time_to, with_stats, **_: (
-        ",".join(repos), time_from.timestamp(), time_to.timestamp(), with_stats),
+    key=lambda repos, time_from, time_to, with_stats, as_roles, **_: (
+        ",".join(repos), time_from.timestamp(), time_to.timestamp(), with_stats,
+        sorted(as_roles)),
 )
 async def _mine_contributors(repos: Collection[str],
                              time_from: datetime,
                              time_to: datetime,
                              with_stats: bool,
+                             as_roles: List[str],
                              db: databases.Database,
                              cache: Optional[aiomcache.Client]) -> List[dict]:
     assert isinstance(time_from, datetime)
@@ -143,6 +119,10 @@ async def _mine_contributors(repos: Collection[str],
                         Release.published_at.between(time_from, time_to)))
             .group_by(Release.author))
 
+    def strip_stats(contribs):
+        for c in contribs:
+            c.pop("stats")
+
     data = await asyncio.gather(
         fetch_authors(), fetch_reviewers(),
         fetch_commit_authors(), fetch_commit_committers(),
@@ -163,8 +143,30 @@ async def _mine_contributors(repos: Collection[str],
     contribs = []
     for ud in user_details:
         c = dict(ud)
-        if with_stats:
-            c["stats"] = stats[c[User.login.key]]
+        c["stats"] = stats[c[User.login.key]]
         contribs.append(c)
 
-    return contribs
+    filtered_contribs = _filter_contributors_by_roles(contribs, as_roles)
+    if not with_stats:
+        strip_stats(filtered_contribs)
+
+    return filtered_contribs
+
+
+def _filter_contributors_by_roles(contribs: List[dict], as_roles: List[str]) -> List[dict]:
+    if not as_roles:
+        return contribs
+
+    filtered_contribs = []
+    # We could get rid of these re-mapping, maybe worth looking at it along with the
+    # definition of `DeveloperUpdates`
+    role_mapping = {"author": "prs"}
+    for c in contribs:
+        has_active_role = sum(c["stats"].get(role_mapping.get(role, role), 0)
+                              for role in as_roles) > 0
+        if not has_active_role:
+            continue
+
+        filtered_contribs.append(c)
+
+    return filtered_contribs
