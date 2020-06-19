@@ -10,10 +10,8 @@ import sentry_sdk
 from sqlalchemy import and_, func, or_, select
 
 from athenian.api.cache import cached
-from athenian.api.models.metadata.github import (PullRequest,
-                                                 PullRequestComment,
-                                                 PullRequestReview, PushCommit,
-                                                 Release, User)
+from athenian.api.models.metadata.github import (PullRequest, PullRequestComment,
+                                                 PullRequestReview, PushCommit, Release, User)
 from athenian.api.tracing import sentry_span
 
 
@@ -66,6 +64,7 @@ async def _mine_contributors(repos: Collection[str],
 
     @sentry_span
     async def fetch_author():
+        # TODO(vmarkovtsev): load released PRs from the pdb
         return await db.fetch_all(
             select([PullRequest.user_login, func.count(PullRequest.user_login)])
             .where(common_prs_where)
@@ -123,10 +122,13 @@ async def _mine_contributors(repos: Collection[str],
                             "commenter", "merger", "releaser")
     locals_ = locals()
     fetchers = {k: locals_[f"fetch_{k}"]() for k in as_roles}
-    data = await asyncio.gather(*fetchers.values())
+    data = await asyncio.gather(*fetchers.values(), return_exceptions=True)
     stats = defaultdict(dict)
-    for rows, key in zip(data, fetchers.keys()):
-        for row in rows:
+    for r, key in zip(data, fetchers.keys()):
+        if isinstance(r, Exception):
+            raise r from None
+
+        for row in r:
             stats[row[0]][key] = row[1]
 
     stats.pop(None, None)
