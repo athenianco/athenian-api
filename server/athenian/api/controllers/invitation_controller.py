@@ -307,60 +307,74 @@ async def get_installation_owner(installation_id: int,
     return user_login
 
 
+async def fetch_github_installation_progress(account: int,
+                                             sdb: DatabaseLike,
+                                             mdb: databases.Database,
+                                             cache: Optional[aiomcache.Client],
+                                             ) -> InstallationProgress:
+    """Load the GitHub installation progress for the specified account."""
+    log = logging.getLogger("%s.fetch_github_installation_progress" % metadata.__package__)
+    mdb_sqlite = mdb.url.dialect == "sqlite"
+    idle_threshold = timedelta(hours=3)
+    async with mdb.connection() as mdb_conn:
+        id_ids = await get_installation_delivery_ids(account, sdb, mdb_conn, cache)
+        owner = await get_installation_owner(id_ids[0][0], mdb_conn, cache)
+        # we don't cache this because the number of repos can dynamically change
+        models = []
+        for installation_id, delivery_id in id_ids:
+            repositories = await mdb_conn.fetch_val(
+                select([func.count(InstallationRepo.repo_id)])
+                .where(InstallationRepo.install_id == installation_id))
+            rows = await mdb_conn.fetch_all(
+                select([FetchProgress]).where(FetchProgress.event_id == delivery_id))
+            tables = [TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.key],
+                                            name=r[FetchProgress.node_type.key],
+                                            total=r[FetchProgress.nodes_total.key])
+                      for r in rows]
+            started_date = min(r[FetchProgress.created_at.key] for r in rows)
+            if mdb_sqlite:
+                started_date = started_date.replace(tzinfo=timezone.utc)
+            finished_date = max(r[FetchProgress.updated_at.key] for r in rows)
+            if mdb_sqlite:
+                finished_date = finished_date.replace(tzinfo=timezone.utc)
+            pending = sum(t.fetched < t.total for t in tables)
+            if datetime.now(tz=timezone.utc) - finished_date > idle_threshold:
+                for table in tables:
+                    table.total = table.fetched
+                if pending:
+                    log.info("Overriding the installation progress by the idle time threshold; "
+                             "there are %d pending tables, last update on %s",
+                             pending, finished_date)
+                    finished_date += idle_threshold  # don't fool the user
+            elif pending:
+                finished_date = None
+            model = InstallationProgress(started_date=started_date,
+                                         finished_date=finished_date,
+                                         owner=owner,
+                                         repositories=repositories,
+                                         tables=tables)
+            models.append(model)
+        tables = {}
+        for m in models:
+            for t in m.tables:
+                table = tables.setdefault(
+                    t.name, TableFetchingProgress(name=t.name, fetched=0, total=0))
+                table.fetched += t.fetched
+                table.total += t.total
+        model = InstallationProgress(started_date=min(m.started_date for m in models),
+                                     finished_date=max(m.finished_date for m in models),
+                                     owner=owner,
+                                     repositories=sum(m.repositories for m in models),
+                                     tables=sorted(tables.values()))
+        return model
+
+
 async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the current Athenian GitHub app installation progress."""
-    mdb_sqlite = request.mdb.url.dialect == "sqlite"
-    idle_threshold = timedelta(hours=3)
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status(request.uid, id, sdb_conn, request.cache)
-        async with request.mdb.connection() as mdb_conn:
-            id_ids = await get_installation_delivery_ids(id, sdb_conn, mdb_conn, request.cache)
-            owner = await get_installation_owner(id_ids[0][0], mdb_conn, request.cache)
-            # we don't cache this because the number of repos can dynamically change
-            models = []
-            for installation_id, delivery_id in id_ids:
-                repositories = await mdb_conn.fetch_val(
-                    select([func.count(InstallationRepo.repo_id)])
-                    .where(InstallationRepo.install_id == installation_id))
-                rows = await mdb_conn.fetch_all(
-                    select([FetchProgress]).where(FetchProgress.event_id == delivery_id))
-                tables = [TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.key],
-                                                name=r[FetchProgress.node_type.key],
-                                                total=r[FetchProgress.nodes_total.key])
-                          for r in rows]
-                started_date = min(r[FetchProgress.created_at.key] for r in rows)
-                if mdb_sqlite:
-                    started_date = started_date.replace(tzinfo=timezone.utc)
-                finished_date = max(r[FetchProgress.updated_at.key] for r in rows)
-                if mdb_sqlite:
-                    finished_date = finished_date.replace(tzinfo=timezone.utc)
-                pending = any(t.fetched < t.total for t in tables)
-                if datetime.now(tz=timezone.utc) - finished_date > idle_threshold:
-                    for table in tables:
-                        table.total = table.fetched
-                    if pending:
-                        finished_date += idle_threshold  # don't fool the user
-                elif pending:
-                    finished_date = None
-                model = InstallationProgress(started_date=started_date,
-                                             finished_date=finished_date,
-                                             owner=owner,
-                                             repositories=repositories,
-                                             tables=tables)
-                models.append(model)
-            tables = {}
-            for m in models:
-                for t in m.tables:
-                    table = tables.setdefault(
-                        t.name, TableFetchingProgress(name=t.name, fetched=0, total=0))
-                    table.fetched += t.fetched
-                    table.total += t.total
-            model = InstallationProgress(started_date=min(m.started_date for m in models),
-                                         finished_date=max(m.finished_date for m in models),
-                                         owner=owner,
-                                         repositories=sum(m.repositories for m in models),
-                                         tables=sorted(tables.values()))
-            return model_response(model)
+        model = await fetch_github_installation_progress(id, sdb_conn, request.mdb, request.cache)
+        return model_response(model)
 
 
 async def gen_jira_link(request: AthenianWebRequest, id: int) -> web.Response:
