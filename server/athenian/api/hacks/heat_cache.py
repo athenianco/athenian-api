@@ -3,20 +3,23 @@ import asyncio
 from collections import defaultdict
 from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
+from itertools import chain
 import logging
+from typing import List
 
-import databases
 import sentry_sdk
-from sqlalchemy import and_, create_engine
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session, sessionmaker
 from tqdm import tqdm
 
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
-    setup_cache_metrics, setup_context
+    ParallelDatabase, setup_cache_metrics, setup_context
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
-from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
-    ReleaseMatchSetting
-from athenian.api.models.state.models import ReleaseSetting, RepositorySet
+from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
+from athenian.api.controllers.settings import Settings
+from athenian.api.models.metadata.github import PullRequestLabel
+from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitHubPullRequestTimes
+from athenian.api.models.state.models import RepositorySet
 
 
 def parse_args():
@@ -44,7 +47,10 @@ def main():
         return 1
     engine = create_engine(args.state_db)
     session = sessionmaker(bind=engine)()  # type: Session
-    reposets = session.query(RepositorySet).all()
+    reposets = session.query(RepositorySet).all()  # type: List[RepositorySet]
+    session.close()
+    engine.dispose()
+    account_progress_settings = {}
     time_to = datetime.combine(date.today() + timedelta(days=1),
                                datetime.min.time(),
                                tzinfo=timezone.utc)
@@ -56,34 +62,39 @@ def main():
         setup_cache_metrics(cache, {}, None)
         for v in cache.metrics["context"].values():
             v.set(defaultdict(int))
-        mdb = databases.Database(args.metadata_db)
+        sdb = ParallelDatabase(args.state_db)
+        await sdb.connect()
+        mdb = ParallelDatabase(args.metadata_db)
         await mdb.connect()
-        pdb = databases.Database(args.precomputed_db)
+        pdb = ParallelDatabase(args.precomputed_db)
         await pdb.connect()
         pdb.metrics = {
             "hits": ContextVar("pdb_hits", default=defaultdict(int)),
             "misses": ContextVar("pdb_misses", default=defaultdict(int)),
         }
 
+        nonlocal return_code
+        return_code = await sync_labels(log, mdb, pdb)
+
+        log.info("Heating")
         for reposet in tqdm(reposets):
+            try:
+                progress, settings = account_progress_settings[reposet.owner_id]
+            except KeyError:
+                try:
+                    progress = await fetch_github_installation_progress(
+                        reposet.owner_id, sdb, mdb, cache)
+                    settings = await Settings(
+                        reposet.owner_id, None, None, sdb, mdb, cache, None).list_release_matches()
+                except Exception as e:
+                    sentry_sdk.capture_exception(e)
+                    log.warning("account %d: %s: %s", reposet.owner_id, type(e).__name__, e)
+                    continue
+                account_progress_settings[reposet.owner_id] = progress, settings
+            if progress.finished_date is None:
+                log.warning("Skipped account %d / reposet %d because the progress is not 100%",
+                            reposet.owner_id, reposet.id)
             repos = {r.split("/", 1)[1] for r in reposet.items}
-            settings = {}
-            rows = session.query(ReleaseSetting).filter(and_(
-                ReleaseSetting.account_id == reposet.owner_id,
-                ReleaseSetting.repository.in_(reposet.items)))
-            for row in rows:
-                settings[row.repository] = ReleaseMatchSetting(
-                    branches=row.branches,
-                    tags=row.tags,
-                    match=ReleaseMatch(row.match),
-                )
-            for repo in reposet.items:
-                if repo not in settings:
-                    settings[repo] = ReleaseMatchSetting(
-                        branches=default_branch_alias,
-                        tags=".*",
-                        match=ReleaseMatch.tag_or_branch,
-                    )
             sentry_sdk.add_breadcrumb(
                 category="account", message=str(reposet.owner_id), level="info")
             try:
@@ -101,11 +112,59 @@ def main():
                 )
             except Exception as e:
                 sentry_sdk.capture_exception(e)
-                nonlocal return_code
+                log.warning("reposet %d: %s: %s", reposet.id, type(e).__name__, e)
                 return_code = 1
 
     asyncio.run(async_run())
     return return_code
+
+
+async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelDatabase) -> int:
+    """Update the labels in `github_pull_request_times` and `github_merged_pull_requests`."""
+    log.info("Syncing labels")
+    tasks = []
+    all_pr_times = await pdb.fetch_all(
+        select([GitHubPullRequestTimes.pr_node_id, GitHubPullRequestTimes.labels]))
+    all_merged = await pdb.fetch_all(
+        select([GitHubMergedPullRequest.pr_node_id, GitHubMergedPullRequest.labels]))
+    unique_prs = list({pr[0] for pr in chain(all_pr_times, all_merged)})
+    if not unique_prs:
+        return 0
+    log.info("Querying labels in %d PRs", len(unique_prs))
+    for batch in range(0, len(unique_prs), 1000):
+        tasks.append(mdb.fetch_all(
+            select([PullRequestLabel.pull_request_node_id, PullRequestLabel.name])
+            .where(PullRequestLabel.pull_request_node_id.in_(unique_prs[batch:batch + 1000]))))
+    task_results = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in task_results:
+        if isinstance(r, Exception):
+            sentry_sdk.capture_exception(r)
+            return 1
+    actual_labels = defaultdict(dict)
+    for row in chain.from_iterable(task_results):
+        actual_labels[row[0]][row[1]] = ""
+    log.info("Loaded labels for %d PRs", len(actual_labels))
+    tasks = []
+    for rows, model in ((all_pr_times, GitHubPullRequestTimes),
+                        (all_merged, GitHubMergedPullRequest)):
+        for row in rows:
+            pr_labels = actual_labels.get(row[0], {})
+            if pr_labels != row[1]:
+                tasks.append(pdb.execute(update(model)
+                                         .where(model.pr_node_id == row[0])
+                                         .values({model.labels: pr_labels,
+                                                  model.updated_at: datetime.now(timezone.utc)})))
+    if not tasks:
+        return 0
+    log.info("Updating %d records", len(tasks))
+    for batch in range(0, len(tasks), 100):
+        errors = await asyncio.gather(*tasks[batch:batch + 100], return_exceptions=True)
+        for err in errors:
+            if isinstance(err, Exception):
+                sentry_sdk.capture_exception(err)
+                log.warning("%s: %s", type(err).__name__, err)
+                return 1
+    return 0
 
 
 if __name__ == "__main__":

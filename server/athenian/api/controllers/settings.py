@@ -58,8 +58,8 @@ class Settings:
 
     def __init__(self,
                  account: int,
-                 user_id: str,
-                 native_user_id: str,
+                 user_id: Optional[str],
+                 native_user_id: Optional[str],
                  sdb: databases.Database,
                  mdb: databases.Database,
                  cache: Optional[aiomcache.Client],
@@ -92,7 +92,8 @@ class Settings:
                                    ) -> Dict[str, ReleaseMatchSetting]:
         """List the current release matching settings for all related repositories."""
         async with self._sdb.connection() as conn:
-            await get_user_account_status(self._user_id, self._account, conn, self._cache)
+            if self._user_id is not None:
+                await get_user_account_status(self._user_id, self._account, conn, self._cache)
             if repos is None:
                 repos = set()
                 for cls in access_classes.values():
