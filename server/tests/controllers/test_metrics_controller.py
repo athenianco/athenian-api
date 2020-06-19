@@ -494,6 +494,22 @@ developer_metric_mcuadros_stats = {
     "dev-review-pr-comments": 74,
 }
 
+developer_metric_be_stats = {
+    "dev-commits-pushed": [[207], [8], [86], [11]],
+    "dev-lines-changed": [[34494], [482], [6159], [592]],
+    "dev-prs-created": [[0], [0], [1], [0]],
+    "dev-prs-reviewed": [[2], [4], [3], [4]],
+    "dev-prs-merged": [[6], [0], [0], [0]],
+    "dev-releases": [[21], [0], [0], [0]],
+    "dev-reviews": [[8], [6], [7], [4]],
+    "dev-review-approvals": [[1], [3], [2], [3]],
+    "dev-review-rejections": [[1], [1], [0], [0]],
+    "dev-review-neutrals": [[6], [2], [5], [1]],
+    "dev-pr-comments": [[10], [6], [0], [2]],
+    "dev-regular-pr-comments": [[3], [1], [0], [1]],
+    "dev-review-pr-comments": [[7], [5], [5], [1]],
+}
+
 
 @pytest.mark.parametrize("metric, value", [(m, developer_metric_mcuadros_stats[m])
                                            for m in DeveloperMetricID])
@@ -559,6 +575,32 @@ async def test_developer_metrics_all(client, headers, dev):
     else:
         assert all(isinstance(v, int) for v in result.calculated[0].values[0]), \
             "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID))
+
+
+@pytest.mark.parametrize("metric, value", [(m, developer_metric_be_stats[m])
+                                           for m in DeveloperMetricID])
+async def test_developer_metrics_labels(client, headers, metric, value):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["{1}"],
+            "developers": ["github.com/mcuadros", "github.com/smola",
+                           "github.com/jfontan", "github.com/ajnavarro"],
+            "labels": ["bug", "enhancement"],
+        }],
+        "metrics": [metric],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert result.calculated[0].for_.labels == ["bug", "enhancement"]
+    assert result.calculated[0].values == value
 
 
 @pytest.mark.parametrize("account, date_to, code",

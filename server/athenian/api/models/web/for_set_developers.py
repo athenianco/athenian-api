@@ -69,6 +69,9 @@ class ForSetDevelopers(Model):
 
         :param developers: The developers of this ForSetDevelopers.
         """
+        if developers is None:
+            raise ValueError("Invalid value for `developers`, must not be `None`")
+
         self._developers = developers
 
     @property
