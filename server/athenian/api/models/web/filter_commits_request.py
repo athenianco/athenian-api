@@ -8,6 +8,11 @@ from athenian.api.models.web.commit_filter import CommitFilter
 class FilterCommitsRequest(CommitFilter):
     """Filter for listing commits."""
 
+    openapi_types = CommitFilter.openapi_types.copy()
+    openapi_types["property"] = str
+    attribute_map = CommitFilter.attribute_map.copy()
+    attribute_map["property"] = "property"
+
     def __init__(
         self,
         account: Optional[int] = None,
@@ -37,8 +42,6 @@ class FilterCommitsRequest(CommitFilter):
                          in_=in_,
                          with_author=with_author,
                          with_committer=with_committer)
-        self.openapi_types["property"] = str
-        self.attribute_map["property"] = "property"
         self._property = property
 
     @property

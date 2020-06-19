@@ -7,6 +7,22 @@ from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 class ReleaseMatchRequest(Model):
     """Release matching rule setting."""
 
+    openapi_types = {
+        "account": int,
+        "repositories": List[str],
+        "branches": str,
+        "tags": str,
+        "match": str,
+    }
+
+    attribute_map = {
+        "account": "account",
+        "repositories": "repositories",
+        "branches": "branches",
+        "tags": "tags",
+        "match": "match",
+    }
+
     def __init__(
         self,
         account: Optional[int] = None,
@@ -23,22 +39,6 @@ class ReleaseMatchRequest(Model):
         :param tags: The tags of this ReleaseMatchRequest.
         :param match: The match of this ReleaseMatchRequest.
         """
-        self.openapi_types = {
-            "account": int,
-            "repositories": List[str],
-            "branches": str,
-            "tags": str,
-            "match": str,
-        }
-
-        self.attribute_map = {
-            "account": "account",
-            "repositories": "repositories",
-            "branches": "branches",
-            "tags": "tags",
-            "match": "match",
-        }
-
         self._account = account
         self._repositories = repositories
         self._branches = branches

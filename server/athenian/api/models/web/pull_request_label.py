@@ -6,6 +6,14 @@ from athenian.api.models.web.base_model_ import Model
 class PullRequestLabel(Model):
     """Pull request label."""
 
+    openapi_types = {"name": str, "description": str, "color": str}
+
+    attribute_map = {
+        "name": "name",
+        "description": "description",
+        "color": "color",
+    }
+
     def __init__(
         self,
         name: Optional[str] = None,
@@ -18,14 +26,6 @@ class PullRequestLabel(Model):
         :param description: The description of this PullRequestLabel.
         :param color: The color of this PullRequestLabel.
         """
-        self.openapi_types = {"name": str, "description": str, "color": str}
-
-        self.attribute_map = {
-            "name": "name",
-            "description": "description",
-            "color": "color",
-        }
-
         self._name = name
         self._description = description
         self._color = color

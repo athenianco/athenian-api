@@ -10,6 +10,22 @@ class RepositorySetListItem(Model):
     Do not edit the class manually.
     """
 
+    openapi_types = {
+        "id": int,
+        "name": str,
+        "created": datetime,
+        "updated": datetime,
+        "items_count": int,
+    }
+
+    attribute_map = {
+        "id": "id",
+        "name": "name",
+        "created": "created",
+        "updated": "updated",
+        "items_count": "items_count",
+    }
+
     def __init__(
         self,
         id: Optional[int] = None,
@@ -26,22 +42,6 @@ class RepositorySetListItem(Model):
         :param updated: The updated of this RepositorySetListItem.
         :param items_count: The items_count of this RepositorySetListItem.
         """
-        self.openapi_types = {
-            "id": int,
-            "name": str,
-            "created": datetime,
-            "updated": datetime,
-            "items_count": int,
-        }
-
-        self.attribute_map = {
-            "id": "id",
-            "name": "name",
-            "created": "created",
-            "updated": "updated",
-            "items_count": "items_count",
-        }
-
         self._id = id
         self._name = name
         self._created = created

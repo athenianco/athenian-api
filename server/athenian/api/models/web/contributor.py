@@ -6,6 +6,15 @@ from athenian.api.models.web.base_model_ import Model
 class Contributor(Model):
     """Details about a developer who contributed to some repositories owned by the account."""
 
+    openapi_types = {"login": str, "name": str, "email": str, "picture": str}
+
+    attribute_map = {
+        "login": "login",
+        "name": "name",
+        "email": "email",
+        "picture": "picture",
+    }
+
     def __init__(
             self,
             login: Optional[str] = None,
@@ -20,15 +29,6 @@ class Contributor(Model):
         :param email: The email of this Contributor.
         :param picture: The picture of this Contributor.
         """
-        self.openapi_types = {"login": str, "name": str, "email": str, "picture": str}
-
-        self.attribute_map = {
-            "login": "login",
-            "name": "name",
-            "email": "email",
-            "picture": "picture",
-        }
-
         self._login = login
         self._name = name
         self._email = email

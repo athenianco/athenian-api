@@ -7,6 +7,32 @@ from athenian.api.models.web.base_model_ import Model
 class FilteredRelease(Model):
     """Various information about a repository release."""
 
+    openapi_types = {
+        "name": str,
+        "repository": str,
+        "url": str,
+        "published": datetime,
+        "age": timedelta,
+        "added_lines": int,
+        "deleted_lines": int,
+        "commits": int,
+        "publisher": str,
+        "commit_authors": List[str],
+    }
+
+    attribute_map = {
+        "name": "name",
+        "repository": "repository",
+        "url": "url",
+        "published": "published",
+        "age": "age",
+        "added_lines": "added_lines",
+        "deleted_lines": "deleted_lines",
+        "commits": "commits",
+        "publisher": "publisher",
+        "commit_authors": "commit_authors",
+    }
+
     def __init__(
         self,
         name: Optional[str] = None,
@@ -33,32 +59,6 @@ class FilteredRelease(Model):
         :param publisher: The publisher of this FilteredRelease.
         :param commit_authors: The publisher of this FilteredRelease.
         """
-        self.openapi_types = {
-            "name": str,
-            "repository": str,
-            "url": str,
-            "published": datetime,
-            "age": timedelta,
-            "added_lines": int,
-            "deleted_lines": int,
-            "commits": int,
-            "publisher": str,
-            "commit_authors": List[str],
-        }
-
-        self.attribute_map = {
-            "name": "name",
-            "repository": "repository",
-            "url": "url",
-            "published": "published",
-            "age": "age",
-            "added_lines": "added_lines",
-            "deleted_lines": "deleted_lines",
-            "commits": "commits",
-            "publisher": "publisher",
-            "commit_authors": "commit_authors",
-        }
-
         self._name = name
         self._repository = repository
         self._url = url

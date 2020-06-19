@@ -6,6 +6,9 @@ from athenian.api.models.web.base_model_ import Model
 class TeamUpdateRequest(Model):
     """Team update request."""
 
+    openapi_types = {"name": str, "members": List[str]}
+    attribute_map = {"name": "name", "members": "members"}
+
     def __init__(
             self,
             name: Optional[str] = None,
@@ -16,10 +19,6 @@ class TeamUpdateRequest(Model):
         :param name: The name of this TeamUpdateRequest.
         :param members: The members of this TeamUpdateRequest.
         """
-        self.openapi_types = {"name": str, "members": List[str]}
-
-        self.attribute_map = {"name": "name", "members": "members"}
-
         self._name = name
         self._members = members
 

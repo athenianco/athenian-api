@@ -10,6 +10,28 @@ from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 class PullRequestMetricsRequest(Model):
     """TRequest for calculating metrics on top of pull requests data."""
 
+    openapi_types = {
+        "for_": List[ForSet],
+        "metrics": List[PullRequestMetricID],
+        "date_from": date,
+        "date_to": date,
+        "timezone": int,
+        "granularities": List[str],
+        "account": int,
+        "exclude_inactive": bool,
+    }
+
+    attribute_map = {
+        "for_": "for",
+        "metrics": "metrics",
+        "date_from": "date_from",
+        "date_to": "date_to",
+        "timezone": "timezone",
+        "granularities": "granularities",
+        "account": "account",
+        "exclude_inactive": "exclude_inactive",
+    }
+
     def __init__(
         self,
         for_: Optional[List[ForSet]] = None,
@@ -32,28 +54,6 @@ class PullRequestMetricsRequest(Model):
         :param account: The account of this PullRequestMetricsRequest.
         :param exclude_inactive: The exclude_inactive of this PullRequestMetricsRequest.
         """
-        self.openapi_types = {
-            "for_": List[ForSet],
-            "metrics": List[PullRequestMetricID],
-            "date_from": date,
-            "date_to": date,
-            "timezone": int,
-            "granularities": List[str],
-            "account": int,
-            "exclude_inactive": bool,
-        }
-
-        self.attribute_map = {
-            "for_": "for",
-            "metrics": "metrics",
-            "date_from": "date_from",
-            "date_to": "date_to",
-            "timezone": "timezone",
-            "granularities": "granularities",
-            "account": "account",
-            "exclude_inactive": "exclude_inactive",
-        }
-
         self._for_ = for_
         self._metrics = metrics
         self._date_from = date_from

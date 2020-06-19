@@ -8,6 +8,13 @@ from athenian.api.models.web.pull_request import PullRequest
 class PullRequestSet(Model):
     """List of pull requests together with the participant profile pictures."""
 
+    openapi_types = {
+        "include": IncludedNativeUsers,
+        "data": List[PullRequest],
+    }
+
+    attribute_map = {"include": "include", "data": "data"}
+
     def __init__(
         self,
         include: Optional[IncludedNativeUsers] = None,
@@ -18,13 +25,6 @@ class PullRequestSet(Model):
         :param include: The include of this PullRequestSet.
         :param data: The data of this PullRequestSet.
         """
-        self.openapi_types = {
-            "include": IncludedNativeUsers,
-            "data": List[PullRequest],
-        }
-
-        self.attribute_map = {"include": "include", "data": "data"}
-
         self._include = include
         self._data = data
 

@@ -10,6 +10,22 @@ class GenericError(Model):
     Do not edit the class manually.
     """
 
+    openapi_types = {
+        "type": str,
+        "title": str,
+        "status": int,
+        "detail": str,
+        "instance": str,
+    }
+
+    attribute_map = {
+        "type": "type",
+        "title": "title",
+        "status": "status",
+        "detail": "detail",
+        "instance": "instance",
+    }
+
     def __init__(
         self,
         type: str,
@@ -26,22 +42,6 @@ class GenericError(Model):
         :param detail: The detail of this GenericError.
         :param instance: The instance of this GenericError.
         """
-        self.openapi_types = {
-            "type": str,
-            "title": str,
-            "status": int,
-            "detail": str,
-            "instance": str,
-        }
-
-        self.attribute_map = {
-            "type": "type",
-            "title": "title",
-            "status": "status",
-            "detail": "detail",
-            "instance": "instance",
-        }
-
         self._type = type
         self._title = title
         self._status = status

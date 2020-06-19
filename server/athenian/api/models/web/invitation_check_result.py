@@ -9,6 +9,8 @@ class InvitationCheckResult(Model):
 
     INVITATION_TYPE_ADMIN = "admin"
     INVITATION_TYPE_REGULAR = "regular"
+    openapi_types = {"active": bool, "type": str, "valid": bool}
+    attribute_map = {"active": "active", "type": "type", "valid": "valid"}
 
     def __init__(self, active: Optional[bool] = None, type: Optional[str] = None,
                  valid: Optional[bool] = None):
@@ -18,10 +20,6 @@ class InvitationCheckResult(Model):
         :param type: The type of this InvitationCheckResult.
         :param valid: The valid of this InvitationCheckResult.
         """
-        self.openapi_types = {"active": bool, "type": str, "valid": bool}
-
-        self.attribute_map = {"active": "active", "type": "type", "valid": "valid"}
-
         self._active = active
         self._type = type
         self._valid = valid

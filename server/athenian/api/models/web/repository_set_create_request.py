@@ -9,6 +9,18 @@ class RepositorySetCreateRequest(Model):
     Do not edit the class manually.
     """
 
+    openapi_types = {
+        "account": int,
+        "items": List[str],
+        "name": str,
+    }
+
+    attribute_map = {
+        "account": "account",
+        "items": "items",
+        "name": "name",
+    }
+
     def __init__(self,
                  account: Optional[int] = None,
                  items: Optional[List[str]] = None,
@@ -18,18 +30,6 @@ class RepositorySetCreateRequest(Model):
         :param account: The account of this RepositorySetCreateRequest.
         :param items: The items of this RepositorySetCreateRequest.
         """
-        self.openapi_types = {
-            "account": int,
-            "items": List[str],
-            "name": str,
-        }
-
-        self.attribute_map = {
-            "account": "account",
-            "items": "items",
-            "name": "name",
-        }
-
         self._account = account
         self._items = items
         self._name = name

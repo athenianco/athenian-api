@@ -4,15 +4,14 @@ from athenian.api.models.web.base_model_ import Model
 class Versions(Model):
     """Versions of the backend components."""
 
+    openapi_types = {"api": str}
+    attribute_map = {"api": "api"}
+
     def __init__(self, api: str = None):
         """Versions - a model defined in OpenAPI
 
         :param api: The api of this Versions.
         """
-        self.openapi_types = {"api": str}
-
-        self.attribute_map = {"api": "api"}
-
         self._api = api
 
     @property

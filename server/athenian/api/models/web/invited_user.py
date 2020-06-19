@@ -8,16 +8,15 @@ class InvitedUser(Model):
     Do not edit the class manually.
     """
 
+    openapi_types = {"account": int, "user": User}
+    attribute_map = {"account": "account", "user": "user"}
+
     def __init__(self, account: int = None, user: User = None):
         """InvitedUser - a model defined in OpenAPI
 
         :param account: The account of this InvitedUser.
         :param user: The user of this InvitedUser.
         """
-        self.openapi_types = {"account": int, "user": User}
-
-        self.attribute_map = {"account": "account", "user": "user"}
-
         self._account = account
         self._user = user
 

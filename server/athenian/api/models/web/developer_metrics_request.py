@@ -9,6 +9,24 @@ from athenian.api.models.web.for_set_developers import ForSetDevelopers
 class DeveloperMetricsRequest(Model):
     """Request for calculating metrics on top of developer activities."""
 
+    openapi_types = {
+        "for_": List[ForSetDevelopers],
+        "metrics": List[str],
+        "date_from": date,
+        "date_to": date,
+        "timezone": int,
+        "account": int,
+    }
+
+    attribute_map = {
+        "for_": "for",
+        "metrics": "metrics",
+        "date_from": "date_from",
+        "date_to": "date_to",
+        "timezone": "timezone",
+        "account": "account",
+    }
+
     def __init__(
         self,
         for_: Optional[List[ForSetDevelopers]] = None,
@@ -27,24 +45,6 @@ class DeveloperMetricsRequest(Model):
         :param timezone: The timezone of this DeveloperMetricsRequest.
         :param account: The account of this DeveloperMetricsRequest.
         """
-        self.openapi_types = {
-            "for_": List[ForSetDevelopers],
-            "metrics": List[str],
-            "date_from": date,
-            "date_to": date,
-            "timezone": int,
-            "account": int,
-        }
-
-        self.attribute_map = {
-            "for_": "for",
-            "metrics": "metrics",
-            "date_from": "date_from",
-            "date_to": "date_to",
-            "timezone": "timezone",
-            "account": "account",
-        }
-
         self._for_ = for_
         self._metrics = metrics
         self._date_from = date_from

@@ -10,6 +10,22 @@ from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 class CalculatedDeveloperMetrics(Model):
     """Response from /metrics/developers - calculated metrics over developer activities."""
 
+    openapi_types = {
+        "calculated": List[CalculatedDeveloperMetricsItem],
+        "date_from": date,
+        "date_to": date,
+        "timezone": int,
+        "metrics": List[DeveloperMetricID],
+    }
+
+    attribute_map = {
+        "calculated": "calculated",
+        "date_from": "date_from",
+        "date_to": "date_to",
+        "timezone": "timezone",
+        "metrics": "metrics",
+    }
+
     def __init__(
         self,
         calculated: Optional[List[CalculatedDeveloperMetricsItem]] = None,
@@ -26,22 +42,6 @@ class CalculatedDeveloperMetrics(Model):
         :param timezone: The timezone of this CalculatedDeveloperMetrics.
         :param metrics: The metrics of this CalculatedDeveloperMetrics.
         """
-        self.openapi_types = {
-            "calculated": List[CalculatedDeveloperMetricsItem],
-            "date_from": date,
-            "date_to": date,
-            "timezone": int,
-            "metrics": List[DeveloperMetricID],
-        }
-
-        self.attribute_map = {
-            "calculated": "calculated",
-            "date_from": "date_from",
-            "date_to": "date_to",
-            "timezone": "timezone",
-            "metrics": "metrics",
-        }
-
         self._calculated = calculated
         self._date_from = date_from
         self._date_to = date_to

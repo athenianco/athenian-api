@@ -10,15 +10,14 @@ class IncludedNativeUsers(Model):
     The users are mentioned in PRs in "PullRequestSet.data".
     """
 
+    openapi_types = {"users": Dict[str, IncludedNativeUser]}
+    attribute_map = {"users": "users"}
+
     def __init__(self, users: Optional[Dict[str, IncludedNativeUser]] = None):
         """IncludedNativeUsers - a model defined in OpenAPI
 
         :param users: The users of this IncludedNativeUsers.
         """
-        self.openapi_types = {"users": Dict[str, IncludedNativeUser]}
-
-        self.attribute_map = {"users": "users"}
-
         self._users = users
 
     @property

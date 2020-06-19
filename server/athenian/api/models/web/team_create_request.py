@@ -6,6 +6,14 @@ from athenian.api.models.web.base_model_ import Model
 class TeamCreateRequest(Model):
     """Team creation request."""
 
+    openapi_types = {"account": int, "name": str, "members": List[str]}
+
+    attribute_map = {
+        "account": "account",
+        "name": "name",
+        "members": "members",
+    }
+
     def __init__(
             self,
             account: Optional[int] = None,
@@ -18,14 +26,6 @@ class TeamCreateRequest(Model):
         :param name: The name of this TeamCreateRequest.
         :param members: The members of this TeamCreateRequest.
         """
-        self.openapi_types = {"account": int, "name": str, "members": List[str]}
-
-        self.attribute_map = {
-            "account": "account",
-            "name": "name",
-            "members": "members",
-        }
-
         self._account = account
         self._name = name
         self._members = members

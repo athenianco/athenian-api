@@ -7,6 +7,20 @@ from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 class ReleaseMatchSetting(Model):
     """Release matching setting for a specific repository."""
 
+    openapi_types = {
+        "branches": str,
+        "tags": str,
+        "match": str,
+        "default_branch": str,
+    }
+
+    attribute_map = {
+        "branches": "branches",
+        "tags": "tags",
+        "match": "match",
+        "default_branch": "default_branch",
+    }
+
     def __init__(self,
                  branches: Optional[str] = None,
                  tags: Optional[str] = None,
@@ -19,20 +33,6 @@ class ReleaseMatchSetting(Model):
         :param match: The match of this ReleaseMatchSetting.
         :param default_branch: The default_branch of this ReleaseMatchSetting.
         """
-        self.openapi_types = {
-            "branches": str,
-            "tags": str,
-            "match": str,
-            "default_branch": str,
-        }
-
-        self.attribute_map = {
-            "branches": "branches",
-            "tags": "tags",
-            "match": "match",
-            "default_branch": "default_branch",
-        }
-
         self._branches = branches
         self._tags = tags
         self._match = match

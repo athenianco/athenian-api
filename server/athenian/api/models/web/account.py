@@ -7,16 +7,15 @@ from athenian.api.models.web.user import User
 class Account(Model):
     """Account members: admins and regular users."""
 
+    openapi_types = {"admins": List[User], "regulars": List[User]}
+    attribute_map = {"admins": "admins", "regulars": "regulars"}
+
     def __init__(self, admins: Optional[List[User]] = None, regulars: Optional[List[User]] = None):
         """Account - a model defined in OpenAPI
 
         :param admins: The admins of this Account.
         :param regulars: The regulars of this Account.
         """
-        self.openapi_types = {"admins": List[User], "regulars": List[User]}
-
-        self.attribute_map = {"admins": "admins", "regulars": "regulars"}
-
         self._admins = admins
         self._regulars = regulars
 
