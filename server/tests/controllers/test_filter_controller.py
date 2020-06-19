@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import json
+from operator import itemgetter
 from typing import Collection, Dict, Set
 
 from aiohttp import ClientResponse
@@ -118,6 +119,62 @@ async def test_filter_contributors(client, headers):
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     contribs = json.loads((await response.read()).decode("utf-8"))
     assert contribs == []
+
+
+async def test_filter_contributors_merger_only(client, headers):
+    body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "timezone": 60,
+        "account": 1,
+        "in": ["github.com/src-d/go-git"],
+        "as": ["merger"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/contributors", headers=headers, json=body)
+    mergers = json.loads((await response.read()).decode("utf-8"))
+    mergers_logins = {c["login"] for c in mergers}
+
+    assert len(mergers) == 8
+    assert len(mergers_logins) == len(mergers)
+    assert all(x.startswith("github.com/") for x in mergers_logins)
+
+    expected_mergers = {"github.com/ajnavarro",
+                        "github.com/alcortesm",
+                        "github.com/erizocosmico",
+                        "github.com/jfontan",
+                        "github.com/mcuadros",
+                        "github.com/orirawlings",
+                        "github.com/smola",
+                        "github.com/strib"}
+    assert mergers_logins == expected_mergers
+
+
+async def test_filter_contributors_with_empty_and_full_roles(client, headers):
+    all_roles = ["author", "reviewer", "commit_author", "commit_committer",
+                 "commenter", "merger", "releaser"]
+
+    base_body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "timezone": 60,
+        "account": 1,
+        "in": ["github.com/src-d/go-git"],
+    }
+
+    body_empty_roles = {**base_body, "as": []}
+    body_all_roles = {**base_body, "as": all_roles}
+
+    response_empty_roles = await client.request(
+        method="POST", path="/v1/filter/contributors", headers=headers, json=body_empty_roles)
+    response_all_roles = await client.request(
+        method="POST", path="/v1/filter/contributors", headers=headers, json=body_all_roles)
+
+    parsed_empty_roles = json.loads((await response_empty_roles.read()).decode("utf-8"))
+    parsed_all_roles = json.loads((await response_all_roles.read()).decode("utf-8"))
+
+    assert (sorted(parsed_empty_roles, key=itemgetter("login")) ==
+            sorted(parsed_all_roles, key=itemgetter("login")))
 
 
 @pytest.mark.parametrize("account, date_to, code",
