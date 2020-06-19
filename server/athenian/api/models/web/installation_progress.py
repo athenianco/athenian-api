@@ -8,6 +8,24 @@ from athenian.api.models.web.table_fetching_progress import TableFetchingProgres
 class InstallationProgress(Model):
     """Data fetching progress of the Athenian metadata retrieval app."""
 
+    openapi_types = {
+        "started_date": datetime,
+        "finished_date": datetime,
+        "owner": str,
+        "repositories": int,
+        "tables": List[TableFetchingProgress],
+    }
+
+    attribute_map = {
+        "started_date": "started_date",
+        "finished_date": "finished_date",
+        "owner": "owner",
+        "repositories": "repositories",
+        "tables": "tables",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         started_date: Optional[datetime] = None,
@@ -24,22 +42,6 @@ class InstallationProgress(Model):
         :param repositories: The repositories of this InstallationProgress.
         :param tables: The tables of this InstallationProgress.
         """
-        self.openapi_types = {
-            "started_date": datetime,
-            "finished_date": datetime,
-            "owner": str,
-            "repositories": int,
-            "tables": List[TableFetchingProgress],
-        }
-
-        self.attribute_map = {
-            "started_date": "started_date",
-            "finished_date": "finished_date",
-            "owner": "owner",
-            "repositories": "repositories",
-            "tables": "tables",
-        }
-
         self._started_date = started_date
         self._finished_date = finished_date
         self._owner = owner

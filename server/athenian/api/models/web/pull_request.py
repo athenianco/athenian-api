@@ -16,6 +16,59 @@ class PullRequest(Model):
     the PR stages `wip`, `reviewing`, `merging`, `releasing`*, which correspond to `date_to`.
     """
 
+    openapi_types = {
+        "repository": str,
+        "number": int,
+        "title": str,
+        "size_added": int,
+        "size_removed": int,
+        "files_changed": int,
+        "created": datetime,
+        "updated": datetime,
+        "closed": datetime,
+        "comments": int,
+        "commits": int,
+        "review_requested": datetime,
+        "first_review": datetime,
+        "approved": datetime,
+        "review_comments": int,
+        "reviews": int,
+        "merged": datetime,
+        "released": datetime,
+        "release_url": str,
+        "stage_timings": StageTimings,
+        "properties": List[str],
+        "participants": List[PullRequestParticipant],
+        "labels": List[PullRequestLabel],
+    }
+
+    attribute_map = {
+        "repository": "repository",
+        "number": "number",
+        "title": "title",
+        "size_added": "size_added",
+        "size_removed": "size_removed",
+        "files_changed": "files_changed",
+        "created": "created",
+        "updated": "updated",
+        "closed": "closed",
+        "comments": "comments",
+        "commits": "commits",
+        "review_requested": "review_requested",
+        "first_review": "first_review",
+        "approved": "approved",
+        "review_comments": "review_comments",
+        "reviews": "reviews",
+        "merged": "merged",
+        "released": "released",
+        "release_url": "release_url",
+        "stage_timings": "stage_timings",
+        "properties": "properties",
+        "participants": "participants",
+        "labels": "labels",
+    }
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         repository: Optional[str] = None,
@@ -67,58 +120,6 @@ class PullRequest(Model):
         :param participants: The participants of this PullRequest.
         :param labels: The labels of this PullRequest.
         """
-        self.openapi_types = {
-            "repository": str,
-            "number": int,
-            "title": str,
-            "size_added": int,
-            "size_removed": int,
-            "files_changed": int,
-            "created": datetime,
-            "updated": datetime,
-            "closed": datetime,
-            "comments": int,
-            "commits": int,
-            "review_requested": datetime,
-            "first_review": datetime,
-            "approved": datetime,
-            "review_comments": int,
-            "reviews": int,
-            "merged": datetime,
-            "released": datetime,
-            "release_url": str,
-            "stage_timings": StageTimings,
-            "properties": List[str],
-            "participants": List[PullRequestParticipant],
-            "labels": List[PullRequestLabel],
-        }
-
-        self.attribute_map = {
-            "repository": "repository",
-            "number": "number",
-            "title": "title",
-            "size_added": "size_added",
-            "size_removed": "size_removed",
-            "files_changed": "files_changed",
-            "created": "created",
-            "updated": "updated",
-            "closed": "closed",
-            "comments": "comments",
-            "commits": "commits",
-            "review_requested": "review_requested",
-            "first_review": "first_review",
-            "approved": "approved",
-            "review_comments": "review_comments",
-            "reviews": "reviews",
-            "merged": "merged",
-            "released": "released",
-            "release_url": "release_url",
-            "stage_timings": "stage_timings",
-            "properties": "properties",
-            "participants": "participants",
-            "labels": "labels",
-        }
-
         self._repository = repository
         self._number = number
         self._title = title

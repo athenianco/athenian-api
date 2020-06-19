@@ -7,6 +7,30 @@ from athenian.api.models.web.commit_signature import CommitSignature
 class Commit(Model):
     """Information about a commit."""
 
+    openapi_types = {
+        "repository": str,
+        "hash": str,
+        "author": CommitSignature,
+        "committer": CommitSignature,
+        "message": str,
+        "size_added": int,
+        "size_removed": int,
+        "files_changed": int,
+    }
+
+    attribute_map = {
+        "repository": "repository",
+        "hash": "hash",
+        "author": "author",
+        "committer": "committer",
+        "message": "message",
+        "size_added": "size_added",
+        "size_removed": "size_removed",
+        "files_changed": "files_changed",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         repository: Optional[str] = None,
@@ -29,28 +53,6 @@ class Commit(Model):
         :param size_removed: The size_removed of this Commit.
         :param files_changed: The files_changed of this Commit.
         """
-        self.openapi_types = {
-            "repository": str,
-            "hash": str,
-            "author": CommitSignature,
-            "committer": CommitSignature,
-            "message": str,
-            "size_added": int,
-            "size_removed": int,
-            "files_changed": int,
-        }
-
-        self.attribute_map = {
-            "repository": "repository",
-            "hash": "hash",
-            "author": "author",
-            "committer": "committer",
-            "message": "message",
-            "size_added": "size_added",
-            "size_removed": "size_removed",
-            "files_changed": "files_changed",
-        }
-
         self._repository = repository
         self._hash = hash
         self._author = author

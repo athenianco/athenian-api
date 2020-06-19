@@ -7,6 +7,10 @@ class TableFetchingProgress(Model):
     """Used in InstallationProgress.tables to indicate how much data has been loaded in each DB \
     table."""
 
+    openapi_types = {"fetched": int, "name": str, "total": int}
+    attribute_map = {"fetched": "fetched", "name": "name", "total": "total"}
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(self,
                  fetched: Optional[int] = None,
                  name: Optional[str] = None,
@@ -17,10 +21,6 @@ class TableFetchingProgress(Model):
         :param name: The name of this TableFetchingProgress.
         :param total: The total of this TableFetchingProgress.
         """
-        self.openapi_types = {"fetched": int, "name": str, "total": int}
-
-        self.attribute_map = {"fetched": "fetched", "name": "name", "total": "total"}
-
         self._fetched = fetched
         self._name = name
         self._total = total

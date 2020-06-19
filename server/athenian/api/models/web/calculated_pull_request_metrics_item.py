@@ -10,6 +10,16 @@ from athenian.api.models.web.granularity import Granularity
 class CalculatedPullRequestMetricsItem(Model):
     """Series of calculated metrics for a specific set of repositories and developers."""
 
+    openapi_types = {
+        "for_": ForSet,
+        "granularity": str,
+        "values": List[CalculatedPullRequestMetricValues],
+    }
+
+    attribute_map = {"for_": "for", "granularity": "granularity", "values": "values"}
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(self,
                  for_: Optional[ForSet] = None,
                  granularity: Optional[str] = None,
@@ -20,14 +30,6 @@ class CalculatedPullRequestMetricsItem(Model):
         :param granularity: The granularity of this CalculatedPullRequestMetricsItem.
         :param values: The values of this CalculatedPullRequestMetricsItem.
         """
-        self.openapi_types = {
-            "for_": ForSet,
-            "granularity": str,
-            "values": List[CalculatedPullRequestMetricValues],
-        }
-
-        self.attribute_map = {"for_": "for", "granularity": "granularity", "values": "values"}
-
         self._for_ = for_
         self._granularity = granularity
         self._values = values

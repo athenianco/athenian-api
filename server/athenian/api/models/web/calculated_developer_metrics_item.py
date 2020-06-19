@@ -7,6 +7,10 @@ from athenian.api.models.web.for_set_developers import ForSetDevelopers
 class CalculatedDeveloperMetricsItem(Model):
     """Measured developer metrics for each `DeveloperMetricsRequest.for`."""
 
+    openapi_types = {"for_": ForSetDevelopers, "values": List[List[object]]}
+    attribute_map = {"for_": "for", "values": "values"}
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(self,
                  for_: Optional[ForSetDevelopers] = None,
                  values: Optional[List[List[object]]] = None):
@@ -15,10 +19,6 @@ class CalculatedDeveloperMetricsItem(Model):
         :param for_: The for_ of this CalculatedDeveloperMetricsItem.
         :param values: The values of this CalculatedDeveloperMetricsItem.
         """
-        self.openapi_types = {"for_": ForSetDevelopers, "values": List[List[object]]}
-
-        self.attribute_map = {"for_": "for", "values": "values"}
-
         self._for_ = for_
         self._values = values
 

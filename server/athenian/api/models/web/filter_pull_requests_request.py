@@ -9,6 +9,32 @@ from athenian.api.models.web.pull_request_with import PullRequestWith
 class FilterPullRequestsRequest(Model):
     """PR filters for /filter/pull_requests."""
 
+    openapi_types = {
+        "account": int,
+        "date_from": date,
+        "date_to": date,
+        "timezone": int,
+        "in_": List[str],
+        "properties": List[str],
+        "with_": PullRequestWith,
+        "labels": List[str],
+        "exclude_inactive": bool,
+    }
+
+    attribute_map = {
+        "account": "account",
+        "date_from": "date_from",
+        "date_to": "date_to",
+        "timezone": "timezone",
+        "in_": "in",
+        "properties": "properties",
+        "with_": "with",
+        "labels": "labels",
+        "exclude_inactive": "exclude_inactive",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         account: Optional[int] = None,
@@ -33,30 +59,6 @@ class FilterPullRequestsRequest(Model):
         :param labels: The labels of this FilterPullRequestsRequest.
         :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
         """
-        self.openapi_types = {
-            "account": int,
-            "date_from": date,
-            "date_to": date,
-            "timezone": int,
-            "in_": List[str],
-            "properties": List[str],
-            "with_": PullRequestWith,
-            "labels": List[str],
-            "exclude_inactive": bool,
-        }
-
-        self.attribute_map = {
-            "account": "account",
-            "date_from": "date_from",
-            "date_to": "date_to",
-            "timezone": "timezone",
-            "in_": "in",
-            "properties": "properties",
-            "with_": "with",
-            "labels": "labels",
-            "exclude_inactive": "exclude_inactive",
-        }
-
         self._account = account
         self._date_from = date_from
         self._date_to = date_to

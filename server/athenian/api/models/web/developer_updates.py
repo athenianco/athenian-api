@@ -10,6 +10,26 @@ class DeveloperUpdates(Model):
     Note: any of these properties may be missing if there was no such activity.
     """
 
+    openapi_types = {
+        "prs": int,
+        "reviewer": int,
+        "commit_author": int,
+        "commit_committer": int,
+        "commenter": int,
+        "releaser": int,
+    }
+
+    attribute_map = {
+        "prs": "prs",
+        "reviewer": "reviewer",
+        "commit_author": "commit_author",
+        "commit_committer": "commit_committer",
+        "commenter": "commenter",
+        "releaser": "releaser",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         prs: Optional[int] = None,
@@ -29,24 +49,6 @@ class DeveloperUpdates(Model):
         :param merger: The merger of this DeveloperUpdates.
         :param releaser: The releaser of this DeveloperUpdates.
         """
-        self.openapi_types = {
-            "prs": int,
-            "reviewer": int,
-            "commit_author": int,
-            "commit_committer": int,
-            "commenter": int,
-            "releaser": int,
-        }
-
-        self.attribute_map = {
-            "prs": "prs",
-            "reviewer": "reviewer",
-            "commit_author": "commit_author",
-            "commit_committer": "commit_committer",
-            "commenter": "commenter",
-            "releaser": "releaser",
-        }
-
         self._prs = prs
         self._reviewer = reviewer
         self._commit_author = commit_author

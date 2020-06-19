@@ -9,13 +9,13 @@ from typing import Collection, Dict, List, Optional, Sequence, Set, Union
 import aiomcache
 import databases
 import pandas as pd
-from sqlalchemy import and_, distinct, func, select
+from sqlalchemy import and_, distinct, func, join, select
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.pull_request import ReviewResolution
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestReview, PullRequestReviewComment, PushCommit, Release
+    PullRequestLabel, PullRequestReview, PullRequestReviewComment, PushCommit, Release
 from athenian.api.tracing import sentry_span
 
 
@@ -61,6 +61,7 @@ async def _set_commits(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                        topics: Set[str],
                        devs: Sequence[str],
                        repos: Collection[str],
+                       labels: Set[str],
                        time_from: datetime,
                        time_to: datetime,
                        conn: databases.core.Connection,
@@ -84,11 +85,12 @@ async def _set_prs_created(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
                            topics: Set[str],
                            devs: Sequence[str],
                            repos: Collection[str],
+                           labels: Set[str],
                            time_from: datetime,
                            time_to: datetime,
                            conn: databases.core.Connection,
                            cache: Optional[aiomcache.Client]) -> None:
-    prs = await _fetch_developer_created_prs(devs, repos, time_from, time_to, conn, cache)
+    prs = await _fetch_developer_created_prs(devs, repos, labels, time_from, time_to, conn, cache)
     topic = DeveloperTopic.prs_created.name
     for dev, n in prs["created_count"].items():
         stats_by_dev[dev][topic] = n
@@ -99,11 +101,12 @@ async def _set_prs_reviewed(stats_by_dev: Dict[str, Dict[str, Union[int, float]]
                             topics: Set[str],
                             devs: Sequence[str],
                             repos: Collection[str],
+                            labels: Set[str],
                             time_from: datetime,
                             time_to: datetime,
                             conn: databases.core.Connection,
                             cache: Optional[aiomcache.Client]) -> None:
-    prs = await _fetch_developer_reviewed_prs(devs, repos, time_from, time_to, conn, cache)
+    prs = await _fetch_developer_reviewed_prs(devs, repos, labels, time_from, time_to, conn, cache)
     topic = DeveloperTopic.prs_reviewed.name
     for dev, n in prs["reviewed_count"].items():
         stats_by_dev[dev][topic] = n
@@ -114,11 +117,12 @@ async def _set_prs_merged(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                           topics: Set[str],
                           devs: Sequence[str],
                           repos: Collection[str],
+                          labels: Set[str],
                           time_from: datetime,
                           time_to: datetime,
                           conn: databases.core.Connection,
                           cache: Optional[aiomcache.Client]) -> None:
-    prs = await _fetch_developer_merged_prs(devs, repos, time_from, time_to, conn, cache)
+    prs = await _fetch_developer_merged_prs(devs, repos, labels, time_from, time_to, conn, cache)
     topic = DeveloperTopic.prs_merged.name
     for dev, n in prs["merged_count"].items():
         stats_by_dev[dev][topic] = n
@@ -129,11 +133,12 @@ async def _set_releases(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                         topics: Set[str],
                         devs: Sequence[str],
                         repos: Collection[str],
+                        labels: Set[str],
                         time_from: datetime,
                         time_to: datetime,
                         conn: databases.core.Connection,
                         cache: Optional[aiomcache.Client]) -> None:
-    prs = await _fetch_developer_released_prs(devs, repos, time_from, time_to, conn, cache)
+    prs = await _fetch_developer_releases(devs, repos, time_from, time_to, conn, cache)
     topic = DeveloperTopic.releases.name
     for dev, n in prs["released_count"].items():
         stats_by_dev[dev][topic] = n
@@ -144,11 +149,12 @@ async def _set_reviews(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                        topics: Set[str],
                        devs: Sequence[str],
                        repos: Collection[str],
+                       labels: Set[str],
                        time_from: datetime,
                        time_to: datetime,
                        conn: databases.core.Connection,
                        cache: Optional[aiomcache.Client]) -> None:
-    reviews = await _fetch_developer_reviews(devs, repos, time_from, time_to, conn, cache)
+    reviews = await _fetch_developer_reviews(devs, repos, labels, time_from, time_to, conn, cache)
     if reviews.empty:
         return
     if DeveloperTopic.reviews in topics:
@@ -188,20 +194,21 @@ async def _set_pr_comments(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
                            topics: Set[str],
                            devs: Sequence[str],
                            repos: Collection[str],
+                           labels: Set[str],
                            time_from: datetime,
                            time_to: datetime,
                            conn: databases.core.Connection,
                            cache: Optional[aiomcache.Client]) -> None:
     if DeveloperTopic.review_pr_comments in topics or DeveloperTopic.pr_comments in topics:
         review_comments = await _fetch_developer_review_comments(
-            devs, repos, time_from, time_to, conn, cache)
+            devs, repos, labels, time_from, time_to, conn, cache)
         if DeveloperTopic.review_pr_comments in topics:
             topic = DeveloperTopic.review_pr_comments.name
             for dev, n in review_comments["comments_count"].items():
                 stats_by_dev[dev][topic] = n
     if DeveloperTopic.regular_pr_comments in topics or DeveloperTopic.pr_comments in topics:
         regular_pr_comments = await _fetch_developer_regular_pr_comments(
-            devs, repos, time_from, time_to, conn, cache)
+            devs, repos, labels, time_from, time_to, conn, cache)
         if DeveloperTopic.regular_pr_comments in topics:
             topic = DeveloperTopic.regular_pr_comments.name
             for dev, n in regular_pr_comments["comments_count"].items():
@@ -231,6 +238,7 @@ processors = [
 async def calc_developer_metrics(devs: Sequence[str],
                                  repos: Collection[str],
                                  topics: Set[DeveloperTopic],
+                                 labels: Set[str],
                                  time_from: datetime,
                                  time_to: datetime,
                                  db: databases.Database,
@@ -247,7 +255,8 @@ async def calc_developer_metrics(devs: Sequence[str],
     tasks = []
     for key, setter in processors:
         if key.intersection(topics):
-            tasks.append(setter(stats_by_dev, topics, devs, repos, time_from, time_to, db, cache))
+            tasks.append(setter(
+                stats_by_dev, topics, devs, repos, labels, time_from, time_to, db, cache))
     errors = await asyncio.gather(*tasks, return_exceptions=True)
     for err in errors:
         if isinstance(err, Exception):
@@ -291,17 +300,35 @@ async def _fetch_developer_commits(devs: Sequence[str],
 )
 async def _fetch_developer_created_prs(devs: Sequence[str],
                                        repos: Collection[str],
+                                       labels: Set[str],
                                        time_from: datetime,
                                        time_to: datetime,
                                        db: databases.core.Connection,
                                        cache: Optional[aiomcache.Client],
                                        ) -> pd.DataFrame:
+    query = select([PullRequest.user_login, func.count(PullRequest.created_at)])
+    if labels:
+        query = (
+            query.select_from(join(
+                PullRequest, PullRequestLabel,
+                PullRequest.node_id == PullRequestLabel.pull_request_node_id,
+            )).where(and_(
+                PullRequest.created_at.between(time_from, time_to),
+                PullRequest.user_login.in_(devs),
+                PullRequest.repository_full_name.in_(repos),
+                PullRequestLabel.name.in_(labels),
+            ))
+        )
+    else:
+        query = (
+            query.where(and_(
+                PullRequest.created_at.between(time_from, time_to),
+                PullRequest.user_login.in_(devs),
+                PullRequest.repository_full_name.in_(repos),
+            ))
+        )
     df = await read_sql_query(
-        select([PullRequest.user_login, func.count(PullRequest.created_at)]).where(and_(
-            PullRequest.created_at.between(time_from, time_to),
-            PullRequest.user_login.in_(devs),
-            PullRequest.repository_full_name.in_(repos),
-        )).group_by(PullRequest.user_login),
+        query.group_by(PullRequest.user_login),
         db, [PullRequest.user_login.key, "created_count"],
         index=PullRequest.user_login.key)
     df.fillna(0, inplace=True, downcast="infer")
@@ -317,17 +344,35 @@ async def _fetch_developer_created_prs(devs: Sequence[str],
 )
 async def _fetch_developer_merged_prs(devs: Sequence[str],
                                       repos: Collection[str],
+                                      labels: Set[str],
                                       time_from: datetime,
                                       time_to: datetime,
                                       db: databases.core.Connection,
                                       cache: Optional[aiomcache.Client],
                                       ) -> pd.DataFrame:
+    query = select([PullRequest.merged_by_login, func.count(PullRequest.merged_at)])
+    if labels:
+        query = (
+            query.select_from(join(
+                PullRequest, PullRequestLabel,
+                PullRequest.node_id == PullRequestLabel.pull_request_node_id,
+            )).where(and_(
+                PullRequest.merged_at.between(time_from, time_to),
+                PullRequest.merged_by_login.in_(devs),
+                PullRequest.repository_full_name.in_(repos),
+                PullRequestLabel.name.in_(labels),
+            ))
+        )
+    else:
+        query = (
+            query.where(and_(
+                PullRequest.merged_at.between(time_from, time_to),
+                PullRequest.merged_by_login.in_(devs),
+                PullRequest.repository_full_name.in_(repos),
+            ))
+        )
     df = await read_sql_query(
-        select([PullRequest.merged_by_login, func.count(PullRequest.merged_at)]).where(and_(
-            PullRequest.merged_at.between(time_from, time_to),
-            PullRequest.merged_by_login.in_(devs),
-            PullRequest.repository_full_name.in_(repos),
-        )).group_by(PullRequest.merged_by_login),
+        query.group_by(PullRequest.merged_by_login),
         db, [PullRequest.merged_by_login.key, "merged_count"],
         index=PullRequest.merged_by_login.key)
     df.fillna(0, inplace=True, downcast="infer")
@@ -341,13 +386,13 @@ async def _fetch_developer_merged_prs(devs: Sequence[str],
     key=lambda devs, repos, time_from, time_to, **_: (
         ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal()),
 )
-async def _fetch_developer_released_prs(devs: Sequence[str],
-                                        repos: Collection[str],
-                                        time_from: datetime,
-                                        time_to: datetime,
-                                        db: databases.core.Connection,
-                                        cache: Optional[aiomcache.Client],
-                                        ) -> pd.DataFrame:
+async def _fetch_developer_releases(devs: Sequence[str],
+                                    repos: Collection[str],
+                                    time_from: datetime,
+                                    time_to: datetime,
+                                    db: databases.core.Connection,
+                                    cache: Optional[aiomcache.Client],
+                                    ) -> pd.DataFrame:
     df = await read_sql_query(
         select([Release.author, func.count(Release.published_at)]).where(and_(
             Release.published_at.between(time_from, time_to),
@@ -368,19 +413,36 @@ async def _fetch_developer_released_prs(devs: Sequence[str],
 )
 async def _fetch_developer_reviewed_prs(devs: Sequence[str],
                                         repos: Collection[str],
+                                        labels: Set[str],
                                         time_from: datetime,
                                         time_to: datetime,
                                         db: databases.core.Connection,
                                         cache: Optional[aiomcache.Client],
                                         ) -> pd.DataFrame:
+    query = select([PullRequestReview.user_login,
+                    func.count(distinct(PullRequestReview.pull_request_node_id))])
+    if labels:
+        query = (
+            query.select_from(join(
+                PullRequestReview, PullRequestLabel,
+                PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id))
+            .where(and_(
+                PullRequestReview.submitted_at.between(time_from, time_to),
+                PullRequestReview.user_login.in_(devs),
+                PullRequestReview.repository_full_name.in_(repos),
+                PullRequestLabel.name.in_(labels),
+            ))
+        )
+    else:
+        query = (
+            query.where(and_(
+                PullRequestReview.submitted_at.between(time_from, time_to),
+                PullRequestReview.user_login.in_(devs),
+                PullRequestReview.repository_full_name.in_(repos),
+            ))
+        )
     df = await read_sql_query(
-        select([PullRequestReview.user_login,
-                func.count(distinct(PullRequestReview.pull_request_node_id))])
-        .where(and_(
-            PullRequestReview.submitted_at.between(time_from, time_to),
-            PullRequestReview.user_login.in_(devs),
-            PullRequestReview.repository_full_name.in_(repos),
-        )).group_by(PullRequestReview.user_login),
+        query.group_by(PullRequestReview.user_login),
         db, [PullRequestReview.user_login.key, "reviewed_count"],
         index=PullRequestReview.user_login.key)
     df.fillna(0, inplace=True, downcast="infer")
@@ -396,19 +458,36 @@ async def _fetch_developer_reviewed_prs(devs: Sequence[str],
 )
 async def _fetch_developer_reviews(devs: Sequence[str],
                                    repos: Collection[str],
+                                   labels: Set[str],
                                    time_from: datetime,
                                    time_to: datetime,
                                    db: databases.core.Connection,
                                    cache: Optional[aiomcache.Client],
                                    ) -> pd.DataFrame:
+    query = select([PullRequestReview.user_login, PullRequestReview.state,
+                    func.count(PullRequestReview.submitted_at)])
+    if labels:
+        query = (
+            query.select_from(join(
+                PullRequestReview, PullRequestLabel,
+                PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id))
+            .where(and_(
+                PullRequestReview.submitted_at.between(time_from, time_to),
+                PullRequestReview.user_login.in_(devs),
+                PullRequestReview.repository_full_name.in_(repos),
+                PullRequestLabel.name.in_(labels),
+            ))
+        )
+    else:
+        query = (
+            query.where(and_(
+                PullRequestReview.submitted_at.between(time_from, time_to),
+                PullRequestReview.user_login.in_(devs),
+                PullRequestReview.repository_full_name.in_(repos),
+            ))
+        )
     df = await read_sql_query(
-        select([PullRequestReview.user_login, PullRequestReview.state,
-                func.count(PullRequestReview.submitted_at)])
-        .where(and_(
-            PullRequestReview.submitted_at.between(time_from, time_to),
-            PullRequestReview.user_login.in_(devs),
-            PullRequestReview.repository_full_name.in_(repos),
-        )).group_by(PullRequestReview.user_login, PullRequestReview.state),
+        query.group_by(PullRequestReview.user_login, PullRequestReview.state),
         db, [PullRequestReview.user_login.key, PullRequestReview.state.key, "reviews_count"],
         index=[PullRequestReview.user_login.key, PullRequestReview.state.key])
     df.fillna(0, inplace=True, downcast="infer")
@@ -424,19 +503,36 @@ async def _fetch_developer_reviews(devs: Sequence[str],
 )
 async def _fetch_developer_review_comments(devs: Sequence[str],
                                            repos: Collection[str],
+                                           labels: Set[str],
                                            time_from: datetime,
                                            time_to: datetime,
                                            db: databases.core.Connection,
                                            cache: Optional[aiomcache.Client],
                                            ) -> pd.DataFrame:
+    query = select([PullRequestReviewComment.user_login,
+                    func.count(PullRequestReviewComment.created_at)])
+    if labels:
+        query = (
+            query.select_from(join(
+                PullRequestReviewComment, PullRequestLabel,
+                PullRequestReviewComment.pull_request_node_id == PullRequestLabel.pull_request_node_id,  # noqa
+            )).where(and_(
+                PullRequestReviewComment.created_at.between(time_from, time_to),
+                PullRequestReviewComment.user_login.in_(devs),
+                PullRequestReviewComment.repository_full_name.in_(repos),
+                PullRequestLabel.name.in_(labels),
+            ))
+        )
+    else:
+        query = (
+            query.where(and_(
+                PullRequestReviewComment.created_at.between(time_from, time_to),
+                PullRequestReviewComment.user_login.in_(devs),
+                PullRequestReviewComment.repository_full_name.in_(repos),
+            ))
+        )
     df = await read_sql_query(
-        select([PullRequestReviewComment.user_login,
-                func.count(PullRequestReviewComment.created_at)])
-        .where(and_(
-            PullRequestReviewComment.created_at.between(time_from, time_to),
-            PullRequestReviewComment.user_login.in_(devs),
-            PullRequestReviewComment.repository_full_name.in_(repos),
-        )).group_by(PullRequestReviewComment.user_login),
+        query.group_by(PullRequestReviewComment.user_login),
         db, [PullRequestReviewComment.user_login.key, "comments_count"],
         index=PullRequestReviewComment.user_login.key)
     df.fillna(0, inplace=True, downcast="infer")
@@ -452,19 +548,35 @@ async def _fetch_developer_review_comments(devs: Sequence[str],
 )
 async def _fetch_developer_regular_pr_comments(devs: Sequence[str],
                                                repos: Collection[str],
+                                               labels: Set[str],
                                                time_from: datetime,
                                                time_to: datetime,
                                                db: databases.core.Connection,
                                                cache: Optional[aiomcache.Client],
                                                ) -> pd.DataFrame:
+    query = select([PullRequestComment.user_login, func.count(PullRequestComment.created_at)])
+    if labels:
+        query = (
+            query.select_from(join(
+                PullRequestComment, PullRequestLabel,
+                PullRequestComment.pull_request_node_id == PullRequestLabel.pull_request_node_id))
+            .where(and_(
+                PullRequestComment.created_at.between(time_from, time_to),
+                PullRequestComment.user_login.in_(devs),
+                PullRequestComment.repository_full_name.in_(repos),
+                PullRequestLabel.name.in_(labels),
+            ))
+        )
+    else:
+        query = (
+            query.where(and_(
+                PullRequestComment.created_at.between(time_from, time_to),
+                PullRequestComment.user_login.in_(devs),
+                PullRequestComment.repository_full_name.in_(repos),
+            ))
+        )
     df = await read_sql_query(
-        select([PullRequestComment.user_login,
-                func.count(PullRequestComment.created_at)])
-        .where(and_(
-            PullRequestComment.created_at.between(time_from, time_to),
-            PullRequestComment.user_login.in_(devs),
-            PullRequestComment.repository_full_name.in_(repos),
-        )).group_by(PullRequestComment.user_login),
+        query.group_by(PullRequestComment.user_login),
         db, [PullRequestComment.user_login.key, "comments_count"],
         index=PullRequestComment.user_login.key)
     df.fillna(0, inplace=True, downcast="infer")

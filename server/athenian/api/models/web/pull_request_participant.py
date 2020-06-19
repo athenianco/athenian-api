@@ -15,6 +15,9 @@ class PullRequestParticipant(Model):
     STATUS_RELEASER = "releaser"
     STATUSES = {STATUS_AUTHOR, STATUS_REVIEWER, STATUS_COMMIT_AUTHOR, STATUS_COMMIT_COMMITTER,
                 STATUS_COMMENTER, STATUS_MERGER, STATUS_RELEASER}
+    openapi_types = {"id": str, "status": List[str]}
+    attribute_map = {"id": "id", "status": "status"}
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, id: Optional[str] = None, status: Optional[List[str]] = None):
         """PullRequestParticipant - a model defined in OpenAPI
@@ -22,10 +25,6 @@ class PullRequestParticipant(Model):
         :param id: The id of this PullRequestParticipant.
         :param status: The status of this PullRequestParticipant.
         """
-        self.openapi_types = {"id": str, "status": List[str]}
-
-        self.attribute_map = {"id": "id", "status": "status"}
-
         self._id = id
         self._status = status
 

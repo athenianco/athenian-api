@@ -7,6 +7,24 @@ from athenian.api.models.web.base_model_ import Model
 class CalculatedPullRequestMetricValues(Model):
     """Calculated metrics: date, values, confidences."""
 
+    openapi_types = {
+        "date": datetime.date,
+        "values": List[object],
+        "confidence_scores": List[int],
+        "confidence_mins": List[object],
+        "confidence_maxs": List[object],
+    }
+
+    attribute_map = {
+        "date": "date",
+        "values": "values",
+        "confidence_scores": "confidence_scores",
+        "confidence_mins": "confidence_mins",
+        "confidence_maxs": "confidence_maxs",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(self, date: Optional[datetime.date] = None,
                  values: Optional[List[object]] = None,
                  confidence_scores: Optional[List[int]] = None,
@@ -23,18 +41,6 @@ class CalculatedPullRequestMetricValues(Model):
                                CalculatedPullRequestMetricValues.
         :param confidence_scores: The confidence scores of this CalculatedPullRequestMetricValues.
         """
-        self.openapi_types = {"date": datetime.date,
-                              "values": List[object],
-                              "confidence_scores": List[int],
-                              "confidence_mins": List[object],
-                              "confidence_maxs": List[object],
-                              }
-        self.attribute_map = {"date": "date",
-                              "values": "values",
-                              "confidence_scores": "confidence_scores",
-                              "confidence_mins": "confidence_mins",
-                              "confidence_maxs": "confidence_maxs",
-                              }
         self._date = date
         self._values = values
         self._confidence_mins = confidence_mins

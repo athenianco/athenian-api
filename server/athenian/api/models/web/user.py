@@ -12,6 +12,30 @@ from athenian.api.models.web.base_model_ import Model
 class User(Model):
     """User profile from Auth0."""
 
+    openapi_types = {
+        "id": str,
+        "native_id": str,
+        "login": str,
+        "name": str,
+        "email": str,
+        "picture": str,
+        "updated": str,
+        "accounts": object,
+    }
+
+    attribute_map = {
+        "id": "id",
+        "native_id": "native_id",
+        "login": "login",
+        "name": "name",
+        "email": "email",
+        "picture": "picture",
+        "updated": "updated",
+        "accounts": "accounts",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         id: Optional[str] = None,
@@ -34,28 +58,6 @@ class User(Model):
         :param updated: The updated of this User.
         :param accounts: The accounts of this User.
         """
-        self.openapi_types = {
-            "id": str,
-            "native_id": str,
-            "login": str,
-            "name": str,
-            "email": str,
-            "picture": str,
-            "updated": str,
-            "accounts": object,
-        }
-
-        self.attribute_map = {
-            "id": "id",
-            "native_id": "native_id",
-            "login": "login",
-            "name": "name",
-            "email": "email",
-            "picture": "picture",
-            "updated": "updated",
-            "accounts": "accounts",
-        }
-
         self._id = id
         self._native_id = native_id
         self._login = login

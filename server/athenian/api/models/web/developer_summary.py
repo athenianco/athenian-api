@@ -5,6 +5,22 @@ from athenian.api.models.web.developer_updates import DeveloperUpdates
 class DeveloperSummary(Model):
     """Developer activity statistics and profile details."""
 
+    openapi_types = {
+        "login": str,
+        "name": str,
+        "avatar": str,
+        "updates": DeveloperUpdates,
+    }
+
+    attribute_map = {
+        "login": "login",
+        "name": "name",
+        "avatar": "avatar",
+        "updates": "updates",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         login: str = None,
@@ -19,20 +35,6 @@ class DeveloperSummary(Model):
         :param avatar: The avatar of this DeveloperSummary.
         :param updates: The updates of this DeveloperSummary.
         """
-        self.openapi_types = {
-            "login": str,
-            "name": str,
-            "avatar": str,
-            "updates": DeveloperUpdates,
-        }
-
-        self.attribute_map = {
-            "login": "login",
-            "name": "name",
-            "avatar": "avatar",
-            "updates": "updates",
-        }
-
         self._login = login
         self._name = name
         self._avatar = avatar

@@ -7,6 +7,28 @@ from athenian.api.models.web.base_model_ import Model
 class CommitFilter(Model):
     """Common parts of the commit filter."""
 
+    openapi_types = {
+        "account": int,
+        "date_from": date,
+        "date_to": date,
+        "timezone": int,
+        "in_": List[str],
+        "with_author": List[str],
+        "with_committer": List[str],
+    }
+
+    attribute_map = {
+        "account": "account",
+        "date_from": "date_from",
+        "date_to": "date_to",
+        "timezone": "timezone",
+        "in_": "in",
+        "with_author": "with_author",
+        "with_committer": "with_committer",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         account: Optional[int] = None,
@@ -27,26 +49,6 @@ class CommitFilter(Model):
         :param with_author: The with_author of this CommitFilter.
         :param with_committer: The with_committer of this CommitFilter.
         """
-        self.openapi_types = {
-            "account": int,
-            "date_from": date,
-            "date_to": date,
-            "timezone": int,
-            "in_": List[str],
-            "with_author": List[str],
-            "with_committer": List[str],
-        }
-
-        self.attribute_map = {
-            "account": "account",
-            "date_from": "date_from",
-            "date_to": "date_to",
-            "timezone": "timezone",
-            "in_": "in",
-            "with_author": "with_author",
-            "with_committer": "with_committer",
-        }
-
         self._account = account
         self._date_from = date_from
         self._date_to = date_to

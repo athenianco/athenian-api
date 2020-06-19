@@ -8,6 +8,15 @@ from athenian.api.models.web.included_native_users import IncludedNativeUsers
 class FilteredReleases(Model):
     """Response of `/filter/releases` - releases metadata and user details."""
 
+    openapi_types = {
+        "include": IncludedNativeUsers,
+        "data": List[FilteredRelease],
+    }
+
+    attribute_map = {"include": "include", "data": "data"}
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         include: Optional[IncludedNativeUsers] = None,
@@ -18,13 +27,6 @@ class FilteredReleases(Model):
         :param include: The include of this FilteredReleases.
         :param data: The data of this FilteredReleases.
         """
-        self.openapi_types = {
-            "include": IncludedNativeUsers,
-            "data": List[FilteredRelease],
-        }
-
-        self.attribute_map = {"include": "include", "data": "data"}
-
         self._include = include
         self._data = data
 

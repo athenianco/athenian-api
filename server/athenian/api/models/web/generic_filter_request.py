@@ -7,6 +7,24 @@ from athenian.api.models.web.base_model_ import Model
 class GenericFilterRequest(Model):
     """Structure to specify the filtering traits for contributors, repositories, or releases."""
 
+    openapi_types = {
+        "account": int,
+        "date_from": date,
+        "date_to": date,
+        "timezone": int,
+        "in_": List[str],
+    }
+
+    attribute_map = {
+        "account": "account",
+        "date_from": "date_from",
+        "date_to": "date_to",
+        "timezone": "timezone",
+        "in_": "in",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         account: Optional[int] = None,
@@ -23,22 +41,6 @@ class GenericFilterRequest(Model):
         :param timezone: The timezone of this GenericFilterRequest.
         :param in_: The in of this GenericFilterRequest.
         """
-        self.openapi_types = {
-            "account": int,
-            "date_from": date,
-            "date_to": date,
-            "timezone": int,
-            "in_": List[str],
-        }
-
-        self.attribute_map = {
-            "account": "account",
-            "date_from": "date_from",
-            "date_to": "date_to",
-            "timezone": "timezone",
-            "in_": "in",
-        }
-
         self._account = account
         self._date_from = date_from
         self._date_to = date_to

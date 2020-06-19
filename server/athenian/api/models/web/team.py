@@ -7,6 +7,10 @@ from athenian.api.models.web.contributor import Contributor
 class Team(Model):
     """List of team members."""
 
+    openapi_types = {"id": int, "name": str, "members": List[Contributor]}
+    attribute_map = {"id": "id", "name": "name", "members": "members"}
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
             self,
             id: Optional[int] = None,
@@ -19,10 +23,6 @@ class Team(Model):
         :param name: The name of this Team.
         :param members: The members of this Team.
         """
-        self.openapi_types = {"id": int, "name": str, "members": List[Contributor]}
-
-        self.attribute_map = {"id": "id", "name": "name", "members": "members"}
-
         self._id = id
         self._name = name
         self._members = members

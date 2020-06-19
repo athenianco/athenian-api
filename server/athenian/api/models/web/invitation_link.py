@@ -7,15 +7,15 @@ class InvitationLink(Model):
     Do not edit the class manually.
     """
 
+    openapi_types = {"url": str}
+    attribute_map = {"url": "url"}
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(self, url: str = None):
         """InvitationLink - a model defined in OpenAPI
 
         :param url: The url of this InvitationLink.
         """
-        self.openapi_types = {"url": str}
-
-        self.attribute_map = {"url": "url"}
-
         self._url = url
 
     @property

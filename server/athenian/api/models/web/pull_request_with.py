@@ -6,6 +6,28 @@ from athenian.api.models.web.base_model_ import Model
 class PullRequestWith(Model, Mapping):
     """Triage PRs by various developer participation."""
 
+    openapi_types = {
+        "author": List[str],
+        "reviewer": List[str],
+        "commit_author": List[str],
+        "commit_committer": List[str],
+        "commenter": List[str],
+        "merger": List[str],
+        "releaser": List[str],
+    }
+
+    attribute_map = {
+        "author": "author",
+        "reviewer": "reviewer",
+        "commit_author": "commit_author",
+        "commit_committer": "commit_committer",
+        "commenter": "commenter",
+        "merger": "merger",
+        "releaser": "releaser",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         author: Optional[List[str]] = None,
@@ -26,26 +48,6 @@ class PullRequestWith(Model, Mapping):
         :param merger: The merger of this PullRequestWith.
         :param releaser: The releaser of this PullRequestWith.
         """
-        self.openapi_types = {
-            "author": List[str],
-            "reviewer": List[str],
-            "commit_author": List[str],
-            "commit_committer": List[str],
-            "commenter": List[str],
-            "merger": List[str],
-            "releaser": List[str],
-        }
-
-        self.attribute_map = {
-            "author": "author",
-            "reviewer": "reviewer",
-            "commit_author": "commit_author",
-            "commit_committer": "commit_committer",
-            "commenter": "commenter",
-            "merger": "merger",
-            "releaser": "releaser",
-        }
-
         self._author = author
         self._reviewer = reviewer
         self._commit_author = commit_author

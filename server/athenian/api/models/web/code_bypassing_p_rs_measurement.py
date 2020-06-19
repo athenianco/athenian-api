@@ -7,6 +7,24 @@ from athenian.api.models.web.base_model_ import Model
 class CodeBypassingPRsMeasurement(Model):
     """Statistics about code pushed outside of pull requests in a certain time interval."""
 
+    openapi_types = {
+        "date": datetime.date,
+        "bypassed_commits": int,
+        "bypassed_lines": int,
+        "total_commits": int,
+        "total_lines": int,
+    }
+
+    attribute_map = {
+        "date": "date",
+        "bypassed_commits": "bypassed_commits",
+        "bypassed_lines": "bypassed_lines",
+        "total_commits": "total_commits",
+        "total_lines": "total_lines",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         date: Optional[datetime.date] = None,
@@ -23,22 +41,6 @@ class CodeBypassingPRsMeasurement(Model):
         :param total_commits: The total_commits of this CodeBypassingPRsMeasurement.
         :param total_lines: The total_lines of this CodeBypassingPRsMeasurement.
         """
-        self.openapi_types = {
-            "date": datetime.date,
-            "bypassed_commits": int,
-            "bypassed_lines": int,
-            "total_commits": int,
-            "total_lines": int,
-        }
-
-        self.attribute_map = {
-            "date": "date",
-            "bypassed_commits": "bypassed_commits",
-            "bypassed_lines": "bypassed_lines",
-            "total_commits": "total_commits",
-            "total_lines": "total_lines",
-        }
-
         self._date = date
         self._bypassed_commits = bypassed_commits
         self._bypassed_lines = bypassed_lines

@@ -8,6 +8,15 @@ from athenian.api.models.web.included_native_users import IncludedNativeUsers
 class CommitsList(Model):
     """Lists of commits for each time interval."""
 
+    openapi_types = {
+        "data": List[Commit],
+        "include": IncludedNativeUsers,
+    }
+
+    attribute_map = {"data": "data", "include": "include"}
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         data: Optional[List[Commit]] = None,
@@ -18,13 +27,6 @@ class CommitsList(Model):
         :param data: The data of this CommitsList.
         :param include: The include of this CommitsList.
         """
-        self.openapi_types = {
-            "data": List[Commit],
-            "include": IncludedNativeUsers,
-        }
-
-        self.attribute_map = {"data": "data", "include": "include"}
-
         self._data = data
         self._include = include
 

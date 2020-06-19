@@ -12,6 +12,10 @@ class UserChangeStatus(metaclass=Enum):
 class AccountUserChangeRequest(Model):
     """Request to change an account member's status."""
 
+    openapi_types = {"account": int, "user": str, "status": str}
+    attribute_map = {"account": "account", "user": "user", "status": "status"}
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(self, account: int = None, user: str = None, status: str = None):
         """AccountUserChangeRequest - a model defined in OpenAPI
 
@@ -19,10 +23,6 @@ class AccountUserChangeRequest(Model):
         :param user: The user of this AccountUserChangeRequest.
         :param status: The status of this AccountUserChangeRequest.
         """
-        self.openapi_types = {"account": int, "user": str, "status": str}
-
-        self.attribute_map = {"account": "account", "user": "user", "status": "status"}
-
         self._account = account
         self._user = user
         self._status = status

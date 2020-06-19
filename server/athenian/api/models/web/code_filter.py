@@ -8,6 +8,12 @@ from athenian.api.models.web.granularity import Granularity
 class CodeFilter(CommitFilter):
     """Filter for revealing code bypassing PRs."""
 
+    openapi_types = CommitFilter.openapi_types.copy()
+    openapi_types["granularity"] = str
+    attribute_map = CommitFilter.attribute_map.copy()
+    attribute_map["granularity"] = "granularity"
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         account: Optional[int] = None,
@@ -37,8 +43,6 @@ class CodeFilter(CommitFilter):
                          in_=in_,
                          with_author=with_author,
                          with_committer=with_committer)
-        self.openapi_types["granularity"] = str
-        self.attribute_map["granularity"] = "granularity"
         self._granularity = granularity
 
     @property

@@ -9,16 +9,16 @@ class RepositorySetWithName(Model):
     Do not edit the class manually.
     """
 
+    openapi_types = {"name": str, "items": List[str]}
+    attribute_map = {"name": "name", "items": "items"}
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(self, name: str = None, items: List[str] = None):
         """RepositorySetWithName - a model defined in OpenAPI
 
         :param name: The name of this RepositorySetWithName.
         :param items: The items of this RepositorySetWithName.
         """
-        self.openapi_types = {"name": str, "items": List[str]}
-
-        self.attribute_map = {"name": "name", "items": "items"}
-
         self._name = name
         self._items = items
 

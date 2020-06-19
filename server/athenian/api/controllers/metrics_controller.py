@@ -211,14 +211,14 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
                 request, account, for_set, i, all_repos, checkers, sdb_conn)
             prefix = PREFIXES[service]
             devs = []
-            for dev in for_set.developers:
+            for dev in (for_set.developers or []):
                 if not dev.startswith(prefix):
                     raise ResponseError(InvalidRequestError(
                         detail='providers in "developers" and "repositories" do not match',
                         pointer=".for[%d].developers" % i,
                     ))
                 devs.append(dev[len(prefix):])
-            filters.append((service, (repos, devs, for_set)))
+            filters.append((service, (repos, devs, set(for_set.labels or []), for_set)))
     return filters, all_repos
 
 
@@ -327,9 +327,9 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
         time_to += tzoffset
     tasks = []
     for_sets = []
-    for service, (repos, devs, for_set) in filters:
+    for service, (repos, devs, labels, for_set) in filters:
         tasks.append(METRIC_ENTRIES[service]["developers"](
-            devs, repos, topics, time_from, time_to, request.mdb, request.cache))
+            devs, repos, topics, labels, time_from, time_to, request.mdb, request.cache))
         for_sets.append(for_set)
     all_stats = await asyncio.gather(*tasks, return_exceptions=True)
     for stats, for_set in zip(all_stats, for_sets):

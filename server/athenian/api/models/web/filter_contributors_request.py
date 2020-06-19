@@ -7,6 +7,26 @@ from athenian.api.models.web.base_model_ import Model
 class FilterContributorsRequest(Model):
     """Filters for `/filter/contributors`."""
 
+    openapi_types = {
+        "account": int,
+        "date_from": date,
+        "date_to": date,
+        "timezone": int,
+        "in_": List[str],
+        "as_": List[str],
+    }
+
+    attribute_map = {
+        "account": "account",
+        "date_from": "date_from",
+        "date_to": "date_to",
+        "timezone": "timezone",
+        "in_": "in",
+        "as_": "as",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
             self,
             account: Optional[int] = None,
@@ -25,24 +45,6 @@ class FilterContributorsRequest(Model):
         :param in_: The in_ of this FilterContributorsRequest.
         :param as_: The as_ of this FilterContributorsRequest.
         """
-        self.openapi_types = {
-            "account": int,
-            "date_from": date,
-            "date_to": date,
-            "timezone": int,
-            "in_": List[str],
-            "as_": List[str],
-        }
-
-        self.attribute_map = {
-            "account": "account",
-            "date_from": "date_from",
-            "date_to": "date_to",
-            "timezone": "timezone",
-            "in_": "in",
-            "as_": "as",
-        }
-
         self._account = account
         self._date_from = date_from
         self._date_to = date_to

@@ -7,6 +7,24 @@ from athenian.api.models.web.base_model_ import Model
 class CommitSignature(Model):
     """Git commit signature."""
 
+    openapi_types = {
+        "login": str,
+        "name": str,
+        "email": str,
+        "timestamp": datetime,
+        "timezone": float,
+    }
+
+    attribute_map = {
+        "login": "login",
+        "name": "name",
+        "email": "email",
+        "timestamp": "timestamp",
+        "timezone": "timezone",
+    }
+
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         login: Optional[str] = None,
@@ -23,22 +41,6 @@ class CommitSignature(Model):
         :param timestamp: The timestamp of this CommitSignature.
         :param timezone: The timezone of this CommitSignature.
         """
-        self.openapi_types = {
-            "login": str,
-            "name": str,
-            "email": str,
-            "timestamp": datetime,
-            "timezone": float,
-        }
-
-        self.attribute_map = {
-            "login": "login",
-            "name": "name",
-            "email": "email",
-            "timestamp": "timestamp",
-            "timezone": "timezone",
-        }
-
         self._login = login
         self._name = name
         self._email = email
