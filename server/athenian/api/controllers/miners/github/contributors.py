@@ -118,13 +118,21 @@ async def _mine_contributors(repos: Collection[str],
                         Release.published_at.between(time_from, time_to)))
             .group_by(Release.author))
 
-    as_roles = as_roles or ("author", "reviewer", "commit_author", "commit_committer",
-                            "commenter", "merger", "releaser")
-    locals_ = locals()
-    fetchers = {k: locals_[f"fetch_{k}"]() for k in as_roles}
-    data = await asyncio.gather(*fetchers.values(), return_exceptions=True)
+    fetchers_mapping = {
+        "author": fetch_author,
+        "reviewer": fetch_reviewer,
+        "commit_author": fetch_commit_author,
+        "commit_committer": fetch_commit_committer,
+        "commenter": fetch_commenter,
+        "merger": fetch_merger,
+        "releaser": fetch_releaser,
+    }
+
+    as_roles = as_roles or fetchers_mapping.keys()
+    tasks = {k: v() for k, v in fetchers_mapping.items() if k in as_roles}
+    data = await asyncio.gather(*tasks.values(), return_exceptions=True)
     stats = defaultdict(dict)
-    for r, key in zip(data, fetchers.keys()):
+    for r, key in zip(data, tasks.keys()):
         if isinstance(r, Exception):
             raise r from None
 
