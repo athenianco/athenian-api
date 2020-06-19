@@ -58,8 +58,7 @@ async def _mine_contributors(repos: Collection[str],
         or_(PullRequest.created_at.between(time_from, time_to),
             and_(PullRequest.created_at < time_to,
                  PullRequest.closed_at.is_(None)),
-            PullRequest.closed_at.between(time_from, time_to),
-            PullRequest.updated_at.between(time_from, time_to)),
+            PullRequest.closed_at.between(time_from, time_to)),
     )
 
     @sentry_span
