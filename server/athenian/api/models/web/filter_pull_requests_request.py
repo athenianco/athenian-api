@@ -33,6 +33,8 @@ class FilterPullRequestsRequest(Model):
         "exclude_inactive": "exclude_inactive",
     }
 
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         account: Optional[int] = None,

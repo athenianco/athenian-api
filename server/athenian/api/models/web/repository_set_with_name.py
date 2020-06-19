@@ -11,6 +11,7 @@ class RepositorySetWithName(Model):
 
     openapi_types = {"name": str, "items": List[str]}
     attribute_map = {"name": "name", "items": "items"}
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, name: str = None, items: List[str] = None):
         """RepositorySetWithName - a model defined in OpenAPI

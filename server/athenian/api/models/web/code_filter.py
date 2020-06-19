@@ -12,6 +12,7 @@ class CodeFilter(CommitFilter):
     openapi_types["granularity"] = str
     attribute_map = CommitFilter.attribute_map.copy()
     attribute_map["granularity"] = "granularity"
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(
         self,

@@ -12,6 +12,7 @@ class IncludedNativeUsers(Model):
 
     openapi_types = {"users": Dict[str, IncludedNativeUser]}
     attribute_map = {"users": "users"}
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, users: Optional[Dict[str, IncludedNativeUser]] = None):
         """IncludedNativeUsers - a model defined in OpenAPI

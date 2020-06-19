@@ -9,6 +9,7 @@ class CalculatedDeveloperMetricsItem(Model):
 
     openapi_types = {"for_": ForSetDevelopers, "values": List[List[object]]}
     attribute_map = {"for_": "for", "values": "values"}
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self,
                  for_: Optional[ForSetDevelopers] = None,

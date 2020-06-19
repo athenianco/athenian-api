@@ -9,6 +9,7 @@ class Account(Model):
 
     openapi_types = {"admins": List[User], "regulars": List[User]}
     attribute_map = {"admins": "admins", "regulars": "regulars"}
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, admins: Optional[List[User]] = None, regulars: Optional[List[User]] = None):
         """Account - a model defined in OpenAPI

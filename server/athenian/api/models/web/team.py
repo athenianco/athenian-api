@@ -9,6 +9,7 @@ class Team(Model):
 
     openapi_types = {"id": int, "name": str, "members": List[Contributor]}
     attribute_map = {"id": "id", "name": "name", "members": "members"}
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(
             self,

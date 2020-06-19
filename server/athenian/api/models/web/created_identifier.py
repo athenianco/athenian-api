@@ -11,6 +11,7 @@ class CreatedIdentifier(Model):
 
     openapi_types = {"id": int}
     attribute_map = {"id": "id"}
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, id: Optional[int] = None):
         """CreatedIdentifier - a model defined in OpenAPI

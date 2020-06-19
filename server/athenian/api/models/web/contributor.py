@@ -15,6 +15,8 @@ class Contributor(Model):
         "picture": "picture",
     }
 
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
             self,
             login: Optional[str] = None,

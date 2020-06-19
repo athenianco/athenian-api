@@ -19,6 +19,8 @@ class ForSet(Model):
         "labels": "labels",
     }
 
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         repositories: Optional[List[str]] = None,

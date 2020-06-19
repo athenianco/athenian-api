@@ -11,6 +11,7 @@ class NoSourceDataError(GenericError):
     openapi_types["repositories"] = List[str]
     attribute_map = GenericError.attribute_map.copy()
     attribute_map["repositories"] = "repositories"
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(
         self,

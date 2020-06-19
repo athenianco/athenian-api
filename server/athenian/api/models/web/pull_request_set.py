@@ -15,6 +15,8 @@ class PullRequestSet(Model):
 
     attribute_map = {"include": "include", "data": "data"}
 
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         include: Optional[IncludedNativeUsers] = None,

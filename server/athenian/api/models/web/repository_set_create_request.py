@@ -21,6 +21,8 @@ class RepositorySetCreateRequest(Model):
         "name": "name",
     }
 
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(self,
                  account: Optional[int] = None,
                  items: Optional[List[str]] = None,

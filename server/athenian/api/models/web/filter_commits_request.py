@@ -12,6 +12,7 @@ class FilterCommitsRequest(CommitFilter):
     openapi_types["property"] = str
     attribute_map = CommitFilter.attribute_map.copy()
     attribute_map["property"] = "property"
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(
         self,

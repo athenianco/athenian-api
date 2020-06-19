@@ -9,6 +9,7 @@ class TableFetchingProgress(Model):
 
     openapi_types = {"fetched": int, "name": str, "total": int}
     attribute_map = {"fetched": "fetched", "name": "name", "total": "total"}
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self,
                  fetched: Optional[int] = None,

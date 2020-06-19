@@ -67,6 +67,7 @@ class PullRequest(Model):
         "participants": "participants",
         "labels": "labels",
     }
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(
         self,

@@ -24,6 +24,8 @@ class InstallationProgress(Model):
         "tables": "tables",
     }
 
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(
         self,
         started_date: Optional[datetime] = None,

@@ -18,6 +18,8 @@ class CalculatedPullRequestMetricsItem(Model):
 
     attribute_map = {"for_": "for", "granularity": "granularity", "values": "values"}
 
+    __slots__ = ["_" + k for k in openapi_types]
+
     def __init__(self,
                  for_: Optional[ForSet] = None,
                  granularity: Optional[str] = None,

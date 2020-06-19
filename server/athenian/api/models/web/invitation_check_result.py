@@ -11,6 +11,7 @@ class InvitationCheckResult(Model):
     INVITATION_TYPE_REGULAR = "regular"
     openapi_types = {"active": bool, "type": str, "valid": bool}
     attribute_map = {"active": "active", "type": "type", "valid": "valid"}
+    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, active: Optional[bool] = None, type: Optional[str] = None,
                  valid: Optional[bool] = None):
