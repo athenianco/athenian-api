@@ -1889,6 +1889,12 @@ components:
           $ref: '#/components/schemas/RepositorySet'
         developers:
           $ref: '#/components/schemas/DeveloperSet'
+        labels:
+          description: PRs must be labeled with at least one name from this list so that
+            the related metrics include them.
+          items:
+            type: string
+          type: array
       required:
       - repositories
       type: object
