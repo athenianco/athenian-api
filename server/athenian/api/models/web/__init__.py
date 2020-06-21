@@ -32,6 +32,7 @@ from athenian.api.models.web.for_set_developers import ForSetDevelopers
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, \
     ForbiddenError, GenericError, NotFoundError
 from athenian.api.models.web.generic_filter_request import GenericFilterRequest
+from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
@@ -45,6 +46,7 @@ from athenian.api.models.web.pull_request import PullRequest
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
+from athenian.api.models.web.pull_request_numbers import PullRequestNumbers
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.pull_request_set import PullRequestSet
