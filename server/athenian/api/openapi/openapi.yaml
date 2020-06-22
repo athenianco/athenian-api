@@ -253,6 +253,44 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
       x-codegen-request-body-name: body
+  /filter/labels:
+    post:
+      operationId: filter_labels
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilterLabelsRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilteredLabels'
+          description: List of labels.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to access the specified account.
+      security:
+      - bearerAuth: []
+      summary: Find labels used in the given repositories.
+      tags:
+      - filter
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.filter_controller
+      x-codegen-request-body-name: body
   /filter/pull_requests:
     post:
       operationId: filter_prs
@@ -1928,14 +1966,14 @@ components:
         developers:
           $ref: '#/components/schemas/DeveloperSet'
         labels:
-          description: PRs must be labeled with at least one name from this list so that
-            the related metrics include them.
+          description: PRs must be labeled with at least one name from this list so
+            that the related metrics include them.
           items:
             type: string
           type: array
       required:
-      - repositories
       - developers
+      - repositories
       type: object
     Granularity:
       description: 'How often the metrics are reported. The value must satisfy the
@@ -3523,3 +3561,54 @@ components:
       - numbers
       - repository
       type: object
+    FilterLabelsRequest:
+      additionalProperties: false
+      description: Request body of `/filter/labels`. Defines the account and the repositories
+        where to look for the labels.
+      example:
+        account: 1
+        repositories:
+        - github.com/athenianco/athenian-api
+        - github.com/athenianco/athenian-webapp
+      properties:
+        account:
+          type: integer
+        repositories:
+          $ref: '#/components/schemas/RepositorySet'
+      required:
+      - account
+      type: object
+    FilteredLabel:
+      additionalProperties: false
+      description: Details about a label and some basic stats.
+      example:
+        name: bug
+        color: ff0000
+        used_prs: 100
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        color:
+          type: string
+        used_prs:
+          type: integer
+      required:
+      - color
+      - name
+      - used_prs
+      type: object
+    FilteredLabels:
+      description: List of labels.
+      example:
+      - name: bug
+        color: ff0000
+        used_prs: 100
+      - name: enhancement
+        description: New project feature.
+        color: 00ff00
+        used_prs: 200
+      items:
+        $ref: '#/components/schemas/FilteredLabel'
+      type: array

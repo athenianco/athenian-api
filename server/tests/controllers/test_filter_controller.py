@@ -12,6 +12,7 @@ import pytest
 from athenian.api import setup_cache_metrics
 from athenian.api.controllers.miners.types import Property
 from athenian.api.models.web import CommitsList, PullRequestSet
+from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_property import PullRequestProperty
@@ -891,5 +892,38 @@ async def test_get_prs_nasty_input(client, headers, account, repo, numbers, stat
     }
     response = await client.request(
         method="POST", path="/v1/get/pull_requests", headers=headers, json=body)
+    response_body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == status, response_body
+
+
+async def test_filter_labels_smoke(client, headers):
+    body = {
+        "account": 1,
+        "repositories": ["{1}"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/labels", headers=headers, json=body)
+    response_body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 200, response_body
+    labels = [FilteredLabel.from_dict(i) for i in response_body]
+    assert all(labels[i - 1].used_prs >= labels[i].used_prs for i in range(1, len(labels)))
+    assert len(labels) == 7
+    assert labels[0].name == "enhancement"
+    assert labels[0].color == "84b6eb"
+    assert labels[0].used_prs == 7
+
+
+@pytest.mark.parametrize("account, repos, status",
+                         [(1, ["github.com/whatever/else"], 403),
+                          (3, ["github.com/src-d/go-git"], 403),
+                          (4, ["github.com/src-d/go-git"], 403),
+                          (1, [], 200)])
+async def test_filter_labels_nasty_input(client, headers, account, repos, status):
+    body = {
+        "account": account,
+        "repositories": repos,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/labels", headers=headers, json=body)
     response_body = json.loads((await response.read()).decode("utf-8"))
     assert response.status == status, response_body
