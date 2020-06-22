@@ -14,14 +14,15 @@ from sqlalchemy import and_, or_, select
 
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.cache import cached
+from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
-    load_precomputed_done_times_filters, load_precomputed_done_times_reponums
+    load_precomputed_done_times_filters, load_precomputed_done_times_reponums, \
+    store_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
     PullRequestMiner, PullRequestTimesMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release import dummy_releases_df, load_releases
@@ -64,6 +65,7 @@ class PullRequestListMiner:
         self._time_from = time_from
         self._now = datetime.now(tz=timezone.utc)
         self._precomputed_hits = self._precomputed_misses = 0
+        self._calculated_released_times = []
 
     @property
     def precomputed_hits(self) -> int:
@@ -74,6 +76,11 @@ class PullRequestListMiner:
     def precomputed_misses(self) -> int:
         """Return the number of times PullRequestTimes was calculated from scratch."""
         return self._precomputed_misses
+
+    @property
+    def calculated_released_times(self) -> List[Tuple[MinedPullRequest, PullRequestTimes]]:
+        """Return the pairs of calculated mined and released PR times."""
+        return self._calculated_released_times
 
     @classmethod
     def _collect_properties(cls,
@@ -139,6 +146,8 @@ class PullRequestListMiner:
             return None
         if callable(times_today):
             times_today = times_today()
+            if times_today.released:
+                self._calculated_released_times.append((pr_today, times_today))
         props_today = self._collect_properties(times_today, pr_today, self._no_time_from)
         author = pr_today.pr[PullRequest.user_id.key]
         external_reviews_mask = pr_today.reviews[PullRequestReview.user_id.key].values != author
@@ -297,22 +306,6 @@ async def _refresh_prs_to_today(prs_time_machine: List[MinedPullRequest],
 
 
 @sentry_span
-@cached(
-    exptime=PullRequestMiner.CACHE_TTL,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, properties, participants, labels, exclude_inactive, release_settings, **_: (  # noqa
-        time_from.timestamp(),
-        time_to.timestamp(),
-        ",".join(sorted(repos)),
-        ",".join(s.name.lower() for s in sorted(properties)),
-        sorted((k.name.lower(), sorted(v)) for k, v in participants.items()),
-        # TODO(vmarkovtsev): get rid of the labels here using postprocess()
-        ",".join(sorted(labels)),
-        exclude_inactive,
-        release_settings,
-    ),
-)
 async def filter_pull_requests(properties: Set[Property],
                                time_from: datetime,
                                time_to: datetime,
@@ -327,8 +320,56 @@ async def filter_pull_requests(properties: Set[Property],
                                ) -> List[PullRequestListItem]:
     """Filter GitHub pull requests according to the specified criteria.
 
+    We call _filter_pull_requests() to ignore all but the first result. We've got
+    @cached.postprocess inside and it requires the wrapped function to return all the relevant
+    post-load dependencies.
+
     :param repos: List of repository names without the service prefix.
     """
+    prs, _ = await _filter_pull_requests(
+        properties, time_from, time_to, repos, participants, labels, exclude_inactive,
+        release_settings, mdb, pdb, cache)
+    return prs
+
+
+def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem], Set[str]],
+                              labels: Set[str], **_):
+    prs, cached_labels = result
+    if cached_labels == labels:
+        return prs, labels
+    if cached_labels and (not labels or labels - cached_labels):
+        raise CancelCache()
+    prs = [pr for pr in prs if labels.intersection({label.name for label in (pr.labels or [])})]
+    return prs, labels
+
+
+@cached(
+    exptime=PullRequestMiner.CACHE_TTL,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda time_from, time_to, repos, properties, participants, exclude_inactive, release_settings, **_: (  # noqa
+        time_from.timestamp(),
+        time_to.timestamp(),
+        ",".join(sorted(repos)),
+        ",".join(s.name.lower() for s in sorted(properties)),
+        sorted((k.name.lower(), sorted(v)) for k, v in participants.items()),
+        exclude_inactive,
+        release_settings,
+    ),
+    postprocess=_postprocess_filtered_prs,
+)
+async def _filter_pull_requests(properties: Set[Property],
+                                time_from: datetime,
+                                time_to: datetime,
+                                repos: Set[str],
+                                participants: Participants,
+                                labels: Set[str],
+                                exclude_inactive: bool,
+                                release_settings: Dict[str, ReleaseMatchSetting],
+                                mdb: databases.Database,
+                                pdb: databases.Database,
+                                cache: Optional[aiomcache.Client],
+                                ) -> Tuple[List[PullRequestListItem], Set[str]]:
     assert isinstance(properties, set)
     assert isinstance(repos, set)
     assert isinstance(labels, set)
@@ -361,8 +402,11 @@ async def filter_pull_requests(properties: Set[Property],
         prs = list(miner)
     set_pdb_hits(pdb, "filter_pull_requests/times", miner.precomputed_hits)
     set_pdb_misses(pdb, "filter_pull_requests/times", miner.precomputed_misses)
+    if miner.calculated_released_times:
+        await store_precomputed_done_times(*zip(*miner.calculated_released_times),
+                                           default_branches, release_settings, pdb)
     log.debug("return %d PRs", len(prs))
-    return prs
+    return prs, labels
 
 
 @sentry_span
