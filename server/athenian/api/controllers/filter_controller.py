@@ -281,3 +281,8 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
         prefix + login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
     }), data=web_prs)
     return model_response(model)
+
+
+async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Find labels used in the given repositories."""
+    pass
