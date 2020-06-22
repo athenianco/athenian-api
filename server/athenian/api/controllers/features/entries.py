@@ -19,7 +19,8 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import calc_developer_metrics
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_precomputed_done_candidates, load_precomputed_done_times, store_precomputed_done_times
+    load_precomputed_done_candidates, load_precomputed_done_times_filters, \
+    store_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestMiner, PullRequestTimesMiner
 from athenian.api.controllers.miners.types import Participants
@@ -61,7 +62,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     branches, default_branches = await extract_branches(repositories, mdb, cache)
     precomputed_tasks = [
-        load_precomputed_done_times(
+        load_precomputed_done_times_filters(
             time_from, time_to, repositories, participants, labels,
             default_branches, exclude_inactive, release_settings, pdb),
     ]
@@ -74,7 +75,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
                 raise r from None
     else:
         done_times = blacklist = await precomputed_tasks[0]
-    add_pdb_hits(pdb, "load_precomputed_done_times", len(done_times))
+    add_pdb_hits(pdb, "load_precomputed_done_times_filters", len(done_times))
 
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
@@ -94,7 +95,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
             except ImpossiblePullRequest:
                 continue
             mined_times.append(times)
-    add_pdb_misses(pdb, "load_precomputed_done_times", len(mined_times))
+    add_pdb_misses(pdb, "load_precomputed_done_times_filters", len(mined_times))
     # we don't care if exclude_inactive is True or False here
     await store_precomputed_done_times(
         mined_prs, mined_times, default_branches, release_settings, pdb)

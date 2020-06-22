@@ -5,7 +5,7 @@ import aiomcache
 from sqlalchemy import and_, select
 
 from athenian.api.cache import cached, max_exptime
-from athenian.api.models.state.models import AccountGitHubInstallation, UserAccount
+from athenian.api.models.state.models import Account, AccountGitHubInstallation, UserAccount
 from athenian.api.models.web import NoSourceDataError, NotFoundError
 from athenian.api.response import ResponseError
 from athenian.api.typing_utils import DatabaseLike
@@ -27,8 +27,11 @@ async def get_github_installation_ids(account: int,
     iids = await sdb_conn.fetch_all(select([AccountGitHubInstallation.id])
                                     .where(AccountGitHubInstallation.account_id == account))
     if len(iids) == 0:
+        acc_exists = await sdb_conn.fetch_val(select([Account.id]).where(Account.id == account))
+        if not acc_exists:
+            raise ResponseError(NotFoundError(detail="Account %d does not exist" % account))
         raise ResponseError(NoSourceDataError(
-            detail="The account installation has not finished yet."))
+            detail="The installation of account %d has not finished yet." % account))
     return tuple(r[0] for r in iids)
 
 

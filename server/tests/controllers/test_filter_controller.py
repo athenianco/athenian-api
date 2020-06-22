@@ -854,3 +854,42 @@ async def test_filter_releases_nasty_input(client, headers, account, date_to, co
     response = await client.request(
         method="POST", path="/v1/filter/releases", headers=headers, json=body)
     assert response.status == code
+
+
+async def test_get_prs_smoke(client, headers):
+    body = {
+        "account": 1,
+        "prs": [
+            {
+                "repository": "github.com/src-d/go-git",
+                "numbers": list(range(1000, 1100)),
+            },
+        ],
+    }
+    response = await client.request(
+        method="POST", path="/v1/get/pull_requests", headers=headers, json=body)
+    response_body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 200, response_body
+    model = PullRequestSet.from_dict(response_body)  # type: PullRequestSet
+    assert len(model.data) == 51
+
+
+@pytest.mark.parametrize("account, repo, numbers, status",
+                         [(1, "bitbucket.org/whatever", [1, 2, 3], 400),
+                          (3, "github.com/src-d/go-git", [1, 2, 3], 422),
+                          (4, "github.com/src-d/go-git", [1, 2, 3], 404),
+                          (1, "github.com/whatever/else", [1, 2, 3], 403)])
+async def test_get_prs_nasty_input(client, headers, account, repo, numbers, status):
+    body = {
+        "account": account,
+        "prs": [
+            {
+                "repository": repo,
+                "numbers": numbers,
+            },
+        ],
+    }
+    response = await client.request(
+        method="POST", path="/v1/get/pull_requests", headers=headers, json=body)
+    response_body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == status, response_body

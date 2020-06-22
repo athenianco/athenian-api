@@ -369,6 +369,44 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
       x-codegen-request-body-name: body
+  /get/pull_requests:
+    post:
+      operationId: get_prs
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetPullRequestsRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PullRequestSet'
+          description: List of pull requests satisfying the specified filters.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to access the specified account
+            or reposets.
+      security:
+      - bearerAuth: []
+      summary: List pull requests by repository and number.
+      tags:
+      - filter
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.filter_controller
   /invite/accept:
     put:
       operationId: accept_invitation
@@ -3439,4 +3477,49 @@ components:
           type: string
       required:
       - api
+      type: object
+    GetPullRequestsRequest:
+      additionalProperties: false
+      description: Request body of `/get/pull_requests`. Declaration of which PRs
+        the user wants to analyze.
+      example:
+        account: 1
+        prs:
+        - repository: github.com/athenianco/athenian-api
+          numbers:
+          - 483
+          - 484
+          - 485
+      properties:
+        account:
+          description: Account ID.
+          type: integer
+        prs:
+          description: List of repositories and PR numbers to analyze.
+          items:
+            $ref: '#/components/schemas/PullRequestNumbers'
+          type: array
+      required:
+      - account
+      - prs
+      type: object
+    PullRequestNumbers:
+      additionalProperties: false
+      description: Repository name and a list of PR numbers in that repository.
+      example:
+        repository: github.com/athenianco/athenian-api
+        numbers:
+        - 483
+        - 484
+        - 485
+      properties:
+        repository:
+          $ref: '#/components/schemas/RepositoryID'
+        numbers:
+          items:
+            type: integer
+          type: array
+      required:
+      - numbers
+      - repository
       type: object
