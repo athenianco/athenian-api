@@ -139,15 +139,6 @@ class PullRequestListMiner:
         if callable(times_today):
             times_today = times_today()
         props_today = self._collect_properties(times_today, pr_today, self._no_time_from)
-        for p in range(Property.WIP, Property.DONE + 1):
-            p = Property(p)
-            if p in props_time_machine:
-                props_today.add(p)
-            else:
-                try:
-                    props_today.remove(p)
-                except KeyError:
-                    pass
         author = pr_today.pr[PullRequest.user_id.key]
         external_reviews_mask = pr_today.reviews[PullRequestReview.user_id.key].values != author
         first_review = dtmin(pr_today.reviews[PullRequestReview.created_at.key].take(
@@ -165,6 +156,15 @@ class PullRequestListMiner:
             if prop in props_today:
                 kwargs["override_event_time"] = now - timedelta(seconds=1)  # < time_max
             stage_timings[k] = calc.analyze(times_today, no_time_from, now, **kwargs)
+        for p in range(Property.WIP, Property.DONE + 1):
+            p = Property(p)
+            if p in props_time_machine:
+                props_today.add(p)
+            else:
+                try:
+                    props_today.remove(p)
+                except KeyError:
+                    pass
         updated_at = pr_today.pr[PullRequest.updated_at.key]
         assert updated_at == updated_at
         if pr_today.labels.empty:
