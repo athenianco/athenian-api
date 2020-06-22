@@ -4,12 +4,16 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import operator
-from typing import Set, Union
+from typing import List, Optional, Set, Union
 
 from aiohttp import web
+import aiomcache
+import databases
 from dateutil.parser import parse as parse_datetime
 
-from athenian.api.controllers.features.github.pull_request_filter import filter_pull_requests
+from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
+    filter_pull_requests
+from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
@@ -22,7 +26,9 @@ from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PushCommit, Release, User
-from athenian.api.models.web import Commit, CommitSignature, CommitsList, InvalidRequestError
+from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
+    ForbiddenError, \
+    InvalidRequestError
 from athenian.api.models.web.developer_summary import DeveloperSummary
 from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
@@ -31,6 +37,7 @@ from athenian.api.models.web.filter_pull_requests_request import FilterPullReque
 from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.generic_filter_request import GenericFilterRequest
+from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
 from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
@@ -113,14 +120,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     prs = await filter_pull_requests(
         props, filt.date_from, filt.date_to, repos, participants, set(filt.labels or []),
         filt.exclude_inactive, settings, request.mdb, request.pdb, request.cache)
-    web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
-    users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
-    avatars = await mine_user_avatars(users, request.mdb, request.cache)
-    prefix = PREFIXES["github"]
-    model = PullRequestSet(include=IncludedNativeUsers(users={
-        prefix + login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
-    }), data=web_prs)
-    return model_response(model)
+    return await _build_github_prs_response(prs, request.mdb, request.cache)
 
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
@@ -220,4 +220,57 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     model = FilteredReleases(data=data, include=IncludedNativeUsers(users={
         u: IncludedNativeUser(avatar=a) for u, a in zip(avatars[User.login.key].values,
                                                         avatars[User.avatar_url.key].values)}))
+    return model_response(model)
+
+
+async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
+    """List pull requests by repository and number."""
+    body = GetPullRequestsRequest.from_dict(body)  # type: GetPullRequestsRequest
+    repos = {}
+    for p in body.prs:
+        repos.setdefault(p.repository, set()).update(p.numbers)
+    checkers = {}
+    repos_by_service = {}
+    reverse_prefixes = {v: k for k, v in PREFIXES.items()}
+    async with request.sdb.connection() as sdb_conn:
+        async with request.mdb.connection() as mdb_conn:
+            for repo in repos:
+                for prefix, service in reverse_prefixes.items():  # noqa: B007
+                    if repo.startswith(prefix):
+                        break
+                else:
+                    raise ResponseError(BadRequestError(
+                        detail="Repository %s is unsupported" % repo))
+                try:
+                    checker = checkers[service]
+                except KeyError:
+                    checker = checkers[service] = access_classes[service](
+                        body.account, sdb_conn, mdb_conn, request.cache)
+                    await checker.load()
+                repo = repo[len(prefix):]
+                denied = await checker.check({repo})
+                if denied:
+                    raise ResponseError(ForbiddenError(
+                        detail="Account %d is access denied to repo %s" % (body.account, repo)))
+                repos_by_service.setdefault(service, []).append(repo)
+    try:
+        github_repos = {r: repos[PREFIXES["github"] + r] for r in repos_by_service["github"]}
+    except KeyError:
+        return model_response(PullRequestSet())
+    settings = await Settings.from_request(request, body.account).list_release_matches(repos)
+    prs = await fetch_pull_requests(
+        github_repos, settings, request.mdb, request.pdb, request.cache)
+    return await _build_github_prs_response(prs, request.mdb, request.cache)
+
+
+async def _build_github_prs_response(prs: List[PullRequestListItem],
+                                     mdb: databases.Database,
+                                     cache: Optional[aiomcache.Client]) -> web.Response:
+    web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
+    users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
+    avatars = await mine_user_avatars(users, mdb, cache)
+    prefix = PREFIXES["github"]
+    model = PullRequestSet(include=IncludedNativeUsers(users={
+        prefix + login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
+    }), data=web_prs)
     return model_response(model)

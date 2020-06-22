@@ -173,17 +173,21 @@ def _check_participants(row: Mapping, participants: Participants) -> bool:
 
 
 @sentry_span
-async def load_precomputed_done_times(time_from: datetime,
-                                      time_to: datetime,
-                                      repos: Collection[str],
-                                      participants: Participants,
-                                      labels: Collection[str],
-                                      default_branches: Dict[str, str],
-                                      exclude_inactive: bool,
-                                      release_settings: Dict[str, ReleaseMatchSetting],
-                                      pdb: databases.Database,
-                                      ) -> Dict[str, PullRequestTimes]:
-    """Load PullRequestTimes belonging to released or rejected PRs from the precomputed DB."""
+async def load_precomputed_done_times_filters(time_from: datetime,
+                                              time_to: datetime,
+                                              repos: Collection[str],
+                                              participants: Participants,
+                                              labels: Collection[str],
+                                              default_branches: Dict[str, str],
+                                              exclude_inactive: bool,
+                                              release_settings: Dict[str, ReleaseMatchSetting],
+                                              pdb: databases.Database,
+                                              ) -> Dict[str, PullRequestTimes]:
+    """
+    Load PullRequestTimes belonging to released or rejected PRs from the precomputed DB.
+
+    Query version.
+    """
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     ghprt = GitHubPullRequestTimes
     selected = [ghprt.pr_node_id,
@@ -229,6 +233,44 @@ async def load_precomputed_done_times(time_from: datetime,
                                  for d in row[ghprt.activity_days.key]}
                 if not activity_days.intersection(date_range):
                     continue
+        dump[row[0]] = pickle.loads(row[3])
+    result.update(ambiguous[ReleaseMatch.tag.name])
+    for node_id, times in ambiguous[ReleaseMatch.branch.name].items():
+        if node_id not in result:
+            result[node_id] = times
+    return result
+
+
+@sentry_span
+async def load_precomputed_done_times_reponums(prs: Dict[str, Set[int]],
+                                               default_branches: Dict[str, str],
+                                               release_settings: Dict[str, ReleaseMatchSetting],
+                                               pdb: databases.Database,
+                                               ) -> Dict[str, PullRequestTimes]:
+    """
+    Load PullRequestTimes belonging to released or rejected PRs from the precomputed DB.
+
+    repo + numbers version.
+    """
+    ghprt = GitHubPullRequestTimes
+    selected = [ghprt.pr_node_id,
+                ghprt.repository_full_name,
+                ghprt.release_match,
+                ghprt.data]
+    filters = [
+        ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
+        or_(*[and_(ghprt.repository_full_name == repo, ghprt.number.in_(numbers))
+              for repo, numbers in prs.items()]),
+    ]
+    rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
+    prefix = PREFIXES["github"]
+    result = {}
+    ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
+    for row in rows:
+        dump = _check_release_match(
+            row[1], row[2], release_settings, default_branches, prefix, result, ambiguous)
+        if dump is None:
+            continue
         dump[row[0]] = pickle.loads(row[3])
     result.update(ambiguous[ReleaseMatch.tag.name])
     for node_id, times in ambiguous[ReleaseMatch.branch.name].items():

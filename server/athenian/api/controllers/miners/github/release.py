@@ -95,7 +95,7 @@ async def load_releases(repos: Iterable[str],
             r, am = r
             result[i] = r
             applied_matches.update(am)
-    result = pd.concat(result) if result else _dummy_releases_df()
+    result = pd.concat(result) if result else dummy_releases_df()
     if index is not None:
         result.set_index(index, inplace=True)
     else:
@@ -103,7 +103,8 @@ async def load_releases(repos: Iterable[str],
     return result, applied_matches
 
 
-def _dummy_releases_df():
+def dummy_releases_df():
+    """Create an empty releases DataFrame."""
     return pd.DataFrame(
         columns=[c.name for c in Release.__table__.columns] + [matched_by_column])
 
@@ -221,7 +222,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
         if not matched.empty:
             branches_matched[repo] = matched
     if not branches_matched:
-        return _dummy_releases_df()
+        return dummy_releases_df()
 
     ghcfp = GitHubCommitFirstParents
     default_version = ghcfp.__table__ \
@@ -275,7 +276,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
             matched_by_column: [ReleaseMatch.branch.value] * len(commits),
         }))
     if not pseudo_releases:
-        return _dummy_releases_df()
+        return dummy_releases_df()
     pseudo_releases = pd.concat(pseudo_releases, copy=False)
     return pseudo_releases
 

@@ -10,7 +10,7 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
@@ -20,10 +20,11 @@ from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
 from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_times
+from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
+    load_precomputed_done_times_filters, load_precomputed_done_times_reponums
 from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
     PullRequestMiner, PullRequestTimesMiner, ReviewResolution
-from athenian.api.controllers.miners.github.release import load_releases
+from athenian.api.controllers.miners.github.release import dummy_releases_df, load_releases
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, Participants, \
     Property, PullRequestListItem, PullRequestTimes
 from athenian.api.controllers.settings import ReleaseMatchSetting
@@ -336,11 +337,12 @@ async def filter_pull_requests(properties: Set[Property],
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     branches, default_branches = await extract_branches(repos, mdb, cache)
     tasks = (
-        PullRequestMiner.mine(date_from, date_to, time_from, time_to, repos, participants, labels,
-                              branches, default_branches, exclude_inactive, release_settings,
-                              mdb, pdb, cache),
-        load_precomputed_done_times(time_from, time_to, repos, participants, labels,
-                                    default_branches, exclude_inactive, release_settings, pdb),
+        PullRequestMiner.mine(
+            date_from, date_to, time_from, time_to, repos, participants, labels, branches,
+            default_branches, exclude_inactive, release_settings, mdb, pdb, cache),
+        load_precomputed_done_times_filters(
+            time_from, time_to, repos, participants, labels, default_branches, exclude_inactive,
+            release_settings, pdb),
     )
     miner_time_machine, done_times = await asyncio.gather(*tasks, return_exceptions=True)
     if isinstance(miner_time_machine, Exception):
@@ -360,4 +362,62 @@ async def filter_pull_requests(properties: Set[Property],
     set_pdb_hits(pdb, "filter_pull_requests/times", miner.precomputed_hits)
     set_pdb_misses(pdb, "filter_pull_requests/times", miner.precomputed_misses)
     log.debug("return %d PRs", len(prs))
+    return prs
+
+
+@sentry_span
+@cached(
+    exptime=PullRequestMiner.CACHE_TTL,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda prs, release_settings, **_: (  # noqa
+        ";".join("%s:%s" % (repo, ",".join(map(str, sorted(numbers))))
+                 for repo, numbers in sorted(prs.items())),
+        release_settings,
+    ),
+)
+async def fetch_pull_requests(prs: Dict[str, Set[int]],
+                              release_settings: Dict[str, ReleaseMatchSetting],
+                              mdb: databases.Database,
+                              pdb: databases.Database,
+                              cache: Optional[aiomcache.Client],
+                              ) -> List[PullRequestListItem]:
+    """
+    List GitHub pull requests by repository and numbers.
+
+    :params prs: For each repository name without the prefix, there is a set of PR numbers to list.
+    """
+    branches, default_branches = await extract_branches(prs, mdb, cache)
+    filters = [and_(PullRequest.repository_full_name == repo, PullRequest.number.in_(numbers))
+               for repo, numbers in prs.items()]
+    tasks = [
+        read_sql_query(select([PullRequest])
+                       .where(or_(*filters))
+                       .order_by(PullRequest.node_id),
+                       mdb, PullRequest, index=PullRequest.node_id.key),
+        load_precomputed_done_times_reponums(prs, default_branches, release_settings, pdb),
+    ]
+    prs_df, done_times = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (prs, done_times):
+        if isinstance(r, Exception):
+            raise r from None
+    now = datetime.now(timezone.utc)
+    rel_time_from = prs_df[PullRequest.merged_at.key].min()
+    if rel_time_from == rel_time_from:
+        releases, matched_bys = await load_releases(
+            prs, branches, default_branches, rel_time_from, now, release_settings, mdb, pdb, cache)
+        unreleased = await discover_unreleased_prs(
+            prs_df, releases, matched_bys, default_branches, release_settings, pdb)
+    else:
+        releases, matched_bys, unreleased = dummy_releases_df(), {}, []
+    dfs = await PullRequestMiner.mine_by_ids(
+        prs_df, unreleased, now, releases, matched_bys, default_branches,
+        release_settings, mdb, pdb, cache)
+    prs = list(PullRequestMiner(prs_df, *dfs))
+    miner = PullRequestListMiner(
+        prs, prs, done_times, set(Property), prs_df[PullRequest.created_at.key].min())
+    with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
+        prs = list(miner)
+    set_pdb_hits(pdb, "filter_pull_requests/times", miner.precomputed_hits)
+    set_pdb_misses(pdb, "filter_pull_requests/times", miner.precomputed_misses)
     return prs

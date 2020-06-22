@@ -56,7 +56,7 @@ async def test_get_contributors_no_installation(client, headers):
         "type": "/errors/NoSourceDataError",
         "title": "Unprocessable Entity",
         "status": 422,
-        "detail": "The account installation has not finished yet.",
+        "detail": "The installation of account 2 has not finished yet.",
     }
 
 
