@@ -1,6 +1,6 @@
 from typing import Optional
 
-from athenian.api.models.web import PullRequestLabel
+from athenian.api.models.web.pull_request_label import PullRequestLabel
 
 
 class FilteredLabel(PullRequestLabel):

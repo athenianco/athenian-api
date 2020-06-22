@@ -17,6 +17,7 @@ from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
+from athenian.api.controllers.miners.github.label import mine_labels
 from athenian.api.controllers.miners.github.release import load_releases, mine_releases
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
@@ -33,7 +34,9 @@ from athenian.api.models.web.developer_summary import DeveloperSummary
 from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contributors_request import FilterContributorsRequest
+from athenian.api.models.web.filter_labels_request import FilterLabelsRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
+from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.generic_filter_request import GenericFilterRequest
@@ -285,4 +288,9 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
 
 async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find labels used in the given repositories."""
-    pass
+    body = FilterLabelsRequest.from_dict(body)  # type: FilterLabelsRequest
+    repos = await resolve_repos(body.repositories, body.account, request.uid, request.native_uid,
+                                request.sdb, request.mdb, request.cache, request.app["slack"])
+    labels = await mine_labels(repos, request.mdb, request.cache)
+    labels = [FilteredLabel(**dataclasses.asdict(label)) for label in labels]
+    return model_response(labels)
