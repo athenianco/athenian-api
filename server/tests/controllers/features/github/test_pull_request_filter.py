@@ -142,7 +142,7 @@ async def test_pr_list_miner_filter_labels_cache(mdb, pdb, release_match_setting
         assert labels.intersection({"bug", "enhancement"})
     prs2 = await filter_pull_requests(
         set(Property), time_from, time_to, {"src-d/go-git"}, {}, {"bug"}, False,
-        release_match_setting_tag, mdb, pdb, cache)
+        release_match_setting_tag, None, None, cache)
     assert len(prs2) == 3
     for pr in prs2:
         labels = {label.name for label in pr.labels}
@@ -154,6 +154,31 @@ async def test_pr_list_miner_filter_labels_cache(mdb, pdb, release_match_setting
     for pr in prs3:
         labels = {label.name for label in pr.labels}
         assert labels.intersection({"bug", "plumbing"})
+
+
+async def test_pr_list_miner_filter_labels_cache_postprocess(
+        mdb, pdb, release_match_setting_tag, cache):
+    time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
+    time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
+    await filter_pull_requests(
+        set(Property), time_from, time_to, {"src-d/go-git"}, {}, set(), False,
+        release_match_setting_tag, mdb, pdb, cache)
+    prs1 = await filter_pull_requests(
+        set(Property), time_from, time_to, {"src-d/go-git"}, {}, {"bug"}, False,
+        release_match_setting_tag, None, None, cache)
+    assert len(prs1) == 3
+    prs2 = await filter_pull_requests(
+        set(Property), time_from, time_to, {"src-d/go-git"}, {}, {"bug"}, False,
+        release_match_setting_tag, mdb, pdb, None)
+    assert prs1 == prs2
+    cache.mem = {}
+    await filter_pull_requests(
+        set(Property), time_from, time_to, {"src-d/go-git"}, {}, {"bug"}, False,
+        release_match_setting_tag, mdb, pdb, cache)
+    with pytest.raises(Exception):
+        await filter_pull_requests(
+            set(Property), time_from, time_to, {"src-d/go-git"}, {}, set(), False,
+            release_match_setting_tag, None, None, cache)
 
 
 async def test_pr_list_miner_filter_labels_pdb(mdb, pdb, release_match_setting_tag):
