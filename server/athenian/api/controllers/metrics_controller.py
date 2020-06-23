@@ -29,7 +29,7 @@ from athenian.api.response import model_response, ResponseError
 
 #               service                 developers            originals
 FilterPRs = Tuple[str, Tuple[Set[str], Participants, Set[str], ForSet]]
-#                          repositories               labels
+#                          repositories           labels_include
 
 #                service               developers
 FilterDevs = Tuple[str, Tuple[Set[str], List[str], ForSetDevelopers]]
@@ -75,7 +75,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     # There should not be any new exception here so we don't have to catch ResponseError.
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(repos)
-    for service, (repos, devs, labels, for_set) in filters:
+    for service, (repos, devs, labels_include, for_set) in filters:
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
         sentries = METRIC_ENTRIES[service]
@@ -85,8 +85,9 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         # for each metric, we find the function to calculate and call it
         tasks = []
         for func, metrics in calcs.items():
-            tasks.append(func(metrics, time_intervals, repos, devs, labels, filt.exclude_inactive,
-                              release_settings, request.mdb, request.pdb, request.cache))
+            tasks.append(func(
+                metrics, time_intervals, repos, devs, labels_include, filt.exclude_inactive,
+                release_settings, request.mdb, request.pdb, request.cache))
         all_mvs = await asyncio.gather(*tasks, return_exceptions=True)
         for metrics, mvs in zip(calcs.values(), all_mvs):
             if isinstance(mvs, Exception):
@@ -183,7 +184,7 @@ async def _compile_repos_and_devs_prs(for_sets: List[ForSet],
                             pointer=".for[%d].with" % i,
                         ))
                     dk.add(dev[len(prefix):])
-            filters.append((service, (repos, devs, set(for_set.labels or []), for_set)))
+            filters.append((service, (repos, devs, set(for_set.labels_include or []), for_set)))
     return filters, all_repos
 
 
@@ -218,7 +219,7 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
                         pointer=".for[%d].developers" % i,
                     ))
                 devs.append(dev[len(prefix):])
-            filters.append((service, (repos, devs, set(for_set.labels or []), for_set)))
+            filters.append((service, (repos, devs, set(for_set.labels_include or []), for_set)))
     return filters, all_repos
 
 
@@ -327,9 +328,9 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
         time_to += tzoffset
     tasks = []
     for_sets = []
-    for service, (repos, devs, labels, for_set) in filters:
+    for service, (repos, devs, labels_include, for_set) in filters:
         tasks.append(METRIC_ENTRIES[service]["developers"](
-            devs, repos, topics, labels, time_from, time_to, request.mdb, request.cache))
+            devs, repos, topics, labels_include, time_from, time_to, request.mdb, request.cache))
         for_sets.append(for_set)
     all_stats = await asyncio.gather(*tasks, return_exceptions=True)
     for stats, for_set in zip(all_stats, for_sets):

@@ -1934,14 +1934,14 @@ components:
           author:
           - github.com/vmarkovtsev
           - github.com/dpordomingo
-        labels:
+        labels_include:
         - bug
       properties:
         repositories:
           $ref: '#/components/schemas/RepositorySet'
         with:
           $ref: '#/components/schemas/PullRequestWith'
-        labels:
+        labels_include:
           description: At least one of these labels must be present in each analyzed
             PR.
           items:
@@ -1965,7 +1965,7 @@ components:
           $ref: '#/components/schemas/RepositorySet'
         developers:
           $ref: '#/components/schemas/DeveloperSet'
-        labels:
+        labels_include:
           description: PRs must be labeled with at least one name from this list so
             that the related metrics include them.
           items:
@@ -2413,7 +2413,7 @@ components:
           type: array
         with:
           $ref: '#/components/schemas/PullRequestWith'
-        labels:
+        labels_include:
           description: At least one of these labels must be present in each returned
             PR.
           items:

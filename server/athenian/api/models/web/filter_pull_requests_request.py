@@ -17,7 +17,7 @@ class FilterPullRequestsRequest(Model):
         "in_": List[str],
         "properties": List[str],
         "with_": PullRequestWith,
-        "labels": List[str],
+        "labels_include": List[str],
         "exclude_inactive": bool,
     }
 
@@ -29,7 +29,7 @@ class FilterPullRequestsRequest(Model):
         "in_": "in",
         "properties": "properties",
         "with_": "with",
-        "labels": "labels",
+        "labels_include": "labels_include",
         "exclude_inactive": "exclude_inactive",
     }
 
@@ -44,7 +44,7 @@ class FilterPullRequestsRequest(Model):
         in_: Optional[List[str]] = None,
         properties: Optional[List[str]] = None,
         with_: Optional[PullRequestWith] = None,
-        labels: Optional[List[str]] = None,
+        labels_include: Optional[List[str]] = None,
         exclude_inactive: Optional[bool] = None,
     ):
         """FilterPullRequestsRequest - a model defined in OpenAPI
@@ -56,7 +56,7 @@ class FilterPullRequestsRequest(Model):
         :param in_: The in_ of this FilterPullRequestsRequest.
         :param properties: The properties of this FilterPullRequestsRequest.
         :param with_: The with_ of this FilterPullRequestsRequest.
-        :param labels: The labels of this FilterPullRequestsRequest.
+        :param labels_include: The labels_include of this FilterPullRequestsRequest.
         :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
         """
         self._account = account
@@ -66,7 +66,7 @@ class FilterPullRequestsRequest(Model):
         self._in_ = in_
         self._properties = properties
         self._with_ = with_
-        self._labels = labels
+        self._labels_include = labels_include
         self._exclude_inactive = exclude_inactive
 
     @property
@@ -217,20 +217,20 @@ class FilterPullRequestsRequest(Model):
         self._with_ = with_
 
     @property
-    def labels(self) -> Optional[List[str]]:
-        """Gets the labels of this FilterPullRequestsRequest.
+    def labels_include(self) -> Optional[List[str]]:
+        """Gets the labels_include of this FilterPullRequestsRequest.
 
-        :return: The labels of this FilterPullRequestsRequest.
+        :return: The labels_include of this FilterPullRequestsRequest.
         """
-        return self._labels
+        return self._labels_include
 
-    @labels.setter
-    def labels(self, labels: List[str]):
-        """Sets the labels of this FilterPullRequestsRequest.
+    @labels_include.setter
+    def labels_include(self, labels_include: List[str]):
+        """Sets the labels_include of this FilterPullRequestsRequest.
 
-        :param labels: The labels of this FilterPullRequestsRequest.
+        :param labels_include: The labels_include of this FilterPullRequestsRequest.
         """
-        self._labels = labels
+        self._labels_include = labels_include
 
     @property
     def exclude_inactive(self) -> bool:
