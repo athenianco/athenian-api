@@ -258,7 +258,7 @@ async def test_filter_prs_shot(client, headers):
                                 {"author": ["github.com/mcuadros"]}, time_to)
 
 
-async def test_filter_prs_labels(client, headers):
+async def test_filter_prs_labels_include(client, headers):
     body = {
         "date_from": "2018-09-01",
         "date_to": "2018-11-30",
@@ -266,7 +266,7 @@ async def test_filter_prs_labels(client, headers):
         "account": 1,
         "in": [],
         "properties": [PullRequestProperty.MERGE_HAPPENED],
-        "labels": ["bug"],
+        "labels_include": ["bug"],
         "exclude_inactive": False,
     }
     response = await client.request(

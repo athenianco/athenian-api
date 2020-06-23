@@ -128,7 +128,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = {r.split("/", 1)[1] for r in repos}
     prs = await filter_pull_requests(
-        props, filt.date_from, filt.date_to, repos, participants, set(filt.labels or []),
+        props, filt.date_from, filt.date_to, repos, participants, set(filt.labels_include or []),
         filt.exclude_inactive, settings, request.mdb, request.pdb, request.cache)
     return await _build_github_prs_response(prs, request.mdb, request.cache)
 

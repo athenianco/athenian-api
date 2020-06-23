@@ -10,13 +10,13 @@ class ForSet(Model):
     openapi_types = {
         "repositories": List[str],
         "with_": PullRequestWith,
-        "labels": List[str],
+        "labels_include": List[str],
     }
 
     attribute_map = {
         "repositories": "repositories",
         "with_": "with",
-        "labels": "labels",
+        "labels_include": "labels_include",
     }
 
     __slots__ = ["_" + k for k in openapi_types]
@@ -25,17 +25,17 @@ class ForSet(Model):
         self,
         repositories: Optional[List[str]] = None,
         with_: Optional[PullRequestWith] = None,
-        labels: Optional[List[str]] = None,
+        labels_include: Optional[List[str]] = None,
     ):
         """ForSet - a model defined in OpenAPI
 
         :param repositories: The repositories of this ForSet.
         :param with_: The with of this ForSet.
-        :param labels: The labels of this ForSet.
+        :param labels_include: The labels_include of this ForSet.
         """
         self._repositories = repositories
         self._with_ = with_
-        self._labels = labels
+        self._labels_include = labels_include
 
     @property
     def repositories(self) -> List[str]:
@@ -77,17 +77,17 @@ class ForSet(Model):
         self._with_ = with_
 
     @property
-    def labels(self) -> List[str]:
-        """Gets the labels of this ForSet.
+    def labels_include(self) -> List[str]:
+        """Gets the labels_include of this ForSet.
 
-        :return: The labels of this ForSet.
+        :return: The labels_include of this ForSet.
         """
-        return self._labels
+        return self._labels_include
 
-    @labels.setter
-    def labels(self, labels: List[str]):
-        """Sets the labels of this ForSet.
+    @labels_include.setter
+    def labels_include(self, labels_include: List[str]):
+        """Sets the labels_include of this ForSet.
 
-        :param labels: The labels of this ForSet.
+        :param labels_include: The labels_include of this ForSet.
         """
-        self._labels = labels
+        self._labels_include = labels_include

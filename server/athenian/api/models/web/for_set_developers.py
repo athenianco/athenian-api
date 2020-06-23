@@ -9,13 +9,13 @@ class ForSetDevelopers(Model):
     openapi_types = {
         "repositories": List[str],
         "developers": List[str],
-        "labels": List[str],
+        "labels_include": List[str],
     }
 
     attribute_map = {
         "repositories": "repositories",
         "developers": "developers",
-        "labels": "labels",
+        "labels_include": "labels_include",
     }
 
     __slots__ = ["_" + k for k in openapi_types]
@@ -24,17 +24,17 @@ class ForSetDevelopers(Model):
         self,
         repositories: Optional[List[str]] = None,
         developers: Optional[List[str]] = None,
-        labels: Optional[List[str]] = None,
+        labels_include: Optional[List[str]] = None,
     ):
         """ForSet - a model defined in OpenAPI
 
         :param repositories: The repositories of this ForSetDevelopers.
         :param developers: The developers of this ForSetDevelopers.
-        :param labels: The labels of this ForSetDevelopers.
+        :param labels_include: The labels_include of this ForSetDevelopers.
         """
         self._repositories = repositories
         self._developers = developers
-        self._labels = labels
+        self._labels_include = labels_include
 
     @property
     def repositories(self) -> List[str]:
@@ -75,17 +75,17 @@ class ForSetDevelopers(Model):
         self._developers = developers
 
     @property
-    def labels(self) -> List[str]:
-        """Gets the labels of this ForSetDevelopers.
+    def labels_include(self) -> List[str]:
+        """Gets the labels_include of this ForSetDevelopers.
 
-        :return: The labels of this ForSetDevelopers.
+        :return: The labels_include of this ForSetDevelopers.
         """
-        return self._labels
+        return self._labels_include
 
-    @labels.setter
-    def labels(self, labels: List[str]):
-        """Sets the labels of this ForSetDevelopers.
+    @labels_include.setter
+    def labels_include(self, labels_include: List[str]):
+        """Sets the labels_include of this ForSetDevelopers.
 
-        :param labels: The labels of this ForSetDevelopers.
+        :param labels_include: The labels_include of this ForSetDevelopers.
         """
-        self._labels = labels
+        self._labels_include = labels_include

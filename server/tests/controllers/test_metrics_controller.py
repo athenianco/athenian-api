@@ -409,7 +409,7 @@ async def test_calc_metrics_prs_filter_authors(client, headers):
     assert cm.calculated[0].values[0].values[0] == 1
 
 
-async def test_calc_metrics_prs_labels(client, headers):
+async def test_calc_metrics_prs_labels_include(client, headers):
     body = {
         "date_from": "2018-09-01",
         "date_to": "2018-11-18",
@@ -417,7 +417,7 @@ async def test_calc_metrics_prs_labels(client, headers):
             "repositories": [
                 "github.com/src-d/go-git",
             ],
-            "labels": [
+            "labels_include": [
                 "bug", "enhancement",
             ],
         }],
@@ -579,7 +579,7 @@ async def test_developer_metrics_all(client, headers, dev):
 
 @pytest.mark.parametrize("metric, value", [(m, developer_metric_be_stats[m])
                                            for m in DeveloperMetricID])
-async def test_developer_metrics_labels(client, headers, metric, value):
+async def test_developer_metrics_labels_include(client, headers, metric, value):
     body = {
         "account": 1,
         "date_from": "2018-01-12",
@@ -588,7 +588,7 @@ async def test_developer_metrics_labels(client, headers, metric, value):
             "repositories": ["{1}"],
             "developers": ["github.com/mcuadros", "github.com/smola",
                            "github.com/jfontan", "github.com/ajnavarro"],
-            "labels": ["bug", "enhancement"],
+            "labels_include": ["bug", "enhancement"],
         }],
         "metrics": [metric],
     }
@@ -599,7 +599,7 @@ async def test_developer_metrics_labels(client, headers, metric, value):
     result: CalculatedDeveloperMetrics
     result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
-    assert result.calculated[0].for_.labels == ["bug", "enhancement"]
+    assert result.calculated[0].for_.labels_include == ["bug", "enhancement"]
     assert result.calculated[0].values == value
 
 
