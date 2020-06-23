@@ -2,6 +2,7 @@ from datetime import date
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.pull_request_with import PullRequestWith
 
@@ -19,6 +20,7 @@ class FilterPullRequestsRequest(Model):
         "with_": PullRequestWith,
         "labels_include": List[str],
         "exclude_inactive": bool,
+        "jira": JIRAFilter,
     }
 
     attribute_map = {
@@ -31,6 +33,7 @@ class FilterPullRequestsRequest(Model):
         "with_": "with",
         "labels_include": "labels_include",
         "exclude_inactive": "exclude_inactive",
+        "jira": "jira",
     }
 
     __slots__ = ["_" + k for k in openapi_types]
@@ -46,6 +49,7 @@ class FilterPullRequestsRequest(Model):
         with_: Optional[PullRequestWith] = None,
         labels_include: Optional[List[str]] = None,
         exclude_inactive: Optional[bool] = None,
+        jira: Optional[JIRAFilter] = None,
     ):
         """FilterPullRequestsRequest - a model defined in OpenAPI
 
@@ -58,6 +62,7 @@ class FilterPullRequestsRequest(Model):
         :param with_: The with_ of this FilterPullRequestsRequest.
         :param labels_include: The labels_include of this FilterPullRequestsRequest.
         :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
+        :param jira: The jira of this FilterPullRequestsRequest.
         """
         self._account = account
         self._date_from = date_from
@@ -68,6 +73,7 @@ class FilterPullRequestsRequest(Model):
         self._with_ = with_
         self._labels_include = labels_include
         self._exclude_inactive = exclude_inactive
+        self._jira = jira
 
     @property
     def account(self) -> int:
@@ -250,4 +256,23 @@ class FilterPullRequestsRequest(Model):
 
         :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
         """
+        if exclude_inactive is None:
+            raise ValueError("Invalid value for `exclude_inactive`, must not be `None`")
+
         self._exclude_inactive = exclude_inactive
+
+    @property
+    def jira(self) -> Optional[JIRAFilter]:
+        """Gets the jira of this FilterPullRequestsRequest.
+
+        :return: The jira of this FilterPullRequestsRequest.
+        """
+        return self._jira
+
+    @jira.setter
+    def jira(self, jira: Optional[JIRAFilter]):
+        """Sets the jira of this FilterPullRequestsRequest.
+
+        :param jira: The jira of this FilterPullRequestsRequest.
+        """
+        self._jira = jira

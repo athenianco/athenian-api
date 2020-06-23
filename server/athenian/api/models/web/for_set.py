@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.pull_request_with import PullRequestWith
 
 
@@ -11,12 +12,14 @@ class ForSet(Model):
         "repositories": List[str],
         "with_": PullRequestWith,
         "labels_include": List[str],
+        "jira": JIRAFilter,
     }
 
     attribute_map = {
         "repositories": "repositories",
         "with_": "with",
         "labels_include": "labels_include",
+        "jira": "jira",
     }
 
     __slots__ = ["_" + k for k in openapi_types]
@@ -26,16 +29,19 @@ class ForSet(Model):
         repositories: Optional[List[str]] = None,
         with_: Optional[PullRequestWith] = None,
         labels_include: Optional[List[str]] = None,
+        jira: Optional[JIRAFilter] = None,
     ):
         """ForSet - a model defined in OpenAPI
 
         :param repositories: The repositories of this ForSet.
         :param with_: The with of this ForSet.
         :param labels_include: The labels_include of this ForSet.
+        :param jira: The jira of this ForSet.
         """
         self._repositories = repositories
         self._with_ = with_
         self._labels_include = labels_include
+        self._jira = jira
 
     @property
     def repositories(self) -> List[str]:
@@ -77,7 +83,7 @@ class ForSet(Model):
         self._with_ = with_
 
     @property
-    def labels_include(self) -> List[str]:
+    def labels_include(self) -> Optional[List[str]]:
         """Gets the labels_include of this ForSet.
 
         :return: The labels_include of this ForSet.
@@ -85,9 +91,25 @@ class ForSet(Model):
         return self._labels_include
 
     @labels_include.setter
-    def labels_include(self, labels_include: List[str]):
+    def labels_include(self, labels_include: Optional[List[str]]):
         """Sets the labels_include of this ForSet.
 
         :param labels_include: The labels_include of this ForSet.
         """
         self._labels_include = labels_include
+
+    @property
+    def jira(self) -> Optional[JIRAFilter]:
+        """Gets the jira of this ForSet.
+
+        :return: The jira of this ForSet.
+        """
+        return self._jira
+
+    @jira.setter
+    def jira(self, jira: Optional[JIRAFilter]):
+        """Sets the jira of this ForSet.
+
+        :param jira: The jira of this ForSet.
+        """
+        self._jira = jira

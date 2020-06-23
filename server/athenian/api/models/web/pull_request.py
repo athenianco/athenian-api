@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_property import PullRequestProperty
@@ -40,6 +41,7 @@ class PullRequest(Model):
         "properties": List[str],
         "participants": List[PullRequestParticipant],
         "labels": List[PullRequestLabel],
+        "jira": List[JIRAIssue],
     }
 
     attribute_map = {
@@ -66,6 +68,7 @@ class PullRequest(Model):
         "properties": "properties",
         "participants": "participants",
         "labels": "labels",
+        "jira": "jira",
     }
     __slots__ = ["_" + k for k in openapi_types]
 
@@ -94,6 +97,7 @@ class PullRequest(Model):
         properties: Optional[List[str]] = None,
         participants: Optional[List[PullRequestParticipant]] = None,
         labels: Optional[List[PullRequestLabel]] = None,
+        jira: Optional[List[JIRAIssue]] = None,
     ):
         """PullRequest - a model defined in OpenAPI
 
@@ -119,6 +123,7 @@ class PullRequest(Model):
         :param properties: The properties of this PullRequest.
         :param participants: The participants of this PullRequest.
         :param labels: The labels of this PullRequest.
+        :param jira: The jira of this PullRequest.
         """
         self._repository = repository
         self._number = number
@@ -143,6 +148,7 @@ class PullRequest(Model):
         self._properties = properties
         self._participants = participants
         self._labels = labels
+        self._jira = jira
 
     def __lt__(self, other: "PullRequest") -> bool:
         """Compute self < other."""
@@ -650,3 +656,23 @@ class PullRequest(Model):
         :param labels: The labels of this PullRequest.
         """
         self._labels = labels
+
+    @property
+    def jira(self) -> Optional[List[JIRAIssue]]:
+        """Gets the jira of this PullRequest.
+
+        List of JIRA issues linked to this PR.
+
+        :return: The jira of this PullRequest.
+        """
+        return self._jira
+
+    @jira.setter
+    def jira(self, jira: Optional[List[JIRAIssue]]):
+        """Sets the jira of this PullRequest.
+
+        List of JIRA issues linked to this PR.
+
+        :param jira: The jira of this PullRequest.
+        """
+        self._jira = jira
