@@ -22,6 +22,8 @@ services:
             --precomputed-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed \
             --ui"
     env_file: .env
+    environment:
+      - ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE=${ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE:-https://installation.athenian.co/jira/%s/atlassian-connect.json}
     ports:
       - ${API_HOST_PORT:-8080}:8080
     depends_on:
