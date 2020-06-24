@@ -23,6 +23,9 @@ services:
             --ui"
     env_file: .env
     environment:
+      - SENTRY_PROJECT=${SENTRY_PROJECT:-1867351}
+      - SENTRY_KEY=${SENTRY_KEY:-9d68b3ad311f4337904f225e189ffea1}
+      - ATHENIAN_DEV_ID=${ATHENIAN_DEV_ID:-pre-staging}
       - ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE=${ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE:-https://installation.athenian.co/jira/%s/atlassian-connect.json}
     ports:
       - ${API_HOST_PORT:-8080}:8080
