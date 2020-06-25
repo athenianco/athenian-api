@@ -3,6 +3,7 @@ import asyncio
 from collections import defaultdict
 from contextvars import ContextVar
 from datetime import date, datetime, timedelta, timezone
+from http import HTTPStatus
 from itertools import chain
 import logging
 from typing import List
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from tqdm import tqdm
 
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
-    ParallelDatabase, setup_cache_metrics, setup_context
+    ParallelDatabase, ResponseError, setup_cache_metrics, setup_context
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.settings import Settings
@@ -86,6 +87,11 @@ def main():
                         reposet.owner_id, sdb, mdb, cache)
                     settings = await Settings(
                         reposet.owner_id, None, None, sdb, mdb, cache, None).list_release_matches()
+                except ResponseError as e:
+                    if e.response.status != HTTPStatus.UNPROCESSABLE_ENTITY:
+                        sentry_sdk.capture_exception(e)
+                    log.warning("account %d: ResponseError: %s", reposet.owner_id, e.response)
+                    continue
                 except Exception as e:
                     sentry_sdk.capture_exception(e)
                     log.warning("account %d: %s: %s", reposet.owner_id, type(e).__name__, e)
