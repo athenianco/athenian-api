@@ -37,6 +37,7 @@ class Property(IntEnum):
     REVIEWING = auto()
     MERGING = auto()
     RELEASING = auto()
+    FORCE_PUSH_DROPPED = auto()
     DONE = auto()
     # stages end
     # events begin

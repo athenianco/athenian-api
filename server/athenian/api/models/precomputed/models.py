@@ -60,11 +60,11 @@ class GitHubPullRequestTimes(Base, UpdatedMixin):
 
 class GitHubCommitHistory(Base, UpdatedMixin):
     """
-    Mined Git commit graph.
+    Mined Git commit graph with all the releases.
 
     We save one graph per repository. There are (rare) cases when the same commit has different
     parents in different branches, but we ignore them.
-    Format: 40 char -> [40 char] * n mapping, marshal-ed.
+    Format: 40 char commit hash -> [40 char commit hash, ...] mapping, marshal-ed.
     Direction: HEAD -> ROOT. In other words, this is the *reverse* Git commit relationship.
     """
 
@@ -73,6 +73,23 @@ class GitHubCommitHistory(Base, UpdatedMixin):
     repository_full_name = Column(RepositoryFullName, primary_key=True)
     format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
     dag = Column(LargeBinary(), nullable=False)
+
+
+class GitHubRepositoryCommits(Base, UpdatedMixin):
+    """
+    Mined Git commit hashes with all the branches.
+
+    We save one graph per repository.
+    Format: ordered numpy array of 40 char commit hashes, pickled.
+    heads: branch name -> branch head commit hash.
+    """
+
+    __tablename__ = "github_repository_commits"
+
+    repository_full_name = Column(RepositoryFullName, primary_key=True)
+    heads = Column(JHSTORE, nullable=False, server_default="")
+    format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
+    hashes = Column(LargeBinary(), nullable=False)
 
 
 class GitHubCommitFirstParents(Base, UpdatedMixin):

@@ -8,14 +8,17 @@ from aiohttp import ClientResponse
 import dateutil
 from prometheus_client import CollectorRegistry
 import pytest
+from sqlalchemy import delete, insert, select
 
 from athenian.api import setup_cache_metrics
 from athenian.api.controllers.miners.types import Property
+from athenian.api.models.metadata.github import Branch
 from athenian.api.models.web import CommitsList, PullRequestSet
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_property import PullRequestProperty
+from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache
 
 
@@ -201,8 +204,24 @@ def filter_prs_single_prop_cache():
     return fc
 
 
+def with_only_master_branch(func):
+    async def wrapped_with_only_master_branch(**kwargs):
+        mdb = kwargs["mdb"]
+        branches = await mdb.fetch_all(select([Branch]).where(Branch.branch_name != "master"))
+        await mdb.execute(delete(Branch).where(Branch.branch_name != "master"))
+        try:
+            await func(**kwargs)
+        finally:
+            for branch in branches:
+                await mdb.execute(insert(Branch).values(branch))
+
+    return wraps(wrapped_with_only_master_branch, func)
+
+
 @pytest.mark.parametrize("prop", [k.name.lower() for k in Property])
-async def test_filter_prs_single_prop(client, headers, prop, app, filter_prs_single_prop_cache):
+@with_only_master_branch
+async def test_filter_prs_single_prop(client, headers, mdb,
+                                      prop, app, filter_prs_single_prop_cache):
     app._cache = filter_prs_single_prop_cache
     body = {
         "date_from": "2015-10-13",
@@ -218,7 +237,8 @@ async def test_filter_prs_single_prop(client, headers, prop, app, filter_prs_sin
                                 datetime(year=2020, month=4, day=23, tzinfo=timezone.utc))
 
 
-async def test_filter_prs_all_properties(client, headers):
+@with_only_master_branch
+async def test_filter_prs_all_properties(client, headers, mdb):
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-04-23",
@@ -238,7 +258,8 @@ async def test_filter_prs_all_properties(client, headers):
     assert response.status == 400
 
 
-async def test_filter_prs_shot(client, headers):
+@with_only_master_branch
+async def test_filter_prs_shot(client, headers, mdb):
     body = {
         "date_from": "2016-10-13",
         "date_to": "2018-01-23",
@@ -354,9 +375,6 @@ will_never_be_released_go_git_pr_numbers = {
     1180, 1195, 1204, 1205, 1206, 1208, 1214, 1225, 1226, 1235, 1231,
 }
 
-undead_go_git_prs = force_push_dropped_go_git_pr_numbers.union(
-    will_never_be_released_go_git_pr_numbers)
-
 
 async def validate_prs_response(response: ClientResponse,
                                 props: Set[str],
@@ -424,16 +442,21 @@ async def validate_prs_response(response: ClientResponse,
         assert PullRequestProperty.CREATED in pr.properties, str(pr)
         if pr.number not in open_go_git_pr_numbers:
             assert pr.closed is not None
-            if pr.number not in undead_go_git_prs:
+            if pr.number not in will_never_be_released_go_git_pr_numbers:
                 assert PullRequestProperty.DONE in pr.properties, str(pr)
             else:
                 assert PullRequestProperty.MERGE_HAPPENED in pr.properties
-            if pr.number not in rejected_go_git_pr_numbers and pr.number not in undead_go_git_prs:
+            if pr.number not in rejected_go_git_pr_numbers and \
+                    pr.number not in will_never_be_released_go_git_pr_numbers and \
+                    pr.number not in force_push_dropped_go_git_pr_numbers:
                 assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
             else:
                 assert PullRequestProperty.RELEASE_HAPPENED not in pr.properties
                 if pr.number in rejected_go_git_pr_numbers:
-                    assert PullRequestProperty.MERGE_HAPPENED not in pr.properties
+                    assert PullRequestProperty.MERGE_HAPPENED not in pr.properties, str(pr)
+                if pr.number in force_push_dropped_go_git_pr_numbers:
+                    assert PullRequestProperty.FORCE_PUSH_DROPPED in pr.properties, str(pr)
+                    assert PullRequestProperty.MERGE_HAPPENED in pr.properties, str(pr)
         else:
             assert pr.closed is None
 
@@ -453,7 +476,10 @@ async def validate_prs_response(response: ClientResponse,
         if PullRequestProperty.DONE in pr.properties:
             assert pr.closed is not None, str(pr)
             if PullRequestProperty.MERGE_HAPPENED in pr.properties:
-                assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
+                if pr.number not in force_push_dropped_go_git_pr_numbers:
+                    assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
+                else:
+                    assert PullRequestProperty.FORCE_PUSH_DROPPED in pr.properties, str(pr)
             else:
                 assert PullRequestProperty.REJECTION_HAPPENED in pr.properties, str(pr)
                 total_rejected += 1
@@ -470,7 +496,7 @@ async def validate_prs_response(response: ClientResponse,
             assert pr.stage_timings.wip > tdz, str(pr)
         assert pr.stage_timings.review is None or pr.stage_timings.review >= tdz
         assert pr.stage_timings.merge is None or pr.stage_timings.merge >= tdz
-        assert pr.stage_timings.release is None or pr.stage_timings.release > tdz
+        assert pr.stage_timings.release is None or pr.stage_timings.release >= tdz
         timings["wip"] += pr.stage_timings.wip
         if pr.stage_timings.review is not None:
             timings["review"] += pr.stage_timings.review
@@ -501,9 +527,13 @@ async def validate_prs_response(response: ClientResponse,
             assert pr.stage_timings.merge is not None, str(pr)
             assert pr.stage_timings.release is not None
         if pr.released is not None:
-            assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
+            if pr.number not in force_push_dropped_go_git_pr_numbers:
+                assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
+                assert pr.release_url, str(pr)
+            else:
+                assert PullRequestProperty.FORCE_PUSH_DROPPED in pr.properties, str(pr)
+                assert pr.release_url is None, str(pr)
             assert PullRequestProperty.DONE in pr.properties, str(pr)
-            assert pr.release_url, str(pr)
             total_released += 1
 
         assert len(pr.participants) > 0

@@ -32,7 +32,8 @@ from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, \
     PushCommit, Release, User
-from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
+from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory, \
+    GitHubRepositoryCommits
 from athenian.api.tracing import sentry_span
 
 
@@ -352,6 +353,7 @@ async def _fetch_commits(commits: List[str],
 async def map_prs_to_releases(prs: pd.DataFrame,
                               releases: pd.DataFrame,
                               matched_bys: Dict[str, ReleaseMatch],
+                              branches: pd.DataFrame,
                               default_branches: Dict[str, str],
                               time_to: datetime,
                               release_settings: Dict[str, ReleaseMatchSetting],
@@ -382,15 +384,22 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
     tasks = [
         _map_prs_to_releases(merged_prs, releases, mdb, pdb, cache),
+        _find_dead_merged_prs(merged_prs, branches, default_branches, mdb, pdb, cache),
         _fetch_labels(merged_prs.index, mdb),
     ]
-    missed_released_prs, labels = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (missed_released_prs, labels):
+    missed_released_prs, dead_prs, labels = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (missed_released_prs, dead_prs, labels):
         if isinstance(r, Exception):
             raise r from None
     add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
+    add_pdb_misses(pdb, "map_prs_to_releases/dead", len(dead_prs))
     add_pdb_misses(pdb, "map_prs_to_releases/unreleased",
-                   len(merged_prs) - len(missed_released_prs))
+                   len(merged_prs) - len(missed_released_prs) - len(dead_prs))
+    if not dead_prs.empty:
+        if not missed_released_prs.empty:
+            missed_released_prs = pd.concat([missed_released_prs, dead_prs])
+        else:
+            missed_released_prs = dead_prs
     await update_unreleased_prs(
         merged_prs, missed_released_prs, releases, labels, matched_bys, default_branches,
         release_settings, pdb)
@@ -436,6 +445,33 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
         released_prs[Release.published_at.key],
         prs.loc[released_prs.index, PullRequest.merged_at.key])
     return postprocess_datetime(released_prs)
+
+
+@sentry_span
+async def _find_dead_merged_prs(prs: pd.DataFrame,
+                                branches: pd.DataFrame,
+                                default_branches: Dict[str, str],
+                                mdb: databases.Database,
+                                pdb: databases.Database,
+                                cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+    if branches.empty:
+        return new_released_prs_df()
+    repos = prs[PullRequest.repository_full_name.key].unique()
+    commits = await _fetch_repository_commits(repos, branches, default_branches, mdb, pdb, cache)
+    rfnkey = PullRequest.repository_full_name.key
+    mchkey = PullRequest.merge_commit_sha.key
+    clskey = PullRequest.closed_at.key
+    dead_prs = []
+    for repo, repo_prs in prs[[mchkey, rfnkey, clskey]].groupby(rfnkey, sort=False):
+        repo_commits = commits[repo]
+        repo_hashes = repo_prs[mchkey].values.astype("U40")
+        indexes = np.searchsorted(repo_commits, repo_hashes)
+        indexes[indexes == len(repo_commits)] = 0  # whatever index is fine
+        dead_indexes = np.where(repo_hashes != repo_commits[indexes])[0]
+        dead_prs.extend((pr_id, ct, None, None, repo, ReleaseMatch.force_push_drop)
+                        for pr_id, ct in zip(repo_prs.index.values.take(dead_indexes),
+                                             repo_prs[clskey].take(dead_indexes)))
+    return new_released_prs_df(dead_prs)
 
 
 @sentry_span
@@ -700,6 +736,114 @@ async def _fetch_commit_history_dag(dag: Optional[bytes],
     return dag
 
 
+@sentry_span
+@cached(
+    exptime=60 * 60,  # 1 hour
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda branches, **_: (",".join(np.sort(branches[Branch.commit_sha.key].values)),),
+    refresh_on_access=True,
+)
+async def _fetch_repository_commits(repos: Collection[str],
+                                    branches: pd.DataFrame,
+                                    default_branches: Dict[str, str],
+                                    mdb: databases.Database,
+                                    pdb: databases.Database,
+                                    cache: Optional[aiomcache.Client]) -> Dict[str, np.ndarray]:
+    filters = []
+    branch_names = branches[Branch.branch_name.key].values
+    branch_commits = branches[Branch.commit_sha.key].values
+    branch_repos = branches[Branch.repository_full_name.key].values
+    sqlite = pdb.url.dialect == "sqlite"
+    ghrc = GitHubRepositoryCommits
+    for repo in repos:
+        matched_rows = branch_repos == repo
+        pairs = zip(branch_names[matched_rows], branch_commits[matched_rows])
+        if sqlite:
+            pairs = sorted(pairs)
+        heads = dict(pairs)
+        filters.append(and_(ghrc.repository_full_name == repo, ghrc.heads == heads))
+    rows = await pdb.fetch_all(
+        select([ghrc.repository_full_name, ghrc.hashes])
+        .where(and_(
+            ghrc.format_version == ghrc.__table__.columns[ghrc.format_version.key].default.arg,
+            or_(*filters),
+        )))
+    result = {row[0]: pickle.loads(row[1]) for row in rows}
+    add_pdb_hits(pdb, "_fetch_repository_commits", len(result))
+    add_pdb_misses(pdb, "_fetch_repository_commits", len(repos) - len(result))
+    missed_repos = [repo for repo in repos if repo not in result]
+    branches = branches.take(np.where(np.in1d(branch_repos, missed_repos))[0])
+    branches.sort_values(
+        [Branch.commit_date.key], ascending=False, ignore_index=True, inplace=True)
+    grouped_branches = list(branches.groupby(Branch.repository_full_name.key, sort=False))
+    # fetch the default branch first
+    tasks = []
+    for repo, branches in grouped_branches:
+        commit_id = branches[Branch.commit_id.key][
+            np.where(branches[Branch.branch_name.key] == default_branches[repo])[0][0]]
+        tasks.append(_fetch_commit_history_hashes([commit_id], mdb))
+    default_hashes = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in default_hashes:
+        if isinstance(r, Exception):
+            raise r from None
+    # fetch the rest of the branches
+    tasks = []
+    for (repo, branches), all_hashes in zip(grouped_branches, default_hashes):
+        missing_hashes = set(branches[Branch.commit_sha.key].values) - all_hashes
+        missing_mask = branches[Branch.commit_sha.key].isin(missing_hashes)
+        commit_ids = branches[Branch.commit_id.key].values[missing_mask]
+        commit_hashes = branches[Branch.commit_sha.key].values[missing_mask]
+        heads = zip(branches[Branch.branch_name.key].values,
+                    branches[Branch.commit_sha.key].values)
+        if sqlite:
+            heads = sorted(heads)
+        tasks.append(_fetch_commit_history_hashes_batched(
+            all_hashes, commit_ids, commit_hashes, repo, dict(heads), mdb, pdb))
+    missed = await asyncio.gather(*tasks, return_exceptions=True)
+    for (repo, _), arr in zip(grouped_branches, missed):
+        if isinstance(arr, Exception):
+            raise arr from None
+        result[repo] = arr
+    return result
+
+
+async def _fetch_commit_history_hashes_batched(hashes: Set[str],
+                                               commit_ids: Sequence[str],
+                                               commit_hashes: Sequence[str],
+                                               repo: str,
+                                               heads: Dict[str, str],
+                                               mdb: databases.Database,
+                                               pdb: databases.Database) -> np.ndarray:
+    batch_size = 20
+    while len(commit_ids) > 0:
+        hashes = hashes.union(await _fetch_commit_history_hashes(commit_ids[:batch_size], mdb))
+        new_commit_ids = []
+        new_commit_hashes = []
+        for cid, chash in zip(commit_ids[batch_size:], commit_hashes[batch_size:]):
+            if chash not in hashes:
+                new_commit_ids.append(cid)
+                new_commit_hashes.append(chash)
+        commit_ids, commit_hashes = new_commit_ids, new_commit_hashes
+    hashes = np.sort(np.fromiter(hashes, count=len(hashes), dtype="U40"))
+    values = GitHubRepositoryCommits(
+        repository_full_name=repo, heads=heads, hashes=pickle.dumps(hashes),
+    ).create_defaults().explode(with_primary_keys=True)
+    if pdb.url.dialect in ("postgres", "postgresql"):
+        sql = postgres_insert(GitHubRepositoryCommits).values(values)
+        sql = sql.on_conflict_do_update(
+            constraint=GitHubRepositoryCommits.__table__.primary_key,
+            set_={GitHubRepositoryCommits.hashes.key: sql.excluded.hashes,
+                  GitHubRepositoryCommits.heads.key: sql.excluded.heads,
+                  GitHubRepositoryCommits.updated_at.key: sql.excluded.updated_at})
+    elif pdb.url.dialect == "sqlite":
+        sql = insert(GitHubRepositoryCommits).values(values).prefix_with("OR REPLACE")
+    else:
+        raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
+    await pdb.execute(sql)
+    return hashes
+
+
 async def _fetch_commit_history_edges(commit_ids: Iterable[str],
                                       mdb: databases.Database) -> List[Tuple]:
     # query credits: @dennwc
@@ -737,6 +881,48 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
                 return await conn.raw_connection.fetch(query)
         else:
             return [tuple(r) for r in await conn.fetch_all(query)]
+
+
+async def _fetch_commit_history_hashes(commit_ids: Iterable[str],
+                                       mdb: databases.Database) -> Set[str]:
+    query = f"""
+        WITH RECURSIVE commit_history AS (
+            SELECT
+                p.child_id AS parent,
+                pc.oid AS child_oid
+            FROM
+                github_node_commit_parents p
+                    LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
+                    LEFT JOIN github_node_commit cc ON p.child_id = cc.id
+            WHERE
+                p.parent_id IN ('{"', '".join(commit_ids)}')
+            UNION
+                SELECT
+                    p.child_id AS parent,
+                    pc.oid AS child_oid
+                FROM
+                    github_node_commit_parents p
+                        INNER JOIN commit_history h ON h.parent = p.parent_id
+                        LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
+                        LEFT JOIN github_node_commit cc ON p.child_id = cc.id
+        ) SELECT
+            child_oid
+        FROM
+            commit_history
+        UNION
+            SELECT
+                oid as child_id
+            FROM
+                github_node_commit
+            WHERE
+                id IN ('{"', '".join(commit_ids)}');"""
+    async with mdb.connection() as conn:
+        if isinstance(conn.raw_connection, asyncpg.connection.Connection):
+            # this works much faster then iterate() / fetch_all()
+            async with conn._query_lock:
+                return {r[0] for r in await conn.raw_connection.fetch(query)}
+        else:
+            return {r[0] for r in await conn.fetch_all(query)}
 
 
 async def _find_old_released_prs(releases: pd.DataFrame,

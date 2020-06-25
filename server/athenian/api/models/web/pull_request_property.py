@@ -22,3 +22,4 @@ class PullRequestProperty(Model, metaclass=Enum):
     RELEASE_HAPPENED = "release_happened"
     REJECTION_HAPPENED = "rejection_happened"
     DONE = "done"
+    FORCE_PUSH_DROPPED = "force_push_dropped"

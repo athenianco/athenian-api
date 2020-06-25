@@ -167,8 +167,8 @@ class PullRequestMiner:
         # bypass the useless inner caching by calling __wrapped__ directly
         with sentry_sdk.start_span(op="PullRequestMiner.mine_by_ids.__wrapped__"):
             dfs = await cls.mine_by_ids.__wrapped__(
-                cls, prs, unreleased.index, time_to, releases, matched_bys, default_branches,
-                release_settings, mdb, pdb, cache)
+                cls, prs, unreleased.index, time_to, releases, matched_bys,
+                branches, default_branches, release_settings, mdb, pdb, cache)
         dfs = [prs, *dfs]
         to_drop = cls._find_drop_by_participants(dfs, participants)
         to_drop |= cls._find_drop_by_labels(prs, dfs[-1], labels)
@@ -197,6 +197,7 @@ class PullRequestMiner:
                           time_to: datetime,
                           releases: pd.DataFrame,
                           matched_bys: Dict[str, ReleaseMatch],
+                          branches: pd.DataFrame,
                           default_branches: Dict[str, str],
                           release_settings: Dict[str, ReleaseMatchSetting],
                           mdb: databases.Database,
@@ -249,8 +250,8 @@ class PullRequestMiner:
             merged_prs = prs.take(np.where(
                 (prs[PullRequest.merged_at.key] <= time_to) & ~prs.index.isin(unreleased))[0])
             return await map_prs_to_releases(
-                merged_prs, releases, matched_bys, default_branches, time_to, release_settings,
-                mdb, pdb, cache)
+                merged_prs, releases, matched_bys, branches, default_branches, time_to,
+                release_settings, mdb, pdb, cache)
 
         @sentry_span
         async def fetch_labels():

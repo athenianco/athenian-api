@@ -2448,6 +2448,7 @@ components:
         * `release_happened`: released PRs. Note: they were released in the given time window.
         * `rejection_happened`: rejected PRs - closed without merge. Note: they were rejected in the given time window.
         * `done`: either released or otherwise closed PRs - "afterlife".
+        * `force_push_dropped`: merged PR that was later discarded from the entire Git history, a subset of `done`.
       enum:
       - wip
       - created
@@ -2463,6 +2464,7 @@ components:
       - release_happened
       - rejection_happened
       - done
+      - force_push_dropped
       example: wip
       type: string
     PullRequestSet:

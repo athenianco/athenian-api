@@ -18,10 +18,14 @@ from athenian.api.models.state.models import ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
 
-ReleaseMatch = IntEnum("ReleaseMatch", {ReleaseMatchStrategy.BRANCH: 0,
+# rejected: PR was closed without merging.
+# force_push_drop: commit history was overwritten and the PR's merge commit no longer exists.
+ReleaseMatch = IntEnum("ReleaseMatch", {"rejected": -2,
+                                        "force_push_drop": -1,
+                                        ReleaseMatchStrategy.BRANCH: 0,
                                         ReleaseMatchStrategy.TAG: 1,
                                         ReleaseMatchStrategy.TAG_OR_BRANCH: 2})
-ReleaseMatch.__doc__ = """Supported release matching strategies."""
+ReleaseMatch.__doc__ = """Enumeration of supported release matching strategies."""
 
 default_branch_alias = "{{default}}"
 

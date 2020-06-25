@@ -91,6 +91,8 @@ class PullRequestListMiner:
         author = pr.pr[PullRequest.user_login.key]
         props = set()
         if times.released or (times.closed and not times.merged):
+            if pr.release[Release.url.key] is None:
+                props.add(Property.FORCE_PUSH_DROPPED)
             props.add(Property.DONE)
         elif times.merged:
             props.add(Property.RELEASING)
@@ -117,7 +119,8 @@ class PullRequestListMiner:
             props.add(Property.MERGE_HAPPENED)
         if not times.merged and times.closed and times.closed.best > time_from:
             props.add(Property.REJECTION_HAPPENED)
-        if times.released and times.released.best > time_from:
+        if times.released and times.released.best > time_from and \
+                pr.release[Release.url.key] is not None:
             props.add(Property.RELEASE_HAPPENED)
         review_states = pr.reviews[PullRequestReview.state.key]
         if ((review_states.values == ReviewResolution.CHANGES_REQUESTED.value)
@@ -294,7 +297,7 @@ async def _refresh_prs_to_today(prs_time_machine: List[MinedPullRequest],
         prs, releases = task_results[-2:]
         releases, matched_bys = releases
         dfs = await PullRequestMiner.mine_by_ids(
-            prs, [], now, releases, matched_bys, default_branches,
+            prs, [], now, releases, matched_bys, branches, default_branches,
             release_settings, mdb, pdb, cache)
         prs_today = list(PullRequestMiner(prs, *dfs))
     else:
@@ -457,7 +460,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
     else:
         releases, matched_bys, unreleased = dummy_releases_df(), {}, []
     dfs = await PullRequestMiner.mine_by_ids(
-        prs_df, unreleased, now, releases, matched_bys, default_branches,
+        prs_df, unreleased, now, releases, matched_bys, branches, default_branches,
         release_settings, mdb, pdb, cache)
     prs = list(PullRequestMiner(prs_df, *dfs))
     miner = PullRequestListMiner(
