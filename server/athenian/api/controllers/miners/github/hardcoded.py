@@ -5,4 +5,6 @@ BOTS = {
     "codecov-commenter",
     "dependabot",
     "dependabot-preview",
+    "linc",
+    "linear-app",
 }
