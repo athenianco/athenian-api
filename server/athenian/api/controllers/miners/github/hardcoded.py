@@ -7,4 +7,5 @@ BOTS = {
     "dependabot-preview",
     "linc",
     "linear-app",
+    "snyk-bot",
 }
