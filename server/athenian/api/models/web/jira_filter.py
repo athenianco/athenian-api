@@ -10,14 +10,14 @@ class JIRAFilter(Model):
         "epics": List[str],
         "labels_include": List[str],
         "labels_exclude": List[str],
-        "types": List[str],
+        "issue_types": List[str],
     }
 
     attribute_map = {
         "epics": "epics",
         "labels_include": "labels_include",
         "labels_exclude": "labels_exclude",
-        "types": "types",
+        "issue_types": "issue_types",
     }
 
     __slots__ = ["_" + k for k in openapi_types]
@@ -27,19 +27,19 @@ class JIRAFilter(Model):
         epics: Optional[List[str]] = None,
         labels_include: Optional[List[str]] = None,
         labels_exclude: Optional[List[str]] = None,
-        types: Optional[List[str]] = None,
+        issue_types: Optional[List[str]] = None,
     ):
         """JIRAFilter - a model defined in OpenAPI
 
         :param epics: The epics of this JIRAFilter.
         :param labels_include: The labels_include of this JIRAFilter.
         :param labels_exclude: The labels_exclude of this JIRAFilter.
-        :param types: The types of this JIRAFilter.
+        :param issue_types: The issue_types of this JIRAFilter.
         """
         self._epics = epics
         self._labels_include = labels_include
         self._labels_exclude = labels_exclude
-        self._types = types
+        self._issue_types = issue_types
 
     @property
     def epics(self) -> List[str]:
@@ -104,21 +104,21 @@ class JIRAFilter(Model):
         self._labels_exclude = labels_exclude
 
     @property
-    def types(self) -> List[str]:
-        """Gets the types of this JIRAFilter.
+    def issue_types(self) -> List[str]:
+        """Gets the issue_types of this JIRAFilter.
 
         PRs must be linked to certain JIRA issue types, e.g. Bug, Task, Design Document, etc.
 
-        :return: The types of this JIRAFilter.
+        :return: The issue_types of this JIRAFilter.
         """
-        return self._types
+        return self._issue_types
 
-    @types.setter
-    def types(self, types: List[str]):
-        """Sets the types of this JIRAFilter.
+    @issue_types.setter
+    def issue_types(self, issue_types: List[str]):
+        """Sets the issue_types of this JIRAFilter.
 
         PRs must be linked to certain JIRA issue types, e.g. Bug, Task, Design Document, etc.
 
-        :param types: The types of this JIRAFilter.
+        :param issue_types: The issue_types of this JIRAFilter.
         """
-        self._types = types
+        self._issue_types = issue_types

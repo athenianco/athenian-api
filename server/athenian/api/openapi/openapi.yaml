@@ -3636,7 +3636,7 @@ components:
         - metadata
         labels_exclude:
         - feature
-        types:
+        issue_types:
         - bug
         - task
       properties:
@@ -3657,7 +3657,7 @@ components:
           items:
             type: string
           type: array
-        types:
+        issue_types:
           description: PRs must be linked to certain JIRA issue types, e.g. Bug, Task,
             Design Document, etc.
           items:
@@ -3669,6 +3669,7 @@ components:
       description: JIRA issue details.
       example:
         id: DEV-344
+        title: 'Write the API specs to filter PRs by Jira epic, ticket type and label'
         epic: DEV-149
         labels:
         - API
@@ -3677,9 +3678,20 @@ components:
         id:
           description: Identifier of this issue.
           type: string
+        title:
+          description: Title of this issue.
+          type: string
         epic:
           description: Identifier of the epic that owns this issue.
           type: string
+        parent:
+          description: If this issue is a subissue, identifier of the higher level issue.
+          type: string
+        children:
+          description: If this issue has subissues, identifiers of all the subissues.
+          items:
+            type: string
+          type: array
         labels:
           description: List of JIRA labels in this issue.
           items:
@@ -3690,5 +3702,6 @@ components:
           type: string
       required:
       - id
+      - title
       - type
       type: object
