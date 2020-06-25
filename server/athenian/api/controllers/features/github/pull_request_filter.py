@@ -445,6 +445,8 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
     for r in (prs, done_times):
         if isinstance(r, Exception):
             raise r from None
+    if prs_df.empty:
+        return []
     now = datetime.now(timezone.utc)
     rel_time_from = prs_df[PullRequest.merged_at.key].min()
     if rel_time_from == rel_time_from:
