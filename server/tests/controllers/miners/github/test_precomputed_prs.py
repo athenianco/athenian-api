@@ -462,7 +462,7 @@ async def test_discover_update_unreleased_prs_released(
         release_match_setting_tag,
         mdb, pdb, None)
     released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, {}, time_to,
+        prs, releases, matched_bys, pd.DataFrame(), {}, time_to,
         release_match_setting_tag, mdb, pdb, None)
     await update_unreleased_prs(
         prs, released_prs, releases, {},
@@ -502,8 +502,8 @@ async def test_load_old_merged_unreleased_prs_smoke(mdb, pdb, release_match_sett
         ["src-d/go-git"], None, None, metrics_time_from, unreleased_time_to,
         release_match_setting_tag, mdb, pdb, cache)
     released_prs = await map_prs_to_releases(
-        unreleased_prs, releases, matched_bys, {}, unreleased_time_to,
-        release_match_setting_tag, mdb, pdb, cache)
+        unreleased_prs, releases, matched_bys, pd.DataFrame(), {},
+        unreleased_time_to, release_match_setting_tag, mdb, pdb, cache)
     assert released_prs.empty
     unreleased_time_from = datetime(2018, 11, 19, tzinfo=timezone.utc)
     unreleased_time_to = datetime(2018, 11, 20, tzinfo=timezone.utc)

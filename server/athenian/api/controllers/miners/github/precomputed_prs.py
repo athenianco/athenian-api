@@ -51,7 +51,7 @@ def _check_release_match(repo: str,
                          prefix: str,
                          result: Any,
                          ambiguous: Dict[str, Any]) -> Optional[Any]:
-    if release_match == "rejected":
+    if release_match in (ReleaseMatch.rejected.name, ReleaseMatch.force_push_drop.name):
         dump = result
     else:
         match_name, match_by = release_match.split("|", 1)
@@ -372,10 +372,12 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
                 release_match = "|".join((match.name, branch))
             elif match == ReleaseMatch.tag:
                 release_match = "|".join((match.name, release_match.tags))
+            elif match == ReleaseMatch.force_push_drop:
+                release_match = ReleaseMatch.force_push_drop.name
             else:
                 raise AssertionError("Unhandled release match strategy: " + match.name)
         else:
-            release_match = "rejected"
+            release_match = ReleaseMatch.rejected.name
         participants = pr.participants()
         # if they are empty the column dtype is sometimes an object so .dt raises an exception
         if not pr.review_requests.empty:

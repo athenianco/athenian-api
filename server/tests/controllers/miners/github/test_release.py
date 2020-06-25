@@ -10,14 +10,17 @@ from sqlalchemy import delete, select, sql
 from sqlalchemy.schema import CreateTable
 
 from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import store_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
     PullRequestTimesMiner
 from athenian.api.controllers.miners.github.release import _fetch_commit_history_dag, \
-    _fetch_first_parents, load_releases, map_prs_to_releases, map_releases_to_prs
+    _fetch_first_parents, _fetch_repository_commits, _find_dead_merged_prs, load_releases, \
+    map_prs_to_releases, map_releases_to_prs
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel, Release
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
+from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
 
 
 def generate_repo_settings(prs: pd.DataFrame) -> Dict[str, ReleaseMatchSetting]:
@@ -39,7 +42,8 @@ async def test_map_prs_to_releases_cache(branches, default_branches, mdb, pdb, c
     tag = "https://github.com/src-d/go-git/releases/tag/v4.12.0"
     for i in range(2):
         released_prs = await map_prs_to_releases(
-            prs, releases, matched_bys, default_branches, time_to, settings, mdb, pdb, cache)
+            prs, releases, matched_bys, branches, default_branches, time_to, settings,
+            mdb, pdb, cache)
         assert len(cache.mem) > 0
         assert len(released_prs) == 1, str(i)
         assert released_prs.iloc[0][Release.published_at.key] == \
@@ -47,7 +51,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, mdb, pdb, c
         assert released_prs.iloc[0][Release.author.key] == "mcuadros"
         assert released_prs.iloc[0][Release.url.key] == tag
     released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, default_branches, time_to, settings, mdb, pdb, None)
+        prs, releases, matched_bys, branches, default_branches, time_to, settings, mdb, pdb, None)
     # the PR was merged and released in the past, we must detect that
     assert len(released_prs) == 1
     assert released_prs.iloc[0][Release.url.key] == tag
@@ -63,7 +67,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, mdb, pdb, cac
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
         mdb, pdb, None)
     released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, default_branches, time_to, settings, mdb, pdb, None)
+        prs, releases, matched_bys, branches, default_branches, time_to, settings, mdb, pdb, None)
     assert len(released_prs) == 1
     dummy_mdb = Database("sqlite://", force_rollback=True)
     await dummy_mdb.connect()
@@ -72,7 +76,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, mdb, pdb, cac
         await dummy_mdb.execute(CreateTable(PullRequestLabel.__table__).compile(
             dialect=dummy_mdb._backend._dialect).string)
         released_prs = await map_prs_to_releases(
-            prs, releases, matched_bys, default_branches, time_to, settings,
+            prs, releases, matched_bys, branches, default_branches, time_to, settings,
             dummy_mdb, pdb, None)
         assert len(released_prs) == 1
     finally:
@@ -90,13 +94,14 @@ async def test_map_prs_to_releases_empty(branches, default_branches, mdb, pdb, c
         mdb, pdb, None)
     for _ in range(2):
         released_prs = await map_prs_to_releases(
-            prs, releases, matched_bys, default_branches, time_to, settings, mdb, pdb, cache)
-        assert len(cache.mem) == 2
+            prs, releases, matched_bys, branches, default_branches, time_to, settings,
+            mdb, pdb, cache)
+        assert len(cache.mem) == 3
         assert released_prs.empty
     prs = prs.iloc[:0]
     released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, default_branches, time_to, settings, mdb, pdb, cache)
-    assert len(cache.mem) == 2
+        prs, releases, matched_bys, branches, default_branches, time_to, settings, mdb, pdb, cache)
+    assert len(cache.mem) == 3
     assert released_prs.empty
 
 
@@ -137,15 +142,15 @@ async def test_map_prs_to_releases_precomputed_released(
             dialect=dummy_mdb._backend._dialect).string)
         with pytest.raises(Exception):
             await map_prs_to_releases(
-                prs, releases, matched_bys, default_branches, time_to, release_match_setting_tag,
-                dummy_mdb, pdb, None)
+                prs, releases, matched_bys, branches, default_branches, time_to,
+                release_match_setting_tag, dummy_mdb, pdb, None)
 
         await store_precomputed_done_times(
             true_prs, times, default_branches, release_match_setting_tag, pdb)
 
         released_prs = await map_prs_to_releases(
-            prs, releases, matched_bys, default_branches, time_to, release_match_setting_tag,
-            dummy_mdb, pdb, None)
+            prs, releases, matched_bys, branches, default_branches, time_to,
+            release_match_setting_tag, dummy_mdb, pdb, None)
         assert len(released_prs) == len(prs)
     finally:
         await dummy_mdb.disconnect()
@@ -296,8 +301,9 @@ async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, mdb
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
         mdb, pdb, None)
     released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, default_branches, time_to, settings, mdb, pdb, None)
+        prs, releases, matched_bys, branches, default_branches, time_to, settings, mdb, pdb, None)
     assert set(released_prs[Release.url.key].unique()) == {
+        None,
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc10",
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc11",
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc13",
@@ -708,6 +714,41 @@ async def test_fetch_first_parents_cache(mdb, pdb, cache):
             None, None, cache)
 
 
+async def test__fetch_repository_commits_smoke(mdb, pdb, cache):
+    repos = ["src-d/go-git"]
+    branches, default_branches = await extract_branches(repos, mdb, None)
+    commits = await _fetch_repository_commits(repos, branches, default_branches, mdb, pdb, cache)
+    assert len(commits) == 1
+    commits = commits["src-d/go-git"]
+    assert len(commits) == 1917
+    commits = await _fetch_repository_commits(repos, branches, default_branches, None, None, cache)
+    assert len(commits) == 1
+    commits = commits["src-d/go-git"]
+    assert len(commits) == 1917
+    commits = await _fetch_repository_commits(repos, branches, default_branches, None, pdb, None)
+    assert len(commits) == 1
+    commits = commits["src-d/go-git"]
+    assert len(commits) == 1917
+    branches = branches.iloc[:1]
+    commits = await _fetch_repository_commits(repos, branches, default_branches, mdb, pdb, cache)
+    assert len(commits) == 1
+    commits = commits["src-d/go-git"]
+    assert len(commits) == 1537  # without force-pushed commits
+
+
+async def test__find_dead_merged_prs_smoke(mdb, pdb):
+    prs = await read_sql_query(
+        select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
+        mdb, PullRequest, index=PullRequest.node_id.key)
+    branches, default_branches = await extract_branches(["src-d/go-git"], mdb, None)
+    branches = branches.iloc[:1]
+    dead_prs = await _find_dead_merged_prs(prs, branches, default_branches, mdb, pdb, None)
+    assert len(dead_prs) == 159
+    dead_prs = await mdb.fetch_all(
+        select([PullRequest.number]).where(PullRequest.node_id.in_(dead_prs.index)))
+    assert {pr[0] for pr in dead_prs} == set(force_push_dropped_go_git_pr_numbers)
+
+
 """
 https://athenianco.atlassian.net/browse/DEV-250
 
@@ -722,7 +763,7 @@ async def test_map_prs_to_releases_miguel(mdb, pdb, release_match_setting_tag, c
         ["src-d/go-git"], None, None, time_from, time_to,
         release_match_setting_tag, mdb, pdb, cache)
     released_prs = await map_prs_to_releases(
-        miguel_pr, releases, matched_bys, {}, time_to,
+        miguel_pr, releases, matched_bys, pd.DataFrame(), {}, time_to,
         release_match_setting_tag, mdb, pdb, cache)
     assert len(released_prs) == 1
 """
