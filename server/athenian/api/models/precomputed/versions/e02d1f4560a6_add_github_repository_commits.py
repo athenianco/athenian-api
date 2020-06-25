@@ -26,8 +26,8 @@ def upgrade():
     op.create_table(
         "github_repository_commits",
         sa.Column("repository_full_name", sa.String(64 + 1 + 100), primary_key=True),
+        sa.Column("format_version", sa.Integer(), primary_key=True, server_default="1"),
         sa.Column("heads", hs, nullable=False, server_default=""),
-        sa.Column("format_version", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("hashes", sa.LargeBinary(), nullable=False),
         sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False,
                   server_default=sa.func.now()),

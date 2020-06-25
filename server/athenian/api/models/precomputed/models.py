@@ -87,8 +87,8 @@ class GitHubRepositoryCommits(Base, UpdatedMixin):
     __tablename__ = "github_repository_commits"
 
     repository_full_name = Column(RepositoryFullName, primary_key=True)
-    heads = Column(JHSTORE, nullable=False, server_default="")
     format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
+    heads = Column(JHSTORE, nullable=False, server_default="")
     hashes = Column(LargeBinary(), nullable=False)
 
 
