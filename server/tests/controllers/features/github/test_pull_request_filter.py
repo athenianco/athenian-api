@@ -244,3 +244,9 @@ async def test_fetch_pull_requests_no_merged(mdb, pdb, release_match_setting_tag
     assert len(prs) == 1
     assert prs[0].number == 1069
     assert Property.WIP in prs[0].properties
+
+
+async def test_fetch_pull_requests_empty(mdb, pdb, release_match_setting_tag, cache):
+    prs = await fetch_pull_requests({"src-d/go-git": {0}},
+                                    release_match_setting_tag, mdb, pdb, cache)
+    assert len(prs) == 0
