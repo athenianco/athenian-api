@@ -780,7 +780,7 @@ async def _fetch_repository_commits(repos: Collection[str],
     # fetch the default branch first
     tasks = []
     for repo, branches in grouped_branches:
-        commit_id = branches[Branch.commit_id.key][
+        commit_id = branches[Branch.commit_id.key].iloc[
             np.where(branches[Branch.branch_name.key] == default_branches[repo])[0][0]]
         tasks.append(_fetch_commit_history_hashes([commit_id], mdb))
     default_hashes = await asyncio.gather(*tasks, return_exceptions=True)
