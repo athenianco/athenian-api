@@ -1947,6 +1947,8 @@ components:
           items:
             type: string
           type: array
+        jira:
+          $ref: '#/components/schemas/JIRAFilter'
       required:
       - repositories
       type: object
@@ -1971,6 +1973,8 @@ components:
           items:
             type: string
           type: array
+        jira:
+          $ref: '#/components/schemas/JIRAFilter'
       required:
       - developers
       - repositories
@@ -2423,6 +2427,8 @@ components:
           description: Value indicating whether PRs without events in the given time
             frame shall be ignored.
           type: boolean
+        jira:
+          $ref: '#/components/schemas/JIRAFilter'
       required:
       - account
       - date_from
@@ -2651,6 +2657,11 @@ components:
           description: List of PR labels.
           items:
             $ref: '#/components/schemas/PullRequestLabel'
+          type: array
+        jira:
+          description: List of linked JIRA issues.
+          items:
+            $ref: '#/components/schemas/JIRAIssue'
           type: array
       required:
       - comments
@@ -3614,3 +3625,85 @@ components:
       items:
         $ref: '#/components/schemas/FilteredLabel'
       type: array
+    JIRAFilter:
+      additionalProperties: false
+      description: PR filters related to JIRA traits. The aggregation between each
+        filter type is *AND*.
+      example:
+        epics:
+        - DEV-167
+        - DEV-230
+        labels_include:
+        - api,performance
+        - metadata
+        labels_exclude:
+        - feature
+        issue_types:
+        - bug
+        - task
+      properties:
+        epics:
+          description: PRs must be linked to at least one JIRA epic from the list.
+          items:
+            type: string
+          type: array
+        labels_include:
+          description: PRs must relate to at least one JIRA issue label from the list.
+            Several labels may be concatenated by a comma `,` so that all of them
+            are required.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: PRs cannot relate to JIRA issue labels from the list.
+          items:
+            type: string
+          type: array
+        issue_types:
+          description: PRs must be linked to certain JIRA issue types, e.g. Bug, Task,
+            Design Document, etc.
+          items:
+            type: string
+          type: array
+      type: object
+    JIRAIssue:
+      additionalProperties: false
+      description: JIRA issue details.
+      example:
+        id: DEV-344
+        title: 'Write the API specs to filter PRs by Jira epic, ticket type and label'
+        epic: DEV-149
+        labels:
+        - API
+        type: task
+      properties:
+        id:
+          description: Identifier of this issue.
+          type: string
+        title:
+          description: Title of this issue.
+          type: string
+        epic:
+          description: Identifier of the epic that owns this issue.
+          type: string
+        parent:
+          description: If this issue is a subissue, identifier of the higher level issue.
+          type: string
+        children:
+          description: If this issue has subissues, identifiers of all the subissues.
+          items:
+            type: string
+          type: array
+        labels:
+          description: List of JIRA labels in this issue.
+          items:
+            type: string
+          type: array
+        type:
+          description: Type of this issue.
+          type: string
+      required:
+      - id
+      - title
+      - type
+      type: object

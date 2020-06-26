@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.jira_filter import JIRAFilter
 
 
 class ForSetDevelopers(Model):
@@ -10,12 +11,14 @@ class ForSetDevelopers(Model):
         "repositories": List[str],
         "developers": List[str],
         "labels_include": List[str],
+        "jira": JIRAFilter,
     }
 
     attribute_map = {
         "repositories": "repositories",
         "developers": "developers",
         "labels_include": "labels_include",
+        "jira": "jira",
     }
 
     __slots__ = ["_" + k for k in openapi_types]
@@ -25,16 +28,19 @@ class ForSetDevelopers(Model):
         repositories: Optional[List[str]] = None,
         developers: Optional[List[str]] = None,
         labels_include: Optional[List[str]] = None,
+        jira: Optional[JIRAFilter] = None,
     ):
         """ForSet - a model defined in OpenAPI
 
         :param repositories: The repositories of this ForSetDevelopers.
         :param developers: The developers of this ForSetDevelopers.
         :param labels_include: The labels_include of this ForSetDevelopers.
+        :param jira: The jira of this ForSetDevelopers.
         """
         self._repositories = repositories
         self._developers = developers
         self._labels_include = labels_include
+        self._jira = jira
 
     @property
     def repositories(self) -> List[str]:
@@ -89,3 +95,19 @@ class ForSetDevelopers(Model):
         :param labels_include: The labels_include of this ForSetDevelopers.
         """
         self._labels_include = labels_include
+
+    @property
+    def jira(self) -> Optional[JIRAFilter]:
+        """Gets the jira of this ForSetDevelopers.
+
+        :return: The jira of this ForSetDevelopers.
+        """
+        return self._jira
+
+    @jira.setter
+    def jira(self, jira: Optional[JIRAFilter]):
+        """Sets the jira of this ForSetDevelopers.
+
+        :param jira: The jira of this ForSetDevelopers.
+        """
+        self._jira = jira

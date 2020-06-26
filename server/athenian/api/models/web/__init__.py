@@ -43,6 +43,8 @@ from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.invitation_check_result import InvitationCheckResult
 from athenian.api.models.web.invitation_link import InvitationLink
 from athenian.api.models.web.invited_user import InvitedUser
+from athenian.api.models.web.jira_filter import JIRAFilter
+from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
 from athenian.api.models.web.pull_request import PullRequest
 from athenian.api.models.web.pull_request_label import PullRequestLabel
