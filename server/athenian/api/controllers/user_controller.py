@@ -1,8 +1,9 @@
 from aiohttp import web
 from sqlalchemy import and_, delete, select, update
 
+from athenian.api import FriendlyJson
 from athenian.api.controllers.account import get_user_account_status
-from athenian.api.models.state.models import God, UserAccount
+from athenian.api.models.state.models import AccountFeature, Feature, God, UserAccount
 from athenian.api.models.web import ForbiddenError, NotFoundError
 from athenian.api.models.web.account import Account
 from athenian.api.models.web.account_user_change_request import AccountUserChangeRequest, \
@@ -17,16 +18,18 @@ async def get_user(request: AthenianWebRequest) -> web.Response:
     return model_response(user)
 
 
-async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
-    """Return details about the current account."""
+async def get_account_members(request: AthenianWebRequest, id: int) -> web.Response:
+    """Return the members of the account."""
     user_id = request.uid
     users = await request.sdb.fetch_all(select([UserAccount]).where(UserAccount.account_id == id))
+    if len(users) == 0:
+        raise ResponseError(NotFoundError(detail="Account %d does not exist." % id))
     for user in users:
         if user[UserAccount.user_id.key] == user_id:
             break
     else:
-        return ResponseError(ForbiddenError(
-            detail="User %s is not allowed to access account %d" % (user_id, id))).response
+        raise ResponseError(ForbiddenError(
+            detail="User %s is not allowed to access account %d" % (user_id, id)))
     admins = []
     regulars = []
     for user in users:
@@ -36,6 +39,22 @@ async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
     account = Account(regulars=[users[k] for k in regulars if k in users],
                       admins=[users[k] for k in admins if k in users])
     return model_response(account)
+
+
+async def get_account_features(request: AthenianWebRequest, id: int) -> web.Response:
+    """Return enabled product features for the account."""
+    async with request.sdb.connection() as conn:
+        await get_user_account_status(request.uid, id, conn, request.cache)
+        account_feature_ids = await conn.fetch_all(
+            select([AccountFeature.feature_id])
+            .where(and_(AccountFeature.account_id == id, AccountFeature.enabled)))
+        account_feature_ids = [row[0] for row in account_feature_ids]
+        features = await conn.fetch_all(
+            select([Feature.name])
+            .where(and_(Feature.id.in_(account_feature_ids),
+                        Feature.component == "user",
+                        Feature.enabled)))
+        return web.json_response([row[0] for row in features], dumps=FriendlyJson.dumps)
 
 
 async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response:
@@ -105,4 +124,4 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
             await conn.execute(delete(UserAccount)
                                .where(and_(UserAccount.user_id == aucr.user,
                                            UserAccount.account_id == aucr.account)))
-    return await get_account(request, aucr.account)
+    return await get_account_members(request, aucr.account)

@@ -1,14 +1,14 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 from aiohttp import web
 import dateutil.parser
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import insert, update
 
 from athenian.api.controllers.user_controller import get_user
-from athenian.api.models.state.models import God
+from athenian.api.models.state.models import AccountFeature, Feature, God
 from athenian.api.request import AthenianWebRequest
 from tests.conftest import disable_default_user
 
@@ -76,15 +76,60 @@ async def test_get_default_user(client, headers, gkwillie):
     }
 
 
-async def test_get_account(client, headers):
+async def test_get_account_members_smoke(client, headers):
     response = await client.request(
-        method="GET", path="/v1/account/1", headers=headers, json={},
+        method="GET", path="/v1/account/1/members", headers=headers, json={},
     )
     body = json.loads((await response.read()).decode("utf-8"))
     assert len(body["admins"]) == 1
     assert body["admins"][0]["email"] == "vadim@athenian.co"
     assert len(body["regulars"]) == 1
     assert body["regulars"][0]["email"] == "eiso@athenian.co"
+
+
+@pytest.mark.parametrize("account, code", [[3, 403], [4, 404]])
+async def test_get_account_members_nasty_input(client, headers, account, code):
+    response = await client.request(
+        method="GET", path="/v1/account/%d/members" % account, headers=headers, json={},
+    )
+    body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == code, body
+
+
+async def test_get_account_features_smoke(client, headers):
+    response = await client.request(
+        method="GET", path="/v1/account/1/features", headers=headers, json={},
+    )
+    body = json.loads((await response.read()).decode("utf-8"))
+    assert body == ["jira"]
+
+
+@pytest.mark.parametrize("account, code", [[3, 404], [4, 404]])
+async def test_get_account_features_nasty_input(client, headers, account, code):
+    response = await client.request(
+        method="GET", path="/v1/account/%d/features" % account, headers=headers, json={},
+    )
+    body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == code, body
+
+
+async def test_get_account_features_disabled(client, headers, sdb):
+    await sdb.execute(update(Feature).values(
+        {Feature.enabled: False, Feature.updated_at: datetime.now(timezone.utc)}))
+    response = await client.request(
+        method="GET", path="/v1/account/1/features", headers=headers, json={},
+    )
+    body = json.loads((await response.read()).decode("utf-8"))
+    assert body == []
+    await sdb.execute(update(Feature).values(
+        {Feature.enabled: True, Feature.updated_at: datetime.now(timezone.utc)}))
+    await sdb.execute(update(AccountFeature).values(
+        {AccountFeature.enabled: False, AccountFeature.updated_at: datetime.now(timezone.utc)}))
+    response = await client.request(
+        method="GET", path="/v1/account/1/features", headers=headers, json={},
+    )
+    body = json.loads((await response.read()).decode("utf-8"))
+    assert body == []
 
 
 async def test_get_users_query_size_limit(xapp):

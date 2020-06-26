@@ -62,5 +62,5 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_table("features")
     op.drop_table("account_features")
+    op.drop_table("features")

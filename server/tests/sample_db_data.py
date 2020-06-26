@@ -8,7 +8,9 @@ import sqlalchemy.orm
 
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import Base
-from athenian.api.models.state.models import Account, AccountGitHubInstallation, Invitation, \
+from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubInstallation, \
+    Feature, \
+    Invitation, \
     RepositorySet, UserAccount
 
 
@@ -101,3 +103,6 @@ def fill_state_session(session: sqlalchemy.orm.Session):
         owner_id=3,
         items=["github.com/athenianco/athenian-webapp", "github.com/athenianco/athenian-api"]))
     session.add(Invitation(salt=777, account_id=3, created_by="auth0|5e1f6e2e8bfa520ea5290741"))
+    session.add(Feature(id=1, name="jira", component="user", enabled=True))
+    session.flush()
+    session.add(AccountFeature(account_id=1, feature_id=1, enabled=True))
