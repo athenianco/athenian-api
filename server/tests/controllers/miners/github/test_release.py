@@ -92,11 +92,11 @@ async def test_map_prs_to_releases_empty(branches, default_branches, mdb, pdb, c
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
         mdb, pdb, None)
-    for _ in range(2):
+    for i in range(2):
         released_prs = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, settings,
             mdb, pdb, cache)
-        assert len(cache.mem) == 3
+        assert len(cache.mem) == 3, i
         assert released_prs.empty
     prs = prs.iloc[:0]
     released_prs = await map_prs_to_releases(

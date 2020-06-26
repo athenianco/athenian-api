@@ -457,6 +457,8 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
     if branches.empty:
         return new_released_prs_df()
     repos = prs[PullRequest.repository_full_name.key].unique()
+    if len(repos) == 0:
+        return new_released_prs_df()
     commits = await _fetch_repository_commits(repos, branches, default_branches, mdb, pdb, cache)
     rfnkey = PullRequest.repository_full_name.key
     mchkey = PullRequest.merge_commit_sha.key
@@ -741,7 +743,8 @@ async def _fetch_commit_history_dag(dag: Optional[bytes],
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda branches, **_: (",".join(np.sort(branches[Branch.commit_sha.key].values)),),
+    key=lambda repos, branches, **_: (
+        ",".join(sorted(repos)), ",".join(np.sort(branches[Branch.commit_sha.key].values))),
     refresh_on_access=True,
 )
 async def _fetch_repository_commits(repos: Collection[str],
