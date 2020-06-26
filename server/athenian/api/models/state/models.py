@@ -167,3 +167,28 @@ class ReleaseSetting(create_time_mixin(updated_at=True), Base):
     branches = Column(String(1024))
     tags = Column(String(1024))
     match = Column(SmallInteger())
+
+
+class Feature(create_time_mixin(updated_at=True), Base):
+    """Product features."""
+
+    __tablename__ = "features"
+    __table_args__ = (UniqueConstraint("name", "component", name="uc_feature_name_component"),
+                      {"sqlite_autoincrement": True})
+
+    id = Column(Integer(), primary_key=True)
+    name = Column(String(128), nullable=False)
+    component = Column(String(64), nullable=False)
+    enabled = Column(Boolean(), nullable=False, default=False, server_default="false")
+
+
+class AccountFeature(create_time_mixin(updated_at=True), Base):
+    """Product features -> accounts many-to-many mapping."""
+
+    __tablename__ = "account_features"
+
+    account_id = Column(Integer(), ForeignKey(
+        "accounts.id", name="fk_account_features_account"), primary_key=True)
+    feature_id = Column(Integer(), ForeignKey(
+        "features.id", name="fk_account_features_feature"), primary_key=True)
+    enabled = Column(Boolean(), nullable=False, default=False, server_default="false")
