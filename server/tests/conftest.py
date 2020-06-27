@@ -205,7 +205,7 @@ async def gkwillie(app) -> User:
 
 @pytest.fixture(scope="function")
 def disable_default_user(app):
-    _extract_token = app._auth0._extract_token
+    _extract_token = app._auth0._extract_bearer_token
     default_user_id = app._auth0._default_user_id
 
     async def hacked_extract_token(token: str):
@@ -214,7 +214,7 @@ def disable_default_user(app):
         app._auth0._default_user_id = "xxx"
         return r
 
-    app._auth0._extract_token = hacked_extract_token
+    app._auth0._extract_bearer_token = hacked_extract_token
 
 
 @pytest.fixture(scope="function")

@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 import enum
 import json
 
-from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, func, Integer, JSON, \
-    SmallInteger, String, Text, TIMESTAMP, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, ForeignKeyConstraint, func, \
+    Integer, JSON, SmallInteger, String, Text, TIMESTAMP, UniqueConstraint
 import xxhash
 
 from athenian.api.models import always_unequal, create_base
@@ -207,19 +207,19 @@ class AccountFeature(create_time_mixin(updated_at=True), Base):
     parameters = Column(JSON())
 
 
-class AccountToken(create_time_mixin(updated_at=True), Base):
+class UserToken(create_time_mixin(updated_at=True), Base):
     """Personal Access Tokens of the accounts."""
 
-    __tablename__ = "account_tokens"
+    __tablename__ = "user_tokens"
     __table_args__ = (UniqueConstraint("name", "user_id", "account_id", name="uc_token_name"),
+                      ForeignKeyConstraint(("account_id", "user_id"),
+                                           ("user_accounts.account_id", "user_accounts.user_id"),
+                                           name="fk_account_tokens_user"),
                       {"sqlite_autoincrement": True})
 
     id = Column(BigInteger(), primary_key=True)
-    account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_account_tokens_account"),
-                        nullable=False)
-    user_id = Column(String(256),
-                     ForeignKey("user_accounts.user_id", name="fk_account_tokens_user"),
-                     nullable=False)
+    account_id = Column(Integer(), nullable=False)
+    user_id = Column(String(256), nullable=False)
     name = Column(String(256), nullable=False)
     last_used_at = Column(TIMESTAMP(timezone=True), nullable=False,
                           default=lambda: datetime.now(timezone.utc), server_default=func.now())

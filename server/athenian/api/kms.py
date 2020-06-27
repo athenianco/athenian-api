@@ -1,10 +1,15 @@
+import logging
 import os
 
 from gcloud.aio.kms import decode, encode, KMS
 
+from athenian.api import metadata
+
 
 class AthenianKMS:
     """Google Cloud Key Management Service for Athenian API."""
+
+    log = logging.getLogger("%s.kms" % metadata.__package__)
 
     def __init__(self):
         """Initialize a new instance of AthenianKMS class."""
@@ -14,9 +19,11 @@ class AthenianKMS:
                               ("keyname", "GOOGLE_KMS_KEYNAME")):
             evars[var] = x = os.getenv(env_name)
             if x is None:
-                raise EnvironmentError("%s must be defined, see "
-                                       "https://cloud.google.com/kms/docs/reference/rest" % x)
-        self._kms = KMS(**evars, service_file=os.getenv("GOOGLE_KMS_SERVICE_FILE"))
+                raise EnvironmentError(
+                    "%s must be defined, see https://cloud.google.com/kms/docs/reference/rest"
+                    % env_name)
+        self._kms = KMS(**evars, service_file=os.getenv("GOOGLE_KMS_SERVICE_ACCOUNT_JSON"))
+        self.log.info("Using Google KMS %(keyproject)s/%(keyring)s/%(keyname)s" % evars)
 
     async def encrypt(self, plaintext: str) -> str:
         """Encrypt text using Google KMS."""

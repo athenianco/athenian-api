@@ -21,14 +21,10 @@ def upgrade():
         bop.create_foreign_key("fk_release_settings_account", "accounts",
                                ["account_id"], ["id"])
     op.create_table(
-        "account_tokens",
+        "user_tokens",
         sa.Column("id", sa.BigInteger(), primary_key=True),
-        sa.Column("account_id", sa.Integer(),
-                  sa.ForeignKey("accounts.id", name="fk_account_tokens_account"),
-                  nullable=False),
-        sa.Column("user_id", sa.String(256),
-                  sa.ForeignKey("user_accounts.user_id", name="fk_account_tokens_user"),
-                  nullable=False),
+        sa.Column("account_id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.String(256), nullable=False),
         sa.Column("name", sa.String(256), nullable=False),
         sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False,
                   server_default=sa.func.now()),
@@ -37,10 +33,13 @@ def upgrade():
         sa.Column("last_used_at", sa.TIMESTAMP(timezone=True), nullable=False,
                   server_default=sa.func.now()),
         sa.UniqueConstraint("name", "user_id", "account_id", name="uc_token_name"),
+        sa.ForeignKeyConstraint(("account_id", "user_id"),
+                                ("user_accounts.account_id", "user_accounts.user_id"),
+                                name="fk_account_tokens_user"),
     )
 
 
 def downgrade():
     with op.batch_alter_table("release_settings") as bop:
         bop.drop_constraint("fk_release_settings_account")
-    op.drop_table("account_tokens")
+    op.drop_table("user_tokens")

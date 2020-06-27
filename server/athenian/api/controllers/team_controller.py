@@ -40,9 +40,9 @@ async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
         try:
             tid = await sdb_conn.execute(insert(Team).values(t.explode()))
         except (UniqueViolationError, IntegrityError, OperationalError) as err:
-            return ResponseError(DatabaseConflict(
+            raise ResponseError(DatabaseConflict(
                 detail="Team '%s' already exists: %s: %s" % (name, type(err).__name__, err)),
-            ).response
+            ) from None
         return model_response(CreatedIdentifier(tid))
 
 

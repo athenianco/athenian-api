@@ -212,6 +212,7 @@ class AthenianApp(connexion.AioHttpApp):
         if not no_kms:
             self.app["kms"] = self._kms = AthenianKMS()
         else:
+            self.log.warning("Google Key Management Service is disabled, PATs will not work")
             self.app["kms"] = self._kms = None
         api.jsonifier.json = FriendlyJson
         prometheus_registry = setup_status(self.app)
@@ -262,6 +263,8 @@ class AthenianApp(connexion.AioHttpApp):
         if not self._shutting_down:
             self.log.warning("Shutting down disgracefully")
         await self._auth0.close()
+        if self._kms is not None:
+            await self._kms.close()
         for f in self._db_futures.values():
             f.cancel()
         for db in (self.mdb, self.sdb, self.pdb):
