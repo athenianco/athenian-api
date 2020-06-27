@@ -1344,6 +1344,164 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.team_controller
       x-codegen-request-body-name: body
+  /token/create:
+    post:
+      operationId: create_token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTokenRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedToken'
+          description: Value and ID of the generated Personal Access Token.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account or no such
+            account exists.
+      security:
+      - bearerAuth: []
+      summary: Create a new Personal Access Token for the current user and the specified
+        account.
+      tags:
+      - security
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.security_controller
+      x-codegen-request-body-name: body
+  /token/{id}:
+    delete:
+      operationId: delete_token
+      parameters:
+      - description: Numeric identifier of the token.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Empty object indicates a successful removal.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not own the token.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The token does not exist.
+      security:
+      - bearerAuth: []
+      summary: Delete a Personal Access Token belonging to the user.
+      tags:
+      - security
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.security_controller
+      x-codegen-request-body-name: body
+    patch:
+      operationId: patch_token
+      parameters:
+      - description: Numeric identifier of the token.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchTokenRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Empty object indicates a successful patch operation.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not own the token.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The token does not exist.
+      security:
+      - bearerAuth: []
+      summary: Change Personal Access Token's details.
+      tags:
+      - security
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.security_controller
+      x-codegen-request-body-name: body
+  /tokens/{id}:
+    get:
+      operationId: list_tokens
+      parameters:
+      - description: Numeric identifier of the account.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListedTokens'
+          description: List of Personal Access Tokens belonging to the user in the
+            specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account or no such
+            account exists.
+      security:
+      - bearerAuth: []
+      summary: List Personal Access Tokens of the user in the account.
+      tags:
+      - security
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.security_controller
+      x-codegen-request-body-name: body
   /user:
     get:
       operationId: get_user
@@ -3767,4 +3925,75 @@ components:
       - name
       - parameters
       type: object
-
+    CreateTokenRequest:
+      additionalProperties: false
+      description: Request body of `/token/create` - creating a new Personal Access
+        Token.
+      example:
+        account: 1
+        name: Release webhook
+      properties:
+        account:
+          type: integer
+        name:
+          type: string
+      required:
+      - account
+      - name
+      type: object
+    CreatedToken:
+      additionalProperties: false
+      description: Value and ID of the generated Personal Access Token.
+      example:
+        id: 1007
+        token: 99129c581b6d2950233dac583629ba591319b2c6
+      properties:
+        id:
+          description: Token identifier - can be used in `/token/{id}` DELETE.
+          type: integer
+        token:
+          description: Secret token - not stored server-side!
+          type: string
+      required:
+      - id
+      - token
+      type: object
+    ListedTokens:
+      items:
+        $ref: '#/components/schemas/ListedToken'
+      type: array
+    ListedToken:
+      additionalProperties: false
+      description: Details about a token - without the token itself, which is not
+        stored.
+      example:
+        last_used: 2020-06-23T04:56:07Z
+        name: webhook
+        id: 1008
+      properties:
+        id:
+          description: Token identifier - can be used in `/token/{id}` DELETE.
+          type: integer
+        name:
+          description: Name of the token (see `/token/create`).
+          type: string
+        last_used:
+          description: When this token was used last time.
+          format: date-time
+          type: string
+      required:
+      - id
+      - last_used
+      - name
+      type: object
+    PatchTokenRequest:
+      additionalProperties: false
+      description: Request body of `/token/{id}` PATCH. Allows changing the token
+        name.
+      example:
+        name: release-webhook
+      properties:
+        name:
+          description: New name of the token.
+          type: string
+      type: object

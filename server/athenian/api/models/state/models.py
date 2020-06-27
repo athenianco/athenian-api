@@ -166,7 +166,8 @@ class ReleaseSetting(create_time_mixin(updated_at=True), Base):
     __tablename__ = "release_settings"
 
     repository = Column(String(512), primary_key=True)
-    account_id = Column(Integer(), primary_key=True)
+    account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_release_settings_account"),
+                        primary_key=True)
     branches = Column(String(1024))
     tags = Column(String(1024))
     match = Column(SmallInteger())
@@ -204,3 +205,21 @@ class AccountFeature(create_time_mixin(updated_at=True), Base):
         "features.id", name="fk_account_features_feature"), primary_key=True)
     enabled = Column(Boolean(), nullable=False, default=False, server_default="false")
     parameters = Column(JSON())
+
+
+class AccountToken(create_time_mixin(updated_at=False), Base):
+    """Personal Access Tokens of the accounts."""
+
+    __tablename__ = "account_tokens"
+    __table_args__ = (UniqueConstraint("name", "user_id", "account_id", name="uc_token_name"),
+                      {"sqlite_autoincrement": True})
+
+    id = Column(BigInteger(), primary_key=True)
+    account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_account_tokens_account"),
+                        nullable=False)
+    user_id = Column(String(256),
+                     ForeignKey("user_accounts.user_id", name="fk_account_tokens_user"),
+                     nullable=False)
+    name = Column(String(256), nullable=False)
+    last_used_at = Column(TIMESTAMP(timezone=True), nullable=False,
+                          default=lambda: datetime.now(timezone.utc), server_default=func.now())

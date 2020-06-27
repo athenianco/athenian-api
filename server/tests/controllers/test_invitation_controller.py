@@ -9,7 +9,7 @@ from sqlalchemy import and_, delete, insert, select, update
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubInstallation, \
-    God, Invitation, RepositorySet, UserAccount
+    AccountToken, God, Invitation, ReleaseSetting, RepositorySet, UserAccount
 
 
 async def test_empty_db_account_creation(client, headers, sdb):
@@ -18,6 +18,8 @@ async def test_empty_db_account_creation(client, headers, sdb):
     await sdb.execute(delete(UserAccount))
     await sdb.execute(delete(Invitation))
     await sdb.execute(delete(AccountGitHubInstallation))
+    await sdb.execute(delete(AccountToken))
+    await sdb.execute(delete(ReleaseSetting))
     await sdb.execute(delete(Account).where(Account.id != invitation_controller.admin_backdoor))
     if sdb.url.dialect != "sqlite":
         await sdb.execute("ALTER SEQUENCE accounts_id_seq RESTART;")

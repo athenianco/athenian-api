@@ -23,8 +23,7 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
 
-async def create_team(request: AthenianWebRequest,
-                      body: Union[dict, bytes] = None) -> web.Response:
+async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
     """Create a team.
 
     :param body: Team creation request body.
