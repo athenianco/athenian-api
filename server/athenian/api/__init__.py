@@ -79,7 +79,8 @@ def parse_args() -> argparse.Namespace:
   GOOGLE_KMS_PROJECT       Name of the project with Google Cloud Key Management Service
   GOOGLE_KMS_KEYRING       Name of the keyring in Google Cloud Key Management Service
   GOOGLE_KMS_KEYNAME       Name of the key in the keyring in Google Cloud Key Management Service
-  GOOGLE_KMS_SERVICE_FILE  (optional) Path to the JSON file with Google Cloud credentions to access KMS
+  GOOGLE_KMS_SERVICE_ACCOUNT_JSON (optional)
+                           Path to the JSON file with Google Cloud credentions to access KMS
   """,  # noqa
                                      formatter_class=Formatter)
     add_logging_args(parser)

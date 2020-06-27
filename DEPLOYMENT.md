@@ -22,6 +22,7 @@ The server requires:
 - `ATHENIAN_INVITATION_KEY` environment variable with the passphrase for encrypting invitation URLs.
 - `ATHENIAN_INVITATION_URL_PREFIX` environment variable which specifies the invitation URL beginning.
 - `ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE` environment variable which specifies the JIRA integration installation link; "%s" will be replaced with the unique account key.
+- `GOOGLE_KMS_PROJECT`, `GOOGLE_KMS_KEYRING`, `GOOGLE_KMS_KEYNAME` environment variables to specify the [Google Key Management Service](https://cloud.google.com/kms/docs) symmetric encrypt/decrypt key.
 - Accessible PostgreSQL endpoint with the metadata.
 - Accessible PostgreSQL endpoint with the server state.
 - Accessible PostgreSQL endpoint with the precomputed objects.
