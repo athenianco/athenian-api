@@ -207,7 +207,7 @@ class AccountFeature(create_time_mixin(updated_at=True), Base):
     parameters = Column(JSON())
 
 
-class AccountToken(create_time_mixin(updated_at=False), Base):
+class AccountToken(create_time_mixin(updated_at=True), Base):
     """Personal Access Tokens of the accounts."""
 
     __tablename__ = "account_tokens"

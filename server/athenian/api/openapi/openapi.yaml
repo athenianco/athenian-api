@@ -86,6 +86,7 @@ paths:
           description: The account was not found.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List the current user's account members.
       tags:
       - user
@@ -211,6 +212,7 @@ paths:
           description: The installation has not started yet.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List all the contributors belonging to the specified account.
       tags:
       - contributors
@@ -249,6 +251,7 @@ paths:
           description: Current user is not allowed to access the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Find commits that match the specified query.
       tags:
       - filter
@@ -287,6 +290,7 @@ paths:
           description: Current user is not allowed to access the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Find developers that made an action within the given timeframe.
       tags:
       - filter
@@ -325,6 +329,7 @@ paths:
           description: Current user is not allowed to access the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Find labels used in the given repositories.
       tags:
       - filter
@@ -364,6 +369,7 @@ paths:
             or reposets.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List pull requests that satisfy the query.
       tags:
       - filter
@@ -401,6 +407,7 @@ paths:
           description: Current user is not allowed to access the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Find releases that were published in the given time fram in the given
         repositories.
       tags:
@@ -441,6 +448,7 @@ paths:
             or reposets.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Find repositories that were updated within the given timeframe.
       tags:
       - filter
@@ -480,6 +488,7 @@ paths:
             or reposets.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List pull requests by repository and number.
       tags:
       - filter
@@ -686,6 +695,7 @@ paths:
           description: The installation has not started yet.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Return the current Athenian GitHub app installation progress.
       tags:
       - registration
@@ -727,6 +737,7 @@ paths:
             on behalf of the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Measure the amount of code that was pushed outside of pull requests.
       tags:
       - metrics
@@ -768,6 +779,7 @@ paths:
             on behalf of the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Calculate metrics over developer activities.
       tags:
       - metrics
@@ -815,6 +827,7 @@ paths:
           description: No data is available to calculate metrics for the given repositories.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Calculate linear metrics over PRs.
       tags:
       - metrics
@@ -936,6 +949,7 @@ paths:
           description: The specified repository set was not found.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List a repository set. The user must be in the account that owns the
         reposet.
       tags:
@@ -1031,6 +1045,7 @@ paths:
           description: Concurrent requests that are finishing the account registration.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List the repository sets belonging to the current user.
       tags:
       - reposet
@@ -1123,6 +1138,7 @@ paths:
           description: The installation has not started yet.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List the current release matching settings.
       tags:
       - settings
@@ -1242,6 +1258,7 @@ paths:
           description: The specified team was not found.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List the team's members. The user must belong to the account that owns
         the team.
       tags:
@@ -1336,6 +1353,7 @@ paths:
           description: The user does not belong to the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List the teams belonging to the current user.
       tags:
       - team
@@ -1494,6 +1512,7 @@ paths:
             account exists.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List Personal Access Tokens of the user in the account.
       tags:
       - security
@@ -1514,6 +1533,7 @@ paths:
           description: 'Information about the current user: name, email, login, etc.'
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Show details about the current user.
       tags:
       - user
@@ -1547,6 +1567,11 @@ components:
       scheme: bearer
       bearerFormat: JWT
       x-bearerInfoFunc: athenian.api.controllers.security_controller.info_from_bearerAuth
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      x-apikeyInfoFunc: athenian.api.controllers.security_controller.info_from_apiKeyAuth
   schemas:
     CreatedIdentifier:
       additionalProperties: false

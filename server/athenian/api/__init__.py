@@ -39,6 +39,7 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.db import add_pdb_metrics_context, measure_db_overhead, ParallelDatabase
 from athenian.api.faster_pandas import patch_pandas
+from athenian.api.kms import AthenianKMS
 from athenian.api.metadata import __package__
 from athenian.api.models import check_collation, check_schema_version, DBSchemaMismatchError, \
     hack_sqlite_arrays, hack_sqlite_hstore
@@ -75,6 +76,10 @@ def parse_args() -> argparse.Namespace:
   ATHENIAN_INVITATION_KEY  Passphrase to encrypt the invitation links
   ATHENIAN_INVITATION_URL_PREFIX
                            String with which any invitation URL starts, e.g. https://app.athenian.co/i/
+  GOOGLE_KMS_PROJECT       Name of the project with Google Cloud Key Management Service
+  GOOGLE_KMS_KEYRING       Name of the keyring in Google Cloud Key Management Service
+  GOOGLE_KMS_KEYNAME       Name of the key in the keyring in Google Cloud Key Management Service
+  GOOGLE_KMS_SERVICE_FILE  (optional) Path to the JSON file with Google Cloud credentions to access KMS
   """,  # noqa
                                      formatter_class=Formatter)
     add_logging_args(parser)
@@ -97,6 +102,9 @@ def parse_args() -> argparse.Namespace:
                         help="memcached (users profiles, preprocessed metadata cache) address, "
                              "for example, 0.0.0.0:11211")
     parser.add_argument("--ui", action="store_true", help="Enable the REST UI.")
+    parser.add_argument("--no-google-kms", action="store_true",
+                        help="Skip Google Key Management Service initialization. Personal Access "
+                             "Tokens will not work.")
     parser.add_argument("--force-user",
                         help="Bypass user authorization and execute all requests on behalf of "
                              "this user.")
@@ -152,6 +160,7 @@ class AthenianApp(connexion.AioHttpApp):
                  sdb_options: Optional[dict] = None,
                  pdb_options: Optional[dict] = None,
                  auth0_cls=Auth0,
+                 no_kms: bool = False,
                  cache: Optional[aiomcache.Client] = None):
         """
         Initialize the underlying connexion -> aiohttp application.
@@ -164,6 +173,7 @@ class AthenianApp(connexion.AioHttpApp):
         :param sdb_options: Extra databases.Database() kwargs for the state DB.
         :param pdb_options: Extra databases.Database() kwargs for the precomputed objects DB.
         :param auth0_cls: Injected authorization class, simplifies unit testing.
+        :param no_kms: Proceed without connecting to Google Key Management Service (disables PAEs).
         :param cache: memcached client for caching auxiliary data.
         """
         options = {"swagger_ui": ui}
@@ -199,6 +209,10 @@ class AthenianApp(connexion.AioHttpApp):
             api.subapp._state = self.app._state
             components = api.specification.raw["components"]
             components["schemas"] = dict(sorted(components["schemas"].items()))
+        if not no_kms:
+            self.app["kms"] = self._kms = AthenianKMS()
+        else:
+            self.app["kms"] = self._kms = None
         api.jsonifier.json = FriendlyJson
         prometheus_registry = setup_status(self.app)
         self._setup_survival()
@@ -540,8 +554,9 @@ def main() -> Optional[AthenianApp]:
     patch_pandas()
     cache = create_memcached(args.memcached, log)
     auth0_cls = create_auth0_factory(args.force_user)
-    app = AthenianApp(mdb_conn=args.metadata_db, sdb_conn=args.state_db,
-                      pdb_conn=args.precomputed_db, ui=args.ui, auth0_cls=auth0_cls, cache=cache)
+    app = AthenianApp(
+        mdb_conn=args.metadata_db, sdb_conn=args.state_db, pdb_conn=args.precomputed_db,
+        ui=args.ui, auth0_cls=auth0_cls, no_kms=args.no_google_kms, cache=cache)
     app.run(host=args.host, port=args.port, use_default_access_log=True, handle_signals=False,
             print=lambda s: log.info("\n" + s))
     return app
