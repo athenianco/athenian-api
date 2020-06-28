@@ -7,6 +7,7 @@ import os
 import pickle
 from random import random
 import re
+import struct
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import aiohttp.web
@@ -426,8 +427,8 @@ class Auth0:
         except aiohttp.ClientResponseError:
             raise Unauthorized()
         try:
-            token_id = int(plaintext, 16)
-        except ValueError:
+            token_id = struct.unpack("<q", plaintext)[0]
+        except (ValueError, struct.error):
             raise Unauthorized() from None
         token_obj = await request.sdb.fetch_one(
             select([UserToken]).where(UserToken.id == token_id))

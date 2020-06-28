@@ -1,7 +1,9 @@
+import base64
 import logging
 import os
+from typing import Union
 
-from gcloud.aio.kms import decode, encode, KMS
+from gcloud.aio.kms import encode, KMS
 
 from athenian.api import metadata
 
@@ -25,13 +27,16 @@ class AthenianKMS:
         self._kms = KMS(**evars, service_file=os.getenv("GOOGLE_KMS_SERVICE_ACCOUNT_JSON"))
         self.log.info("Using Google KMS %(keyproject)s/%(keyring)s/%(keyname)s" % evars)
 
-    async def encrypt(self, plaintext: str) -> str:
+    async def encrypt(self, plaintext: Union[bytes, str]) -> str:
         """Encrypt text using Google KMS."""
         return await self._kms.encrypt(encode(plaintext))
 
-    async def decrypt(self, ciphertext: str) -> str:
+    async def decrypt(self, ciphertext: str) -> bytes:
         """Decrypt text using Google KMS."""
-        return decode(await self._kms.decrypt(ciphertext))
+        # we cannot use gcloud.aio.kms.decode because it converts bytes to string with str.decode()
+        payload = await self._kms.decrypt(ciphertext)
+        variant = payload.replace("-", "+").replace("_", "/")
+        return base64.b64decode(variant)
 
     async def close(self):
         """Close the underlying HTTPS session."""

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from sqlite3 import IntegrityError, OperationalError
+import struct
 from typing import Any, Dict, Optional
 
 from aiohttp import web
@@ -62,7 +63,7 @@ async def create_token(request: AthenianWebRequest, body: dict) -> web.Response:
             raise ResponseError(DatabaseConflict(
                 detail="Token '%s' already exists: %s: %s" % (model.name, type(e).__name__, e)),
             ) from None
-    plaintext = "%016x" % token
+    plaintext = struct.pack("<q", token)
     cyphertext = await kms.encrypt(plaintext)
     return model_response(CreatedToken(id=token, token=cyphertext))
 
