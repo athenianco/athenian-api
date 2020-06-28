@@ -34,7 +34,7 @@ from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, \
-    ForbiddenError, GenericError, NotFoundError
+    ForbiddenError, GenericError, NotFoundError, ServerNotImplementedError
 from athenian.api.models.web.generic_filter_request import GenericFilterRequest
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.granularity import Granularity
@@ -49,8 +49,8 @@ from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
-from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.models.web.patch_token_request import PatchTokenRequest
+from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.models.web.pull_request import PullRequest
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID

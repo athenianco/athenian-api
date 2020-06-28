@@ -217,7 +217,7 @@ class UserToken(create_time_mixin(updated_at=True), Base):
                                            name="fk_account_tokens_user"),
                       {"sqlite_autoincrement": True})
 
-    id = Column(BigInteger(), primary_key=True)
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
     account_id = Column(Integer(), nullable=False)
     user_id = Column(String(256), nullable=False)
     name = Column(String(256), nullable=False)

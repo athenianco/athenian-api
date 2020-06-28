@@ -1,4 +1,4 @@
-"""Add account_tokens
+"""Add user_tokens
 
 Revision ID: 4b00ea73d30a
 Revises: 5887950a696d
@@ -22,7 +22,7 @@ def upgrade():
                                ["account_id"], ["id"])
     op.create_table(
         "user_tokens",
-        sa.Column("id", sa.BigInteger(), primary_key=True),
+        sa.Column("id", sa.BigInteger().with_variant(sa.Integer(), "sqlite"), primary_key=True),
         sa.Column("account_id", sa.Integer(), nullable=False),
         sa.Column("user_id", sa.String(256), nullable=False),
         sa.Column("name", sa.String(256), nullable=False),

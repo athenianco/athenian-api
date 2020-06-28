@@ -26,9 +26,10 @@ def test_integration_micro(metadata_db, aiohttp_unused_port):
     env["ATHENIAN_INVITATION_KEY"] = "secret"
     env["ATHENIAN_DEFAULT_USER"] = "github|60340680"
     proc = subprocess.Popen(
-        [sys.executable, "-m", "athenian.api", "--ui", "--metadata-db=" + metadata_db,
-         "--state-db=" + state_db, "--precomputed-db=" + precomputed_db,
-         "--memcached=localhost:11211", "--port=" + unused_port],
+        [sys.executable, "-m", "athenian.api", "--ui", "--no-google-kms",
+         "--metadata-db=" + metadata_db, "--state-db=" + state_db,
+         "--precomputed-db=" + precomputed_db, "--memcached=localhost:11211",
+         "--port=" + unused_port],
         encoding="utf-8", text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     kill_cond = Condition()
 

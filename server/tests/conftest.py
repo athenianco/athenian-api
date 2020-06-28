@@ -1,4 +1,5 @@
 import asyncio
+import base64
 from collections import defaultdict
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -181,6 +182,19 @@ class TestAuth0(Auth0):
         )
 
 
+class FakeKMS:
+    async def encrypt(self, plaintext: Union[bytes, str]) -> str:
+        if isinstance(plaintext, str):
+            plaintext = plaintext.encode()
+        return base64.b64encode(plaintext).decode()
+
+    async def decrypt(self, ciphertext: str) -> bytes:
+        return base64.b64decode(ciphertext.encode())
+
+    async def close(self):
+        pass
+
+
 @pytest.fixture(scope="function")
 async def eiso(app) -> User:
     user = User(
@@ -230,7 +244,7 @@ def headers() -> Dict[str, str]:
 async def app(metadata_db, state_db, precomputed_db) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
     return AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, pdb_conn=precomputed_db,
-                       ui=False, auth0_cls=TestAuth0)
+                       ui=False, auth0_cls=TestAuth0, kms_cls=FakeKMS)
 
 
 @pytest.fixture(scope="function")

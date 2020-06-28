@@ -161,7 +161,7 @@ class AthenianApp(connexion.AioHttpApp):
                  sdb_options: Optional[dict] = None,
                  pdb_options: Optional[dict] = None,
                  auth0_cls=Auth0,
-                 no_kms: bool = False,
+                 kms_cls=AthenianKMS,
                  cache: Optional[aiomcache.Client] = None):
         """
         Initialize the underlying connexion -> aiohttp application.
@@ -174,7 +174,8 @@ class AthenianApp(connexion.AioHttpApp):
         :param sdb_options: Extra databases.Database() kwargs for the state DB.
         :param pdb_options: Extra databases.Database() kwargs for the precomputed objects DB.
         :param auth0_cls: Injected authorization class, simplifies unit testing.
-        :param no_kms: Proceed without connecting to Google Key Management Service (disables PAEs).
+        :param kms_cls: Injected Google Key Management Service class, simplifies unit testing. \
+                        `None` disables KMS and, effectively, API Key authentication.
         :param cache: memcached client for caching auxiliary data.
         """
         options = {"swagger_ui": ui}
@@ -210,8 +211,8 @@ class AthenianApp(connexion.AioHttpApp):
             api.subapp._state = self.app._state
             components = api.specification.raw["components"]
             components["schemas"] = dict(sorted(components["schemas"].items()))
-        if not no_kms:
-            self.app["kms"] = self._kms = AthenianKMS()
+        if kms_cls is not None:
+            self.app["kms"] = self._kms = kms_cls()
         else:
             self.log.warning("Google Key Management Service is disabled, PATs will not work")
             self.app["kms"] = self._kms = None
@@ -558,9 +559,10 @@ def main() -> Optional[AthenianApp]:
     patch_pandas()
     cache = create_memcached(args.memcached, log)
     auth0_cls = create_auth0_factory(args.force_user)
+    kms_cls = None if args.no_google_kms else AthenianKMS
     app = AthenianApp(
         mdb_conn=args.metadata_db, sdb_conn=args.state_db, pdb_conn=args.precomputed_db,
-        ui=args.ui, auth0_cls=auth0_cls, no_kms=args.no_google_kms, cache=cache)
+        ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache)
     app.run(host=args.host, port=args.port, use_default_access_log=True, handle_signals=False,
             print=lambda s: log.info("\n" + s))
     return app
