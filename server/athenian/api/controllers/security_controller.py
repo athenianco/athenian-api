@@ -82,25 +82,35 @@ async def patch_token(request: AthenianWebRequest, id: int, body: dict) -> web.R
     _check_token_name(model.name)
     async with request.sdb.connection() as conn:
         await _check_token_access(request, id, conn)
-        await conn.execute(update(UserToken).where(UserToken.id == id).values({
-            UserToken.name: model.name,
-            UserToken.updated_at: datetime.now(timezone.utc),
-        }))
+        try:
+            await conn.execute(update(UserToken).where(UserToken.id == id).values({
+                UserToken.name: model.name,
+                UserToken.updated_at: datetime.now(timezone.utc),
+            }))
+        except (UniqueViolationError, IntegrityError, OperationalError) as e:
+            raise ResponseError(DatabaseConflict(
+                detail="Token '%s' already exists: %s: %s" % (model.name, type(e).__name__, e)),
+            ) from None
     return web.json_response({})
 
 
 async def list_tokens(request: AthenianWebRequest, id: int) -> web.Response:
     """List Personal Access Tokens of the user in the account."""
+    sqlite = request.sdb.url.dialect == "sqlite"
     async with request.sdb.connection() as conn:
         await get_user_account_status(request.uid, id, conn, request.cache)
         rows = await conn.fetch_all(
             select([UserToken.id, UserToken.name, UserToken.last_used_at])
             .where(and_(UserToken.user_id == request.uid,
                         UserToken.account_id == id)))
-        model = [ListedToken(id=row[UserToken.id.key],
-                             name=row[UserToken.name.key],
-                             last_used=row[UserToken.last_used_at.key])
-                 for row in rows]
+        model = []
+        for row in rows:
+            last_used = row[UserToken.last_used_at.key]
+            if sqlite:
+                last_used = last_used.replace(tzinfo=timezone.utc)
+            model.append(ListedToken(id=row[UserToken.id.key],
+                                     name=row[UserToken.name.key],
+                                     last_used=last_used))
     return model_response(model)
 
 

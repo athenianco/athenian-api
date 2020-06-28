@@ -1385,6 +1385,13 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: The user does not belong to the specified account or no such
             account exists.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: There is another token with the same name belonging to
+            the user in the account.
       security:
       - bearerAuth: []
       summary: Create a new Personal Access Token for the current user and the specified
@@ -1473,6 +1480,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenericError'
           description: The token does not exist.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: There is another token with the same name belonging to
+            the user in the account.
       security:
       - bearerAuth: []
       summary: Change Personal Access Token's details.
