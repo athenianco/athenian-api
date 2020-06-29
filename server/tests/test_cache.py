@@ -55,7 +55,7 @@ async def test_cached(memcached):
     assert await add_one(inc_evaluated, 1, memcached) == 2
     assert await add_one(inc_evaluated, 1, memcached) == 2
     assert evaluated == 1
-    await asyncio.sleep(1)
+    await asyncio.sleep(1.1)
     assert await add_one(inc_evaluated, 1, memcached) == 2
     assert evaluated == 2
 

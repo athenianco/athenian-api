@@ -2,11 +2,13 @@ from aiohttp import web
 from sqlalchemy import and_, delete, select, update
 
 from athenian.api.controllers.account import get_user_account_status
-from athenian.api.models.state.models import God, UserAccount
+from athenian.api.models.state.models import AccountFeature, Feature, FeatureComponent, God, \
+    UserAccount
 from athenian.api.models.web import ForbiddenError, NotFoundError
 from athenian.api.models.web.account import Account
 from athenian.api.models.web.account_user_change_request import AccountUserChangeRequest, \
     UserChangeStatus
+from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
@@ -17,16 +19,18 @@ async def get_user(request: AthenianWebRequest) -> web.Response:
     return model_response(user)
 
 
-async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
-    """Return details about the current account."""
+async def get_account_members(request: AthenianWebRequest, id: int) -> web.Response:
+    """Return the members of the account."""
     user_id = request.uid
     users = await request.sdb.fetch_all(select([UserAccount]).where(UserAccount.account_id == id))
+    if len(users) == 0:
+        raise ResponseError(NotFoundError(detail="Account %d does not exist." % id))
     for user in users:
         if user[UserAccount.user_id.key] == user_id:
             break
     else:
-        return ResponseError(ForbiddenError(
-            detail="User %s is not allowed to access account %d" % (user_id, id))).response
+        raise ResponseError(ForbiddenError(
+            detail="User %s is not allowed to access account %d" % (user_id, id)))
     admins = []
     regulars = []
     for user in users:
@@ -36,6 +40,37 @@ async def get_account(request: AthenianWebRequest, id: int) -> web.Response:
     account = Account(regulars=[users[k] for k in regulars if k in users],
                       admins=[users[k] for k in admins if k in users])
     return model_response(account)
+
+
+async def get_account_members_legacy(request: AthenianWebRequest, id: int) -> web.Response:
+    """Legacy entry for get_account_members()."""
+    return await get_account_members(request, id)
+
+
+async def get_account_features(request: AthenianWebRequest, id: int) -> web.Response:
+    """Return enabled product features for the account."""
+    async with request.sdb.connection() as conn:
+        await get_user_account_status(request.uid, id, conn, request.cache)
+        account_features = await conn.fetch_all(
+            select([AccountFeature.feature_id, AccountFeature.parameters])
+            .where(and_(AccountFeature.account_id == id, AccountFeature.enabled)))
+        account_features = {row[0]: row[1] for row in account_features}
+        features = await conn.fetch_all(
+            select([Feature.id, Feature.name, Feature.default_parameters])
+            .where(and_(Feature.id.in_(account_features),
+                        Feature.component == FeatureComponent.webapp,
+                        Feature.enabled)))
+        features = {row[0]: (row[1], row[2]) for row in features}
+        for k, v in account_features.items():
+            try:
+                fk = features[k]
+            except KeyError:
+                continue
+            if v is not None:
+                for pk, pv in v.items():
+                    fk[1][pk] = pv
+        models = [ProductFeature(*v) for k, v in sorted(features.items())]
+        return model_response(models)
 
 
 async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response:
@@ -105,4 +140,4 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
             await conn.execute(delete(UserAccount)
                                .where(and_(UserAccount.user_id == aucr.user,
                                            UserAccount.account_id == aucr.account)))
-    return await get_account(request, aucr.account)
+    return await get_account_members(request, aucr.account)

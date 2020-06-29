@@ -8,12 +8,13 @@ from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import FetchProgress
-from athenian.api.models.state.models import Account, AccountGitHubInstallation, God, Invitation, \
-    RepositorySet, UserAccount
+from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubInstallation, \
+    God, Invitation, RepositorySet, UserAccount
 
 
 async def test_empty_db_account_creation(client, headers, sdb):
     await sdb.execute(delete(RepositorySet))
+    await sdb.execute(delete(AccountFeature))
     await sdb.execute(delete(UserAccount))
     await sdb.execute(delete(Invitation))
     await sdb.execute(delete(AccountGitHubInstallation))
