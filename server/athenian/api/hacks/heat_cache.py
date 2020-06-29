@@ -79,6 +79,9 @@ def main():
 
         log.info("Heating")
         for reposet in tqdm(reposets):
+            if reposet.owner_id == 33:
+                # FIXME(vmarkovtsev): temporarily skip this big boss
+                continue
             try:
                 progress, settings = account_progress_settings[reposet.owner_id]
             except KeyError:
