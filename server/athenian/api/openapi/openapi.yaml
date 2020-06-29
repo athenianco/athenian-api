@@ -52,6 +52,43 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
+  /account/{id}:
+    get:
+      operationId: get_account_members_legacy
+      parameters:
+      - description: Numeric identifier of the account. The user must belong
+          to that account. To find out which accounts the user belongs to, see `/user`.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+          description: List of the account members.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not have access to this account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account was not found.
+      security:
+      - bearerAuth: []
+      summary: List the current user's account members.
+      x-openapi-router-controller: athenian.api.controllers.user_controller
+      x-codegen-request-body-name: body
   /account/{id}/members:
     get:
       operationId: get_account_members

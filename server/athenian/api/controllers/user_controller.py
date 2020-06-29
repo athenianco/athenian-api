@@ -42,6 +42,11 @@ async def get_account_members(request: AthenianWebRequest, id: int) -> web.Respo
     return model_response(account)
 
 
+async def get_account_members_legacy(request: AthenianWebRequest, id: int) -> web.Response:
+    """Legacy entry for get_account_members()."""
+    return await get_account_members(request, id)
+
+
 async def get_account_features(request: AthenianWebRequest, id: int) -> web.Response:
     """Return enabled product features for the account."""
     async with request.sdb.connection() as conn:
@@ -57,9 +62,13 @@ async def get_account_features(request: AthenianWebRequest, id: int) -> web.Resp
                         Feature.enabled)))
         features = {row[0]: (row[1], row[2]) for row in features}
         for k, v in account_features.items():
+            try:
+                fk = features[k]
+            except KeyError:
+                continue
             if v is not None:
                 for pk, pv in v.items():
-                    features[k][1][pk] = pv
+                    fk[1][pk] = pv
         models = [ProductFeature(*v) for k, v in sorted(features.items())]
         return model_response(models)
 

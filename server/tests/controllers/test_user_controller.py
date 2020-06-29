@@ -88,6 +88,13 @@ async def test_get_account_members_smoke(client, headers):
     assert body["regulars"][0]["email"] == "eiso@athenian.co"
 
 
+async def test_get_account_members_legacy(client, headers):
+    response = await client.request(
+        method="GET", path="/v1/account/1", headers=headers, json={},
+    )
+    assert response.status == 200
+
+
 @pytest.mark.parametrize("account, code", [[3, 403], [4, 404]])
 async def test_get_account_members_nasty_input(client, headers, account, code):
     response = await client.request(

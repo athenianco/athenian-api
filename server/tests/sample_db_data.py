@@ -9,9 +9,7 @@ import sqlalchemy.orm
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import Base
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubInstallation, \
-    Feature, \
-    FeatureComponent, Invitation, \
-    RepositorySet, UserAccount
+    Feature, FeatureComponent, Invitation, RepositorySet, UserAccount
 
 
 def fill_metadata_session(session: sqlalchemy.orm.Session):
