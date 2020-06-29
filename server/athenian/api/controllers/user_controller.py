@@ -42,11 +42,6 @@ async def get_account_members(request: AthenianWebRequest, id: int) -> web.Respo
     return model_response(account)
 
 
-async def get_account_members_legacy(request: AthenianWebRequest, id: int) -> web.Response:
-    """Legacy entry for get_account_members()."""
-    return await get_account_members(request, id)
-
-
 async def get_account_features(request: AthenianWebRequest, id: int) -> web.Response:
     """Return enabled product features for the account."""
     async with request.sdb.connection() as conn:
