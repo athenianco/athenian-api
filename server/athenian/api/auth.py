@@ -8,7 +8,7 @@ import pickle
 from random import random
 import re
 import struct
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
@@ -354,20 +354,24 @@ class Auth0:
         if method == "bearer":
             token_info = await self._extract_bearer_token(token)
             request.uid = token_info["sub"]
-            request.native_uid = request.uid.rsplit("|", 1)[1]
         elif method == "apikey":
-            request.uid, request.native_uid = await self._extract_api_key(token, request)
+            request.uid = await self._extract_api_key(token, request)
         else:
             raise AssertionError("Unsupported auth method: %s" % method)
+
         god = await request.sdb.fetch_one(
             select([God.mapped_id]).where(God.user_id == request.uid))
         if god is not None:
             request.god_id = request.uid
-            mapped_id = god[God.mapped_id.key]
+            if "X-Identity" in request.headers:
+                mapped_id = request.headers["X-Identity"]
+            else:
+                mapped_id = god[God.mapped_id.key]
             if mapped_id is not None:
                 request.uid = mapped_id
-                request.native_uid = mapped_id.rsplit("|", 1)[1]
                 self.log.info("God mode: %s became %s", request.god_id, mapped_id)
+
+        request.native_uid = request.uid.rsplit("|", 1)[1]
         request.is_default_user = request.uid == self._default_user_id
         sentry_sdk.add_breadcrumb(category="user", message=request.uid, level="info")
 
@@ -414,7 +418,7 @@ class Auth0:
         except jwt.JWTError as e:
             raise OAuthProblem(description="Unable to parse the authentication token: %s" % e)
 
-    async def _extract_api_key(self, token: str, request: AthenianWebRequest) -> Tuple[str, str]:
+    async def _extract_api_key(self, token: str, request: AthenianWebRequest) -> str:
         kms = request.app["kms"]  # type: AthenianKMS
         if kms is None:
             raise AuthenticationProblem(
@@ -435,5 +439,4 @@ class Auth0:
         if token_obj is None:
             raise Unauthorized()
         uid = token_obj[UserToken.user_id.key]
-        native_uid = uid.split("|", 1)[1]
-        return uid, native_uid
+        return uid
