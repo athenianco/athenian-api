@@ -1,4 +1,5 @@
 import base64
+import io
 import logging
 import os
 from typing import Union
@@ -24,7 +25,12 @@ class AthenianKMS:
                 raise EnvironmentError(
                     "%s must be defined, see https://cloud.google.com/kms/docs/reference/rest"
                     % env_name)
-        self._kms = KMS(**evars, service_file=os.getenv("GOOGLE_KMS_SERVICE_ACCOUNT_JSON"))
+        service_file_inline = os.getenv("GOOGLE_KMS_SERVICE_ACCOUNT_JSON_INLINE")
+        if service_file_inline is not None:
+            service_file = io.StringIO(service_file_inline)
+        else:
+            service_file = os.getenv("GOOGLE_KMS_SERVICE_ACCOUNT_JSON")
+        self._kms = KMS(**evars, service_file=service_file)
         self.log.info("Using Google KMS %(keyproject)s/%(keyring)s/%(keyname)s" % evars)
 
     async def encrypt(self, plaintext: Union[bytes, str]) -> str:
