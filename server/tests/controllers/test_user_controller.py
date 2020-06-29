@@ -9,6 +9,7 @@ from sqlalchemy import insert, update
 
 from athenian.api.controllers.user_controller import get_user
 from athenian.api.models.state.models import AccountFeature, Feature, God
+from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.request import AthenianWebRequest
 from tests.conftest import disable_default_user
 
@@ -101,7 +102,10 @@ async def test_get_account_features_smoke(client, headers):
         method="GET", path="/v1/account/1/features", headers=headers, json={},
     )
     body = json.loads((await response.read()).decode("utf-8"))
-    assert body == ["jira"]
+    models = [ProductFeature.from_dict(p) for p in body]
+    assert len(models) == 1
+    assert models[0].name == "jira"
+    assert models[0].parameters == {"a": "x", "c": "d"}
 
 
 @pytest.mark.parametrize("account, code", [[3, 404], [4, 404]])

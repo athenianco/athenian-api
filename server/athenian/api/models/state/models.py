@@ -1,8 +1,9 @@
 import ctypes
 from datetime import datetime, timezone
+import enum
 import json
 
-from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, func, Integer, JSON, \
+from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, func, Integer, JSON, \
     SmallInteger, String, Text, TIMESTAMP, UniqueConstraint
 import xxhash
 
@@ -169,6 +170,13 @@ class ReleaseSetting(create_time_mixin(updated_at=True), Base):
     match = Column(SmallInteger())
 
 
+class FeatureComponent(enum.IntEnum):
+    """Athenian stack parts: the frontend, the backend, etc."""
+
+    webapp = 1
+    server = 2
+
+
 class Feature(create_time_mixin(updated_at=True), Base):
     """Product features."""
 
@@ -178,8 +186,9 @@ class Feature(create_time_mixin(updated_at=True), Base):
 
     id = Column(Integer(), primary_key=True)
     name = Column(String(128), nullable=False)
-    component = Column(String(64), nullable=False)
+    component = Column(Enum(FeatureComponent), nullable=False)
     enabled = Column(Boolean(), nullable=False, default=False, server_default="false")
+    default_parameters = Column(JSON(), nullable=False, default={}, server_default="{}")
 
 
 class AccountFeature(create_time_mixin(updated_at=True), Base):
@@ -192,3 +201,4 @@ class AccountFeature(create_time_mixin(updated_at=True), Base):
     feature_id = Column(Integer(), ForeignKey(
         "features.id", name="fk_account_features_feature"), primary_key=True)
     enabled = Column(Boolean(), nullable=False, default=False, server_default="false")
+    parameters = Column(JSON())

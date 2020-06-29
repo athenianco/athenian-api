@@ -3713,7 +3713,7 @@ components:
       description: JIRA issue details.
       example:
         id: DEV-344
-        title: 'Write the API specs to filter PRs by Jira epic, ticket type and label'
+        title: Write the API specs to filter PRs by Jira epic, ticket type and label
         epic: DEV-149
         labels:
         - API
@@ -3729,7 +3729,8 @@ components:
           description: Identifier of the epic that owns this issue.
           type: string
         parent:
-          description: If this issue is a subissue, identifier of the higher level issue.
+          description: If this issue is a subissue, identifier of the higher level
+            issue.
           type: string
         children:
           description: If this issue has subissues, identifiers of all the subissues.
@@ -3752,7 +3753,28 @@ components:
     ProductFeatures:
       description: Enabled client-side product features.
       example:
-        - jira
+      - name: jira
+        parameters:
+          epics: true
+          labels: false
       items:
-        type: string
+        $ref: '#/components/schemas/ProductFeature'
       type: array
+    ProductFeature:
+      additionalProperties: false
+      description: Client-side product feature definition.
+      example:
+        name: jira
+        parameters:
+          epics: true
+          labels: false
+      properties:
+        name:
+          type: string
+        parameters:
+          type: object
+      required:
+      - name
+      - parameters
+      type: object
+

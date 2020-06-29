@@ -1,13 +1,14 @@
 from aiohttp import web
 from sqlalchemy import and_, delete, select, update
 
-from athenian.api import FriendlyJson
 from athenian.api.controllers.account import get_user_account_status
-from athenian.api.models.state.models import AccountFeature, Feature, God, UserAccount
+from athenian.api.models.state.models import AccountFeature, Feature, FeatureComponent, God, \
+    UserAccount
 from athenian.api.models.web import ForbiddenError, NotFoundError
 from athenian.api.models.web.account import Account
 from athenian.api.models.web.account_user_change_request import AccountUserChangeRequest, \
     UserChangeStatus
+from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
@@ -45,16 +46,22 @@ async def get_account_features(request: AthenianWebRequest, id: int) -> web.Resp
     """Return enabled product features for the account."""
     async with request.sdb.connection() as conn:
         await get_user_account_status(request.uid, id, conn, request.cache)
-        account_feature_ids = await conn.fetch_all(
-            select([AccountFeature.feature_id])
+        account_features = await conn.fetch_all(
+            select([AccountFeature.feature_id, AccountFeature.parameters])
             .where(and_(AccountFeature.account_id == id, AccountFeature.enabled)))
-        account_feature_ids = [row[0] for row in account_feature_ids]
+        account_features = {row[0]: row[1] for row in account_features}
         features = await conn.fetch_all(
-            select([Feature.name])
-            .where(and_(Feature.id.in_(account_feature_ids),
-                        Feature.component == "user",
+            select([Feature.id, Feature.name, Feature.default_parameters])
+            .where(and_(Feature.id.in_(account_features),
+                        Feature.component == FeatureComponent.webapp,
                         Feature.enabled)))
-        return web.json_response([row[0] for row in features], dumps=FriendlyJson.dumps)
+        features = {row[0]: (row[1], row[2]) for row in features}
+        for k, v in account_features.items():
+            if v is not None:
+                for pk, pv in v.items():
+                    features[k][1][pk] = pv
+        models = [ProductFeature(*v) for k, v in sorted(features.items())]
+        return model_response(models)
 
 
 async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response:
