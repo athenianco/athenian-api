@@ -16,9 +16,9 @@ class User(Model):
         "id": str,
         "native_id": str,
         "login": str,
-        "name": str,
-        "email": str,
-        "picture": str,
+        "name": Optional[str],
+        "email": Optional[str],
+        "picture": Optional[str],
         "updated": str,
         "accounts": object,
     }
@@ -202,9 +202,6 @@ class User(Model):
 
         :param name: The name of this User.
         """
-        if name is None:
-            raise ValueError("Invalid value for `name`, must not be `None`")
-
         self._name = name
 
     @property
@@ -225,9 +222,6 @@ class User(Model):
 
         :param email: The email of this User.
         """
-        if email is None:
-            raise ValueError("Invalid value for `email`, must not be `None`")
-
         self._email = email
 
     @property
@@ -248,9 +242,6 @@ class User(Model):
 
         :param picture: The picture of this User.
         """
-        if picture is None:
-            raise ValueError("Invalid value for `picture`, must not be `None`")
-
         self._picture = picture
 
     @property
@@ -271,6 +262,9 @@ class User(Model):
 
         :param updated: The updated of this User.
         """
+        if updated is None:
+            raise ValueError("Invalid value for `updated`, must not be `None`")
+
         self._updated = updated
 
     @property
@@ -292,4 +286,7 @@ class User(Model):
 
         :param accounts: The accounts of this User.
         """
+        if accounts is None:
+            raise ValueError("Invalid value for `accounts`, must not be `None`")
+
         self._accounts = accounts

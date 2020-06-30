@@ -149,8 +149,11 @@ async def test_get_release_match_settings_defaults(client, headers):
     response = await client.request(
         method="GET", path="/v1/settings/release_match/1", headers=headers)
     assert response.status == 200
-    settings = {k: ReleaseMatchSetting.from_dict(v)
-                for k, v in json.loads((await response.read()).decode("utf-8")).items()}
+    settings = {}
+    for k, v in json.loads((await response.read()).decode("utf-8")).items():
+        if v["default_branch"] is None:
+            v["default_branch"] = "whatever"
+        settings[k] = ReleaseMatchSetting.from_dict(v)
     defset = ReleaseMatchSetting(
         branches="{{default}}",
         tags=".*",
@@ -159,7 +162,7 @@ async def test_get_release_match_settings_defaults(client, headers):
     )
     assert settings["github.com/src-d/go-git"] == defset
     for k, v in settings.items():
-        if v.default_branch is None:
+        if v.default_branch == "whatever":
             v.default_branch = "master"
         assert v == defset, k
 
@@ -174,8 +177,11 @@ async def test_get_release_match_settings_existing(client, headers, sdb):
     response = await client.request(
         method="GET", path="/v1/settings/release_match/1", headers=headers)
     assert response.status == 200
-    settings = {k: ReleaseMatchSetting.from_dict(v)
-                for k, v in json.loads((await response.read()).decode("utf-8")).items()}
+    settings = {}
+    for k, v in json.loads((await response.read()).decode("utf-8")).items():
+        if v["default_branch"] is None:
+            v["default_branch"] = "whatever"
+        settings[k] = ReleaseMatchSetting.from_dict(v)
     assert settings["github.com/src-d/go-git"] == ReleaseMatchSetting(
         branches="master",
         tags="v.*",
@@ -186,13 +192,11 @@ async def test_get_release_match_settings_existing(client, headers, sdb):
         branches="{{default}}",
         tags=".*",
         match=ReleaseMatchStrategy.TAG_OR_BRANCH,
-        default_branch=None,
+        default_branch="whatever",
     )
+    del settings["github.com/src-d/go-git"]
     for k, v in settings.items():
-        if k != "github.com/src-d/go-git":
-            if v.default_branch == "master":
-                v.default_branch = None
-            assert v == defset, k
+        assert v == defset, k
 
 
 @pytest.mark.parametrize("account, code", [(2, 422), (3, 404)])
