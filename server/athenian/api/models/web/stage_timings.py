@@ -9,9 +9,9 @@ class StageTimings(Model):
 
     openapi_types = {
         "wip": timedelta,
-        "review": timedelta,
-        "merge": timedelta,
-        "release": timedelta,
+        "review": Optional[timedelta],
+        "merge": Optional[timedelta],
+        "release": Optional[timedelta],
     }
 
     attribute_map = {
