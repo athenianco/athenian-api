@@ -45,6 +45,8 @@ def _deserialize(
             return _deserialize_list(data, klass.__args__[0])
         if typing_utils.is_dict(klass):
             return _deserialize_dict(data, klass.__args__[1])
+        if typing_utils.is_optional(klass):
+            return _deserialize(data, klass.__args__[0])
     else:
         return deserialize_model(data, klass)
 

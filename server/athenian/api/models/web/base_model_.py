@@ -1,7 +1,7 @@
 import pprint
 import typing
 
-from athenian.api import serialization
+from athenian.api import serialization, typing_utils
 
 T = typing.TypeVar("T")
 
@@ -28,7 +28,7 @@ class Model:
 
         for attr_key, json_key in self.attribute_map.items():
             value = getattr(self, attr_key)
-            if value is None:
+            if value is None and typing_utils.is_optional(self.openapi_types[attr_key]):
                 continue
             if isinstance(value, list):
                 result[json_key] = list(

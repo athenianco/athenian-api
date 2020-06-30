@@ -41,6 +41,7 @@ async def test_empty_db_account_creation(client, headers, sdb):
         "user": {
             "id": "auth0|5e1f6dfb57bc640ea390557b",
             "name": "Vadim Markovtsev",
+            "login": "vadim",
             "native_id": "5e1f6dfb57bc640ea390557b",
             "email": "vadim@athenian.co",
             "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png", # noqa
@@ -116,6 +117,7 @@ async def test_accept_invitation_smoke(client, headers, sdb):
         "user": {
             "id": "auth0|5e1f6dfb57bc640ea390557b",
             "name": "Vadim Markovtsev",
+            "login": "vadim",
             "native_id": "5e1f6dfb57bc640ea390557b",
             "email": "vadim@athenian.co",
             "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
@@ -140,6 +142,7 @@ async def test_accept_invitation_noop(client, eiso, headers):
         "user": {
             "id": "auth0|5e1f6e2e8bfa520ea5290741",
             "name": "Eiso Kant",
+            "login": "eiso",
             "native_id": "5e1f6e2e8bfa520ea5290741",
             "email": "eiso@athenian.co",
             "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
@@ -195,6 +198,7 @@ async def test_accept_invitation_admin(client, headers, sdb):
         "user": {
             "id": "auth0|5e1f6dfb57bc640ea390557b",
             "name": "Vadim Markovtsev",
+            "login": "vadim",
             "native_id": "5e1f6dfb57bc640ea390557b",
             "email": "vadim@athenian.co",
             "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png", # noqa
@@ -364,7 +368,8 @@ complete_progress = {
                {"fetched": 4, "name": "UnassignedEvent", "total": 4},
                {"fetched": 32, "name": "UnlabeledEvent", "total": 32},
                {"fetched": 1, "name": "UnsubscribedEvent", "total": 1},
-               {"fetched": 910, "name": "User", "total": 910}],
+               {"fetched": 910, "name": "User", "total": 910},
+               {"fetched": 1, "name": "precomputed", "total": 1}],
 }
 
 
@@ -402,6 +407,25 @@ async def test_progress_idle(client, headers, mdb):
     finally:
         await mdb.execute(update(FetchProgress).values({
             FetchProgress.nodes_total: FetchProgress.nodes_total / 2}))
+
+
+async def test_progress_no_precomputed(client, headers, sdb):
+    await sdb.execute(update(RepositorySet).where(RepositorySet.id == 1).values({
+        RepositorySet.precomputed: False,
+        RepositorySet.updated_at: datetime.now(timezone.utc),
+        RepositorySet.items_count: 2,
+        RepositorySet.items_checksum: 42,
+        RepositorySet.updates_count: 2,
+    }))
+    response = await client.request(
+        method="GET", path="/v1/invite/progress/1", headers=headers, json={},
+    )
+    assert response.status == 200
+    body = json.loads((await response.read()).decode("utf-8"))
+    progress = complete_progress.copy()
+    progress["finished_date"] = None
+    progress["tables"][-1]["fetched"] = 0
+    assert body == progress
 
 
 async def test_gen_jira_link_smoke(client, headers):

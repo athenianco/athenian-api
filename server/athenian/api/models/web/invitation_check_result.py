@@ -9,7 +9,7 @@ class InvitationCheckResult(Model):
 
     INVITATION_TYPE_ADMIN = "admin"
     INVITATION_TYPE_REGULAR = "regular"
-    openapi_types = {"active": bool, "type": str, "valid": bool}
+    openapi_types = {"active": Optional[bool], "type": Optional[str], "valid": bool}
     attribute_map = {"active": "active", "type": "type", "valid": "valid"}
     __slots__ = ["_" + k for k in openapi_types]
 

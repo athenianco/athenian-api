@@ -72,7 +72,7 @@ class InstallationProgress(Model):
         self._started_date = started_date
 
     @property
-    def finished_date(self) -> datetime:
+    def finished_date(self) -> Optional[datetime]:
         """Gets the finished_date of this InstallationProgress.
 
         Date and time when the historical data collection ended.
@@ -82,7 +82,7 @@ class InstallationProgress(Model):
         return self._finished_date
 
     @finished_date.setter
-    def finished_date(self, finished_date: datetime):
+    def finished_date(self, finished_date: Optional[datetime]):
         """Sets the finished_date of this InstallationProgress.
 
         Date and time when the historical data collection ended.

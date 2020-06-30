@@ -10,9 +10,9 @@ class CalculatedPullRequestMetricValues(Model):
     openapi_types = {
         "date": datetime.date,
         "values": List[object],
-        "confidence_scores": List[int],
-        "confidence_mins": List[object],
-        "confidence_maxs": List[object],
+        "confidence_scores": Optional[List[int]],
+        "confidence_mins": Optional[List[object]],
+        "confidence_maxs": Optional[List[object]],
     }
 
     attribute_map = {
@@ -94,7 +94,7 @@ class CalculatedPullRequestMetricValues(Model):
         self._values = values
 
     @property
-    def confidence_mins(self) -> List[object]:
+    def confidence_mins(self) -> Optional[List[object]]:
         """Gets the left boundaries of the 80% confidence interval of this \
         CalculatedPullRequestMetricValues.
 
@@ -106,7 +106,7 @@ class CalculatedPullRequestMetricValues(Model):
         return self._confidence_mins
 
     @confidence_mins.setter
-    def confidence_mins(self, confidence_mins: List[object]):
+    def confidence_mins(self, confidence_mins: Optional[List[object]]):
         """Sets the left boundaries of the 80% confidence interval of this \
         CalculatedPullRequestMetricValues.
 
@@ -118,7 +118,7 @@ class CalculatedPullRequestMetricValues(Model):
         self._confidence_mins = confidence_mins
 
     @property
-    def confidence_maxs(self) -> List[object]:
+    def confidence_maxs(self) -> Optional[List[object]]:
         """Gets the right boundaries of the 80% confidence interval of this \
         CalculatedPullRequestMetricValues.
 
@@ -130,7 +130,7 @@ class CalculatedPullRequestMetricValues(Model):
         return self._confidence_maxs
 
     @confidence_maxs.setter
-    def confidence_maxs(self, confidence_maxs: List[object]):
+    def confidence_maxs(self, confidence_maxs: Optional[List[object]]):
         """Sets the right boundaries of the 80% confidence interval of this \
         CalculatedPullRequestMetricValues.
 
@@ -142,7 +142,7 @@ class CalculatedPullRequestMetricValues(Model):
         self._confidence_maxs = confidence_maxs
 
     @property
-    def confidence_scores(self) -> List[int]:
+    def confidence_scores(self) -> Optional[List[int]]:
         """Gets the confidence scores of this CalculatedPullRequestMetricValues.
 
         The same order as `metrics`.
@@ -152,7 +152,7 @@ class CalculatedPullRequestMetricValues(Model):
         return self._confidence_scores
 
     @confidence_scores.setter
-    def confidence_scores(self, confidence_scores: List[int]):
+    def confidence_scores(self, confidence_scores: Optional[List[int]]):
         """Sets the confidence scores of this CalculatedPullRequestMetricValues.
 
         Confidence score from 0 (no idea) to 100 (very confident). The same order as `metrics`.

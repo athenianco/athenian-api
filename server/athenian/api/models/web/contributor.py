@@ -6,7 +6,12 @@ from athenian.api.models.web.base_model_ import Model
 class Contributor(Model):
     """Details about a developer who contributed to some repositories owned by the account."""
 
-    openapi_types = {"login": str, "name": str, "email": str, "picture": str}
+    openapi_types = {
+        "login": str,
+        "name": Optional[str],
+        "email": Optional[str],
+        "picture": Optional[str],
+    }
 
     attribute_map = {
         "login": "login",
@@ -62,7 +67,7 @@ class Contributor(Model):
         self._login = login
 
     @property
-    def name(self) -> str:
+    def name(self) -> Optional[str]:
         """Gets the name of this Contributor.
 
         Full name of the contributor.
@@ -72,44 +77,37 @@ class Contributor(Model):
         return self._name
 
     @name.setter
-    def name(self, name: str):
+    def name(self, name: Optional[str]):
         """Sets the name of this Contributor.
 
         Full name of the contributor.
 
         :param name: The name of this Contributor.
         """
-        if name is None:
-            raise ValueError("Invalid value for `name`, must not be `None`")
-
         self._name = name
 
     @property
-    def email(self) -> str:
+    def email(self) -> Optional[str]:
         """Gets the email of this Contributor.
 
         Email of the conributor.
 
         :return: The email of this Contributor.
-        :rtype: str
         """
         return self._email
 
     @email.setter
-    def email(self, email: str):
+    def email(self, email: Optional[str]):
         """Sets the email of this Contributor.
 
         Email of the conributor.
 
         :param email: The email of this Contributor.
         """
-        if email is None:
-            raise ValueError("Invalid value for `email`, must not be `None`")
-
         self._email = email
 
     @property
-    def picture(self) -> str:
+    def picture(self) -> Optional[str]:
         """Gets the picture of this Contributor.
 
         Avatar URL of the contributor.
@@ -119,14 +117,11 @@ class Contributor(Model):
         return self._picture
 
     @picture.setter
-    def picture(self, picture: str):
+    def picture(self, picture: Optional[str]):
         """Sets the picture of this Contributor.
 
         Avatar URL of the contributor.
 
         :param picture: The picture of this Contributor.
         """
-        if picture is None:
-            raise ValueError("Invalid value for `picture`, must not be `None`")
-
         self._picture = picture

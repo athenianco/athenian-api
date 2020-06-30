@@ -13,9 +13,9 @@ class GenericError(Model):
     openapi_types = {
         "type": str,
         "title": str,
-        "status": int,
-        "detail": str,
-        "instance": str,
+        "status": Optional[int],
+        "detail": Optional[str],
+        "instance": Optional[str],
     }
 
     attribute_map = {
@@ -51,24 +51,22 @@ class GenericError(Model):
         self._instance = instance
 
     @property
-    def type(self):
+    def type(self) -> str:
         """Gets the type of this GenericError.
 
         URI reference that identifies the problem type (RFC 7807).
 
         :return: The type of this GenericError.
-        :rtype: str
         """
         return self._type
 
     @type.setter
-    def type(self, type):
+    def type(self, type: str):
         """Sets the type of this GenericError.
 
         URI reference that identifies the problem type (RFC 7807).
 
         :param type: The type of this GenericError.
-        :type type: str
         """
         if type is None:
             raise ValueError("Invalid value for `type`, must not be `None`")
@@ -76,90 +74,82 @@ class GenericError(Model):
         self._type = type
 
     @property
-    def title(self):
+    def title(self) -> str:
         """Gets the title of this GenericError.
 
         Short, human-readable summary of the problem type.
 
         :return: The title of this GenericError.
-        :rtype: str
         """
         return self._title
 
     @title.setter
-    def title(self, title):
+    def title(self, title: str):
         """Sets the title of this GenericError.
 
         Short, human-readable summary of the problem type.
 
         :param title: The title of this GenericError.
-        :type title: str
         """
         self._title = title
 
     @property
-    def status(self):
+    def status(self) -> Optional[int]:
         """Gets the status of this GenericError.
 
         Duplicated HTTP status code.
 
         :return: The status of this GenericError.
-        :rtype: int
         """
         return self._status
 
     @status.setter
-    def status(self, status):
+    def status(self, status: Optional[int]):
         """Sets the status of this GenericError.
 
         Duplicated HTTP status code.
 
         :param status: The status of this GenericError.
-        :type status: int
         """
         self._status = status
 
     @property
-    def detail(self):
+    def detail(self) -> Optional[str]:
         """Gets the detail of this GenericError.
 
         Human-readable explanation specific to this occurrence of the problem.
 
         :return: The detail of this GenericError.
-        :rtype: str
         """
         return self._detail
 
     @detail.setter
-    def detail(self, detail):
+    def detail(self, detail: Optional[str]):
         """Sets the detail of this GenericError.
 
         Human-readable explanation specific to this occurrence of the problem.
 
         :param detail: The detail of this GenericError.
-        :type detail: str
         """
         self._detail = detail
 
     @property
-    def instance(self):
+    def instance(self) -> Optional[str]:
         """Gets the instance of this GenericError.
 
         URI reference that identifies the specific occurrence of the problem.
 
         :return: The instance of this GenericError.
-        :rtype: str
         """
         return self._instance
 
     @instance.setter
-    def instance(self, instance):
+    def instance(self, instance: Optional[str]):
         """Sets the instance of this GenericError.
 
         URI reference that identifies the specific occurrence of the problem.
 
         :param instance: The instance of this GenericError.
-        :type instance: str
         """
         self._instance = instance
 

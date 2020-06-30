@@ -172,6 +172,7 @@ class TestAuth0(Auth0):
             whitelist=whitelist, default_user="auth0|5e1f6dfb57bc640ea390557b", lazy=True)
         self._default_user = User(
             id="auth0|5e1f6dfb57bc640ea390557b",
+            login="vadim",
             email="vadim@athenian.co",
             name="Vadim Markovtsev",
             native_id="5e1f6dfb57bc640ea390557b",
@@ -184,6 +185,7 @@ class TestAuth0(Auth0):
 async def eiso(app) -> User:
     user = User(
         id="auth0|5e1f6e2e8bfa520ea5290741",
+        login="eiso",
         email="eiso@athenian.co",
         name="Eiso Kant",
         native_id="5e1f6e2e8bfa520ea5290741",

@@ -1440,12 +1440,7 @@ components:
             type: string
         type: object
     NoSourceDataError:
-      allOf:
-      - $ref: '#/components/schemas/GenericError'
-      - properties:
-          repositories:
-            $ref: '#/components/schemas/RepositorySet'
-        type: object
+      $ref: '#/components/schemas/GenericError'
     PullRequestMetricID:
       description: |-
         Currently supported PR metric types.
@@ -1553,10 +1548,7 @@ components:
           description: Avatar URL of the contributor.
           type: string
       required:
-      - email
       - login
-      - name
-      - picture
       type: object
     TeamCreateRequest:
       additionalProperties: false
@@ -1781,12 +1773,9 @@ components:
             2: false
           type: object
       required:
-      - email
       - id
       - login
-      - name
       - native_id
-      - picture
       type: object
     InvitedUser:
       additionalProperties: false
@@ -1931,6 +1920,7 @@ components:
             name: Commit
             total: 100
           - fetched: 0
+            total: 200
             name: PullRequest
           items:
             $ref: '#/components/schemas/TableFetchingProgress'
