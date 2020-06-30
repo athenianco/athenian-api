@@ -24,9 +24,9 @@ async def main():
             v.set(defaultdict(int))
     else:
         cache = None
-    # password = os.getenv("POSTGRES_PASSWORD")
-    # addr = "production-cloud-sql:%s@0.0.0.0:5432" % password
-    addr = "postgres:postgres@0.0.0.0:5433"
+    password = os.getenv("POSTGRES_PASSWORD")
+    addr = "production-cloud-sql:%s@0.0.0.0:5432" % password
+    # addr = "postgres:postgres@0.0.0.0:5433"
     mdb = databases.Database("postgresql://%s/metadata" % addr)
     await mdb.connect()
     if os.getenv("DISABLE_PDB"):
@@ -40,7 +40,7 @@ async def main():
     }
 
     time_from = datetime(2019, 6, 5, tzinfo=timezone.utc)
-    time_to = datetime(2020, 6, 5, tzinfo=timezone.utc)
+    time_to = datetime(2020, 6, 30, tzinfo=timezone.utc)
     repos = {"classified"}
     # TODO(vmarkovtsev): load these from the settings
     settings = {
@@ -54,6 +54,7 @@ async def main():
         time_to,
         repos,
         {},
+        set(),
         False,
         settings,
         mdb,

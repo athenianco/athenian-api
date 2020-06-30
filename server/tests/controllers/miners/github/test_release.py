@@ -18,7 +18,7 @@ from athenian.api.controllers.miners.github.release import _fetch_commit_history
     _fetch_first_parents, _fetch_repository_commits, _find_dead_merged_prs, load_releases, \
     map_prs_to_releases, map_releases_to_prs
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
-from athenian.api.models.metadata.github import PullRequest, PullRequestLabel, Release
+from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, Release
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
 
@@ -747,6 +747,17 @@ async def test__find_dead_merged_prs_smoke(mdb, pdb):
     dead_prs = await mdb.fetch_all(
         select([PullRequest.number]).where(PullRequest.node_id.in_(dead_prs.index)))
     assert {pr[0] for pr in dead_prs} == set(force_push_dropped_go_git_pr_numbers)
+
+
+async def test__find_dead_merged_prs_no_branches(mdb, pdb):
+    prs = await read_sql_query(
+        select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
+        mdb, PullRequest, index=PullRequest.node_id.key)
+    branches, default_branches = await extract_branches(["src-d/go-git"], mdb, None)
+    branches = branches.iloc[:1]
+    branches[Branch.repository_full_name.key] = "xxx"
+    dead_prs = await _find_dead_merged_prs(prs, branches, default_branches, mdb, pdb, None)
+    assert len(dead_prs) == 0
 
 
 """
