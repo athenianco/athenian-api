@@ -3,6 +3,7 @@ import bisect
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from itertools import chain
+import logging
 import marshal
 import pickle
 import re
@@ -19,6 +20,7 @@ from sqlalchemy.cprocessors import str_to_datetime
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql.elements import BinaryExpression
 
+from athenian.api import metadata
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query, wrap_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
@@ -466,6 +468,9 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
     dead_prs = []
     for repo, repo_prs in prs[[mchkey, rfnkey, clskey]].groupby(rfnkey, sort=False):
         repo_commits = commits[repo]
+        if len(repo_commits) == 0:
+            # metadata branches fault
+            continue
         repo_hashes = repo_prs[mchkey].values.astype("U40")
         indexes = np.searchsorted(repo_commits, repo_hashes)
         indexes[indexes == len(repo_commits)] = 0  # whatever index is fine
@@ -812,6 +817,12 @@ async def _fetch_repository_commits(repos: Collection[str],
         if isinstance(arr, Exception):
             raise arr from None
         result[repo] = arr
+    # some repos may have 0 branches due to a metadata fault
+    log = logging.getLogger("%s._fetch_repository_commits" % metadata.__package__)
+    for repo in repos:
+        if repo not in result:
+            result[repo] = np.empty((0,), dtype="U40")
+            log.warning("No branches in %s", repo)
     return result
 
 
