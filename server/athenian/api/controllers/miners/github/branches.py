@@ -4,7 +4,7 @@ from typing import Dict, Iterable, Optional, Tuple
 
 import aiomcache
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
@@ -27,7 +27,8 @@ async def extract_branches(repos: Iterable[str],
                            ) -> Tuple[pd.DataFrame, Dict[str, str]]:
     """Fetch branches in the given repositories and extract the default branch names."""
     branches = await read_sql_query(
-        select([Branch]).where(Branch.repository_full_name.in_(repos)), db, Branch)
+        select([Branch]).where(and_(Branch.repository_full_name.in_(repos),
+                                    Branch.commit_sha.isnot(None))), db, Branch)
     log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
     default_branches = {}
     for repo, repo_branches in branches.groupby(Branch.repository_full_name.key):
