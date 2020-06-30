@@ -120,6 +120,15 @@ def main():
                 sentry_sdk.capture_exception(e)
                 log.warning("reposet %d: %s: %s", reposet.id, type(e).__name__, e)
                 return_code = 1
+            else:
+                await sdb.execute(
+                    update(RepositorySet)
+                    .where(RepositorySet.id == reposet.id)
+                    .values({RepositorySet.precomputed: True,
+                             RepositorySet.updates_count: reposet.updates_count,
+                             RepositorySet.updated_at: reposet.updated_at,
+                             RepositorySet.items_count: reposet.items_count,
+                             RepositorySet.items_checksum: RepositorySet.items_checksum}))
 
     asyncio.run(async_run())
     return return_code

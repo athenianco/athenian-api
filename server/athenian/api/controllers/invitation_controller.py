@@ -16,14 +16,16 @@ import aiosqlite.core
 from asyncpg import IntegrityConstraintViolationError
 import databases.core
 import pyffx
+import slack
 from sqlalchemy import and_, delete, func, insert, select, update
 
 from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_github_installation_ids, get_user_account_status
+from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.models.metadata.github import FetchProgress, Installation, InstallationOwner, \
     InstallationRepo
-from athenian.api.models.state.models import Account, Invitation, UserAccount
+from athenian.api.models.state.models import Account, Invitation, RepositorySet, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
     NoSourceDataError, NotFoundError
 from athenian.api.models.web.generic_error import DatabaseConflict
@@ -355,18 +357,43 @@ async def fetch_github_installation_progress(account: int,
                                          tables=tables)
             models.append(model)
         tables = {}
+        finished_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
         for m in models:
             for t in m.tables:
                 table = tables.setdefault(
                     t.name, TableFetchingProgress(name=t.name, fetched=0, total=0))
                 table.fetched += t.fetched
                 table.total += t.total
+            if model.finished_date is None:
+                finished_date = None
+            elif finished_date is not None:
+                finished_date = max(finished_date, model.finished_date)
         model = InstallationProgress(started_date=min(m.started_date for m in models),
-                                     finished_date=max(m.finished_date for m in models),
+                                     finished_date=finished_date,
                                      owner=owner,
                                      repositories=sum(m.repositories for m in models),
                                      tables=sorted(tables.values()))
         return model
+
+
+async def _append_precomputed_progress(model: InstallationProgress,
+                                       account: int,
+                                       native_uid: str,
+                                       sdb: DatabaseLike,
+                                       mdb: databases.Database,
+                                       cache: Optional[aiomcache.Client],
+                                       slack: Optional[slack.WebClient]) -> None:
+    reposets = await load_account_reposets(
+        account, native_uid, [RepositorySet.name, RepositorySet.precomputed],
+        sdb, mdb, cache, slack)
+    precomputed = False
+    for reposet in reposets:
+        if reposet[RepositorySet.name.key] == RepositorySet.ALL:
+            precomputed = reposet[RepositorySet.precomputed.key]
+    model.tables.append(TableFetchingProgress(
+        name="precomputed", fetched=int(precomputed), total=1))
+    if not precomputed:
+        model.finished_date = None
 
 
 async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
@@ -374,6 +401,8 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status(request.uid, id, sdb_conn, request.cache)
         model = await fetch_github_installation_progress(id, sdb_conn, request.mdb, request.cache)
+        await _append_precomputed_progress(model, id, request.native_uid, sdb_conn, request.mdb,
+                                           request.cache, request.app["slack"])
         return model_response(model)
 
 

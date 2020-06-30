@@ -212,7 +212,9 @@ async def _load_account_reposets(account: int,
                                              .where(InstallationRepo.install_id.in_(iids)))
             prefix = PREFIXES["github"]
             repos = [(prefix + r[0]) for r in repos]
-            rs = RepositorySet(name="all", owner_id=account, items=repos).create_defaults()
+            rs = RepositorySet(
+                name=RepositorySet.ALL, owner_id=account, items=repos,
+            ).create_defaults()
             rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
             log.info(
                 "Created the first reposet %d for account %d with %d repos on behalf of %s",

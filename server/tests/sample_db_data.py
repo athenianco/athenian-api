@@ -91,6 +91,7 @@ def fill_state_session(session: sqlalchemy.orm.Session):
     session.add(RepositorySet(
         name="all",
         owner_id=1,
+        precomputed=True,
         items=["github.com/src-d/gitbase", "github.com/src-d/go-git"]))
     session.add(RepositorySet(
         name="all",

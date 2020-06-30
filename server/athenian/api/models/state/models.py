@@ -32,7 +32,7 @@ def create_collection_mixin(name: str) -> type:
 
     setattr(CollectionMixin, name, Column(always_unequal(JSON()), nullable=False))
     setattr(CollectionMixin, f"{name}_count",
-            Column(Integer(), nullable=False, default=CollectionMixin.count_items,
+            Column(always_unequal(Integer()), nullable=False, default=CollectionMixin.count_items,
                    onupdate=CollectionMixin.count_items))
     setattr(CollectionMixin, f"{name}_checksum",
             Column(always_unequal(BigInteger()), nullable=False,
@@ -69,6 +69,7 @@ class RepositorySet(create_time_mixin(created_at=True, updated_at=True),
     __table_args__ = (UniqueConstraint("owner_id", "items_checksum", name="uc_owner_items"),
                       UniqueConstraint("owner_id", "name", name="uc_owner_name2"),
                       {"sqlite_autoincrement": True})
+    ALL = "all"  # <<< constant name of the main reposet
 
     id = Column(Integer(), primary_key=True)
     owner_id = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"),
@@ -76,6 +77,7 @@ class RepositorySet(create_time_mixin(created_at=True, updated_at=True),
     updates_count = Column(always_unequal(Integer()), nullable=False, default=1,
                            onupdate=lambda ctx: ctx.get_current_parameters()["updates_count"] + 1)
     tracking_re = Column(Text(), nullable=False, default=".*", server_default=".*")
+    precomputed = Column(Boolean(), nullable=False, default=False, server_default="false")
 
 
 class UserAccount(create_time_mixin(created_at=True), Base):

@@ -1931,6 +1931,7 @@ components:
             name: Commit
             total: 100
           - fetched: 0
+            total: 200
             name: PullRequest
           items:
             $ref: '#/components/schemas/TableFetchingProgress'

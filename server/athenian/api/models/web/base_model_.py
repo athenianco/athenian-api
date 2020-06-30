@@ -28,8 +28,6 @@ class Model:
 
         for attr_key, json_key in self.attribute_map.items():
             value = getattr(self, attr_key)
-            if value is None:
-                continue
             if isinstance(value, list):
                 result[json_key] = list(
                     map(lambda x: x.to_dict() if hasattr(x, "to_dict") else x, value)  # noqa(C812)
