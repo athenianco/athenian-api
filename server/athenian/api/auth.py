@@ -191,14 +191,17 @@ class Auth0:
         def verify_security(auth_funcs, required_scopes, function):
             @functools.wraps(function)
             async def wrapper(request: ConnexionRequest):
+                # we support two auth methods: JWT and apiKey
                 has_auth = "Authorization" in request.headers or "X-API-Key" in request.headers
                 if not has_auth or self.force_user:
-                    # Otherwise we will never reach self.extract_token and self._set_user
+                    # to reach self._set_user, we have to hardcode "null" as a "magic" JWT
                     request.headers = CIMultiDict(request.headers)
                     request.headers["Authorization"] = "Bearer null"
+                # invoke security_controller.info_from_*Auth
                 token_info = get_authorization_info(auth_funcs, request, required_scopes)
-                # token_info = {"token": <token>} at this point, now do the real work
+                # token_info = {"token": <token>, "method": "bearer" or "apikey"}
                 await self._set_user(request.context, **token_info)
+                # nothing important afterward, finish the auth processing
                 return await function(request)
             return wrapper
 
