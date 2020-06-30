@@ -2715,6 +2715,7 @@ components:
       description: Time spent by the PR in each pipeline stage.
       example:
         wip: 120s
+        review: 600s
       properties:
         wip:
           type: string
@@ -2724,6 +2725,8 @@ components:
           type: string
         release:
           type: string
+      required:
+      - wip
       type: object
     PullRequestParticipant:
       additionalProperties: false
