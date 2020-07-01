@@ -498,6 +498,7 @@ async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
                                    pdb: databases.Database,
                                    cache: Optional[aiomcache.Client],
                                    ) -> Dict[str, Dict[str, List[str]]]:
+    log = logging.getLogger("%s._fetch_release_histories" % metadata.__package__)
     histories = {}
     pdags = await _fetch_precomputed_commit_histories(releases, pdb)
 
@@ -512,7 +513,10 @@ async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
         release_hashes = set(repo_releases[Release.sha.key].values)
         for rel_index, rel_sha in zip(repo_releases.index.values,
                                       repo_releases[Release.sha.key].values):
-            assert rel_sha in history
+            if rel_sha not in history:
+                log.error("DEV-256 release commit %s was not found in the commit history",
+                          rel_sha)
+                continue
             update_history(history, rel_sha, rel_index, release_hashes)
 
     errors = await asyncio.gather(*(fetch_release_history(*r) for r in releases.items()),
