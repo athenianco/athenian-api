@@ -4,9 +4,13 @@ import logging
 import os
 from typing import Union
 
+from gcloud.aio.auth import session
 from gcloud.aio.kms import encode, KMS
 
 from athenian.api import metadata
+
+
+session.log.exception = session.log.warning
 
 
 class AthenianKMS:
