@@ -13,11 +13,13 @@ To run the server, please execute the following from the root directory:
 
 ```
 pip3 install -r requirements.txt
-python3 -m athenian.api --state-db sqlite:// --metadata-db sqlite:// --precomputed-db sqlite:// --ui
+python3 -m athenian.api --state-db sqlite:// --metadata-db sqlite:// --precomputed-db sqlite:// --ui --no-google-kms
 ```
 
 You may replace `sqlite://` (in-memory zero-configuration sample DB stub) with a real
 [SQLAlchemy connection string](https://docs.sqlalchemy.org/en/13/core/engines.html).
+`--no-google-kms` disables the second authentication method (API keys) which relies on Google Key Management Service
+and which you are probably not eager to setup.
 
 and open your browser to here:
 

@@ -7,13 +7,14 @@ import os
 import pickle
 from random import random
 import re
+import struct
 from typing import Any, Dict, List, Optional, Sequence
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
 from connexion.decorators.security import get_authorization_info
-from connexion.exceptions import OAuthProblem
+from connexion.exceptions import AuthenticationProblem, OAuthProblem, Unauthorized
 from connexion.lifecycle import ConnexionRequest
 from connexion.operations import secure
 from jose import jwt
@@ -22,7 +23,8 @@ import sentry_sdk
 from sqlalchemy import select
 
 from athenian.api.cache import cached
-from athenian.api.models.state.models import God
+from athenian.api.kms import AthenianKMS
+from athenian.api.models.state.models import God, UserToken
 from athenian.api.models.web import GenericError
 from athenian.api.models.web.user import User
 from athenian.api.request import AthenianWebRequest
@@ -189,13 +191,17 @@ class Auth0:
         def verify_security(auth_funcs, required_scopes, function):
             @functools.wraps(function)
             async def wrapper(request: ConnexionRequest):
-                if "Authorization" not in request.headers or self.force_user:
-                    # Otherwise we will never reach self.extract_token and self._set_user
+                # we support two auth methods: JWT and apiKey
+                has_auth = "Authorization" in request.headers or "X-API-Key" in request.headers
+                if not has_auth or self.force_user:
+                    # to reach self._set_user, we have to hardcode "null" as a "magic" JWT
                     request.headers = CIMultiDict(request.headers)
                     request.headers["Authorization"] = "Bearer null"
+                # invoke security_controller.info_from_*Auth
                 token_info = get_authorization_info(auth_funcs, request, required_scopes)
-                # token_info = {"token": <token>} at this point, now do the real work
-                await self._set_user(request.context, token_info["token"])
+                # token_info = {"token": <token>, "method": "bearer" or "apikey"}
+                await self._set_user(request.context, **token_info)
+                # nothing important afterward, finish the auth processing
                 return await function(request)
             return wrapper
 
@@ -347,32 +353,44 @@ class Auth0:
                 detail=user.get("description", str(user))))
         return User.from_auth0(**user)
 
-    async def _set_user(self, request: AthenianWebRequest, token: str) -> None:
-        token_info = await self._extract_token(token)
-        request.uid = token_info["sub"]
-        request.native_uid = request.uid.rsplit("|", 1)[1]
+    async def _set_user(self, request: AthenianWebRequest, token: str, method: str) -> None:
+        if method == "bearer":
+            token_info = await self._extract_bearer_token(token)
+            request.uid = token_info["sub"]
+        elif method == "apikey":
+            request.uid = await self._extract_api_key(token, request)
+        else:
+            raise AssertionError("Unsupported auth method: %s" % method)
+
         god = await request.sdb.fetch_one(
             select([God.mapped_id]).where(God.user_id == request.uid))
         if god is not None:
             request.god_id = request.uid
-            mapped_id = god[God.mapped_id.key]
+            if "X-Identity" in request.headers:
+                mapped_id = request.headers["X-Identity"]
+            else:
+                mapped_id = god[God.mapped_id.key]
             if mapped_id is not None:
                 request.uid = mapped_id
-                request.native_uid = mapped_id.rsplit("|", 1)[1]
                 self.log.info("God mode: %s became %s", request.god_id, mapped_id)
+
+        request.native_uid = request.uid.rsplit("|", 1)[1]
         request.is_default_user = request.uid == self._default_user_id
         sentry_sdk.add_breadcrumb(category="user", message=request.uid, level="info")
 
         async def get_user_info():
-            if god is not None and request.god_id is not None:
+            if method != "bearer" or (god is not None and request.god_id is not None):
                 return await self.get_user(request.uid)
             return await self._get_user_info(token)
 
         request.user = get_user_info
 
-    async def _extract_token(self, token: str) -> Dict[str, Any]:
+    async def _extract_bearer_token(self, token: str) -> Dict[str, Any]:
         if token == "null":
             return {"sub": self.force_user or self._default_user_id}
+        # People who understand what's going on here:
+        # - @dennwc
+        # - @vmarkovtsev
         try:
             unverified_header = jwt.get_unverified_header(token)
         except jwt.JWTError as e:
@@ -402,3 +420,26 @@ class Auth0:
             raise OAuthProblem(description="invalid claims: %s" % e)
         except jwt.JWTError as e:
             raise OAuthProblem(description="Unable to parse the authentication token: %s" % e)
+
+    async def _extract_api_key(self, token: str, request: AthenianWebRequest) -> str:
+        kms = request.app["kms"]  # type: AthenianKMS
+        if kms is None:
+            raise AuthenticationProblem(
+                status=HTTPStatus.UNAUTHORIZED,
+                title="Unable to authenticate with an API key.",
+                detail="The backend was not properly configured and there is no connection with "
+                       "Google Key Management Service to decrypt API keys.")
+        try:
+            plaintext = await kms.decrypt(token)
+        except aiohttp.ClientResponseError:
+            raise Unauthorized()
+        try:
+            token_id = struct.unpack("<q", plaintext)[0]
+        except (ValueError, struct.error):
+            raise Unauthorized() from None
+        token_obj = await request.sdb.fetch_one(
+            select([UserToken]).where(UserToken.id == token_id))
+        if token_obj is None:
+            raise Unauthorized()
+        uid = token_obj[UserToken.user_id.key]
+        return uid

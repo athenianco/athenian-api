@@ -23,8 +23,7 @@ from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitH
 from athenian.api.models.state.models import RepositorySet
 
 
-def parse_args():
-    """Go away linter."""
+def _parse_args():
     parser = argparse.ArgumentParser()
     add_logging_args(parser)
     parser.add_argument("--metadata-db", required=True,
@@ -41,7 +40,7 @@ def parse_args():
 def main():
     """Go away linter."""
     log = logging.getLogger("heat_cache")
-    args = parse_args()
+    args = _parse_args()
     setup_context(log)
     sentry_sdk.add_breadcrumb(category="origin", message="heater", level="info")
     if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):

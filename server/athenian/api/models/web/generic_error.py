@@ -200,3 +200,17 @@ class DatabaseConflict(GenericError):
         """
         super().__init__(type="/errors/DatabaseConflict", title=HTTPStatus.CONFLICT.phrase,
                          status=HTTPStatus.CONFLICT, detail=detail)
+
+
+class ServerNotImplementedError(GenericError):
+    """HTTP 501."""
+
+    def __init__(self, detail="This API endpoint is not implemented yet."):
+        """Initialize a new instance of ServerNotImplementedError.
+
+        :param detail: The details about this error.
+        """
+        super().__init__(type="/errors/NotImplemented",
+                         title=HTTPStatus.NOT_IMPLEMENTED.phrase,
+                         status=HTTPStatus.NOT_IMPLEMENTED,
+                         detail=detail)

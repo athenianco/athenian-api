@@ -20,7 +20,8 @@ services:
             --metadata-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata \
             --state-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state \
             --precomputed-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed \
-            --ui"
+            --ui \
+            --no-google-kms"
     env_file: .env
     ports:
       - ${API_HOST_PORT:-8080}:8080

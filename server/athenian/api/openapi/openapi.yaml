@@ -86,6 +86,7 @@ paths:
           description: The account was not found.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List the current user's account members.
       tags:
       - user
@@ -211,6 +212,7 @@ paths:
           description: The installation has not started yet.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List all the contributors belonging to the specified account.
       tags:
       - contributors
@@ -249,6 +251,7 @@ paths:
           description: Current user is not allowed to access the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Find commits that match the specified query.
       tags:
       - filter
@@ -287,6 +290,7 @@ paths:
           description: Current user is not allowed to access the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Find developers that made an action within the given timeframe.
       tags:
       - filter
@@ -325,6 +329,7 @@ paths:
           description: Current user is not allowed to access the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Find labels used in the given repositories.
       tags:
       - filter
@@ -364,6 +369,7 @@ paths:
             or reposets.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List pull requests that satisfy the query.
       tags:
       - filter
@@ -401,6 +407,7 @@ paths:
           description: Current user is not allowed to access the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Find releases that were published in the given time fram in the given
         repositories.
       tags:
@@ -441,6 +448,7 @@ paths:
             or reposets.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Find repositories that were updated within the given timeframe.
       tags:
       - filter
@@ -480,6 +488,7 @@ paths:
             or reposets.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List pull requests by repository and number.
       tags:
       - filter
@@ -686,6 +695,7 @@ paths:
           description: The installation has not started yet.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Return the current Athenian GitHub app installation progress.
       tags:
       - registration
@@ -727,6 +737,7 @@ paths:
             on behalf of the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Measure the amount of code that was pushed outside of pull requests.
       tags:
       - metrics
@@ -768,6 +779,7 @@ paths:
             on behalf of the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Calculate metrics over developer activities.
       tags:
       - metrics
@@ -815,6 +827,7 @@ paths:
           description: No data is available to calculate metrics for the given repositories.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Calculate linear metrics over PRs.
       tags:
       - metrics
@@ -936,6 +949,7 @@ paths:
           description: The specified repository set was not found.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List a repository set. The user must be in the account that owns the
         reposet.
       tags:
@@ -1031,6 +1045,7 @@ paths:
           description: Concurrent requests that are finishing the account registration.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List the repository sets belonging to the current user.
       tags:
       - reposet
@@ -1123,6 +1138,7 @@ paths:
           description: The installation has not started yet.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List the current release matching settings.
       tags:
       - settings
@@ -1242,6 +1258,7 @@ paths:
           description: The specified team was not found.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List the team's members. The user must belong to the account that owns
         the team.
       tags:
@@ -1336,6 +1353,7 @@ paths:
           description: The user does not belong to the specified account.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List the teams belonging to the current user.
       tags:
       - team
@@ -1343,6 +1361,179 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.team_controller
+      x-codegen-request-body-name: body
+  /token/create:
+    post:
+      operationId: create_token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTokenRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedToken'
+          description: Value and ID of the generated Personal Access Token.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account or no such
+            account exists.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: There is another token with the same name belonging to
+            the user in the account.
+      security:
+      - bearerAuth: []
+      summary: Create a new Personal Access Token for the current user and the specified
+        account.
+      tags:
+      - security
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.security_controller
+      x-codegen-request-body-name: body
+  /token/{id}:
+    delete:
+      operationId: delete_token
+      parameters:
+      - description: Numeric identifier of the token.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Empty object indicates a successful removal.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not own the token.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The token does not exist.
+      security:
+      - bearerAuth: []
+      summary: Delete a Personal Access Token belonging to the user.
+      tags:
+      - security
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.security_controller
+      x-codegen-request-body-name: body
+    patch:
+      operationId: patch_token
+      parameters:
+      - description: Numeric identifier of the token.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchTokenRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Empty object indicates a successful patch operation.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not own the token.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The token does not exist.
+        409:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: There is another token with the same name belonging to
+            the user in the account.
+      security:
+      - bearerAuth: []
+      summary: Change Personal Access Token's details.
+      tags:
+      - security
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.security_controller
+      x-codegen-request-body-name: body
+  /tokens/{id}:
+    get:
+      operationId: list_tokens
+      parameters:
+      - description: Numeric identifier of the account.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListedTokens'
+          description: List of Personal Access Tokens belonging to the user in the
+            specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account or no such
+            account exists.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: List Personal Access Tokens of the user in the account.
+      tags:
+      - security
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.security_controller
       x-codegen-request-body-name: body
   /user:
     get:
@@ -1356,6 +1547,7 @@ paths:
           description: 'Information about the current user: name, email, login, etc.'
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Show details about the current user.
       tags:
       - user
@@ -1389,6 +1581,11 @@ components:
       scheme: bearer
       bearerFormat: JWT
       x-bearerInfoFunc: athenian.api.controllers.security_controller.info_from_bearerAuth
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      x-apikeyInfoFunc: athenian.api.controllers.security_controller.info_from_apiKeyAuth
   schemas:
     CreatedIdentifier:
       additionalProperties: false
@@ -3770,4 +3967,75 @@ components:
       - name
       - parameters
       type: object
-
+    CreateTokenRequest:
+      additionalProperties: false
+      description: Request body of `/token/create` - creating a new Personal Access
+        Token.
+      example:
+        account: 1
+        name: Release webhook
+      properties:
+        account:
+          type: integer
+        name:
+          type: string
+      required:
+      - account
+      - name
+      type: object
+    CreatedToken:
+      additionalProperties: false
+      description: Value and ID of the generated Personal Access Token.
+      example:
+        id: 1007
+        token: 99129c581b6d2950233dac583629ba591319b2c6
+      properties:
+        id:
+          description: Token identifier - can be used in `/token/{id}` DELETE.
+          type: integer
+        token:
+          description: Secret token - not stored server-side!
+          type: string
+      required:
+      - id
+      - token
+      type: object
+    ListedTokens:
+      items:
+        $ref: '#/components/schemas/ListedToken'
+      type: array
+    ListedToken:
+      additionalProperties: false
+      description: Details about a token - without the token itself, which is not
+        stored.
+      example:
+        last_used: 2020-06-23T04:56:07Z
+        name: webhook
+        id: 1008
+      properties:
+        id:
+          description: Token identifier - can be used in `/token/{id}` DELETE.
+          type: integer
+        name:
+          description: Name of the token (see `/token/create`).
+          type: string
+        last_used:
+          description: When this token was used last time.
+          format: date-time
+          type: string
+      required:
+      - id
+      - last_used
+      - name
+      type: object
+    PatchTokenRequest:
+      additionalProperties: false
+      description: Request body of `/token/{id}` PATCH. Allows changing the token
+        name.
+      example:
+        name: release-webhook
+      properties:
+        name:
+          description: New name of the token.
+          type: string
+      type: object

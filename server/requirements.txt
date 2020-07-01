@@ -19,3 +19,8 @@ uvloop==0.14.0
 bootstrapped==0.0.2
 tqdm==4.46.1
 slackclient[optional]==2.7.1
+gcloud-aio-kms==3.2.0
+# gcloud-aio-kms does not pin the exact versions of the following packages
+gcloud-aio-auth==3.2.1
+backoff==1.10.0
+# end of gcloud-aio-kms unpinned deps
