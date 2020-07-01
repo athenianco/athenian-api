@@ -983,6 +983,7 @@ async def _extract_released_commits(releases: pd.DataFrame,
                                     pdb: databases.Database,
                                     cache: Optional[aiomcache.Client],
                                     ) -> Tuple[Dict[str, List[str]], pd.DataFrame, Dict[str, str]]:
+    log = logging.getLogger("%s._extract_released_commits")
     repo = releases[Release.repository_full_name.key].unique()
     assert len(repo) == 1
     repo = repo[0]
@@ -1020,7 +1021,10 @@ async def _extract_released_commits(releases: pd.DataFrame,
                 else:
                     boundary_releases.add(xrid)
                     continue
-            parents.extend(dag[x])
+            try:
+                parents.extend(dag[x])
+            except KeyError:
+                log.error("DEV-256 missing commit parent for %s", x)
 
     # we need to traverse full history from boundary_releases and subtract it from the full DAG
     ignored_commits = set()
