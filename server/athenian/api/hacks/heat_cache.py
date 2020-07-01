@@ -101,8 +101,7 @@ def main():
                 log.warning("Skipped account %d / reposet %d because the progress is not 100%",
                             reposet.owner_id, reposet.id)
             repos = {r.split("/", 1)[1] for r in reposet.items}
-            sentry_sdk.add_breadcrumb(
-                category="account", message=str(reposet.owner_id), level="info")
+            log.info("Heating reposet %d of account %d", reposet.id, reposet.owner_id)
             try:
                 await calc_pull_request_metrics_line_github(
                     ["pr-lead-time"],
