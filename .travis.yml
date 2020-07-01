@@ -25,6 +25,8 @@ stages:
   - bump-version
 
 _install: &_install
+  - echo $GOOGLE_KMS_SERVICE_ACCOUNT_B64 | base64 -d > /home/travis/google_service.json
+  - export GOOGLE_KMS_SERVICE_ACCOUNT_JSON=/home/travis/google_service.json
   - sudo sed -i 's/-m 64/-m 128/g' /etc/memcached.conf
   - sudo sed -i 's/-I 1m/-I 64m/g' /etc/memcached.conf
   - sudo systemctl start memcached
