@@ -16,7 +16,6 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
-from athenian.api.controllers.miners.github.hardcoded import BOTS
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_inactive_merged_unreleased_prs
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
@@ -598,6 +597,10 @@ class PullRequestTimesMiner:
                               index=[PullRequestReview.state.key,
                                      PullRequestReview.submitted_at.key])
 
+    def __init__(self, bots: Set[str]):
+        """Require the set of bots to be preloaded."""
+        self._bots = bots
+
     def __call__(self, pr: MinedPullRequest) -> PullRequestTimes:
         """
         Extract the pull request event timestamps from a MinedPullRequest.
@@ -617,7 +620,7 @@ class PullRequestTimesMiner:
         authored_comments = pr.comments[PullRequestReviewComment.user_id.key]
         external_comments_times = pr.comments[PullRequestComment.created_at.key].take(
             np.where((authored_comments != pr.pr[PullRequest.user_id.key]) &
-                     ~authored_comments.isin(BOTS))[0])
+                     ~authored_comments.isin(self._bots))[0])
         first_comment = dtmin(
             pr.review_comments[PullRequestReviewComment.created_at.key].min(),
             pr.reviews[PullRequestReview.submitted_at.key].min(),
