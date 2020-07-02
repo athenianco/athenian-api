@@ -1110,6 +1110,7 @@ async def map_releases_to_prs(repos: Iterable[str],
     )
 
 
+@sentry_span
 async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, default_branches,
                                           release_settings, pdb, mdb, cache):
     # we have to load releases in two separate batches: before and after time_from
@@ -1152,33 +1153,35 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
     releases_old = releases_old[0]
     hard_repos = set(matched_bys) - set(releases_old[Release.repository_full_name.key].unique())
     if hard_repos:
-        repo_births = sorted(
-            (row["min"], row[PushCommit.repository_full_name.key])
-            for row in repo_births
-            if row[PushCommit.repository_full_name.key] in hard_repos
-        )
-        repo_births_dates = [rb[0].replace(tzinfo=timezone.utc) for rb in repo_births]
-        repo_births_names = [rb[1] for rb in repo_births]
-        del repo_births
-        deeper_step = timedelta(days=6 * 31)
-        while hard_repos:
-            # no previous releases were discovered for `hard_repos`, go deeper in history
-            hard_repos = hard_repos.intersection(
-                repo_births_names[:bisect.bisect_right(repo_births_dates, lookbehind_time_from)])
-            if not hard_repos:
-                break
-            releases_old_hard, _ = await load_releases(
-                hard_repos, branches, default_branches, lookbehind_time_from - deeper_step,
-                lookbehind_time_from, consistent_release_settings, mdb, pdb, cache)
-            releases_old = releases_old.append(releases_old_hard)
-            hard_repos -= set(releases_old_hard[Release.repository_full_name.key].unique())
-            del releases_old_hard
-            lookbehind_time_from -= deeper_step
+        with sentry_sdk.start_span(op="_find_releases_for_matching_prs/hard_repos"):
+            repo_births = sorted(
+                (row["min"], row[PushCommit.repository_full_name.key])
+                for row in repo_births
+                if row[PushCommit.repository_full_name.key] in hard_repos
+            )
+            repo_births_dates = [rb[0].replace(tzinfo=timezone.utc) for rb in repo_births]
+            repo_births_names = [rb[1] for rb in repo_births]
+            del repo_births
+            deeper_step = timedelta(days=6 * 31)
+            while hard_repos:
+                # no previous releases were discovered for `hard_repos`, go deeper in history
+                hard_repos = hard_repos.intersection(repo_births_names[:bisect.bisect_right(
+                    repo_births_dates, lookbehind_time_from)])
+                if not hard_repos:
+                    break
+                releases_old_hard, _ = await load_releases(
+                    hard_repos, branches, default_branches, lookbehind_time_from - deeper_step,
+                    lookbehind_time_from, consistent_release_settings, mdb, pdb, cache)
+                releases_old = releases_old.append(releases_old_hard)
+                hard_repos -= set(releases_old_hard[Release.repository_full_name.key].unique())
+                del releases_old_hard
+                lookbehind_time_from -= deeper_step
     releases = releases_new.append(releases_old)
     releases.reset_index(drop=True, inplace=True)
     return matched_bys, pdags, releases, releases_new
 
 
+@sentry_span
 async def mine_releases(releases: pd.DataFrame,
                         time_boundary: datetime,
                         mdb: databases.Database,
