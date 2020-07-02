@@ -56,7 +56,7 @@ $(IO_DIR)/%.sqlite: $(ENV_FILE)
 
 .PHONY: run-api
 run-api: $(IO_DIR)/mdb.sqlite $(IO_DIR)/sdb.sqlite $(IO_DIR)/pdb.sqlite
-	docker run $(DOCKER_RUN_EXTRA_ARGS) --rm -p 8080:8080 -v$(IO_DIR):/io --env-file $(ENV_FILE) $(IMAGE) --ui --metadata-db=sqlite:///io/mdb.sqlite --state-db=sqlite:///io/sdb.sqlite --precomputed-db=sqlite:///io/pdb.sqlite
+	docker run $(DOCKER_RUN_EXTRA_ARGS) --rm -p 8080:8080 -v$(IO_DIR):/io --env-file $(ENV_FILE) $(IMAGE) --ui --no-google-kms --metadata-db=sqlite:///io/mdb.sqlite --state-db=sqlite:///io/sdb.sqlite --precomputed-db=sqlite:///io/pdb.sqlite
 
 .PHONY: invitation-link
 invitation-link: $(IO_DIR)/sdb.sqlite
