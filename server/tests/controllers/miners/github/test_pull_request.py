@@ -7,6 +7,7 @@ import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
 
+from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
     PullRequestTimesMiner
 from athenian.api.controllers.miners.github.release import load_releases
@@ -363,7 +364,7 @@ async def test_pr_times_miner_smoke(
         pdb,
         None,
     )
-    times_miner = PullRequestTimesMiner()
+    times_miner = PullRequestTimesMiner(await bots(mdb))
     prts = [(pr.pr, times_miner(pr)) for pr in miner]
     for prt in prts:
         validate_pull_request_times(*prt)
@@ -389,7 +390,7 @@ async def test_pr_times_miner_empty_review_comments(
         None,
     )
     miner._review_comments = miner._review_comments.iloc[0:0]
-    times_miner = PullRequestTimesMiner()
+    times_miner = PullRequestTimesMiner(await bots(mdb))
     prts = [(pr.pr, times_miner(pr)) for pr in miner]
     for prt in prts:
         validate_pull_request_times(*prt)
@@ -415,7 +416,7 @@ async def test_pr_times_miner_empty_commits(
         None,
     )
     miner._commits = miner._commits.iloc[0:0]
-    times_miner = PullRequestTimesMiner()
+    times_miner = PullRequestTimesMiner(await bots(mdb))
     prts = [(pr.pr, times_miner(pr)) for pr in miner]
     for prt in prts:
         validate_pull_request_times(*prt)
@@ -440,7 +441,7 @@ async def test_pr_times_miner_bug_less_timestamp_float(
         pdb,
         None,
     )
-    times_miner = PullRequestTimesMiner()
+    times_miner = PullRequestTimesMiner(await bots(mdb))
     prts = [(pr.pr, times_miner(pr)) for pr in miner]
     assert len(prts) > 0
     for prt in prts:
@@ -466,7 +467,7 @@ async def test_pr_times_miner_empty_releases(branches, default_branches, mdb, pd
         pdb,
         None,
     )
-    times_miner = PullRequestTimesMiner()
+    times_miner = PullRequestTimesMiner(await bots(mdb))
     prts = [(pr.pr, times_miner(pr)) for pr in miner]
     for prt in prts:
         validate_pull_request_times(*prt)

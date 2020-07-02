@@ -15,6 +15,7 @@ from athenian.api.controllers.features.github.pull_request import \
     BinnedPullRequestMetricCalculator, calculators as pull_request_calculators
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
 from athenian.api.controllers.features.metric import Metric
+from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import calc_developer_metrics
@@ -84,7 +85,7 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
         date_from, date_to, time_from, time_to, repositories, participants, labels,
         branches, default_branches, exclude_inactive, release_settings,
         mdb, pdb, cache, pr_blacklist=blacklist)
-    times_miner = PullRequestTimesMiner()
+    times_miner = PullRequestTimesMiner(await bots(mdb))
     mined_prs = []
     mined_times = []
     with sentry_sdk.start_span(op="PullRequestMiner.__iter__ + PullRequestTimesMiner.__call__"):

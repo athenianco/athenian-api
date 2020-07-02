@@ -19,6 +19,7 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
+from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_precomputed_done_times_filters, load_precomputed_done_times_reponums, \
@@ -47,12 +48,13 @@ class PullRequestListMiner:
                  prs_today: Iterable[MinedPullRequest],
                  precomputed_times: Dict[str, PullRequestTimes],
                  properties: Set[Property],
-                 time_from: datetime):
+                 time_from: datetime,
+                 bots: Set[str]):
         """Initialize a new instance of `PullRequestListMiner`."""
         self._prs_time_machine = prs_time_machine
         self._prs_today = prs_today
         self._precomputed_times = precomputed_times
-        self._times_miner = PullRequestTimesMiner()
+        self._times_miner = PullRequestTimesMiner(bots)
         self._properties = properties
         self._calcs = {
             "wip": (WorkInProgressTimeCalculator(), Property.WIP),
@@ -400,7 +402,8 @@ async def _filter_pull_requests(properties: Set[Property],
             mdb, pdb, cache)
     else:
         prs_today = prs_time_machine
-    miner = PullRequestListMiner(prs_time_machine, prs_today, done_times, properties, time_from)
+    miner = PullRequestListMiner(
+        prs_time_machine, prs_today, done_times, properties, time_from, await bots(mdb))
     with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
         prs = list(miner)
     set_pdb_hits(pdb, "filter_pull_requests/times", miner.precomputed_hits)
@@ -464,7 +467,8 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
         release_settings, mdb, pdb, cache)
     prs = list(PullRequestMiner(prs_df, *dfs))
     miner = PullRequestListMiner(
-        prs, prs, done_times, set(Property), prs_df[PullRequest.created_at.key].min())
+        prs, prs, done_times, set(Property), prs_df[PullRequest.created_at.key].min(),
+        await bots(mdb))
     with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
         prs = list(miner)
     set_pdb_hits(pdb, "filter_pull_requests/times", miner.precomputed_hits)

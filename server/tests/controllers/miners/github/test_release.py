@@ -10,6 +10,7 @@ from sqlalchemy import delete, select, sql
 from sqlalchemy.schema import CreateTable
 
 from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import store_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
@@ -125,7 +126,7 @@ async def test_map_prs_to_releases_precomputed_released(
         pdb,
         None,
     )
-    times_miner = PullRequestTimesMiner()
+    times_miner = PullRequestTimesMiner(await bots(mdb))
     true_prs = [pr for pr in miner if pr.release[Release.published_at.key] is not None]
     times = [times_miner(pr) for pr in true_prs]
     prs = pd.DataFrame([pr.pr for pr in true_prs]).set_index(PullRequest.node_id.key)

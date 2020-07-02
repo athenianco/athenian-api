@@ -334,3 +334,9 @@ class PullRequestLabel(Base,
     name = Column(Text, nullable=False)
     description = Column(Text)
     color = Column(Text, nullable=False)
+
+
+class Bot(Base):
+    __tablename__ = "github_bots_compat"
+
+    login = Column(Text, primary_key=True)
