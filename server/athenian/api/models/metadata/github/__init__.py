@@ -1,5 +1,5 @@
 import dateutil.parser
-from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, Integer, Text, TIMESTAMP
+from sqlalchemy import BigInteger, Boolean, Column, Integer, Text, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import synonym
 
@@ -56,23 +56,10 @@ class PullRequestPKMixin:
 # -- TABLES --
 
 
-class Installation(Base, UpdatedMixin):
-    __tablename__ = "github_installations"
-
-    id = Column(BigInteger, primary_key=True)
-    delivery_id = Column(Text, nullable=False)
-    app_id = Column(BigInteger, nullable=False)
-    target_id = Column(BigInteger, nullable=False)
-    target_type = Column(Text, nullable=False)
-    html_url = Column(Text)
-
-
 class InstallationOwner(Base, UpdatedMixin):
     __tablename__ = "github_installation_owners"
 
-    install_id = Column(BigInteger,
-                        ForeignKey("github_installations.id", name="fk_github_installation_owner"),
-                        primary_key=True)
+    install_id = Column(BigInteger, primary_key=True)
     user_id = Column(BigInteger, primary_key=True)
     user_login = Column(Text, nullable=False)
 
@@ -80,9 +67,8 @@ class InstallationOwner(Base, UpdatedMixin):
 class InstallationRepo(Base):
     __tablename__ = "github_installation_repos_compat"
 
-    install_id = Column(BigInteger,
-                        ForeignKey("github_installations.id", name="fk_github_installation_repo"),
-                        primary_key=True)
+    install_id = Column(BigInteger, primary_key=True)
+    event_id = Column(Text, nullable=False)
     repo_id = Column(Text, primary_key=True)
     repo_full_name = Column(Text, nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False)

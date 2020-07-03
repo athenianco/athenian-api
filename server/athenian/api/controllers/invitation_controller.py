@@ -23,8 +23,7 @@ from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_github_installation_ids, get_user_account_status
 from athenian.api.controllers.reposet import load_account_reposets
-from athenian.api.models.metadata.github import FetchProgress, Installation, InstallationOwner, \
-    InstallationRepo
+from athenian.api.models.metadata.github import FetchProgress, InstallationOwner, InstallationRepo
 from athenian.api.models.state.models import Account, Invitation, RepositorySet, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
     NoSourceDataError, NotFoundError
@@ -271,22 +270,23 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
     deserialize=lambda buf: marshal.loads(buf),
     key=lambda account, **_: (account,),
 )
-async def get_installation_delivery_ids(account: int,
-                                        sdb_conn: databases.core.Connection,
-                                        mdb_conn: databases.core.Connection,
-                                        cache: Optional[aiomcache.Client],
-                                        ) -> List[Tuple[int, str]]:
+async def get_installation_event_ids(account: int,
+                                     sdb_conn: databases.core.Connection,
+                                     mdb_conn: databases.core.Connection,
+                                     cache: Optional[aiomcache.Client],
+                                     ) -> List[Tuple[int, str]]:
     """Load the app installation and delivery IDs for the given account."""
     installation_ids = await get_github_installation_ids(account, sdb_conn, cache)
-    dids = await mdb_conn.fetch_all(
-        select([Installation.id, Installation.delivery_id])
-        .where(Installation.id.in_(installation_ids)))
-    diff = len(installation_ids) - len(dids)
-    if diff > 0:
-        raise ResponseError(NoSourceDataError(detail="There %s %d missing installation%s." %
-                                                     ("are" if diff > 1 else "is", diff,
-                                                      "s" if diff > 1 else "")))
-    return [(did[0], did[1]) for did in dids]
+    rows = await mdb_conn.fetch_all(
+        select([InstallationRepo.install_id, InstallationRepo.event_id])
+        .where(InstallationRepo.install_id.in_(installation_ids))
+        .distinct())
+    repo_iids = {r[0] for r in rows}
+    diff = set(installation_ids) - repo_iids
+    if diff:
+        raise ResponseError(NoSourceDataError(detail="Some installation%s missing: %s." %
+                                                     ("s are" if len(diff) > 1 else " is", diff)))
+    return [(r[0], r[1]) for r in rows]
 
 
 @cached(
@@ -319,7 +319,7 @@ async def fetch_github_installation_progress(account: int,
     mdb_sqlite = mdb.url.dialect == "sqlite"
     idle_threshold = timedelta(hours=3)
     async with mdb.connection() as mdb_conn:
-        id_ids = await get_installation_delivery_ids(account, sdb, mdb_conn, cache)
+        id_ids = await get_installation_event_ids(account, sdb, mdb_conn, cache)
         owner = await get_installation_owner(id_ids[0][0], mdb_conn, cache)
         # we don't cache this because the number of repos can dynamically change
         models = []
