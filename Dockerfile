@@ -71,10 +71,12 @@ lapack_libs = mkl_lapack95_lp64' > /root/.numpy-site.cfg && \
 
 ADD server/requirements.txt /server/requirements.txt
 ADD databases.patch /databases.patch
+ADD prometheus_client.patch /prometheus_client.patch
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends python3-dev gcc g++ patch && \
     pip3 install --no-cache-dir -r /server/requirements.txt && \
     patch /usr/local/lib/python*/dist-packages/databases/backends/postgres.py /databases.patch && \
+    patch /usr/local/lib/python*/dist-packages/prometheus_client/exposition.py /prometheus_client.patch && \
     rm /databases.patch && \
     apt-get remove -y patch && \
     apt-get autoremove -y && \
