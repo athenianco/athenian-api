@@ -323,12 +323,14 @@ async def fetch_github_installation_progress(account: int,
         owner = await get_installation_owner(id_ids[0][0], mdb_conn, cache)
         # we don't cache this because the number of repos can dynamically change
         models = []
-        for installation_id, delivery_id in id_ids:
+        for installation_id, event_id in id_ids:
             repositories = await mdb_conn.fetch_val(
                 select([func.count(InstallationRepo.repo_id)])
                 .where(InstallationRepo.install_id == installation_id))
             rows = await mdb_conn.fetch_all(
-                select([FetchProgress]).where(FetchProgress.event_id == delivery_id))
+                select([FetchProgress]).where(FetchProgress.event_id == event_id))
+            if not rows:
+                continue
             tables = [TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.key],
                                             name=r[FetchProgress.node_type.key],
                                             total=r[FetchProgress.nodes_total.key])
