@@ -9,7 +9,7 @@ from athenian.api.typing_utils import DatabaseLike
 class AccessChecker:
     """Interface for all repository access checkers."""
 
-    CACHE_TTL = 60 * 60  # 1 hour
+    CACHE_TTL = 60  # 1 minute
     SERVICE = ""
 
     def __init__(self,
