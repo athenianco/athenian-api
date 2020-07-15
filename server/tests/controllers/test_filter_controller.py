@@ -22,6 +22,7 @@ from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache
 
 
+@pytest.mark.filter_repositories
 async def test_filter_repositories_no_repos(client, headers):
     body = {
         "date_from": "2015-01-12",
@@ -35,6 +36,7 @@ async def test_filter_repositories_no_repos(client, headers):
     assert repos == []
 
 
+@pytest.mark.filter_repositories
 async def test_filter_repositories_smoke(client, headers):
     body = {
         "date_from": "2015-10-13",
@@ -54,6 +56,7 @@ async def test_filter_repositories_smoke(client, headers):
     assert repos == []
 
 
+@pytest.mark.filter_repositories
 @pytest.mark.parametrize("account, date_to, code",
                          [(3, "2020-01-23", 403), (10, "2020-01-23", 403), (1, "2015-10-13", 200),
                           (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
@@ -68,6 +71,7 @@ async def test_filter_repositories_nasty_input(client, headers, account, date_to
     assert response.status == code
 
 
+@pytest.mark.filter_contributors
 @pytest.mark.parametrize("in_", [{}, {"in": []}])
 async def test_filter_contributors_no_repos(client, headers, in_):
     body = {
@@ -92,6 +96,7 @@ async def test_filter_contributors_no_repos(client, headers, in_):
     assert contribs == []
 
 
+@pytest.mark.filter_contributors
 async def test_filter_contributors(client, headers):
     body = {
         "date_from": "2015-10-13",
@@ -125,6 +130,7 @@ async def test_filter_contributors(client, headers):
     assert contribs == []
 
 
+@pytest.mark.filter_contributors
 async def test_filter_contributors_merger_only(client, headers):
     body = {
         "date_from": "2015-10-13",
@@ -154,6 +160,7 @@ async def test_filter_contributors_merger_only(client, headers):
     assert mergers_logins == expected_mergers
 
 
+@pytest.mark.filter_contributors
 async def test_filter_contributors_with_empty_and_full_roles(client, headers):
     all_roles = ["author", "reviewer", "commit_author", "commit_committer",
                  "commenter", "merger", "releaser"]
@@ -181,6 +188,7 @@ async def test_filter_contributors_with_empty_and_full_roles(client, headers):
             sorted(parsed_all_roles, key=itemgetter("login")))
 
 
+@pytest.mark.filter_contributors
 @pytest.mark.parametrize("account, date_to, code",
                          [(3, "2020-01-23", 403), (10, "2020-01-23", 403), (1, "2015-10-13", 200),
                           (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
@@ -218,6 +226,7 @@ def with_only_master_branch(func):
     return wraps(wrapped_with_only_master_branch, func)
 
 
+@pytest.mark.filter_pull_requests
 @pytest.mark.parametrize("prop", [k.name.lower() for k in Property])
 @with_only_master_branch
 async def test_filter_prs_single_prop(client, headers, mdb,
@@ -237,6 +246,7 @@ async def test_filter_prs_single_prop(client, headers, mdb,
                                 datetime(year=2020, month=4, day=23, tzinfo=timezone.utc))
 
 
+@pytest.mark.filter_pull_requests
 @with_only_master_branch
 async def test_filter_prs_all_properties(client, headers, mdb):
     body = {
@@ -258,6 +268,7 @@ async def test_filter_prs_all_properties(client, headers, mdb):
     assert response.status == 400
 
 
+@pytest.mark.filter_pull_requests
 @with_only_master_branch
 async def test_filter_prs_shot(client, headers, mdb):
     body = {
@@ -279,6 +290,7 @@ async def test_filter_prs_shot(client, headers, mdb):
                                 {"author": ["github.com/mcuadros"]}, time_to)
 
 
+@pytest.mark.filter_pull_requests
 async def test_filter_prs_labels_include(client, headers):
     body = {
         "date_from": "2018-09-01",
@@ -299,6 +311,7 @@ async def test_filter_prs_labels_include(client, headers):
         assert "bug" in {label.name for label in pr.labels}
 
 
+@pytest.mark.filter_pull_requests
 @pytest.mark.parametrize("timezone, must_match", [(120, True), (60, True), (0, False)])
 async def test_filter_prs_merged_timezone(client, headers, timezone, must_match):
     body = {
@@ -322,6 +335,7 @@ async def test_filter_prs_merged_timezone(client, headers, timezone, must_match)
     assert matched == must_match
 
 
+@pytest.mark.filter_pull_requests
 @pytest.mark.parametrize("timezone, must_match", [(-7 * 60, False), (-8 * 60, True)])
 async def test_filter_prs_created_timezone(client, headers, timezone, must_match):
     body = {
@@ -603,6 +617,7 @@ async def validate_prs_response(response: ClientResponse,
         assert v > tdz, k
 
 
+@pytest.mark.filter_pull_requests
 @pytest.mark.parametrize("account, date_to, code",
                          [(3, "2020-01-23", 403), (10, "2020-01-23", 403), (1, "2015-10-13", 200),
                           (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
@@ -620,6 +635,7 @@ async def test_filter_prs_nasty_input(client, headers, account, date_to, code):
     assert response.status == code
 
 
+@pytest.mark.filter_pull_requests
 async def test_filter_prs_david_bug(client, headers):
     body = {
         "account": 1,
@@ -642,6 +658,7 @@ async def test_filter_prs_david_bug(client, headers):
     assert response.status == 200
 
 
+@pytest.mark.filter_pull_requests
 async def test_filter_prs_developer_filter(client, headers):
     body = {
         "date_from": "2017-07-15",
@@ -669,6 +686,7 @@ async def test_filter_prs_developer_filter(client, headers):
         assert passed
 
 
+@pytest.mark.filter_pull_requests
 async def test_filter_prs_exclude_inactive(client, headers):
     body = {
         "date_from": "2017-01-01",
@@ -687,6 +705,7 @@ async def test_filter_prs_exclude_inactive(client, headers):
 
 
 async def test_filter_commits_bypassing_prs_mcuadros(client, headers):
+@pytest.mark.filter_commits
     body = {
         "account": 1,
         "date_from": "2019-01-12",
@@ -725,6 +744,7 @@ async def test_filter_commits_bypassing_prs_mcuadros(client, headers):
 
 
 async def test_filter_commits_no_pr_merges_mcuadros(client, headers):
+@pytest.mark.filter_commits
     body = {
         "account": 1,
         "date_from": "2019-01-12",
@@ -747,6 +767,7 @@ async def test_filter_commits_no_pr_merges_mcuadros(client, headers):
 
 
 async def test_filter_commits_bypassing_prs_merges(client, headers):
+@pytest.mark.filter_commits
     body = {
         "account": 1,
         "date_from": "2019-01-12",
@@ -766,6 +787,7 @@ async def test_filter_commits_bypassing_prs_merges(client, headers):
 
 
 async def test_filter_commits_bypassing_prs_empty(client, headers):
+@pytest.mark.filter_commits
     body = {
         "account": 1,
         "date_from": "2020-01-12",
@@ -784,6 +806,7 @@ async def test_filter_commits_bypassing_prs_empty(client, headers):
 
 
 async def test_filter_commits_bypassing_prs_no_with(client, headers):
+@pytest.mark.filter_commits
     body = {
         "account": 1,
         "date_from": "2020-01-12",
@@ -808,6 +831,7 @@ async def test_filter_commits_bypassing_prs_no_with(client, headers):
                                                            tzinfo=dateutil.tz.tzutc())
 
 
+@pytest.mark.filter_commits
 @pytest.mark.parametrize("account, date_to, code",
                          [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2020-01-12", 200),
                           (1, "2010-01-11", 400), (1, "2020-02-32", 400)])
@@ -824,6 +848,7 @@ async def test_filter_commits_bypassing_prs_nasty_input(client, headers, account
     assert response.status == code
 
 
+@pytest.mark.filter_releases
 async def test_filter_releases_by_tag(client, headers):
     body = {
         "account": 1,
@@ -858,6 +883,7 @@ async def test_filter_releases_by_tag(client, headers):
         assert release.repository.startswith("github.com/"), str(release)
 
 
+@pytest.mark.filter_releases
 async def test_filter_releases_by_branch(client, headers, client_cache, app):
     app._cache = client_cache
     body = {
@@ -872,6 +898,7 @@ async def test_filter_releases_by_branch(client, headers, client_cache, app):
     assert response.status == 200, response_text
 
 
+@pytest.mark.filter_releases
 @pytest.mark.parametrize("account, date_to, code",
                          [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2020-01-12", 200),
                           (1, "2010-01-11", 400), (1, "2020-02-32", 400)])
@@ -926,6 +953,7 @@ async def test_get_prs_nasty_input(client, headers, account, repo, numbers, stat
     assert response.status == status, response_body
 
 
+@pytest.mark.filter_labels
 async def test_filter_labels_smoke(client, headers):
     body = {
         "account": 1,
@@ -943,6 +971,7 @@ async def test_filter_labels_smoke(client, headers):
     assert labels[0].used_prs == 7
 
 
+@pytest.mark.filter_labels
 @pytest.mark.parametrize("account, repos, status",
                          [(1, ["github.com/whatever/else"], 403),
                           (3, ["github.com/src-d/go-git"], 403),
