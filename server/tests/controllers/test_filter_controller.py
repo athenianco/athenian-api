@@ -20,6 +20,7 @@ from athenian.api.models.web.pull_request_participant import PullRequestParticip
 from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache
+from tests.conftest import has_memcached
 
 
 @pytest.mark.filter_repositories
@@ -704,8 +705,14 @@ async def test_filter_prs_exclude_inactive(client, headers):
     assert len(prs.data) == 6
 
 
-async def test_filter_commits_bypassing_prs_mcuadros(client, headers):
 @pytest.mark.filter_commits
+@pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
+async def test_filter_commits_bypassing_prs_mcuadros(client, cached, headers, app, client_cache):
+    if cached:
+        if not has_memcached:
+            raise pytest.skip("no memcached")
+        app._cache = client_cache
+
     body = {
         "account": 1,
         "date_from": "2019-01-12",
@@ -743,8 +750,14 @@ async def test_filter_commits_bypassing_prs_mcuadros(client, headers):
                 "avatar": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4"}}}}
 
 
-async def test_filter_commits_no_pr_merges_mcuadros(client, headers):
 @pytest.mark.filter_commits
+@pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
+async def test_filter_commits_no_pr_merges_mcuadros(client, cached, headers, app, client_cache):
+    if cached:
+        if not has_memcached:
+            raise pytest.skip("no memcached")
+        app._cache = client_cache
+
     body = {
         "account": 1,
         "date_from": "2019-01-12",
@@ -766,8 +779,14 @@ async def test_filter_commits_no_pr_merges_mcuadros(client, headers):
         assert c.committer.login == "github.com/mcuadros"
 
 
-async def test_filter_commits_bypassing_prs_merges(client, headers):
 @pytest.mark.filter_commits
+@pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
+async def test_filter_commits_bypassing_prs_merges(client, cached, headers, app, client_cache):
+    if cached:
+        if not has_memcached:
+            raise pytest.skip("no memcached")
+        app._cache = client_cache
+
     body = {
         "account": 1,
         "date_from": "2019-01-12",
@@ -786,8 +805,14 @@ async def test_filter_commits_bypassing_prs_merges(client, headers):
         assert c.committer.email != "noreply@github.com"
 
 
-async def test_filter_commits_bypassing_prs_empty(client, headers):
 @pytest.mark.filter_commits
+@pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
+async def test_filter_commits_bypassing_prs_empty(client, cached, headers, app, client_cache):
+    if cached:
+        if not has_memcached:
+            raise pytest.skip("no memcached")
+        app._cache = client_cache
+
     body = {
         "account": 1,
         "date_from": "2020-01-12",
@@ -805,8 +830,14 @@ async def test_filter_commits_bypassing_prs_empty(client, headers):
     assert len(commits.include.users) == 0
 
 
-async def test_filter_commits_bypassing_prs_no_with(client, headers):
 @pytest.mark.filter_commits
+@pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
+async def test_filter_commits_bypassing_prs_no_with(client, cached, headers, app, client_cache):
+    if cached:
+        if not has_memcached:
+            raise pytest.skip("no memcached")
+        app._cache = client_cache
+
     body = {
         "account": 1,
         "date_from": "2020-01-12",
@@ -832,10 +863,17 @@ async def test_filter_commits_bypassing_prs_no_with(client, headers):
 
 
 @pytest.mark.filter_commits
+@pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
 @pytest.mark.parametrize("account, date_to, code",
                          [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2020-01-12", 200),
                           (1, "2010-01-11", 400), (1, "2020-02-32", 400)])
-async def test_filter_commits_bypassing_prs_nasty_input(client, headers, account, date_to, code):
+async def test_filter_commits_bypassing_prs_nasty_input(client, cached, headers, app, client_cache,
+                                                        account, date_to, code):
+    if cached:
+        if not has_memcached:
+            raise pytest.skip("no memcached")
+        app._cache = client_cache
+
     body = {
         "account": account,
         "date_from": "2020-01-12",
