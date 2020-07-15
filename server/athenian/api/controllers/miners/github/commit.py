@@ -26,11 +26,11 @@ class FilterCommitsProperty(Enum):
     exptime=5 * 60,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda prop, date_from, date_to, repos, with_author, with_committer, columns, **_:
+    key=lambda prop, date_from, date_to, repos, with_author, with_committer, **kwargs:
         (prop.value, date_from.timestamp(), date_to.timestamp(), ",".join(sorted(repos)),
          ",".join(sorted(with_author)) if with_author else "",
          ",".join(sorted(with_committer)) if with_committer else "",
-         "" if columns is None else ",".join(c.key for c in columns)),
+         "" if kwargs.get("columns") is None else ",".join(c.key for c in kwargs["columns"])),
 )
 async def extract_commits(prop: FilterCommitsProperty,
                           date_from: datetime,
