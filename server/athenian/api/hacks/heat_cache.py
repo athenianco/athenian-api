@@ -99,6 +99,7 @@ def main():
             if progress.finished_date is None:
                 log.warning("Skipped account %d / reposet %d because the progress is not 100%",
                             reposet.owner_id, reposet.id)
+                continue
             repos = {r.split("/", 1)[1] for r in reposet.items}
             log.info("Heating reposet %d of account %d", reposet.id, reposet.owner_id)
             try:
