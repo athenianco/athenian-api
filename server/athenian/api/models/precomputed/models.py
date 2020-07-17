@@ -1,10 +1,9 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import CHAR, Column, func, Integer, JSON, LargeBinary, String, Text, TIMESTAMP
+from sqlalchemy import CHAR, func, Integer, JSON, LargeBinary, String, Text, TIMESTAMP
 from sqlalchemy.dialects.postgresql import ARRAY, HSTORE
 
-from athenian.api.models import create_base
-
+from athenian.api.models import create_base, SmartColumn as Column
 
 Base = create_base()
 
