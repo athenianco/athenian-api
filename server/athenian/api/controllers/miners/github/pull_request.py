@@ -452,7 +452,13 @@ class PullRequestMiner:
                                     ) -> pd.DataFrame:
         if columns is not None:
             columns = [model_cls.pull_request_node_id, model_cls.node_id] + columns
-        node_id_filter = model_cls.pull_request_node_id.in_(node_ids)
+
+        if len(node_ids) > 32767:
+            from sqlalchemy.sql.expression import any_
+            node_id_filter = model_cls.pull_request_node_id == any_(node_ids)
+        else:
+            node_id_filter = model_cls.pull_request_node_id.in_(node_ids)
+
         if created_at:
             filters = sql.and_(node_id_filter, model_cls.created_at < time_to)
         else:

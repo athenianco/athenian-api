@@ -483,9 +483,15 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
 
 @sentry_span
 async def _fetch_labels(node_ids: Iterable[str], mdb: databases.Database) -> Dict[str, List[str]]:
+    if len(node_ids) > 32767:
+        from sqlalchemy.sql.expression import any_
+        node_id_filter = PullRequestLabel.pull_request_node_id == any_(node_ids)
+    else:
+        node_id_filter = PullRequestLabel.pull_request_node_id.in_(node_ids)
+
     rows = await mdb.fetch_all(
         select([PullRequestLabel.pull_request_node_id, PullRequestLabel.name])
-        .where(PullRequestLabel.pull_request_node_id.in_(node_ids)))
+        .where(node_id_filter))
     labels = {}
     for row in rows:
         node_id, label = row[0], row[1]
