@@ -7,9 +7,11 @@ from typing import Union
 from alembic import script
 from alembic.migration import MigrationContext
 import jinja2
+from sqlalchemy import Column
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
 from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
+from sqlalchemy.sql.expression import all_, any_
 
 from athenian.api import slogging
 
@@ -76,6 +78,42 @@ BaseType = Union[DeclarativeMeta, Refreshable, Explodable]
 def create_base() -> BaseType:
     """Create the declarative base class type."""
     return declarative_base(cls=(Refreshable, Explodable))
+
+
+class SmartColumn(Column):
+    """Column that automatically converts `IN` and `NOT IN` to `ANY` and `!= ALL` repsecitvely"""
+
+    # 32767 is the maximum value for postgres:
+    #   - https://sentry.io/organizations/athenianco/issues/1785993425/
+    MAX_ALLOWED_QUERY_ARGUMENTS = 32767
+    # Anyway we cannot use exactly the upper limit because the length of the values used for
+    # `IN` and `NOT IN` could be near the the maximum allowed, but it often comes with other
+    # clauses that could make the total number of arguments bindings overflow the limit.
+    # This switch also affects performances:
+    #   - https://blog.jooq.org/2017/03/30/sql-in-predicate-with-in-list-or-with-array-which-is-faster/ # noqa: E501
+    IN_AUTO_ANY_THRESHOLD = 16383  # This specific value doesn't have any specific meaning
+
+    assert IN_AUTO_ANY_THRESHOLD < MAX_ALLOWED_QUERY_ARGUMENTS
+
+    log = logging.getLogger("%s.SmartColumn" % __name__)
+
+    def in_(self, other):
+        """Change the `in` operator into an `any` if too many values"""
+        if len(other) > self.IN_AUTO_ANY_THRESHOLD:
+            self.log.info("automatically switching `IN` clause to `ANY`")
+            # `in_` works if you pass a `dict` for example, but `any_` does not
+            return self == any_(list(other))
+
+        return super(SmartColumn, self).in_(other)
+
+    def notin_(self, other):
+        """Change the `notin` operator into a `!= all` if too many values"""
+        if len(other) > self.IN_AUTO_ANY_THRESHOLD:
+            self.log.info("automatically switching `NOT IN` clause to `!= ALL`")
+            # `notin_` works if you pass a `dict` for example, but `all_` does not
+            return self != all_(list(other))
+
+        return super(SmartColumn, self).notin_(other)
 
 
 slogging.trailing_dot_exceptions.add("alembic.runtime.migration")
