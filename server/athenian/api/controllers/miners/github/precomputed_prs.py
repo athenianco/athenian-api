@@ -303,17 +303,10 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
     """
     log = logging.getLogger("%s.load_precomputed_pr_releases" % metadata.__package__)
     ghprt = GitHubPullRequestTimes
-
-    if len(prs) > 32767:
-        from sqlalchemy.sql.expression import any_
-        pr_node_id_filter = ghprt.pr_node_id == any_(prs)
-    else:
-        pr_node_id_filter = ghprt.pr_node_id.in_(prs)
-
     prs = await pdb.fetch_all(
         select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
                 ghprt.repository_full_name, ghprt.release_match])
-        .where(and_(pr_node_id_filter,
+        .where(and_(ghprt.pr_node_id.in_(prs),
                     ghprt.releaser.isnot(None),
                     ghprt.pr_done_at < time_to)))
     prefix = PREFIXES["github"]
@@ -478,16 +471,10 @@ async def discover_unreleased_prs(prs: pd.DataFrame,
     if not postgres:
         selected.extend([GitHubMergedPullRequest.checked_releases,
                          GitHubMergedPullRequest.repository_full_name])
-
-    if len(prs.index) > 32767:
-        from sqlalchemy.sql.expression import any_
-        pr_node_id_filter = GitHubMergedPullRequest.pr_node_id == any_(prs.index)
-    else:
-        pr_node_id_filter = GitHubMergedPullRequest.pr_node_id.in_(prs.index)
-
     rows = await pdb.fetch_all(
         select(selected)
-        .where(and_(pr_node_id_filter, or_(*filters))))
+        .where(and_(GitHubMergedPullRequest.pr_node_id.in_(prs.index),
+                    or_(*filters))))
     if not postgres:
         filtered_rows = []
         grouped = {}
@@ -656,14 +643,7 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
             continue
         node_ids.append(row[0])
     add_pdb_hits(pdb, "inactive_merged_unreleased", len(node_ids))
-
-    if len(node_ids) > 32767:
-        from sqlalchemy.sql.expression import any_
-        node_id_filter = PullRequest.node_id == any_(node_ids)
-    else:
-        node_id_filter = PullRequest.node_id.in_(node_ids)
-
     return await read_sql_query(select([PullRequest])
-                                .where(node_id_filter)
+                                .where(PullRequest.node_id.in_(node_ids))
                                 .order_by(PullRequest.node_id),
                                 mdb, PullRequest, index=PullRequest.node_id.key)

@@ -264,26 +264,14 @@ async def _refresh_prs_to_today(prs_time_machine: List[MinedPullRequest],
             done.append(pr)
     tasks = []
     if done:
-        if len(done) > 32767:
-            from sqlalchemy.sql.expression import any_
-            node_id_filter = PullRequest.node_id == any_([pr.pr[node_id_key] for pr in done])
-        else:
-            node_id_filter = PullRequest.node_id.in_([pr.pr[node_id_key] for pr in done])
-
         # updated_at can be outside of `time_to` and missed in the cache
         tasks.append(mdb.fetch_all(
             select([PullRequest.node_id, PullRequest.updated_at])
-            .where(node_id_filter)))
+            .where(PullRequest.node_id.in_([pr.pr[node_id_key] for pr in done]))))
     if remined:
-        if len(remined) > 32767:
-            from sqlalchemy.sql.expression import any_
-            node_id_filter = PullRequest.node_id == any_(remined)
-        else:
-            node_id_filter = PullRequest.node_id.in_(remined)
-
         tasks.extend([
             read_sql_query(select([PullRequest])
-                           .where(node_id_filter)
+                           .where(PullRequest.node_id.in_(remined))
                            .order_by(PullRequest.node_id),
                            mdb, PullRequest, index=node_id_key),
             # `time_to` is in the place of `time_from` because we know that these PRs
