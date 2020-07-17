@@ -1,7 +1,9 @@
 import dateutil.parser
-from sqlalchemy import BigInteger, Boolean, Column, Integer, Text, TIMESTAMP
+from sqlalchemy import BigInteger, Boolean, Integer, Text, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import synonym
+
+from athenian.api.models import SmartColumn as Column
 
 Base = declarative_base()
 
