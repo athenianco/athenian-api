@@ -189,6 +189,7 @@ class AthenianApp(connexion.AioHttpApp):
             r"/v1/ui(/|$)",
             r"/v1/invite/check/?$",
             r"/status/?$",
+            r"/memory/?$",
         ], cache=cache)
         with self._auth0:
             api = self.add_api(
