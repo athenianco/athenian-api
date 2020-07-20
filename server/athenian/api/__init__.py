@@ -1,7 +1,7 @@
 import argparse
 import asyncio
 import bdb
-from datetime import timezone
+from datetime import datetime, timezone
 from functools import partial
 import getpass
 from http import HTTPStatus
@@ -493,13 +493,14 @@ def create_slack(log: logging.Logger) -> Optional[slack.WebClient]:
         loader=jinja2.FileSystemLoader(Path(__file__).parent / "slack"),
         autoescape=False, trim_blocks=True, lstrip_blocks=True,
     )
+    slack_client.jinja2.globals["env"] = os.getenv("SENTRY_ENV", "development")
+    slack_client.jinja2.globals["now"] = lambda: datetime.now(timezone.utc)
 
     async def post(template, **kwargs) -> None:
         try:
             response = await slack_client.chat_postMessage(
                 channel=slack_client.channel,
-                text=slack_client.jinja2.get_template(template).render(
-                    env=os.getenv("SENTRY_ENV", "development"), **kwargs))
+                text=slack_client.jinja2.get_template(template).render(**kwargs))
             error_name = error_data = ""
         except Exception as e:
             error_name = type(e).__name__
