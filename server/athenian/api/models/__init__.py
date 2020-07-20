@@ -9,7 +9,11 @@ from alembic.migration import MigrationContext
 import jinja2
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
+from sqlalchemy.sql.compiler import OPERATORS
+from sqlalchemy.sql.elements import BinaryExpression, Grouping
+from sqlalchemy.sql.operators import in_op, notin_op
 
 from athenian.api import slogging
 
@@ -76,6 +80,30 @@ BaseType = Union[DeclarativeMeta, Refreshable, Explodable]
 def create_base() -> BaseType:
     """Create the declarative base class type."""
     return declarative_base(cls=(Refreshable, Explodable))
+
+
+@compiles(BinaryExpression)
+def compile_binary(binary, compiler, override_operator=None, **kw):
+    """
+    If there are more than 10 elements in the `IN` set, inline them to avoid hitting the limit of \
+    the number of query arguments in Postgres (1<<15).
+    """  # noqa: D200
+    operator = override_operator or binary.operator
+
+    try:
+        right_len = len(binary.right)
+    except TypeError:
+        if isinstance(binary.right, Grouping):
+            right_len = len(binary.right.element.clauses)
+        else:
+            right_len = 0
+    if operator is in_op or operator is notin_op and right_len >= 10:
+        left = compiler.process(binary.left, **kw)
+        kw["literal_binds"] = True
+        right = compiler.process(binary.right, **kw)
+        return left + OPERATORS[operator] + right
+
+    return compiler.visit_binary(binary, override_operator=override_operator, **kw)
 
 
 slogging.trailing_dot_exceptions.add("alembic.runtime.migration")

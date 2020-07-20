@@ -3,6 +3,7 @@ from sqlalchemy import BigInteger, Boolean, Column, Integer, Text, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import synonym
 
+
 Base = declarative_base()
 
 
