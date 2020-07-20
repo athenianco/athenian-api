@@ -987,7 +987,7 @@ async def _extract_released_commits(releases: pd.DataFrame,
                                     pdb: databases.Database,
                                     cache: Optional[aiomcache.Client],
                                     ) -> Tuple[Dict[str, List[str]], pd.DataFrame, Dict[str, str]]:
-    log = logging.getLogger("%s._extract_released_commits")
+    log = logging.getLogger("%s._extract_released_commits" % metadata.__package__)
     repo = releases[Release.repository_full_name.key].unique()
     assert len(repo) == 1
     repo = repo[0]

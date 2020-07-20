@@ -6,11 +6,14 @@ import time
 
 from aiohttp import web
 import prometheus_client
+import pympler.muppy
+import pympler.summary
 
 from athenian.api import metadata
 from athenian.api.metadata import __package__, __version__
+from athenian.api.models.web import BadRequestError
 from athenian.api.models.web.versions import Versions
-from athenian.api.response import model_response
+from athenian.api.response import model_response, ResponseError
 
 
 async def get_versions(request: web.Request) -> web.Response:
@@ -112,6 +115,23 @@ class StatusRenderer:
         return resp
 
 
+async def summarize_memory(request: web.Request) -> web.Response:
+    """Return a TXT memory usage summary by object type."""
+    limit = request.rel_url.query.get("limit", "20")
+    try:
+        limit = int(limit)
+    except ValueError:
+        return ResponseError(
+            BadRequestError('"limit" has an invalid integer value "%s"' % limit),
+        ).response
+    all_objects = pympler.muppy.get_objects()
+    summary = pympler.summary.summarize(all_objects)
+    body = "\n".join(pympler.summary.format_(summary, limit=limit))
+    resp = web.Response(body=body)
+    resp.content_type = prometheus_client.CONTENT_TYPE_LATEST
+    return resp
+
+
 def setup_status(app) -> prometheus_client.CollectorRegistry:
     """Add /status to serve Prometheus-driven runtime metrics."""
     registry = prometheus_client.CollectorRegistry(auto_describe=True)
@@ -188,4 +208,5 @@ def setup_status(app) -> prometheus_client.CollectorRegistry:
     # passing StatusRenderer(registry) without __call__ triggers a spurious DeprecationWarning
     # FIXME(vmarkovtsev): https://github.com/aio-libs/aiohttp/issues/4519
     app.router.add_get("/status", StatusRenderer(registry).__call__)
+    app.router.add_get("/memory", summarize_memory)
     return registry
