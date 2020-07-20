@@ -5,6 +5,7 @@ from http import HTTPStatus
 import logging
 import marshal
 import os
+import pickle
 from random import randint
 from sqlite3 import IntegrityError, OperationalError
 import struct
@@ -309,6 +310,10 @@ async def get_installation_owner(installation_id: int,
     return user_login
 
 
+@cached(exptime=10,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda account, **_: (account,))
 async def fetch_github_installation_progress(account: int,
                                              sdb: DatabaseLike,
                                              mdb: databases.Database,
@@ -380,6 +385,7 @@ async def fetch_github_installation_progress(account: int,
 
 async def _append_precomputed_progress(model: InstallationProgress,
                                        account: int,
+                                       uid: str,
                                        native_uid: str,
                                        sdb: DatabaseLike,
                                        mdb: databases.Database,
@@ -392,6 +398,10 @@ async def _append_precomputed_progress(model: InstallationProgress,
     for reposet in reposets:
         if reposet[RepositorySet.name.key] == RepositorySet.ALL:
             precomputed = reposet[RepositorySet.precomputed.key]
+            break
+    if slack is not None and not precomputed and model.finished_date is not None \
+            and datetime.now(timezone.utc) - model.finished_date > timedelta(hours=2):
+        await slack.post("precomputed_failure.jinja2", uid=uid, account=account, model=model)
     model.tables.append(TableFetchingProgress(
         name="precomputed", fetched=int(precomputed), total=1))
     if not precomputed:
@@ -403,8 +413,9 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status(request.uid, id, sdb_conn, request.cache)
         model = await fetch_github_installation_progress(id, sdb_conn, request.mdb, request.cache)
-        await _append_precomputed_progress(model, id, request.native_uid, sdb_conn, request.mdb,
-                                           request.cache, request.app["slack"])
+        await _append_precomputed_progress(
+            model, id, request.uid, request.native_uid, sdb_conn, request.mdb,
+            request.cache, request.app["slack"])
         return model_response(model)
 
 
