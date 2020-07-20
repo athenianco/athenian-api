@@ -7,11 +7,13 @@ from typing import Union
 from alembic import script
 from alembic.migration import MigrationContext
 import jinja2
-from sqlalchemy import Column
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
-from sqlalchemy.sql.expression import all_, any_
+from sqlalchemy.sql.compiler import OPERATORS
+from sqlalchemy.sql.elements import BinaryExpression, Grouping
+from sqlalchemy.sql.operators import in_op, notin_op
 
 from athenian.api import slogging
 
@@ -80,41 +82,28 @@ def create_base() -> BaseType:
     return declarative_base(cls=(Refreshable, Explodable))
 
 
-class AutoInAnyColumn(Column):
-    """Column that automatically converts `IN` and `NOT IN` to `ANY` and `!= ALL` repsecitvely"""
+@compiles(BinaryExpression)
+def compile_binary(binary, compiler, override_operator=None, **kw):
+    """
+    If there are more than 10 elements in the `IN` set, inline them to avoid hitting the limit of \
+    the number of query arguments in Postgres (1<<15).
+    """  # noqa: D200
+    operator = override_operator or binary.operator
 
-    # 32767 is the maximum value for postgres:
-    #   - https://sentry.io/organizations/athenianco/issues/1785993425/
-    MAX_ALLOWED_QUERY_ARGUMENTS = 32767
-    # Anyway we cannot use exactly the upper limit because the length of the values used for
-    # `IN` and `NOT IN` could be near the the maximum allowed, but it often comes with other
-    # clauses that could make the total number of arguments bindings overflow the limit.
-    # This switch also affects performance. `IN` is better for smaller values and `ANY` for larger
-    # ones:
-    #   - https://blog.jooq.org/2017/03/30/sql-in-predicate-with-in-list-or-with-array-which-is-faster/ # noqa: E501
-    IN_AUTO_ANY_THRESHOLD = 100  # This value doesn't have any specific meaning
+    try:
+        right_len = len(binary.right)
+    except TypeError:
+        if isinstance(binary.right, Grouping):
+            right_len = len(binary.right.element.clauses)
+        else:
+            right_len = 0
+    if operator is in_op or operator is notin_op and right_len >= 10:
+        left = compiler.process(binary.left, **kw)
+        kw["literal_binds"] = True
+        right = compiler.process(binary.right, **kw)
+        return left + OPERATORS[operator] + right
 
-    assert IN_AUTO_ANY_THRESHOLD < MAX_ALLOWED_QUERY_ARGUMENTS
-
-    log = logging.getLogger("%s.AutoInAnyColumn" % __name__)
-
-    def in_(self, other):
-        """Change the `in` operator into an `any` if too many values"""
-        if len(other) > self.IN_AUTO_ANY_THRESHOLD:
-            self.log.debug("automatically switching `IN` clause to `ANY`")
-            # `in_` works if you pass a `dict` for example, but `any_` does not
-            return self == any_(list(other))
-
-        return super(AutoInAnyColumn, self).in_(other)
-
-    def notin_(self, other):
-        """Change the `notin` operator into a `!= all` if too many values"""
-        if len(other) > self.IN_AUTO_ANY_THRESHOLD:
-            self.log.debug("automatically switching `NOT IN` clause to `!= ALL`")
-            # `notin_` works if you pass a `dict` for example, but `all_` does not
-            return self != all_(list(other))
-
-        return super(AutoInAnyColumn, self).notin_(other)
+    return compiler.visit_binary(binary, override_operator=override_operator, **kw)
 
 
 slogging.trailing_dot_exceptions.add("alembic.runtime.migration")

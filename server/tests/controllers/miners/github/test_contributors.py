@@ -22,7 +22,6 @@ async def test_mine_contributors_expected_cache_miss_with_different_roles(mdb, c
     if has_memcached:
         cache = memcached
 
-    cache = memcached
     authors = await mine_contributors(
         ["src-d/go-git"], None, None, mdb, cache, with_stats=True, as_roles=["author"])
     mergers = await mine_contributors(
