@@ -89,9 +89,10 @@ class AutoInAnyColumn(Column):
     # Anyway we cannot use exactly the upper limit because the length of the values used for
     # `IN` and `NOT IN` could be near the the maximum allowed, but it often comes with other
     # clauses that could make the total number of arguments bindings overflow the limit.
-    # This switch also affects performances:
+    # This switch also affects performance. `IN` is better for smaller values and `ANY` for larger
+    # ones:
     #   - https://blog.jooq.org/2017/03/30/sql-in-predicate-with-in-list-or-with-array-which-is-faster/ # noqa: E501
-    IN_AUTO_ANY_THRESHOLD = 16383  # This specific value doesn't have any specific meaning
+    IN_AUTO_ANY_THRESHOLD = 100  # This specific value doesn't have any specific meaning
 
     assert IN_AUTO_ANY_THRESHOLD < MAX_ALLOWED_QUERY_ARGUMENTS
 
