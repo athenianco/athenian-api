@@ -12,7 +12,7 @@ import signal
 import socket
 import sys
 import threading
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 import aiohttp.web
 from aiohttp.web_exceptions import HTTPFound
@@ -547,6 +547,18 @@ def check_schema_versions(metadata_db: str,
     return passed
 
 
+def compose_db_options(mdb: str, sdb: str, pdb: str) -> Dict[str, Dict[str, Any]]:
+    """Create the kwargs for each of the three databases.Database __init__-s."""
+    result = {"mdb_options": {},
+              "sdb_options": {},
+              "pdb_options": {}}
+    for url, dikt in zip((mdb, sdb, pdb), result.values()):
+        if databases.DatabaseURL(url).dialect in ("postgres", "postgresql"):
+            # enable PgBouncer
+            dikt["statement_cache_size"] = 0
+    return result
+
+
 def main() -> Optional[AthenianApp]:
     """Server entry point."""
     uvloop.install()
@@ -563,6 +575,7 @@ def main() -> Optional[AthenianApp]:
     kms_cls = None if args.no_google_kms else AthenianKMS
     app = AthenianApp(
         mdb_conn=args.metadata_db, sdb_conn=args.state_db, pdb_conn=args.precomputed_db,
+        **compose_db_options(args.metadata_db, args.state_db, args.precomputed_db),
         ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache)
     app.run(host=args.host, port=args.port, use_default_access_log=True, handle_signals=False,
             print=lambda s: log.info("\n" + s))
