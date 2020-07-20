@@ -92,7 +92,7 @@ class AutoInAnyColumn(Column):
     # This switch also affects performance. `IN` is better for smaller values and `ANY` for larger
     # ones:
     #   - https://blog.jooq.org/2017/03/30/sql-in-predicate-with-in-list-or-with-array-which-is-faster/ # noqa: E501
-    IN_AUTO_ANY_THRESHOLD = 100  # This specific value doesn't have any specific meaning
+    IN_AUTO_ANY_THRESHOLD = 100  # This value doesn't have any specific meaning
 
     assert IN_AUTO_ANY_THRESHOLD < MAX_ALLOWED_QUERY_ARGUMENTS
 
@@ -101,7 +101,7 @@ class AutoInAnyColumn(Column):
     def in_(self, other):
         """Change the `in` operator into an `any` if too many values"""
         if len(other) > self.IN_AUTO_ANY_THRESHOLD:
-            self.log.info("automatically switching `IN` clause to `ANY`")
+            self.log.debug("automatically switching `IN` clause to `ANY`")
             # `in_` works if you pass a `dict` for example, but `any_` does not
             return self == any_(list(other))
 
@@ -110,7 +110,7 @@ class AutoInAnyColumn(Column):
     def notin_(self, other):
         """Change the `notin` operator into a `!= all` if too many values"""
         if len(other) > self.IN_AUTO_ANY_THRESHOLD:
-            self.log.info("automatically switching `NOT IN` clause to `!= ALL`")
+            self.log.debug("automatically switching `NOT IN` clause to `!= ALL`")
             # `notin_` works if you pass a `dict` for example, but `all_` does not
             return self != all_(list(other))
 
