@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import CHAR, func, Integer, JSON, LargeBinary, String, Text, TIMESTAMP
 from sqlalchemy.dialects.postgresql import ARRAY, HSTORE
 
-from athenian.api.models import create_base, SmartColumn as Column
+from athenian.api.models import AutoInAnyColumn as Column, create_base
 
 Base = create_base()
 

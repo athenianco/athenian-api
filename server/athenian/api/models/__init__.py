@@ -80,7 +80,7 @@ def create_base() -> BaseType:
     return declarative_base(cls=(Refreshable, Explodable))
 
 
-class SmartColumn(Column):
+class AutoInAnyColumn(Column):
     """Column that automatically converts `IN` and `NOT IN` to `ANY` and `!= ALL` repsecitvely"""
 
     # 32767 is the maximum value for postgres:
@@ -95,7 +95,7 @@ class SmartColumn(Column):
 
     assert IN_AUTO_ANY_THRESHOLD < MAX_ALLOWED_QUERY_ARGUMENTS
 
-    log = logging.getLogger("%s.SmartColumn" % __name__)
+    log = logging.getLogger("%s.AutoInAnyColumn" % __name__)
 
     def in_(self, other):
         """Change the `in` operator into an `any` if too many values"""
@@ -104,7 +104,7 @@ class SmartColumn(Column):
             # `in_` works if you pass a `dict` for example, but `any_` does not
             return self == any_(list(other))
 
-        return super(SmartColumn, self).in_(other)
+        return super(AutoInAnyColumn, self).in_(other)
 
     def notin_(self, other):
         """Change the `notin` operator into a `!= all` if too many values"""
@@ -113,7 +113,7 @@ class SmartColumn(Column):
             # `notin_` works if you pass a `dict` for example, but `all_` does not
             return self != all_(list(other))
 
-        return super(SmartColumn, self).notin_(other)
+        return super(AutoInAnyColumn, self).notin_(other)
 
 
 slogging.trailing_dot_exceptions.add("alembic.runtime.migration")
