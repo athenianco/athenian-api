@@ -12,7 +12,7 @@ import signal
 import socket
 import sys
 import threading
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 import aiohttp.web
 from aiohttp.web_exceptions import HTTPFound
@@ -99,6 +99,8 @@ def parse_args() -> argparse.Namespace:
                         help="Precomputed objects augmenting the metadata DB and reducing "
                              "the amount of online work. DB connection string in SQLAlchemy "
                              "format. This DB is read/write.")
+    parser.add_argument("--pgbouncer", action="store_true",
+                        help="Enable pgbouncer connectivity for PostgreSQL DBs.")
     parser.add_argument("--memcached", required=False,
                         help="memcached (users profiles, preprocessed metadata cache) address, "
                              "for example, 0.0.0.0:11211")
@@ -546,6 +548,17 @@ def check_schema_versions(metadata_db: str,
     return passed
 
 
+def compose_db_options(mdb: str, sdb: str, pdb: str, pgbouncer: bool) -> Tuple[dict, dict, dict]:
+    """Create the kwargs for each of the three databases.Database __init__-s."""
+    result = {}, {}, {}
+    if not pgbouncer:
+        return result
+    for url, dikt in zip((mdb, sdb, pdb), result):
+        if databases.DatabaseURL(url).dialect in ("postgres", "postgresql"):
+            dikt["statement_cache_size"] = 0
+    return result
+
+
 def main() -> Optional[AthenianApp]:
     """Server entry point."""
     uvloop.install()
@@ -560,8 +573,11 @@ def main() -> Optional[AthenianApp]:
     cache = create_memcached(args.memcached, log)
     auth0_cls = create_auth0_factory(args.force_user)
     kms_cls = None if args.no_google_kms else AthenianKMS
+    mdb_opts, sdb_opts, pdb_opts = compose_db_options(
+        args.metadata_db, args.state_db, args.precomputed_db, args.pgbouncer)
     app = AthenianApp(
         mdb_conn=args.metadata_db, sdb_conn=args.state_db, pdb_conn=args.precomputed_db,
+        mdb_options=mdb_opts, sdb_options=sdb_opts, pdb_options=pdb_opts,
         ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache)
     app.run(host=args.host, port=args.port, use_default_access_log=True, handle_signals=False,
             print=lambda s: log.info("\n" + s))
