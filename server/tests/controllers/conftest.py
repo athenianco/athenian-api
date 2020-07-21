@@ -87,3 +87,9 @@ def pr_samples():
 
         return [random_pr() for _ in range(n)]
     return generate
+
+
+def pytest_configure(config):
+    for mark in ("filter_repositories", "filter_contributors", "filter_pull_requests",
+                 "filter_commits", "filter_releases", "filter_labels"):
+        config.addinivalue_line("markers", mark)
