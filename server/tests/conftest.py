@@ -195,9 +195,9 @@ class FakeKMS:
         pass
 
 
-@pytest.fixture(scope="function")
-async def eiso(app) -> User:
-    user = User(
+@pytest.fixture(scope="module")
+def eiso_user() -> User:
+    return User(
         id="auth0|5e1f6e2e8bfa520ea5290741",
         login="eiso",
         email="eiso@athenian.co",
@@ -206,9 +206,13 @@ async def eiso(app) -> User:
         picture="https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
         updated=datetime.now(timezone.utc),
     )
-    app._auth0._default_user_id = "auth0|5e1f6e2e8bfa520ea5290741"
-    app._auth0._default_user = user
-    return user
+
+
+@pytest.fixture(scope="function")
+async def eiso(app, eiso_user) -> User:
+    app._auth0._default_user_id = eiso_user.id
+    app._auth0._default_user = eiso_user
+    return eiso_user
 
 
 @pytest.fixture(scope="function")
