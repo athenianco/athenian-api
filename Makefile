@@ -3,7 +3,7 @@ MAKEFLAGS += --no-builtin-rules
 # Package configuration
 PROJECT = athenian-api
 SERVICE_NAME = api
-IMAGE ?= athenian/api:dev
+IMAGE ?= gcr.io/athenian-1/api:latest
 
 CI_REPOSITORY ?= https://github.com/athenianco/ci
 CI_BRANCH ?= master
