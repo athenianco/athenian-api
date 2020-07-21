@@ -118,6 +118,9 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
     if getattr(request, "god_id", request.uid) != request.uid:
         return ResponseError(ForbiddenError(
             detail="You must not be an active god to accept an invitation.")).response
+    if request.uid == (await request.app["auth"].default_user()).id:
+        return ResponseError(ForbiddenError(
+            detail="You must not be the default user to accept an invitation.")).response
 
     def bad_req():
         return ResponseError(BadRequestError(detail="Invalid invitation URL")).response
