@@ -103,6 +103,10 @@ def add_pdb_misses(pdb: databases.Database, topic: str, value: int) -> None:
 class ParallelDatabase(databases.Database):
     """Override connection() to ignore the task context and spawn a new Connection every time."""
 
+    def __str__(self):
+        """Make Sentry debugging easier."""
+        return "ParallelDatabase('%s', options=%s)" % (self.url, self.options)
+
     def connection(self) -> "databases.core.Connection":
         """Bypass self._connection_context."""
         return databases.core.Connection(self._backend)
