@@ -1,13 +1,14 @@
 import asyncio
 from collections import defaultdict
 from contextvars import ContextVar
+import dataclasses  # noqa
 from datetime import datetime, timezone
 import logging  # noqa
 import os
 
 import databases
 
-from athenian.api import create_memcached, setup_cache_metrics
+from athenian.api import create_memcached, setup_cache_metrics, slogging
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github  # noqa
 from athenian.api.controllers.features.github.pull_request_filter import filter_pull_requests
 from athenian.api.controllers.miners.types import Property
@@ -17,6 +18,7 @@ from athenian.api.models.web import PullRequestMetricID  # noqa
 
 async def main():
     """Go away linter."""
+    slogging.setup("INFO", False)
     if False:
         cache = create_memcached("0.0.0.0:7001", logging.getLogger())
         setup_cache_metrics(cache, {}, None)
@@ -39,8 +41,8 @@ async def main():
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
     }
 
-    time_from = datetime(2019, 6, 5, tzinfo=timezone.utc)
-    time_to = datetime(2020, 6, 30, tzinfo=timezone.utc)
+    time_from = datetime(2020, 4, 19, tzinfo=timezone.utc)
+    time_to = datetime(2020, 4, 26, tzinfo=timezone.utc)
     repos = {"classified"}
     # TODO(vmarkovtsev): load these from the settings
     settings = {
@@ -49,20 +51,21 @@ async def main():
     }
     # """
     prs = list(await filter_pull_requests(
-        set(Property),
+        {Property.WIP, Property.REVIEWING, Property.MERGING, Property.RELEASING,
+         Property.RELEASE_HAPPENED, Property.REJECTION_HAPPENED, Property.FORCE_PUSH_DROPPED},
         time_from,
         time_to,
         repos,
         {},
         set(),
-        False,
+        True,
         settings,
         mdb,
         pdb,
         cache,
     ))
     for pr in prs:
-        print("https://%s/pull/%d" % (pr.repository, pr.number))
+        print("https://%s/pull/%d\t%s" % (pr.repository, pr.number, pr.stage_timings))
     """
     metrics = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_REVIEW_TIME],
