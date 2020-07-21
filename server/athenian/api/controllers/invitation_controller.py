@@ -313,7 +313,7 @@ async def get_installation_owner(installation_id: int,
     return user_login
 
 
-@cached(exptime=10,
+@cached(exptime=5,  # matches the webapp poll interval
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda account, **_: (account,))
@@ -366,6 +366,9 @@ async def fetch_github_installation_progress(account: int,
                                          repositories=repositories,
                                          tables=tables)
             models.append(model)
+        if not models:
+            raise ResponseError(NoSourceDataError(
+                detail="No installation progress exists for account %d." % account))
         tables = {}
         finished_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
         for m in models:
