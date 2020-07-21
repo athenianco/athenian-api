@@ -348,6 +348,7 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
                                        pdb: databases.Database,
                                        ) -> None:
     """Store PullRequestTimes belonging to released or rejected PRs to the precomputed DB."""
+    log = logging.getLogger("%s.store_precomputed_done_times" % metadata.__package__)
     inserted = []
     prefix = PREFIXES["github"]
     sqlite = pdb.url.dialect == "sqlite"
@@ -359,6 +360,12 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
             done_at = times.closed.best
         else:
             done_at = times.released.best
+            if not times.closed:
+                log.error("[DEV-508] PR %s (%s#%d) is released but not closed:\n%s",
+                          pr.pr[PullRequest.node_id.key],
+                          pr.pr[PullRequest.repository_full_name.key],
+                          pr.pr[PullRequest.number.key],
+                          times)
             activity_days.add(times.released.best.date())
         activity_days.add(times.created.best.date())
         activity_days.add(times.closed.best.date())
