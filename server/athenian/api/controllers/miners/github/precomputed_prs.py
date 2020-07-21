@@ -366,6 +366,7 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
                           pr.pr[PullRequest.repository_full_name.key],
                           pr.pr[PullRequest.number.key],
                           times)
+                continue
             activity_days.add(times.released.best.date())
         activity_days.add(times.created.best.date())
         activity_days.add(times.closed.best.date())
