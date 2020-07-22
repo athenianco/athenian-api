@@ -150,10 +150,12 @@ async def graph_type_memory(request: web.Request) -> web.Response:
         ).response
     if max_depth > 20:
         return ResponseError(BadRequestError('"depth" cannot be greater than 20')).response
+    if max_depth < 1:
+        return ResponseError(BadRequestError('"depth" cannot be less than 1')).response
     all_objects = pympler.muppy.get_objects()
     roots = [obj for obj in all_objects if pympler.summary._repr(obj) == typename]
     buf = io.StringIO()
-    objgraph.show_refs(roots, output=buf, max_depth=max_depth)
+    objgraph.show_backrefs(roots, output=buf, max_depth=max_depth, refcounts=True)
     resp = web.Response(text=buf.getvalue())
     resp.content_type = "text/vnd.graphviz; charset=utf-8"
     return resp

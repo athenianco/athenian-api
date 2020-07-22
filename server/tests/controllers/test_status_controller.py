@@ -53,6 +53,7 @@ async def test_objgraph(client, headers):
 
 @pytest.mark.parametrize("query", ["depth=10",
                                    "type=uvloop.Loop&depth=50",
+                                   "type=uvloop.Loop&depth=0",
                                    "type=uvloop.Loop&depth=xxx"])
 async def test_objgraph_400(client, headers, query):
     response = await client.request(
