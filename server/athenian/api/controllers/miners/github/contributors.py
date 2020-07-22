@@ -2,7 +2,7 @@ import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import marshal
-from typing import Collection, List, Optional
+from typing import Any, Collection, Dict, List, Optional
 
 import aiomcache
 import databases
@@ -22,7 +22,7 @@ async def mine_contributors(repos: Collection[str],
                             db: databases.Database,
                             cache: Optional[aiomcache.Client],
                             with_stats: Optional[bool] = True,
-                            as_roles: List[str] = None) -> List[dict]:
+                            as_roles: List[str] = None) -> List[Dict[str, Any]]:
     """Discover developers who made any important action in the given repositories and \
     in the given time frame."""
     time_from = time_from or datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -48,7 +48,7 @@ async def _mine_contributors(repos: Collection[str],
                              with_stats: bool,
                              as_roles: List[str],
                              db: databases.Database,
-                             cache: Optional[aiomcache.Client]) -> List[dict]:
+                             cache: Optional[aiomcache.Client]) -> List[Dict[str, Any]]:
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
 

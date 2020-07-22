@@ -6,10 +6,10 @@ from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from itertools import chain
 import logging
-from typing import List
+from typing import Collection, List, Set
 
 import sentry_sdk
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, insert, select, update
 from sqlalchemy.orm import Session, sessionmaker
 from tqdm import tqdm
 
@@ -17,10 +17,13 @@ from athenian.api import add_logging_args, check_schema_versions, create_memcach
     ParallelDatabase, ResponseError, setup_cache_metrics, setup_context
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
+from athenian.api.controllers.miners.github.bots import Bots
+from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.settings import Settings
-from athenian.api.models.metadata.github import PullRequestLabel
+from athenian.api.models.metadata import PREFIXES
+from athenian.api.models.metadata.github import PullRequestLabel, User
 from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitHubPullRequestTimes
-from athenian.api.models.state.models import RepositorySet
+from athenian.api.models.state.models import RepositorySet, Team
 
 
 def _parse_args():
@@ -75,9 +78,13 @@ def main():
 
         nonlocal return_code
         return_code = await sync_labels(log, mdb, pdb)
+        bots = await Bots()(mdb)
+        log.info("Loaded %d bots", len(bots))
 
         log.info("Heating")
         for reposet in tqdm(reposets):
+            if reposet.name != RepositorySet.ALL:
+                continue
             try:
                 progress, settings = account_progress_settings[reposet.owner_id]
             except KeyError:
@@ -101,6 +108,10 @@ def main():
                             reposet.owner_id, reposet.id)
                 continue
             repos = {r.split("/", 1)[1] for r in reposet.items}
+            if not reposet.precomputed:
+                log.info("Considering account %d as brand new, creating the Bots team",
+                         reposet.owner_id)
+                await create_bots_team(reposet.owner_id, repos, bots, sdb, mdb)
             log.info("Heating reposet %d of account %d", reposet.id, reposet.owner_id)
             try:
                 await calc_pull_request_metrics_line_github(
@@ -131,6 +142,26 @@ def main():
 
     asyncio.run(async_run())
     return return_code
+
+
+async def create_bots_team(account: int,
+                           repos: Collection[str],
+                           all_bots: Set[str],
+                           sdb: ParallelDatabase,
+                           mdb: ParallelDatabase) -> None:
+    """Create a new team for the specified accoutn which contains all the involved bots."""
+    teams = await sdb.fetch_all(select([Team.id]).where(Team.name == Team.BOTS))
+    if teams:
+        return
+    contributors = await mine_contributors(
+        repos, datetime.now(timezone.utc) - timedelta(days=365 * 5), datetime.now(timezone.utc),
+        mdb, None, with_stats=False)
+    bots = {u[User.login.key] for u in contributors}.intersection(all_bots)
+    if bots:
+        bots = [PREFIXES["github"] + login for login in bots]
+        await sdb.execute(insert(Team).values(
+            Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
+            .create_defaults().explode()))
 
 
 async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelDatabase) -> int:

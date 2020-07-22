@@ -110,6 +110,7 @@ class Team(create_time_mixin(created_at=True, updated_at=True),
     __table_args__ = (UniqueConstraint("owner_id", "members_checksum", name="uc_owner_members"),
                       UniqueConstraint("owner_id", "name", name="uc_owner_name"),
                       {"sqlite_autoincrement": True})
+    BOTS = "Bots"  # the name of the special team which contains bots
 
     id = Column(Integer(), primary_key=True)
     owner_id = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"),
