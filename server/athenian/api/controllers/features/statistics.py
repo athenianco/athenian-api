@@ -11,20 +11,41 @@ import scipy.stats
 from athenian.api.controllers.features.metric import T
 
 
-vanilla_random_choice = np.random.choice
-lru_random_choice = lru_cache(maxsize=1024)(np.random.choice)
+class NumpyRandomChoiceCache:
+    """
+    Cache numpy.random.choice when `a` is an integer and `size` is a 2D shape.
+
+    This caching improves the performance of bootstrapped because we don't have to generate a big
+    random array every time.
+    """
+
+    vanilla_random_choice = np.random.choice
+
+    class Item:
+        """Cached 2D array of randomness. It may grow over time."""
+
+        def __init__(self):
+            """Initialize a new instance of the Item class."""
+            self.random = np.zeros((0, 0))
+
+        @staticmethod
+        @lru_cache(100)
+        def get(a):
+            """Use lru_cache to maintain a distinct array for each `a`."""
+            return NumpyRandomChoiceCache.Item()
+
+    @wraps(np.random.choice)
+    def __call__(self, a, size=None, replace=True, p=None):
+        """Pretend to be np.random.choice."""
+        if isinstance(a, (int, np.int)) and len(size) == 2 and replace and p is None:
+            item = self.Item.get(a)
+            if item.random.shape < size:
+                item.random = self.vanilla_random_choice(a, size=size)
+            return item.random[:size[0], :size[1]]
+        return self.vanilla_random_choice(a, size=size, replace=replace, p=p)
 
 
-@wraps(np.random.choice)
-def cached_choice(*args, **kwargs):
-    """Avoid hitting "unhashable type" error."""
-    try:
-        return lru_random_choice(*args, **kwargs)
-    except TypeError:
-        return vanilla_random_choice(*args, **kwargs)
-
-
-np.random.choice = cached_choice
+np.random.choice = NumpyRandomChoiceCache()
 
 
 def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, confidence=0.8,
