@@ -612,7 +612,7 @@ class PullRequestTimesMiner:
         merged_at = Fallback(pr.pr[PullRequest.merged_at.key], None)
         closed_at = Fallback(pr.pr[PullRequest.closed_at.key], None)
         if merged_at and not closed_at:
-            self.log.error("[DEV-508] PR %s (%s#%d) is merged at %s but not closed.",
+            self.log.error("[DEV-508] PR %s (%s#%d) is merged at %s but not closed",
                            pr.pr[PullRequest.node_id.key],
                            pr.pr[PullRequest.repository_full_name.key],
                            pr.pr[PullRequest.number.key],
