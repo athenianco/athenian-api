@@ -40,3 +40,22 @@ async def test_memory_400(client, headers):
         method="GET", path="/memory?limit=x", headers=headers, json={},
     )
     assert response.status == 400
+
+
+async def test_objgraph(client, headers):
+    response = await client.request(
+        method="GET", path="/objgraph?type=uvloop.Loop", headers=headers, json={},
+    )
+    assert response.status == 200
+    body = (await response.read()).decode("utf-8")
+    assert body.startswith("digraph ObjectGraph")
+
+
+@pytest.mark.parametrize("query", ["depth=10",
+                                   "type=uvloop.Loop&depth=50",
+                                   "type=uvloop.Loop&depth=xxx"])
+async def test_objgraph_400(client, headers, query):
+    response = await client.request(
+        method="GET", path="/objgraph?" + query, headers=headers, json={},
+    )
+    assert response.status == 400
