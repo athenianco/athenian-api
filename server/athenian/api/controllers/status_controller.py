@@ -1,10 +1,12 @@
 from collections import defaultdict
 from contextvars import ContextVar
+import io
 from itertools import chain
 import logging
 import time
 
 from aiohttp import web
+import objgraph
 import prometheus_client
 import pympler.muppy
 import pympler.summary
@@ -127,8 +129,33 @@ async def summarize_memory(request: web.Request) -> web.Response:
     all_objects = pympler.muppy.get_objects()
     summary = pympler.summary.summarize(all_objects)
     body = "\n".join(pympler.summary.format_(summary, limit=limit))
-    resp = web.Response(body=body)
-    resp.content_type = prometheus_client.CONTENT_TYPE_LATEST
+    resp = web.Response(text=body)
+    return resp
+
+
+async def graph_type_memory(request: web.Request) -> web.Response:
+    """Generate Graphviz of the objects referencing the objects of the specified type."""
+    try:
+        typename = request.rel_url.query["type"]
+    except KeyError:
+        return ResponseError(
+            BadRequestError('"type" must be specified in the URL arguments'),
+        ).response
+    max_depth = request.rel_url.query.get("depth", "5")
+    try:
+        max_depth = int(max_depth)
+    except ValueError:
+        return ResponseError(
+            BadRequestError('"depth" has an invalid integer value "%s"' % max_depth),
+        ).response
+    if max_depth > 20:
+        return ResponseError(BadRequestError('"depth" cannot be greater than 20')).response
+    all_objects = pympler.muppy.get_objects()
+    roots = [obj for obj in all_objects if pympler.summary._repr(obj) == typename]
+    buf = io.StringIO()
+    objgraph.show_refs(roots, output=buf, max_depth=max_depth)
+    resp = web.Response(text=buf.getvalue())
+    resp.content_type = "text/vnd.graphviz; charset=utf-8"
     return resp
 
 
@@ -209,4 +236,5 @@ def setup_status(app) -> prometheus_client.CollectorRegistry:
     # FIXME(vmarkovtsev): https://github.com/aio-libs/aiohttp/issues/4519
     app.router.add_get("/status", StatusRenderer(registry).__call__)
     app.router.add_get("/memory", summarize_memory)
+    app.router.add_get("/objgraph", graph_type_memory)
     return registry

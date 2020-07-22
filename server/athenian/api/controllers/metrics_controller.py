@@ -255,8 +255,7 @@ async def _extract_repos(request: AthenianWebRequest,
         ))
     checker = checkers.get(service)
     if checker is None:
-        checker = await access_classes[service](
-            account, sdb, request.mdb, request.cache).load()
+        checker = await access_classes[service](account, sdb, request.mdb, request.cache).load()
         checkers[service] = checker
     denied = await checker.check(repos)
     if denied:
