@@ -446,8 +446,8 @@ def setup_context(log: logging.Logger) -> None:
         request_bodies="medium",
         release="%s@%s" % (metadata.__package__, metadata.__version__),
         traces_sample_rate=traces_sample_rate,
-        before_send=filter_sentry_events,
     )
+    sentry_sdk.scope.add_global_event_processor(filter_sentry_events)
     sentry_sdk.utils.MAX_STRING_LENGTH = 2048
     sentry_sdk.utils.MAX_FORMAT_PARAM_LENGTH = 256
     with sentry_sdk.configure_scope() as scope:
