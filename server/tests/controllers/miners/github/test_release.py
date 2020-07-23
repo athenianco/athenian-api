@@ -16,10 +16,11 @@ from athenian.api.controllers.miners.github.precomputed_prs import store_precomp
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
     PullRequestTimesMiner
 from athenian.api.controllers.miners.github.release import _fetch_commit_history_dag, \
-    _fetch_first_parents, _fetch_repository_commits, _find_dead_merged_prs, load_releases, \
-    map_prs_to_releases, map_releases_to_prs
+    _fetch_first_parents, _fetch_repository_commits, _fetch_repository_first_commit_dates, \
+    _find_dead_merged_prs, load_releases, map_prs_to_releases, map_releases_to_prs
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
-from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, Release
+from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, \
+    PushCommit, Release
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
 
@@ -759,6 +760,17 @@ async def test__find_dead_merged_prs_no_branches(mdb, pdb):
     branches[Branch.repository_full_name.key] = "xxx"
     dead_prs = await _find_dead_merged_prs(prs, branches, default_branches, mdb, pdb, None)
     assert len(dead_prs) == 0
+
+
+async def test__fetch_repository_first_commit_dates(mdb, pdb):
+    rows1 = await _fetch_repository_first_commit_dates(["src-d/go-git"], mdb, pdb)
+    rows2 = await _fetch_repository_first_commit_dates(["src-d/go-git"], None, pdb)
+    assert len(rows1) == len(rows2) == 1
+    assert rows1[0][0] == rows2[0][0]
+    assert rows1[0][1] == rows2[0][1]
+    assert rows1[0][PushCommit.repository_full_name.key] == \
+        rows2[0][PushCommit.repository_full_name.key]
+    assert rows1[0]["min"] == rows2[0]["min"]
 
 
 """

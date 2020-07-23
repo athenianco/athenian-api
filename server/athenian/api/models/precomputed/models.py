@@ -126,3 +126,13 @@ class GitHubMergedPullRequest(Base, UpdatedMixin):
     author = Column(CHAR(100))  # can be null, see @ghost
     merger = Column(CHAR(100))  # @ghost can merge, too
     labels = Column(JHSTORE, nullable=False, server_default="")
+
+
+class GitHubRepository(Base, UpdatedMixin):
+    """Mined facts about repositories."""
+
+    __tablename__ = "github_repositories"
+
+    node_id = Column(CHAR(32), primary_key=True)
+    repository_full_name = Column(RepositoryFullName, nullable=False)
+    first_commit = Column(TIMESTAMP(timezone=True), nullable=False)

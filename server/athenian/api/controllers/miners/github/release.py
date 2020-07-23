@@ -15,7 +15,7 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, distinct, func, insert, or_, select
+from sqlalchemy import and_, desc, distinct, func, insert, join, or_, select
 from sqlalchemy.cprocessors import str_to_datetime
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql.elements import BinaryExpression
@@ -32,10 +32,10 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, \
-    PushCommit, Release, User
+from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepository, PullRequest, \
+    PullRequestLabel, PushCommit, Release, User
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory, \
-    GitHubRepositoryCommits
+    GitHubRepository, GitHubRepositoryCommits
 from athenian.api.tracing import sentry_span
 
 
@@ -1139,10 +1139,7 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
     # let's try to find the releases not older than 5 weeks before `time_from`
     lookbehind_time_from = time_from - timedelta(days=5 * 7)
     tasks = [
-        mdb.fetch_all(select([PushCommit.repository_full_name,
-                              func.min(PushCommit.committed_date).label("min")])
-                      .where(PushCommit.repository_full_name.in_(matched_bys))
-                      .group_by(PushCommit.repository_full_name)),
+        _fetch_repository_first_commit_dates(repos, mdb, pdb),
         load_releases(matched_bys, branches, default_branches, lookbehind_time_from, time_from,
                       consistent_release_settings, mdb, pdb, cache),
     ]
@@ -1179,6 +1176,40 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
     releases = releases_new.append(releases_old)
     releases.reset_index(drop=True, inplace=True)
     return matched_bys, pdags, releases, releases_new
+
+
+@sentry_span
+async def _fetch_repository_first_commit_dates(repos: Iterable[str],
+                                               mdb: databases.Database,
+                                               pdb: databases.Database,
+                                               ) -> List[Mapping]:
+    result = await pdb.fetch_all(
+        select([GitHubRepository.repository_full_name,
+                GitHubRepository.first_commit.label("min")])
+        .where(GitHubRepository.repository_full_name.in_(repos)))
+    missing = set(repos) - {r[0] for r in result}
+    if missing:
+        computed = await mdb.fetch_all(
+            select([NodeRepository.name_with_owner.label(PushCommit.repository_full_name.key),
+                    func.min(NodeCommit.committed_date).label("min"),
+                    NodeRepository.id])
+            .select_from(join(NodeCommit, NodeRepository,
+                              NodeCommit.repository == NodeRepository.id))
+            .where(NodeRepository.name_with_owner.in_(missing))
+            .group_by(NodeRepository.id))
+        if computed:
+            values = [GitHubRepository(repository_full_name=r[0], first_commit=r[1], node_id=r[2])
+                      .create_defaults().explode(with_primary_keys=True)
+                      for r in computed]
+            try:
+                await pdb.execute_many(insert(GitHubRepository), values)
+            except Exception as e:
+                log = logging.getLogger(
+                    "%s._fetch_repository_first_commit_dates" % metadata.__package__)
+                log.warning("Failed to store %d rows: %s: %s",
+                            len(values), type(e).__name__, e)
+            result.extend(computed)
+    return result
 
 
 @sentry_span

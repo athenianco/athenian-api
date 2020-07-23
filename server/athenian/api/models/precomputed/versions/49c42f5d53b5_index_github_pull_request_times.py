@@ -25,6 +25,7 @@ def upgrade():
         ON github_pull_request_times
         ("repository_full_name", "pr_created_at", "pr_done_at");
         """)
+        session.commit()
 
 
 def downgrade():
@@ -32,3 +33,4 @@ def downgrade():
     if bind.dialect.name == "postgresql":
         session = Session(bind=bind)
         session.execute("DROP INDEX github_pull_request_times_main;")
+        session.commit()

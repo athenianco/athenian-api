@@ -274,6 +274,7 @@ class NodeCommit(Base):
     id = Column(Text, primary_key=True)
     oid = Column(Text, nullable=False)
     sha = synonym(oid)
+    repository = Column(Text, nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True))
 
 
@@ -288,12 +289,17 @@ class NodeCommitParent(Base,
     index = Column(Integer, nullable=False)
 
 
-class NodePullRequestCommit(Base):
+class NodePullRequestCommit(Base, IDMixinNG):
     __tablename__ = "github_node_pull_request_commit"
 
-    id = Column(Text, primary_key=True)
     commit = Column(Text, nullable=False)
     pull_request = Column(Text, nullable=False)
+
+
+class NodeRepository(Base, IDMixinNG):
+    __tablename__ = "github_node_repository"
+
+    name_with_owner = Column(Text, nullable=False)
 
 
 class Branch(Base,
