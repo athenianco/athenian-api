@@ -1187,7 +1187,9 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
         select([GitHubRepository.repository_full_name,
                 GitHubRepository.first_commit.label("min")])
         .where(GitHubRepository.repository_full_name.in_(repos)))
+    add_pdb_hits(pdb, "_fetch_repository_first_commit_dates", len(result))
     missing = set(repos) - {r[0] for r in result}
+    add_pdb_misses(pdb, "_fetch_repository_first_commit_dates", len(missing))
     if missing:
         computed = await mdb.fetch_all(
             select([NodeRepository.name_with_owner.label(PushCommit.repository_full_name.key),
