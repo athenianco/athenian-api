@@ -226,9 +226,13 @@ class PullRequestListMiner:
                 times_time_machine = times_today = \
                     self._precomputed_times[pr_today.pr[PullRequest.node_id.key]]
             except KeyError:
-                times_time_machine = self._times_miner(pr_time_machine)
+                try:
+                    times_time_machine = self._times_miner(pr_time_machine)
+                except ImpossiblePullRequest:
+                    continue
+                finally:
+                    evals += 1
                 times_today = partial(self._times_miner, pr_today)
-                evals += 1
             try:
                 item = self._compile(pr_time_machine, times_time_machine, pr_today, times_today)
             except ImpossiblePullRequest:
