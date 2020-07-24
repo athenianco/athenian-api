@@ -407,11 +407,26 @@ async def _append_precomputed_progress(model: InstallationProgress,
             break
     if slack is not None and not precomputed and model.finished_date is not None \
             and datetime.now(timezone.utc) - model.finished_date > timedelta(hours=2):
-        await slack.post("precomputed_failure.jinja2", uid=uid, account=account, model=model)
+        await _notify_precomputed_failure(slack, uid, account, model, cache)
     model.tables.append(TableFetchingProgress(
         name="precomputed", fetched=int(precomputed), total=1))
     if not precomputed:
         model.finished_date = None
+
+
+@cached(
+    exptime=2 * 3600,
+    serialize=marshal.dumps,
+    deserialize=marshal.loads,
+    key=lambda **_: (),
+    refresh_on_access=True,
+)
+async def _notify_precomputed_failure(slack: Optional[slack.WebClient],
+                                      uid: str,
+                                      account: int,
+                                      model: InstallationProgress,
+                                      cache: Optional[aiomcache.Client]) -> None:
+    await slack.post("precomputed_failure.jinja2", uid=uid, account=account, model=model)
 
 
 async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
