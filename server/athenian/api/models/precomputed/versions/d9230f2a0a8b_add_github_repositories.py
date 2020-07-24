@@ -23,7 +23,7 @@ def upgrade():
     op.create_table(
         "github_repositories",
         sa.Column("node_id", sa.CHAR(32), primary_key=True),
-        sa.Column("repository_full_name", sa.String(64 + 1 + 100), primary_key=True),
+        sa.Column("repository_full_name", sa.String(39 + 1 + 100), primary_key=True),
         sa.Column("first_commit", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False,
                   server_default=sa.func.now()),

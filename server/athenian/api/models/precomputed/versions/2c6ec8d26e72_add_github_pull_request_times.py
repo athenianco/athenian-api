@@ -30,7 +30,7 @@ def upgrade():
         "github_pull_request_times",
         sa.Column("pr_node_id", sa.CHAR(32), primary_key=True),
         sa.Column("release_match", sa.Text(), primary_key=True),
-        sa.Column("repository_full_name", sa.String(64 + 1 + 100), nullable=False),
+        sa.Column("repository_full_name", sa.String(39 + 1 + 100), nullable=False),
         sa.Column("pr_created_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("pr_done_at", sa.TIMESTAMP(timezone=True)),
         sa.Column("developers", hs, nullable=False, server_default=""),

@@ -149,6 +149,12 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
     return WebPullRequest(**props)
 
 
+def _nan_to_none(val):
+    if val != val:
+        return None
+    return val
+
+
 async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find commits that match the specified query."""
     try:
@@ -174,9 +180,9 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
             repository=getattr(commit, PushCommit.repository_full_name.key),
             hash=getattr(commit, PushCommit.sha.key),
             message=getattr(commit, PushCommit.message.key),
-            size_added=getattr(commit, PushCommit.additions.key),
-            size_removed=getattr(commit, PushCommit.deletions.key),
-            files_changed=getattr(commit, PushCommit.changed_files.key),
+            size_added=_nan_to_none(getattr(commit, PushCommit.additions.key)),
+            size_removed=_nan_to_none(getattr(commit, PushCommit.deletions.key)),
+            files_changed=_nan_to_none(getattr(commit, PushCommit.changed_files.key)),
             author=CommitSignature(
                 login=(prefix + author_login) if author_login else None,
                 name=getattr(commit, PushCommit.author_name.key),

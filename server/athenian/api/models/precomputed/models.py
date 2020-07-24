@@ -11,7 +11,7 @@ Base = create_base()
 
 TSARRAY = ARRAY(TIMESTAMP(timezone=True)).with_variant(JSON(), "sqlite")
 JHSTORE = HSTORE().with_variant(JSON(), "sqlite")
-RepositoryFullName = String(64 + 1 + 100)  # user / project taken from the official GitHub docs
+RepositoryFullName = String(39 + 1 + 100)  # user / project taken from the factual GitHub limits
 
 
 class UpdatedMixin:
