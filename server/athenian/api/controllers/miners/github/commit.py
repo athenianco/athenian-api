@@ -1,12 +1,15 @@
 from datetime import datetime
 from enum import Enum
+import logging
 import pickle
 from typing import Collection, List, Optional
 
 import aiomcache
+import numpy as np
 from sqlalchemy import and_, outerjoin, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
+from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.models.metadata.github import NodePullRequestCommit, PushCommit
@@ -45,6 +48,7 @@ async def extract_commits(prop: FilterCommitsProperty,
     """Fetch commits that satisfy the given filters."""
     assert isinstance(date_from, datetime)
     assert isinstance(date_to, datetime)
+    log = logging.getLogger("%s.extract_commits" % metadata.__package__)
     sql_filters = [
         PushCommit.committed_date.between(date_from, date_to),
         PushCommit.repository_full_name.in_(repos),
@@ -57,6 +61,8 @@ async def extract_commits(prop: FilterCommitsProperty,
     if columns is None:
         cols_query, cols_df = [PushCommit], PushCommit
     else:
+        if PushCommit.node_id not in columns:
+            columns.append(PushCommit.node_id)
         cols_query = cols_df = columns
     if prop == FilterCommitsProperty.NO_PR_MERGES:
         commits = await read_sql_query(select(cols_query).where(and_(*sql_filters)), db, cols_df)
@@ -69,4 +75,13 @@ async def extract_commits(prop: FilterCommitsProperty,
             db, cols_df)
     else:
         raise AssertionError('Unsupported primary commit filter "%s"' % prop)
+    for number_prop in (PushCommit.additions, PushCommit.deletions, PushCommit.changed_files):
+        try:
+            number_col = commits[number_prop.key]
+        except KeyError:
+            continue
+        nans = commits[PushCommit.node_id.key].take(np.where(number_col.isna())[0])
+        if not nans.empty:
+            log.error("[DEV-546] Commits have NULL in %s: %s",
+                      number_prop.key, ", ".join(nans))
     return commits
