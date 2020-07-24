@@ -28,8 +28,8 @@ def test_mean_confidence_interval_positive():
     assert isinstance(conf_min, np.float32)
     assert isinstance(conf_max, np.float32)
     assert 20.7 < mean < 20.8
-    assert 17.71 < conf_min < 17.72
-    assert 23.645 < conf_max < 23.665
+    assert 17.5 < conf_min < 18.0
+    assert 23.5 < conf_max < 23.7
 
 
 def test_mean_confidence_interval_negative(square_centered_samples):

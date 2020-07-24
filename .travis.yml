@@ -62,7 +62,7 @@ matrix:
         - PYTHONPATH=. python3 tests/gen_sqlite_db.py
         - coverage run --source athenian.api -m athenian.api.hacks.heat_cache --metadata-db=sqlite:///tests/mdb.sqlite --state-db=sqlite:///tests/sdb.sqlite --precomputed-db=sqlite:///tests/pdb.sqlite --memcached=0.0.0.0:11211
         - coverage xml
-        - pytest --cov-report=xml --cov=athenian.api --cov-append --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py
+        - pytest --benchmark-skip --cov-report=xml --cov=athenian.api --cov-append --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py
         - set +e
       after_success:
         - codecov
@@ -76,7 +76,7 @@ matrix:
       script:
         - set -e
         - export SLACK_API_TOKEN=xxx
-        - pytest --cov-report=xml --cov=athenian.api --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py
+        - pytest --benchmark-skip --cov-report=xml --cov=athenian.api --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py
         - set +e
       after_success:
         - codecov

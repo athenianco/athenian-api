@@ -163,7 +163,11 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
         borders = self.time_intervals
         calcs = self.calcs
         dummy_bins = [[] for _ in borders[:-1]]
-        items = sorted(items)
+        # avoid multiple evaluations of work_began, it is really visible in the profile
+        work_begans = [(item.work_began, i) for i, item in enumerate(items)]
+        if not hasattr(items, "__getitem__"):
+            items = list(items)
+        items = [items[i] for _, i in sorted(work_begans)]
         regulars = [(calc, i) for i, calc in enumerate(calcs) if not calc.requires_full_span]
         full_spans = [(calc, i) for i, calc in enumerate(calcs) if calc.requires_full_span]
         regular_bins = self._bin_regulars(items) if regulars else dummy_bins
