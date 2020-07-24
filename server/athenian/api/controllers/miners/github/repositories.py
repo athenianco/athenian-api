@@ -7,12 +7,12 @@ from typing import Collection, List, Optional
 import aiomcache
 import databases
 import sentry_sdk
-from sqlalchemy import and_, distinct, or_, select
+from sqlalchemy import and_, distinct, join, or_, select
 
 from athenian.api.cache import cached
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestReview, PushCommit, Release, Repository
+from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
+    PullRequestComment, PullRequestReview, PushCommit, Release, Repository
 from athenian.api.tracing import sentry_span
 
 
@@ -57,9 +57,11 @@ async def mine_repositories(repos: Collection[str],
     @sentry_span
     async def fetch_push_commits():
         return await db.fetch_all(
-            select([distinct(PushCommit.repository_full_name)])
-            .where(and_(PushCommit.repository_full_name.in_(repos),
-                        PushCommit.committed_date.between(time_from, time_to),
+            select([NodeRepository.name_with_owner.label(PushCommit.repository_full_name.key)])
+            .select_from(join(NodeCommit, NodeRepository,
+                              NodeCommit.repository == NodeRepository.id))
+            .where(and_(NodeRepository.name_with_owner.in_(repos),
+                        NodeCommit.committed_date.between(time_from, time_to),
                         )))
 
     @sentry_span
