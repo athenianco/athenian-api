@@ -2,6 +2,7 @@ coverage==5.2
 pytest==5.4.3
 pytest-aiohttp==0.3.0
 pytest-cov==2.10.0
+pytest-benchmark==3.2.3
 faker==4.1.1
 nest_asyncio==1.4.0
 codecov==2.1.8

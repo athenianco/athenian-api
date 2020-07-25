@@ -84,8 +84,19 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
             # There used to be an assumption of the log-normal distribution here.
             # However, it worked terribly bad in practice. Besides, we never have values bigger
             # than a certain threshold (several years for timedelta-s).
-            mci = bootstrap.bootstrap(arr, stat_func=bs_stats.mean, alpha=0.2)
-            m, conf_min, conf_max = map(exact_type, (mci.value, mci.lower_bound, mci.upper_bound))
+
+            # Reduce the number of iterations to keep the constant amount of work.
+            num_iterations = max(int(2000 * min(1.0, 200 / len(arr))), 10)
+            for _ in range(10):
+                mci = bootstrap.bootstrap(
+                    arr, num_iterations=num_iterations, stat_func=bs_stats.mean, alpha=0.2)
+                m, conf_min, conf_max = map(
+                    exact_type, (mci.value, mci.lower_bound, mci.upper_bound))
+                if conf_min >= 0:
+                    break
+                num_iterations *= 2
+            if conf_min < 0:
+                conf_min = 0
     if dtype_is_timedelta:
         # convert the dtype back
         m = pd.Timedelta(np.timedelta64(int(m * ns)))
