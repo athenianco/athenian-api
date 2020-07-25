@@ -423,12 +423,16 @@ def setup_context(log: logging.Logger) -> None:
         return
     sentry_env = os.getenv("SENTRY_ENV", "development")
     log.info("Sentry: https://[secure]@sentry.io/%s#%s" % (sentry_project, sentry_env))
+    disabled_transactions = {
+        "aiohttp_cors.preflight_handler._PreflightHandler._preflight_handler",
+        "athenian.api.controllers.status_controller.StatusRenderer.__call__",
+    }
 
     def filter_sentry_events(event: dict, hint) -> Optional[dict]:
-        status_transaction = "athenian.api.controllers.status_controller.StatusRenderer.__call__"
-        if event.get("type", "") == "transaction" and event["transaction"] == status_transaction:
+        if event.get("type", "") == "transaction" and \
+                event["transaction"] in disabled_transactions:
             event.clear()
-            event.update({"type": "transaction", "transaction": status_transaction})
+            event.update({"type": "transaction", "transaction": "disabled"})
             return None
         return event
 
