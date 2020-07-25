@@ -90,12 +90,16 @@ def set_pdb_misses(pdb: databases.Database, topic: str, value: int) -> None:
 
 def add_pdb_hits(pdb: databases.Database, topic: str, value: int) -> None:
     """Increase the `topic` precomputed hits by `value`."""
+    if value < 0:
+        pdb_metrics_logger.error('negative add_pdb_hits("%s", %d)', topic, value)
     pdb.metrics["hits"].get()[topic] += value
     pdb_metrics_logger.info("hits/%s: +%d", topic, value)
 
 
 def add_pdb_misses(pdb: databases.Database, topic: str, value: int) -> None:
     """Increase the `topic` precomputed misses by `value`."""
+    if value < 0:
+        pdb_metrics_logger.error('negative add_pdb_misses("%s", %d)', topic, value)
     pdb.metrics["misses"].get()[topic] += value
     pdb_metrics_logger.info("misses/%s: +%d", topic, value)
 
