@@ -418,7 +418,7 @@ async def _append_precomputed_progress(model: InstallationProgress,
     exptime=2 * 3600,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
-    key=lambda **_: (),
+    key=lambda account, **_: (account,),
     refresh_on_access=True,
 )
 async def _notify_precomputed_failure(slack: Optional[slack.WebClient],
