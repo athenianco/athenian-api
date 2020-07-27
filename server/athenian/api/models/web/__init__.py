@@ -5,6 +5,8 @@ from athenian.api.models.web.base_model_ import Enum, Model
 from athenian.api.models.web.calculated_developer_metrics import CalculatedDeveloperMetrics
 from athenian.api.models.web.calculated_developer_metrics_item import \
     CalculatedDeveloperMetricsItem
+from athenian.api.models.web.calculated_pull_request_histogram import \
+    CalculatedPullRequestHistogram
 from athenian.api.models.web.calculated_pull_request_metric_values import \
     CalculatedPullRequestMetricValues
 from athenian.api.models.web.calculated_pull_request_metrics import CalculatedPullRequestMetrics
@@ -38,6 +40,7 @@ from athenian.api.models.web.generic_error import BadRequestError, DatabaseConfl
 from athenian.api.models.web.generic_filter_request import GenericFilterRequest
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.granularity import Granularity
+from athenian.api.models.web.histogram_scale import HistogramScale
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
 from athenian.api.models.web.installation_progress import InstallationProgress
@@ -52,6 +55,8 @@ from athenian.api.models.web.no_source_data_error import NoSourceDataError
 from athenian.api.models.web.patch_token_request import PatchTokenRequest
 from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.models.web.pull_request import PullRequest
+from athenian.api.models.web.pull_request_histogram_topic import PullRequestHistogramTopic
+from athenian.api.models.web.pull_request_histograms_request import PullRequestHistogramsRequest
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest

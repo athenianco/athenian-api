@@ -162,6 +162,13 @@ class FilterPullRequestsRequest(Model):
 
         :param timezone: The timezone of this FilterPullRequestsRequest.
         """
+        if timezone is not None and timezone > 720:
+            raise ValueError(
+                "Invalid value for `timezone`, must be a value less than or equal to `720`")
+        if timezone is not None and timezone < -720:
+            raise ValueError(
+                "Invalid value for `timezone`, must be a value greater than or equal to `-720`")
+
         self._timezone = timezone
 
     @property
