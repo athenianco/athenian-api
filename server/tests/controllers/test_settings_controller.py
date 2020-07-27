@@ -200,7 +200,8 @@ async def test_get_release_match_settings_existing(client, headers, sdb):
 
 
 @pytest.mark.parametrize("account, code", [(2, 422), (3, 404)])
-async def test_get_release_match_settings_nasty_input(client, headers, account, code):
+async def test_get_release_match_settings_nasty_input(client, headers, sdb, account, code):
+    await sdb.execute(delete(RepositorySet))
     response = await client.request(
         method="GET", path="/v1/settings/release_match/%d" % account, headers=headers)
     assert response.status == code

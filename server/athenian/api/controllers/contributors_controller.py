@@ -1,7 +1,7 @@
 from aiohttp import web
 from sqlalchemy import and_, select
 
-from athenian.api.controllers.miners.access_classes import access_classes
+from athenian.api.controllers.account import get_account_repositories
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.state.models import UserAccount
@@ -25,10 +25,7 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
                 "is not a member."
             )
             return ResponseError(NotFoundError(detail=err_detail)).response
-
-        checker = await access_classes["github"](
-            account_id, sdb_conn, request.mdb, request.cache).load()
-        repos = checker.installed_repos(with_prefix=False)
+        repos = await get_account_repositories(id, sdb_conn, with_prefix=False)
         users = await mine_contributors(
             repos, None, None, request.mdb, request.cache, with_stats=False)
         prefix = PREFIXES["github"]

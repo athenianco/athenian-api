@@ -1,11 +1,12 @@
 import struct
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import aiomcache
 from sqlalchemy import and_, select
 
 from athenian.api.cache import cached, max_exptime
-from athenian.api.models.state.models import Account, AccountGitHubInstallation, UserAccount
+from athenian.api.models.state.models import Account, AccountGitHubInstallation, RepositorySet, \
+    UserAccount
 from athenian.api.models.web import NoSourceDataError, NotFoundError
 from athenian.api.response import ResponseError
 from athenian.api.typing_utils import DatabaseLike
@@ -54,3 +55,19 @@ async def get_user_account_status(user: str,
         raise ResponseError(NotFoundError(
             detail="Account %d does not exist or user %s is not a member." % (account, user)))
     return status
+
+
+async def get_account_repositories(account: int,
+                                   sdb_conn: DatabaseLike,
+                                   with_prefix=True) -> List[str]:
+    """Fetch all the repositories belonging to the account."""
+    repos = await sdb_conn.fetch_val(select([RepositorySet.items]).where(and_(
+        RepositorySet.owner_id == account,
+        RepositorySet.name == RepositorySet.ALL,
+    )))
+    if repos is None:
+        raise ResponseError(NoSourceDataError(
+            detail="The installation of account %d has not finished yet." % account))
+    if not with_prefix:
+        repos = [r.split("/", 1)[1] for r in repos]
+    return repos
