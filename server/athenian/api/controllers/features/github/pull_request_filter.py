@@ -266,6 +266,7 @@ async def _refresh_prs_to_today(prs_time_machine: List[MinedPullRequest],
             remined[pr.pr[node_id_key]] = pr
         else:
             done.append(pr)
+    # TODO(vmarkovtsev): when remined[updated_at] < time_to, we should only match the new releases
     tasks = []
     if done:
         # updated_at can be outside of `time_to` and missed in the cache
