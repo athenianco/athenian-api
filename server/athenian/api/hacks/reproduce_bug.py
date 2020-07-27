@@ -41,8 +41,8 @@ async def main():
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
     }
 
-    time_from = datetime(2020, 4, 19, tzinfo=timezone.utc)
-    time_to = datetime(2020, 4, 26, tzinfo=timezone.utc)
+    time_from = datetime(2020, 7, 27, tzinfo=timezone.utc)
+    time_to = datetime(2020, 7, 28, tzinfo=timezone.utc)
     repos = {"classified"}
     # TODO(vmarkovtsev): load these from the settings
     settings = {

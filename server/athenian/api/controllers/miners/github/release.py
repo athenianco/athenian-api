@@ -393,13 +393,8 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     for r in (missed_released_prs, dead_prs, labels):
         if isinstance(r, Exception):
             raise r from None
-    # FIXME(vmarkovtsev): remove this debug helper when DEV-554 is resolved
-    if not missed_released_prs.empty and not dead_prs.empty:
-        common = missed_released_prs.index.intersection(dead_prs.index)
-        if not common.empty:
-            log = logging.getLogger("%s.map_prs_to_releases" % metadata.__package__)
-            log.error("API bug: some PRs are considered both released and dead: %s",
-                      common.tolist())
+    # PRs may wrongly classified as dead although they are really released; remove the conflicts
+    dead_prs.drop(index=missed_released_prs.index, inplace=True, errors="ignore")
     add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
     add_pdb_misses(pdb, "map_prs_to_releases/dead", len(dead_prs))
     add_pdb_misses(pdb, "map_prs_to_releases/unreleased",
@@ -465,6 +460,12 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
                                 cache: Optional[aiomcache.Client]) -> pd.DataFrame:
     if branches.empty:
         return new_released_prs_df()
+    prs = prs.take(np.where(
+        prs[PullRequest.merged_at.key] <= datetime.now(timezone.utc) - timedelta(hours=1))[0])
+    # timedelta(hours=1) must match the `exptime` of `_fetch_repository_commits()`
+    # commits DAGs are cached and may be not fully up to date, so otherwise some PRs may appear in
+    # dead_prs and missed_released_prs at the same time
+    # see also: DEV-554
     repos = prs[PullRequest.repository_full_name.key].unique()
     if len(repos) == 0:
         return new_released_prs_df()
