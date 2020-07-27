@@ -1,7 +1,9 @@
 import json
 
 import pytest
+from sqlalchemy import delete
 
+from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import Contributor
 from tests.conftest import has_memcached
 
@@ -43,7 +45,8 @@ async def _test_get_contributors(client, cached, headers, app, client_cache):
     assert contribs["github.com/mcuadros"].name == "Máximo Cuadros"
 
 
-async def test_get_contributors_no_installation(client, headers):
+async def test_get_contributors_no_installation(client, headers, sdb):
+    await sdb.execute(delete(RepositorySet))
     response = await client.request(
         method="GET", path="/v1/contributors/2", headers=headers,
     )

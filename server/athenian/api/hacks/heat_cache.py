@@ -104,14 +104,19 @@ def main():
                     continue
                 account_progress_settings[reposet.owner_id] = progress, settings
             if progress.finished_date is None:
-                log.warning("Skipped account %d / reposet %d because the progress is not 100%",
+                log.warning("Skipped account %d / reposet %d because the progress is not 100%%",
                             reposet.owner_id, reposet.id)
                 continue
             repos = {r.split("/", 1)[1] for r in reposet.items}
             if not reposet.precomputed:
                 log.info("Considering account %d as brand new, creating the Bots team",
                          reposet.owner_id)
-                await create_bots_team(reposet.owner_id, repos, bots, sdb, mdb)
+                try:
+                    await create_bots_team(reposet.owner_id, repos, bots, sdb, mdb)
+                except Exception as e:
+                    log.warning("bots %d: %s: %s", reposet.owner_id, type(e).__name__, e)
+                    sentry_sdk.capture_exception(e)
+                    return_code = 1
             log.info("Heating reposet %d of account %d", reposet.id, reposet.owner_id)
             try:
                 await calc_pull_request_metrics_line_github(
@@ -127,8 +132,8 @@ def main():
                     cache,
                 )
             except Exception as e:
-                sentry_sdk.capture_exception(e)
                 log.warning("reposet %d: %s: %s", reposet.id, type(e).__name__, e)
+                sentry_sdk.capture_exception(e)
                 return_code = 1
             else:
                 await sdb.execute(
@@ -140,7 +145,16 @@ def main():
                              RepositorySet.items_count: reposet.items_count,
                              RepositorySet.items_checksum: RepositorySet.items_checksum}))
 
-    asyncio.run(async_run())
+    async def sentry_wrapper():
+        nonlocal return_code
+        try:
+            return await async_run()
+        except Exception as e:
+            log.warning("unhandled error: %s: %s", type(e).__name__, e)
+            sentry_sdk.capture_exception(e)
+            return_code = 1
+
+    asyncio.run(sentry_wrapper())
     return return_code
 
 

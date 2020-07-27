@@ -11,8 +11,7 @@ from sqlalchemy import and_, delete, insert, select
 from sqlalchemy.sql import Select
 
 from athenian.api import ResponseError
-from athenian.api.controllers.account import get_user_account_status
-from athenian.api.controllers.miners.access_classes import access_classes
+from athenian.api.controllers.account import get_account_repositories, get_user_account_status
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.models.state.models import ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, ReleaseMatchStrategy
@@ -99,10 +98,7 @@ class Settings:
             if self._user_id is not None:
                 await get_user_account_status(self._user_id, self._account, conn, self._cache)
             if repos is None:
-                repos = set()
-                for cls in access_classes.values():
-                    repos.update((await cls(self._account, conn, self._mdb, self._cache).load())
-                                 .installed_repos())
+                repos = await get_account_repositories(self._account, conn)
             repos = frozenset(repos)
             rows = await conn.fetch_all(self._cached_release_settings_sql(self._account, repos))
             settings = []

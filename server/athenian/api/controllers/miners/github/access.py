@@ -16,6 +16,8 @@ class GitHubAccessChecker(AccessChecker):
 
     We load the repositories belonging to the bound GitHub installation and rule them out from
     the checked set.
+
+    Do not use this to load all the repos for the account! get_account_repositories() instead.
     """
 
     SERVICE = "github"
