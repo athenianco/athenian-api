@@ -1003,14 +1003,17 @@ async def _extract_released_commits(releases: pd.DataFrame,
     repo = repo[0]
     resolved_releases = set()
     hash_to_release = {h: rid for rid, h in zip(releases.index, releases[Release.sha.key].values)}
-    new_releases = releases[releases[Release.published_at.key] >= time_boundary]
+    new_releases = releases.take(np.where(releases[Release.published_at.key] >= time_boundary)[0])
     assert not new_releases.empty, "you must check this before calling me"
-    boundary_releases = set()
+    # we stop walking the DAG when we encounter these
+    boundary_releases = set(releases.index.take(
+        np.where(releases[Release.published_at.key] < time_boundary)[0]))
+    # original DAG with all the mentioned releases
     dag = await _fetch_commit_history_dag(
         pdag, repo,
-        new_releases[Release.commit_id.key].values,
-        new_releases[Release.sha.key].values,
-        new_releases[Release.published_at.key].values,
+        releases[Release.commit_id.key].values,
+        releases[Release.sha.key].values,
+        releases[Release.published_at.key].values,
         mdb, pdb, cache)
 
     for rid, root in zip(new_releases.index, new_releases[Release.sha.key].values):
@@ -1024,16 +1027,12 @@ async def _extract_released_commits(releases: pd.DataFrame,
                 continue
             else:
                 visited.add(x)
-            try:
-                xrid = hash_to_release[x]
-            except KeyError:
-                pass
-            else:
+            xrid = hash_to_release.get(x)
+            if xrid is not None:
                 pubdt = releases.loc[xrid, Release.published_at.key]
                 if pubdt >= time_boundary:
                     resolved_releases.add(xrid)
                 else:
-                    boundary_releases.add(xrid)
                     continue
             try:
                 parents.extend(dag[x])
@@ -1043,10 +1042,10 @@ async def _extract_released_commits(releases: pd.DataFrame,
     # we need to traverse full history from boundary_releases and subtract it from the full DAG
     ignored_commits = set()
     for rid in boundary_releases:
-        release = releases.loc[rid]
-        if release[Release.sha.key] in ignored_commits:
+        release_sha = releases.loc[rid, Release.sha.key]
+        if release_sha in ignored_commits:
             continue
-        parents = [release[Release.sha.key]]
+        parents = [release_sha]
         while parents:
             x = parents.pop()
             if x in ignored_commits:
@@ -1058,6 +1057,7 @@ async def _extract_released_commits(releases: pd.DataFrame,
         try:
             del dag[c]
         except KeyError:
+            # may raise on boundary release commits
             continue
     return dag, new_releases, hash_to_release
 
