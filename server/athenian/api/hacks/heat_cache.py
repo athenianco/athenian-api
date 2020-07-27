@@ -42,7 +42,7 @@ def _parse_args():
 
 def main():
     """Go away linter."""
-    log = logging.getLogger("heat_cache")
+    log = logging.getLogger("heater")
     args = _parse_args()
     setup_context(log)
     sentry_sdk.add_breadcrumb(category="origin", message="heater", level="info")
@@ -129,7 +129,7 @@ def main():
                     settings,
                     mdb,
                     pdb,
-                    cache,
+                    None,  # yes, disable the cache
                 )
             except Exception as e:
                 log.warning("reposet %d: %s: %s", reposet.id, type(e).__name__, e)
