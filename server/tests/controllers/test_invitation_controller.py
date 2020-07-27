@@ -444,6 +444,7 @@ async def test_progress_no_precomputed(client, headers, sdb):
         RepositorySet.items_count: 2,
         RepositorySet.items_checksum: 42,
         RepositorySet.updates_count: 2,
+        RepositorySet.created_at: datetime.now(timezone.utc) - timedelta(days=1),
     }))
     response = await client.request(
         method="GET", path="/v1/invite/progress/1", headers=headers, json={},

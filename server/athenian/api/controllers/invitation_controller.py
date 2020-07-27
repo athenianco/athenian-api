@@ -398,16 +398,20 @@ async def _append_precomputed_progress(model: InstallationProgress,
                                        cache: Optional[aiomcache.Client],
                                        slack: Optional[slack.WebClient]) -> None:
     reposets = await load_account_reposets(
-        account, native_uid, [RepositorySet.name, RepositorySet.precomputed],
+        account, native_uid,
+        [RepositorySet.name, RepositorySet.precomputed, RepositorySet.created_at],
         sdb, mdb, cache, slack)
     precomputed = False
+    created = None
     for reposet in reposets:
         if reposet[RepositorySet.name.key] == RepositorySet.ALL:
             precomputed = reposet[RepositorySet.precomputed.key]
+            created = reposet[RepositorySet.created_at.key].replace(tzinfo=timezone.utc)
             break
     if slack is not None and not precomputed and model.finished_date is not None \
-            and datetime.now(timezone.utc) - model.finished_date > timedelta(hours=2):
-        await _notify_precomputed_failure(slack, uid, account, model, cache)
+            and datetime.now(timezone.utc) - model.finished_date > timedelta(hours=2) \
+            and datetime.now(timezone.utc) - created > timedelta(hours=2):
+        await _notify_precomputed_failure(slack, uid, account, model, created, cache)
     model.tables.append(TableFetchingProgress(
         name="precomputed", fetched=int(precomputed), total=1))
     if not precomputed:
@@ -425,8 +429,10 @@ async def _notify_precomputed_failure(slack: Optional[slack.WebClient],
                                       uid: str,
                                       account: int,
                                       model: InstallationProgress,
+                                      created: datetime,
                                       cache: Optional[aiomcache.Client]) -> None:
-    await slack.post("precomputed_failure.jinja2", uid=uid, account=account, model=model)
+    await slack.post(
+        "precomputed_failure.jinja2", uid=uid, account=account, model=model, created=created)
 
 
 async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
