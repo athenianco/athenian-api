@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime, timezone
 import logging
 import pickle
@@ -9,6 +8,7 @@ import databases
 from dateutil.rrule import DAILY, rrule
 import numpy as np
 import pandas as pd
+import sentry_sdk
 from sqlalchemy import and_, insert, join, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
@@ -93,7 +93,8 @@ async def load_precomputed_done_candidates(time_from: datetime,
                 ghprt.repository_full_name,
                 ghprt.release_match]
     filters = _create_common_filters(time_from, time_to, repos)
-    rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
+    with sentry_sdk.start_span(op="load_precomputed_done_candidates/fetch"):
+        rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
     result = set()
     ambiguous = {ReleaseMatch.tag.name: set(), ReleaseMatch.branch.name: set()}
@@ -214,7 +215,8 @@ async def load_precomputed_done_times_filters(time_from: datetime,
         else:
             selected.append(ghprt.activity_days)
             date_range = set(date_range)
-    rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
+    with sentry_sdk.start_span(op="load_precomputed_done_times_filters/fetch"):
+        rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
@@ -262,7 +264,8 @@ async def load_precomputed_done_times_reponums(prs: Dict[str, Set[int]],
         or_(*[and_(ghprt.repository_full_name == repo, ghprt.number.in_(numbers))
               for repo, numbers in prs.items()]),
     ]
-    rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
+    with sentry_sdk.start_span(op="load_precomputed_done_times_reponums/fetch"):
+        rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
@@ -303,12 +306,13 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
     """
     log = logging.getLogger("%s.load_precomputed_pr_releases" % metadata.__package__)
     ghprt = GitHubPullRequestTimes
-    prs = await pdb.fetch_all(
-        select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
-                ghprt.repository_full_name, ghprt.release_match])
-        .where(and_(ghprt.pr_node_id.in_(prs),
-                    ghprt.releaser.isnot(None),
-                    ghprt.pr_done_at < time_to)))
+    with sentry_sdk.start_span(op="load_precomputed_pr_releases/fetch"):
+        prs = await pdb.fetch_all(
+            select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
+                    ghprt.repository_full_name, ghprt.release_match])
+            .where(and_(ghprt.pr_node_id.in_(prs),
+                        ghprt.releaser.isnot(None),
+                        ghprt.pr_done_at < time_to)))
     prefix = PREFIXES["github"]
     records = []
     utc = timezone.utc
@@ -428,7 +432,8 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
         sql = insert(GitHubPullRequestTimes).prefix_with("OR IGNORE")
     else:
         raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-    await pdb.execute_many(sql, inserted)
+    with sentry_sdk.start_span(op="store_precomputed_done_times/fetch"):
+        await pdb.execute_many(sql, inserted)
 
 
 def _flatten_set(s: set) -> Optional[Any]:
@@ -479,10 +484,11 @@ async def discover_unreleased_prs(prs: pd.DataFrame,
     if not postgres:
         selected.extend([GitHubMergedPullRequest.checked_releases,
                          GitHubMergedPullRequest.repository_full_name])
-    rows = await pdb.fetch_all(
-        select(selected)
-        .where(and_(GitHubMergedPullRequest.pr_node_id.in_(prs.index),
-                    or_(*filters))))
+    with sentry_sdk.start_span(op="discover_unreleased_prs/fetch"):
+        rows = await pdb.fetch_all(
+            select(selected)
+            .where(and_(GitHubMergedPullRequest.pr_node_id.in_(prs.index),
+                        or_(*filters))))
     if not postgres:
         filtered_rows = []
         grouped = {}
@@ -516,30 +522,53 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
     :param releases: All the releases that were considered in mapping `merged_prs` to \
                      `released_prs`.
     """
-    updates = []
-    prefix = PREFIXES["github"]
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     if not postgres:
         assert pdb.url.dialect == "sqlite"
-    release_dates_by_pr = dict(zip(released_prs.index, released_prs[Release.published_at.key]))
-    for repo, repo_prs in merged_prs.groupby(PullRequest.repository_full_name.key, sort=False):
-        try:
-            matched_by = matched_bys[repo]
-        except KeyError:
-            # no new releases
-            continue
-        repo_releases = releases[[Release.id.key, Release.published_at.key]].take(
-            np.where(releases[Release.repository_full_name.key] == repo)[0])
-        repo_releases_dict = {r: "" for r in repo_releases[Release.id.key].values}
-        release_setting = release_settings[prefix + repo]
-        if matched_by == ReleaseMatch.tag:
-            release_match = "tag|" + release_setting.tags
-        elif matched_by == ReleaseMatch.branch:
-            branch = release_setting.branches.replace(
-                default_branch_alias, default_branches[repo])
-            release_match = "branch|" + branch
-        else:
-            raise AssertionError("Unsupported release match %s" % matched_by)
+    values = []
+    with sentry_sdk.start_span(op="update_unreleased_prs/generate"):
+        prefix = PREFIXES["github"]
+        release_dates_by_pr = dict(zip(released_prs.index, released_prs[Release.published_at.key]))
+        for repo, repo_prs in merged_prs.groupby(PullRequest.repository_full_name.key, sort=False):
+            try:
+                matched_by = matched_bys[repo]
+            except KeyError:
+                # no new releases
+                continue
+            repo_releases = releases[[Release.id.key, Release.published_at.key]].take(
+                np.where(releases[Release.repository_full_name.key] == repo)[0])
+            repo_releases_dict = {r: "" for r in repo_releases[Release.id.key].values}
+            release_setting = release_settings[prefix + repo]
+            if matched_by == ReleaseMatch.tag:
+                release_match = "tag|" + release_setting.tags
+            elif matched_by == ReleaseMatch.branch:
+                branch = release_setting.branches.replace(
+                    default_branch_alias, default_branches[repo])
+                release_match = "branch|" + branch
+            else:
+                raise AssertionError("Unsupported release match %s" % matched_by)
+            for node_id, merged_at, author, merger in zip(
+                    repo_prs.index.values, repo_prs[PullRequest.merged_at.key],
+                    repo_prs[PullRequest.user_login.key].values,
+                    repo_prs[PullRequest.merged_by_login.key].values):
+                release_date = release_dates_by_pr.get(node_id)
+                if release_date is None:
+                    pr_releases = repo_releases_dict
+                else:
+                    pr_releases = {
+                        r: "" for r in repo_releases[Release.id.key].values[
+                            repo_releases[Release.published_at.key] < release_date]
+                    }
+                values.append(GitHubMergedPullRequest(
+                    pr_node_id=node_id,
+                    release_match=release_match,
+                    repository_full_name=repo,
+                    checked_releases=pr_releases,
+                    merged_at=merged_at,
+                    author=author,
+                    merger=merger,
+                    labels={label: "" for label in labels.get(node_id, [])},
+                ).create_defaults().explode(with_primary_keys=True))
         if postgres:
             sql = postgres_insert(GitHubMergedPullRequest)
             sql = sql.on_conflict_do_update(
@@ -554,34 +583,8 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
             # this is wrong but we just cannot update SQLite properly
             # nothing will break though
             sql = insert(GitHubMergedPullRequest).prefix_with("OR REPLACE")
-        values = []
-        for node_id, merged_at, author, merger in zip(
-                repo_prs.index.values, repo_prs[PullRequest.merged_at.key],
-                repo_prs[PullRequest.user_login.key].values,
-                repo_prs[PullRequest.merged_by_login.key].values):
-            release_date = release_dates_by_pr.get(node_id)
-            if release_date is None:
-                pr_releases = repo_releases_dict
-            else:
-                pr_releases = {
-                    r: "" for r in repo_releases[Release.id.key].values[
-                        repo_releases[Release.published_at.key] < release_date]
-                }
-            values.append(GitHubMergedPullRequest(
-                pr_node_id=node_id,
-                release_match=release_match,
-                repository_full_name=repo,
-                checked_releases=pr_releases,
-                merged_at=merged_at,
-                author=author,
-                merger=merger,
-                labels={label: "" for label in labels.get(node_id, [])},
-            ).create_defaults().explode(with_primary_keys=True))
-        updates.append(pdb.execute_many(sql, values))
-    errors = await asyncio.gather(*updates, return_exceptions=True)
-    for r in errors:
-        if isinstance(r, Exception):
-            raise r from None
+    with sentry_sdk.start_span(op="update_unreleased_prs/execute"):
+        await pdb.execute_many(sql, values)
 
 
 @sentry_span
@@ -636,7 +639,8 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
         GitHubPullRequestTimes.repository_full_name.in_(repos),
         GitHubPullRequestTimes.pr_created_at < time_from,
     ), isouter=True)
-    rows = await pdb.fetch_all(select(selected).select_from(body).where(and_(*filters)))
+    with sentry_sdk.start_span(op="load_inactive_merged_unreleased_prs/fetch"):
+        rows = await pdb.fetch_all(select(selected).select_from(body).where(and_(*filters)))
     prefix = PREFIXES["github"]
     ambiguous = {ReleaseMatch.tag.name: set(), ReleaseMatch.branch.name: set()}
     node_ids = []

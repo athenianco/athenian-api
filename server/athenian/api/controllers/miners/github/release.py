@@ -977,9 +977,11 @@ async def _find_old_released_prs(releases: pd.DataFrame,
         filters.append(PullRequest.merged_by_login.in_(mergers))
     if pr_blacklist is not None:
         filters.append(pr_blacklist)
-    return await mdb.fetch_all(select([PullRequest]).where(and_(*filters)))
+    with sentry_sdk.start_span(op="_find_old_released_prs/mdb"):
+        return await mdb.fetch_all(select([PullRequest]).where(and_(*filters)))
 
 
+@sentry_span
 async def _extract_released_commits(releases: pd.DataFrame,
                                     pdag: Optional[bytes],
                                     time_boundary: datetime,

@@ -2,10 +2,12 @@ from contextvars import ContextVar
 import logging
 import os
 import time
+from typing import List, Mapping, Tuple, Union
 
 import aiohttp.web
 import databases.core
 from databases.interfaces import ConnectionBackend, TransactionBackend
+from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
 from athenian.api.typing_utils import wraps
@@ -114,3 +116,42 @@ class ParallelDatabase(databases.Database):
     def connection(self) -> "databases.core.Connection":
         """Bypass self._connection_context."""
         return databases.core.Connection(self._backend)
+
+    def _compile(self, query: ClauseElement, values: List[Mapping]) -> Tuple[str, List[list]]:
+        compiled = query.compile(dialect=self._backend._dialect)
+        compiled_params = sorted(compiled.params.items())
+
+        sql_mapping = {}
+        param_mapping = {}
+        for i, (key, _) in enumerate(compiled_params):
+            sql_mapping[key] = "$" + str(i + 1)
+            param_mapping[key] = i
+        compiled_query = compiled.string % sql_mapping
+
+        processors = compiled._bind_processors
+        args = []
+        for dikt in values:
+            series = [None] * len(compiled_params)
+            args.append(series)
+            for key, val in dikt.items():
+                series[param_mapping[key]] = processors[key](val) if key in processors else val
+
+        return compiled_query, args
+
+    async def _connection_execute_many(self,
+                                       connection: databases.core.Connection,
+                                       query: Union[ClauseElement, str],
+                                       values: List[Mapping]) -> None:
+        """Leverage executemany() if connected to PostgreSQL."""
+        if self.url.dialect not in ("postgres", "postgresql"):
+            return await connection.execute_many(query, values)
+        sql, args = self._compile(query, values)
+        async with connection._query_lock:
+            await connection._connection.raw_connection.executemany(sql, args)
+
+    async def execute_many(self,
+                           query: Union[ClauseElement, str],
+                           values: List[Mapping]) -> None:
+        """Re-implement execute_many for better performance."""
+        async with self.connection() as connection:
+            return await self._connection_execute_many(connection, query, values)
