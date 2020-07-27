@@ -393,6 +393,13 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     for r in (missed_released_prs, dead_prs, labels):
         if isinstance(r, Exception):
             raise r from None
+    # FIXME(vmarkovtsev): remove this debug helper when DEV-554 is resolved
+    if not missed_released_prs.empty and not dead_prs.empty:
+        common = missed_released_prs.index.intersection(dead_prs.index)
+        if not common.empty:
+            log = logging.getLogger("%s.map_prs_to_releases" % metadata.__package__)
+            log.error("API bug: some PRs are considered both released and dead: %s",
+                      common.tolist())
     add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
     add_pdb_misses(pdb, "map_prs_to_releases/dead", len(dead_prs))
     add_pdb_misses(pdb, "map_prs_to_releases/unreleased",

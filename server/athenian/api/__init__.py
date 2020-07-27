@@ -26,7 +26,9 @@ import databases
 import jinja2
 import pytz
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
+from sentry_sdk.integrations.executing import ExecutingIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.pure_eval import PureEvalIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 import sentry_sdk.utils
 import slack
@@ -444,7 +446,8 @@ def setup_context(log: logging.Logger) -> None:
         environment=sentry_env,
         dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),
         integrations=[AioHttpIntegration(), SqlalchemyIntegration(),
-                      LoggingIntegration(level=logging.INFO, event_level=logging.ERROR)],
+                      LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+                      PureEvalIntegration(), ExecutingIntegration()],
         send_default_pii=True,
         debug=sentry_env != "production",
         max_breadcrumbs=20,
