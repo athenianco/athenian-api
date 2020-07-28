@@ -440,7 +440,7 @@ def setup_context(log: logging.Logger) -> None:
         return event
 
     if sentry_env != "development":
-        traces_sample_rate = float(os.getenv("SENTRY_SAMPLING_RATE", "0.1"))
+        traces_sample_rate = float(os.getenv("SENTRY_SAMPLING_RATE", "0.2"))
     else:
         traces_sample_rate = 0
     sentry_sdk.init(
