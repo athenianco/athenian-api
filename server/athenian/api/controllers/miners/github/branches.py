@@ -58,7 +58,7 @@ async def extract_branches(repos: Iterable[str],
                 GROUP BY parent_id;
             """ % ", ".join("'%s'" % n for n in existing_zero_branch_repos)
             rows = await db.fetch_all(sql)
-            refs = {r[0]: r[1] for r in rows}
+            refs = {r["parent_id"]: r["numrefs"] for r in rows}
             for node_id, full_name in existing_zero_branch_repos.items():
                 (log.warning if refs.get(node_id, 0) == 0 else log.error)(
                     "repository %s has 0 branches", full_name)
