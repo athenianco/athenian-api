@@ -1003,11 +1003,11 @@ async def _extract_released_commits(releases: pd.DataFrame,
     repo = repo[0]
     resolved_releases = set()
     hash_to_release = {h: rid for rid, h in zip(releases.index, releases[Release.sha.key].values)}
-    new_releases = releases.take(np.where(releases[Release.published_at.key] >= time_boundary)[0])
+    time_mask = releases[Release.published_at.key] >= time_boundary
+    new_releases = releases.take(np.where(time_mask)[0])
     assert not new_releases.empty, "you must check this before calling me"
     # we stop walking the DAG when we encounter these
-    boundary_releases = set(releases.index.take(
-        np.where(releases[Release.published_at.key] < time_boundary)[0]))
+    boundary_releases = set(releases.index.take(np.where(~time_mask)[0]))
     # original DAG with all the mentioned releases
     dag = await _fetch_commit_history_dag(
         pdag, repo,

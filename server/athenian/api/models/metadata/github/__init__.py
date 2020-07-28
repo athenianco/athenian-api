@@ -333,3 +333,7 @@ class Bot(Base):
     __tablename__ = "github_bots_compat"
 
     login = Column(Text, primary_key=True)
+
+
+class NodeRepositoryRef(Base, ParentChildMixin):
+    __tablename__ = "github_node_repository_refs"
