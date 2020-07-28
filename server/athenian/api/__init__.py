@@ -429,6 +429,8 @@ def setup_context(log: logging.Logger) -> None:
     disabled_transactions = {
         "aiohttp_cors.preflight_handler._PreflightHandler._preflight_handler",
         "athenian.api.controllers.status_controller.StatusRenderer.__call__",
+        "aiohttp.web_urldispatcher.StaticResource._handle",
+        "connexion.apis.aiohttp_api.AioHttpApi._get_openapi_json",
     }
 
     def filter_sentry_events(event: dict, hint) -> Optional[dict]:

@@ -20,7 +20,7 @@ from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
     CalculatedPullRequestMetricValues, CodeBypassingPRsMeasurement, CodeFilter, \
-    DeveloperMetricsRequest, ForSet, ForSetDevelopers, Granularity
+    DeveloperMetricsRequest, ForSet, ForSetDevelopers, Granularity, Model
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 # from athenian.api.models.no_source_data_error import NoSourceDataError
@@ -48,7 +48,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    filters, repos = await _compile_repos_and_devs_prs(filt.for_, request, filt.account)
+    filters, repos = await compile_repos_and_devs_prs(filt.for_, request, filt.account)
     time_intervals, tzoffset = _split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 
@@ -72,15 +72,15 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     met.metrics = filt.metrics
     met.exclude_inactive = filt.exclude_inactive
     met.calculated = []
-    # There should not be any new exception here so we don't have to catch ResponseError.
+
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     for service, (repos, devs, labels_include, for_set) in filters:
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
-        sentries = METRIC_ENTRIES[service]
+        entries = METRIC_ENTRIES[service]["linear"]
         for m in filt.metrics:
-            calcs[sentries[m]].append(m)
+            calcs[entries[m]].append(m)
         gresults = []
         # for each metric, we find the function to calculate and call it
         tasks = []
@@ -149,10 +149,10 @@ def _split_to_time_intervals(date_from: date,
     return [split(g, ".granularities[%d]" % i) for i, g in enumerate(granularities)], tzoffset
 
 
-async def _compile_repos_and_devs_prs(for_sets: List[ForSet],
-                                      request: AthenianWebRequest,
-                                      account: int,
-                                      ) -> (List[FilterPRs], List[str]):
+async def compile_repos_and_devs_prs(for_sets: List[ForSet],
+                                     request: AthenianWebRequest,
+                                     account: int,
+                                     ) -> (List[FilterPRs], List[str]):
     """
     Build the list of filters for a given list of ForSet-s.
 
@@ -297,6 +297,17 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     return model_response(model)
 
 
+def resolve_time_from_and_to(filt: Model) -> Tuple[datetime, datetime]:
+    """Extract the time window from the request model: the timestamps of `from` and `to`."""
+    time_from = datetime.combine(filt.date_from, datetime.min.time(), tzinfo=timezone.utc)
+    time_to = datetime.combine(filt.date_to, datetime.max.time(), tzinfo=timezone.utc)
+    if filt.timezone is not None:
+        tzoffset = timedelta(minutes=-filt.timezone)
+        time_from += tzoffset
+        time_to += tzoffset
+    return time_from, time_to
+
+
 async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over developer activities."""
     try:
@@ -319,12 +330,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     met.metrics = filt.metrics
     met.calculated = []
     topics = {DeveloperTopic(t) for t in filt.metrics}
-    time_from = datetime.combine(filt.date_from, datetime.min.time(), tzinfo=timezone.utc)
-    time_to = datetime.combine(filt.date_to, datetime.max.time(), tzinfo=timezone.utc)
-    if filt.timezone is not None:
-        tzoffset = timedelta(minutes=-filt.timezone)
-        time_from += tzoffset
-        time_to += tzoffset
+    time_from, time_to = resolve_time_from_and_to(filt)
     tasks = []
     for_sets = []
     for service, (repos, devs, labels_include, for_set) in filters:

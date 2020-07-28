@@ -55,7 +55,6 @@ from athenian.api.models.web.no_source_data_error import NoSourceDataError
 from athenian.api.models.web.patch_token_request import PatchTokenRequest
 from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.models.web.pull_request import PullRequest
-from athenian.api.models.web.pull_request_histogram_topic import PullRequestHistogramTopic
 from athenian.api.models.web.pull_request_histograms_request import PullRequestHistogramsRequest
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID

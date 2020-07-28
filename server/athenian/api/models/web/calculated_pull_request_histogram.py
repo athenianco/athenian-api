@@ -3,22 +3,22 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.histogram_scale import HistogramScale
-from athenian.api.models.web.pull_request_histogram_topic import PullRequestHistogramTopic
+from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 
 
 class CalculatedPullRequestHistogram(Model):
     """Response from `/histograms/prs`."""
 
     openapi_types = {
-        "_for": ForSet,
+        "for_": ForSet,
         "metric": str,
         "scale": str,
-        "ticks": List[float],
+        "ticks": List[object],
         "frequencies": List[int],
     }
 
     attribute_map = {
-        "_for": "for",
+        "for_": "for",
         "metric": "metric",
         "scale": "scale",
         "ticks": "ticks",
@@ -29,7 +29,7 @@ class CalculatedPullRequestHistogram(Model):
 
     def __init__(
         self,
-        _for: Optional[ForSet] = None,
+        for_: Optional[ForSet] = None,
         metric: Optional[str] = None,
         scale: Optional[str] = None,
         ticks: Optional[List[float]] = None,
@@ -37,36 +37,36 @@ class CalculatedPullRequestHistogram(Model):
     ):
         """CalculatedPullRequestHistogram - a model defined in OpenAPI
 
-        :param _for: The _for of this CalculatedPullRequestHistogram.
+        :param for_: The for_ of this CalculatedPullRequestHistogram.
         :param metric: The metric of this CalculatedPullRequestHistogram.
         :param scale: The scale of this CalculatedPullRequestHistogram.
         :param ticks: The ticks of this CalculatedPullRequestHistogram.
         :param frequencies: The frequencies of this CalculatedPullRequestHistogram.
         """
-        self.__for = _for
+        self._for_ = for_
         self._metric = metric
         self._scale = scale
         self._ticks = ticks
         self._frequencies = frequencies
 
     @property
-    def _for(self) -> ForSet:
-        """Gets the _for of this CalculatedPullRequestHistogram.
+    def for_(self) -> ForSet:
+        """Gets the for_ of this CalculatedPullRequestHistogram.
 
-        :return: The _for of this CalculatedPullRequestHistogram.
+        :return: The for_ of this CalculatedPullRequestHistogram.
         """
-        return self.__for
+        return self._for_
 
-    @_for.setter
-    def _for(self, _for: ForSet):
-        """Sets the _for of this CalculatedPullRequestHistogram.
+    @for_.setter
+    def for_(self, for_: ForSet):
+        """Sets the for_ of this CalculatedPullRequestHistogram.
 
-        :param _for: The _for of this CalculatedPullRequestHistogram.
+        :param for_: The for_ of this CalculatedPullRequestHistogram.
         """
-        if _for is None:
-            raise ValueError("Invalid value for `_for`, must not be `None`")
+        if for_ is None:
+            raise ValueError("Invalid value for `for_`, must not be `None`")
 
-        self.__for = _for
+        self._for_ = for_
 
     @property
     def metric(self) -> str:
@@ -84,8 +84,8 @@ class CalculatedPullRequestHistogram(Model):
         """
         if metric is None:
             raise ValueError("Invalid value for `metric`, must not be `None`")
-        if metric not in PullRequestHistogramTopic:
-            raise ValueError('"metrics" must be one of %s' % list(PullRequestHistogramTopic))
+        if metric not in PullRequestMetricID:
+            raise ValueError('"metrics" must be one of %s' % list(PullRequestMetricID))
 
         self._metric = metric
 
@@ -111,7 +111,7 @@ class CalculatedPullRequestHistogram(Model):
         self._scale = scale
 
     @property
-    def ticks(self) -> List[float]:
+    def ticks(self) -> List[object]:
         """Gets the ticks of this CalculatedPullRequestHistogram.
 
         Series of horizontal bar borders aka X axis. Their count is `len(y) + 1` because there are
@@ -122,7 +122,7 @@ class CalculatedPullRequestHistogram(Model):
         return self._ticks
 
     @ticks.setter
-    def ticks(self, ticks: List[float]):
+    def ticks(self, ticks: List[object]):
         """Sets the ticks of this CalculatedPullRequestHistogram.
 
         Series of horizontal bar borders aka X axis. Their count is `len(y) + 1` because there are
