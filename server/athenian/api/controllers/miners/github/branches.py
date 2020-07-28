@@ -9,7 +9,7 @@ from sqlalchemy import and_, select
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
-from athenian.api.models.metadata.github import Branch
+from athenian.api.models.metadata.github import Branch, Repository
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
 
@@ -40,8 +40,21 @@ async def extract_branches(repos: Iterable[str],
                       repo, repo_branches[[Branch.branch_name.key, Branch.is_default.key]])
             default_branch = "master"
         default_branches[repo] = default_branch
-    for repo in repos:
-        if repo not in default_branches:
-            log.error("repository %s has 0 branches", repo)
-            default_branches[repo] = "master"
+    zero_branch_repos = [repo for repo in repos if repo not in default_branches]
+    if zero_branch_repos:
+        rows = await db.fetch_all(select([Repository.node_id, Repository.full_name])
+                                  .where(Repository.full_name.in_(zero_branch_repos)))
+        zero_branch_repos = {r[0]: r[1] for r in rows}
+        sql = """
+            SELECT parent_id, COUNT(child_id)
+            FROM github_node_repository_refs
+            WHERE parent_id IN (%s)
+            GROUP BY parent_id;
+        """ % ", ".join("'%s'" % n for n in zero_branch_repos)
+        rows = await db.fetch_all(sql)
+        refs = {r[0]: r[1] for r in rows}
+        for node_id, full_name in zero_branch_repos.items():
+            (log.warning if refs.get(node_id, 0) == 0 else log.error)(
+                "repository %s has 0 branches", full_name)
+            default_branches[full_name] = "master"
     return branches, default_branches
