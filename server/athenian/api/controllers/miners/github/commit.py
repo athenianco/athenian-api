@@ -6,6 +6,7 @@ from typing import Collection, List, Optional
 
 import aiomcache
 import numpy as np
+import sentry_sdk
 from sqlalchemy import and_, outerjoin, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
@@ -65,14 +66,17 @@ async def extract_commits(prop: FilterCommitsProperty,
             columns.append(PushCommit.node_id)
         cols_query = cols_df = columns
     if prop == FilterCommitsProperty.NO_PR_MERGES:
-        commits = await read_sql_query(select(cols_query).where(and_(*sql_filters)), db, cols_df)
+        with sentry_sdk.start_span(op="extract_commits/fetch/NO_PR_MERGES"):
+            commits = await read_sql_query(
+                select(cols_query).where(and_(*sql_filters)), db, cols_df)
     elif prop == FilterCommitsProperty.BYPASSING_PRS:
-        commits = await read_sql_query(
-            select(cols_query)
-            .select_from(outerjoin(PushCommit, NodePullRequestCommit,
-                                   PushCommit.node_id == NodePullRequestCommit.commit))
-            .where(and_(NodePullRequestCommit.commit.is_(None), *sql_filters)),
-            db, cols_df)
+        with sentry_sdk.start_span(op="extract_commits/fetch/BYPASSING_PRS"):
+            commits = await read_sql_query(
+                select(cols_query)
+                .select_from(outerjoin(PushCommit, NodePullRequestCommit,
+                                       PushCommit.node_id == NodePullRequestCommit.commit))
+                .where(and_(NodePullRequestCommit.commit.is_(None), *sql_filters)),
+                db, cols_df)
     else:
         raise AssertionError('Unsupported primary commit filter "%s"' % prop)
     for number_prop in (PushCommit.additions, PushCommit.deletions, PushCommit.changed_files):
@@ -82,6 +86,5 @@ async def extract_commits(prop: FilterCommitsProperty,
             continue
         nans = commits[PushCommit.node_id.key].take(np.where(number_col.isna())[0])
         if not nans.empty:
-            log.error("[DEV-546] Commits have NULL in %s: %s",
-                      number_prop.key, ", ".join(nans))
+            log.error("[DEV-546] Commits have NULL in %s: %s", number_prop.key, ", ".join(nans))
     return commits

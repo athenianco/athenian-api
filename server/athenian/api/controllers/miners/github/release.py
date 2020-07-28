@@ -228,13 +228,17 @@ async def _match_releases_by_branch(repos: Iterable[str],
         return dummy_releases_df()
 
     ghcfp = GitHubCommitFirstParents
-    default_version = ghcfp.__table__ \
-        .columns[ghcfp.format_version.key].default.arg
+    default_version = ghcfp.__table__.columns[ghcfp.format_version.key].default.arg
+
+    async def _fetch_commit_first_parents_pdb():
+        with sentry_sdk.start_span(op="_match_releases_by_branch/_fetch_commit_first_parents_pdb"):
+            return await pdb.fetch_all(
+                select([ghcfp.repository_full_name, ghcfp.commits])
+                .where(and_(ghcfp.repository_full_name.in_(branches_matched),
+                            ghcfp.format_version == default_version)))
+
     pre_mp_tasks = [
-        pdb.fetch_all(
-            select([ghcfp.repository_full_name, ghcfp.commits])
-            .where(and_(ghcfp.repository_full_name.in_(branches_matched),
-                        ghcfp.format_version == default_version))),
+        _fetch_commit_first_parents_pdb(),
         _fetch_pr_merge_commits(branches_matched, time_from, time_to, mdb, cache),
     ]
     data_rows, pr_merge_commits = await asyncio.gather(*pre_mp_tasks, return_exceptions=True)
@@ -252,10 +256,11 @@ async def _match_releases_by_branch(repos: Iterable[str],
         for repo, branches in branches_matched.items()
     ]
     all_merge_commits = []
-    for mps in await asyncio.gather(*mp_tasks, return_exceptions=True):
-        if isinstance(mps, Exception):
-            raise mps from None
-        all_merge_commits.extend(mps)
+    with sentry_sdk.start_span(op="_match_releases_by_branch/_fetch_merge_points"):
+        for mps in await asyncio.gather(*mp_tasks, return_exceptions=True):
+            if isinstance(mps, Exception):
+                raise mps from None
+            all_merge_commits.extend(mps)
     all_commits = await _fetch_commits(all_merge_commits, mdb, cache)
     del all_merge_commits
     pseudo_releases = []
@@ -284,6 +289,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
     return pseudo_releases
 
 
+@sentry_span
 @cached(
     exptime=60 * 60,  # 1 hour
     serialize=marshal.dumps,
@@ -335,6 +341,7 @@ async def _fetch_merge_points(data: Optional[bytes],
     return first_parents
 
 
+@sentry_span
 @cached(
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,
