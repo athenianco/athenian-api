@@ -2,6 +2,7 @@ from datetime import datetime
 from itertools import chain
 from typing import Dict, Generic, Iterable, List, Optional, Sequence, Type
 
+from athenian.api.controllers.features.histogram import calculate_histogram, Histogram, Scale
 from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
@@ -120,15 +121,28 @@ class PullRequestCounter(PullRequestSumMetricCalculator[int]):
         return int(self.calc.analyze(times, min_time, max_time) is not None)
 
 
-calculators: Dict[str, Type[PullRequestMetricCalculator]] = {}
+class PullRequestHistogramCalculator(PullRequestMetricCalculator):
+    """Pull request histogram calculator, base abstract class."""
+
+    def histogram(self, scale: Scale, bins: int) -> Histogram[T]:
+        """Calculate the histogram over the current distribution."""
+        return calculate_histogram(self.samples, scale, bins)
 
 
-def register(name: str):
-    """Keep track of the PR metric calculators."""
+metric_calculators: Dict[str, Type[PullRequestMetricCalculator]] = {}
+histogram_calculators: Dict[str, Type[PullRequestHistogramCalculator]] = {}
+
+
+def register_metric(name: str):
+    """Keep track of the PR metric calculators and generate the histogram calculator."""
     assert isinstance(name, str)
 
     def register_with_name(cls: Type[PullRequestMetricCalculator]):
-        calculators[name] = cls
+        metric_calculators[name] = cls
+        if not issubclass(cls, PullRequestSumMetricCalculator) \
+                and not issubclass(cls, PullRequestMedianMetricCalculator):
+            histogram_calculators[name] = \
+                type("HistogramOf" + cls.__name__, (cls, PullRequestHistogramCalculator), {})
         return cls
 
     return register_with_name

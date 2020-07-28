@@ -4149,7 +4149,7 @@ components:
         metrics:
           description: List of desired histogram topics.
           items:
-            $ref: '#/components/schemas/PullRequestHistogramTopic'
+            $ref: '#/components/schemas/PullRequestMetricID'
           type: array
         scale:
           $ref: '#/components/schemas/HistogramScale'
@@ -4183,17 +4183,6 @@ components:
       - metrics
       - scale
       type: object
-    PullRequestHistogramTopic:
-      description: Supported histogram measurement kinds.
-      enum:
-      - pr-cycle-time
-      - pr-lead-time
-      - pr-wip-time
-      - pr-review-time
-      - pr-merge-time
-      - pr-release-time
-      example: pr-lead-time
-      type: string
     HistogramScale:
       description: X axis scale.
       enum:
@@ -4213,7 +4202,7 @@ components:
         for:
           $ref: '#/components/schemas/ForSet'
         metric:
-          $ref: '#/components/schemas/PullRequestHistogramTopic'
+          $ref: '#/components/schemas/PullRequestMetricID'
         scale:
           $ref: '#/components/schemas/HistogramScale'
         ticks:

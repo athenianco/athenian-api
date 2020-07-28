@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
     ParallelDatabase, ResponseError, setup_cache_metrics, setup_context
-from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
+from athenian.api.controllers.features.entries import calc_pull_request_times_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.contributors import mine_contributors
@@ -119,9 +119,9 @@ def main():
                     return_code = 1
             log.info("Heating reposet %d of account %d", reposet.id, reposet.owner_id)
             try:
-                await calc_pull_request_metrics_line_github(
-                    ["pr-lead-time"],
-                    [[time_from, time_to]],
+                await calc_pull_request_times_github(
+                    time_from,
+                    time_to,
                     repos,
                     {},
                     set(),

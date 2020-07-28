@@ -4,14 +4,14 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.histogram_scale import HistogramScale
-from athenian.api.models.web.pull_request_histogram_topic import PullRequestHistogramTopic
+from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 
 
 class PullRequestHistogramsRequest(Model):
     """Request of `/histograms/prs`."""
 
     openapi_types = {
-        "_for": List[ForSet],
+        "for_": List[ForSet],
         "metrics": List[str],
         "scale": str,
         "bins": int,
@@ -23,7 +23,7 @@ class PullRequestHistogramsRequest(Model):
     }
 
     attribute_map = {
-        "_for": "for",
+        "for_": "for",
         "metrics": "metrics",
         "scale": "scale",
         "bins": "bins",
@@ -38,7 +38,7 @@ class PullRequestHistogramsRequest(Model):
 
     def __init__(
         self,
-        _for: Optional[List[ForSet]] = None,
+        for_: Optional[List[ForSet]] = None,
         metrics: Optional[List[str]] = None,
         scale: Optional[str] = None,
         bins: Optional[int] = None,
@@ -50,7 +50,7 @@ class PullRequestHistogramsRequest(Model):
     ):
         """PullRequestHistogramsRequest - a model defined in OpenAPI
 
-        :param _for: The _for of this PullRequestHistogramsRequest.
+        :param for_: The for_ of this PullRequestHistogramsRequest.
         :param metrics: The metrics of this PullRequestHistogramsRequest.
         :param scale: The scale of this PullRequestHistogramsRequest.
         :param bins: The bins of this PullRequestHistogramsRequest.
@@ -60,7 +60,7 @@ class PullRequestHistogramsRequest(Model):
         :param exclude_inactive: The exclude_inactive of this PullRequestHistogramsRequest.
         :param account: The account of this PullRequestHistogramsRequest.
         """
-        self.__for = _for
+        self._for_ = for_
         self._metrics = metrics
         self._scale = scale
         self._bins = bins
@@ -71,31 +71,31 @@ class PullRequestHistogramsRequest(Model):
         self._account = account
 
     @property
-    def _for(self) -> List[ForSet]:
-        """Gets the _for of this PullRequestHistogramsRequest.
+    def for_(self) -> List[ForSet]:
+        """Gets the for_ of this PullRequestHistogramsRequest.
 
         Sets of developers and repositories for which to calculate the histograms.
         The aggregation is `AND` between repositories and developers. The aggregation is `OR`
         inside both repositories and developers.
 
-        :return: The _for of this PullRequestHistogramsRequest.
+        :return: The for_ of this PullRequestHistogramsRequest.
         """
-        return self.__for
+        return self._for_
 
-    @_for.setter
-    def _for(self, _for: List[ForSet]):
-        """Sets the _for of this PullRequestHistogramsRequest.
+    @for_.setter
+    def for_(self, for_: List[ForSet]):
+        """Sets the for_ of this PullRequestHistogramsRequest.
 
         Sets of developers and repositories for which to calculate the histograms.
         The aggregation is `AND` between repositories and developers. The aggregation is `OR`
         inside both repositories and developers.
 
-        :param _for: The _for of this PullRequestHistogramsRequest.
+        :param for_: The for_ of this PullRequestHistogramsRequest.
         """
-        if _for is None:
-            raise ValueError("Invalid value for `_for`, must not be `None`")
+        if for_ is None:
+            raise ValueError("Invalid value for `for_`, must not be `None`")
 
-        self.__for = _for
+        self._for_ = for_
 
     @property
     def metrics(self) -> List[str]:
@@ -118,8 +118,8 @@ class PullRequestHistogramsRequest(Model):
         if metrics is None:
             raise ValueError("Invalid value for `metrics`, must not be `None`")
         for m in metrics:
-            if m not in PullRequestHistogramTopic:
-                raise ValueError('"%s" is not one of %s' % (m, list(PullRequestHistogramTopic)))
+            if m not in PullRequestMetricID:
+                raise ValueError('"%s" is not one of %s' % (m, list(PullRequestMetricID)))
 
         self._metrics = metrics
 

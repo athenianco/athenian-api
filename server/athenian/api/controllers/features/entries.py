@@ -12,8 +12,9 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request import \
-    BinnedPullRequestMetricCalculator, calculators as pull_request_calculators
+    BinnedPullRequestMetricCalculator, histogram_calculators, metric_calculators
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
+from athenian.api.controllers.features.histogram import Histogram, Scale
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -24,7 +25,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     store_precomputed_done_times
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestMiner, PullRequestTimesMiner
-from athenian.api.controllers.miners.types import Participants
+from athenian.api.controllers.miners.types import Participants, PullRequestTimes
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.models.metadata.github import PushCommit
@@ -36,10 +37,10 @@ from athenian.api.tracing import sentry_span
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda metrics, time_intervals, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
+    key=lambda time_from, time_to, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
     (
-        ",".join(sorted(metrics)),
-        ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+        time_from,
+        time_to,
         ",".join(sorted(repositories)),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
         ",".join(sorted(labels)),
@@ -47,20 +48,19 @@ from athenian.api.tracing import sentry_span
         release_settings,
     ),
 )
-async def calc_pull_request_metrics_line_github(metrics: Collection[str],
-                                                time_intervals: Sequence[Sequence[datetime]],
-                                                repositories: Set[str],
-                                                participants: Participants,
-                                                labels: Set[str],
-                                                exclude_inactive: bool,
-                                                release_settings: Dict[str, ReleaseMatchSetting],
-                                                mdb: Database,
-                                                pdb: Database,
-                                                cache: Optional[aiomcache.Client],
-                                                ) -> List[List[List[Metric]]]:
-    """Calculate pull request metrics on GitHub data."""
+async def calc_pull_request_times_github(time_from: datetime,
+                                         time_to: datetime,
+                                         repositories: Set[str],
+                                         participants: Participants,
+                                         labels: Set[str],
+                                         exclude_inactive: bool,
+                                         release_settings: Dict[str, ReleaseMatchSetting],
+                                         mdb: Database,
+                                         pdb: Database,
+                                         cache: Optional[aiomcache.Client],
+                                         ) -> List[PullRequestTimes]:
+    """Calculate the pull request timestamps on GitHub."""
     assert isinstance(repositories, set)
-    time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     branches, default_branches = await extract_branches(repositories, mdb, cache)
     precomputed_tasks = [
         load_precomputed_done_times_filters(
@@ -101,8 +101,43 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     await store_precomputed_done_times(
         mined_prs, mined_times, default_branches, release_settings, pdb)
     mined_times.extend(done_times.values())
+    return mined_times
+
+
+@sentry_span
+@cached(
+    exptime=PullRequestMiner.CACHE_TTL,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda metrics, time_intervals, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
+    (
+        ",".join(sorted(metrics)),
+        ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+        ",".join(sorted(repositories)),
+        ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+        ",".join(sorted(labels)),
+        exclude_inactive,
+        release_settings,
+    ),
+)
+async def calc_pull_request_metrics_line_github(metrics: Collection[str],
+                                                time_intervals: Sequence[Sequence[datetime]],
+                                                repositories: Set[str],
+                                                participants: Participants,
+                                                labels: Set[str],
+                                                exclude_inactive: bool,
+                                                release_settings: Dict[str, ReleaseMatchSetting],
+                                                mdb: Database,
+                                                pdb: Database,
+                                                cache: Optional[aiomcache.Client],
+                                                ) -> List[List[List[Metric]]]:
+    """Calculate pull request metrics on GitHub."""
+    time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
+    mined_times = await calc_pull_request_times_github(
+        time_from, time_to, repositories, participants, labels, exclude_inactive,
+        release_settings, mdb, pdb, cache)
     with sentry_sdk.start_span(op="BinnedPullRequestMetricCalculator.__call__"):
-        calcs = [pull_request_calculators[m]() for m in metrics]
+        calcs = [metric_calculators[m]() for m in metrics]
         return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_times) for ts in time_intervals]
 
 
@@ -125,9 +160,37 @@ async def calc_code_metrics(prop: FilterCommitsProperty,
     return calc_code_stats(x_commits, all_commits, time_intervals)
 
 
+@sentry_span
+async def calc_pull_request_histogram_github(metrics: Sequence[str],
+                                             scale: Scale,
+                                             bins: int,
+                                             time_from: datetime,
+                                             time_to: datetime,
+                                             repositories: Set[str],
+                                             participants: Participants,
+                                             labels: Set[str],
+                                             exclude_inactive: bool,
+                                             release_settings: Dict[str, ReleaseMatchSetting],
+                                             mdb: Database,
+                                             pdb: Database,
+                                             cache: Optional[aiomcache.Client],
+                                             ) -> List[Histogram]:
+    """Calculate the pull request histograms on GitHub."""
+    mined_times = await calc_pull_request_times_github(
+        time_from, time_to, repositories, participants, labels, exclude_inactive,
+        release_settings, mdb, pdb, cache)
+    calcs = [histogram_calculators[m]() for m in metrics]
+    for times in mined_times:
+        for calc in calcs:
+            calc(times, time_from, time_to)
+    histograms = [calc.histogram(scale, bins) for calc in calcs]
+    return histograms
+
+
 METRIC_ENTRIES = {
     "github": {
-        **{k: calc_pull_request_metrics_line_github for k in pull_request_calculators},
+        "linear": {k: calc_pull_request_metrics_line_github for k in metric_calculators},
+        "histogram": {k: calc_pull_request_histogram_github for k in histogram_calculators},
         "code": calc_code_metrics,
         "developers": calc_developer_metrics,
     },
