@@ -182,7 +182,8 @@ class AthenianApp(connexion.AioHttpApp):
         """
         options = {"swagger_ui": ui}
         specification_dir = str(Path(__file__).parent / "openapi")
-        super().__init__(__package__, specification_dir=specification_dir, options=options)
+        super().__init__(__package__, specification_dir=specification_dir, options=options,
+                         server_args={"client_max_size": 128 * 1024})
         self.api_cls = ExactServersAioHttpApi
         invitation_controller.validate_env()
         auth0_cls.ensure_static_configuration()
