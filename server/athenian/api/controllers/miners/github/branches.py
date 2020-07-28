@@ -44,17 +44,23 @@ async def extract_branches(repos: Iterable[str],
     if zero_branch_repos:
         rows = await db.fetch_all(select([Repository.node_id, Repository.full_name])
                                   .where(Repository.full_name.in_(zero_branch_repos)))
-        zero_branch_repos = {r[0]: r[1] for r in rows}
-        sql = """
-            SELECT parent_id, COUNT(child_id)
-            FROM github_node_repository_refs
-            WHERE parent_id IN (%s)
-            GROUP BY parent_id;
-        """ % ", ".join("'%s'" % n for n in zero_branch_repos)
-        rows = await db.fetch_all(sql)
-        refs = {r[0]: r[1] for r in rows}
-        for node_id, full_name in zero_branch_repos.items():
-            (log.warning if refs.get(node_id, 0) == 0 else log.error)(
-                "repository %s has 0 branches", full_name)
-            default_branches[full_name] = "master"
+        existing_zero_branch_repos = {r[0]: r[1] for r in rows}
+        deleted_repos = set(zero_branch_repos) - set(existing_zero_branch_repos)
+        if deleted_repos:
+            for repo in deleted_repos:
+                default_branches[repo] = "master"
+            log.error("some repositories do not exist: %s", deleted_repos)
+        if existing_zero_branch_repos:
+            sql = """
+                SELECT parent_id, COUNT(child_id)
+                FROM github_node_repository_refs
+                WHERE parent_id IN (%s)
+                GROUP BY parent_id;
+            """ % ", ".join("'%s'" % n for n in existing_zero_branch_repos)
+            rows = await db.fetch_all(sql)
+            refs = {r[0]: r[1] for r in rows}
+            for node_id, full_name in existing_zero_branch_repos.items():
+                (log.warning if refs.get(node_id, 0) == 0 else log.error)(
+                    "repository %s has 0 branches", full_name)
+                default_branches[full_name] = "master"
     return branches, default_branches
