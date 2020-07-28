@@ -13,6 +13,12 @@ async def test_extract_branches_zero(mdb):
         assert defaults == {"src-d/gitbase": "master"}
 
 
+async def test_extract_branches_trash(mdb):
+    branches, defaults = await extract_branches(["src-d/whatever"], mdb, None)
+    assert branches.empty
+    assert defaults == {"src-d/whatever": "master"}
+
+
 async def test_extract_branches_cache(mdb, cache):
     branches, defaults = await extract_branches(["src-d/go-git"], mdb, cache)
     assert not branches.empty
