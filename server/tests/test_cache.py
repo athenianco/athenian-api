@@ -7,6 +7,7 @@ import aiomcache
 import pytest
 
 from athenian.api.cache import cached, gen_cache_key
+from athenian.api.defer import wait_deferred, with_defer
 from tests.conftest import has_memcached
 
 
@@ -45,6 +46,7 @@ async def add_one(eval_notify: callable, number: int, cache: Optional[aiomcache.
 
 
 @pytest.mark.skipif(not has_memcached, reason="memcached is unavailable")
+@with_defer
 async def test_cached(memcached):
     evaluated = 0
 
@@ -53,13 +55,17 @@ async def test_cached(memcached):
         evaluated += 1
 
     assert await add_one(inc_evaluated, 1, memcached) == 2
+    await wait_deferred()
     assert await add_one(inc_evaluated, 1, memcached) == 2
+    await wait_deferred()
     assert evaluated == 1
     await asyncio.sleep(1.1)
     assert await add_one(inc_evaluated, 1, memcached) == 2
+    await wait_deferred()
     assert evaluated == 2
 
 
+@with_defer
 async def test_cache_serialization_errors(cache):
     def crash(*_):
         raise ValueError
@@ -74,6 +80,7 @@ async def test_cache_serialization_errors(cache):
         return 1
 
     await test(cache)
+    await wait_deferred()
 
     @cached(
         exptime=1,
@@ -85,4 +92,5 @@ async def test_cache_serialization_errors(cache):
         return 1
 
     await test(cache)
+    await wait_deferred()
     await test(cache)

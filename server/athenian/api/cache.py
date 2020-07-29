@@ -13,6 +13,7 @@ from prometheus_client.utils import INF
 from xxhash import xxh64_hexdigest
 
 from athenian.api import metadata
+from athenian.api.defer import defer
 from athenian.api.metadata import __package__, __version__
 from athenian.api.typing_utils import wraps
 
@@ -148,20 +149,24 @@ def cached(exptime: Union[int, Callable[..., int]],
                     log.error("Failed to serialize %s/%s: %s: %s",
                               full_name, cache_key.decode(), type(e).__name__, e)
                 else:
-                    try:
-                        await client.set(cache_key, payload, exptime=t)
-                    except aiomcache.exceptions.ClientException:
-                        log.exception("Failed to put %d bytes in memcached for %s/%s",
-                                      len(payload), full_name, cache_key.decode())
-                    else:
-                        client.metrics["misses"].labels(__package__, __version__, full_name).inc()
-                        client.metrics["miss_latency"] \
-                            .labels(__package__, __version__, full_name) \
-                            .observe(time.time() - start_time)
-                        client.metrics["size"] \
-                            .labels(__package__, __version__, full_name) \
-                            .observe(len(payload))
-                        client.metrics["context"]["misses"].get()[full_name] += 1
+                    async def set_cache_item():
+                        try:
+                            await client.set(cache_key, payload, exptime=t)
+                        except aiomcache.exceptions.ClientException:
+                            log.exception("Failed to put %d bytes in memcached for %s/%s",
+                                          len(payload), full_name, cache_key.decode())
+                        else:
+                            client.metrics["misses"] \
+                                .labels(__package__, __version__, full_name) \
+                                .inc()
+                            client.metrics["miss_latency"] \
+                                .labels(__package__, __version__, full_name) \
+                                .observe(time.time() - start_time)
+                            client.metrics["size"] \
+                                .labels(__package__, __version__, full_name) \
+                                .observe(len(payload))
+                            client.metrics["context"]["misses"].get()[full_name] += 1
+                    await defer(set_cache_item())
             return result
 
         async def reset_cache(*args, **kwargs) -> bool:

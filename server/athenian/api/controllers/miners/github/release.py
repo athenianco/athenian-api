@@ -31,6 +31,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
+from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepository, PullRequest, \
     PullRequestLabel, PushCommit, Release, User
@@ -411,9 +412,9 @@ async def map_prs_to_releases(prs: pd.DataFrame,
             missed_released_prs = pd.concat([missed_released_prs, dead_prs])
         else:
             missed_released_prs = dead_prs
-    await update_unreleased_prs(
+    await defer(update_unreleased_prs(
         merged_prs, missed_released_prs, releases, labels, matched_bys, default_branches,
-        release_settings, pdb)
+        release_settings, pdb))
     return pr_releases.append(missed_released_prs)
 
 
@@ -670,7 +671,7 @@ async def _fetch_first_parents(data: Optional[bytes],
             sql = insert(GitHubCommitFirstParents).values(values).prefix_with("OR REPLACE")
         else:
             raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-        await pdb.execute(sql)
+        await defer(pdb.execute(sql))
     else:  # if need_update
         add_pdb_hits(pdb, "_fetch_first_parents", 1)
 
@@ -758,7 +759,7 @@ async def _fetch_commit_history_dag(dag: Optional[bytes],
             sql = insert(GitHubCommitHistory).values(values).prefix_with("OR REPLACE")
         else:
             raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-        await pdb.execute(sql)
+        await defer(pdb.execute(sql))
     return dag
 
 
@@ -790,12 +791,13 @@ async def _fetch_repository_commits(repos: Collection[str],
             pairs = sorted(pairs)
         heads = dict(pairs)
         filters.append(and_(ghrc.repository_full_name == repo, ghrc.heads == heads))
-    rows = await pdb.fetch_all(
-        select([ghrc.repository_full_name, ghrc.hashes])
-        .where(and_(
-            ghrc.format_version == ghrc.__table__.columns[ghrc.format_version.key].default.arg,
-            or_(*filters),
-        )))
+    with sentry_sdk.start_span(op="_fetch_repository_commits/pdb"):
+        rows = await pdb.fetch_all(
+            select([ghrc.repository_full_name, ghrc.hashes])
+            .where(and_(
+                ghrc.format_version == ghrc.__table__.columns[ghrc.format_version.key].default.arg,
+                or_(*filters),
+            )))
     result = {row[0]: pickle.loads(row[1]) for row in rows}
     add_pdb_hits(pdb, "_fetch_repository_commits", len(result))
     add_pdb_misses(pdb, "_fetch_repository_commits", len(repos) - len(result))
@@ -814,7 +816,8 @@ async def _fetch_repository_commits(repos: Collection[str],
             # there is a metadata problem and we could not find the default branch
             continue
         tasks.append(_fetch_commit_history_hashes([commit_id], mdb))
-    default_hashes = await asyncio.gather(*tasks, return_exceptions=True)
+    with sentry_sdk.start_span(op="_fetch_repository_commits/_fetch_hashes/default"):
+        default_hashes = await asyncio.gather(*tasks, return_exceptions=True)
     for r in default_hashes:
         if isinstance(r, Exception):
             raise r from None
@@ -831,7 +834,8 @@ async def _fetch_repository_commits(repos: Collection[str],
             heads = sorted(heads)
         tasks.append(_fetch_commit_history_hashes_batched(
             all_hashes, commit_ids, commit_hashes, repo, dict(heads), mdb, pdb))
-    missed = await asyncio.gather(*tasks, return_exceptions=True)
+    with sentry_sdk.start_span(op="_fetch_repository_commits/_fetch_hashes/branches"):
+        missed = await asyncio.gather(*tasks, return_exceptions=True)
     for (repo, _), arr in zip(grouped_branches, missed):
         if isinstance(arr, Exception):
             raise arr from None
@@ -877,7 +881,7 @@ async def _fetch_commit_history_hashes_batched(hashes: Set[str],
         sql = insert(GitHubRepositoryCommits).values(values).prefix_with("OR REPLACE")
     else:
         raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-    await pdb.execute(sql)
+    await defer(pdb.execute(sql))
     return hashes
 
 
@@ -1220,13 +1224,16 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
             values = [GitHubRepository(repository_full_name=r[0], first_commit=r[1], node_id=r[2])
                       .create_defaults().explode(with_primary_keys=True)
                       for r in computed]
-            try:
-                await pdb.execute_many(insert(GitHubRepository), values)
-            except Exception as e:
-                log = logging.getLogger(
-                    "%s._fetch_repository_first_commit_dates" % metadata.__package__)
-                log.warning("Failed to store %d rows: %s: %s",
-                            len(values), type(e).__name__, e)
+
+            async def insert_repository():
+                try:
+                    await pdb.execute_many(insert(GitHubRepository), values)
+                except Exception as e:
+                    log = logging.getLogger(
+                        "%s._fetch_repository_first_commit_dates" % metadata.__package__)
+                    log.warning("Failed to store %d rows: %s: %s",
+                                len(values), type(e).__name__, e)
+            await defer(insert_repository())
             result.extend(computed)
     return result
 

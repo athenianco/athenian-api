@@ -12,7 +12,7 @@ import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, or_, select
 
-from athenian.api import metadata
+from athenian.api import COROUTINE_YIELD_EVERY_ITER, metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
@@ -31,6 +31,7 @@ from athenian.api.controllers.miners.types import Label, MinedPullRequest, Parti
     Property, PullRequestFacts, PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import set_pdb_hits, set_pdb_misses
+from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, PullRequestLabel, \
     PullRequestReview, PullRequestReviewComment, Release
@@ -409,13 +410,24 @@ async def _filter_pull_requests(properties: Set[Property],
         prs_today = prs_time_machine
     miner = PullRequestListMiner(
         prs_time_machine, prs_today, done_facts, properties, time_from, await bots(mdb))
+
+    async def _store_precomputed_done_facts():
+        if miner.calculated_released_facts:
+            await defer(store_precomputed_done_facts(
+                *zip(*miner.calculated_released_facts), default_branches, release_settings, pdb))
+
     with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
-        prs = list(miner)
+        prs = []
+        for i, pr in enumerate(miner):
+            if (i + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
+                await asyncio.sleep(0)
+            if (len(miner.calculated_released_facts) + 1) % 500 == 0:
+                miner.calculated_released_facts.clear()
+                await _store_precomputed_done_facts()
+            prs.append(pr)
     set_pdb_hits(pdb, "filter_pull_requests/facts", miner.precomputed_hits)
     set_pdb_misses(pdb, "filter_pull_requests/facts", miner.precomputed_misses)
-    if miner.calculated_released_facts:
-        await store_precomputed_done_facts(*zip(*miner.calculated_released_facts),
-                                           default_branches, release_settings, pdb)
+    await _store_precomputed_done_facts()
     log.debug("return %d PRs", len(prs))
     return prs, labels
 

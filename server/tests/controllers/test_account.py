@@ -2,13 +2,17 @@ import pytest
 
 from athenian.api import ResponseError
 from athenian.api.controllers.account import get_github_installation_ids
+from athenian.api.defer import wait_deferred, with_defer
 
 
+@with_defer
 async def test_get_installation_id_cache(sdb, cache):
     assert await get_github_installation_ids(1, sdb, cache) == (6366825,)
+    await wait_deferred()
     assert len(cache.mem) == 1
     # use the cache
     assert await get_github_installation_ids(1, sdb, cache) == (6366825,)
+    await wait_deferred()
     assert len(cache.mem) == 1
 
 

@@ -3,11 +3,13 @@ from datetime import date, datetime, timezone
 import pytest
 from sqlalchemy import delete
 
-from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
+from athenian.api.controllers.features.entries import calc_pull_request_facts_github, \
+    calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
 from athenian.api.controllers.miners.types import ParticipationKind, Property
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.precomputed.models import GitHubMergedPullRequest
 from athenian.api.models.web import PullRequestMetricID
 
@@ -19,12 +21,14 @@ def time_from_to():
     return time_from, time_to
 
 
+@with_defer
 async def test_pr_list_miner_none(mdb, pdb, release_match_setting_tag, time_from_to):
     prs = await filter_pull_requests(set(), *time_from_to, {"src-d/go-git"}, {}, set(), False,
                                      release_match_setting_tag, mdb, pdb, None)
     assert not prs
 
 
+@with_defer
 async def test_pr_list_miner_match_participants(mdb, pdb, release_match_setting_tag, time_from_to):
     participants = {ParticipationKind.AUTHOR: {"mcuadros", "smola"},
                     ParticipationKind.COMMENTER: {"mcuadros"}}
@@ -52,6 +56,7 @@ async def test_pr_list_miner_match_participants(mdb, pdb, release_match_setting_
                                                  date(year=2016, month=12, day=15)),
                                                 (date(year=2016, month=11, day=17),
                                                  date(year=2016, month=12, day=1))])
+@with_defer
 async def test_pr_list_miner_match_metrics_all_count(
         mdb, pdb, release_match_setting_tag, date_from, date_to):
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -59,6 +64,7 @@ async def test_pr_list_miner_match_metrics_all_count(
     prs = await filter_pull_requests(
         set(Property), time_from, time_to, {"src-d/go-git"}, {}, set(), False,
         release_match_setting_tag, mdb, pdb, None)
+    await wait_deferred()
     assert prs
     await pdb.execute(delete(GitHubMergedPullRequest))  # ignore inactive unreleased
     metric = (await calc_pull_request_metrics_line_github(
@@ -80,6 +86,7 @@ async def test_pr_list_miner_match_metrics_all_count(
 
 
 @pytest.mark.parametrize("year, check", [[2016, True], [2018, False]])
+@with_defer
 async def test_pr_list_miner_release_settings(
         mdb, pdb, release_match_setting_tag, cache, year, check):
     time_from = datetime(year=year, month=1, day=1, tzinfo=timezone.utc)
@@ -98,6 +105,7 @@ async def test_pr_list_miner_release_settings(
     assert prs1 != prs2
 
 
+@with_defer
 async def test_pr_list_miner_release_cache_participants(
         mdb, pdb, release_match_setting_tag, cache):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
@@ -108,6 +116,7 @@ async def test_pr_list_miner_release_cache_participants(
     prs1 = await filter_pull_requests(
         {Property.RELEASING}, time_from, time_to, {"src-d/go-git"}, participants, set(), False,
         release_match_setting_tag, mdb, pdb, cache)
+    await wait_deferred()
     assert prs1
     # reorder
     participants = {ParticipationKind.REVIEWER: {"alcortes", "mcuadros"},
@@ -119,6 +128,7 @@ async def test_pr_list_miner_release_cache_participants(
     assert len(prs1) == len(prs2)
 
 
+@with_defer
 async def test_pr_list_miner_exclude_inactive(mdb, pdb, release_match_setting_tag, cache):
     time_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=1, day=11, tzinfo=timezone.utc)
@@ -132,12 +142,14 @@ async def test_pr_list_miner_exclude_inactive(mdb, pdb, release_match_setting_ta
     assert len(prs1) == 6
 
 
+@with_defer
 async def test_pr_list_miner_filter_labels_cache(mdb, pdb, release_match_setting_tag, cache):
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     prs1 = await filter_pull_requests(
         set(Property), time_from, time_to, {"src-d/go-git"}, {}, {"bug", "enhancement"}, False,
         release_match_setting_tag, mdb, pdb, cache)
+    await wait_deferred()
     assert len(prs1) == 6
     for pr in prs1:
         labels = {label.name for label in pr.labels}
@@ -145,6 +157,7 @@ async def test_pr_list_miner_filter_labels_cache(mdb, pdb, release_match_setting
     prs2 = await filter_pull_requests(
         set(Property), time_from, time_to, {"src-d/go-git"}, {}, {"bug"}, False,
         release_match_setting_tag, None, None, cache)
+    await wait_deferred()
     assert len(prs2) == 3
     for pr in prs2:
         labels = {label.name for label in pr.labels}
@@ -158,6 +171,7 @@ async def test_pr_list_miner_filter_labels_cache(mdb, pdb, release_match_setting
         assert labels.intersection({"bug", "plumbing"})
 
 
+@with_defer
 async def test_pr_list_miner_filter_labels_cache_postprocess(
         mdb, pdb, release_match_setting_tag, cache):
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
@@ -165,35 +179,42 @@ async def test_pr_list_miner_filter_labels_cache_postprocess(
     await filter_pull_requests(
         set(Property), time_from, time_to, {"src-d/go-git"}, {}, set(), False,
         release_match_setting_tag, mdb, pdb, cache)
+    await wait_deferred()
     prs1 = await filter_pull_requests(
         set(Property), time_from, time_to, {"src-d/go-git"}, {}, {"bug"}, False,
         release_match_setting_tag, None, None, cache)
+    await wait_deferred()
     assert len(prs1) == 3
     prs2 = await filter_pull_requests(
         set(Property), time_from, time_to, {"src-d/go-git"}, {}, {"bug"}, False,
         release_match_setting_tag, mdb, pdb, None)
+    await wait_deferred()
     assert prs1 == prs2
     cache.mem = {}
     await filter_pull_requests(
         set(Property), time_from, time_to, {"src-d/go-git"}, {}, {"bug"}, False,
         release_match_setting_tag, mdb, pdb, cache)
+    await wait_deferred()
     with pytest.raises(Exception):
         await filter_pull_requests(
             set(Property), time_from, time_to, {"src-d/go-git"}, {}, set(), False,
             release_match_setting_tag, None, None, cache)
 
 
+@with_defer
 async def test_pr_list_miner_filter_labels_pdb(mdb, pdb, release_match_setting_tag):
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
-    await calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_to]],
+    await calc_pull_request_facts_github(
+        time_from, time_to,
         {"src-d/go-git"}, {}, {"bug", "enhancement"}, False,
         release_match_setting_tag, mdb, pdb, None,
     )
+    await wait_deferred()
     prs = await filter_pull_requests(
         set(Property), time_from, time_to, {"src-d/go-git"}, {}, {"bug", "enhancement"}, False,
         release_match_setting_tag, mdb, pdb, None)
+    await wait_deferred()
     assert len(prs) == 6
     for pr in prs:
         labels = {label.name for label in pr.labels}
@@ -206,21 +227,25 @@ async def test_pr_list_miner_filter_labels_pdb(mdb, pdb, release_match_setting_t
         assert "bug" in {label.name for label in (pr.labels or [])}
 
 
+@with_defer
 async def test_fetch_pull_requests_smoke(mdb, pdb, release_match_setting_tag, cache):
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
-    await calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_to]],
+    await calc_pull_request_facts_github(
+        time_from, time_to,
         {"src-d/go-git"}, {}, {"bug", "enhancement"}, False,
         release_match_setting_tag, mdb, pdb, None,
     )
+    await wait_deferred()
     prs1 = await filter_pull_requests(
         set(Property), time_from, time_to, {"src-d/go-git"}, {}, set(), False,
         release_match_setting_tag, mdb, pdb, None)
+    await wait_deferred()
     prs1 = {pr.number: pr for pr in prs1}
     # 921 is needed to check done_times
     prs2 = await fetch_pull_requests({"src-d/go-git": set(list(range(1000, 1011)) + [921])},
                                      release_match_setting_tag, mdb, pdb, cache)
+    await wait_deferred()
     prs3 = await fetch_pull_requests({"src-d/go-git": set(list(range(1000, 1011)) + [921])},
                                      release_match_setting_tag, None, None, cache)
     assert prs2 == prs3
@@ -240,6 +265,7 @@ async def test_fetch_pull_requests_smoke(mdb, pdb, release_match_setting_tag, ca
                                   release_match_setting_tag, None, None, cache)
 
 
+@with_defer
 async def test_fetch_pull_requests_no_merged(mdb, pdb, release_match_setting_tag, cache):
     prs = await fetch_pull_requests({"src-d/go-git": {1069}},
                                     release_match_setting_tag, mdb, pdb, cache)
@@ -248,6 +274,7 @@ async def test_fetch_pull_requests_no_merged(mdb, pdb, release_match_setting_tag
     assert Property.WIP in prs[0].properties
 
 
+@with_defer
 async def test_fetch_pull_requests_empty(mdb, pdb, release_match_setting_tag, cache):
     prs = await fetch_pull_requests({"src-d/go-git": {0}},
                                     release_match_setting_tag, mdb, pdb, cache)

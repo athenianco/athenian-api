@@ -426,6 +426,8 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             activity_days=activity_days,
             data=pickle.dumps(facts),
         ).create_defaults().explode(with_primary_keys=True))
+    if not inserted:
+        return
     if pdb.url.dialect in ("postgres", "postgresql"):
         sql = postgres_insert(GitHubPullRequestFacts).on_conflict_do_nothing()
     elif pdb.url.dialect == "sqlite":

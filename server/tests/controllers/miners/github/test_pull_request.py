@@ -13,10 +13,12 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestFacts
 from athenian.api.controllers.miners.github.release import load_releases
 from athenian.api.controllers.miners.types import Fallback, ParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import PullRequest
 from tests.conftest import has_memcached
 
 
+@with_defer
 async def test_pr_miner_iter_smoke(
         branches, default_branches, mdb, pdb, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
@@ -52,6 +54,7 @@ async def test_pr_miner_iter_smoke(
     assert with_data["prs"] == size
 
 
+@with_defer
 async def test_pr_miner_blacklist(branches, default_branches, mdb, pdb, release_match_setting_tag):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2017, month=1, day=12)
@@ -98,6 +101,7 @@ async def test_pr_miner_blacklist(branches, default_branches, mdb, pdb, release_
 
 
 @pytest.mark.parametrize("with_memcached", [False, True])
+@with_defer
 async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, memcached,
                                    release_match_setting_tag, with_memcached):
     if with_memcached:
@@ -121,6 +125,7 @@ async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, 
         pdb,
         cache,
     )
+    await wait_deferred()
     if not with_memcached:
         assert len(cache.mem) > 0
     first_data = list(miner)
@@ -139,6 +144,7 @@ async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, 
         None,
         cache,
     )
+    await wait_deferred()
     second_data = list(miner)
     for first, second in zip(first_data, second_data):
         for fv, sv in zip(dataclasses.astuple(first), dataclasses.astuple(second)):
@@ -180,6 +186,7 @@ async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, 
             None,
             cache,
         ))
+        await wait_deferred()
         assert len(cache.mem) == cache_size
         for pr in prs:
             text = ""
@@ -191,6 +198,7 @@ async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, 
             assert "mcuadros" in text
 
 
+@with_defer
 async def test_pr_miner_iter_cache_incompatible(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
     date_from = date(year=2018, month=1, day=1)
@@ -228,6 +236,7 @@ async def test_pr_miner_iter_cache_incompatible(
         )
 
 
+@with_defer
 async def test_pr_miner_cache_pr_blacklist(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
     """https://athenianco.atlassian.net/browse/DEV-206"""
@@ -270,6 +279,7 @@ async def test_pr_miner_cache_pr_blacklist(
 
 
 @pytest.mark.parametrize("pk", [[v] for v in ParticipationKind] + [list(ParticipationKind)])
+@with_defer
 async def test_pr_miner_participant_filters(
         branches, default_branches, mdb, pdb, release_match_setting_tag, pk):
     date_from = date(year=2015, month=1, day=1)
@@ -345,6 +355,7 @@ def validate_pull_request_facts(prmeta: Dict[str, Any], prt: PullRequestFacts):
             assert prt.closed
 
 
+@with_defer
 async def test_pr_facts_miner_smoke(
         branches, default_branches, mdb, pdb, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
@@ -370,6 +381,7 @@ async def test_pr_facts_miner_smoke(
         validate_pull_request_facts(*prt)
 
 
+@with_defer
 async def test_pr_facts_miner_empty_review_comments(
         branches, default_branches, mdb, pdb, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
@@ -396,6 +408,7 @@ async def test_pr_facts_miner_empty_review_comments(
         validate_pull_request_facts(*prt)
 
 
+@with_defer
 async def test_pr_facts_miner_empty_commits(
         branches, default_branches, mdb, pdb, release_match_setting_tag):
     date_from = date(year=2015, month=1, day=1)
@@ -422,6 +435,7 @@ async def test_pr_facts_miner_empty_commits(
         validate_pull_request_facts(*prt)
 
 
+@with_defer
 async def test_pr_facts_miner_bug_less_timestamp_float(
         branches, default_branches, mdb, pdb, release_match_setting_tag):
     date_from = date(2019, 10, 16) - timedelta(days=3)
@@ -448,6 +462,7 @@ async def test_pr_facts_miner_bug_less_timestamp_float(
         validate_pull_request_facts(*prt)
 
 
+@with_defer
 async def test_pr_facts_miner_empty_releases(branches, default_branches, mdb, pdb):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2018, month=1, day=1)
@@ -473,6 +488,7 @@ async def test_pr_facts_miner_empty_releases(branches, default_branches, mdb, pd
         validate_pull_request_facts(*prt)
 
 
+@with_defer
 async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2018, month=1, day=1)
@@ -497,6 +513,7 @@ async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
         pdb,
         None,
     )
+    await wait_deferred()
     mined_prs = list(miner)
     prs = pd.DataFrame([pd.Series(pr.pr) for pr in mined_prs])
     prs.set_index(PullRequest.node_id.key, inplace=True)
@@ -542,6 +559,7 @@ async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
         assert (df.fillna(0) == df1.fillna(0)).all().all()
 
 
+@with_defer
 async def test_pr_miner_exclude_inactive(
         branches, default_branches, mdb, pdb, release_match_setting_tag):
     date_from = date(year=2017, month=1, day=1)
@@ -569,6 +587,7 @@ async def test_pr_miner_exclude_inactive(
     }
 
 
+@with_defer
 async def test_pr_miner_unreleased_pdb(mdb, pdb, release_match_setting_tag):
     time_from = datetime(2018, 11, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
@@ -577,15 +596,18 @@ async def test_pr_miner_unreleased_pdb(mdb, pdb, release_match_setting_tag):
         {"src-d/go-git"}, {}, set(), pd.DataFrame(), {}, False,
         release_match_setting_tag, mdb, pdb, None)
     time_from_lookback = time_from - timedelta(days=60)
+    await wait_deferred()
     # populate pdb
     await PullRequestMiner.mine(
         time_from_lookback.date(), time_to.date(), time_from_lookback, time_to,
         {"src-d/go-git"}, {}, set(), pd.DataFrame(), {}, False,
         release_match_setting_tag, mdb, pdb, None)
+    await wait_deferred()
     miner_complete = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, set(), pd.DataFrame(), {}, False,
         release_match_setting_tag, mdb, pdb, None)
+    await wait_deferred()
     assert len(miner_incomplete._prs) == 19
     assert len(miner_complete._prs) == 19 + 42
     miner_active = await PullRequestMiner.mine(
@@ -595,6 +617,7 @@ async def test_pr_miner_unreleased_pdb(mdb, pdb, release_match_setting_tag):
     assert len(miner_active._prs) <= 19
 
 
+@with_defer
 async def test_pr_miner_labels(mdb, pdb, release_match_setting_tag, cache):
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
@@ -634,6 +657,7 @@ async def test_pr_miner_labels(mdb, pdb, release_match_setting_tag, cache):
     assert {pr.pr[PullRequest.number.key] for pr in prs} == {921, 950, 958}
 
 
+@with_defer
 async def test_pr_miner_labels_unreleased(mdb, pdb, release_match_setting_tag):
     time_from = datetime(2018, 11, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
@@ -643,6 +667,7 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, release_match_setting_tag):
         time_from_lookback.date(), time_to.date(), time_from_lookback, time_to,
         {"src-d/go-git"}, {}, set(), pd.DataFrame(), {}, False,
         release_match_setting_tag, mdb, pdb, None)
+    await wait_deferred()
     miner_complete = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, {"bug"}, pd.DataFrame(), {}, False,
@@ -650,6 +675,7 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, release_match_setting_tag):
         pr_blacklist=["MDExOlB1bGxSZXF1ZXN0MjA5MjA0MDQz",
                       "MDExOlB1bGxSZXF1ZXN0MjE2MTA0NzY1",
                       "MDExOlB1bGxSZXF1ZXN0MjEzODQ1NDUx"])
+    await wait_deferred()
     assert len(miner_complete._prs) == 3
     miner_complete = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
