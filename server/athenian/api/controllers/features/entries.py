@@ -21,11 +21,11 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import calc_developer_metrics
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_precomputed_done_candidates, load_precomputed_done_times_filters, \
-    store_precomputed_done_times
+    load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
+    store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
-    PullRequestMiner, PullRequestTimesMiner
-from athenian.api.controllers.miners.types import Participants, PullRequestTimes
+    PullRequestFactsMiner, PullRequestMiner
+from athenian.api.controllers.miners.types import Participants, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.models.metadata.github import PushCommit
@@ -48,7 +48,7 @@ from athenian.api.tracing import sentry_span
         release_settings,
     ),
 )
-async def calc_pull_request_times_github(time_from: datetime,
+async def calc_pull_request_facts_github(time_from: datetime,
                                          time_to: datetime,
                                          repositories: Set[str],
                                          participants: Participants,
@@ -58,25 +58,25 @@ async def calc_pull_request_times_github(time_from: datetime,
                                          mdb: Database,
                                          pdb: Database,
                                          cache: Optional[aiomcache.Client],
-                                         ) -> List[PullRequestTimes]:
+                                         ) -> List[PullRequestFacts]:
     """Calculate the pull request timestamps on GitHub."""
     assert isinstance(repositories, set)
     branches, default_branches = await extract_branches(repositories, mdb, cache)
     precomputed_tasks = [
-        load_precomputed_done_times_filters(
+        load_precomputed_done_facts_filters(
             time_from, time_to, repositories, participants, labels,
             default_branches, exclude_inactive, release_settings, pdb),
     ]
     if exclude_inactive:
         precomputed_tasks.append(load_precomputed_done_candidates(
             time_from, time_to, repositories, default_branches, release_settings, pdb))
-        done_times, blacklist = await asyncio.gather(*precomputed_tasks, return_exceptions=True)
-        for r in (done_times, blacklist):
+        done_facts, blacklist = await asyncio.gather(*precomputed_tasks, return_exceptions=True)
+        for r in (done_facts, blacklist):
             if isinstance(r, Exception):
                 raise r from None
     else:
-        done_times = blacklist = await precomputed_tasks[0]
-    add_pdb_hits(pdb, "load_precomputed_done_times_filters", len(done_times))
+        done_facts = blacklist = await precomputed_tasks[0]
+    add_pdb_hits(pdb, "load_precomputed_done_facts_filters", len(done_facts))
 
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
@@ -85,23 +85,23 @@ async def calc_pull_request_times_github(time_from: datetime,
         date_from, date_to, time_from, time_to, repositories, participants, labels,
         branches, default_branches, exclude_inactive, release_settings,
         mdb, pdb, cache, pr_blacklist=blacklist)
-    times_miner = PullRequestTimesMiner(await bots(mdb))
+    facts_miner = PullRequestFactsMiner(await bots(mdb))
     mined_prs = []
-    mined_times = []
-    with sentry_sdk.start_span(op="PullRequestMiner.__iter__ + PullRequestTimesMiner.__call__"):
+    mined_facts = []
+    with sentry_sdk.start_span(op="PullRequestMiner.__iter__ + PullRequestFactsMiner.__call__"):
         for pr in miner:
             mined_prs.append(pr)
             try:
-                times = times_miner(pr)
+                facts = facts_miner(pr)
             except ImpossiblePullRequest:
                 continue
-            mined_times.append(times)
-    add_pdb_misses(pdb, "load_precomputed_done_times_filters", len(mined_times))
+            mined_facts.append(facts)
+    add_pdb_misses(pdb, "load_precomputed_done_facts_filters", len(mined_facts))
     # we don't care if exclude_inactive is True or False here
-    await store_precomputed_done_times(
-        mined_prs, mined_times, default_branches, release_settings, pdb)
-    mined_times.extend(done_times.values())
-    return mined_times
+    await store_precomputed_done_facts(
+        mined_prs, mined_facts, default_branches, release_settings, pdb)
+    mined_facts.extend(done_facts.values())
+    return mined_facts
 
 
 @sentry_span
@@ -133,12 +133,12 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
                                                 ) -> List[List[List[Metric]]]:
     """Calculate pull request metrics on GitHub."""
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
-    mined_times = await calc_pull_request_times_github(
+    mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, repositories, participants, labels, exclude_inactive,
         release_settings, mdb, pdb, cache)
     with sentry_sdk.start_span(op="BinnedPullRequestMetricCalculator.__call__"):
         calcs = [metric_calculators[m]() for m in metrics]
-        return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_times) for ts in time_intervals]
+        return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_facts) for ts in time_intervals]
 
 
 @sentry_span
@@ -176,13 +176,13 @@ async def calc_pull_request_histogram_github(metrics: Sequence[str],
                                              cache: Optional[aiomcache.Client],
                                              ) -> List[Histogram]:
     """Calculate the pull request histograms on GitHub."""
-    mined_times = await calc_pull_request_times_github(
+    mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, repositories, participants, labels, exclude_inactive,
         release_settings, mdb, pdb, cache)
     calcs = [histogram_calculators[m]() for m in metrics]
-    for times in mined_times:
+    for facts in mined_facts:
         for calc in calcs:
-            calc(times, time_from, time_to)
+            calc(facts, time_from, time_to)
     histograms = [calc.histogram(scale, bins) for calc in calcs]
     return histograms
 

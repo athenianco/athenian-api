@@ -21,7 +21,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
 from athenian.api.controllers.miners.types import DT, Fallback, MinedPullRequest, Participants, \
-    ParticipationKind, PullRequestTimes
+    ParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewComment, \
@@ -586,13 +586,13 @@ class ReviewResolution(Enum):
 
 
 class ImpossiblePullRequest(Exception):
-    """Raised by PullRequestTimesMiner._compile() on broken PRs."""
+    """Raised by PullRequestFactsMiner._compile() on broken PRs."""
 
 
-class PullRequestTimesMiner:
+class PullRequestFactsMiner:
     """Extract the pull request event timestamps from MinedPullRequest-s."""
 
-    log = logging.getLogger("%s.PullRequestTimesMiner" % metadata.__package__)
+    log = logging.getLogger("%s.PullRequestFactsMiner" % metadata.__package__)
     dummy_reviews = pd.Series(["INVALID", pd.NaT],
                               index=[PullRequestReview.state.key,
                                      PullRequestReview.submitted_at.key])
@@ -601,7 +601,7 @@ class PullRequestTimesMiner:
         """Require the set of bots to be preloaded."""
         self._bots = bots
 
-    def __call__(self, pr: MinedPullRequest) -> PullRequestTimes:
+    def __call__(self, pr: MinedPullRequest) -> PullRequestFacts:
         """
         Extract the pull request event timestamps from a MinedPullRequest.
 
@@ -741,7 +741,17 @@ class PullRequestTimesMiner:
         approved_at = Fallback(approved_at_value, None)
         last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
         released_at = Fallback(pr.release[Release.published_at.key], None)
-        times = PullRequestTimes(
+        additions = pr.pr[PullRequest.additions.key]
+        deletions = pr.pr[PullRequest.deletions.key]
+        if additions is None or deletions is None:
+            self.log.error("NULL in PR additions or deletions: %s (%s#%d): +%s -%s",
+                           pr.pr[PullRequest.node_id.key],
+                           pr.pr[PullRequest.repository_full_name.key],
+                           pr.pr[PullRequest.number.key],
+                           additions, deletions)
+            raise ImpossiblePullRequest()
+        size = additions + deletions
+        facts = PullRequestFacts(
             created=created_at,
             first_commit=first_commit,
             last_commit_before_first_review=last_commit_before_first_review,
@@ -755,28 +765,29 @@ class PullRequestTimesMiner:
             last_passed_checks=last_passed_checks,
             released=released_at,
             closed=closed_at,
+            size=size,
         )
-        self._validate(times, pr.pr[PullRequest.htmlurl.key])
-        return times
+        self._validate(facts, pr.pr[PullRequest.htmlurl.key])
+        return facts
 
-    def _validate(self, times: PullRequestTimes, url: str) -> None:
+    def _validate(self, facts: PullRequestFacts, url: str) -> None:
         """Run sanity checks to ensure consistency."""
-        if not times.closed:
+        if not facts.closed:
             return
-        if times.last_commit and times.last_commit.best > times.closed.best:
+        if facts.last_commit and facts.last_commit.best > facts.closed.best:
             self.log.error("%s is impossible: closed %s but last commit %s: delta %s",
-                           url, times.closed.best, times.last_commit.best,
-                           times.closed.best - times.last_commit.best)
+                           url, facts.closed.best, facts.last_commit.best,
+                           facts.closed.best - facts.last_commit.best)
             raise ImpossiblePullRequest()
-        if times.created.best > times.closed.best:
+        if facts.created.best > facts.closed.best:
             self.log.error("%s is impossible: closed %s but created %s: delta %s",
-                           url, times.closed.best, times.created.best,
-                           times.closed.best - times.created.best)
+                           url, facts.closed.best, facts.created.best,
+                           facts.closed.best - facts.created.best)
             raise ImpossiblePullRequest()
-        if times.merged and times.released and times.merged.best > times.released.best:
+        if facts.merged and facts.released and facts.merged.best > facts.released.best:
             self.log.error("%s is impossible: merged %s but released %s: delta %s",
-                           url, times.merged.best, times.released.best,
-                           times.released.best - times.merged.best)
+                           url, facts.merged.best, facts.released.best,
+                           facts.released.best - facts.merged.best)
             raise ImpossiblePullRequest()
 
 

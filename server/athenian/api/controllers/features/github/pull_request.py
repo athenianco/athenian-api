@@ -6,7 +6,7 @@ from athenian.api.controllers.features.histogram import calculate_histogram, His
 from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
-from athenian.api.controllers.miners.types import PullRequestTimes
+from athenian.api.controllers.miners.types import PullRequestFacts
 
 
 class PullRequestMetricCalculator(Generic[T]):
@@ -26,8 +26,8 @@ class PullRequestMetricCalculator(Generic[T]):
         """Initialize a new `PullRequestMetricCalculator` instance."""
         self.samples = []
 
-    def __call__(self, times: PullRequestTimes, min_time: datetime, max_time: datetime) -> bool:
-        """Supply another pull request timestamps to update the state.
+    def __call__(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime) -> bool:
+        """Supply another pull request facts to update the state.
 
         :param min_time: Start of the considered time interval. It is needed to discard samples \
                          with both ends less than the minimum time.
@@ -35,7 +35,7 @@ class PullRequestMetricCalculator(Generic[T]):
                          with both ends greater than the maximum time.
         :return: Boolean indicating whether the calculated value exists.
         """
-        sample = self.analyze(times, min_time, max_time)
+        sample = self.analyze(facts, min_time, max_time)
         exists = sample is not None
         if exists:
             self.samples.append(sample)
@@ -49,7 +49,7 @@ class PullRequestMetricCalculator(Generic[T]):
         """Calculate the current metric value."""
         raise NotImplementedError
 
-    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                 ) -> Optional[T]:
         """Calculate the actual state update."""
         raise NotImplementedError
@@ -70,7 +70,7 @@ class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
             assert all(s >= zero for s in self.samples), str(self.samples)
         return Metric(True, *mean_confidence_interval(self.samples, self.may_have_negative_values))
 
-    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                 ) -> Optional[T]:
         """Calculate the actual state update."""
         raise NotImplementedError
@@ -85,7 +85,7 @@ class PullRequestMedianMetricCalculator(PullRequestMetricCalculator[T]):
             return Metric(False, None, None, None)
         return Metric(True, *median_confidence_interval(self.samples))
 
-    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                 ) -> Optional[T]:
         """Calculate the actual state update."""
         raise NotImplementedError
@@ -99,7 +99,7 @@ class PullRequestSumMetricCalculator(PullRequestMetricCalculator[T]):
         exists = bool(self.samples)
         return Metric(exists, sum(self.samples) if exists else None, None, None)
 
-    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                 ) -> Optional[T]:
         """Calculate the actual state update."""
         raise NotImplementedError
@@ -115,10 +115,10 @@ class PullRequestCounter(PullRequestSumMetricCalculator[int]):
         super().__init__()
         self.calc = self.calc_cls()
 
-    def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                 ) -> Optional[int]:
         """Calculate the actual state update."""
-        return int(self.calc.analyze(times, min_time, max_time) is not None)
+        return int(self.calc.analyze(facts, min_time, max_time) is not None)
 
 
 class PullRequestHistogramCalculator(PullRequestMetricCalculator):
@@ -167,7 +167,7 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
         assert len(time_intervals) >= 2
         self.time_intervals = time_intervals
 
-    def __call__(self, items: Iterable[PullRequestTimes]) -> List[List[Metric[T]]]:
+    def __call__(self, items: Iterable[PullRequestFacts]) -> List[List[Metric[T]]]:
         """
         Calculate the binned metrics.
 
@@ -203,7 +203,7 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
                 calc.reset()
         return result
 
-    def _bin_regulars(self, items: Iterable[PullRequestTimes]) -> List[List[PullRequestTimes]]:
+    def _bin_regulars(self, items: Iterable[PullRequestFacts]) -> List[List[PullRequestFacts]]:
         borders = self.time_intervals
         bins = [[] for _ in borders[:-1]]
         pos = 0
@@ -217,7 +217,7 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
                 span += 1
         return bins
 
-    def _bin_full_spans(self, items: Iterable[PullRequestTimes]) -> List[List[PullRequestTimes]]:
+    def _bin_full_spans(self, items: Iterable[PullRequestFacts]) -> List[List[PullRequestFacts]]:
         borders = self.time_intervals
         bins = [[] for _ in borders[:-1]]
         pos = 0

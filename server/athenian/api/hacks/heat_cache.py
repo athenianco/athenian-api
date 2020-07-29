@@ -15,14 +15,14 @@ from tqdm import tqdm
 
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
     ParallelDatabase, ResponseError, setup_cache_metrics, setup_context
-from athenian.api.controllers.features.entries import calc_pull_request_times_github
+from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequestLabel, User
-from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitHubPullRequestTimes
+from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitHubPullRequestFacts
 from athenian.api.models.state.models import RepositorySet, Team
 
 
@@ -119,7 +119,7 @@ def main():
                     return_code = 1
             log.info("Heating reposet %d of account %d", reposet.id, reposet.owner_id)
             try:
-                await calc_pull_request_times_github(
+                await calc_pull_request_facts_github(
                     time_from,
                     time_to,
                     repos,
@@ -183,7 +183,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     log.info("Syncing labels")
     tasks = []
     all_pr_times = await pdb.fetch_all(
-        select([GitHubPullRequestTimes.pr_node_id, GitHubPullRequestTimes.labels]))
+        select([GitHubPullRequestFacts.pr_node_id, GitHubPullRequestFacts.labels]))
     all_merged = await pdb.fetch_all(
         select([GitHubMergedPullRequest.pr_node_id, GitHubMergedPullRequest.labels]))
     unique_prs = list({pr[0] for pr in chain(all_pr_times, all_merged)})
@@ -204,7 +204,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
         actual_labels[row[0]][row[1]] = ""
     log.info("Loaded labels for %d PRs", len(actual_labels))
     tasks = []
-    for rows, model in ((all_pr_times, GitHubPullRequestTimes),
+    for rows, model in ((all_pr_times, GitHubPullRequestFacts),
                         (all_merged, GitHubMergedPullRequest)):
         for row in rows:
             pr_labels = actual_labels.get(row[0], {})

@@ -223,8 +223,8 @@ DT = Union[pd.Timestamp, datetime, None]
 
 
 @dataclasses.dataclass(frozen=True)
-class PullRequestTimes:
-    """Various PR update timestamps."""
+class PullRequestFacts:
+    """Various PR event timestamps and other properties."""
 
     @property
     def work_began(self) -> Fallback[DT]:  # PR_B   noqa: D102
@@ -243,17 +243,19 @@ class PullRequestTimes:
     first_passed_checks: Fallback[DT]                    # PR_VS
     last_passed_checks: Fallback[DT]                     # PR_VF
     released: Fallback[DT]                               # PR_R
+    size: int
 
     def max_timestamp(self) -> DT:
         """Find the maximum timestamp contained in the struct."""
-        return Fallback.max(*self.__dict__.values()).best
+        return Fallback.max(*(v for v in self.__dict__.values() if isinstance(v, Fallback))).best
 
     def __str__(self) -> str:
         """Format for human-readability."""
         return "{\n\t%s\n}" % ",\n\t".join(
-            "%s: %s" % (k, v.best) for k, v in dataclasses.asdict(self).items())
+            "%s: %s" % (k, v.best if isinstance(v, Fallback) else v)
+            for k, v in dataclasses.asdict(self).items())
 
-    def __lt__(self, other: "PullRequestTimes") -> bool:
+    def __lt__(self, other: "PullRequestFacts") -> bool:
         """Order by `work_began`."""
         return self.work_began.best < other.work_began.best
 

@@ -23,24 +23,24 @@ class UpdatedMixin:
                         onupdate=lambda ctx: datetime.now(timezone.utc))
 
 
-class GitHubPullRequestTimes(Base, UpdatedMixin):
+class GitHubPullRequestFacts(Base, UpdatedMixin):
     """
-    Mined PullRequestTimes.
+    Mined PullRequestFacts.
 
     Tricky columns:
         * `release_match`: the description of the release match strategy applied to this PR. \
                            Note that `pr_done_at` depends on that.
         * `pr_done_at`: PR closure timestamp if it is not merged or PR release timestamp if it is.
         * `HSTORE` a set of developers with which we can efficiently check an intersection.
-        * `data`: pickle-d PullRequestTimes (may change in the future).
+        * `data`: pickle-d PullRequestFacts (may change in the future).
         * `format_version`: version of the table, used for smooth upgrades and downgrades.
     """
 
-    __tablename__ = "github_pull_request_times"
+    __tablename__ = "github_pull_request_facts"
 
     pr_node_id = Column(CHAR(32), primary_key=True)
     release_match = Column(Text(), primary_key=True)
-    format_version = Column(Integer(), primary_key=True, default=3, server_default="3")
+    format_version = Column(Integer(), primary_key=True, default=4, server_default="4")
     repository_full_name = Column(RepositoryFullName, nullable=False)
     pr_created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     pr_done_at = Column(TIMESTAMP(timezone=True))
