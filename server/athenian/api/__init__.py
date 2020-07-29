@@ -40,6 +40,7 @@ from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.db import add_pdb_metrics_context, measure_db_overhead, ParallelDatabase
+from athenian.api.defer import enable_defer, wait_deferred
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.metadata import __package__
@@ -59,6 +60,9 @@ trailing_dot_exceptions.update((
 
 # Workaround https://github.com/pandas-dev/pandas/issues/32619
 pytz.UTC = pytz.utc = timezone.utc
+
+# Allow other coroutines to execute every Nth iteration in long loops
+COROUTINE_YIELD_EVERY_ITER = 250
 
 
 def parse_args() -> argparse.Namespace:
@@ -340,6 +344,7 @@ class AthenianApp(connexion.AioHttpApp):
 
     async def _shielded(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
         self._requests += 1
+        enable_defer()
         try:
             return await handler(request)
         except bdb.BdbQuit:
@@ -348,6 +353,7 @@ class AthenianApp(connexion.AioHttpApp):
         except ResponseError as e:
             return e.response
         finally:
+            await wait_deferred()
             self._requests -= 1
             if self._requests == 0 and self._shutting_down:
                 asyncio.ensure_future(self._raise_graceful_exit())

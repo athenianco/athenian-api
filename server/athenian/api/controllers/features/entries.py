@@ -7,6 +7,7 @@ import aiomcache
 from databases import Database
 import sentry_sdk
 
+from athenian.api import COROUTINE_YIELD_EVERY_ITER
 from athenian.api.cache import cached
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
@@ -28,6 +29,7 @@ from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRe
 from athenian.api.controllers.miners.types import Participants, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
+from athenian.api.defer import defer
 from athenian.api.models.metadata.github import PushCommit
 from athenian.api.tracing import sentry_span
 
@@ -89,7 +91,9 @@ async def calc_pull_request_facts_github(time_from: datetime,
     mined_prs = []
     mined_facts = []
     with sentry_sdk.start_span(op="PullRequestMiner.__iter__ + PullRequestFactsMiner.__call__"):
-        for pr in miner:
+        for i, pr in enumerate(miner):
+            if (i + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
+                await asyncio.sleep(0)
             mined_prs.append(pr)
             try:
                 facts = facts_miner(pr)
@@ -98,8 +102,8 @@ async def calc_pull_request_facts_github(time_from: datetime,
             mined_facts.append(facts)
     add_pdb_misses(pdb, "load_precomputed_done_facts_filters", len(mined_facts))
     # we don't care if exclude_inactive is True or False here
-    await store_precomputed_done_facts(
-        mined_prs, mined_facts, default_branches, release_settings, pdb)
+    await defer(store_precomputed_done_facts(
+        mined_prs, mined_facts, default_branches, release_settings, pdb))
     mined_facts.extend(done_facts.values())
     return mined_facts
 

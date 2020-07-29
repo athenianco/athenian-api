@@ -2,15 +2,18 @@ from operator import itemgetter
 
 from athenian.api.controllers.miners.github.contributors import \
     mine_contributors
+from athenian.api.defer import wait_deferred, with_defer
 from tests.conftest import has_memcached
 
 
+@with_defer
 async def test_mine_contributors_expected_cache_miss_with_stats(mdb, cache, memcached):
     if has_memcached:
         cache = memcached
 
     contribs_with_stats = await mine_contributors(
         ["src-d/go-git"], None, None, mdb, cache, with_stats=True)
+    await wait_deferred()
     contribs_with_no_stats = await mine_contributors(
         ["src-d/go-git"], None, None, mdb, cache, with_stats=False)
 
@@ -18,12 +21,14 @@ async def test_mine_contributors_expected_cache_miss_with_stats(mdb, cache, memc
     _assert_contribs_equal(contribs_with_stats, contribs_with_no_stats, [True, False])
 
 
+@with_defer
 async def test_mine_contributors_expected_cache_miss_with_different_roles(mdb, cache, memcached):
     if has_memcached:
         cache = memcached
 
     authors = await mine_contributors(
         ["src-d/go-git"], None, None, mdb, cache, with_stats=True, as_roles=["author"])
+    await wait_deferred()
     mergers = await mine_contributors(
         ["src-d/go-git"], None, None, mdb, cache, with_stats=True, as_roles=["merger"])
 

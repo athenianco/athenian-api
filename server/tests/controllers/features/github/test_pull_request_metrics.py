@@ -16,6 +16,7 @@ from athenian.api.controllers.features.github.pull_request_metrics import AllCou
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.web import Granularity, PullRequestMetricID
 from tests.conftest import has_memcached
 from tests.controllers.features.github.test_pull_request import ensure_dtype
@@ -201,6 +202,7 @@ def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
 
 @pytest.mark.parametrize("with_memcached, with_mine_cache_wipe",
                          itertools.product(*([[False, True]] * 2)))
+@with_defer
 async def test_calc_pull_request_metrics_line_github_cache(
         branches, default_branches, mdb, pdb, cache, memcached, with_memcached,
         release_match_setting_tag, with_mine_cache_wipe):
@@ -213,6 +215,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
     args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]],
             {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, cache)
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    await wait_deferred()
     assert await calc_pull_request_metrics_line_github.reset_cache(*args)
     if with_mine_cache_wipe:
         assert await PullRequestMiner._mine.reset_cache(
@@ -225,6 +228,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
     assert metrics1.confidence_min < metrics1.value < metrics1.confidence_max
 
 
+@with_defer
 async def test_calc_pull_request_metrics_line_github_changed_releases(
         mdb, pdb, cache, release_match_setting_tag):
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
@@ -240,6 +244,7 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
     assert metrics1 != metrics2
 
 
+@with_defer
 async def test_pr_list_miner_match_metrics_all_count_david_bug(
         mdb, pdb, release_match_setting_tag):
     time_from = datetime(year=2016, month=11, day=17, tzinfo=timezone.utc)
@@ -263,6 +268,7 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
     assert metric2 == metric2_ext
 
 
+@with_defer
 async def test_calc_pull_request_metrics_line_github_exclude_inactive(
         mdb, pdb, cache, release_match_setting_tag):
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
@@ -270,9 +276,11 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]],
             {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, cache]
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    await wait_deferred()
     assert metrics.value == 7
     args[5] = True
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    await wait_deferred()
     assert metrics.value == 6
     date_from = datetime(year=2017, month=5, day=23, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=5, day=25, tzinfo=timezone.utc)
@@ -280,8 +288,10 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     args[1] = [[date_from, date_to]]
     args[5] = False
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    await wait_deferred()
     assert metrics.value == 71
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    await wait_deferred()
     assert metrics.value == 71
     args[5] = True
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]

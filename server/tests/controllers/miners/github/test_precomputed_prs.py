@@ -7,20 +7,19 @@ import pandas as pd
 from sqlalchemy import and_, select
 
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
+from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_inactive_merged_unreleased_prs, load_precomputed_done_candidates, \
     load_precomputed_done_facts_filters, load_precomputed_done_facts_reponums, \
-    load_precomputed_pr_releases, store_precomputed_done_facts, \
-    update_unreleased_prs
+    load_precomputed_pr_releases, store_precomputed_done_facts, update_unreleased_prs
 from athenian.api.controllers.miners.github.release import load_releases, map_prs_to_releases
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.types import Fallback, MinedPullRequest, ParticipationKind, \
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, Release
-from athenian.api.models.web import PullRequestMetricID
 
 
 def gen_dummy_df(dt: datetime) -> pd.DataFrame:
@@ -299,6 +298,10 @@ def _gen_one_pr(pr_samples):
     return samples, prs, settings
 
 
+async def test_store_precomputed_done_facts_empty(pdb):
+    await store_precomputed_done_facts([], [], None, None, pdb)
+
+
 async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
     await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
@@ -315,6 +318,7 @@ async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branch
     assert len(loaded_prs) == 0
 
 
+@with_defer
 async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, pdb, cache):
     samples, prs, settings = _gen_one_pr(pr_samples)
     await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
@@ -324,13 +328,14 @@ async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, 
             max(s.released.best for s in samples) + timedelta(days=1),
             {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
             default_branches, settings, pdb if i == 0 else None, cache)
+        await wait_deferred()
         for s, pr in zip(samples, prs):
             rpr = released_prs.loc[pr.pr[PullRequest.node_id.key]]
             for col in (Release.author.key, Release.url.key, matched_by_column):
-                assert rpr[col] == pr.release[col]
-            assert rpr[Release.published_at.key] == s.released.best
+                assert rpr[col] == pr.release[col], i
+            assert rpr[Release.published_at.key] == s.released.best, i
             assert rpr[Release.repository_full_name.key] == \
-                pr.pr[PullRequest.repository_full_name.key]
+                pr.pr[PullRequest.repository_full_name.key], i
 
 
 async def test_load_precomputed_pr_releases_time_to(pr_samples, default_branches, pdb):
@@ -445,6 +450,7 @@ async def test_discover_update_unreleased_prs_smoke(
     assert len(unreleased_prs) == 0
 
 
+@with_defer
 async def test_discover_update_unreleased_prs_released(
         mdb, pdb, default_branches, release_match_setting_tag):
     prs = await read_sql_query(
@@ -477,19 +483,22 @@ async def test_discover_update_unreleased_prs_released(
     assert len(unreleased_prs) == 7
 
 
+@with_defer
 async def test_load_old_merged_unreleased_prs_smoke(mdb, pdb, release_match_setting_tag, cache):
     metrics_time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
-    await calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_OPENED], [[metrics_time_from, metrics_time_to]],
-        {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, cache,
+    await calc_pull_request_facts_github(
+        metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, set(), False,
+        release_match_setting_tag, mdb, pdb, cache,
     )
+    await wait_deferred()
     unreleased_time_from = datetime(2018, 11, 1, tzinfo=timezone.utc)
     unreleased_time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     unreleased_prs = await load_inactive_merged_unreleased_prs(
         unreleased_time_from, unreleased_time_to, {"src-d/go-git"},
         {ParticipationKind.MERGER: {"mcuadros"}}, [], {}, release_match_setting_tag,
         mdb, pdb, cache)
+    await wait_deferred()
     assert len(unreleased_prs) == 11
     assert (unreleased_prs[PullRequest.merged_at.key] >
             datetime(2018, 10, 17, tzinfo=timezone.utc)).all()
@@ -501,9 +510,11 @@ async def test_load_old_merged_unreleased_prs_smoke(mdb, pdb, release_match_sett
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], None, None, metrics_time_from, unreleased_time_to,
         release_match_setting_tag, mdb, pdb, cache)
+    await wait_deferred()
     released_prs = await map_prs_to_releases(
         unreleased_prs, releases, matched_bys, pd.DataFrame(), {},
         unreleased_time_to, release_match_setting_tag, mdb, pdb, cache)
+    await wait_deferred()
     assert released_prs.empty
     unreleased_time_from = datetime(2018, 11, 19, tzinfo=timezone.utc)
     unreleased_time_to = datetime(2018, 11, 20, tzinfo=timezone.utc)
@@ -514,13 +525,15 @@ async def test_load_old_merged_unreleased_prs_smoke(mdb, pdb, release_match_sett
     assert unreleased_prs.empty
 
 
+@with_defer
 async def test_load_old_merged_unreleased_prs_labels(mdb, pdb, release_match_setting_tag, cache):
     metrics_time_from = datetime(2018, 5, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2019, 1, 1, tzinfo=timezone.utc)
-    await calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_OPENED], [[metrics_time_from, metrics_time_to]],
-        {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, cache,
+    await calc_pull_request_facts_github(
+        metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, set(), False,
+        release_match_setting_tag, mdb, pdb, cache,
     )
+    await wait_deferred()
     unreleased_time_from = datetime(2018, 9, 19, tzinfo=timezone.utc)
     unreleased_time_to = datetime(2018, 9, 30, tzinfo=timezone.utc)
     unreleased_prs = await load_inactive_merged_unreleased_prs(

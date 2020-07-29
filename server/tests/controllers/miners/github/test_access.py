@@ -2,13 +2,16 @@ import pytest
 
 from athenian.api import ResponseError
 from athenian.api.controllers.miners.github.access import GitHubAccessChecker
+from athenian.api.defer import wait_deferred, with_defer
 
 
 @pytest.mark.parametrize("has_cache", [True, False])
+@with_defer
 async def test_check_access_normal(mdb, sdb, cache, has_cache):
     cache = cache if has_cache else None
     checker = await GitHubAccessChecker(1, sdb, mdb, cache).load()
     assert await checker.check({"src-d/go-git"}) == set()
+    await wait_deferred()
     if has_cache:
         assert len(cache.mem) == 2
     assert await checker.check({"src-d/go-buck"}) == {"src-d/go-buck"}

@@ -19,6 +19,7 @@ from athenian.api.controllers.miners.github.release import _fetch_commit_history
     _fetch_first_parents, _fetch_repository_commits, _fetch_repository_first_commit_dates, \
     _find_dead_merged_prs, load_releases, map_prs_to_releases, map_releases_to_prs
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, \
     PushCommit, Release
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
@@ -32,6 +33,7 @@ def generate_repo_settings(prs: pd.DataFrame) -> Dict[str, ReleaseMatchSetting]:
     }
 
 
+@with_defer
 async def test_map_prs_to_releases_cache(branches, default_branches, mdb, pdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1126),
                                mdb, PullRequest, index=PullRequest.node_id.key)
@@ -59,6 +61,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, mdb, pdb, c
     assert released_prs.iloc[0][Release.url.key] == tag
 
 
+@with_defer
 async def test_map_prs_to_releases_pdb(branches, default_branches, mdb, pdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number.in_((1126, 1180))),
                                mdb, PullRequest, index=PullRequest.node_id.key)
@@ -85,6 +88,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, mdb, pdb, cac
         await dummy_mdb.disconnect()
 
 
+@with_defer
 async def test_map_prs_to_releases_empty(branches, default_branches, mdb, pdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1231),
                                mdb, PullRequest, index=PullRequest.node_id.key)
@@ -107,6 +111,7 @@ async def test_map_prs_to_releases_empty(branches, default_branches, mdb, pdb, c
     assert released_prs.empty
 
 
+@with_defer
 async def test_map_prs_to_releases_precomputed_released(
         branches, default_branches, mdb, pdb, release_match_setting_tag):
     time_to = datetime(year=2019, month=8, day=2, tzinfo=timezone.utc)
@@ -158,6 +163,7 @@ async def test_map_prs_to_releases_precomputed_released(
         await dummy_mdb.disconnect()
 
 
+@with_defer
 async def test_map_releases_to_prs_early_merges(
         branches, default_branches, mdb, pdb, release_match_setting_tag):
     prs, releases, matched_bys = await map_releases_to_prs(
@@ -171,6 +177,7 @@ async def test_map_releases_to_prs_early_merges(
             datetime(year=2017, month=9, day=4, tzinfo=timezone.utc)).all()
 
 
+@with_defer
 async def test_map_releases_to_prs_smoke(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
     for _ in range(2):
@@ -194,6 +201,7 @@ async def test_map_releases_to_prs_smoke(
         assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
 
 
+@with_defer
 async def test_map_releases_to_prs_empty(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
     prs, releases, matched_bys = await map_releases_to_prs(
@@ -225,6 +233,7 @@ async def test_map_releases_to_prs_empty(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
 
+@with_defer
 async def test_map_releases_to_prs_blacklist(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
     prs, releases, matched_bys = await map_releases_to_prs(
@@ -251,6 +260,7 @@ async def test_map_releases_to_prs_blacklist(
 @pytest.mark.parametrize("authors, mergers, n", [(["mcuadros"], [], 2),
                                                  ([], ["mcuadros"], 7),
                                                  (["mcuadros"], ["mcuadros"], 7)])
+@with_defer
 async def test_map_releases_to_prs_authors_mergers(
         branches, default_branches, mdb, pdb, cache,
         release_match_setting_tag, authors, mergers, n):
@@ -269,6 +279,7 @@ async def test_map_releases_to_prs_authors_mergers(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
 
 
+@with_defer
 async def test_map_releases_to_prs_hard(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
     prs, releases, matched_bys = await map_releases_to_prs(
@@ -286,6 +297,7 @@ async def test_map_releases_to_prs_hard(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
 
 
+@with_defer
 async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, mdb, pdb):
     time_from = datetime(year=2015, month=10, day=13, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
@@ -341,6 +353,7 @@ def check_branch_releases(releases: pd.DataFrame, n: int, date_from: datetime, d
 
 
 @pytest.mark.parametrize("branches_", ["{{default}}", "master", "m.*"])
+@with_defer
 async def test_load_releases_branches(branches, default_branches, mdb, pdb, cache, branches_):
     date_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
     date_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
@@ -359,6 +372,7 @@ async def test_load_releases_branches(branches, default_branches, mdb, pdb, cach
     check_branch_releases(releases, 240, date_from, date_to)
 
 
+@with_defer
 async def test_load_releases_branches_empty(branches, default_branches, mdb, pdb, cache):
     date_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
     date_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
@@ -382,6 +396,7 @@ async def test_load_releases_branches_empty(branches, default_branches, mdb, pdb
     (datetime(year=2017, month=9, day=4, tzinfo=timezone.utc), 1),
     (datetime(year=2017, month=12, day=8, tzinfo=timezone.utc), 0),
 ])
+@with_defer
 async def test_load_releases_tag_or_branch_dates(
         branches, default_branches, mdb, pdb, cache, date_from, n):
     date_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
@@ -407,6 +422,7 @@ async def test_load_releases_tag_or_branch_dates(
             assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
 
+@with_defer
 async def test_load_releases_tag_or_branch_initial(branches, default_branches, mdb, pdb):
     date_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2015, month=10, day=22, tzinfo=timezone.utc)
@@ -425,6 +441,7 @@ async def test_load_releases_tag_or_branch_initial(branches, default_branches, m
     check_branch_releases(releases, 17, date_from, date_to)
 
 
+@with_defer
 async def test_map_releases_to_prs_branches(branches, default_branches, mdb, pdb):
     date_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
@@ -446,6 +463,7 @@ async def test_map_releases_to_prs_branches(branches, default_branches, mdb, pdb
 
 
 @pytest.mark.parametrize("repos", [["src-d/gitbase"], []])
+@with_defer
 async def test_load_releases_empty(branches, default_branches, mdb, pdb, repos):
     releases, matched_bys = await load_releases(
         repos,
@@ -491,6 +509,7 @@ async def test_load_releases_empty(branches, default_branches, mdb, pdb, repos):
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
 
+@with_defer
 async def test_fetch_commit_history_smoke(mdb, pdb):
     dag = await _fetch_commit_history_dag(
         None,
@@ -540,6 +559,7 @@ async def test_fetch_commit_history_smoke(mdb, pdb):
         )
 
 
+@with_defer
 async def test_fetch_commit_history_initial_commit(mdb, pdb):
     dag = await _fetch_commit_history_dag(
         None,
@@ -551,6 +571,7 @@ async def test_fetch_commit_history_initial_commit(mdb, pdb):
     assert dag == {"5d7303c49ac984a9fec60523f2d5297682e16646": []}
 
 
+@with_defer
 async def test_fetch_commit_history_cache(mdb, pdb, cache):
     dag = await _fetch_commit_history_dag(
         None,
@@ -561,6 +582,7 @@ async def test_fetch_commit_history_cache(mdb, pdb, cache):
          "31eae7b619d166c366bf5df4991f04ba8cebea0a"],
         [0, 0],
         mdb, pdb, cache)
+    await wait_deferred()
     dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"] = set(
         dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"])
     ground_truth = {
@@ -590,6 +612,7 @@ async def test_fetch_commit_history_cache(mdb, pdb, cache):
     assert dag == ground_truth
 
 
+@with_defer
 async def test_fetch_commit_history_many(mdb, pdb):
     commit_ids = [
         "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
@@ -606,6 +629,7 @@ async def test_fetch_commit_history_many(mdb, pdb):
     assert dag
 
 
+@with_defer
 async def test_fetch_first_parents_smoke(mdb, pdb):
     fp = await _fetch_first_parents(
         None,
@@ -615,6 +639,7 @@ async def test_fetch_first_parents_smoke(mdb, pdb):
         datetime(2015, 4, 5),
         datetime(2015, 5, 20),
         mdb, pdb, None)
+    await wait_deferred()
     ground_truth = {
         "MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng==",
         "MDY6Q29tbWl0NDQ3MzkwNDQ6NWZkZGJlYjY3OGJkMmMzNmM1ZTVjODkxYWI4ZjJiMTQzY2VkNWJhZg==",
@@ -630,6 +655,7 @@ async def test_fetch_first_parents_smoke(mdb, pdb):
         datetime(2015, 4, 5),
         datetime(2015, 5, 20),
         Database("sqlite://"), pdb, None)
+    await wait_deferred()
     assert fp == ground_truth
     with pytest.raises(Exception):
         await _fetch_first_parents(
@@ -641,6 +667,7 @@ async def test_fetch_first_parents_smoke(mdb, pdb):
             Database("sqlite://"), pdb, None)
 
 
+@with_defer
 async def test_fetch_first_parents_initial_commit(mdb, pdb):
     fp = await _fetch_first_parents(
         None,
@@ -662,6 +689,7 @@ async def test_fetch_first_parents_initial_commit(mdb, pdb):
     assert fp == set()
 
 
+@with_defer
 async def test_fetch_first_parents_index_error(mdb, pdb):
     fp1 = await _fetch_first_parents(
         None,
@@ -670,6 +698,7 @@ async def test_fetch_first_parents_index_error(mdb, pdb):
         datetime(2015, 4, 5),
         datetime(2015, 5, 20),
         mdb, pdb, None)
+    await wait_deferred()
     data = await pdb.fetch_val(select([GitHubCommitFirstParents.commits]))
     assert data
     fp2 = await _fetch_first_parents(
@@ -679,9 +708,11 @@ async def test_fetch_first_parents_index_error(mdb, pdb):
         datetime(2015, 4, 5),
         datetime(2015, 5, 20),
         mdb, pdb, None)
+    await wait_deferred()
     assert fp1 != fp2
 
 
+@with_defer
 async def test_fetch_first_parents_cache(mdb, pdb, cache):
     await _fetch_first_parents(
         None,
@@ -696,6 +727,7 @@ async def test_fetch_first_parents_cache(mdb, pdb, cache):
         "MDY6Q29tbWl0NDQ3MzkwNDQ6NWZkZGJlYjY3OGJkMmMzNmM1ZTVjODkxYWI4ZjJiMTQzY2VkNWJhZg==",
         "MDY6Q29tbWl0NDQ3MzkwNDQ6YzA4OGZkNmE3ZTFhMzhlOWQ1YTk4MTUyNjVjYjU3NWJiMDhkMDhmZg==",
     }
+    await wait_deferred()
     fp = await _fetch_first_parents(
         None,
         "src-d/go-git",
@@ -704,6 +736,7 @@ async def test_fetch_first_parents_cache(mdb, pdb, cache):
         datetime(2015, 4, 5),
         datetime(2015, 5, 20),
         None, None, cache)
+    await wait_deferred()
     assert fp == ground_truth
     with pytest.raises(Exception):
         await _fetch_first_parents(
@@ -716,28 +749,34 @@ async def test_fetch_first_parents_cache(mdb, pdb, cache):
             None, None, cache)
 
 
+@with_defer
 async def test__fetch_repository_commits_smoke(mdb, pdb, cache):
     repos = ["src-d/go-git"]
     branches, default_branches = await extract_branches(repos, mdb, None)
     commits = await _fetch_repository_commits(repos, branches, default_branches, mdb, pdb, cache)
+    await wait_deferred()
     assert len(commits) == 1
     commits = commits["src-d/go-git"]
     assert len(commits) == 1917
     commits = await _fetch_repository_commits(repos, branches, default_branches, None, None, cache)
+    await wait_deferred()
     assert len(commits) == 1
     commits = commits["src-d/go-git"]
     assert len(commits) == 1917
     commits = await _fetch_repository_commits(repos, branches, default_branches, None, pdb, None)
+    await wait_deferred()
     assert len(commits) == 1
     commits = commits["src-d/go-git"]
     assert len(commits) == 1917
     branches = branches.iloc[:1]
     commits = await _fetch_repository_commits(repos, branches, default_branches, mdb, pdb, cache)
+    await wait_deferred()
     assert len(commits) == 1
     commits = commits["src-d/go-git"]
     assert len(commits) == 1537  # without force-pushed commits
 
 
+@with_defer
 async def test__find_dead_merged_prs_smoke(mdb, pdb):
     prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
@@ -751,6 +790,7 @@ async def test__find_dead_merged_prs_smoke(mdb, pdb):
     assert {pr[0] for pr in dead_prs} == set(force_push_dropped_go_git_pr_numbers)
 
 
+@with_defer
 async def test__find_dead_merged_prs_no_branches(mdb, pdb):
     prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
@@ -762,8 +802,10 @@ async def test__find_dead_merged_prs_no_branches(mdb, pdb):
     assert len(dead_prs) == 0
 
 
+@with_defer
 async def test__fetch_repository_first_commit_dates(mdb, pdb):
     rows1 = await _fetch_repository_first_commit_dates(["src-d/go-git"], mdb, pdb)
+    await wait_deferred()
     rows2 = await _fetch_repository_first_commit_dates(["src-d/go-git"], None, pdb)
     assert len(rows1) == len(rows2) == 1
     assert rows1[0][0] == rows2[0][0]
