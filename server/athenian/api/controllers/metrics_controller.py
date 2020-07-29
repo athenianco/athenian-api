@@ -299,6 +299,10 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
 
 def resolve_time_from_and_to(filt: Model) -> Tuple[datetime, datetime]:
     """Extract the time window from the request model: the timestamps of `from` and `to`."""
+    if filt.date_from > filt.date_to:
+        raise ResponseError(InvalidRequestError(
+            "`date_to` may not be less than `date_from`",
+            detail="from:%s > to:%s" % (filt.date_from, filt.date_to)))
     time_from = datetime.combine(filt.date_from, datetime.min.time(), tzinfo=timezone.utc)
     time_to = datetime.combine(filt.date_to, datetime.max.time(), tzinfo=timezone.utc)
     if filt.timezone is not None:
