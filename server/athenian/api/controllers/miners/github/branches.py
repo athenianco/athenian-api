@@ -52,7 +52,7 @@ async def extract_branches(repos: Iterable[str],
             log.error("some repositories do not exist: %s", deleted_repos)
         if existing_zero_branch_repos:
             sql = """
-                SELECT parent_id, COUNT(child_id)
+                SELECT parent_id, COUNT(child_id) AS numrefs
                 FROM github_node_repository_refs
                 WHERE parent_id IN (%s)
                 GROUP BY parent_id;

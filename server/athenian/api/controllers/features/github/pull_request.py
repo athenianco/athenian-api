@@ -139,8 +139,7 @@ def register_metric(name: str):
 
     def register_with_name(cls: Type[PullRequestMetricCalculator]):
         metric_calculators[name] = cls
-        if not issubclass(cls, PullRequestSumMetricCalculator) \
-                and not issubclass(cls, PullRequestMedianMetricCalculator):
+        if not issubclass(cls, PullRequestSumMetricCalculator):
             histogram_calculators[name] = \
                 type("HistogramOf" + cls.__name__, (cls, PullRequestHistogramCalculator), {})
         return cls
