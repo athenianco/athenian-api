@@ -12,9 +12,9 @@ from sqlalchemy.schema import CreateTable
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.github.precomputed_prs import store_precomputed_done_times
-from athenian.api.controllers.miners.github.pull_request import PullRequestMiner, \
-    PullRequestTimesMiner
+from athenian.api.controllers.miners.github.precomputed_prs import store_precomputed_done_facts
+from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
+    PullRequestMiner
 from athenian.api.controllers.miners.github.release import _fetch_commit_history_dag, \
     _fetch_first_parents, _fetch_repository_commits, _fetch_repository_first_commit_dates, \
     _find_dead_merged_prs, load_releases, map_prs_to_releases, map_releases_to_prs
@@ -127,7 +127,7 @@ async def test_map_prs_to_releases_precomputed_released(
         pdb,
         None,
     )
-    times_miner = PullRequestTimesMiner(await bots(mdb))
+    times_miner = PullRequestFactsMiner(await bots(mdb))
     true_prs = [pr for pr in miner if pr.release[Release.published_at.key] is not None]
     times = [times_miner(pr) for pr in true_prs]
     prs = pd.DataFrame([pr.pr for pr in true_prs]).set_index(PullRequest.node_id.key)
@@ -147,7 +147,7 @@ async def test_map_prs_to_releases_precomputed_released(
                 prs, releases, matched_bys, branches, default_branches, time_to,
                 release_match_setting_tag, dummy_mdb, pdb, None)
 
-        await store_precomputed_done_times(
+        await store_precomputed_done_facts(
             true_prs, times, default_branches, release_match_setting_tag, pdb)
 
         released_prs = await map_prs_to_releases(

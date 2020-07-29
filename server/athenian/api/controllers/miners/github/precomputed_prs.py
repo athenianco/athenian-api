@@ -19,14 +19,14 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, Participants, \
-    ParticipationKind, PullRequestTimes
+    ParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewRequest, Release
-from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitHubPullRequestTimes
+from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitHubPullRequestFacts
 from athenian.api.tracing import sentry_span
 
 
@@ -35,7 +35,7 @@ def _create_common_filters(time_from: datetime,
                            repos: Collection[str]) -> List[ClauseElement]:
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
-    ghprt = GitHubPullRequestTimes
+    ghprt = GitHubPullRequestFacts
     return [
         ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
         ghprt.repository_full_name.in_(repos),
@@ -88,7 +88,7 @@ async def load_precomputed_done_candidates(time_from: datetime,
 
     We find all the released PRs for a given time frame, repositories, and release match settings.
     """
-    ghprt = GitHubPullRequestTimes
+    ghprt = GitHubPullRequestFacts
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match]
@@ -113,7 +113,7 @@ def _build_participants_filters(participants: Participants,
                                 filters: list,
                                 selected: list,
                                 postgres: bool) -> None:
-    ghprt = GitHubPullRequestTimes
+    ghprt = GitHubPullRequestFacts
     if postgres:
         developer_filters_single = []
         for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
@@ -150,13 +150,13 @@ def _build_labels_filters(labels: Collection[str],
                           selected: list,
                           postgres: bool) -> None:
     if postgres:
-        filters.append(GitHubPullRequestTimes.labels.has_any(labels))
+        filters.append(GitHubPullRequestFacts.labels.has_any(labels))
     else:
-        selected.append(GitHubPullRequestTimes.labels)
+        selected.append(GitHubPullRequestFacts.labels)
 
 
 def _check_participants(row: Mapping, participants: Participants) -> bool:
-    ghprt = GitHubPullRequestTimes
+    ghprt = GitHubPullRequestFacts
     for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
                     (ghprt.merger, ParticipationKind.MERGER),
                     (ghprt.releaser, ParticipationKind.RELEASER)):
@@ -174,7 +174,7 @@ def _check_participants(row: Mapping, participants: Participants) -> bool:
 
 
 @sentry_span
-async def load_precomputed_done_times_filters(time_from: datetime,
+async def load_precomputed_done_facts_filters(time_from: datetime,
                                               time_to: datetime,
                                               repos: Collection[str],
                                               participants: Participants,
@@ -183,14 +183,14 @@ async def load_precomputed_done_times_filters(time_from: datetime,
                                               exclude_inactive: bool,
                                               release_settings: Dict[str, ReleaseMatchSetting],
                                               pdb: databases.Database,
-                                              ) -> Dict[str, PullRequestTimes]:
+                                              ) -> Dict[str, PullRequestFacts]:
     """
-    Load PullRequestTimes belonging to released or rejected PRs from the precomputed DB.
+    Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
 
     Query version.
     """
     postgres = pdb.url.dialect in ("postgres", "postgresql")
-    ghprt = GitHubPullRequestTimes
+    ghprt = GitHubPullRequestFacts
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match,
@@ -215,7 +215,7 @@ async def load_precomputed_done_times_filters(time_from: datetime,
         else:
             selected.append(ghprt.activity_days)
             date_range = set(date_range)
-    with sentry_sdk.start_span(op="load_precomputed_done_times_filters/fetch"):
+    with sentry_sdk.start_span(op="load_precomputed_done_facts_filters/fetch"):
         rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
     result = {}
@@ -237,24 +237,24 @@ async def load_precomputed_done_times_filters(time_from: datetime,
                     continue
         dump[row[0]] = pickle.loads(row[3])
     result.update(ambiguous[ReleaseMatch.tag.name])
-    for node_id, times in ambiguous[ReleaseMatch.branch.name].items():
+    for node_id, facts in ambiguous[ReleaseMatch.branch.name].items():
         if node_id not in result:
-            result[node_id] = times
+            result[node_id] = facts
     return result
 
 
 @sentry_span
-async def load_precomputed_done_times_reponums(prs: Dict[str, Set[int]],
+async def load_precomputed_done_facts_reponums(prs: Dict[str, Set[int]],
                                                default_branches: Dict[str, str],
                                                release_settings: Dict[str, ReleaseMatchSetting],
                                                pdb: databases.Database,
-                                               ) -> Dict[str, PullRequestTimes]:
+                                               ) -> Dict[str, PullRequestFacts]:
     """
-    Load PullRequestTimes belonging to released or rejected PRs from the precomputed DB.
+    Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
 
     repo + numbers version.
     """
-    ghprt = GitHubPullRequestTimes
+    ghprt = GitHubPullRequestFacts
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match,
@@ -264,7 +264,7 @@ async def load_precomputed_done_times_reponums(prs: Dict[str, Set[int]],
         or_(*[and_(ghprt.repository_full_name == repo, ghprt.number.in_(numbers))
               for repo, numbers in prs.items()]),
     ]
-    with sentry_sdk.start_span(op="load_precomputed_done_times_reponums/fetch"):
+    with sentry_sdk.start_span(op="load_precomputed_done_facts_reponums/fetch"):
         rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
     result = {}
@@ -276,9 +276,9 @@ async def load_precomputed_done_times_reponums(prs: Dict[str, Set[int]],
             continue
         dump[row[0]] = pickle.loads(row[3])
     result.update(ambiguous[ReleaseMatch.tag.name])
-    for node_id, times in ambiguous[ReleaseMatch.branch.name].items():
+    for node_id, facts in ambiguous[ReleaseMatch.branch.name].items():
         if node_id not in result:
-            result[node_id] = times
+            result[node_id] = facts
     return result
 
 
@@ -305,7 +305,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
     Each PR is represented by a node_id, a repository name, and a required release match.
     """
     log = logging.getLogger("%s.load_precomputed_pr_releases" % metadata.__package__)
-    ghprt = GitHubPullRequestTimes
+    ghprt = GitHubPullRequestFacts
     with sentry_sdk.start_span(op="load_precomputed_pr_releases/fetch"):
         prs = await pdb.fetch_all(
             select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
@@ -345,35 +345,35 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
 
 
 @sentry_span
-async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
-                                       pr_times: Iterable[PullRequestTimes],
+async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
+                                       pr_facts: Iterable[PullRequestFacts],
                                        default_branches: Dict[str, str],
                                        release_settings: Dict[str, ReleaseMatchSetting],
                                        pdb: databases.Database,
                                        ) -> None:
-    """Store PullRequestTimes belonging to released or rejected PRs to the precomputed DB."""
-    log = logging.getLogger("%s.store_precomputed_done_times" % metadata.__package__)
+    """Store PullRequestFacts belonging to released or rejected PRs to the precomputed DB."""
+    log = logging.getLogger("%s.store_precomputed_done_facts" % metadata.__package__)
     inserted = []
     prefix = PREFIXES["github"]
     sqlite = pdb.url.dialect == "sqlite"
-    for pr, times in zip(prs, pr_times):
+    for pr, facts in zip(prs, pr_facts):
         activity_days = set()
-        if not times.released:
-            if not times.closed or times.merged:
+        if not facts.released:
+            if not facts.closed or facts.merged:
                 continue
-            done_at = times.closed.best
+            done_at = facts.closed.best
         else:
-            done_at = times.released.best
-            if not times.closed:
+            done_at = facts.released.best
+            if not facts.closed:
                 log.error("[DEV-508] PR %s (%s#%d) is released but not closed:\n%s",
                           pr.pr[PullRequest.node_id.key],
                           pr.pr[PullRequest.repository_full_name.key],
                           pr.pr[PullRequest.number.key],
-                          times)
+                          facts)
                 continue
-            activity_days.add(times.released.best.date())
-        activity_days.add(times.created.best.date())
-        activity_days.add(times.closed.best.date())
+            activity_days.add(facts.released.best.date())
+        activity_days.add(facts.created.best.date())
+        activity_days.add(facts.closed.best.date())
         repo = pr.pr[PullRequest.repository_full_name.key]
         if pr.release[matched_by_column] is not None:
             release_match = release_settings[prefix + repo]
@@ -407,11 +407,11 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
             # Postgres is "clever" enough to localize them otherwise
             activity_days = [datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
                              for d in activity_days]
-        inserted.append(GitHubPullRequestTimes(
+        inserted.append(GitHubPullRequestFacts(
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,
             repository_full_name=repo,
-            pr_created_at=times.created.best,
+            pr_created_at=facts.created.best,
             pr_done_at=done_at,
             number=pr.pr[PullRequest.number.key],
             release_url=pr.release[Release.url.key],
@@ -424,15 +424,15 @@ async def store_precomputed_done_times(prs: Iterable[MinedPullRequest],
             commit_committers={k: "" for k in participants[ParticipationKind.COMMIT_COMMITTER]},
             labels={label: "" for label in pr.labels[PullRequestLabel.name.key]},
             activity_days=activity_days,
-            data=pickle.dumps(times),
+            data=pickle.dumps(facts),
         ).create_defaults().explode(with_primary_keys=True))
     if pdb.url.dialect in ("postgres", "postgresql"):
-        sql = postgres_insert(GitHubPullRequestTimes).on_conflict_do_nothing()
+        sql = postgres_insert(GitHubPullRequestFacts).on_conflict_do_nothing()
     elif pdb.url.dialect == "sqlite":
-        sql = insert(GitHubPullRequestTimes).prefix_with("OR IGNORE")
+        sql = insert(GitHubPullRequestFacts).prefix_with("OR IGNORE")
     else:
         raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-    with sentry_sdk.start_span(op="store_precomputed_done_times/fetch"):
+    with sentry_sdk.start_span(op="store_precomputed_done_facts/fetch"):
         await pdb.execute_many(sql, inserted)
 
 
@@ -616,8 +616,8 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
                 GitHubMergedPullRequest.repository_full_name,
                 GitHubMergedPullRequest.release_match]
     filters = [
-        or_(GitHubPullRequestTimes.pr_done_at.is_(None),
-            GitHubPullRequestTimes.pr_done_at >= time_to),
+        or_(GitHubPullRequestFacts.pr_done_at.is_(None),
+            GitHubPullRequestFacts.pr_done_at >= time_to),
         GitHubMergedPullRequest.repository_full_name.in_(repos),
         GitHubMergedPullRequest.merged_at < time_from,
     ]
@@ -633,11 +633,11 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
             selected.append(GitHubMergedPullRequest.labels)
             if not isinstance(labels, set):
                 labels = set(labels)
-    body = join(GitHubMergedPullRequest, GitHubPullRequestTimes, and_(
-        GitHubPullRequestTimes.pr_node_id == GitHubMergedPullRequest.pr_node_id,
-        GitHubPullRequestTimes.release_match == GitHubMergedPullRequest.release_match,
-        GitHubPullRequestTimes.repository_full_name.in_(repos),
-        GitHubPullRequestTimes.pr_created_at < time_from,
+    body = join(GitHubMergedPullRequest, GitHubPullRequestFacts, and_(
+        GitHubPullRequestFacts.pr_node_id == GitHubMergedPullRequest.pr_node_id,
+        GitHubPullRequestFacts.release_match == GitHubMergedPullRequest.release_match,
+        GitHubPullRequestFacts.repository_full_name.in_(repos),
+        GitHubPullRequestFacts.pr_created_at < time_from,
     ), isouter=True)
     with sentry_sdk.start_span(op="load_inactive_merged_unreleased_prs/fetch"):
         rows = await pdb.fetch_all(select(selected).select_from(body).where(and_(*filters)))

@@ -14,7 +14,7 @@ from athenian.api.controllers.features.github.pull_request_metrics import AllCou
     ReviewTimeCalculator, WaitFirstReviewTimeCalculator, WorkInProgressCounter, \
     WorkInProgressTimeCalculator
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
-from athenian.api.controllers.miners.types import Fallback, PullRequestTimes
+from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.web import Granularity, PullRequestMetricID
 from tests.conftest import has_memcached
@@ -22,14 +22,14 @@ from tests.controllers.features.github.test_pull_request import ensure_dtype
 
 
 def random_dropout(pr, prob):
-    fields = sorted(PullRequestTimes.__dataclass_fields__)
+    fields = sorted(PullRequestFacts.__dataclass_fields__)
     killed = np.random.choice(fields, int(len(fields) * prob), replace=False)
     kwargs = {f: getattr(pr, f) for f in fields}
     for k in killed:
         # "created" must always exist
         if k != "created":
             kwargs[k] = Fallback(None, None)
-    return PullRequestTimes(**kwargs)
+    return PullRequestFacts(**kwargs)
 
 
 @pytest.mark.parametrize("cls, dtypes", itertools.product(
@@ -85,7 +85,7 @@ def test_pull_request_metrics_float_binned(pr_samples, cls):  # noqa: F811
         for i, s in enumerate(samples):
             data = vars(s)
             data["merged"] = Fallback(None, None)
-            samples[i] = PullRequestTimes(**data)
+            samples[i] = PullRequestFacts(**data)
     result = binned(samples)
     # the last interval is null and that's intended
     for i, m in enumerate(result[:-1]):

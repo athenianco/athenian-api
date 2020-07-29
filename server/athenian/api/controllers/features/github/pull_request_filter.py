@@ -22,13 +22,13 @@ from athenian.api.controllers.features.github.pull_request_metrics import \
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
-    load_precomputed_done_times_filters, load_precomputed_done_times_reponums, \
-    store_precomputed_done_times
+    load_precomputed_done_facts_filters, load_precomputed_done_facts_reponums, \
+    store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
-    PullRequestMiner, PullRequestTimesMiner, ReviewResolution
+    PullRequestFactsMiner, PullRequestMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release import dummy_releases_df, load_releases
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, Participants, \
-    Property, PullRequestListItem, PullRequestTimes
+    Property, PullRequestFacts, PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import set_pdb_hits, set_pdb_misses
 from athenian.api.models.metadata import PREFIXES
@@ -46,15 +46,15 @@ class PullRequestListMiner:
     def __init__(self,
                  prs_time_machine: Iterable[MinedPullRequest],
                  prs_today: Iterable[MinedPullRequest],
-                 precomputed_times: Dict[str, PullRequestTimes],
+                 precomputed_facts: Dict[str, PullRequestFacts],
                  properties: Set[Property],
                  time_from: datetime,
                  bots: Set[str]):
         """Initialize a new instance of `PullRequestListMiner`."""
         self._prs_time_machine = prs_time_machine
         self._prs_today = prs_today
-        self._precomputed_times = precomputed_times
-        self._times_miner = PullRequestTimesMiner(bots)
+        self._precomputed_facts = precomputed_facts
+        self._facts_miner = PullRequestFactsMiner(bots)
         self._properties = properties
         self._calcs = {
             "wip": (WorkInProgressTimeCalculator(), Property.WIP),
@@ -67,44 +67,44 @@ class PullRequestListMiner:
         self._time_from = time_from
         self._now = datetime.now(tz=timezone.utc)
         self._precomputed_hits = self._precomputed_misses = 0
-        self._calculated_released_times = []
+        self._calculated_released_facts = []
 
     @property
     def precomputed_hits(self) -> int:
-        """Return the number of used precomputed PullRequestTimes."""
+        """Return the number of used precomputed PullRequestFacts."""
         return self._precomputed_hits
 
     @property
     def precomputed_misses(self) -> int:
-        """Return the number of times PullRequestTimes was calculated from scratch."""
+        """Return the number of times PullRequestFacts was calculated from scratch."""
         return self._precomputed_misses
 
     @property
-    def calculated_released_times(self) -> List[Tuple[MinedPullRequest, PullRequestTimes]]:
-        """Return the pairs of calculated mined and released PR times."""
-        return self._calculated_released_times
+    def calculated_released_facts(self) -> List[Tuple[MinedPullRequest, PullRequestFacts]]:
+        """Return the pairs of calculated mined and released PR facts."""
+        return self._calculated_released_facts
 
     @classmethod
     def _collect_properties(cls,
-                            times: PullRequestTimes,
+                            facts: PullRequestFacts,
                             pr: MinedPullRequest,
                             time_from: datetime,
                             ) -> Set[Property]:
         author = pr.pr[PullRequest.user_login.key]
         props = set()
-        if times.released or (times.closed and not times.merged):
+        if facts.released or (facts.closed and not facts.merged):
             if pr.release[Release.url.key] is None:
                 props.add(Property.FORCE_PUSH_DROPPED)
             props.add(Property.DONE)
-        elif times.merged:
+        elif facts.merged:
             props.add(Property.RELEASING)
-        elif times.approved:
+        elif facts.approved:
             props.add(Property.MERGING)
-        elif times.first_review_request:
+        elif facts.first_review_request:
             props.add(Property.REVIEWING)
         else:
             props.add(Property.WIP)
-        if times.created.best > time_from:
+        if facts.created.best > time_from:
             props.add(Property.CREATED)
         if (pr.commits[PullRequestCommit.committed_date.key] > time_from).any():
             props.add(Property.COMMIT_HAPPENED)
@@ -112,16 +112,16 @@ class PullRequestListMiner:
         if ((review_submitted_ats > time_from)
                 & (pr.reviews[PullRequestReview.user_login.key] != author)).any():
             props.add(Property.REVIEW_HAPPENED)
-        if times.first_review_request.value is not None and \
-                times.first_review_request.value > time_from:
+        if facts.first_review_request.value is not None and \
+                facts.first_review_request.value > time_from:
             props.add(Property.REVIEW_REQUEST_HAPPENED)
-        if times.approved and times.approved.best > time_from:
+        if facts.approved and facts.approved.best > time_from:
             props.add(Property.APPROVE_HAPPENED)
-        if times.merged and times.merged.best > time_from:
+        if facts.merged and facts.merged.best > time_from:
             props.add(Property.MERGE_HAPPENED)
-        if not times.merged and times.closed and times.closed.best > time_from:
+        if not facts.merged and facts.closed and facts.closed.best > time_from:
             props.add(Property.REJECTION_HAPPENED)
-        if times.released and times.released.best > time_from and \
+        if facts.released and facts.released.best > time_from and \
                 pr.release[Release.url.key] is not None:
             props.add(Property.RELEASE_HAPPENED)
         review_states = pr.reviews[PullRequestReview.state.key]
@@ -132,28 +132,28 @@ class PullRequestListMiner:
 
     def _compile(self,
                  pr_time_machine: MinedPullRequest,
-                 times_time_machine: PullRequestTimes,
+                 facts_time_machine: PullRequestFacts,
                  pr_today: MinedPullRequest,
-                 times_today: Union[PullRequestTimes, Callable[[], PullRequestTimes]],
+                 facts_today: Union[PullRequestFacts, Callable[[], PullRequestFacts]],
                  ) -> Optional[PullRequestListItem]:
         """
         Match the PR to the required participants and properties.
 
         :param pr_time_machine: PR's metadata as of `time_to`.
         :param pr_today: Today's version of the PR's metadata.
-        :param times_time_machine: Facts about the PR corresponding to [`time_from`, `time_to`].
-        :param times_today: Facts about the PR as of datetime.now().
+        :param facts_time_machine: Facts about the PR corresponding to [`time_from`, `time_to`].
+        :param facts_today: Facts about the PR as of datetime.now().
         """
         assert pr_time_machine.pr[PullRequest.node_id.key] == pr_today.pr[PullRequest.node_id.key]
         props_time_machine = self._collect_properties(
-            times_time_machine, pr_time_machine, self._time_from)
+            facts_time_machine, pr_time_machine, self._time_from)
         if not self._properties.intersection(props_time_machine):
             return None
-        if callable(times_today):
-            times_today = times_today()
-            if times_today.released:
-                self._calculated_released_times.append((pr_today, times_today))
-        props_today = self._collect_properties(times_today, pr_today, self._no_time_from)
+        if callable(facts_today):
+            facts_today = facts_today()
+            if facts_today.released:
+                self._calculated_released_facts.append((pr_today, facts_today))
+        props_today = self._collect_properties(facts_today, pr_today, self._no_time_from)
         author = pr_today.pr[PullRequest.user_id.key]
         external_reviews_mask = pr_today.reviews[PullRequestReview.user_id.key].values != author
         first_review = dtmin(pr_today.reviews[PullRequestReview.created_at.key].take(
@@ -170,7 +170,7 @@ class PullRequestListMiner:
             kwargs = {} if k != "review" else {"allow_unclosed": True}
             if prop in props_today:
                 kwargs["override_event_time"] = now - timedelta(seconds=1)  # < time_max
-            stage_timings[k] = calc.analyze(times_today, no_time_from, now, **kwargs)
+            stage_timings[k] = calc.analyze(facts_today, no_time_from, now, **kwargs)
         for p in range(Property.WIP, Property.DONE + 1):
             p = Property(p)
             if p in props_time_machine:
@@ -201,16 +201,16 @@ class PullRequestListMiner:
             files_changed=pr_today.pr[PullRequest.changed_files.key],
             created=pr_today.pr[PullRequest.created_at.key],
             updated=updated_at,
-            closed=times_today.closed.best,
+            closed=facts_today.closed.best,
             comments=len(pr_today.comments) + delta_comments,
             commits=len(pr_today.commits),
-            review_requested=times_today.first_review_request.value,
+            review_requested=facts_today.first_review_request.value,
             first_review=first_review,
-            approved=times_today.approved.best,
+            approved=facts_today.approved.best,
             review_comments=review_comments,
             reviews=reviews,
-            merged=times_today.merged.best,
-            released=times_today.released.best,
+            merged=facts_today.merged.best,
+            released=facts_today.released.best,
             release_url=pr_today.release[Release.url.key],
             properties=props_today,
             stage_timings=stage_timings,
@@ -223,18 +223,18 @@ class PullRequestListMiner:
         evals = 0
         for pr_time_machine, pr_today in zip(self._prs_time_machine, self._prs_today):
             try:
-                times_time_machine = times_today = \
-                    self._precomputed_times[pr_today.pr[PullRequest.node_id.key]]
+                facts_time_machine = facts_today = \
+                    self._precomputed_facts[pr_today.pr[PullRequest.node_id.key]]
             except KeyError:
                 try:
-                    times_time_machine = self._times_miner(pr_time_machine)
+                    facts_time_machine = self._facts_miner(pr_time_machine)
                 except ImpossiblePullRequest:
                     continue
                 finally:
                     evals += 1
-                times_today = partial(self._times_miner, pr_today)
+                facts_today = partial(self._facts_miner, pr_today)
             try:
-                item = self._compile(pr_time_machine, times_time_machine, pr_today, times_today)
+                item = self._compile(pr_time_machine, facts_time_machine, pr_today, facts_today)
             except ImpossiblePullRequest:
                 continue
             if item is not None:
@@ -391,15 +391,15 @@ async def _filter_pull_requests(properties: Set[Property],
         PullRequestMiner.mine(
             date_from, date_to, time_from, time_to, repos, participants, labels, branches,
             default_branches, exclude_inactive, release_settings, mdb, pdb, cache),
-        load_precomputed_done_times_filters(
+        load_precomputed_done_facts_filters(
             time_from, time_to, repos, participants, labels, default_branches, exclude_inactive,
             release_settings, pdb),
     )
-    miner_time_machine, done_times = await asyncio.gather(*tasks, return_exceptions=True)
+    miner_time_machine, done_facts = await asyncio.gather(*tasks, return_exceptions=True)
     if isinstance(miner_time_machine, Exception):
         raise miner_time_machine from None
-    if isinstance(done_times, Exception):
-        raise done_times from None
+    if isinstance(done_facts, Exception):
+        raise done_facts from None
     prs_time_machine = list(miner_time_machine)
     if time_to < datetime.now(tz=timezone.utc):
         prs_today, prs_time_machine = await _refresh_prs_to_today(
@@ -408,13 +408,13 @@ async def _filter_pull_requests(properties: Set[Property],
     else:
         prs_today = prs_time_machine
     miner = PullRequestListMiner(
-        prs_time_machine, prs_today, done_times, properties, time_from, await bots(mdb))
+        prs_time_machine, prs_today, done_facts, properties, time_from, await bots(mdb))
     with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
         prs = list(miner)
-    set_pdb_hits(pdb, "filter_pull_requests/times", miner.precomputed_hits)
-    set_pdb_misses(pdb, "filter_pull_requests/times", miner.precomputed_misses)
-    if miner.calculated_released_times:
-        await store_precomputed_done_times(*zip(*miner.calculated_released_times),
+    set_pdb_hits(pdb, "filter_pull_requests/facts", miner.precomputed_hits)
+    set_pdb_misses(pdb, "filter_pull_requests/facts", miner.precomputed_misses)
+    if miner.calculated_released_facts:
+        await store_precomputed_done_facts(*zip(*miner.calculated_released_facts),
                                            default_branches, release_settings, pdb)
     log.debug("return %d PRs", len(prs))
     return prs, labels
@@ -450,10 +450,10 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
                        .where(or_(*filters))
                        .order_by(PullRequest.node_id),
                        mdb, PullRequest, index=PullRequest.node_id.key),
-        load_precomputed_done_times_reponums(prs, default_branches, release_settings, pdb),
+        load_precomputed_done_facts_reponums(prs, default_branches, release_settings, pdb),
     ]
-    prs_df, done_times = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (prs, done_times):
+    prs_df, done_facts = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (prs, done_facts):
         if isinstance(r, Exception):
             raise r from None
     if prs_df.empty:
@@ -472,10 +472,10 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
         release_settings, mdb, pdb, cache)
     prs = list(PullRequestMiner(prs_df, *dfs))
     miner = PullRequestListMiner(
-        prs, prs, done_times, set(Property), prs_df[PullRequest.created_at.key].min(),
+        prs, prs, done_facts, set(Property), prs_df[PullRequest.created_at.key].min(),
         await bots(mdb))
     with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
         prs = list(miner)
-    set_pdb_hits(pdb, "filter_pull_requests/times", miner.precomputed_hits)
-    set_pdb_misses(pdb, "filter_pull_requests/times", miner.precomputed_misses)
+    set_pdb_hits(pdb, "filter_pull_requests/facts", miner.precomputed_hits)
+    set_pdb_misses(pdb, "filter_pull_requests/facts", miner.precomputed_misses)
     return prs

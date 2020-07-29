@@ -10,7 +10,7 @@ from athenian.api.controllers.features.github.pull_request import \
     PullRequestMedianMetricCalculator
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
-from athenian.api.controllers.miners.types import Fallback, PullRequestTimes
+from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
 
 
 @pytest.fixture
@@ -109,7 +109,9 @@ def test_median_confidence_interval_empty():
 
 def ensure_dtype(pr, dtype):
     if not isinstance(pr.created.value, dtype):
-        pr = PullRequestTimes(**{k: Fallback(dtype(v.value), None) for k, v in vars(pr).items()})
+        pr = PullRequestFacts(
+            **{k: Fallback(dtype(v.value), None) if isinstance(v, Fallback) else v
+               for k, v in vars(pr).items()})
     return pr
 
 
@@ -124,7 +126,7 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
     class LeadTimeCalculator(cls):
         may_have_negative_values = negative
 
-        def analyze(self, times: PullRequestTimes, min_time: datetime, max_time: datetime,
+        def analyze(self, times: PullRequestFacts, min_time: datetime, max_time: datetime,
                     ) -> timedelta:
             return times.released.value - times.work_began.best
 

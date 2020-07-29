@@ -1,10 +1,11 @@
 from datetime import timedelta, timezone
+from random import randint
 
 import faker
 import pytest
 
 from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.types import Fallback, PullRequestTimes
+from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 
 
@@ -69,7 +70,7 @@ def pr_samples():
             last_review = fake.date_time_between(approved_at, closed_at, tzinfo=timezone.utc)
             released_at = fake.date_time_between(
                 merged_at, merged_at + timedelta(days=30), tzinfo=timezone.utc)
-            return PullRequestTimes(
+            return PullRequestFacts(
                 created=Fallback(created_at, None),
                 first_commit=Fallback(first_commit, created_at),
                 last_commit_before_first_review=Fallback(last_commit_before_first_review, None),
@@ -83,6 +84,7 @@ def pr_samples():
                 last_passed_checks=Fallback(last_passed_checks, None),
                 released=Fallback(released_at, None),
                 closed=Fallback(closed_at, None),
+                size=randint(10, 1000),
             )
 
         return [random_pr() for _ in range(n)]
