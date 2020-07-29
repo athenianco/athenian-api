@@ -45,7 +45,7 @@ async def extract_branches(repos: Iterable[str],
         rows = await db.fetch_all(select([Repository.node_id, Repository.full_name])
                                   .where(Repository.full_name.in_(zero_branch_repos)))
         existing_zero_branch_repos = {r[0]: r[1] for r in rows}
-        deleted_repos = set(zero_branch_repos) - set(existing_zero_branch_repos)
+        deleted_repos = set(zero_branch_repos) - set(existing_zero_branch_repos.values())
         if deleted_repos:
             for repo in deleted_repos:
                 default_branches[repo] = "master"
