@@ -219,7 +219,7 @@ class AllCounter(PullRequestSumMetricCalculator[int]):
             and facts.closed.best < min_time
         )
         cut_after = pr_started >= max_time
-        # FIXME(vmarkovtsev): ENG-673
+        # see also: ENG-673
         cut_old_unreleased = (
             facts.merged and not facts.released and facts.merged.best < min_time
         )
@@ -341,3 +341,22 @@ class FlowRatioCalculator(PullRequestMetricCalculator[float]):
         """Reset the internal state."""
         self._opened.reset()
         self._closed.reset()
+
+
+@register_metric(PullRequestMetricID.PR_SIZE)
+class SizeCalculator(PullRequestAverageMetricCalculator[int]):
+    """Elapsed time between requesting the review for the first time and getting it."""
+
+    may_have_negative_values = False
+
+    def __init__(self):
+        """Initialize a new instance of SizeCalculator."""
+        super().__init__()
+        self.all = AllCounter()
+
+    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                ) -> Optional[int]:
+        """Calculate the actual state update."""
+        if self.all.analyze(facts, min_time, max_time) is not None:
+            return facts.size
+        return None

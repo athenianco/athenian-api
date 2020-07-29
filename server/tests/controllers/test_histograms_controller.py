@@ -138,3 +138,38 @@ async def test_calc_histogram_prs_multiple(client, headers):
     for i in range(4):
         for j in range(i + 1, 4):
             assert body[i] != body[j], "%d == %d" % (i, j)
+
+
+async def test_calc_histogram_prs_size(client, headers):
+    body = {
+        "for": [
+            {
+                "with": {"merger": ["github.com/mcuadros"]},
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+            },
+        ],
+        "metrics": [PullRequestMetricID.PR_SIZE],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "scale": "linear",
+        "bins": 10,
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = FriendlyJson.loads(body)
+    assert body == [{"for": {"repositories": ["github.com/src-d/go-git"],
+                             "with": {"author": None, "reviewer": None, "commit_author": None,
+                                      "commit_committer": None, "commenter": None,
+                                      "merger": ["github.com/mcuadros"], "releaser": None},
+                             "labels_include": None, "jira": None},
+                     "metric": "pr-size", "scale": "linear",
+                     "ticks": [0.0, 1109.9, 2219.8, 3329.7000000000003, 4439.6, 5549.5,
+                               6659.400000000001, 7769.300000000001, 8879.2, 9989.1, 11099.0],
+                     "frequencies": [465, 17, 2, 2, 1, 0, 1, 0, 0, 1]}]
