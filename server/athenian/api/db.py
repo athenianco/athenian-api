@@ -1,8 +1,9 @@
+import asyncio
 from contextvars import ContextVar
 import logging
 import os
 import time
-from typing import List, Mapping, Tuple, Union
+from typing import Callable, List, Mapping, Tuple, Union
 
 import aiohttp.web
 import databases.core
@@ -23,40 +24,48 @@ def measure_db_overhead(db: databases.Database,
     log = logging.getLogger("%s.measure_db_overhead" % metadata.__package__)
     _profile_queries = profile_queries
 
-    def measure_method_overhead(func) -> callable:
-        async def wrapped_measure_method_overhead(*args, **kwargs):
+    def measure_method_overhead_and_retry(func) -> callable:
+        async def wrapped_measure_method_overhead_and_retry(*args, **kwargs):
             start_time = time.time()
-            try:
-                return await func(*args, **kwargs)
-            finally:
-                elapsed = app["db_elapsed"].get()
-                if elapsed is None:
-                    log.warning("Cannot record the %s overhead", db_id)
-                else:
-                    delta = time.time() - start_time
-                    elapsed[db_id] += delta
-                    if _profile_queries:
-                        sql = str(args[0]).replace("\n", "\\n").replace("\t", "\\t")
-                        print("%f\t%s" % (delta, sql), flush=True)
+            attempts = 4
+            for i in range(attempts):
+                try:
+                    return await func(*args, **kwargs)
+                except OSError as e:
+                    if i == attempts - 1:
+                        raise e from None
+                    log.error("[%d] %s: %s", i + 1, type(e).__name__, e)
+                    await asyncio.sleep((i + 1) * (i + 1) * 0.1)
+                finally:
+                    elapsed = app["db_elapsed"].get()
+                    if elapsed is None:
+                        log.warning("Cannot record the %s overhead", db_id)
+                    else:
+                        delta = time.time() - start_time
+                        elapsed[db_id] += delta
+                        if _profile_queries:
+                            sql = str(args[0]).replace("\n", "\\n").replace("\t", "\\t")
+                            print("%f\t%s" % (delta, sql), flush=True)
 
-        return wraps(wrapped_measure_method_overhead, func)
+        return wraps(wrapped_measure_method_overhead_and_retry, func)
 
-    backend_connection = db._backend.connection
+    backend_connection = db._backend.connection  # type: Callable[[], ConnectionBackend]
 
     def wrapped_backend_connection() -> ConnectionBackend:
         connection = backend_connection()
-        connection.fetch_all = measure_method_overhead(connection.fetch_all)
-        connection.fetch_one = measure_method_overhead(connection.fetch_one)
-        connection.execute = measure_method_overhead(connection.execute)
-        connection.execute_many = measure_method_overhead(connection.execute_many)
+        connection.acquire = measure_method_overhead_and_retry(connection.acquire)
+        connection.fetch_all = measure_method_overhead_and_retry(connection.fetch_all)
+        connection.fetch_one = measure_method_overhead_and_retry(connection.fetch_one)
+        connection.execute = measure_method_overhead_and_retry(connection.execute)
+        connection.execute_many = measure_method_overhead_and_retry(connection.execute_many)
 
         original_transaction = connection.transaction
 
         def transaction() -> TransactionBackend:
             t = original_transaction()
-            t.start = measure_method_overhead(t.start)
-            t.commit = measure_method_overhead(t.commit)
-            t.rollback = measure_method_overhead(t.rollback)
+            t.start = measure_method_overhead_and_retry(t.start)
+            t.commit = measure_method_overhead_and_retry(t.commit)
+            t.rollback = measure_method_overhead_and_retry(t.rollback)
             return t
 
         connection.transaction = transaction
