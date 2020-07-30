@@ -301,7 +301,8 @@ async def _filter_pull_requests(properties: Set[Property],
         fact_evals = 0
         hit_facts_counter = 0
         missed_facts_counter = 0
-        for pr in prs:
+        bad_prs = []
+        for i, pr in enumerate(prs):
             node_id = pr.pr[PullRequest.node_id.key]
             if node_id not in facts:
                 fact_evals += 1
@@ -310,6 +311,7 @@ async def _filter_pull_requests(properties: Set[Property],
                 try:
                     facts[node_id] = pr_facts = facts_miner(pr)
                 except ImpossiblePullRequest:
+                    bad_prs.insert(0, i)  # reversed order
                     continue
                 if pr_facts.released or pr_facts.closed and not pr_facts.merged:
                     missed_facts_counter += 1
@@ -320,6 +322,10 @@ async def _filter_pull_requests(properties: Set[Property],
                 hit_facts_counter += 1
         if missed_facts:
             await store_missed_facts()
+        if bad_prs:
+            # the order is already reversed
+            for i in bad_prs:
+                del prs[i]
         set_pdb_hits(pdb, "filter_pull_requests/facts", hit_facts_counter)
         set_pdb_misses(pdb, "filter_pull_requests/facts", missed_facts_counter)
         log.info("total fact evals: %d", fact_evals)
