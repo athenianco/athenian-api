@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from tqdm import tqdm
 
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
-    ParallelDatabase, ResponseError, setup_cache_metrics, setup_context
+    enable_defer, ParallelDatabase, ResponseError, setup_cache_metrics, setup_context, \
+    wait_deferred
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.miners.github.bots import Bots
@@ -61,6 +62,7 @@ def main():
     return_code = 0
 
     async def async_run():
+        enable_defer()
         cache = create_memcached(args.memcached, log)
         setup_cache_metrics(cache, {}, None)
         for v in cache.metrics["context"].values():
@@ -144,6 +146,8 @@ def main():
                              RepositorySet.updated_at: reposet.updated_at,
                              RepositorySet.items_count: reposet.items_count,
                              RepositorySet.items_checksum: RepositorySet.items_checksum}))
+            finally:
+                await wait_deferred()
 
     async def sentry_wrapper():
         nonlocal return_code

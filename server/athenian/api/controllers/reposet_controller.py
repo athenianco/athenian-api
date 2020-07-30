@@ -69,10 +69,12 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     :param id: Numeric identifier of the repository set to list.
     :type id: int
     """
-    rs, _ = await fetch_reposet(id, [RepositorySet.name, RepositorySet.items],
+    rs, _ = await fetch_reposet(id, [RepositorySet.name, RepositorySet.items,
+                                     RepositorySet.precomputed],
                                 request.uid, request.sdb, request.cache)
     # "items" collides with dict.items() so we have to access the list via []
-    return model_response(RepositorySetWithName(name=rs.name, items=rs.items))
+    return model_response(RepositorySetWithName(
+        name=rs.name, items=rs.items, precomputed=rs.precomputed))
 
 
 async def _check_reposet(request: AthenianWebRequest,
@@ -132,6 +134,7 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
             changed = True
         if new_items != rs.items:
             rs.items = new_items
+            rs.precomputed = False
             rs.refresh()
             changed = True
         if changed:

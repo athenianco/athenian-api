@@ -52,6 +52,7 @@ async def test_get_repository_set(client, reposet, headers, checked):
     assert len(body.items) == 2
     assert checked in body.items
     assert body.name == "all"
+    assert body.precomputed == (reposet == 1)
 
 
 async def test_get_repository_set_404(client, headers):
