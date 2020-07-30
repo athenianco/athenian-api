@@ -189,6 +189,7 @@ async def test_map_releases_to_prs_smoke(
             datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
             [], [],
             release_match_setting_tag, mdb, pdb, cache)
+        await wait_deferred()
         assert len(prs) == 7
         assert (prs[PullRequest.merged_at.key] < pd.Timestamp(
             "2019-07-31 00:00:00", tzinfo=timezone.utc)).all()
@@ -200,6 +201,23 @@ async def test_map_releases_to_prs_smoke(
             "6241d0e70427cb0db4ca00182717af88f638268c",
         }
         assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
+
+
+@with_defer
+async def test_map_releases_to_prs_no_truncate(
+        branches, default_branches, mdb, pdb, release_match_setting_tag):
+    prs, releases, matched_bys = await map_releases_to_prs(
+        ["src-d/go-git"],
+        branches, default_branches,
+        datetime(year=2018, month=7, day=31, tzinfo=timezone.utc),
+        datetime(year=2018, month=12, day=2, tzinfo=timezone.utc),
+        [], [],
+        release_match_setting_tag, mdb, pdb, None, truncate=False)
+    assert len(prs) == 8
+    assert len(releases) == 5 + 7
+    assert releases[Release.published_at.key].is_monotonic_decreasing
+    assert releases.index.is_monotonic
+    assert "v4.13.1" in releases[Release.tag.key].values
 
 
 @with_defer

@@ -12,7 +12,7 @@ import signal
 import socket
 import sys
 import threading
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import aiohttp.web
 from aiohttp.web_exceptions import HTTPFound
@@ -63,6 +63,17 @@ pytz.UTC = pytz.utc = timezone.utc
 
 # Allow other coroutines to execute every Nth iteration in long loops
 COROUTINE_YIELD_EVERY_ITER = 250
+
+
+async def list_with_yield(iterable: Iterable[Any], sentry_op: str) -> List[Any]:
+    """Drain an iterable to a list, tracing the loop in Sentry and respecting other coroutines."""
+    with sentry_sdk.start_span(op=sentry_op):
+        things = []
+        for i, thing in enumerate(iterable):
+            if (i + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
+                await asyncio.sleep(0)
+            things.append(thing)
+    return things
 
 
 def parse_args() -> argparse.Namespace:
