@@ -296,7 +296,8 @@ async def _filter_pull_requests(properties: Set[Property],
 
         async def store_missed_facts():
             await defer(store_precomputed_done_facts(
-                *zip(*missed_facts), default_branches, release_settings, pdb))
+                *zip(*missed_facts), default_branches, release_settings, pdb),
+                "store_precomputed_done_facts(%d)" % len(missed_facts))
 
         fact_evals = 0
         hit_facts_counter = 0

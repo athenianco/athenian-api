@@ -103,7 +103,8 @@ async def calc_pull_request_facts_github(time_from: datetime,
     add_pdb_misses(pdb, "load_precomputed_done_facts_filters", len(mined_facts))
     # we don't care if exclude_inactive is True or False here
     await defer(store_precomputed_done_facts(
-        mined_prs, mined_facts, default_branches, release_settings, pdb))
+        mined_prs, mined_facts, default_branches, release_settings, pdb),
+        "store_precomputed_done_facts(%d)" % len(mined_facts))
     mined_facts.extend(done_facts.values())
     return mined_facts
 

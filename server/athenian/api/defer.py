@@ -20,20 +20,12 @@ def enable_defer() -> None:
     _defer_counter.set([0])
 
 
-async def defer(coroutine: Coroutine) -> None:
+async def defer(coroutine: Coroutine, name: str) -> None:
     """Schedule coroutine in parallel with the main control flow and return immediately."""
     sync = _defer_sync.get()
     counter = _defer_counter.get()
     async with sync:
         counter[0] += 1
-    code = coroutine.cr_frame.f_code
-    func_name = code.co_name
-    if func_name.startswith("wrapped_"):
-        func = coroutine.cr_frame.f_locals["func"]
-        while hasattr(func, "__wrapped__"):
-            func = func.__wrapped__
-        func_name = func.__name__
-        code = func.__code__
     span = Hub.current.scope.span
     op = span.op if span is not None else "unknown"
     transaction = Hub.current.scope.transaction
@@ -42,11 +34,10 @@ async def defer(coroutine: Coroutine) -> None:
 
     async def wrapped_defer():
         try:
-            with transaction.start_child(op="defer", description=op):
+            with transaction.start_child(op="defer %s" % name, description=op):
                 await coroutine
         except BaseException:
-            _log.exception("Unhandled exception in deferred function %s:%d %s",
-                           code.co_filename, code.co_firstlineno, func_name)
+            _log.exception("Unhandled exception in deferred function %s", name)
         finally:
             async with sync:
                 value = counter[0] - 1
