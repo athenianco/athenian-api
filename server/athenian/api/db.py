@@ -6,8 +6,10 @@ import time
 from typing import Callable, List, Mapping, Tuple, Union
 
 import aiohttp.web
+import asyncpg
 import databases.core
 from databases.interfaces import ConnectionBackend, TransactionBackend
+import sentry_sdk
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
@@ -27,15 +29,15 @@ def measure_db_overhead(db: databases.Database,
     def measure_method_overhead_and_retry(func) -> callable:
         async def wrapped_measure_method_overhead_and_retry(*args, **kwargs):
             start_time = time.time()
-            attempts = 4
-            for i in range(attempts):
+            wait_intervals = [0.1, 0.5, 1.4, None]
+            for i, wait_time in enumerate(wait_intervals):
                 try:
                     return await func(*args, **kwargs)
                 except OSError as e:
-                    if i == attempts - 1:
+                    if i == len(wait_intervals) - 1:
                         raise e from None
-                    log.error("[%d] %s: %s", i + 1, type(e).__name__, e)
-                    await asyncio.sleep((i + 1) * (i + 1) * 0.1)
+                    log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
+                    await asyncio.sleep(wait_time)
                 finally:
                     elapsed = app["db_elapsed"].get()
                     if elapsed is None:
@@ -164,3 +166,12 @@ class ParallelDatabase(databases.Database):
         """Re-implement execute_many for better performance."""
         async with self.connection() as connection:
             return await self._connection_execute_many(connection, query, values)
+
+
+async def _asyncpg_execute(self, query, args, limit, timeout, return_status=False):
+    with sentry_sdk.start_span(op="sql", description=query + "|" + str(args)):
+        return await self._execute_original(query, args, limit, timeout, return_status)
+
+
+asyncpg.Connection._execute_original = asyncpg.Connection._Connection__execute
+asyncpg.Connection._Connection__execute = _asyncpg_execute

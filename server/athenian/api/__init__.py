@@ -477,8 +477,8 @@ def setup_context(log: logging.Logger) -> None:
         traces_sample_rate=traces_sample_rate,
     )
     sentry_sdk.scope.add_global_event_processor(filter_sentry_events)
-    sentry_sdk.utils.MAX_STRING_LENGTH = 2048
-    sentry_sdk.utils.MAX_FORMAT_PARAM_LENGTH = 256
+    sentry_sdk.utils.MAX_STRING_LENGTH = 4096
+    sentry_sdk.utils.MAX_FORMAT_PARAM_LENGTH = 512
     with sentry_sdk.configure_scope() as scope:
         scope.set_tag("version", metadata.__version__)
         scope.set_tag("username", username)
