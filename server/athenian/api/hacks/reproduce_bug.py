@@ -8,17 +8,20 @@ import os
 
 import databases
 
-from athenian.api import create_memcached, setup_cache_metrics, slogging
+from athenian.api import create_memcached, slogging
+from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github  # noqa
 from athenian.api.controllers.features.github.pull_request_filter import filter_pull_requests
 from athenian.api.controllers.miners.types import Property
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.defer import enable_defer, wait_deferred
 from athenian.api.models.web import PullRequestMetricID  # noqa
 
 
 async def main():
     """Go away linter."""
     slogging.setup("INFO", False)
+    enable_defer()
     if False:
         cache = create_memcached("0.0.0.0:7001", logging.getLogger())
         setup_cache_metrics(cache, {}, None)
@@ -64,6 +67,7 @@ async def main():
         pdb,
         cache,
     ))
+    await wait_deferred()
     for pr in prs:
         print("https://%s/pull/%d\t%s" % (pr.repository, pr.number, pr.stage_timings))
     """

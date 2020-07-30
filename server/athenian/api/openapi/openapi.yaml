@@ -1909,6 +1909,7 @@ components:
         items:
         - github.com/athenianco/athenian-webapp
         - github.com/athenianco/athenian-api
+        precomputed: true
       properties:
         name:
           type: string
@@ -1916,6 +1917,8 @@ components:
           items:
             $ref: '#/components/schemas/RepositoryID'
           type: array
+        precomputed:
+          type: boolean
       type: object
     RepositorySetList:
       description: List of repository sets owned by a user.

@@ -73,6 +73,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, mdb, pdb, cac
         mdb, pdb, None)
     released_prs = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, settings, mdb, pdb, None)
+    await wait_deferred()
     assert len(released_prs) == 1
     dummy_mdb = Database("sqlite://", force_rollback=True)
     await dummy_mdb.connect()
