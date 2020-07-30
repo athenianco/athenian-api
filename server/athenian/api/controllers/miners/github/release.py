@@ -414,7 +414,8 @@ async def map_prs_to_releases(prs: pd.DataFrame,
             missed_released_prs = dead_prs
     await defer(update_unreleased_prs(
         merged_prs, missed_released_prs, releases, labels, matched_bys, default_branches,
-        release_settings, pdb))
+        release_settings, pdb),
+        "update_unreleased_prs(%d, %d)" % (len(merged_prs), len(missed_released_prs)))
     return pr_releases.append(missed_released_prs)
 
 
@@ -671,7 +672,7 @@ async def _fetch_first_parents(data: Optional[bytes],
             sql = insert(GitHubCommitFirstParents).values(values).prefix_with("OR REPLACE")
         else:
             raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-        await defer(pdb.execute(sql))
+        await defer(pdb.execute(sql), "_fetch_first_parents/pdb")
     else:  # if need_update
         add_pdb_hits(pdb, "_fetch_first_parents", 1)
 
@@ -759,7 +760,7 @@ async def _fetch_commit_history_dag(dag: Optional[bytes],
             sql = insert(GitHubCommitHistory).values(values).prefix_with("OR REPLACE")
         else:
             raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-        await defer(pdb.execute(sql))
+        await defer(pdb.execute(sql), "_fetch_commit_history_dag/pdb")
     return dag
 
 
@@ -882,7 +883,7 @@ async def _fetch_commit_history_hashes_batched(hashes: Set[str],
         sql = insert(GitHubRepositoryCommits).values(values).prefix_with("OR REPLACE")
     else:
         raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-    await defer(pdb.execute(sql))
+    await defer(pdb.execute(sql), "_fetch_commit_history_hashes_batched/pdb")
     return hashes
 
 
@@ -1260,7 +1261,7 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
                         "%s._fetch_repository_first_commit_dates" % metadata.__package__)
                     log.warning("Failed to store %d rows: %s: %s",
                                 len(values), type(e).__name__, e)
-            await defer(insert_repository())
+            await defer(insert_repository(), "insert_repository")
             result.extend(computed)
     return result
 

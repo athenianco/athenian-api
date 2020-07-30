@@ -434,7 +434,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
         sql = insert(GitHubPullRequestFacts).prefix_with("OR IGNORE")
     else:
         raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-    with sentry_sdk.start_span(op="store_precomputed_done_facts/fetch"):
+    with sentry_sdk.start_span(op="store_precomputed_done_facts/execute_many"):
         await pdb.execute_many(sql, inserted)
 
 

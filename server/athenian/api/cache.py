@@ -166,7 +166,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                                 .labels(__package__, __version__, full_name) \
                                 .observe(len(payload))
                             client.metrics["context"]["misses"].get()[full_name] += 1
-                    await defer(set_cache_item())
+                    await defer(set_cache_item(), "set_cache_items(%s)" % func.__qualname__)
             return result
 
         async def reset_cache(*args, **kwargs) -> bool:
