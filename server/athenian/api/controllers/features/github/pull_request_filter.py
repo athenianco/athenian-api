@@ -1,18 +1,16 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
-from functools import partial
 import logging
 import pickle
-from typing import Callable, Dict, Generator, Iterable, List, Optional, Set, Tuple, Union
+from typing import Dict, Generator, List, Optional, Set, Tuple
 
 import aiomcache
 import databases
 import numpy as np
-import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, or_, select
 
-from athenian.api import COROUTINE_YIELD_EVERY_ITER, metadata
+from athenian.api import COROUTINE_YIELD_EVERY_ITER, list_with_yield, metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
@@ -45,17 +43,14 @@ class PullRequestListMiner:
     log = logging.getLogger("%s.PullRequestListMiner" % metadata.__version__)
 
     def __init__(self,
-                 prs_time_machine: Iterable[MinedPullRequest],
-                 prs_today: Iterable[MinedPullRequest],
-                 precomputed_facts: Dict[str, PullRequestFacts],
+                 prs: List[MinedPullRequest],
+                 facts: Dict[str, PullRequestFacts],
                  properties: Set[Property],
                  time_from: datetime,
-                 bots: Set[str]):
+                 time_to: datetime):
         """Initialize a new instance of `PullRequestListMiner`."""
-        self._prs_time_machine = prs_time_machine
-        self._prs_today = prs_today
-        self._precomputed_facts = precomputed_facts
-        self._facts_miner = PullRequestFactsMiner(bots)
+        self._prs = prs
+        self._facts = facts
         self._properties = properties
         self._calcs = {
             "wip": (WorkInProgressTimeCalculator(), Property.WIP),
@@ -66,24 +61,8 @@ class PullRequestListMiner:
         self._no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
         assert isinstance(time_from, datetime)
         self._time_from = time_from
+        self._time_to = time_to
         self._now = datetime.now(tz=timezone.utc)
-        self._precomputed_hits = self._precomputed_misses = 0
-        self._calculated_released_facts = []
-
-    @property
-    def precomputed_hits(self) -> int:
-        """Return the number of used precomputed PullRequestFacts."""
-        return self._precomputed_hits
-
-    @property
-    def precomputed_misses(self) -> int:
-        """Return the number of times PullRequestFacts was calculated from scratch."""
-        return self._precomputed_misses
-
-    @property
-    def calculated_released_facts(self) -> List[Tuple[MinedPullRequest, PullRequestFacts]]:
-        """Return the pairs of calculated mined and released PR facts."""
-        return self._calculated_released_facts
 
     @classmethod
     def _collect_properties(cls,
@@ -132,28 +111,22 @@ class PullRequestListMiner:
         return props
 
     def _compile(self,
-                 pr_time_machine: MinedPullRequest,
-                 facts_time_machine: PullRequestFacts,
-                 pr_today: MinedPullRequest,
-                 facts_today: Union[PullRequestFacts, Callable[[], PullRequestFacts]],
+                 pr: MinedPullRequest,
+                 facts: PullRequestFacts,
                  ) -> Optional[PullRequestListItem]:
         """
-        Match the PR to the required participants and properties.
+        Match the PR to the required participants and properties and produce PullRequestListItem.
 
-        :param pr_time_machine: PR's metadata as of `time_to`.
-        :param pr_today: Today's version of the PR's metadata.
-        :param facts_time_machine: Facts about the PR corresponding to [`time_from`, `time_to`].
-        :param facts_today: Facts about the PR as of datetime.now().
+        We return None if the PR does not match.
         """
-        assert pr_time_machine.pr[PullRequest.node_id.key] == pr_today.pr[PullRequest.node_id.key]
+        pr_today = pr
+        pr_time_machine = pr.truncate(self._time_to)
+        facts_today = facts
+        facts_time_machine = facts.truncate(self._time_to)
         props_time_machine = self._collect_properties(
             facts_time_machine, pr_time_machine, self._time_from)
         if not self._properties.intersection(props_time_machine):
             return None
-        if callable(facts_today):
-            facts_today = facts_today()
-            if facts_today.released:
-                self._calculated_released_facts.append((pr_today, facts_today))
         props_today = self._collect_properties(facts_today, pr_today, self._no_time_from)
         author = pr_today.pr[PullRequest.user_id.key]
         external_reviews_mask = pr_today.reviews[PullRequestReview.user_id.key].values != author
@@ -220,100 +193,13 @@ class PullRequestListMiner:
         )
 
     def __iter__(self) -> Generator[PullRequestListItem, None, None]:
-        """Iterate over the individual pull requests."""
-        evals = 0
-        for pr_time_machine, pr_today in zip(self._prs_time_machine, self._prs_today):
-            try:
-                facts_time_machine = facts_today = \
-                    self._precomputed_facts[pr_today.pr[PullRequest.node_id.key]]
-            except KeyError:
-                try:
-                    facts_time_machine = self._facts_miner(pr_time_machine)
-                except ImpossiblePullRequest:
-                    continue
-                finally:
-                    evals += 1
-                facts_today = partial(self._facts_miner, pr_today)
-            try:
-                item = self._compile(pr_time_machine, facts_time_machine, pr_today, facts_today)
-            except ImpossiblePullRequest:
-                continue
+        """Iterate over individual pull requests."""
+        facts = self._facts
+        node_id_key = PullRequest.node_id.key
+        for pr in self._prs:
+            item = self._compile(pr, facts[pr.pr[node_id_key]])
             if item is not None:
                 yield item
-        self._precomputed_hits = len(self._prs_today) - evals
-        self._precomputed_misses = evals
-
-
-@sentry_span
-async def _refresh_prs_to_today(prs_time_machine: List[MinedPullRequest],
-                                time_to: datetime,
-                                repos: Set[str],
-                                branches: pd.DataFrame,
-                                default_branches: Dict[str, str],
-                                release_settings: Dict[str, ReleaseMatchSetting],
-                                mdb: databases.Database,
-                                pdb: databases.Database,
-                                cache: Optional[aiomcache.Client],
-                                ) -> Tuple[List[MinedPullRequest], List[MinedPullRequest]]:
-    now = datetime.now(tz=timezone.utc)
-    merged_at_key = PullRequest.merged_at.key
-    closed_at_key = PullRequest.closed_at.key
-    node_id_key = PullRequest.node_id.key
-    remined = {}
-    done = []
-    for pr in prs_time_machine:
-        if (pr.release[Release.published_at.key] is None and
-                (not pd.isnull(pr.pr[merged_at_key]) or pd.isnull(pr.pr[closed_at_key]))):
-            remined[pr.pr[node_id_key]] = pr
-        else:
-            done.append(pr)
-    # TODO(vmarkovtsev): when remined[updated_at] < time_to, we should only match the new releases
-    tasks = []
-    if done:
-        # updated_at can be outside of `time_to` and missed in the cache
-        tasks.append(mdb.fetch_all(
-            select([PullRequest.node_id, PullRequest.updated_at])
-            .where(PullRequest.node_id.in_([pr.pr[node_id_key] for pr in done]))))
-    if remined:
-        tasks.extend([
-            read_sql_query(select([PullRequest])
-                           .where(PullRequest.node_id.in_(remined))
-                           .order_by(PullRequest.node_id),
-                           mdb, PullRequest, index=node_id_key),
-            # `time_to` is in the place of `time_from` because we know that these PRs
-            # were not released before `time_to`
-            load_releases(repos, branches, default_branches, time_to, now, release_settings,
-                          mdb, pdb, cache),
-        ])
-    if tasks:
-        task_results = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in task_results:
-            if isinstance(r, Exception):
-                raise r from None
-    else:
-        task_results = []
-    if done:
-        updates = task_results[0]
-        updates = {p[0]: p[1] for p in updates}
-        updated_at_key = PullRequest.updated_at.key
-        for pr in done:
-            ts = updates[pr.pr[node_id_key]]
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            pr.pr[updated_at_key] = ts
-    if remined:
-        prs, releases = task_results[-2:]
-        releases, matched_bys = releases
-        dfs = await PullRequestMiner.mine_by_ids(
-            prs, [], now, releases, matched_bys, branches, default_branches,
-            release_settings, mdb, pdb, cache)
-        prs_today = list(PullRequestMiner(prs, *dfs))
-    else:
-        prs_today = []
-    # reorder prs_time_machine without really changing the contents
-    prs_time_machine = [remined[pr.pr[node_id_key]] for pr in prs_today] + done
-    prs_today += done
-    return prs_today, prs_time_machine
 
 
 @sentry_span
@@ -391,43 +277,58 @@ async def _filter_pull_requests(properties: Set[Property],
     tasks = (
         PullRequestMiner.mine(
             date_from, date_to, time_from, time_to, repos, participants, labels, branches,
-            default_branches, exclude_inactive, release_settings, mdb, pdb, cache),
+            default_branches, exclude_inactive, release_settings, mdb, pdb, cache,
+            truncate=False),
         load_precomputed_done_facts_filters(
             time_from, time_to, repos, participants, labels, default_branches, exclude_inactive,
             release_settings, pdb),
     )
-    miner_time_machine, done_facts = await asyncio.gather(*tasks, return_exceptions=True)
-    if isinstance(miner_time_machine, Exception):
-        raise miner_time_machine from None
-    if isinstance(done_facts, Exception):
-        raise done_facts from None
-    prs_time_machine = list(miner_time_machine)
-    if time_to < datetime.now(tz=timezone.utc):
-        prs_today, prs_time_machine = await _refresh_prs_to_today(
-            prs_time_machine, time_to, repos, branches, default_branches, release_settings,
-            mdb, pdb, cache)
-    else:
-        prs_today = prs_time_machine
-    miner = PullRequestListMiner(
-        prs_time_machine, prs_today, done_facts, properties, time_from, await bots(mdb))
+    pr_miner, facts = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (pr_miner, facts):
+        if isinstance(r, Exception):
+            raise r from None
 
-    async def _store_precomputed_done_facts():
-        if miner.calculated_released_facts:
+    prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
+
+    with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__"):
+        facts_miner = PullRequestFactsMiner(await bots(mdb))
+        missed_facts = []
+
+        async def store_missed_facts():
             await defer(store_precomputed_done_facts(
-                *zip(*miner.calculated_released_facts), default_branches, release_settings, pdb))
+                *zip(*missed_facts), default_branches, release_settings, pdb))
 
-    with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
-        prs = []
-        for i, pr in enumerate(miner):
-            if (i + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
-                await asyncio.sleep(0)
-            if (len(miner.calculated_released_facts) + 1) % 500 == 0:
-                miner.calculated_released_facts.clear()
-                await _store_precomputed_done_facts()
-            prs.append(pr)
-    set_pdb_hits(pdb, "filter_pull_requests/facts", miner.precomputed_hits)
-    set_pdb_misses(pdb, "filter_pull_requests/facts", miner.precomputed_misses)
-    await _store_precomputed_done_facts()
+        fact_evals = 0
+        hit_facts_counter = 0
+        missed_facts_counter = 0
+        for pr in prs:
+            node_id = pr.pr[PullRequest.node_id.key]
+            if node_id not in facts:
+                fact_evals += 1
+                if (fact_evals + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
+                    await asyncio.sleep(0)
+                try:
+                    facts[node_id] = pr_facts = facts_miner(pr)
+                except ImpossiblePullRequest:
+                    continue
+                if pr_facts.released or pr_facts.closed and not pr_facts.merged:
+                    missed_facts_counter += 1
+                    missed_facts.append((pr, pr_facts))
+                    if (len(missed_facts) + 1) % 100 == 0:
+                        await store_missed_facts()
+            else:
+                hit_facts_counter += 1
+        if missed_facts:
+            await store_missed_facts()
+        set_pdb_hits(pdb, "filter_pull_requests/facts", hit_facts_counter)
+        set_pdb_misses(pdb, "filter_pull_requests/facts", missed_facts_counter)
+        log.info("total fact evals: %d", fact_evals)
+
+    prs = await list_with_yield(
+        PullRequestListMiner(prs, facts, properties, time_from, time_to),
+        "PullRequestListMiner.__iter__",
+    )
+
     log.debug("return %d PRs", len(prs))
     return prs, labels
 
@@ -464,8 +365,8 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
                        mdb, PullRequest, index=PullRequest.node_id.key),
         load_precomputed_done_facts_reponums(prs, default_branches, release_settings, pdb),
     ]
-    prs_df, done_facts = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (prs, done_facts):
+    prs_df, facts = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (prs, facts):
         if isinstance(r, Exception):
             raise r from None
     if prs_df.empty:
@@ -482,12 +383,18 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
     dfs = await PullRequestMiner.mine_by_ids(
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches,
         release_settings, mdb, pdb, cache)
-    prs = list(PullRequestMiner(prs_df, *dfs))
+    prs = await list_with_yield(PullRequestMiner(prs_df, *dfs), "PullRequestMiner.__iter__")
+    with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__"):
+        facts_miner = PullRequestFactsMiner(await bots(mdb))
+        pdb_misses = 0
+        for pr in prs:
+            node_id = pr.pr[PullRequest.node_id.key]
+            if node_id not in facts:
+                facts[node_id] = facts_miner(pr)
+                pdb_misses += 1
     miner = PullRequestListMiner(
-        prs, prs, done_facts, set(Property), prs_df[PullRequest.created_at.key].min(),
-        await bots(mdb))
-    with sentry_sdk.start_span(op="PullRequestListMiner.__iter__"):
-        prs = list(miner)
-    set_pdb_hits(pdb, "filter_pull_requests/facts", miner.precomputed_hits)
-    set_pdb_misses(pdb, "filter_pull_requests/facts", miner.precomputed_misses)
+        prs, facts, set(Property), prs_df[PullRequest.created_at.key].min(), now)
+    prs = await list_with_yield(miner, "PullRequestListMiner.__iter__")
+    set_pdb_hits(pdb, "filter_pull_requests/facts", len(prs) - pdb_misses)
+    set_pdb_misses(pdb, "filter_pull_requests/facts", pdb_misses)
     return prs

@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestCommit, PullRequestReview, Release
+    PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
+    Release
 
 
 class ParticipationKind(IntEnum):
@@ -139,6 +140,33 @@ class MinedPullRequest:
         values = df[col].values
         return set(values[np.where(values)[0]])
 
+    def truncate(self, dt: Union[pd.Timestamp, datetime]) -> "MinedPullRequest":
+        """Create a copy of the PR data without timestamps bigger than or equal to `dt`."""
+        pr = self.pr
+        assert pr[PullRequest.created_at.key] < dt
+        closed_at = pr[PullRequest.closed_at.key]
+        if closed_at is not None and closed_at >= dt:
+            pr = pr.copy()
+            pr[PullRequest.closed_at.key] = None
+            pr[PullRequest.merged_at.key] = None
+        # we ignore PullRequest.updated_at
+        release = self.release
+        published_at = release[Release.published_at.key]
+        if published_at is not None and published_at >= dt:
+            release = {k: None for k in release}
+        dfs = {}
+        for name, col in (("commits", PullRequestCommit.committed_date),
+                          ("review_requests", PullRequestReviewRequest.created_at),
+                          ("review_comments", PullRequestReviewComment.created_at),
+                          ("reviews", PullRequestReview.created_at),
+                          ("comments", PullRequestComment.created_at)):
+            df = getattr(self, name)  # type: pd.DataFrame
+            left = np.where(df[col.key] < dt)[0]
+            if len(left) < len(df):
+                df = df.take(left)
+            dfs[name] = df
+        return MinedPullRequest(pr=pr, release=release, labels=self.labels, **dfs)
+
 
 T = TypeVar("T")
 
@@ -247,7 +275,32 @@ class PullRequestFacts:
 
     def max_timestamp(self) -> DT:
         """Find the maximum timestamp contained in the struct."""
-        return Fallback.max(*(v for v in self.__dict__.values() if isinstance(v, Fallback))).best
+        return Fallback.max(*(v for v in dataclasses.asdict(self).values()
+                              if isinstance(v, Fallback))).best
+
+    def truncate(self, dt: Union[pd.Timestamp, datetime]) -> "PullRequestFacts":
+        """Create a copy of the facts without timestamps bigger than or equal to `dt`."""
+        dikt = {}
+        changed = False
+        for k, v in dataclasses.asdict(self).items():
+            if not isinstance(v, Fallback):
+                dikt[k] = v
+                continue
+            if v:
+                if v.best < dt:
+                    if v.value is None or v.value < dt:
+                        dikt[k] = v
+                    else:
+                        dikt[k] = Fallback(None, v.best)
+                        changed = True
+                else:
+                    dikt[k] = Fallback(None, None)
+                    changed = True
+            else:
+                dikt[k] = v
+        if not changed:
+            return self
+        return PullRequestFacts(**dikt)
 
     def __str__(self) -> str:
         """Format for human-readability."""

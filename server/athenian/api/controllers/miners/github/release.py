@@ -777,7 +777,8 @@ async def _fetch_repository_commits(repos: Collection[str],
                                     default_branches: Dict[str, str],
                                     mdb: databases.Database,
                                     pdb: databases.Database,
-                                    cache: Optional[aiomcache.Client]) -> Dict[str, np.ndarray]:
+                                    cache: Optional[aiomcache.Client],
+                                    ) -> Dict[str, np.ndarray]:
     filters = []
     branch_names = branches[Branch.branch_name.key].values
     branch_commits = branches[Branch.commit_sha.key].values
@@ -1086,16 +1087,19 @@ async def map_releases_to_prs(repos: Iterable[str],
                               pdb: databases.Database,
                               cache: Optional[aiomcache.Client],
                               pr_blacklist: Optional[BinaryExpression] = None,
+                              truncate: bool = True,
                               ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, ReleaseMatch]]:
     """Find pull requests which were released between `time_from` and `time_to` but merged before \
     `time_from`.
 
     :param authors: Required PR authors.
     :param mergers: Required PR mergers.
+    :param truncate: Do not load releases after `time_to`.
     :return: pd.DataFrame with found PRs that were created before `time_from` and released \
              between `time_from` and `time_to` \
              + \
-             pd.DataFrame with the discovered releases between `time_from` and `time_to` \
+             pd.DataFrame with the discovered releases between \
+             `time_from` and `time_to` (today if not `truncate`) \
              + \
              `matched_bys` so that we don't have to compute that mapping again.
     """
@@ -1104,25 +1108,48 @@ async def map_releases_to_prs(repos: Iterable[str],
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
 
-    matched_bys, pdags, releases, releases_new = await _find_releases_for_matching_prs(
-        repos, time_from, time_to, branches, default_branches, release_settings, pdb, mdb, cache)
-    prs = []
+    matched_bys, pdags, releases, releases_new, release_settings = \
+        await _find_releases_for_matching_prs(
+            repos, time_from, time_to, branches, default_branches,
+            release_settings, pdb, mdb, cache)
+    tasks = []
+    if not truncate:
+        today = datetime.combine((datetime.now(timezone.utc) + timedelta(days=1)).date(),
+                                 datetime.min.time(), tzinfo=timezone.utc)
+        tasks.append(load_releases(
+            repos, branches, default_branches, time_to, today, release_settings,
+            mdb, pdb, cache))
+
+    def concat_releases(releases_new: pd.DataFrame,
+                        releases_today: pd.DataFrame,
+                        ) -> pd.DataFrame:
+        releases_concat = releases_today.append(releases_new)
+        releases_concat.reset_index(drop=True, inplace=True)
+        return releases_concat
+
     for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
         if (repo_releases[Release.published_at.key] >= time_from).any():
-            prs.append(_find_old_released_prs(
+            tasks.append(_find_old_released_prs(
                 repo_releases, pdags.get(repo), time_from, authors, mergers, pr_blacklist,
                 mdb, pdb, cache))
-    if prs:
+    if len(tasks) - (not truncate):
         with sentry_sdk.start_span(op="_find_old_released_prs"):
-            prs = await asyncio.gather(*prs, return_exceptions=True)
-        for pr in prs:
-            if isinstance(pr, Exception):
-                raise pr
+            tasks = await asyncio.gather(*tasks, return_exceptions=True)
+        for task in tasks:
+            if isinstance(task, Exception):
+                raise task
+        if not truncate:
+            releases_today, _ = tasks[0]
+            releases_new = concat_releases(releases_new, releases_today)
+            tasks = tasks[1:]
         return (
-            wrap_sql_query(chain.from_iterable(prs), PullRequest, index=PullRequest.node_id.key),
+            wrap_sql_query(chain.from_iterable(tasks), PullRequest, index=PullRequest.node_id.key),
             releases_new,
             matched_bys,
         )
+    if not truncate:
+        releases_today, _ = await tasks[0]
+        releases_new = concat_releases(releases_new, releases_today)
     return (
         pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
                               if c.name != PullRequest.node_id.key]),
@@ -1150,12 +1177,12 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
     # these matching rules must be applied in the past to stay consistent
     prefix = PREFIXES["github"]
     consistent_release_settings = {}
-    for repo in matched_bys:
+    for repo in repos:
         setting = release_settings[prefix + repo]
         consistent_release_settings[prefix + repo] = ReleaseMatchSetting(
             tags=setting.tags,
             branches=setting.branches,
-            match=ReleaseMatch(matched_bys[repo]),
+            match=ReleaseMatch(matched_bys.get(repo, setting.match)),
         )
     # let's try to find the releases not older than 5 weeks before `time_from`
     lookbehind_time_from = time_from - timedelta(days=5 * 7)
@@ -1196,7 +1223,7 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
                 lookbehind_time_from -= deeper_step
     releases = releases_new.append(releases_old)
     releases.reset_index(drop=True, inplace=True)
-    return matched_bys, pdags, releases, releases_new
+    return matched_bys, pdags, releases, releases_new, consistent_release_settings
 
 
 @sentry_span
