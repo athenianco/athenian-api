@@ -968,6 +968,7 @@ async def _fetch_commit_history_hashes(commit_ids: Iterable[str],
             return {r[0] for r in await conn.fetch_all(query)}
 
 
+@sentry_span
 async def _find_old_released_prs(releases: pd.DataFrame,
                                  pdag: Optional[bytes],
                                  time_boundary: datetime,
@@ -998,8 +999,7 @@ async def _find_old_released_prs(releases: pd.DataFrame,
         filters.append(PullRequest.merged_by_login.in_(mergers))
     if pr_blacklist is not None:
         filters.append(pr_blacklist)
-    with sentry_sdk.start_span(op="_find_old_released_prs/mdb"):
-        return await mdb.fetch_all(select([PullRequest]).where(and_(*filters)))
+    return await mdb.fetch_all(select([PullRequest]).where(and_(*filters)))
 
 
 @sentry_span
@@ -1224,6 +1224,7 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
                 hard_repos -= set(releases_old_hard[Release.repository_full_name.key].unique())
                 del releases_old_hard
                 lookbehind_time_from -= deeper_step
+                deeper_step *= 2
     releases = releases_new.append(releases_old)
     releases.reset_index(drop=True, inplace=True)
     return matched_bys, pdags, releases, releases_new, consistent_release_settings
