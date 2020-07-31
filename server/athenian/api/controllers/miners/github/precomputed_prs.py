@@ -429,9 +429,21 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
     if not inserted:
         return
     if pdb.url.dialect in ("postgres", "postgresql"):
-        sql = postgres_insert(GitHubPullRequestFacts).on_conflict_do_nothing()
+        sql = postgres_insert(GitHubPullRequestFacts)
+        sql = sql.on_conflict_do_update(
+            constraint=GitHubPullRequestFacts.__table__.primary_key,
+            set_={
+                GitHubPullRequestFacts.pr_done_at.key: sql.excluded.pr_done_at,
+                GitHubPullRequestFacts.updated_at.key: sql.excluded.updated_at,
+                GitHubPullRequestFacts.release_url.key: sql.excluded.release_url,
+                GitHubPullRequestFacts.merger.key: sql.excluded.merger,
+                GitHubPullRequestFacts.releaser.key: sql.excluded.releaser,
+                GitHubPullRequestFacts.activity_days.key: sql.excluded.activity_days,
+                GitHubPullRequestFacts.data.key: sql.excluded.data,
+            },
+        )
     elif pdb.url.dialect == "sqlite":
-        sql = insert(GitHubPullRequestFacts).prefix_with("OR IGNORE")
+        sql = insert(GitHubPullRequestFacts).prefix_with("OR REPLACE")
     else:
         raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
     with sentry_sdk.start_span(op="store_precomputed_done_facts/execute_many"):
