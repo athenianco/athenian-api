@@ -181,9 +181,21 @@ async def _asyncpg_execute(self, query, args, limit, timeout, return_status=Fals
             data = base64.b64encode(bz2.compress(pickle.dumps((query, args)))).decode()
             description = str(uuid.uuid4())
             _sql_log.info("%s %s", description, data)
-    with sentry_sdk.start_span(op="sql", description=description):
-        return await self._execute_original(query, args, limit, timeout, return_status)
+    with sentry_sdk.start_span(op="sql", description=description) as span:
+        result = await self._execute_original(query, args, limit, timeout, return_status)
+        try:
+            span.description = "=> %d\n%s" % (len(result), span.description)
+        except TypeError:
+            pass
+        return result
+
+
+async def _asyncpg_executemany(self, query, args, timeout):
+    with sentry_sdk.start_span(op="sql", description="<= %d\n%s" % (len(args), query)):
+        return await self._executemany_original(query, args, timeout)
 
 
 asyncpg.Connection._execute_original = asyncpg.Connection._Connection__execute
 asyncpg.Connection._Connection__execute = _asyncpg_execute
+asyncpg.Connection._executemany_original = asyncpg.Connection._executemany
+asyncpg.Connection._executemany = _asyncpg_executemany
