@@ -90,6 +90,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
     facts_miner = PullRequestFactsMiner(await bots(mdb))
     mined_prs = []
     mined_facts = []
+    done_count = 0
     with sentry_sdk.start_span(op="PullRequestMiner.__iter__ + PullRequestFactsMiner.__call__",
                                description=str(len(miner))):
         for i, pr in enumerate(miner):
@@ -101,11 +102,14 @@ async def calc_pull_request_facts_github(time_from: datetime,
             except ImpossiblePullRequest:
                 continue
             mined_facts.append(facts)
-    add_pdb_misses(pdb, "load_precomputed_done_facts_filters", len(mined_facts))
+            if facts.released or (facts.closed and not facts.merged):
+                done_count += 1
+    add_pdb_misses(pdb, "load_precomputed_done_facts_filters", done_count)
+    add_pdb_misses(pdb, "facts", len(mined_facts))
     # we don't care if exclude_inactive is True or False here
     await defer(store_precomputed_done_facts(
         mined_prs, mined_facts, default_branches, release_settings, pdb),
-        "store_precomputed_done_facts(%d)" % len(mined_facts))
+        "store_precomputed_done_facts(%d/%d)" % (done_count, len(mined_facts)))
     mined_facts.extend(done_facts.values())
     return mined_facts
 
