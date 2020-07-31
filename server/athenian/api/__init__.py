@@ -339,6 +339,9 @@ class AthenianApp(connexion.AioHttpApp):
         except (AttributeError, TypeError):
             # static files
             pass
+        with sentry_sdk.configure_scope() as scope:
+            for k, v in response.headers.items():
+                scope.set_extra(k, v)
         return response
 
     @aiohttp.web.middleware
