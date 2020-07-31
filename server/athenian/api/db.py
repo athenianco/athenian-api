@@ -1,9 +1,12 @@
 import asyncio
+import base64
+import bz2
 from contextvars import ContextVar
 import logging
-import os
+import pickle
 import time
 from typing import Callable, List, Mapping, Tuple, Union
+import uuid
 
 import aiohttp.web
 import asyncpg
@@ -13,18 +16,19 @@ import sentry_sdk
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
+from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 from athenian.api.typing_utils import wraps
 
 
-profile_queries = os.getenv("PROFILE_QUERIES") in ("1", "true", "yes")
+def measure_db_overhead_and_retry(db: databases.Database,
+                                  db_id: str,
+                                  app: aiohttp.web.Application) -> databases.Database:
+    """
+    Instrument Database to measure the time spent inside DB i/o.
 
-
-def measure_db_overhead(db: databases.Database,
-                        db_id: str,
-                        app: aiohttp.web.Application) -> databases.Database:
-    """Instrument Database to measure the time spent inside DB i/o."""
-    log = logging.getLogger("%s.measure_db_overhead" % metadata.__package__)
-    _profile_queries = profile_queries
+    Also retry queries after connectivity errors.
+    """
+    log = logging.getLogger("%s.measure_db_overhead_and_retry" % metadata.__package__)
 
     def measure_method_overhead_and_retry(func) -> callable:
         async def wrapped_measure_method_overhead_and_retry(*args, **kwargs):
@@ -45,9 +49,6 @@ def measure_db_overhead(db: databases.Database,
                     else:
                         delta = time.time() - start_time
                         elapsed[db_id] += delta
-                        if _profile_queries:
-                            sql = str(args[0]).replace("\n", "\\n").replace("\t", "\\t")
-                            print("%f\t%s" % (delta, sql), flush=True)
 
         return wraps(wrapped_measure_method_overhead_and_retry, func)
 
@@ -168,8 +169,19 @@ class ParallelDatabase(databases.Database):
             return await self._connection_execute_many(connection, query, values)
 
 
+_sql_log = logging.getLogger("%s.sql" % metadata.__package__)
+
+
 async def _asyncpg_execute(self, query, args, limit, timeout, return_status=False):
-    with sentry_sdk.start_span(op="sql", description=query + "|" + str(args)):
+    description = query
+    if query.startswith("SELECT"):
+        if len(description) <= MAX_SENTRY_STRING_LENGTH and args:
+            description += " | " + str(args)
+        if len(description) > MAX_SENTRY_STRING_LENGTH:
+            data = base64.b64encode(bz2.compress(pickle.dumps((query, args)))).decode()
+            description = uuid.uuid4()
+            _sql_log.info("%s %s", description, data)
+    with sentry_sdk.start_span(op="sql", description=description):
         return await self._execute_original(query, args, limit, timeout, return_status)
 
 
