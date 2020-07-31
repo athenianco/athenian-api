@@ -445,24 +445,26 @@ def setup_context(log: logging.Logger) -> None:
     sentry_env = os.getenv("SENTRY_ENV", "development")
     log.info("Sentry: https://[secure]@sentry.io/%s#%s" % (sentry_project, sentry_env))
     disabled_transactions = {
-        "aiohttp_cors.preflight_handler._PreflightHandler._preflight_handler",
         "athenian.api.controllers.status_controller.StatusRenderer.__call__",
-        "aiohttp.web_urldispatcher.StaticResource._handle",
-        "connexion.apis.aiohttp_api.AioHttpApi._get_openapi_json",
     }
 
     def filter_sentry_events(event: dict, hint) -> Optional[dict]:
-        if event.get("type", "") == "transaction" and \
-                event["transaction"] in disabled_transactions:
-            event.clear()
-            event.update({"type": "transaction", "transaction": "disabled"})
-            return None
+        if event.get("type", "") == "transaction":
+            t = event["transaction"]
+            if not t.startswith(metadata.__package__) or t in disabled_transactions:
+                event.clear()
+                event.update({"type": "transaction", "transaction": "disabled"})
+                return None
         return event
 
     if sentry_env != "development":
         traces_sample_rate = float(os.getenv("SENTRY_SAMPLING_RATE", "0.2"))
     else:
-        traces_sample_rate = 0
+        traces_sample_rate = 1.0
+    if traces_sample_rate > 0:
+        log.info("Sentry tracing is ON: sampling rate %.2f", traces_sample_rate)
+    sentry_log = logging.getLogger("sentry_sdk.errors")
+    sentry_log.handlers.clear()
     sentry_sdk.init(
         environment=sentry_env,
         dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),

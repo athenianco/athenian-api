@@ -179,7 +179,7 @@ async def _asyncpg_execute(self, query, args, limit, timeout, return_status=Fals
             description += " | " + str(args)
         if len(description) > MAX_SENTRY_STRING_LENGTH:
             data = base64.b64encode(bz2.compress(pickle.dumps((query, args)))).decode()
-            description = uuid.uuid4()
+            description = str(uuid.uuid4())
             _sql_log.info("%s %s", description, data)
     with sentry_sdk.start_span(op="sql", description=description):
         return await self._execute_original(query, args, limit, timeout, return_status)
