@@ -14,8 +14,9 @@ def sentry_span(func):
     """Wrap the function in a Sentry span to trace the elapsed time."""
     if asyncio.iscoroutinefunction(func):
         async def wrapped_async_sentry_span(*args, **kwargs):
-            with sentry_sdk.start_span(op=func.__qualname__):
-                return await func(*args, **kwargs)
+            with sentry_sdk.Hub(sentry_sdk.Hub.current):
+                with sentry_sdk.start_span(op=func.__qualname__):
+                    return await func(*args, **kwargs)
 
         # forward the @cached service sub-routines
         reset_cache = getattr(func, "reset_cache", None)
