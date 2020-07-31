@@ -90,7 +90,8 @@ async def calc_pull_request_facts_github(time_from: datetime,
     facts_miner = PullRequestFactsMiner(await bots(mdb))
     mined_prs = []
     mined_facts = []
-    with sentry_sdk.start_span(op="PullRequestMiner.__iter__ + PullRequestFactsMiner.__call__"):
+    with sentry_sdk.start_span(op="PullRequestMiner.__iter__ + PullRequestFactsMiner.__call__",
+                               description=str(len(miner))):
         for i, pr in enumerate(miner):
             if (i + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
                 await asyncio.sleep(0)
@@ -141,7 +142,8 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, repositories, participants, labels, exclude_inactive,
         release_settings, mdb, pdb, cache)
-    with sentry_sdk.start_span(op="BinnedPullRequestMetricCalculator.__call__"):
+    with sentry_sdk.start_span(op="BinnedPullRequestMetricCalculator.__call__",
+                               description=str(len(mined_facts))):
         calcs = [metric_calculators[m]() for m in metrics]
         return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_facts) for ts in time_intervals]
 

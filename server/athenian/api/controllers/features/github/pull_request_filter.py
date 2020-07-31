@@ -391,7 +391,8 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches,
         release_settings, mdb, pdb, cache)
     prs = await list_with_yield(PullRequestMiner(prs_df, *dfs), "PullRequestMiner.__iter__")
-    with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__"):
+    with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__",
+                               description=str(len(prs))):
         facts_miner = PullRequestFactsMiner(await bots(mdb))
         pdb_misses = 0
         for pr in prs:
