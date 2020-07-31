@@ -539,6 +539,10 @@ class PullRequestMiner:
         for col in df.select_dtypes(include=["datetime"]):
             df.loc[df[col] > upto, col] = pd.NaT
 
+    def __len__(self) -> int:
+        """Return the number of loaded pull requests."""
+        return len(self._prs)
+
     def __iter__(self) -> Generator[MinedPullRequest, None, None]:
         """Iterate over the individual pull requests."""
         df_fields = list(MinedPullRequest.__dataclass_fields__)
