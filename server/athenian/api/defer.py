@@ -27,14 +27,12 @@ async def defer(coroutine: Coroutine, name: str) -> None:
     async with sync:
         counter[0] += 1
     span = Hub.current.scope.span
-    op = span.op if span is not None else "unknown"
-    transaction = Hub.current.scope.transaction
-    if transaction is None:
-        transaction = Transaction(sampled=False)
+    if span is None:
+        span = Transaction(sampled=False)
 
     async def wrapped_defer():
         try:
-            with transaction.start_child(op="defer %s" % name, description=op):
+            with span.start_child(op="defer %s" % name):
                 await coroutine
         except BaseException:
             _log.exception("Unhandled exception in deferred function %s", name)

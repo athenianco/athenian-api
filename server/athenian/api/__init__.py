@@ -39,7 +39,8 @@ from athenian.api.auth import Auth0
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
-from athenian.api.db import add_pdb_metrics_context, measure_db_overhead, ParallelDatabase
+from athenian.api.db import add_pdb_metrics_context, measure_db_overhead_and_retry, \
+    ParallelDatabase
 from athenian.api.defer import enable_defer, wait_deferred
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
@@ -50,7 +51,7 @@ from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
 from athenian.api.slogging import add_logging_args, trailing_dot_exceptions
-
+from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
 trailing_dot_exceptions.update((
     "connexion.api.security",
@@ -260,7 +261,7 @@ class AthenianApp(connexion.AioHttpApp):
                 self.log.exception("Failed to connect to the %s DB at %s", name, db_conn)
                 raise GracefulExit() from None
             self.log.info("Connected to the %s DB on %s", name, db_conn)
-            setattr(self, shortcut, measure_db_overhead(db, shortcut, self.app))
+            setattr(self, shortcut, measure_db_overhead_and_retry(db, shortcut, self.app))
             if shortcut == "pdb":
                 self.pdb.metrics = pdbctx
 
@@ -477,8 +478,8 @@ def setup_context(log: logging.Logger) -> None:
         traces_sample_rate=traces_sample_rate,
     )
     sentry_sdk.scope.add_global_event_processor(filter_sentry_events)
-    sentry_sdk.utils.MAX_STRING_LENGTH = 4096
-    sentry_sdk.utils.MAX_FORMAT_PARAM_LENGTH = 512
+    sentry_sdk.utils.MAX_STRING_LENGTH = MAX_SENTRY_STRING_LENGTH
+    sentry_sdk.utils.MAX_FORMAT_PARAM_LENGTH = MAX_SENTRY_STRING_LENGTH // 8
     with sentry_sdk.configure_scope() as scope:
         scope.set_tag("version", metadata.__version__)
         scope.set_tag("username", username)
