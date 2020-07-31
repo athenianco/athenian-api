@@ -1117,9 +1117,11 @@ async def map_releases_to_prs(repos: Iterable[str],
     if not truncate:
         today = datetime.combine((datetime.now(timezone.utc) + timedelta(days=1)).date(),
                                  datetime.min.time(), tzinfo=timezone.utc)
-        tasks.append(load_releases(
-            repos, branches, default_branches, time_to, today, release_settings,
-            mdb, pdb, cache))
+        truncate = today <= time_to
+        if not truncate:
+            tasks.append(load_releases(
+                repos, branches, default_branches, time_to, today, release_settings,
+                mdb, pdb, cache))
 
     def concat_releases(releases_new: pd.DataFrame,
                         releases_today: pd.DataFrame,
