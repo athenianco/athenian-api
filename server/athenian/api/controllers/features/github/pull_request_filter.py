@@ -144,7 +144,8 @@ class PullRequestListMiner:
             kwargs = {} if k != "review" else {"allow_unclosed": True}
             if prop in props_today:
                 kwargs["override_event_time"] = now - timedelta(seconds=1)  # < time_max
-            stage_timings[k] = calc.analyze(facts_today, no_time_from, now, **kwargs)
+            calc(facts_today, no_time_from, now, **kwargs)
+            stage_timings[k] = calc.peek
         for p in range(Property.WIP, Property.DONE + 1):
             p = Property(p)
             if p in props_time_machine:

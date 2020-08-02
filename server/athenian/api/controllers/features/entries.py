@@ -13,7 +13,8 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request import \
-    BinnedPullRequestMetricCalculator, histogram_calculators, metric_calculators
+    BinnedPullRequestMetricCalculator, histogram_calculators, metric_calculators, \
+    PullRequestHistogramCalculatorEnsemble
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
 from athenian.api.controllers.features.histogram import Histogram, Scale
 from athenian.api.controllers.features.metric import Metric
@@ -130,7 +131,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
         release_settings,
     ),
 )
-async def calc_pull_request_metrics_line_github(metrics: Collection[str],
+async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
                                                 repositories: Set[str],
                                                 participants: Participants,
@@ -148,8 +149,8 @@ async def calc_pull_request_metrics_line_github(metrics: Collection[str],
         release_settings, mdb, pdb, cache)
     with sentry_sdk.start_span(op="BinnedPullRequestMetricCalculator.__call__",
                                description=str(len(mined_facts))):
-        calcs = [metric_calculators[m]() for m in metrics]
-        return [BinnedPullRequestMetricCalculator(calcs, ts)(mined_facts) for ts in time_intervals]
+        return [BinnedPullRequestMetricCalculator(metrics, ts)(mined_facts)
+                for ts in time_intervals]
 
 
 @sentry_span
@@ -190,11 +191,11 @@ async def calc_pull_request_histogram_github(metrics: Sequence[str],
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, repositories, participants, labels, exclude_inactive,
         release_settings, mdb, pdb, cache)
-    calcs = [histogram_calculators[m]() for m in metrics]
+    ensemble = PullRequestHistogramCalculatorEnsemble(*metrics)
     for facts in mined_facts:
-        for calc in calcs:
-            calc(facts, time_from, time_to)
-    histograms = [calc.histogram(scale, bins) for calc in calcs]
+        ensemble(facts, time_from, time_to)
+    histograms = ensemble.histograms(scale, bins)
+    histograms = [histograms[m] for m in metrics]
     return histograms
 
 

@@ -1,5 +1,4 @@
 from collections import defaultdict
-import dataclasses
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
@@ -145,7 +144,7 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
             participants[prefix + pid].append(pkweb)
     props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
     if pr.labels is not None:
-        props["labels"] = [PullRequestLabel(**dataclasses.asdict(label)) for label in pr.labels]
+        props["labels"] = [PullRequestLabel(**label.__dict__) for label in pr.labels]
     return WebPullRequest(**props)
 
 
@@ -298,5 +297,5 @@ async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response
     repos = await resolve_repos(body.repositories, body.account, request.uid, request.native_uid,
                                 request.sdb, request.mdb, request.cache, request.app["slack"])
     labels = await mine_labels(repos, request.mdb, request.cache)
-    labels = [FilteredLabel(**dataclasses.asdict(label)) for label in labels]
+    labels = [FilteredLabel(**label.__dict__) for label in labels]
     return model_response(labels)
