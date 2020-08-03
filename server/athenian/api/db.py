@@ -184,7 +184,7 @@ async def _asyncpg_execute(self, query, args, limit, timeout, return_status=Fals
     with sentry_sdk.start_span(op="sql", description=description) as span:
         result = await self._execute_original(query, args, limit, timeout, return_status)
         try:
-            span.description = "=> %d\n%s" % (len(result), span.description)
+            span.description = "=> %d\n%s" % (len(result[0]), span.description)
         except TypeError:
             pass
         return result
