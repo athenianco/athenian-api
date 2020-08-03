@@ -13,7 +13,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
-from athenian.api.models.metadata.github import NodePullRequestCommit, PushCommit
+from athenian.api.models.metadata.github import NodePullRequestCommit, PushCommit, User
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
 
@@ -55,10 +55,34 @@ async def extract_commits(prop: FilterCommitsProperty,
         PushCommit.repository_full_name.in_(repos),
         PushCommit.committer_email != "noreply@github.com",
     ]
+    user_logins = set()
     if with_author:
-        sql_filters.append(PushCommit.author_login.in_(with_author))
+        user_logins.update(with_author)
     if with_committer:
-        sql_filters.append(PushCommit.committer_login.in_(with_committer))
+        user_logins.update(with_committer)
+    if user_logins:
+        rows = await db.fetch_all(
+            select([User.login, User.node_id]).where(User.login.in_(user_logins)))
+        user_ids = {r[0]: r[1] for r in rows}
+        del user_logins
+    else:
+        user_ids = {}
+    if with_author:
+        author_ids = []
+        for u in with_author:
+            try:
+                author_ids.append(user_ids[u])
+            except KeyError:
+                continue
+        sql_filters.append(PushCommit.author_user.in_(author_ids))
+    if with_committer:
+        committer_ids = []
+        for u in with_committer:
+            try:
+                committer_ids.append(user_ids[u])
+            except KeyError:
+                continue
+        sql_filters.append(PushCommit.committer_user.in_(committer_ids))
     if columns is None:
         cols_query, cols_df = [PushCommit], PushCommit
     else:
