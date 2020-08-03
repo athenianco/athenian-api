@@ -15,8 +15,8 @@ class WorkInProgressTimeCalculator(PullRequestAverageMetricCalculator[timedelta]
 
     may_have_negative_values = False
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                override_event_time: Optional[datetime] = None) -> Optional[timedelta]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 override_event_time: Optional[datetime] = None) -> Optional[timedelta]:
         """Calculate the actual state update."""
         if override_event_time is not None:
             wip_end = override_event_time
@@ -42,7 +42,7 @@ class WorkInProgressTimeCalculator(PullRequestAverageMetricCalculator[timedelta]
 class WorkInProgressCounter(PullRequestCounter):
     """Count the number of PRs that were used to calculate PR_WIP_TIME."""
 
-    calc_cls = WorkInProgressTimeCalculator
+    deps = (WorkInProgressTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_REVIEW_TIME)
@@ -51,9 +51,9 @@ class ReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                allow_unclosed=False, override_event_time: Optional[datetime] = None,
-                ) -> Optional[timedelta]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 allow_unclosed=False, override_event_time: Optional[datetime] = None,
+                 ) -> Optional[timedelta]:
         """Calculate the actual state update."""
         if not facts.first_review_request:
             return None
@@ -77,7 +77,7 @@ class ReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 class ReviewCounter(PullRequestCounter):
     """Count the number of PRs that were used to calculate PR_REVIEW_TIME."""
 
-    calc_cls = ReviewTimeCalculator
+    deps = (ReviewTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_MERGING_TIME)
@@ -86,8 +86,8 @@ class MergingTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                override_event_time: Optional[datetime] = None) -> Optional[timedelta]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 override_event_time: Optional[datetime] = None) -> Optional[timedelta]:
         """Calculate the actual state update."""
         closed = facts.closed.best if override_event_time is None else override_event_time
         if closed is not None and min_time <= closed < max_time:
@@ -105,7 +105,7 @@ class MergingTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 class MergingCounter(PullRequestCounter):
     """Count the number of PRs that were used to calculate PR_MERGING_TIME."""
 
-    calc_cls = MergingTimeCalculator
+    deps = (MergingTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_RELEASE_TIME)
@@ -114,8 +114,8 @@ class ReleaseTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                override_event_time: Optional[datetime] = None) -> Optional[timedelta]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 override_event_time: Optional[datetime] = None) -> Optional[timedelta]:
         """Calculate the actual state update."""
         released = facts.released.best if override_event_time is None else override_event_time
         if facts.merged and released is not None and min_time <= released < max_time:
@@ -127,7 +127,7 @@ class ReleaseTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 class ReleaseCounter(PullRequestCounter):
     """Count the number of PRs that were used to calculate PR_RELEASE_TIME."""
 
-    calc_cls = ReleaseTimeCalculator
+    deps = (ReleaseTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_TIME)
@@ -136,8 +136,8 @@ class LeadTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                ) -> Optional[timedelta]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[timedelta]:
         """Calculate the actual state update."""
         if facts.released and min_time <= facts.released.best < max_time:
             return facts.released.best - facts.work_began.best
@@ -148,25 +148,24 @@ class LeadTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 class LeadCounter(PullRequestCounter):
     """Count the number of PRs that were used to calculate PR_LEAD_TIME."""
 
-    calc_cls = LeadTimeCalculator
+    deps = (LeadTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_TIME)
 class CycleTimeCalculator(PullRequestMetricCalculator[timedelta]):
     """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, and PR_RELEASE_TIME."""
 
-    def __init__(self):
-        """Initialize a new instance of CycleTimeCalculator."""
-        super().__init__()
-        self._calcs = [WorkInProgressTimeCalculator(), ReviewTimeCalculator(),
-                       MergingTimeCalculator(), ReleaseTimeCalculator()]
+    deps = (WorkInProgressTimeCalculator,
+            ReviewTimeCalculator,
+            MergingTimeCalculator,
+            ReleaseTimeCalculator)
 
-    def value(self) -> Metric[timedelta]:
+    def _value(self) -> Metric[timedelta]:
         """Calculate the current metric value."""
         exists = False
         ct = ct_conf_min = ct_conf_max = timedelta(0)
         for calc in self._calcs:
-            val = calc.value()
+            val = calc.value
             if val.exists:
                 exists = True
                 ct += val.value
@@ -175,22 +174,17 @@ class CycleTimeCalculator(PullRequestMetricCalculator[timedelta]):
         return Metric(exists, ct if exists else None,
                       ct_conf_min if exists else None, ct_conf_max if exists else None)
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                ) -> Optional[timedelta]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[timedelta]:
         """Update the states of the underlying calcs and return whether at least one of the PR's \
         metrics exists."""
         exists = False
         sumval = timedelta(0)
         for calc in self._calcs:
-            if calc(facts, min_time, max_time):
+            if calc.peek is not None:
                 exists = True
-                sumval += calc.samples[-1]
+                sumval += calc.peek
         return sumval if exists else None
-
-    def reset(self):
-        """Reset the internal state."""
-        for calc in self._calcs:
-            calc.reset()
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT)
@@ -198,7 +192,7 @@ class CycleCounter(PullRequestCounter):
     """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, \
     or PR_RELEASE_TIME."""
 
-    calc_cls = CycleTimeCalculator
+    deps = (CycleTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_ALL_COUNT)
@@ -207,8 +201,8 @@ class AllCounter(PullRequestSumMetricCalculator[int]):
 
     requires_full_span = True
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                ) -> Optional[int]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
         pr_started = facts.created.best  # not `work_began.best`! It breaks granular measurements.
         cut_before_released = (
@@ -234,8 +228,8 @@ class WaitFirstReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta
 
     may_have_negative_values = False
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                ) -> Optional[timedelta]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[timedelta]:
         """Calculate the actual state update."""
         if facts.first_review_request and facts.first_comment_on_first_review and \
                 min_time <= facts.first_comment_on_first_review.best < max_time:
@@ -247,15 +241,15 @@ class WaitFirstReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta
 class WaitFirstReviewCounter(PullRequestCounter):
     """Count PRs that were used to calculate PR_WAIT_FIRST_REVIEW_TIME."""
 
-    calc_cls = WaitFirstReviewTimeCalculator
+    deps = (WaitFirstReviewTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_OPENED)
 class OpenedCalculator(PullRequestSumMetricCalculator[int]):
     """Number of open PRs."""
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                ) -> Optional[int]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
         if min_time <= facts.created.best < max_time:
             return 1
@@ -266,8 +260,8 @@ class OpenedCalculator(PullRequestSumMetricCalculator[int]):
 class MergedCalculator(PullRequestSumMetricCalculator[int]):
     """Number of merged PRs."""
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                ) -> Optional[int]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
         if facts.merged and min_time <= facts.merged.best < max_time:
             return 1
@@ -278,8 +272,8 @@ class MergedCalculator(PullRequestSumMetricCalculator[int]):
 class RejectedCalculator(PullRequestSumMetricCalculator[int]):
     """Number of rejected PRs."""
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                ) -> Optional[int]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
         if facts.closed and not facts.merged and min_time <= facts.closed.best < max_time:
             return 1
@@ -290,8 +284,8 @@ class RejectedCalculator(PullRequestSumMetricCalculator[int]):
 class ClosedCalculator(PullRequestSumMetricCalculator[int]):
     """Number of closed PRs."""
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                ) -> Optional[int]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
         if facts.closed and min_time <= facts.closed.best < max_time:
             return 1
@@ -302,8 +296,8 @@ class ClosedCalculator(PullRequestSumMetricCalculator[int]):
 class ReleasedCalculator(PullRequestSumMetricCalculator[int]):
     """Number of released PRs."""
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                ) -> Optional[int]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
         if facts.released and min_time <= facts.released.best < max_time:
             return 1
@@ -314,49 +308,41 @@ class ReleasedCalculator(PullRequestSumMetricCalculator[int]):
 class FlowRatioCalculator(PullRequestMetricCalculator[float]):
     """PR flow ratio - opened / closed - calculator."""
 
-    def __init__(self):
-        """Initialize a new instance of FlowRatioCalculator."""
-        super().__init__()
-        self._opened = OpenedCalculator()
-        self._closed = ClosedCalculator()
+    deps = (OpenedCalculator, ClosedCalculator)
 
-    def value(self) -> Metric[float]:
+    def __init__(self, *deps: PullRequestMetricCalculator):
+        """Initialize a new instance of FlowRatioCalculator."""
+        super().__init__(*deps)
+        if isinstance(self._calcs[1], OpenedCalculator):
+            self._calcs = list(reversed(self._calcs))
+        self._opened, self._closed = self._calcs
+
+    def _value(self) -> Metric[float]:
         """Calculate the current metric value."""
-        opened = self._opened.value()
-        closed = self._closed.value()
+        opened = self._opened.value
+        closed = self._closed.value
         if not closed.exists and not opened.exists:
             return Metric(False, None, None, None)
         # Why +1? See ENG-866
         val = ((opened.value or 0) + 1) / ((closed.value or 0) + 1)
         return Metric(True, val, None, None)
 
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                ) -> Optional[float]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[float]:
         """Calculate the actual state update."""
-        self._opened(facts, min_time, max_time)
-        self._closed(facts, min_time, max_time)
         return None
-
-    def reset(self):
-        """Reset the internal state."""
-        self._opened.reset()
-        self._closed.reset()
 
 
 @register_metric(PullRequestMetricID.PR_SIZE)
 class SizeCalculator(PullRequestAverageMetricCalculator[int]):
-    """Elapsed time between requesting the review for the first time and getting it."""
+    """Average PR size.."""
 
     may_have_negative_values = False
+    deps = (AllCounter,)
 
-    def __init__(self):
-        """Initialize a new instance of SizeCalculator."""
-        super().__init__()
-        self.all = AllCounter()
-
-    def analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                ) -> Optional[int]:
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
-        if self.all.analyze(facts, min_time, max_time) is not None:
+        if self._calcs[0].peek is not None:
             return facts.size
         return None

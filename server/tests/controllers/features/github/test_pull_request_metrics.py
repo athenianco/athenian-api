@@ -6,13 +6,13 @@ import pandas as pd
 import pytest
 
 from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
-from athenian.api.controllers.features.github.pull_request import BinnedPullRequestMetricCalculator
+from athenian.api.controllers.features.github.pull_request import \
+    BinnedPullRequestMetricCalculator, PullRequestMetricCalculatorEnsemble
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
-    ClosedCalculator, CycleCounter, FlowRatioCalculator, LeadCounter, LeadTimeCalculator, \
-    MergedCalculator, MergingCounter, MergingTimeCalculator, OpenedCalculator, \
-    RejectedCalculator, ReleaseCounter, ReleaseTimeCalculator, ReviewCounter, \
-    ReviewTimeCalculator, WaitFirstReviewTimeCalculator, WorkInProgressCounter, \
-    WorkInProgressTimeCalculator
+    ClosedCalculator, CycleCounter, CycleTimeCalculator, FlowRatioCalculator, LeadCounter, \
+    LeadTimeCalculator, MergingCounter, MergingTimeCalculator, OpenedCalculator, \
+    ReleaseCounter, ReleaseTimeCalculator, ReviewCounter, ReviewTimeCalculator, \
+    WaitFirstReviewTimeCalculator, WorkInProgressCounter, WorkInProgressTimeCalculator
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
@@ -43,7 +43,7 @@ def test_pull_request_metrics_timedelta_stability(pr_samples, cls, dtypes):  # n
     time_to = datetime.now(tz=timezone.utc)
     for pr in pr_samples(1000):
         pr = random_dropout(ensure_dtype(pr, dtypes[0]), 0.5)
-        r = calc.analyze(pr, time_from, time_to)
+        r = calc._analyze(pr, time_from, time_to)
         assert (r is None) or ((isinstance(r, dtypes[1])) and r >= dtypes[1](0)), str(pr)
 
 
@@ -63,26 +63,28 @@ def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa
             time_from = max(getattr(pr, attr).best, time_from)
         time_from += timedelta(days=1)
         time_to = time_from + timedelta(days=7)
-        assert calc.analyze(pr, time_from, time_to) is None
+        assert calc._analyze(pr, time_from, time_to) is None
 
         time_from = datetime.now(tz=timezone.utc)
         for attr in peak_attr.split(","):
             time_from = min(getattr(pr, attr).best, time_from)
         time_from -= timedelta(days=7)
         time_to = time_from + timedelta(days=1)
-        assert calc.analyze(pr, time_from, time_to) is None
+        assert calc._analyze(pr, time_from, time_to) is None
 
 
-@pytest.mark.parametrize("cls", [OpenedCalculator, MergedCalculator, RejectedCalculator,
-                                 ClosedCalculator])
-def test_pull_request_metrics_float_binned(pr_samples, cls):  # noqa: F811
+@pytest.mark.parametrize("metric", [PullRequestMetricID.PR_OPENED,
+                                    PullRequestMetricID.PR_MERGED,
+                                    PullRequestMetricID.PR_REJECTED,
+                                    PullRequestMetricID.PR_CLOSED])
+def test_pull_request_metrics_float_binned(pr_samples, metric):  # noqa: F811
     time_from = (datetime.now(tz=timezone.utc) - timedelta(days=365 * 3 // 2)).date()
     time_to = (datetime.now(tz=timezone.utc) - timedelta(days=365 // 2)).date()
     time_intervals = [datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc)
                       for i in Granularity.split("month", time_from, time_to)]
-    binned = BinnedPullRequestMetricCalculator([cls()], time_intervals)
+    binned = BinnedPullRequestMetricCalculator([metric], time_intervals)
     samples = pr_samples(1000)
-    if issubclass(cls, RejectedCalculator):
+    if metric == PullRequestMetricID.PR_REJECTED:
         for i, s in enumerate(samples):
             data = vars(s)
             data["merged"] = Fallback(None, None)
@@ -106,7 +108,7 @@ def test_pull_request_opened_no(pr_samples):  # noqa: F811
             n += 1
             calc(pr, time_from, time_to)
     assert n > 0
-    m = calc.value()
+    m = calc.value
     assert not m.exists
 
 
@@ -116,56 +118,62 @@ def test_pull_request_closed_no(pr_samples):  # noqa: F811
     time_to = time_from + timedelta(days=7)
     for pr in pr_samples(100):
         calc(pr, time_from, time_to)
-    m = calc.value()
+    m = calc.value
     assert not m.exists
 
 
 def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator()
+    calc = FlowRatioCalculator(OpenedCalculator(), ClosedCalculator())
     open_calc = OpenedCalculator()
     closed_calc = ClosedCalculator()
     time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
     time_to = datetime.now(tz=timezone.utc)
     for pr in pr_samples(1000):
+        for dep in calc._calcs:
+            dep(pr, time_from, time_to)
         calc(pr, time_from, time_to)
         open_calc(pr, time_from, time_to)
         closed_calc(pr, time_from, time_to)
-    m = calc.value()
+    m = calc.value
     assert m.exists
     assert 0 < m.value < 1
     assert m.confidence_min is None
     assert m.confidence_max is None
-    assert m.value == (open_calc.value().value + 1) / (closed_calc.value().value + 1)
+    assert m.value == (open_calc.value.value + 1) / (closed_calc.value.value + 1)
 
 
 def test_pull_request_flow_ratio_zeros():
-    calc = FlowRatioCalculator()
-    m = calc.value()
+    calc = FlowRatioCalculator(OpenedCalculator(), ClosedCalculator())
+    m = calc.value
     assert not m.exists
 
 
 def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator()
+    calc = FlowRatioCalculator(OpenedCalculator(), ClosedCalculator())
     time_to = datetime.now(tz=timezone.utc)
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
         if pr.closed and time_from <= pr.closed.best < time_to:
+            for dep in calc._calcs:
+                dep(pr, time_from, time_to)
             calc(pr, time_from, time_to)
             break
-    m = calc.value()
+    m = calc.value
     assert m.exists
     assert m.value == 0.5
 
 
 def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator()
+    calc = FlowRatioCalculator(OpenedCalculator(), ClosedCalculator())
     time_to = datetime.now(tz=timezone.utc) - timedelta(days=180)
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
         if pr.closed and pr.closed.best > time_to > pr.created.best >= time_from:
+            for dep in calc._calcs:
+                dep(pr, time_from, time_to)
             calc(pr, time_from, time_to)
             break
-    m = calc.value()
+    m = calc.value
     assert m.exists
     assert m.value == 2
 
@@ -180,16 +188,23 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
                           AllCounter,
                           ])
 def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
-    calc = cls()
-    if isinstance(calc, AllCounter):
-        calc.calc = calc
+    calc = cls(*(dep1(*(dep2() for dep2 in dep1.deps)) for dep1 in cls.deps))
     nones = nonones = 0
     for pr in pr_samples(1000):
         time_to = datetime.now(tz=timezone.utc)
         time_from = time_to - timedelta(days=10000)
-        delta = calc.analyze(pr, time_from, time_to)
+        for dep1 in calc._calcs:
+            for dep2 in dep1._calcs:
+                dep2(pr, time_from, time_to)
+            dep1(pr, time_from, time_to)
+        calc(pr, time_from, time_to)
+        delta = calc.peek
         assert isinstance(delta, int)
-        if calc.calc.analyze(pr, time_from, time_to) is not None:
+        if cls != AllCounter:
+            peek = calc._calcs[0].peek
+        else:
+            peek = calc.peek
+        if peek is not None:
             assert delta == 1
             nonones += 1
         else:
@@ -297,3 +312,43 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     args[5] = True
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics.value == 71
+
+
+def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
+    ensemble = PullRequestMetricCalculatorEnsemble(PullRequestMetricID.PR_CYCLE_TIME,
+                                                   PullRequestMetricID.PR_WIP_COUNT,
+                                                   PullRequestMetricID.PR_RELEASE_TIME,
+                                                   PullRequestMetricID.PR_CLOSED)
+    release_time = ReleaseTimeCalculator()
+    wip_count = WorkInProgressCounter(WorkInProgressTimeCalculator())
+    cycle_time = CycleTimeCalculator(WorkInProgressTimeCalculator(), ReviewTimeCalculator(),
+                                     MergingTimeCalculator(), ReleaseTimeCalculator())
+    closed = ClosedCalculator()
+    time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
+    time_to = datetime.now(tz=timezone.utc)
+    for _ in range(2):
+        for pr in pr_samples(100):
+            ensemble(pr, time_from, time_to)
+            release_time(pr, time_from, time_to)
+            wip_count._calcs[0](pr, time_from, time_to)
+            wip_count(pr, time_from, time_to)
+            for c in cycle_time._calcs:
+                c(pr, time_from, time_to)
+            cycle_time(pr, time_from, time_to)
+            closed(pr, time_from, time_to)
+        ensemble_metrics = ensemble.values()
+        assert ensemble_metrics[PullRequestMetricID.PR_CYCLE_TIME] == cycle_time.value
+        assert ensemble_metrics[PullRequestMetricID.PR_RELEASE_TIME] == release_time.value
+        assert ensemble_metrics[PullRequestMetricID.PR_WIP_COUNT] == wip_count.value
+        assert ensemble_metrics[PullRequestMetricID.PR_CLOSED] == closed.value
+        for c in (ensemble, release_time, wip_count, cycle_time, closed):
+            c.reset()
+
+
+def test_pull_request_metric_calculator_ensemble_empty(pr_samples):
+    ensemble = PullRequestMetricCalculatorEnsemble()
+    time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
+    time_to = datetime.now(tz=timezone.utc)
+    for pr in pr_samples(1):
+        ensemble(pr, time_from, time_to)
+    assert ensemble.values() == {}

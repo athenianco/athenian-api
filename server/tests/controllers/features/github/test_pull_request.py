@@ -6,8 +6,7 @@ import pandas as pd
 import pytest
 
 from athenian.api.controllers.features.github.pull_request import \
-    PullRequestAverageMetricCalculator, \
-    PullRequestMedianMetricCalculator
+    PullRequestAverageMetricCalculator, PullRequestMedianMetricCalculator
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
 from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
@@ -126,14 +125,14 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
     class LeadTimeCalculator(cls):
         may_have_negative_values = negative
 
-        def analyze(self, times: PullRequestFacts, min_time: datetime, max_time: datetime,
-                    ) -> timedelta:
+        def _analyze(self, times: PullRequestFacts, min_time: datetime, max_time: datetime,
+                     ) -> timedelta:
             return times.released.value - times.work_began.best
 
     calc = LeadTimeCalculator()
     for pr in pr_samples(100):
         calc(ensure_dtype(pr, dtype), datetime.now(), datetime.now())
-    m = calc.value()
+    m = calc.value
     assert m.exists
     assert isinstance(m.value, timedelta)
     assert isinstance(m.confidence_min, timedelta)
@@ -142,7 +141,7 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
     assert timedelta() < m.value < timedelta(days=365 * 3 + 32)
     assert m.confidence_min < m.value < m.confidence_max
     calc.reset()
-    m = calc.value()
+    m = calc.value
     assert not m.exists
     assert m.value is None
     assert m.confidence_min is None
@@ -153,7 +152,7 @@ def test_pull_request_average_metric_calculator_zeros_nonnegative(pr_samples):
     calc = PullRequestAverageMetricCalculator()
     calc.may_have_negative_values = False
     calc.samples.extend(pd.Timedelta(0) for _ in range(3))
-    m = calc.value()
+    m = calc.value
     assert m.exists
     assert m.value == pd.Timedelta(0)
 

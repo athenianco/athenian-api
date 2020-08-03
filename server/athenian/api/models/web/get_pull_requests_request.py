@@ -47,7 +47,7 @@ class GetPullRequestsRequest(Model):
     def prs(self) -> List[PullRequestNumbers]:
         """Gets the prs of this GetPullRequestsRequest.
 
-        List of repositories and PR numbers to analyze.
+        List of repositories and PR numbers to _analyze.
 
         :return: The prs of this GetPullRequestsRequest.
         """
@@ -57,7 +57,7 @@ class GetPullRequestsRequest(Model):
     def prs(self, prs: List[PullRequestNumbers]):
         """Sets the prs of this GetPullRequestsRequest.
 
-        List of repositories and PR numbers to analyze.
+        List of repositories and PR numbers to _analyze.
 
         :param prs: The prs of this GetPullRequestsRequest.
         """

@@ -275,14 +275,15 @@ class PullRequestFacts:
 
     def max_timestamp(self) -> DT:
         """Find the maximum timestamp contained in the struct."""
-        return Fallback.max(*(v for v in dataclasses.asdict(self).values()
+        return Fallback.max(*(v for v in vars(self).values()
                               if isinstance(v, Fallback))).best
+        # do not use dataclasses.asdict() - very slow
 
     def truncate(self, dt: Union[pd.Timestamp, datetime]) -> "PullRequestFacts":
         """Create a copy of the facts without timestamps bigger than or equal to `dt`."""
         dikt = {}
         changed = False
-        for k, v in dataclasses.asdict(self).items():
+        for k, v in vars(self).items():  # do not use dataclasses.asdict() - very slow
             if not isinstance(v, Fallback):
                 dikt[k] = v
                 continue
@@ -306,7 +307,7 @@ class PullRequestFacts:
         """Format for human-readability."""
         return "{\n\t%s\n}" % ",\n\t".join(
             "%s: %s" % (k, v.best if isinstance(v, Fallback) else v)
-            for k, v in dataclasses.asdict(self).items())
+            for k, v in vars(self).items())  # do not use dataclasses.asdict() - very slow
 
     def __lt__(self, other: "PullRequestFacts") -> bool:
         """Order by `work_began`."""
