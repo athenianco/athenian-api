@@ -140,8 +140,13 @@ class MinedPullRequest:
         values = df[col].values
         return set(values[np.where(values)[0]])
 
-    def truncate(self, dt: Union[pd.Timestamp, datetime]) -> "MinedPullRequest":
-        """Create a copy of the PR data without timestamps bigger than or equal to `dt`."""
+    def truncate(self, dt: Union[pd.Timestamp, datetime],
+                 ignore=tuple()) -> "MinedPullRequest":
+        """
+        Create a copy of the PR data without timestamps bigger than or equal to `dt`.
+
+        :param ignore: Field names to not truncate.
+        """
         pr = self.pr
         assert pr[PullRequest.created_at.key] < dt
         closed_at = pr[PullRequest.closed_at.key]
@@ -155,15 +160,17 @@ class MinedPullRequest:
         if published_at is not None and published_at >= dt:
             release = {k: None for k in release}
         dfs = {}
+        dt = np.datetime64(dt.replace(tzinfo=None))
         for name, col in (("commits", PullRequestCommit.committed_date),
                           ("review_requests", PullRequestReviewRequest.created_at),
                           ("review_comments", PullRequestReviewComment.created_at),
                           ("reviews", PullRequestReview.created_at),
                           ("comments", PullRequestComment.created_at)):
             df = getattr(self, name)  # type: pd.DataFrame
-            left = np.where(df[col.key] < dt)[0]
-            if len(left) < len(df):
-                df = df.take(left)
+            if name not in ignore:
+                left = np.where(df[col.key].values < dt)[0]
+                if len(left) < len(df):
+                    df = df.take(left)
             dfs[name] = df
         return MinedPullRequest(pr=pr, release=release, labels=self.labels, **dfs)
 
