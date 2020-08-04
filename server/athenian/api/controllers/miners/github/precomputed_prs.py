@@ -694,7 +694,7 @@ async def load_open_pull_request_facts(prs: pd.DataFrame,
                     ghoprf.format_version == default_version)))
     if not rows:
         return {}
-    found_node_ids = [r[0] for r in rows]
+    found_node_ids = [r[0].rstrip() for r in rows]
     found_updated_ats = [r[1] for r in rows]
     if pdb.url.dialect == "sqlite":
         found_updated_ats = [dt.replace(tzinfo=timezone.utc) for dt in found_updated_ats]

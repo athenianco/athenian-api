@@ -63,7 +63,8 @@ class PullRequestMiner:
         self._prs.drop(removed, inplace=True)
         for df in (self._reviews, self._review_comments, self._review_requests,
                    self._comments, self._commits, self._reviews, self._labels):
-            df.drop(removed, inplace=True, errors="ignore")
+            df.drop(removed, inplace=True, errors="ignore",
+                    level=0 if isinstance(df.index, pd.MultiIndex) else None)
         return removed
 
     @sentry_span
