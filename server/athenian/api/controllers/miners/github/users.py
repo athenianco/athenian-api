@@ -8,8 +8,10 @@ from sqlalchemy import select
 
 from athenian.api.cache import cached
 from athenian.api.models.metadata.github import User
+from athenian.api.tracing import sentry_span
 
 
+@sentry_span
 @cached(
     exptime=60 * 60,
     serialize=pickle.dumps,
@@ -23,6 +25,7 @@ async def mine_users(logins: Collection[str],
     return [dict(u) for u in await db.fetch_all(select([User]).where(User.login.in_(logins)))]
 
 
+@sentry_span
 @cached(
     exptime=60 * 60,
     serialize=marshal.dumps,

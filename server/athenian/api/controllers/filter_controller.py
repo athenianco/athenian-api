@@ -49,6 +49,7 @@ from athenian.api.models.web.pull_request_set import PullRequestSet
 from athenian.api.models.web.stage_timings import StageTimings
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
+from athenian.api.tracing import sentry_span
 
 
 async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -278,6 +279,7 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     return await _build_github_prs_response(prs, request.mdb, request.cache)
 
 
+@sentry_span
 async def _build_github_prs_response(prs: List[PullRequestListItem],
                                      mdb: databases.Database,
                                      cache: Optional[aiomcache.Client]) -> web.Response:
