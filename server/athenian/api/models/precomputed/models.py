@@ -49,6 +49,7 @@ class GitHubDonePullRequestFacts(Base, UpdatedMixin):
     merger = Column(CHAR(100))
     releaser = Column(CHAR(100))
     release_url = Column(Text())
+    release_node_id = Column(Text())
     reviewers = Column(JHSTORE, nullable=False, server_default="")
     commenters = Column(JHSTORE, nullable=False, server_default="")
     commit_authors = Column(JHSTORE, nullable=False, server_default="")

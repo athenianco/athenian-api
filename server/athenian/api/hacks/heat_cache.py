@@ -59,7 +59,7 @@ def main():
     time_to = datetime.combine(date.today() + timedelta(days=1),
                                datetime.min.time(),
                                tzinfo=timezone.utc)
-    time_from = time_to - timedelta(days=365)
+    time_from = time_to - timedelta(days=365 * 2)
     return_code = 0
 
     async def async_run():

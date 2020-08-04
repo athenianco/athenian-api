@@ -12,6 +12,7 @@ def new_released_prs_df(records=None) -> pd.DataFrame:
     columns = [Release.published_at.key,
                Release.author.key,
                Release.url.key,
+               Release.id.key,
                Release.repository_full_name.key,
                matched_by_column]
     if records is None:

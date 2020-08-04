@@ -310,7 +310,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
     with sentry_sdk.start_span(op="load_precomputed_pr_releases/fetch"):
         prs = await pdb.fetch_all(
             select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
-                    ghprt.repository_full_name, ghprt.release_match])
+                    ghprt.release_node_id, ghprt.repository_full_name, ghprt.release_match])
             .where(and_(ghprt.pr_node_id.in_(prs),
                         ghprt.releaser.isnot(None),
                         ghprt.pr_done_at < time_to)))
@@ -340,7 +340,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
             raise AssertionError("Unsupported release match in the precomputed DB: " + match_name)
         records.append((pr[ghprt.pr_node_id.key], pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
                         pr[ghprt.releaser.key].rstrip(), pr[ghprt.release_url.key],
-                        pr[ghprt.repository_full_name.key],
+                        pr[ghprt.release_node_id.key], pr[ghprt.repository_full_name.key],
                         ReleaseMatch[pr[ghprt.release_match.key].split("|", 1)[0]]))
     return new_released_prs_df(records)
 
@@ -420,6 +420,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             pr_done_at=done_at,
             number=pr.pr[PullRequest.number.key],
             release_url=pr.release[Release.url.key],
+            release_node_id=pr.release[Release.id.key],
             author=_flatten_set(participants[ParticipationKind.AUTHOR]),
             merger=_flatten_set(participants[ParticipationKind.MERGER]),
             releaser=_flatten_set(participants[ParticipationKind.RELEASER]),
@@ -441,6 +442,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
                 GitHubDonePullRequestFacts.pr_done_at.key: sql.excluded.pr_done_at,
                 GitHubDonePullRequestFacts.updated_at.key: sql.excluded.updated_at,
                 GitHubDonePullRequestFacts.release_url.key: sql.excluded.release_url,
+                GitHubDonePullRequestFacts.release_node_id.key: sql.excluded.release_node_id,
                 GitHubDonePullRequestFacts.merger.key: sql.excluded.merger,
                 GitHubDonePullRequestFacts.releaser.key: sql.excluded.releaser,
                 GitHubDonePullRequestFacts.activity_days.key: sql.excluded.activity_days,
