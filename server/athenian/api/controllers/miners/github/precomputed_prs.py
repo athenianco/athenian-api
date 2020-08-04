@@ -347,7 +347,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
 
 @sentry_span
 async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
-                                       pr_facts: Iterable[PullRequestFacts],
+                                       pr_facts: Iterable[Optional[PullRequestFacts]],
                                        default_branches: Dict[str, str],
                                        release_settings: Dict[str, ReleaseMatchSetting],
                                        pdb: databases.Database,
@@ -358,6 +358,10 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
     prefix = PREFIXES["github"]
     sqlite = pdb.url.dialect == "sqlite"
     for pr, facts in zip(prs, pr_facts):
+        if facts is None:
+            # ImpossiblePullRequest
+            continue
+        assert pr.pr[PullRequest.created_at.key] == facts.created.best
         activity_days = set()
         if not facts.released:
             if not facts.closed or facts.merged:

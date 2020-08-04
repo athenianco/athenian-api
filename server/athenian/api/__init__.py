@@ -482,13 +482,12 @@ def setup_context(log: logging.Logger) -> None:
         debug=sentry_env != "production",
         max_breadcrumbs=20,
         attach_stacktrace=True,
-        request_bodies="medium",
+        request_bodies="always",
         release="%s@%s" % (metadata.__package__, metadata.__version__),
         traces_sample_rate=traces_sample_rate,
     )
     sentry_sdk.scope.add_global_event_processor(filter_sentry_events)
     sentry_sdk.utils.MAX_STRING_LENGTH = MAX_SENTRY_STRING_LENGTH
-    sentry_sdk.utils.MAX_FORMAT_PARAM_LENGTH = MAX_SENTRY_STRING_LENGTH // 8
     with sentry_sdk.configure_scope() as scope:
         scope.set_tag("version", metadata.__version__)
         scope.set_tag("username", username)

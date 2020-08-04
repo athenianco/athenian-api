@@ -107,6 +107,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
             try:
                 facts = facts_miner(pr)
             except ImpossiblePullRequest:
+                mined_facts.append(None)  # to match the order of mined_prs
                 continue
             mined_facts.append(facts)
             if facts.released or (facts.closed and not facts.merged):
@@ -118,7 +119,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
     add_pdb_misses(pdb, "facts", len(miner))
     # we don't care if exclude_inactive is True or False here
     await defer(store_precomputed_done_facts(
-        mined_prs, mined_facts, default_branches, release_settings, pdb),
+        mined_prs, mined_facts[len(precomputed_facts):], default_branches, release_settings, pdb),
         "store_precomputed_done_facts(%d/%d)" % (done_count, len(miner)))
     await defer(store_open_pull_request_facts(open_pr_facts, pdb),
                 "store_open_pull_request_facts(%d)" % len(open_pr_facts))
