@@ -23,7 +23,8 @@ from athenian.api.controllers.miners.github.contributors import mine_contributor
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequestLabel, User
-from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitHubPullRequestFacts
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
+    GitHubMergedPullRequest
 from athenian.api.models.state.models import RepositorySet, Team
 
 
@@ -183,11 +184,11 @@ async def create_bots_team(account: int,
 
 
 async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelDatabase) -> int:
-    """Update the labels in `github_pull_request_times` and `github_merged_pull_requests`."""
+    """Update the labels in `github_done_pull_request_times` and `github_merged_pull_requests`."""
     log.info("Syncing labels")
     tasks = []
     all_pr_times = await pdb.fetch_all(
-        select([GitHubPullRequestFacts.pr_node_id, GitHubPullRequestFacts.labels]))
+        select([GitHubDonePullRequestFacts.pr_node_id, GitHubDonePullRequestFacts.labels]))
     all_merged = await pdb.fetch_all(
         select([GitHubMergedPullRequest.pr_node_id, GitHubMergedPullRequest.labels]))
     unique_prs = list({pr[0] for pr in chain(all_pr_times, all_merged)})
@@ -208,7 +209,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
         actual_labels[row[0]][row[1]] = ""
     log.info("Loaded labels for %d PRs", len(actual_labels))
     tasks = []
-    for rows, model in ((all_pr_times, GitHubPullRequestFacts),
+    for rows, model in ((all_pr_times, GitHubDonePullRequestFacts),
                         (all_merged, GitHubMergedPullRequest)):
         for row in rows:
             pr_labels = actual_labels.get(row[0], {})

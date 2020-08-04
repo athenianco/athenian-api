@@ -23,9 +23,9 @@ class UpdatedMixin:
                         onupdate=lambda ctx: datetime.now(timezone.utc))
 
 
-class GitHubPullRequestFacts(Base, UpdatedMixin):
+class GitHubDonePullRequestFacts(Base, UpdatedMixin):
     """
-    Mined PullRequestFacts.
+    Mined PullRequestFacts about released/rejected PRs.
 
     Tricky columns:
         * `release_match`: the description of the release match strategy applied to this PR. \
@@ -36,7 +36,7 @@ class GitHubPullRequestFacts(Base, UpdatedMixin):
         * `format_version`: version of the table, used for smooth upgrades and downgrades.
     """
 
-    __tablename__ = "github_pull_request_facts"
+    __tablename__ = "github_done_pull_request_facts"
 
     pr_node_id = Column(CHAR(32), primary_key=True)
     release_match = Column(Text(), primary_key=True)
@@ -55,6 +55,20 @@ class GitHubPullRequestFacts(Base, UpdatedMixin):
     commit_committers = Column(JHSTORE, nullable=False, server_default="")
     labels = Column(JHSTORE, nullable=False, server_default="")
     activity_days = Column(TSARRAY, nullable=False, server_default="{}")
+    data = Column(LargeBinary(), nullable=False)
+
+
+class GitHubOpenPullRequestFacts(Base, UpdatedMixin):
+    """Mined PullRequestFacts about open PRs."""
+
+    __tablename__ = "github_open_pull_request_facts"
+
+    pr_node_id = Column(CHAR(32), primary_key=True)
+    format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
+    repository_full_name = Column(RepositoryFullName, nullable=False)
+    pr_created_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    number = Column(Integer(), nullable=False)
+    pr_updated_at = Column(TIMESTAMP(timezone=True), nullable=False)
     data = Column(LargeBinary(), nullable=False)
 
 

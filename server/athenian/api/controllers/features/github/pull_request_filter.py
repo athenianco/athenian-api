@@ -21,7 +21,7 @@ from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_precomputed_done_facts_filters, load_precomputed_done_facts_reponums, \
-    store_precomputed_done_facts
+    store_open_pull_request_facts, store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release import dummy_releases_df, load_releases
@@ -288,21 +288,28 @@ async def _filter_pull_requests(properties: Set[Property],
     for r in (pr_miner, facts):
         if isinstance(r, Exception):
             raise r from None
+    pr_miner, open_facts = pr_miner
+    facts.update(open_facts)
 
     prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
 
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__"):
         facts_miner = PullRequestFactsMiner(await bots(mdb))
-        missed_facts = []
+        missed_done_facts = []
+        missed_open_facts = []
 
-        async def store_missed_facts():
+        async def store_missed_done_facts():
             await defer(store_precomputed_done_facts(
-                *zip(*missed_facts), default_branches, release_settings, pdb),
-                "store_precomputed_done_facts(%d)" % len(missed_facts))
+                *zip(*missed_done_facts), default_branches, release_settings, pdb),
+                "store_precomputed_done_facts(%d)" % len(missed_done_facts))
+
+        async def store_missed_open_facts():
+            await defer(store_open_pull_request_facts(missed_open_facts, pdb),
+                        "store_open_pull_request_facts(%d)" % len(missed_open_facts))
 
         fact_evals = 0
         hit_facts_counter = 0
-        missed_facts_counter = 0
+        missed_done_facts_counter = missed_open_facts_counter = 0
         bad_prs = []
         for i, pr in enumerate(prs):
             node_id = pr.pr[PullRequest.node_id.key]
@@ -316,20 +323,28 @@ async def _filter_pull_requests(properties: Set[Property],
                     bad_prs.insert(0, i)  # reversed order
                     continue
                 if pr_facts.released or pr_facts.closed and not pr_facts.merged:
-                    missed_facts_counter += 1
-                    missed_facts.append((pr, pr_facts))
-                    if (len(missed_facts) + 1) % 100 == 0:
-                        await store_missed_facts()
+                    missed_done_facts_counter += 1
+                    missed_done_facts.append((pr, pr_facts))
+                    if (len(missed_done_facts) + 1) % 100 == 0:
+                        await store_missed_done_facts()
+                elif not pr_facts.closed:
+                    missed_open_facts_counter += 1
+                    missed_open_facts.append((pr.pr, pr_facts))
+                    if (len(missed_open_facts) + 1) % 100 == 0:
+                        await store_missed_open_facts()
             else:
                 hit_facts_counter += 1
-        if missed_facts:
-            await store_missed_facts()
+        if missed_done_facts:
+            await store_missed_done_facts()
+        if missed_open_facts:
+            await store_missed_open_facts()
         if bad_prs:
             # the order is already reversed
             for i in bad_prs:
                 del prs[i]
         set_pdb_hits(pdb, "filter_pull_requests/facts", hit_facts_counter)
-        set_pdb_misses(pdb, "filter_pull_requests/facts", missed_facts_counter)
+        set_pdb_misses(pdb, "filter_pull_requests/done_facts", missed_done_facts_counter)
+        set_pdb_misses(pdb, "filter_pull_requests/open_facts", missed_open_facts_counter)
         log.info("total fact evals: %d", fact_evals)
 
     prs = await list_with_yield(

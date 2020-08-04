@@ -4,6 +4,7 @@ import bz2
 from contextvars import ContextVar
 import logging
 import pickle
+import sys
 import time
 from typing import Callable, List, Mapping, Tuple, Union
 import uuid
@@ -170,11 +171,12 @@ class ParallelDatabase(databases.Database):
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
+_testing = "pytest" in sys.modules
 
 
 async def _asyncpg_execute(self, query, args, limit, timeout, return_status=False):
     description = query
-    if query.startswith("SELECT"):
+    if query.startswith("SELECT") and not _testing:
         if len(description) <= MAX_SENTRY_STRING_LENGTH and args:
             description += " | " + str(args)
         if len(description) > MAX_SENTRY_STRING_LENGTH:

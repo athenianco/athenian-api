@@ -4,8 +4,10 @@ import itertools
 import numpy as np
 import pandas as pd
 import pytest
+from sqlalchemy import select
 
-from athenian.api.controllers.features.entries import calc_pull_request_metrics_line_github
+from athenian.api.controllers.features.entries import calc_pull_request_facts_github, \
+    calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request import \
     BinnedPullRequestMetricCalculator, PullRequestMetricCalculatorEnsemble
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
@@ -17,6 +19,7 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.models.precomputed.models import GitHubOpenPullRequestFacts
 from athenian.api.models.web import Granularity, PullRequestMetricID
 from tests.conftest import has_memcached
 from tests.controllers.features.github.test_pull_request import ensure_dtype
@@ -352,3 +355,18 @@ def test_pull_request_metric_calculator_ensemble_empty(pr_samples):
     for pr in pr_samples(1):
         ensemble(pr, time_from, time_to)
     assert ensemble.values() == {}
+
+
+@with_defer
+async def test_calc_pull_request_facts_github_open_precomputed(
+        mdb, pdb, release_match_setting_tag):
+    time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    args = (time_from, time_to, {"src-d/go-git"}, {}, set(), False, release_match_setting_tag,
+            mdb, pdb, None)
+    facts1 = await calc_pull_request_facts_github(*args)
+    await wait_deferred()
+    open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
+    assert len(open_facts) == 21
+    facts2 = await calc_pull_request_facts_github(*args)
+    assert set(facts1) == set(facts2)

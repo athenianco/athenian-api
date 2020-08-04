@@ -17,7 +17,7 @@ from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_inactive_merged_unreleased_prs
+    load_inactive_merged_unreleased_prs, load_open_pull_request_facts
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
 from athenian.api.controllers.miners.types import DT, Fallback, MinedPullRequest, Participants, \
@@ -49,17 +49,36 @@ class PullRequestMiner:
         self._releases = releases
         self._labels = labels
 
+    def drop(self, node_ids: Collection[str]) -> pd.Index:
+        """
+        Remove PRs from the given collection of PR node IDs in-place.
+
+        Node IDs don't have to be all present.
+
+        :return: Actually removed node IDs.
+        """
+        removed = self._prs.index.intersection(node_ids)
+        if removed.empty:
+            return removed
+        self._prs.drop(removed, inplace=True)
+        for df in (self._reviews, self._review_comments, self._review_requests,
+                   self._comments, self._commits, self._reviews, self._labels):
+            df.drop(removed, inplace=True, errors="ignore")
+        return removed
+
     @sentry_span
     def _postprocess_cached_prs(
-            result: Tuple[List[pd.DataFrame], Set[str], Participants, Set[str]],
+            result: Tuple[List[pd.DataFrame], Dict[str, PullRequestFacts],
+                          Set[str], Participants, Set[str]],
             date_to: date,
             repositories: Set[str],
             participants: Participants,
             labels: Set[str],
             pr_blacklist: Optional[Collection[str]],
             truncate: bool,
-            **_) -> Tuple[List[pd.DataFrame], Set[str], Participants]:
-        dfs, cached_repositories, cached_participants, cached_labels = result
+            **_) -> Tuple[List[pd.DataFrame], Dict[str, PullRequestFacts],
+                          Set[str], Participants, Set[str]]:
+        dfs, _, cached_repositories, cached_participants, cached_labels = result
         if repositories - cached_repositories:
             raise CancelCache()
         cls = PullRequestMiner
@@ -92,7 +111,7 @@ class PullRequestMiner:
             ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []), truncate,
         ),
         postprocess=_postprocess_cached_prs,
-        version=2,
+        version=3,
     )
     async def _mine(cls,
                     date_from: date,
@@ -109,7 +128,8 @@ class PullRequestMiner:
                     cache: Optional[aiomcache.Client],
                     pr_blacklist: Optional[Collection[str]],
                     truncate: bool,
-                    ) -> Tuple[List[pd.DataFrame], Set[str], Participants, Set[str]]:
+                    ) -> Tuple[List[pd.DataFrame], Dict[str, PullRequestFacts],
+                               Set[str], Participants, Set[str]]:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
         assert isinstance(repositories, set)
@@ -168,19 +188,28 @@ class PullRequestMiner:
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
         if truncate:
             cls._truncate_timestamps(prs, time_to)
-        # bypass the useless inner caching by calling __wrapped__ directly
-        with sentry_sdk.start_span(op="PullRequestMiner.mine_by_ids.__wrapped__"):
-            dfs = await cls.mine_by_ids.__wrapped__(
+        tasks = [
+            # bypass the useless inner caching by calling __wrapped__ directly
+            cls.mine_by_ids.__wrapped__(
                 cls, prs, unreleased.index, time_to, releases, matched_bys,
                 branches, default_branches, release_settings, mdb, pdb, cache,
-                truncate=truncate)
-        dfs = [prs, *dfs]
+                truncate=truncate),
+            load_open_pull_request_facts(prs, pdb),
+        ]
+        with sentry_sdk.start_span(op="PullRequestMiner.mine/external_data"):
+            external_data = await asyncio.gather(*tasks, return_exceptions=True)
+            for r in external_data:
+                if isinstance(r, Exception):
+                    raise r from None
+        dfs = [prs, *external_data[0]]
+        open_facts = external_data[1]
         to_drop = cls._find_drop_by_participants(dfs, participants, None if truncate else time_to)
         to_drop |= cls._find_drop_by_labels(prs, dfs[-1], labels)
         if exclude_inactive:
             to_drop |= cls._find_drop_by_inactive(dfs, time_from, time_to)
         cls._drop(dfs, to_drop)
-        return dfs, repositories, participants, labels
+        # we don't care about the precomputed facts, they are here for the reference
+        return dfs, open_facts, repositories, participants, labels
 
     _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
 
@@ -280,7 +309,8 @@ class PullRequestMiner:
 
         dfs = await asyncio.gather(
             fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
-            fetch_commits(), map_releases(), fetch_labels(), return_exceptions=True)
+            fetch_commits(), map_releases(), fetch_labels(),
+            return_exceptions=True)
         for df in dfs:
             if isinstance(df, Exception):
                 raise df from None
@@ -305,9 +335,10 @@ class PullRequestMiner:
                    cache: Optional[aiomcache.Client],
                    pr_blacklist: Optional[Collection[str]] = None,
                    truncate: bool = True,
-                   ) -> "PullRequestMiner":
+                   ) -> Tuple["PullRequestMiner", Dict[str, PullRequestFacts]]:
         """
-        Create a new `PullRequestMiner` from the metadata DB according to the specified filters.
+        Create a new `PullRequestMiner` from the metadata DB according to the specified filters. \
+        Fetch the precomputed facts about open pull requests (optimization makes us do it here).
 
         :param date_from: Fetch PRs created starting from this date, inclusive.
         :param date_to: Fetch PRs created ending with this date, inclusive.
@@ -331,7 +362,7 @@ class PullRequestMiner:
         date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
-        dfs, _, _, _ = await cls._mine(
+        dfs, open_facts, _, _, _ = await cls._mine(
             date_from, date_to, repositories, participants, labels, branches, default_branches,
             exclude_inactive, release_settings, mdb, pdb, cache, pr_blacklist=pr_blacklist,
             truncate=truncate)
@@ -339,7 +370,7 @@ class PullRequestMiner:
         if truncate:
             for df in dfs:
                 cls._truncate_timestamps(df, time_to)
-        return cls(*dfs)
+        return cls(*dfs), open_facts
 
     @staticmethod
     def _check_participants_compatibility(cached_participants: Participants,

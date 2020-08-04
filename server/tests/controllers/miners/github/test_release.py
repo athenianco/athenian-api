@@ -118,7 +118,7 @@ async def test_map_prs_to_releases_precomputed_released(
     time_to = datetime(year=2019, month=8, day=2, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=2)
 
-    miner = await PullRequestMiner.mine(
+    miner, _ = await PullRequestMiner.mine(
         time_from.date(),
         time_to.date(),
         time_from,

@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github, \
     calc_pull_request_metrics_line_github
@@ -10,7 +10,8 @@ from athenian.api.controllers.features.github.pull_request_filter import fetch_p
 from athenian.api.controllers.miners.types import ParticipationKind, Property
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.models.precomputed.models import GitHubMergedPullRequest
+from athenian.api.models.precomputed.models import GitHubMergedPullRequest, \
+    GitHubOpenPullRequestFacts
 from athenian.api.models.web import PullRequestMetricID
 
 
@@ -279,3 +280,21 @@ async def test_fetch_pull_requests_empty(mdb, pdb, release_match_setting_tag, ca
     prs = await fetch_pull_requests({"src-d/go-git": {0}},
                                     release_match_setting_tag, mdb, pdb, cache)
     assert len(prs) == 0
+
+
+@with_defer
+async def test_pr_list_miner_filter_open_precomputed(mdb, pdb, release_match_setting_tag):
+    time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    args = [{Property.WIP, Property.REVIEWING, Property.MERGING},
+            time_from, time_to, {"src-d/go-git"}, {}, set(), False, release_match_setting_tag,
+            mdb, pdb, None]
+    prs1 = await filter_pull_requests(*args)
+    await wait_deferred()
+    assert len(prs1) == 21
+    open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
+    assert len(open_facts) == 21
+    prs2 = await filter_pull_requests(*args)
+    assert {pr.number for pr in prs1} == {pr.number for pr in prs2}
+    assert {tuple(sorted(pr.stage_timings)) for pr in prs1} == \
+           {tuple(sorted(pr.stage_timings)) for pr in prs2}

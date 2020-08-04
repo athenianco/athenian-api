@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import logging
 import pickle
-from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Set
+from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 import aiomcache
 import databases
@@ -26,7 +26,8 @@ from athenian.api.db import add_pdb_hits
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewRequest, Release
-from athenian.api.models.precomputed.models import GitHubMergedPullRequest, GitHubPullRequestFacts
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
+    GitHubMergedPullRequest, GitHubOpenPullRequestFacts
 from athenian.api.tracing import sentry_span
 
 
@@ -35,7 +36,7 @@ def _create_common_filters(time_from: datetime,
                            repos: Collection[str]) -> List[ClauseElement]:
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
-    ghprt = GitHubPullRequestFacts
+    ghprt = GitHubDonePullRequestFacts
     return [
         ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
         ghprt.repository_full_name.in_(repos),
@@ -88,7 +89,7 @@ async def load_precomputed_done_candidates(time_from: datetime,
 
     We find all the released PRs for a given time frame, repositories, and release match settings.
     """
-    ghprt = GitHubPullRequestFacts
+    ghprt = GitHubDonePullRequestFacts
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match]
@@ -113,7 +114,7 @@ def _build_participants_filters(participants: Participants,
                                 filters: list,
                                 selected: list,
                                 postgres: bool) -> None:
-    ghprt = GitHubPullRequestFacts
+    ghprt = GitHubDonePullRequestFacts
     if postgres:
         developer_filters_single = []
         for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
@@ -150,13 +151,13 @@ def _build_labels_filters(labels: Collection[str],
                           selected: list,
                           postgres: bool) -> None:
     if postgres:
-        filters.append(GitHubPullRequestFacts.labels.has_any(labels))
+        filters.append(GitHubDonePullRequestFacts.labels.has_any(labels))
     else:
-        selected.append(GitHubPullRequestFacts.labels)
+        selected.append(GitHubDonePullRequestFacts.labels)
 
 
 def _check_participants(row: Mapping, participants: Participants) -> bool:
-    ghprt = GitHubPullRequestFacts
+    ghprt = GitHubDonePullRequestFacts
     for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
                     (ghprt.merger, ParticipationKind.MERGER),
                     (ghprt.releaser, ParticipationKind.RELEASER)):
@@ -190,7 +191,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
     Query version.
     """
     postgres = pdb.url.dialect in ("postgres", "postgresql")
-    ghprt = GitHubPullRequestFacts
+    ghprt = GitHubDonePullRequestFacts
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match,
@@ -254,7 +255,7 @@ async def load_precomputed_done_facts_reponums(prs: Dict[str, Set[int]],
 
     repo + numbers version.
     """
-    ghprt = GitHubPullRequestFacts
+    ghprt = GitHubDonePullRequestFacts
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match,
@@ -305,7 +306,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
     Each PR is represented by a node_id, a repository name, and a required release match.
     """
     log = logging.getLogger("%s.load_precomputed_pr_releases" % metadata.__package__)
-    ghprt = GitHubPullRequestFacts
+    ghprt = GitHubDonePullRequestFacts
     with sentry_sdk.start_span(op="load_precomputed_pr_releases/fetch"):
         prs = await pdb.fetch_all(
             select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
@@ -407,7 +408,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             # Postgres is "clever" enough to localize them otherwise
             activity_days = [datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
                              for d in activity_days]
-        inserted.append(GitHubPullRequestFacts(
+        inserted.append(GitHubDonePullRequestFacts(
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,
             repository_full_name=repo,
@@ -429,21 +430,21 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
     if not inserted:
         return
     if pdb.url.dialect in ("postgres", "postgresql"):
-        sql = postgres_insert(GitHubPullRequestFacts)
+        sql = postgres_insert(GitHubDonePullRequestFacts)
         sql = sql.on_conflict_do_update(
-            constraint=GitHubPullRequestFacts.__table__.primary_key,
+            constraint=GitHubDonePullRequestFacts.__table__.primary_key,
             set_={
-                GitHubPullRequestFacts.pr_done_at.key: sql.excluded.pr_done_at,
-                GitHubPullRequestFacts.updated_at.key: sql.excluded.updated_at,
-                GitHubPullRequestFacts.release_url.key: sql.excluded.release_url,
-                GitHubPullRequestFacts.merger.key: sql.excluded.merger,
-                GitHubPullRequestFacts.releaser.key: sql.excluded.releaser,
-                GitHubPullRequestFacts.activity_days.key: sql.excluded.activity_days,
-                GitHubPullRequestFacts.data.key: sql.excluded.data,
+                GitHubDonePullRequestFacts.pr_done_at.key: sql.excluded.pr_done_at,
+                GitHubDonePullRequestFacts.updated_at.key: sql.excluded.updated_at,
+                GitHubDonePullRequestFacts.release_url.key: sql.excluded.release_url,
+                GitHubDonePullRequestFacts.merger.key: sql.excluded.merger,
+                GitHubDonePullRequestFacts.releaser.key: sql.excluded.releaser,
+                GitHubDonePullRequestFacts.activity_days.key: sql.excluded.activity_days,
+                GitHubDonePullRequestFacts.data.key: sql.excluded.data,
             },
         )
     elif pdb.url.dialect == "sqlite":
-        sql = insert(GitHubPullRequestFacts).prefix_with("OR REPLACE")
+        sql = insert(GitHubDonePullRequestFacts).prefix_with("OR REPLACE")
     else:
         raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
     with sentry_sdk.start_span(op="store_precomputed_done_facts/execute_many"):
@@ -630,8 +631,8 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
                 GitHubMergedPullRequest.repository_full_name,
                 GitHubMergedPullRequest.release_match]
     filters = [
-        or_(GitHubPullRequestFacts.pr_done_at.is_(None),
-            GitHubPullRequestFacts.pr_done_at >= time_to),
+        or_(GitHubDonePullRequestFacts.pr_done_at.is_(None),
+            GitHubDonePullRequestFacts.pr_done_at >= time_to),
         GitHubMergedPullRequest.repository_full_name.in_(repos),
         GitHubMergedPullRequest.merged_at < time_from,
     ]
@@ -647,11 +648,11 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
             selected.append(GitHubMergedPullRequest.labels)
             if not isinstance(labels, set):
                 labels = set(labels)
-    body = join(GitHubMergedPullRequest, GitHubPullRequestFacts, and_(
-        GitHubPullRequestFacts.pr_node_id == GitHubMergedPullRequest.pr_node_id,
-        GitHubPullRequestFacts.release_match == GitHubMergedPullRequest.release_match,
-        GitHubPullRequestFacts.repository_full_name.in_(repos),
-        GitHubPullRequestFacts.pr_created_at < time_from,
+    body = join(GitHubMergedPullRequest, GitHubDonePullRequestFacts, and_(
+        GitHubDonePullRequestFacts.pr_node_id == GitHubMergedPullRequest.pr_node_id,
+        GitHubDonePullRequestFacts.release_match == GitHubMergedPullRequest.release_match,
+        GitHubDonePullRequestFacts.repository_full_name.in_(repos),
+        GitHubDonePullRequestFacts.pr_created_at < time_from,
     ), isouter=True)
     with sentry_sdk.start_span(op="load_inactive_merged_unreleased_prs/fetch"):
         rows = await pdb.fetch_all(select(selected).select_from(body).where(and_(*filters)))
@@ -673,3 +674,75 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
                                 .where(PullRequest.node_id.in_(node_ids))
                                 .order_by(PullRequest.node_id),
                                 mdb, PullRequest, index=PullRequest.node_id.key)
+
+
+@sentry_span
+async def load_open_pull_request_facts(prs: pd.DataFrame,
+                                       pdb: databases.Database) -> Dict[str, PullRequestFacts]:
+    """
+    Fetch precomputed facts about the open PRs from the DataFrame.
+
+    We filter open PRs inplace so the user does not have to worry about that.
+    """
+    open_indexes = np.where(prs[PullRequest.closed_at.key].isnull())[0]
+    node_ids = prs.index.take(open_indexes)
+    ghoprf = GitHubOpenPullRequestFacts
+    default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
+    rows = await pdb.fetch_all(
+        select([ghoprf.pr_node_id, ghoprf.pr_updated_at, ghoprf.data])
+        .where(and_(ghoprf.pr_node_id.in_(node_ids),
+                    ghoprf.format_version == default_version)))
+    if not rows:
+        return {}
+    found_node_ids = [r[0] for r in rows]
+    found_updated_ats = [r[1] for r in rows]
+    if pdb.url.dialect == "sqlite":
+        found_updated_ats = [dt.replace(tzinfo=timezone.utc) for dt in found_updated_ats]
+    updated_ats = prs[PullRequest.updated_at.key].take(open_indexes)
+    passed_mask = updated_ats[found_node_ids] <= found_updated_ats
+    passed_node_ids = set(updated_ats.index.take(np.where(passed_mask)[0]))
+    facts = {}
+    for row in rows:
+        node_id = row[0]
+        if node_id in passed_node_ids:
+            facts[node_id] = pickle.loads(row[2])
+    return facts
+
+
+@sentry_span
+async def store_open_pull_request_facts(
+        open_prs_and_facts: Iterable[Tuple[Dict[str, Any], PullRequestFacts]],
+        pdb: databases.Database) -> None:
+    """
+    Persist the facts about open pull requests to the database.
+
+    Each passed PR must be open, we raise an assertion otherwise.
+    """
+    postgres = pdb.url.dialect in ("postgres", "postgresql")
+    if not postgres:
+        assert pdb.url.dialect == "sqlite"
+    values = []
+    for pr, facts in open_prs_and_facts:
+        assert not facts.closed
+        values.append(GitHubOpenPullRequestFacts(
+            pr_node_id=pr[PullRequest.node_id.key],
+            repository_full_name=pr[PullRequest.repository_full_name.key],
+            pr_created_at=pr[PullRequest.created_at.key],
+            number=pr[PullRequest.number.key],
+            pr_updated_at=pr[PullRequest.updated_at.key],
+            data=pickle.dumps(facts),
+        ).create_defaults().explode(with_primary_keys=True))
+    if postgres:
+        sql = postgres_insert(GitHubOpenPullRequestFacts)
+        sql = sql.on_conflict_do_update(
+            constraint=GitHubOpenPullRequestFacts.__table__.primary_key,
+            set_={
+                GitHubOpenPullRequestFacts.pr_updated_at.key: sql.excluded.pr_updated_at,
+                GitHubOpenPullRequestFacts.updated_at.key: sql.excluded.updated_at,
+                GitHubOpenPullRequestFacts.data.key: sql.excluded.data,
+            },
+        )
+    else:
+        sql = insert(GitHubOpenPullRequestFacts).prefix_with("OR REPLACE")
+    with sentry_sdk.start_span(op="store_open_pull_request_facts/execute"):
+        await pdb.execute_many(sql, values)
