@@ -4,6 +4,7 @@ from typing import Sequence
 import uuid
 
 import pandas as pd
+import pytest
 from sqlalchemy import and_, select
 
 from athenian.api.async_read_sql_query import read_sql_query
@@ -44,7 +45,8 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
                 for i, k in enumerate(names)}
     default_branches = {k: "master" for k in names}
     prs = [MinedPullRequest(
-        pr={PullRequest.repository_full_name.key: names[i % len(names)],
+        pr={PullRequest.created_at.key: s.created.best,
+            PullRequest.repository_full_name.key: names[i % len(names)],
             PullRequest.user_login.key: "xxx",
             PullRequest.merged_by_login.key: "yyy",
             PullRequest.number.key: i + 1,
@@ -93,7 +95,8 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
                 for i, k in enumerate(names)}
     default_branches = {k: "master" for k in names}
     prs = [MinedPullRequest(
-        pr={PullRequest.repository_full_name.key: names[i % len(names)],
+        pr={PullRequest.created_at.key: s.created.best,
+            PullRequest.repository_full_name.key: names[i % len(names)],
             PullRequest.user_login.key: ["xxx", "wow"][i % 2],
             PullRequest.merged_by_login.key: "yyy",
             PullRequest.number.key: i + 1,
@@ -186,7 +189,8 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_
             break
     settings = {"github.com/one": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag)}
     prs = [MinedPullRequest(
-        pr={PullRequest.repository_full_name.key: "one",
+        pr={PullRequest.created_at.key: s.created.best,
+            PullRequest.repository_full_name.key: "one",
             PullRequest.user_login.key: "xxx",
             PullRequest.merged_by_login.key: "yyy",
             PullRequest.number.key: 777,
@@ -229,7 +233,8 @@ async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
                 for i, k in enumerate(names)}
     default_branches = {k: "master" for k in names}
     prs = [MinedPullRequest(
-        pr={PullRequest.repository_full_name.key: names[i % len(names)],
+        pr={PullRequest.created_at.key: s.created.best,
+            PullRequest.repository_full_name.key: names[i % len(names)],
             PullRequest.user_login.key: ["xxx", "wow"][i % 2],
             PullRequest.merged_by_login.key: "yyy",
             PullRequest.number.key: i + 1,
@@ -274,7 +279,8 @@ def _gen_one_pr(pr_samples):
             "{{default}}", ".*", ReleaseMatch.tag_or_branch),
     }
     prs = [MinedPullRequest(
-        pr={PullRequest.repository_full_name.key: "src-d/go-git",
+        pr={PullRequest.created_at.key: s.created.best,
+            PullRequest.repository_full_name.key: "src-d/go-git",
             PullRequest.user_login.key: "xxx",
             PullRequest.merged_by_login.key: "yyy",
             PullRequest.number.key: 777,
@@ -547,3 +553,34 @@ async def test_load_old_merged_unreleased_prs_labels(mdb, pdb, release_match_set
         {}, ["enhancement"], {}, release_match_setting_tag,
         mdb, pdb, cache)
     assert list(unreleased_prs.index) == ["MDExOlB1bGxSZXF1ZXN0MjEzODQwMDc3"]
+
+
+async def test_store_precomputed_done_none_assert(pdb, pr_samples):
+    samples = pr_samples(1)  # type: Sequence[PullRequestFacts]
+    settings = {"github.com/one": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag)}
+    default_branches = {"one": "master"}
+    prs = [MinedPullRequest(
+        pr={PullRequest.created_at.key: samples[0].merged.best,
+            PullRequest.repository_full_name.key: "one",
+            PullRequest.user_login.key: "xxx",
+            PullRequest.merged_by_login.key: "yyy",
+            PullRequest.number.key: 1,
+            PullRequest.node_id.key: uuid.uuid4().hex},
+        release={matched_by_column: settings["github.com/one"],
+                 Release.author.key: "foo", Release.url.key: "https://release"},
+        comments=gen_dummy_df(samples[0].first_comment_on_first_review.best),
+        commits=pd.DataFrame.from_records(
+            [["yyy", "yyy", samples[0].first_commit.best]],
+            columns=[
+                PullRequestCommit.committer_login.key,
+                PullRequestCommit.author_login.key,
+                PullRequestCommit.committed_date.key,
+            ],
+        ),
+        reviews=gen_dummy_df(samples[0].first_comment_on_first_review.best),
+        review_comments=gen_dummy_df(samples[0].first_comment_on_first_review.best),
+        review_requests=gen_dummy_df(samples[0].first_review_request.best),
+        labels=pd.DataFrame.from_records([["bug"]], columns=["name"]))]
+    await store_precomputed_done_facts(prs, [None], default_branches, settings, pdb)
+    with pytest.raises(AssertionError):
+        await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
