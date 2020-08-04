@@ -26,7 +26,7 @@ def test_binned_calc_lab(benchmark, pr_samples, no_warnings):
 
 
 def test_binned_calc_es(benchmark, no_warnings):
-    with lzma.open(Path(__file__).parent / "es.pickle.xz", "rb") as fin:
+    with lzma.open(Path(__file__).parent / "es_bins.pickle.xz", "rb") as fin:
         mined_facts, time_intervals = pickle.load(fin)
     metrics = list(PullRequestMetricID)
 
