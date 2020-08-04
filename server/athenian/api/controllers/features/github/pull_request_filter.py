@@ -7,6 +7,7 @@ from typing import Dict, Generator, List, Optional, Set, Tuple
 import aiomcache
 import databases
 import numpy as np
+import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, or_, select
 
@@ -22,7 +23,7 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_precomputed_done_facts_filters, load_precomputed_done_facts_reponums, \
     store_open_pull_request_facts, store_precomputed_done_facts
-from athenian.api.controllers.miners.github.pull_request import dtmin, ImpossiblePullRequest, \
+from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release import dummy_releases_df, load_releases
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, Participants, \
@@ -70,6 +71,7 @@ class PullRequestListMiner:
                             pr: MinedPullRequest,
                             time_from: datetime,
                             ) -> Set[Property]:
+        np_time_from = np.datetime64(time_from.replace(tzinfo=None))
         author = pr.pr[PullRequest.user_login.key]
         props = set()
         if facts.released or (facts.closed and not facts.merged):
@@ -86,11 +88,11 @@ class PullRequestListMiner:
             props.add(Property.WIP)
         if facts.created.best > time_from:
             props.add(Property.CREATED)
-        if (pr.commits[PullRequestCommit.committed_date.key] > time_from).any():
+        if (pr.commits[PullRequestCommit.committed_date.key].values > np_time_from).any():
             props.add(Property.COMMIT_HAPPENED)
-        review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.key]
-        if ((review_submitted_ats > time_from)
-                & (pr.reviews[PullRequestReview.user_login.key] != author)).any():
+        review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.key].values
+        if ((review_submitted_ats > np_time_from)
+                & (pr.reviews[PullRequestReview.user_login.key].values != author)).any():
             props.add(Property.REVIEW_HAPPENED)
         if facts.first_review_request.value is not None and \
                 facts.first_review_request.value > time_from:
@@ -106,7 +108,7 @@ class PullRequestListMiner:
             props.add(Property.RELEASE_HAPPENED)
         review_states = pr.reviews[PullRequestReview.state.key]
         if ((review_states.values == ReviewResolution.CHANGES_REQUESTED.value)
-                & (review_submitted_ats > time_from).values).any():
+                & (review_submitted_ats > np_time_from)).any():
             props.add(Property.CHANGES_REQUEST_HAPPENED)
         return props
 
@@ -120,7 +122,8 @@ class PullRequestListMiner:
         We return None if the PR does not match.
         """
         pr_today = pr
-        pr_time_machine = pr.truncate(self._time_to)
+        pr_time_machine = pr.truncate(
+            self._time_to, ignore=("review_comments", "review_requests", "comments"))
         facts_today = facts
         facts_time_machine = facts.truncate(self._time_to)
         props_time_machine = self._collect_properties(
@@ -130,8 +133,10 @@ class PullRequestListMiner:
         props_today = self._collect_properties(facts_today, pr_today, self._no_time_from)
         author = pr_today.pr[PullRequest.user_id.key]
         external_reviews_mask = pr_today.reviews[PullRequestReview.user_id.key].values != author
-        first_review = dtmin(pr_today.reviews[PullRequestReview.created_at.key].take(
-            np.where(external_reviews_mask)[0]).min())
+        external_review_times = pr_today.reviews[PullRequestReview.created_at.key].values[
+            external_reviews_mask]
+        first_review = pd.Timestamp(external_review_times.min(), tz=timezone.utc) \
+            if len(external_review_times) > 0 else None
         review_comments = (
             pr_today.review_comments[PullRequestReviewComment.user_id.key].values != author
         ).sum()
