@@ -52,7 +52,9 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
             PullRequest.number.key: i + 1,
             PullRequest.node_id.key: uuid.uuid4().hex},
         release={matched_by_column: settings["github.com/" + names[i % len(names)]].match % 2,
-                 Release.author.key: "zzz", Release.url.key: "https://release"},
+                 Release.author.key: "zzz",
+                 Release.url.key: "https://release",
+                 Release.id.key: "MD%d" % i},
         comments=gen_dummy_df(s.first_comment_on_first_review.best),
         commits=pd.DataFrame.from_records(
             [["zzz", "zzz", s.first_commit.best]],
@@ -102,7 +104,9 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
             PullRequest.number.key: i + 1,
             PullRequest.node_id.key: uuid.uuid4().hex},
         release={matched_by_column: settings["github.com/" + names[i % len(names)]].match % 2,
-                 Release.author.key: ["foo", "zzz"][i % 2], Release.url.key: "https://release"},
+                 Release.author.key: ["foo", "zzz"][i % 2],
+                 Release.url.key: "https://release",
+                 Release.id.key: "MD%d" % i},
         comments=gen_dummy_df(s.first_comment_on_first_review.best),
         commits=pd.DataFrame.from_records(
             [["yyy", "yyy", s.first_commit.best]],
@@ -196,7 +200,9 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_
             PullRequest.number.key: 777,
             PullRequest.node_id.key: uuid.uuid4().hex},
         release={matched_by_column: settings["github.com/one"].match,
-                 Release.author.key: "zzz", Release.url.key: "https://release"},
+                 Release.author.key: "zzz",
+                 Release.url.key: "https://release",
+                 Release.id.key: "MDwhatever="},
         comments=gen_dummy_df(s.first_comment_on_first_review.best),
         commits=pd.DataFrame.from_records(
             [["yyy", "yyy", s.first_comment_on_first_review.best]],
@@ -240,7 +246,9 @@ async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
             PullRequest.number.key: i + 1,
             PullRequest.node_id.key: uuid.uuid4().hex},
         release={matched_by_column: settings["github.com/" + names[i % len(names)]].match % 2,
-                 Release.author.key: ["foo", "zzz"][i % 2], Release.url.key: "https://release"},
+                 Release.author.key: ["foo", "zzz"][i % 2],
+                 Release.url.key: "https://release",
+                 Release.id.key: "MD%d" % i},
         comments=gen_dummy_df(s.first_comment_on_first_review.best),
         commits=pd.DataFrame.from_records(
             [["yyy", "yyy", s.first_commit.best]],
@@ -287,7 +295,8 @@ def _gen_one_pr(pr_samples):
             PullRequest.node_id.key: uuid.uuid4().hex},
         release={matched_by_column: ReleaseMatch.branch,
                  Release.author.key: "zzz",
-                 Release.url.key: "https://release"},
+                 Release.url.key: "https://release",
+                 Release.id.key: "MDwhatever="},
         comments=gen_dummy_df(s.first_comment_on_first_review.best),
         commits=pd.DataFrame.from_records(
             [["zzz", "zzz", s.first_commit.best]],
@@ -337,7 +346,7 @@ async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, 
         await wait_deferred()
         for s, pr in zip(samples, prs):
             rpr = released_prs.loc[pr.pr[PullRequest.node_id.key]]
-            for col in (Release.author.key, Release.url.key, matched_by_column):
+            for col in (Release.author.key, Release.url.key, Release.id.key, matched_by_column):
                 assert rpr[col] == pr.release[col], i
             assert rpr[Release.published_at.key] == s.released.best, i
             assert rpr[Release.repository_full_name.key] == \
@@ -567,7 +576,9 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
             PullRequest.number.key: 1,
             PullRequest.node_id.key: uuid.uuid4().hex},
         release={matched_by_column: settings["github.com/one"],
-                 Release.author.key: "foo", Release.url.key: "https://release"},
+                 Release.author.key: "foo",
+                 Release.url.key: "https://release",
+                 Release.id.key: "MDwhatever="},
         comments=gen_dummy_df(samples[0].first_comment_on_first_review.best),
         commits=pd.DataFrame.from_records(
             [["yyy", "yyy", samples[0].first_commit.best]],

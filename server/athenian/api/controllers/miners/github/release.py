@@ -451,6 +451,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
                                  r[Release.published_at.key],
                                  r[Release.author.key],
                                  r[Release.url.key],
+                                 r[Release.id.key],
                                  repo,
                                  r[matched_by_column]))
     released_prs = new_released_prs_df(released_prs)
@@ -492,7 +493,7 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
         indexes = np.searchsorted(repo_commits, repo_hashes)
         indexes[indexes == len(repo_commits)] = 0  # whatever index is fine
         dead_indexes = np.where(repo_hashes != repo_commits[indexes])[0]
-        dead_prs.extend((pr_id, ct, None, None, repo, ReleaseMatch.force_push_drop)
+        dead_prs.extend((pr_id, ct, None, None, None, repo, ReleaseMatch.force_push_drop)
                         for pr_id, ct in zip(repo_prs.index.values.take(dead_indexes),
                                              repo_prs[clskey].take(dead_indexes)))
     return new_released_prs_df(dead_prs)
