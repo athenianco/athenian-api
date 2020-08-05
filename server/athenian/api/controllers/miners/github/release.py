@@ -683,6 +683,7 @@ async def _fetch_first_parents(data: Optional[bytes],
     return result
 
 
+@sentry_span
 @cached(
     exptime=60 * 60,  # 1 hour
     serialize=marshal.dumps,
@@ -715,25 +716,36 @@ async def _fetch_commit_history_dag(dag: Optional[bytes],
             return dag
 
     add_pdb_misses(pdb, "_fetch_commit_history_dag", 1)
-    threshold = 50
-    if len(commit_ids) > threshold:
+    raw_dag = set()
+    if dag is not None:
+        commit_shas_index = {sha: i for i, sha in enumerate(commit_shas)}
+        for key, children in dag.items():
+            for child in children:
+                raw_dag.add((child, key))  # yes, the order is reversed to match SQL
+        precomputed_indexes = [commit_shas_index[k]
+                               for k in (commit_shas_index.keys() & dag.keys())]
+        if precomputed_indexes:
+            commit_ids = np.delete(commit_ids, precomputed_indexes)
+            commit_shas = np.delete(commit_shas, precomputed_indexes)
+            commit_dates = np.delete(commit_dates, precomputed_indexes)
+    chunk_size = 50  # how many seeds in the underlying recurssive SQL to traverse the DAG
+    if len(commit_ids) > chunk_size:
         order = np.argsort(commit_dates)
         _commit_ids = commit_ids[order]
         _commit_shas = commit_shas.astype("U40")[order]
     else:
         _commit_ids = commit_ids
         _commit_shas = commit_shas
-    raw_dag = set()
-    while len(_commit_ids) > threshold:
-        rows = await _fetch_commit_history_edges([_commit_ids[-1]], mdb)
+    while len(_commit_ids) > chunk_size:
+        rows = await _fetch_commit_history_edges(_commit_ids[-chunk_size:], mdb)
         if len(rows) > 0:
             raw_dag.update(rows)
             left_mask = ~np.isin(_commit_shas, np.fromiter((r[1] for r in rows), "U40", len(rows)))
             _commit_shas = _commit_shas[left_mask]
             _commit_ids = _commit_ids[left_mask]
         else:
-            _commit_ids = _commit_ids[:-1]
-            _commit_shas = _commit_shas[:-1]
+            _commit_ids = _commit_ids[:-chunk_size]
+            _commit_shas = _commit_shas[:-chunk_size]
     if len(_commit_ids) > 0:
         raw_dag.update(await _fetch_commit_history_edges(_commit_ids, mdb))
     dag = {}
