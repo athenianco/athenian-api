@@ -44,6 +44,13 @@ _setup_postgres: &_setup_postgres
   - export OVERRIDE_MDB=postgresql://postgres:postgres@0.0.0.0:5432/metadata
   - export OVERRIDE_PDB=postgresql://postgres:postgres@0.0.0.0:5432/precomputed
 
+_addons: &_addons
+  postgresql: "11"
+  apt:
+    packages:
+      - postgresql-11
+      - postgresql-client-11
+
 matrix:
   fast_finish: true
   include:
@@ -71,6 +78,7 @@ matrix:
       name: Unit tests (2/4 - postgresql)
       services:
         - postgresql
+      addons: *_addons
       install: *_install
       before_script: *_setup_postgres
       script:
@@ -95,6 +103,7 @@ matrix:
       name: Unit tests (4/4 - postgresql)
       services:
         - postgresql
+      addons: *_addons
       install: *_install
       before_script: *_setup_postgres
       script:
@@ -123,6 +132,7 @@ matrix:
         - pip3 install codecov coverage
         - docker build --cache-from ${GOOGLE_DOCKER_IMAGE}:latest --build-arg COMMIT=$TRAVIS_COMMIT -t ${GOOGLE_DOCKER_IMAGE} .
       before_script: *_setup_postgres
+      addons: *_addons
       script:
         - docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
         - docker build -t test --build-arg base=${GOOGLE_DOCKER_IMAGE} server/tests

@@ -340,6 +340,9 @@ class SizeCalculator(PullRequestAverageMetricCalculator[int]):
     may_have_negative_values = False
     deps = (AllCounter,)
 
+    def _shift_log(self, sample: int) -> int:
+        return sample if sample > 0 else (sample + 1)
+
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[int]:
         """Calculate the actual state update."""

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
+from typing import Callable, Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
 
 import networkx as nx
 
@@ -20,7 +20,7 @@ class PullRequestMetricCalculator(Generic[T]):
     calculators.
     """
 
-    # This indicates whether the calc should care about PRs without events on the time interval.
+    # Whether the calc should care about PRs without events on the time interval.
     requires_full_span = False
 
     # Types of dependencies - upstream PullRequestMetricCalculator-s.
@@ -147,7 +147,12 @@ class PullRequestHistogramCalculator(PullRequestMetricCalculator):
 
     def histogram(self, scale: Scale, bins: int) -> Histogram[T]:
         """Calculate the histogram over the current distribution."""
-        return calculate_histogram(self.samples, scale, bins)
+        samples = self.samples
+        if scale == Scale.LOG:
+            shift_log = getattr(self, "_shift_log", None)  # type: Optional[Callable[[T], T]]
+            if shift_log is not None:
+                samples = [shift_log(s) for s in self.samples]
+        return calculate_histogram(samples, scale, bins)
 
 
 metric_calculators: Dict[str, Type[PullRequestMetricCalculator]] = {}

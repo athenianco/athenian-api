@@ -9,12 +9,13 @@ from sqlalchemy import select
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github, \
     calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request import \
-    BinnedPullRequestMetricCalculator, PullRequestMetricCalculatorEnsemble
+    BinnedPullRequestMetricCalculator, histogram_calculators, PullRequestMetricCalculatorEnsemble
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
     ClosedCalculator, CycleCounter, CycleTimeCalculator, FlowRatioCalculator, LeadCounter, \
     LeadTimeCalculator, MergingCounter, MergingTimeCalculator, OpenedCalculator, \
     ReleaseCounter, ReleaseTimeCalculator, ReviewCounter, ReviewTimeCalculator, \
     WaitFirstReviewTimeCalculator, WorkInProgressCounter, WorkInProgressTimeCalculator
+from athenian.api.controllers.features.histogram import Scale
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
@@ -370,3 +371,12 @@ async def test_calc_pull_request_facts_github_open_precomputed(
     assert len(open_facts) == 21
     facts2 = await calc_pull_request_facts_github(*args)
     assert set(facts1) == set(facts2)
+
+
+def test_size_calculator_shift_log():
+    calc = histogram_calculators[PullRequestMetricID.PR_SIZE]()
+    calc.samples = [0, 10, 0, 20, 150, 0]
+    h = calc.histogram(Scale.LOG, 3)
+    assert h.ticks[0] == 1
+    for f in h.frequencies:
+        assert f == f
