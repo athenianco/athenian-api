@@ -25,7 +25,7 @@ import athenian.api.db
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequestLabel, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
-    GitHubMergedPullRequest
+    GitHubMergedPullRequestFacts
 from athenian.api.models.state.models import RepositorySet, Team
 
 
@@ -193,7 +193,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     all_pr_times = await pdb.fetch_all(
         select([GitHubDonePullRequestFacts.pr_node_id, GitHubDonePullRequestFacts.labels]))
     all_merged = await pdb.fetch_all(
-        select([GitHubMergedPullRequest.pr_node_id, GitHubMergedPullRequest.labels]))
+        select([GitHubMergedPullRequestFacts.pr_node_id, GitHubMergedPullRequestFacts.labels]))
     unique_prs = list({pr[0] for pr in chain(all_pr_times, all_merged)})
     if not unique_prs:
         return 0
@@ -213,7 +213,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     log.info("Loaded labels for %d PRs", len(actual_labels))
     tasks = []
     for rows, model in ((all_pr_times, GitHubDonePullRequestFacts),
-                        (all_merged, GitHubMergedPullRequest)):
+                        (all_merged, GitHubMergedPullRequestFacts)):
         for row in rows:
             pr_labels = actual_labels.get(row[0], {})
             if pr_labels != row[1]:

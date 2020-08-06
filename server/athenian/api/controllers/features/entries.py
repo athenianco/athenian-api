@@ -24,7 +24,8 @@ from athenian.api.controllers.miners.github.commit import extract_commits, Filte
 from athenian.api.controllers.miners.github.developer import calc_developer_metrics
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
-    store_open_pull_request_facts, store_precomputed_done_facts
+    store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
+    store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner
 from athenian.api.controllers.miners.types import Participants, PullRequestFacts
@@ -85,18 +86,19 @@ async def calc_pull_request_facts_github(time_from: datetime,
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
     # are effectively discarded later in BinnedPullRequestMetricCalculator
-    miner, open_facts = await PullRequestMiner.mine(
+    miner, unreleased_facts, matched_bys = await PullRequestMiner.mine(
         date_from, date_to, time_from, time_to, repositories, participants, labels,
         branches, default_branches, exclude_inactive, release_settings,
         mdb, pdb, cache, pr_blacklist=blacklist)
-    precomputed_open_prs = miner.drop(open_facts)
-    add_pdb_hits(pdb, "load_open_pull_request_facts", len(precomputed_open_prs))
-    for node_id in precomputed_open_prs.values:
-        precomputed_facts[node_id] = open_facts[node_id]
+    precomputed_unreleased_prs = miner.drop(unreleased_facts)
+    add_pdb_hits(pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
+    for node_id in precomputed_unreleased_prs.values:
+        precomputed_facts[node_id] = unreleased_facts[node_id]
     facts_miner = PullRequestFactsMiner(await bots(mdb))
     mined_prs = []
     mined_facts = list(precomputed_facts.values())
     open_pr_facts = []
+    merged_unreleased_pr_facts = []
     done_count = 0
     with sentry_sdk.start_span(op="PullRequestMiner.__iter__ + PullRequestFactsMiner.__call__",
                                description=str(len(miner))):
@@ -113,8 +115,11 @@ async def calc_pull_request_facts_github(time_from: datetime,
                 done_count += 1
             if not facts.closed:
                 open_pr_facts.append((pr.pr, facts))
-    add_pdb_misses(pdb, "load_precomputed_done_facts_filters", done_count)
-    add_pdb_misses(pdb, "load_open_pull_request_facts", len(open_pr_facts))
+            elif not facts.released and facts.merged:
+                merged_unreleased_pr_facts.append((pr.pr, facts))
+    add_pdb_misses(pdb, "precomputed_done_facts", done_count)
+    add_pdb_misses(pdb, "precomputed_open_facts", len(open_pr_facts))
+    add_pdb_misses(pdb, "precomputed_merged_unreleased_facts", len(merged_unreleased_pr_facts))
     add_pdb_misses(pdb, "facts", len(miner))
     if done_count > 0:
         # we don't care if exclude_inactive is True or False here
@@ -124,6 +129,10 @@ async def calc_pull_request_facts_github(time_from: datetime,
     if len(open_pr_facts) > 0:
         await defer(store_open_pull_request_facts(open_pr_facts, pdb),
                     "store_open_pull_request_facts(%d)" % len(open_pr_facts))
+    if len(merged_unreleased_pr_facts) > 0:
+        await defer(store_merged_unreleased_pull_request_facts(
+            merged_unreleased_pr_facts, matched_bys, default_branches, release_settings),
+            "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts))
     return mined_facts
 
 

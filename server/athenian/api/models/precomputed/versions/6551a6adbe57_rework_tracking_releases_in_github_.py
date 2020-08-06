@@ -21,9 +21,12 @@ depends_on = None
 def upgrade():
     bind = op.get_bind()
     pg = bind.dialect.name == "postgresql"
+    session = Session(bind=bind)
     if pg:
-        session = Session(bind=bind)
+        session.execute("TRUNCATE github_merged_pull_requests;")
+    else:
         session.execute("DELETE FROM github_merged_pull_requests;")
+    session.commit()
     with op.batch_alter_table("github_merged_pull_requests") as bop:
         bop.drop_column("checked_releases")
         bop.add_column(sa.Column("checked_until", sa.TIMESTAMP(timezone=True), nullable=False))
@@ -37,9 +40,11 @@ def upgrade():
 
 def downgrade():
     bind = op.get_bind()
+    session = Session(bind=bind)
     if bind.dialect.name == "postgresql":
-        session = Session(bind=bind)
         session.execute("DROP INDEX IF EXISTS github_merged_pull_requests_matched;")
+        session.execute("TRUNCATE github_merged_pull_requests;")
+    else:
         session.execute("DELETE FROM github_merged_pull_requests;")
     if bind.dialect.name == "postgresql":
         hs = HSTORE()

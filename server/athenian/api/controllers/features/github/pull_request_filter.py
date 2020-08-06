@@ -22,7 +22,8 @@ from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_precomputed_done_facts_filters, load_precomputed_done_facts_reponums, \
-    store_open_pull_request_facts, store_precomputed_done_facts
+    store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
+    store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release import dummy_releases_df, load_commit_dags, \
@@ -294,8 +295,8 @@ async def _filter_pull_requests(properties: Set[Property],
     for r in (pr_miner, facts):
         if isinstance(r, Exception):
             raise r from None
-    pr_miner, open_facts = pr_miner
-    facts.update(open_facts)
+    pr_miner, unreleased_facts, matched_bys = pr_miner
+    facts.update(unreleased_facts)
 
     prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
 
@@ -303,6 +304,7 @@ async def _filter_pull_requests(properties: Set[Property],
         facts_miner = PullRequestFactsMiner(await bots(mdb))
         missed_done_facts = []
         missed_open_facts = []
+        missed_merged_unreleased_facts = []
 
         async def store_missed_done_facts():
             await defer(store_precomputed_done_facts(
@@ -313,9 +315,17 @@ async def _filter_pull_requests(properties: Set[Property],
             await defer(store_open_pull_request_facts(missed_open_facts, pdb),
                         "store_open_pull_request_facts(%d)" % len(missed_open_facts))
 
+        async def store_missed_merged_unreleased_facts():
+            await defer(store_merged_unreleased_pull_request_facts(
+                missed_merged_unreleased_facts, matched_bys, default_branches,
+                release_settings, pdb),
+                "store_merged_unreleased_pull_request_facts(%d)" %
+                len(missed_merged_unreleased_facts))
+
         fact_evals = 0
         hit_facts_counter = 0
-        missed_done_facts_counter = missed_open_facts_counter = 0
+        missed_done_facts_counter = missed_open_facts_counter = \
+            missed_merged_unreleased_facts_counter = 0
         bad_prs = []
         for i, pr in enumerate(prs):
             node_id = pr.pr[PullRequest.node_id.key]
@@ -338,12 +348,19 @@ async def _filter_pull_requests(properties: Set[Property],
                     missed_open_facts.append((pr.pr, pr_facts))
                     if (len(missed_open_facts) + 1) % 100 == 0:
                         await store_missed_open_facts()
+                elif pr_facts.merged and not pr_facts.released:
+                    missed_merged_unreleased_facts_counter += 1
+                    missed_merged_unreleased_facts.append((pr, pr_facts))
+                    if (len(missed_merged_unreleased_facts) + 1) % 100 == 0:
+                        await store_missed_merged_unreleased_facts()
             else:
                 hit_facts_counter += 1
         if missed_done_facts:
             await store_missed_done_facts()
         if missed_open_facts:
             await store_missed_open_facts()
+        if missed_merged_unreleased_facts:
+            await store_missed_merged_unreleased_facts()
         if bad_prs:
             # the order is already reversed
             for i in bad_prs:
@@ -351,6 +368,8 @@ async def _filter_pull_requests(properties: Set[Property],
         set_pdb_hits(pdb, "filter_pull_requests/facts", hit_facts_counter)
         set_pdb_misses(pdb, "filter_pull_requests/done_facts", missed_done_facts_counter)
         set_pdb_misses(pdb, "filter_pull_requests/open_facts", missed_open_facts_counter)
+        set_pdb_misses(pdb, "filter_pull_requests/merged_unreleased_facts",
+                       missed_merged_unreleased_facts_counter)
         log.info("total fact evals: %d", fact_evals)
 
     prs = await list_with_yield(
@@ -416,12 +435,15 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
             if isinstance(r, Exception):
                 raise r from None
     else:
-        releases, matched_bys, unreleased = dummy_releases_df(), {}, []
+        releases, matched_bys, unreleased = dummy_releases_df(), {}, {}
         dags = {}
-    dfs = await PullRequestMiner.mine_by_ids(
+    dfs, _ = await PullRequestMiner.mine_by_ids(
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
         release_settings, mdb, pdb, cache)
     prs = await list_with_yield(PullRequestMiner(prs_df, *dfs), "PullRequestMiner.__iter__")
+    for k, v in unreleased.items():
+        if v is not None and k not in facts:
+            facts[k] = v
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__",
                                description=str(len(prs))):
         facts_miner = PullRequestFactsMiner(await bots(mdb))

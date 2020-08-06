@@ -73,6 +73,31 @@ class GitHubOpenPullRequestFacts(Base, UpdatedMixin):
     data = Column(LargeBinary(), nullable=False)
 
 
+class GitHubMergedPullRequestFacts(Base, UpdatedMixin):
+    """
+    Merged PRs (released and unreleased).
+
+    We attach the mined releases that do *not* contain the given pull request.
+
+    `pr_node_id` is a merged but not released yet PR node identifier.
+    According to `release_match`, any release between `merged_at` and `checked_until` does not
+    contain that PR.
+    """
+
+    __tablename__ = "github_merged_pull_request_facts"
+
+    pr_node_id = Column(CHAR(32), primary_key=True)
+    release_match = Column(Text(), primary_key=True)
+    format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
+    merged_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    repository_full_name = Column(RepositoryFullName, nullable=False)
+    checked_until = Column(TIMESTAMP(timezone=True), nullable=False)
+    author = Column(CHAR(100))  # can be null, see @ghost
+    merger = Column(CHAR(100))  # @ghost can merge, too
+    labels = Column(JHSTORE, nullable=False, server_default="")
+    data = Column(LargeBinary())  # can be null, we run a 2-step update procedure
+
+
 class GitHubCommitHistory(Base, UpdatedMixin):
     """
     Mined Git commit graph with all the releases.
@@ -104,27 +129,6 @@ class GitHubCommitFirstParents(Base, UpdatedMixin):
     repository_full_name = Column(RepositoryFullName, primary_key=True)
     format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
     commits = Column(LargeBinary(), nullable=False)
-
-
-class GitHubMergedPullRequest(Base, UpdatedMixin):
-    """
-    Mined releases that do *not* contain the given pull request.
-
-    `pr_node_id` is a merged but not released yet PR node identifier.
-    According to `release_match`, any release between `merged_at` and `checked_until` does not
-    contain that PR.
-    """
-
-    __tablename__ = "github_merged_pull_requests"
-
-    pr_node_id = Column(CHAR(32), primary_key=True)
-    release_match = Column(Text(), primary_key=True)
-    merged_at = Column(TIMESTAMP(timezone=True), nullable=False)
-    repository_full_name = Column(RepositoryFullName, nullable=False)
-    checked_until = Column(TIMESTAMP(timezone=True), nullable=False)
-    author = Column(CHAR(100))  # can be null, see @ghost
-    merger = Column(CHAR(100))  # @ghost can merge, too
-    labels = Column(JHSTORE, nullable=False, server_default="")
 
 
 class GitHubRepository(Base, UpdatedMixin):
