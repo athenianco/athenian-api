@@ -15,13 +15,13 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, distinct, func, insert, join, or_, select
+from sqlalchemy import and_, desc, distinct, func, insert, join, or_, select, true
 from sqlalchemy.cprocessors import str_to_datetime
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
-from sqlalchemy.sql.elements import BinaryExpression
+from sqlalchemy.sql.elements import BinaryExpression, ClauseElement
 
 from athenian.api import metadata
-from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query, wrap_sql_query
+from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_precomputed_pr_releases, update_unreleased_prs
@@ -978,24 +978,17 @@ async def _fetch_commit_history_hashes(commit_ids: Iterable[str],
 
 
 @sentry_span
-async def _find_old_released_prs(releases: pd.DataFrame,
-                                 pdag: Optional[bytes],
+async def _find_old_released_prs(repo_clauses: List[ClauseElement],
                                  time_boundary: datetime,
                                  authors: Collection[str],
                                  mergers: Collection[str],
                                  pr_blacklist: Optional[BinaryExpression],
                                  mdb: databases.Database,
-                                 pdb: databases.Database,
-                                 cache: Optional[aiomcache.Client],
-                                 ) -> Iterable[Mapping]:
-    observed_commits, _, _ = await _extract_released_commits(
-        releases, pdag, time_boundary, mdb, pdb, cache)
-    repo = releases.iloc[0][Release.repository_full_name.key] if not releases.empty else ""
+                                 ) -> pd.DataFrame:
     filters = [
         PullRequest.merged_at < time_boundary,
-        PullRequest.repository_full_name == repo,
-        PullRequest.merge_commit_sha.in_(observed_commits),
         PullRequest.hidden.is_(False),
+        or_(*repo_clauses),
     ]
     if len(authors) and len(mergers):
         filters.append(or_(
@@ -1008,7 +1001,27 @@ async def _find_old_released_prs(releases: pd.DataFrame,
         filters.append(PullRequest.merged_by_login.in_(mergers))
     if pr_blacklist is not None:
         filters.append(pr_blacklist)
-    return await mdb.fetch_all(select([PullRequest]).where(and_(*filters)))
+    return await read_sql_query(select([PullRequest]).where(and_(*filters)),
+                                mdb, PullRequest, index=PullRequest.node_id.key)
+
+
+@sentry_span
+async def _generate_released_prs_clause(releases: pd.DataFrame,
+                                        pdag: Optional[bytes],
+                                        time_boundary: datetime,
+                                        mdb: databases.Database,
+                                        pdb: databases.Database,
+                                        cache: Optional[aiomcache.Client],
+                                        ) -> ClauseElement:
+    if releases.empty:
+        return true()
+    observed_commits, _, _ = await _extract_released_commits(
+        releases, pdag, time_boundary, mdb, pdb, cache)
+    repo = releases.iloc[0][Release.repository_full_name.key]
+    return and_(
+        PullRequest.repository_full_name == repo,
+        PullRequest.merge_commit_sha.in_(observed_commits),
+    )
 
 
 @sentry_span
@@ -1141,11 +1154,10 @@ async def map_releases_to_prs(repos: Iterable[str],
 
     for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
         if (repo_releases[Release.published_at.key] >= time_from).any():
-            tasks.append(_find_old_released_prs(
-                repo_releases, pdags.get(repo), time_from, authors, mergers, pr_blacklist,
-                mdb, pdb, cache))
+            tasks.append(_generate_released_prs_clause(
+                repo_releases, pdags.get(repo), time_from, mdb, pdb, cache))
     if len(tasks) - (not truncate):
-        with sentry_sdk.start_span(op="_find_old_released_prs"):
+        with sentry_sdk.start_span(op="_generate_released_prs_clause"):
             tasks = await asyncio.gather(*tasks, return_exceptions=True)
         for task in tasks:
             if isinstance(task, Exception):
@@ -1154,8 +1166,9 @@ async def map_releases_to_prs(repos: Iterable[str],
             releases_today, _ = tasks[0]
             releases_new = concat_releases(releases_new, releases_today)
             tasks = tasks[1:]
+        prs = await _find_old_released_prs(tasks, time_from, authors, mergers, pr_blacklist, mdb)
         return (
-            wrap_sql_query(chain.from_iterable(tasks), PullRequest, index=PullRequest.node_id.key),
+            prs,
             releases_new,
             matched_bys,
         )
