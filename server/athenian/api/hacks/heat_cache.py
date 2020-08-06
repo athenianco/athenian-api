@@ -8,6 +8,7 @@ from itertools import chain
 import logging
 from typing import Collection, List, Set
 
+import pytest  # disables SQL logging  # noqa
 import sentry_sdk
 from sqlalchemy import create_engine, insert, select, update
 from sqlalchemy.orm import Session, sessionmaker
