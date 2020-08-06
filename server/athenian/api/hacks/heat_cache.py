@@ -8,7 +8,6 @@ from itertools import chain
 import logging
 from typing import Collection, List, Set
 
-import pytest  # disables SQL logging  # noqa
 import sentry_sdk
 from sqlalchemy import create_engine, insert, select, update
 from sqlalchemy.orm import Session, sessionmaker
@@ -22,6 +21,7 @@ from athenian.api.controllers.invitation_controller import fetch_github_installa
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.settings import Settings
+import athenian.api.db
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequestLabel, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
@@ -45,6 +45,8 @@ def _parse_args():
 
 def main():
     """Go away linter."""
+    athenian.api.db._testing = True
+
     log = logging.getLogger("heater")
     args = _parse_args()
     setup_context(log)
