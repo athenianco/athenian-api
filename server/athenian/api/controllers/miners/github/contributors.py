@@ -39,7 +39,7 @@ async def mine_contributors(repos: Collection[str],
     serialize=marshal.dumps,
     deserialize=marshal.loads,
     key=lambda repos, time_from, time_to, with_stats, as_roles, **_: (
-        ",".join(repos), time_from.timestamp(), time_to.timestamp(), with_stats,
+        ",".join(sorted(repos)), time_from.timestamp(), time_to.timestamp(), with_stats,
         sorted(as_roles)),
 )
 async def _mine_contributors(repos: Collection[str],
