@@ -103,12 +103,11 @@ async def calc_pull_request_facts_github(time_from: datetime,
         for i, pr in enumerate(miner):
             if (i + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
                 await asyncio.sleep(0)
-            mined_prs.append(pr)
             try:
                 facts = facts_miner(pr)
             except ImpossiblePullRequest:
-                mined_facts.append(None)  # to match the order of mined_prs
                 continue
+            mined_prs.append(pr)
             mined_facts.append(facts)
             if facts.released or (facts.closed and not facts.merged):
                 done_count += 1
