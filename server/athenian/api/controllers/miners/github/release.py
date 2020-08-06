@@ -751,11 +751,7 @@ async def _fetch_commit_history_dag(dag: Optional[bytes],
     dag = {}
     for child, parent in raw_dag:
         # reverse the order so that parent-child matches github_node_commit_parents again
-        try:
-            dag[parent].append(child)
-        except KeyError:
-            # first iteration
-            dag[parent] = [child]
+        dag.setdefault(parent, []).append(child)
         dag.setdefault(child, [])
     if not dag:
         # initial commit(s)
