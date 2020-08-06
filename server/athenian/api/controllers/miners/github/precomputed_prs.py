@@ -730,12 +730,15 @@ async def store_open_pull_request_facts(
     values = []
     for pr, facts in open_prs_and_facts:
         assert not facts.closed
+        updated_at = pr[PullRequest.updated_at.key]
+        if updated_at != updated_at:
+            continue
         values.append(GitHubOpenPullRequestFacts(
             pr_node_id=pr[PullRequest.node_id.key],
             repository_full_name=pr[PullRequest.repository_full_name.key],
             pr_created_at=pr[PullRequest.created_at.key],
             number=pr[PullRequest.number.key],
-            pr_updated_at=pr[PullRequest.updated_at.key],
+            pr_updated_at=updated_at,
             data=pickle.dumps(facts),
         ).create_defaults().explode(with_primary_keys=True))
     if postgres:
