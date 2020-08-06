@@ -36,9 +36,9 @@ class PullRequestMiner:
     CACHE_TTL = 5 * 60
     log = logging.getLogger("%s.PullRequestMiner" % metadata.__package__)
 
-    def __init__(self, prs: pd.DataFrame, reviews: pd.DataFrame, review_comments: pd.DataFrame,
-                 review_requests: pd.DataFrame, comments: pd.DataFrame, commits: pd.DataFrame,
-                 releases: pd.DataFrame, labels: pd.DataFrame):
+    def __init__(self, prs: pd.DataFrame, commits: pd.DataFrame, reviews: pd.DataFrame,
+                 review_comments: pd.DataFrame, review_requests: pd.DataFrame,
+                 comments: pd.DataFrame, releases: pd.DataFrame, labels: pd.DataFrame):
         """Initialize a new instance of `PullRequestMiner`."""
         self._prs = prs
         self._reviews = reviews
@@ -309,8 +309,8 @@ class PullRequestMiner:
                 created_at=False)
 
         dfs = await asyncio.gather(
-            fetch_reviews(), fetch_review_comments(), fetch_review_requests(), fetch_comments(),
-            fetch_commits(), map_releases(), fetch_labels(),
+            fetch_commits(), fetch_reviews(), fetch_review_comments(), fetch_review_requests(),
+            fetch_comments(), map_releases(), fetch_labels(),
             return_exceptions=True)
         for df in dfs:
             if isinstance(df, Exception):
@@ -390,16 +390,16 @@ class PullRequestMiner:
     def _remove_spurious_prs(cls,
                              time_from: datetime,
                              prs: pd.DataFrame,
+                             commits: pd.DataFrame,
                              reviews: pd.DataFrame,
                              review_comments: pd.DataFrame,
                              review_requests: pd.DataFrame,
                              comments: pd.DataFrame,
-                             commits: pd.DataFrame,
                              releases: pd.DataFrame):
         old_releases = np.where(releases[Release.published_at.key] < time_from)[0]
         if len(old_releases) == 0:
             return
-        cls._drop((prs, reviews, review_comments, review_requests, comments, commits, releases),
+        cls._drop((prs, commits, reviews, review_comments, review_requests, comments, releases),
                   releases.index[old_releases])
 
     @classmethod
@@ -422,14 +422,14 @@ class PullRequestMiner:
         if not participants:
             return pd.Index([])
         if time_to is not None:
-            for i, (df, col) in enumerate(zip(dfs[1:6], (PullRequestReview.created_at,
+            for i, (df, col) in enumerate(zip(dfs[1:6], (PullRequestCommit.committed_date,
+                                                         PullRequestReview.created_at,
                                                          PullRequestReviewComment.created_at,
                                                          PullRequestReviewRequest.created_at,
-                                                         PullRequestComment.created_at,
-                                                         PullRequestCommit.committed_date),
+                                                         PullRequestComment.created_at),
                                               ), start=1):
                 dfs[i] = df.take(np.where(df[col.key] < time_to)[0])
-        prs, reviews, review_comments, review_requests, comments, commits, releases, _ = dfs
+        prs, commits, reviews, review_comments, review_requests, comments, releases, _ = dfs
         passed = []
         dict_iter = (
             (prs, PullRequest.user_login, None, ParticipationKind.AUTHOR),
@@ -492,14 +492,14 @@ class PullRequestMiner:
                                dfs: List[pd.DataFrame],
                                time_from: datetime,
                                time_to: datetime) -> pd.Index:
-        prs, reviews, review_comments, review_requests, comments, commits, releases, _ = dfs
+        prs, commits, reviews, review_comments, review_requests, comments, releases, _ = dfs
         activities = [
             prs[PullRequest.created_at.key],
             prs[PullRequest.closed_at.key],
+            commits[PullRequestCommit.committed_date.key],
             review_requests[PullRequestReviewRequest.created_at.key],
             reviews[PullRequestReview.created_at.key],
             comments[PullRequestComment.created_at.key],
-            commits[PullRequestCommit.committed_date.key],
             releases[Release.published_at.key],
         ]
         for df in activities:

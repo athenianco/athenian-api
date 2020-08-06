@@ -117,12 +117,14 @@ async def calc_pull_request_facts_github(time_from: datetime,
     add_pdb_misses(pdb, "load_precomputed_done_facts_filters", done_count)
     add_pdb_misses(pdb, "load_open_pull_request_facts", len(open_pr_facts))
     add_pdb_misses(pdb, "facts", len(miner))
-    # we don't care if exclude_inactive is True or False here
-    await defer(store_precomputed_done_facts(
-        mined_prs, mined_facts[len(precomputed_facts):], default_branches, release_settings, pdb),
-        "store_precomputed_done_facts(%d/%d)" % (done_count, len(miner)))
-    await defer(store_open_pull_request_facts(open_pr_facts, pdb),
-                "store_open_pull_request_facts(%d)" % len(open_pr_facts))
+    if done_count > 0:
+        # we don't care if exclude_inactive is True or False here
+        await defer(store_precomputed_done_facts(mined_prs, mined_facts[len(precomputed_facts):],
+                                                 default_branches, release_settings, pdb),
+                    "store_precomputed_done_facts(%d/%d)" % (done_count, len(miner)))
+    if len(open_pr_facts) > 0:
+        await defer(store_open_pull_request_facts(open_pr_facts, pdb),
+                    "store_open_pull_request_facts(%d)" % len(open_pr_facts))
     return mined_facts
 
 

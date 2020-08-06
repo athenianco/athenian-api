@@ -103,11 +103,11 @@ class MinedPullRequest:
     """
 
     pr: Dict[str, Any]
+    commits: pd.DataFrame
     reviews: pd.DataFrame
     review_comments: pd.DataFrame
     review_requests: pd.DataFrame
     comments: pd.DataFrame
-    commits: pd.DataFrame
     release: Dict[str, Any]
     labels: pd.DataFrame
 

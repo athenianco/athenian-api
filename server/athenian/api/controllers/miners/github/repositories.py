@@ -22,7 +22,7 @@ from athenian.api.tracing import sentry_span
     serialize=marshal.dumps,
     deserialize=marshal.loads,
     key=lambda repos, time_from, time_to, **_: (
-        ",".join(repos), time_from.timestamp(), time_to.timestamp()),
+        ",".join(sorted(repos)), time_from.timestamp(), time_to.timestamp()),
 )
 async def mine_repositories(repos: Collection[str],
                             time_from: datetime,
