@@ -491,7 +491,7 @@ async def test_pr_facts_miner_empty_releases(branches, default_branches, mdb, pd
 
 
 @with_defer
-async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
+async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, cache):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2018, month=1, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -530,6 +530,7 @@ async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
         matched_bys,
         branches,
         default_branches,
+        dag,
         release_settings,
         mdb,
         pdb,
@@ -543,6 +544,7 @@ async def test_pr_mine_by_ids(branches, default_branches, mdb, pdb, cache):
         matched_bys,
         branches,
         default_branches,
+        dag,
         release_settings,
         mdb,
         pdb,

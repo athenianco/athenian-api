@@ -467,7 +467,7 @@ async def test_discover_update_unreleased_prs_smoke(
 
 @with_defer
 async def test_discover_update_unreleased_prs_released(
-        mdb, pdb, default_branches, release_match_setting_tag):
+        mdb, pdb, dag, default_branches, release_match_setting_tag):
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
@@ -483,7 +483,7 @@ async def test_discover_update_unreleased_prs_released(
         release_match_setting_tag,
         mdb, pdb, None)
     released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, pd.DataFrame(), {}, time_to,
+        prs, releases, matched_bys, pd.DataFrame(), {}, time_to, dag,
         release_match_setting_tag, mdb, pdb, None)
     await update_unreleased_prs(
         prs, released_prs, releases, {},
@@ -499,7 +499,8 @@ async def test_discover_update_unreleased_prs_released(
 
 
 @with_defer
-async def test_load_old_merged_unreleased_prs_smoke(mdb, pdb, release_match_setting_tag, cache):
+async def test_load_old_merged_unreleased_prs_smoke(
+        mdb, pdb, dag, release_match_setting_tag, cache):
     metrics_time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
     await calc_pull_request_facts_github(
@@ -528,7 +529,7 @@ async def test_load_old_merged_unreleased_prs_smoke(mdb, pdb, release_match_sett
     await wait_deferred()
     released_prs = await map_prs_to_releases(
         unreleased_prs, releases, matched_bys, pd.DataFrame(), {},
-        unreleased_time_to, release_match_setting_tag, mdb, pdb, cache)
+        unreleased_time_to, dag, release_match_setting_tag, mdb, pdb, cache)
     await wait_deferred()
     assert released_prs.empty
     unreleased_time_from = datetime(2018, 11, 19, tzinfo=timezone.utc)

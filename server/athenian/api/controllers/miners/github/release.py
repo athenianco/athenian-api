@@ -7,7 +7,7 @@ import logging
 import marshal
 import pickle
 import re
-from typing import Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Collection, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import asyncpg
@@ -15,7 +15,7 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, distinct, func, insert, join, or_, select, true
+from sqlalchemy import and_, desc, distinct, func, insert, join, or_, select
 from sqlalchemy.cprocessors import str_to_datetime
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql.elements import BinaryExpression, ClauseElement
@@ -25,18 +25,20 @@ from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_que
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_precomputed_pr_releases, update_unreleased_prs
-from athenian.api.controllers.miners.github.release_accelerated import update_history
+from athenian.api.controllers.miners.github.release_accelerated import extract_subdag, join_dags, \
+    mark_dag_access, searchsorted_inrange
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
+from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepository, PullRequest, \
-    PullRequestLabel, PushCommit, Release, User
+    PullRequestLabel, PushCommit, Release
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory, \
-    GitHubRepository, GitHubRepositoryCommits
+    GitHubRepository
 from athenian.api.tracing import sentry_span
 
 
@@ -252,7 +254,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
     }
     del data_rows
     mp_tasks = [
-        _fetch_merge_points(data_by_repo.get(repo), repo, branches[Branch.commit_id.key],
+        _fetch_merge_points(data_by_repo.get(repo), repo, branches[Branch.commit_id.key].values,
                             pr_merge_commits.get(repo), time_from, time_to, mdb, pdb, cache)
         for repo, branches in branches_matched.items()
     ]
@@ -347,14 +349,14 @@ async def _fetch_merge_points(data: Optional[bytes],
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda commits, **_: (",".join(sorted(commits)),),
+    key=lambda commit_ids, **_: (",".join(sorted(commit_ids)),),
     refresh_on_access=True,
 )
-async def _fetch_commits(commits: List[str],
+async def _fetch_commits(commit_ids: List[str],
                          db: databases.Database,
                          cache: Optional[aiomcache.Client]) -> pd.DataFrame:
     return await read_sql_query(
-        select([PushCommit]).where(PushCommit.node_id.in_(commits))
+        select([PushCommit]).where(PushCommit.node_id.in_(commit_ids))
         .order_by(desc(PushCommit.commit_date)),
         db, PushCommit)
 
@@ -366,6 +368,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               branches: pd.DataFrame,
                               default_branches: Dict[str, str],
                               time_to: datetime,
+                              dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
                               release_settings: Dict[str, ReleaseMatchSetting],
                               mdb: databases.Database,
                               pdb: databases.Database,
@@ -393,11 +396,11 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     pr_releases = precomputed_pr_releases
     merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
     tasks = [
-        _map_prs_to_releases(merged_prs, releases, mdb, pdb, cache),
-        _find_dead_merged_prs(merged_prs, branches, default_branches, mdb, pdb, cache),
         _fetch_labels(merged_prs.index, mdb),
+        _find_dead_merged_prs(merged_prs, dags, branches, mdb, pdb, cache),
+        _map_prs_to_releases(merged_prs, dags, releases),
     ]
-    missed_released_prs, dead_prs, labels = await asyncio.gather(*tasks, return_exceptions=True)
+    labels, dead_prs, missed_released_prs = await asyncio.gather(*tasks, return_exceptions=True)
     for r in (missed_released_prs, dead_prs, labels):
         if isinstance(r, Exception):
             raise r from None
@@ -420,41 +423,46 @@ async def map_prs_to_releases(prs: pd.DataFrame,
 
 
 async def _map_prs_to_releases(prs: pd.DataFrame,
+                               dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
                                releases: pd.DataFrame,
-                               mdb: databases.Database,
-                               pdb: databases.Database,
-                               cache: Optional[aiomcache.Client],
                                ) -> pd.DataFrame:
     if prs.empty:
         return new_released_prs_df()
     releases = dict(list(releases.groupby(Release.repository_full_name.key, sort=False)))
-    histories = await _fetch_release_histories(releases, mdb, pdb, cache)
+
     released_prs = []
+    release_columns = [
+        c.key for c in (Release.published_at, Release.author, Release.url,
+                        Release.id, Release.repository_full_name)
+    ] + [matched_by_column]
     for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.key, sort=False):
         try:
             repo_releases = releases[repo]
-            history = histories[repo]
         except KeyError:
             # no releases exist for this repo
             continue
-        for pr_id, merge_sha in zip(repo_prs.index,
-                                    repo_prs[PullRequest.merge_commit_sha.key].values):
-            try:
-                items = history[merge_sha]
-            except KeyError:
-                continue
-            ri = items[0]
-            if ri < 0:
-                continue
-            r = repo_releases.xs(ri)
-            released_prs.append((pr_id,
-                                 r[Release.published_at.key],
-                                 r[Release.author.key],
-                                 r[Release.url.key],
-                                 r[Release.id.key],
-                                 repo,
-                                 r[matched_by_column]))
-    released_prs = new_released_prs_df(released_prs)
+        repo_prs = repo_prs.take(np.where(~repo_prs[PullRequest.merge_commit_sha.key].isnull())[0])
+        hashes, vertexes, edges = dags[repo]
+        ownership = mark_dag_access(hashes, vertexes, edges, repo_releases[Release.sha.key].values)
+        unmatched = np.where(ownership == len(repo_releases))[0]
+        if len(unmatched) > 0:
+            hashes = np.delete(hashes, unmatched)
+            ownership = np.delete(ownership, unmatched)
+        if len(hashes) == 0:
+            continue
+        merge_hashes = repo_prs[PullRequest.merge_commit_sha.key].values.astype("U40")
+        merges_found = np.searchsorted(hashes, merge_hashes)
+        found_mask = hashes[merges_found] == merge_hashes
+        found_releases = repo_releases[release_columns].take(ownership[merges_found[found_mask]])
+        if not found_releases.empty:
+            found_prs = repo_prs.index.take(np.where(found_mask)[0])
+            found_releases.set_index(found_prs, inplace=True)
+            released_prs.append(found_releases)
+        await asyncio.sleep(0)
+    if released_prs:
+        released_prs = pd.concat(released_prs, copy=False)
+    else:
+        released_prs = new_released_prs_df()
     released_prs[Release.published_at.key] = np.maximum(
         released_prs[Release.published_at.key],
         prs.loc[released_prs.index, PullRequest.merged_at.key])
@@ -463,8 +471,8 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
 
 @sentry_span
 async def _find_dead_merged_prs(prs: pd.DataFrame,
+                                dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
                                 branches: pd.DataFrame,
-                                default_branches: Dict[str, str],
                                 mdb: databases.Database,
                                 pdb: databases.Database,
                                 cache: Optional[aiomcache.Client]) -> pd.DataFrame:
@@ -476,26 +484,27 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
     # commits DAGs are cached and may be not fully up to date, so otherwise some PRs may appear in
     # dead_prs and missed_released_prs at the same time
     # see also: DEV-554
-    repos = prs[PullRequest.repository_full_name.key].unique()
-    if len(repos) == 0:
+    if prs.empty:
         return new_released_prs_df()
-    commits = await _fetch_repository_commits(repos, branches, default_branches, mdb, pdb, cache)
     rfnkey = PullRequest.repository_full_name.key
     mchkey = PullRequest.merge_commit_sha.key
     clskey = PullRequest.closed_at.key
     dead_prs = []
+    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date.key,
+            Branch.repository_full_name.key)
+    dags = await _fetch_repository_commits(dags, branches, cols, True, mdb, pdb, cache)
     for repo, repo_prs in prs[[mchkey, rfnkey, clskey]].groupby(rfnkey, sort=False):
-        repo_commits = commits[repo]
-        if len(repo_commits) == 0:
-            # metadata branches fault
+        hashes, _, _ = dags[repo]
+        if len(hashes) == 0:
+            # no branches found in `_fetch_repository_commits()`
             continue
-        repo_hashes = repo_prs[mchkey].values.astype("U40")
-        indexes = np.searchsorted(repo_commits, repo_hashes)
-        indexes[indexes == len(repo_commits)] = 0  # whatever index is fine
-        dead_indexes = np.where(repo_hashes != repo_commits[indexes])[0]
+        pr_merge_hashes = repo_prs[mchkey].values.astype("U40")
+        indexes = searchsorted_inrange(hashes, pr_merge_hashes)
+        dead_indexes = np.where(pr_merge_hashes != hashes[indexes])[0]
         dead_prs.extend((pr_id, ct, None, None, None, repo, ReleaseMatch.force_push_drop)
                         for pr_id, ct in zip(repo_prs.index.values.take(dead_indexes),
                                              repo_prs[clskey].take(dead_indexes)))
+        await asyncio.sleep(0)
     return new_released_prs_df(dead_prs)
 
 
@@ -509,53 +518,6 @@ async def _fetch_labels(node_ids: Iterable[str], mdb: databases.Database) -> Dic
         node_id, label = row[0], row[1]
         labels.setdefault(node_id, []).append(label)
     return labels
-
-
-async def _fetch_release_histories(releases: Dict[str, pd.DataFrame],
-                                   mdb: databases.Database,
-                                   pdb: databases.Database,
-                                   cache: Optional[aiomcache.Client],
-                                   ) -> Dict[str, Dict[str, List[str]]]:
-    log = logging.getLogger("%s._fetch_release_histories" % metadata.__package__)
-    histories = {}
-    pdags = await _fetch_precomputed_commit_histories(releases, pdb)
-
-    async def fetch_release_history(repo, repo_releases):
-        dag = await _fetch_commit_history_dag(
-            pdags.get(repo), repo,
-            repo_releases[Release.commit_id.key].values,
-            repo_releases[Release.sha.key].values,
-            repo_releases[Release.published_at.key].values,
-            mdb, pdb, cache)
-        histories[repo] = history = {k: [-1, *v] for k, v in dag.items()}
-        release_hashes = set(repo_releases[Release.sha.key].values)
-        for rel_index, rel_sha in zip(repo_releases.index.values,
-                                      repo_releases[Release.sha.key].values):
-            if rel_sha not in history:
-                log.error("DEV-256 release commit %s was not found in the commit history",
-                          rel_sha)
-                continue
-            update_history(history, rel_sha, rel_index, release_hashes)
-
-    errors = await asyncio.gather(*(fetch_release_history(*r) for r in releases.items()),
-                                  return_exceptions=True)
-    for e in errors:
-        if e is not None:
-            raise e from None
-    return histories
-
-
-async def _fetch_precomputed_commit_histories(repos: Iterable[str],
-                                              pdb: databases.Database) -> Dict[str, bytes]:
-    default_version = GitHubCommitHistory.__table__ \
-        .columns[GitHubCommitHistory.format_version.key].default.arg
-    pdags = await pdb.fetch_all(
-        select([GitHubCommitHistory.repository_full_name, GitHubCommitHistory.dag])
-        .where(and_(GitHubCommitHistory.repository_full_name.in_(repos),
-                    GitHubCommitHistory.format_version == default_version)))
-    pdags = {r[GitHubCommitHistory.repository_full_name.key]: r[GitHubCommitHistory.dag.key]
-             for r in pdags}
-    return pdags
 
 
 @cached(
@@ -583,12 +545,8 @@ async def _fetch_first_parents(data: Optional[bytes],
     if data is not None:
         f = BytesIO(data)
         first_parents = pickle.load(f)
-        try:
-            need_update = \
-                (first_parents[np.searchsorted(first_parents, commit_ids)] != commit_ids).any()
-        except IndexError:
-            # np.searchsorted can return len(first_parents)
-            need_update = True
+        need_update = \
+            (first_parents[searchsorted_inrange(first_parents, commit_ids)] != commit_ids).any()
         if not need_update:
             timestamps = pickle.load(f)
         else:
@@ -686,91 +644,45 @@ async def _fetch_first_parents(data: Optional[bytes],
 @sentry_span
 @cached(
     exptime=60 * 60,  # 1 hour
-    serialize=marshal.dumps,
-    deserialize=marshal.loads,
-    key=lambda commit_ids, **_: (",".join(sorted(commit_ids)),),
-    refresh_on_access=True,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda repos, **_: (",".join(sorted(repos)),),
 )
-async def _fetch_commit_history_dag(dag: Optional[bytes],
-                                    repo: str,
-                                    commit_ids: np.ndarray,
-                                    commit_shas: np.ndarray,
-                                    commit_dates: np.ndarray,
-                                    mdb: databases.Database,
-                                    pdb: databases.Database,
-                                    cache: Optional[aiomcache.Client],
-                                    ) -> Dict[str, List[str]]:
-    # Git parent-child is reversed github_node_commit_parents' parent-child.
-    assert isinstance(mdb, databases.Database)
-    assert isinstance(pdb, databases.Database)
+async def _fetch_precomputed_commit_history_dags(
+        repos: Iterable[str],
+        pdb: databases.Database,
+        cache: Optional[aiomcache.Client],
+) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    ghrc = GitHubCommitHistory
+    with sentry_sdk.start_span(op="_fetch_precomputed_commit_history_dags/pdb"):
+        rows = await pdb.fetch_all(
+            select([ghrc.repository_full_name, ghrc.dag])
+            .where(and_(
+                ghrc.format_version == ghrc.__table__.columns[ghrc.format_version.key].default.arg,
+                ghrc.repository_full_name.in_(repos),
+            )))
+    dags = {row[0]: pickle.loads(row[1]) for row in rows}
+    for repo in repos:
+        if repo not in dags:
+            dags[repo] = _empty_dag()
+    return dags
 
-    if dag is not None:
-        dag = marshal.loads(dag)
-        need_update = False
-        for commit_sha in commit_shas:
-            if commit_sha not in dag:
-                need_update = True
-                break
-        if not need_update:
-            add_pdb_hits(pdb, "_fetch_commit_history_dag", 1)
-            return dag
 
-    add_pdb_misses(pdb, "_fetch_commit_history_dag", 1)
-    raw_dag = set()
-    if dag is not None:
-        commit_shas_index = {sha: i for i, sha in enumerate(commit_shas)}
-        for key, children in dag.items():
-            for child in children:
-                raw_dag.add((child, key))  # yes, the order is reversed to match SQL
-        precomputed_indexes = [commit_shas_index[k]
-                               for k in (commit_shas_index.keys() & dag.keys())]
-        if precomputed_indexes:
-            commit_ids = np.delete(commit_ids, precomputed_indexes)
-            commit_shas = np.delete(commit_shas, precomputed_indexes)
-            commit_dates = np.delete(commit_dates, precomputed_indexes)
-    chunk_size = 50  # how many seeds in the underlying recurssive SQL to traverse the DAG
-    if len(commit_ids) > chunk_size:
-        order = np.argsort(commit_dates)
-        _commit_ids = commit_ids[order]
-        _commit_shas = commit_shas.astype("U40")[order]
-    else:
-        _commit_ids = commit_ids
-        _commit_shas = commit_shas
-    while len(_commit_ids) > chunk_size:
-        rows = await _fetch_commit_history_edges(_commit_ids[-chunk_size:], mdb)
-        if len(rows) > 0:
-            raw_dag.update(rows)
-            left_mask = ~np.isin(_commit_shas, np.fromiter((r[1] for r in rows), "U40", len(rows)))
-            _commit_shas = _commit_shas[left_mask]
-            _commit_ids = _commit_ids[left_mask]
-        else:
-            _commit_ids = _commit_ids[:-chunk_size]
-            _commit_shas = _commit_shas[:-chunk_size]
-    if len(_commit_ids) > 0:
-        raw_dag.update(await _fetch_commit_history_edges(_commit_ids, mdb))
-    dag = {}
-    for child, parent in raw_dag:
-        # reverse the order so that parent-child matches github_node_commit_parents again
-        dag.setdefault(parent, []).append(child)
-        dag.setdefault(child, [])
-    if not dag:
-        # initial commit(s)
-        return {sha: [] for sha in commit_shas}
-    else:
-        values = GitHubCommitHistory(repository_full_name=repo, dag=marshal.dumps(dag)) \
-            .create_defaults().explode(with_primary_keys=True)
-        if pdb.url.dialect in ("postgres", "postgresql"):
-            sql = postgres_insert(GitHubCommitHistory).values(values)
-            sql = sql.on_conflict_do_update(
-                constraint=GitHubCommitHistory.__table__.primary_key,
-                set_={GitHubCommitHistory.dag.key: sql.excluded.dag,
-                      GitHubCommitHistory.updated_at.key: sql.excluded.updated_at})
-        elif pdb.url.dialect == "sqlite":
-            sql = insert(GitHubCommitHistory).values(values).prefix_with("OR REPLACE")
-        else:
-            raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-        await defer(pdb.execute(sql), "_fetch_commit_history_dag/pdb")
-    return dag
+def _empty_dag() -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    return np.array([], dtype="U40"), np.array([0], dtype=np.uint32), np.array([], dtype=np.uint32)
+
+
+async def load_commit_dags(releases: pd.DataFrame,
+                           mdb: databases.Database,
+                           pdb: databases.Database,
+                           cache: Optional[aiomcache.Client],
+                           ) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Produce the commit history DAGs which should contain the specified releases."""
+    pdags = await _fetch_precomputed_commit_history_dags(
+        releases[Release.repository_full_name.key].values, pdb, cache)
+    cols = (Release.sha.key, Release.commit_id.key, Release.published_at.key,
+            Release.repository_full_name.key)
+    return await _fetch_repository_commits(pdags, releases, cols, False, mdb, pdb, cache)
 
 
 @sentry_span
@@ -778,127 +690,114 @@ async def _fetch_commit_history_dag(dag: Optional[bytes],
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda repos, branches, **_: (
-        ",".join(sorted(repos)), ",".join(np.sort(branches[Branch.commit_sha.key].values))),
+    key=lambda repos, branches, columns, prune, **_: (
+        ",".join(sorted(repos)),
+        ",".join(np.sort(branches[columns[0]].values)),
+        prune,
+    ),
     refresh_on_access=True,
 )
-async def _fetch_repository_commits(repos: Collection[str],
+async def _fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
                                     branches: pd.DataFrame,
-                                    default_branches: Dict[str, str],
+                                    columns: Tuple[str, str, str, str],
+                                    prune: bool,
                                     mdb: databases.Database,
                                     pdb: databases.Database,
                                     cache: Optional[aiomcache.Client],
-                                    ) -> Dict[str, np.ndarray]:
-    filters = []
-    branch_names = branches[Branch.branch_name.key].values
-    branch_commits = branches[Branch.commit_sha.key].values
-    branch_repos = branches[Branch.repository_full_name.key].values
-    sqlite = pdb.url.dialect == "sqlite"
-    ghrc = GitHubRepositoryCommits
-    for repo in repos:
-        matched_rows = branch_repos == repo
-        pairs = zip(branch_names[matched_rows], branch_commits[matched_rows])
-        if sqlite:
-            pairs = sorted(pairs)
-        heads = dict(pairs)
-        filters.append(and_(ghrc.repository_full_name == repo, ghrc.heads == heads))
-    with sentry_sdk.start_span(op="_fetch_repository_commits/pdb"):
-        rows = await pdb.fetch_all(
-            select([ghrc.repository_full_name, ghrc.hashes])
-            .where(and_(
-                ghrc.format_version == ghrc.__table__.columns[ghrc.format_version.key].default.arg,
-                or_(*filters),
-            )))
-    result = {row[0]: pickle.loads(row[1]) for row in rows}
-    add_pdb_hits(pdb, "_fetch_repository_commits", len(result))
-    add_pdb_misses(pdb, "_fetch_repository_commits", len(repos) - len(result))
-    missed_repos = [repo for repo in repos if repo not in result]
-    branches = branches.take(np.where(np.in1d(branch_repos, missed_repos))[0])
-    branches.sort_values(
-        [Branch.commit_date.key], ascending=False, ignore_index=True, inplace=True)
-    grouped_branches = list(branches.groupby(Branch.repository_full_name.key, sort=False))
-    # fetch the default branch first
+                                    ) -> Dict[str, Tuple[np.ndarray, np.array, np.array]]:
+    missed_counter = 0
+    repo_heads = {}
+    sha_col, id_col, dt_col, repo_col = columns
+    hash_to_id = dict(zip(branches[sha_col].values, branches[id_col].values))
+    hash_to_dt = dict(zip(branches[sha_col].values, branches[dt_col].values))
+    result = {}
     tasks = []
-    for repo, branches in grouped_branches:
-        try:
-            commit_id = branches[Branch.commit_id.key].iloc[
-                np.where(branches[Branch.branch_name.key] == default_branches[repo])[0][0]]
-        except IndexError:
-            # there is a metadata problem and we could not find the default branch
-            continue
-        tasks.append(_fetch_commit_history_hashes([commit_id], mdb))
-    with sentry_sdk.start_span(op="_fetch_repository_commits/_fetch_hashes/default"):
-        default_hashes = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in default_hashes:
-        if isinstance(r, Exception):
-            raise r from None
-    # fetch the rest of the branches
-    tasks = []
-    for (repo, branches), all_hashes in zip(grouped_branches, default_hashes):
-        missing_hashes = set(branches[Branch.commit_sha.key].values) - all_hashes
-        missing_mask = branches[Branch.commit_sha.key].isin(missing_hashes)
-        commit_ids = branches[Branch.commit_id.key].values[missing_mask]
-        commit_hashes = branches[Branch.commit_sha.key].values[missing_mask]
-        heads = zip(branches[Branch.branch_name.key].values,
-                    branches[Branch.commit_sha.key].values)
-        if sqlite:
-            heads = sorted(heads)
-        tasks.append(_fetch_commit_history_hashes_batched(
-            all_hashes, commit_ids, commit_hashes, repo, dict(heads), mdb, pdb))
-    with sentry_sdk.start_span(op="_fetch_repository_commits/_fetch_hashes/branches"):
-        missed = await asyncio.gather(*tasks, return_exceptions=True)
-    for (repo, _), arr in zip(grouped_branches, missed):
-        if isinstance(arr, Exception):
-            raise arr from None
-        result[repo] = arr
-    # some repos may have 0 branches due to a metadata fault
-    log = logging.getLogger("%s._fetch_repository_commits" % metadata.__package__)
+    for repo, repo_df in branches[[repo_col, sha_col]].groupby(repo_col, sort=False):
+        required_heads = repo_df[sha_col].values.astype("U40")
+        repo_heads[repo] = required_heads
+        hashes, vertexes, edges = repos[repo]
+        if len(hashes) > 0:
+            found_indexes = searchsorted_inrange(hashes, required_heads)
+            missed_mask = hashes[found_indexes] != required_heads
+            missed_counter += missed_mask.sum()
+            missed_heads = required_heads[missed_mask]  # these hashes do not exist in the p-DAG
+        else:
+            missed_heads = required_heads
+        if len(missed_heads) > 0:
+            # heuristic: order the heads from most to least recent
+            order = sorted([(hash_to_dt[h], i) for i, h in enumerate(missed_heads)], reverse=True)
+            missed_heads = [missed_heads[i] for _, i in order]
+            missed_ids = [hash_to_id[h] for h in missed_heads]
+            tasks.append(_fetch_commit_history_dag(
+                hashes, vertexes, edges, missed_heads, missed_ids, repo, mdb, pdb))
+        else:
+            if prune:
+                hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, required_heads)
+            result[repo] = hashes, vertexes, edges
+    # traverse commits starting from the missing branch heads
+    add_pdb_hits(pdb, "_fetch_repository_commits", len(branches) - missed_counter)
+    add_pdb_misses(pdb, "_fetch_repository_commits", missed_counter)
+    if tasks:
+        with sentry_sdk.start_span(op="_fetch_repository_commits/mdb"):
+            new_dags = await asyncio.gather(*tasks, return_exceptions=True)
+        sql_values = []
+        for nd in new_dags:
+            if isinstance(nd, Exception):
+                raise nd from None
+            repo, hashes, vertexes, edges = nd
+            sql_values.append(GitHubCommitHistory(
+                repository_full_name=repo, dag=pickle.dumps((hashes, vertexes, edges)),
+            ).create_defaults().explode(with_primary_keys=True))
+            if prune:
+                hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, repo_heads[repo])
+            result[repo] = hashes, vertexes, edges
+        if pdb.url.dialect in ("postgres", "postgresql"):
+            sql = postgres_insert(GitHubCommitHistory)
+            sql = sql.on_conflict_do_update(
+                constraint=GitHubCommitHistory.__table__.primary_key,
+                set_={GitHubCommitHistory.dag.key: sql.excluded.dag,
+                      GitHubCommitHistory.updated_at.key: sql.excluded.updated_at})
+        elif pdb.url.dialect == "sqlite":
+            sql = insert(GitHubCommitHistory).prefix_with("OR REPLACE")
+        else:
+            raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
+        await defer(pdb.execute_many(sql, sql_values), "_fetch_repository_commits/pdb")
     for repo in repos:
         if repo not in result:
-            result[repo] = np.empty((0,), dtype="U40")
-            log.warning("No branches in %s", repo)
+            result[repo] = _empty_dag()
     return result
 
 
-async def _fetch_commit_history_hashes_batched(hashes: Set[str],
-                                               commit_ids: Sequence[str],
-                                               commit_hashes: Sequence[str],
-                                               repo: str,
-                                               heads: Dict[str, str],
-                                               mdb: databases.Database,
-                                               pdb: databases.Database) -> np.ndarray:
+@sentry_span
+async def _fetch_commit_history_dag(hashes: np.ndarray,
+                                    vertexes: np.ndarray,
+                                    edges: np.ndarray,
+                                    head_hashes: Sequence[str],
+                                    head_ids: Sequence[str],
+                                    repo: str,
+                                    mdb: databases.Database,
+                                    pdb: databases.Database,
+                                    ) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
     batch_size = 20
-    while len(commit_ids) > 0:
-        hashes = hashes.union(await _fetch_commit_history_hashes(commit_ids[:batch_size], mdb))
-        new_commit_ids = []
-        new_commit_hashes = []
-        for cid, chash in zip(commit_ids[batch_size:], commit_hashes[batch_size:]):
-            if chash not in hashes:
-                new_commit_ids.append(cid)
-                new_commit_hashes.append(chash)
-        commit_ids, commit_hashes = new_commit_ids, new_commit_hashes
-    hashes = np.sort(np.fromiter(hashes, count=len(hashes), dtype="U40"))
-    values = GitHubRepositoryCommits(
-        repository_full_name=repo, heads=heads, hashes=pickle.dumps(hashes),
-    ).create_defaults().explode(with_primary_keys=True)
-    if pdb.url.dialect in ("postgres", "postgresql"):
-        sql = postgres_insert(GitHubRepositoryCommits).values(values)
-        sql = sql.on_conflict_do_update(
-            constraint=GitHubRepositoryCommits.__table__.primary_key,
-            set_={GitHubRepositoryCommits.hashes.key: sql.excluded.hashes,
-                  GitHubRepositoryCommits.heads.key: sql.excluded.heads,
-                  GitHubRepositoryCommits.updated_at.key: sql.excluded.updated_at})
-    elif pdb.url.dialect == "sqlite":
-        sql = insert(GitHubRepositoryCommits).values(values).prefix_with("OR REPLACE")
-    else:
-        raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-    await defer(pdb.execute(sql), "_fetch_commit_history_hashes_batched/pdb")
-    return hashes
+    while len(head_hashes) > 0:
+        new_edges = await _fetch_commit_history_edges(head_ids[:batch_size], mdb)
+        if not new_edges:
+            new_edges = [(h, "") for h in np.sort(np.unique(head_hashes[:batch_size]))]
+        hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges)
+        head_hashes = head_hashes[batch_size:]
+        head_ids = head_ids[batch_size:]
+        if len(head_hashes) > 0:
+            collateral = np.where(
+                hashes[searchsorted_inrange(hashes, head_hashes)] == head_hashes)[0]
+            if len(collateral) > 0:
+                head_hashes = np.delete(head_hashes, collateral)
+                head_ids = np.delete(head_ids, collateral)
+    return repo, hashes, vertexes, edges
 
 
 async def _fetch_commit_history_edges(commit_ids: Iterable[str],
                                       mdb: databases.Database) -> List[Tuple]:
-    # query credits: @dennwc
+    # SQL credits: @dennwc
     query = f"""
             WITH RECURSIVE commit_history AS (
                 SELECT
@@ -922,8 +821,8 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
                             LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
                             LEFT JOIN github_node_commit cc ON p.child_id = cc.id
             ) SELECT
-                parent_oid,
-                child_oid
+                child_oid,
+                parent_oid
             FROM
                 commit_history;"""
     async with mdb.connection() as conn:
@@ -935,48 +834,6 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
             return [tuple(r) for r in await conn.fetch_all(query)]
 
 
-async def _fetch_commit_history_hashes(commit_ids: Iterable[str],
-                                       mdb: databases.Database) -> Set[str]:
-    query = f"""
-        WITH RECURSIVE commit_history AS (
-            SELECT
-                p.child_id AS parent,
-                pc.oid AS child_oid
-            FROM
-                github_node_commit_parents p
-                    LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
-                    LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-            WHERE
-                p.parent_id IN ('{"', '".join(commit_ids)}')
-            UNION
-                SELECT
-                    p.child_id AS parent,
-                    pc.oid AS child_oid
-                FROM
-                    github_node_commit_parents p
-                        INNER JOIN commit_history h ON h.parent = p.parent_id
-                        LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
-                        LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-        ) SELECT
-            child_oid
-        FROM
-            commit_history
-        UNION
-            SELECT
-                oid as child_id
-            FROM
-                github_node_commit
-            WHERE
-                id IN ('{"', '".join(commit_ids)}');"""
-    async with mdb.connection() as conn:
-        if isinstance(conn.raw_connection, asyncpg.connection.Connection):
-            # this works much faster then iterate() / fetch_all()
-            async with conn._query_lock:
-                return {r[0] for r in await conn.raw_connection.fetch(query)}
-        else:
-            return {r[0] for r in await conn.fetch_all(query)}
-
-
 @sentry_span
 async def _find_old_released_prs(repo_clauses: List[ClauseElement],
                                  time_boundary: datetime,
@@ -985,6 +842,9 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
                                  pr_blacklist: Optional[BinaryExpression],
                                  mdb: databases.Database,
                                  ) -> pd.DataFrame:
+    if not repo_clauses:
+        return pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
+                            if c.name != PullRequest.node_id.key])
     filters = [
         PullRequest.merged_at < time_boundary,
         PullRequest.hidden.is_(False),
@@ -1006,99 +866,34 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
 
 
 @sentry_span
-async def _generate_released_prs_clause(releases: pd.DataFrame,
-                                        pdag: Optional[bytes],
-                                        time_boundary: datetime,
-                                        mdb: databases.Database,
-                                        pdb: databases.Database,
-                                        cache: Optional[aiomcache.Client],
-                                        ) -> ClauseElement:
-    if releases.empty:
-        return true()
-    observed_commits, _, _ = await _extract_released_commits(
-        releases, pdag, time_boundary, mdb, pdb, cache)
-    repo = releases.iloc[0][Release.repository_full_name.key]
-    return and_(
-        PullRequest.repository_full_name == repo,
-        PullRequest.merge_commit_sha.in_(observed_commits),
-    )
-
-
-@sentry_span
-async def _extract_released_commits(releases: pd.DataFrame,
-                                    pdag: Optional[bytes],
-                                    time_boundary: datetime,
-                                    mdb: databases.Database,
-                                    pdb: databases.Database,
-                                    cache: Optional[aiomcache.Client],
-                                    ) -> Tuple[Dict[str, List[str]], pd.DataFrame, Dict[str, str]]:
-    log = logging.getLogger("%s._extract_released_commits" % metadata.__package__)
-    repo = releases[Release.repository_full_name.key].unique()
-    assert len(repo) == 1
-    repo = repo[0]
-    resolved_releases = set()
-    hash_to_release = {h: rid for rid, h in zip(releases.index, releases[Release.sha.key].values)}
+def _extract_released_commits(releases: pd.DataFrame,
+                              dag: Tuple[np.ndarray, np.ndarray, np.ndarray],
+                              time_boundary: datetime,
+                              ) -> np.ndarray:
     time_mask = releases[Release.published_at.key] >= time_boundary
     new_releases = releases.take(np.where(time_mask)[0])
     assert not new_releases.empty, "you must check this before calling me"
-    # we stop walking the DAG when we encounter these
-    boundary_releases = set(releases.index.take(np.where(~time_mask)[0]))
-    # original DAG with all the mentioned releases
-    dag = await _fetch_commit_history_dag(
-        pdag, repo,
-        releases[Release.commit_id.key].values,
-        releases[Release.sha.key].values,
-        releases[Release.published_at.key].values,
-        mdb, pdb, cache)
-
-    for rid, root in zip(new_releases.index, new_releases[Release.sha.key].values):
-        if rid in resolved_releases:
-            continue
-        parents = [root]
-        visited = set()
-        while parents:
-            x = parents.pop()
-            if x in visited:
-                continue
-            else:
-                visited.add(x)
-            xrid = hash_to_release.get(x)
-            if xrid is not None:
-                pubdt = releases.loc[xrid, Release.published_at.key]
-                if pubdt >= time_boundary:
-                    resolved_releases.add(xrid)
-                else:
-                    continue
-            try:
-                parents.extend(dag[x])
-            except KeyError:
-                log.error("DEV-256 missing commit parent for %s", x)
-
-    # we need to traverse full history from boundary_releases and subtract it from the full DAG
-    ignored_commits = set()
-    for rid in boundary_releases:
-        release_sha = releases.loc[rid, Release.sha.key]
-        if release_sha in ignored_commits:
-            continue
-        parents = [release_sha]
-        while parents:
-            x = parents.pop()
-            if x in ignored_commits:
-                continue
-            ignored_commits.add(x)
-            children = dag[x]
-            parents.extend(children)
-    for c in ignored_commits:
-        try:
-            del dag[c]
-        except KeyError:
-            # may raise on boundary release commits
-            continue
-    return dag, new_releases, hash_to_release
+    hashes, vertexes, edges = dag
+    # the latest release before the time boundary
+    if not time_mask.all():
+        boundary_release_hash = releases[Release.sha.key].values[~time_mask][
+            [np.argsort(releases[Release.published_at.key].values[~time_mask])[-1]]].astype("U40")
+    else:
+        boundary_release_hash = None
+    visited_hashes, _, _ = extract_subdag(
+        hashes, vertexes, edges, new_releases[Release.sha.key].values.astype("U40"))
+    if boundary_release_hash is None:
+        return visited_hashes
+    ignored_hashes, _, _ = extract_subdag(
+        hashes, vertexes, edges, boundary_release_hash)
+    # we are guaranteed that `ignored_hashes` are a subset of `visited_hashes`
+    # so there is not overflow possible in np.searchsorted
+    released_hashes = np.delete(visited_hashes, np.searchsorted(visited_hashes, ignored_hashes))
+    return released_hashes
 
 
 @sentry_span
-async def map_releases_to_prs(repos: Iterable[str],
+async def map_releases_to_prs(repos: Collection[str],
                               branches: pd.DataFrame,
                               default_branches: Dict[str, str],
                               time_from: datetime,
@@ -1111,7 +906,8 @@ async def map_releases_to_prs(repos: Iterable[str],
                               cache: Optional[aiomcache.Client],
                               pr_blacklist: Optional[BinaryExpression] = None,
                               truncate: bool = True,
-                              ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, ReleaseMatch]]:
+                              ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, ReleaseMatch],
+                                         Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]]:
     """Find pull requests which were released between `time_from` and `time_to` but merged before \
     `time_from`.
 
@@ -1131,19 +927,16 @@ async def map_releases_to_prs(repos: Iterable[str],
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
 
-    matched_bys, pdags, releases, releases_new, release_settings = \
-        await _find_releases_for_matching_prs(
-            repos, time_from, time_to, branches, default_branches,
-            release_settings, pdb, mdb, cache)
-    tasks = []
-    if not truncate:
-        today = datetime.combine((datetime.now(timezone.utc) + timedelta(days=1)).date(),
-                                 datetime.min.time(), tzinfo=timezone.utc)
-        truncate = today <= time_to
-        if not truncate:
-            tasks.append(load_releases(
-                repos, branches, default_branches, time_to, today, release_settings,
-                mdb, pdb, cache))
+    tasks = [
+        _find_releases_for_matching_prs(repos, time_from, time_to, branches, default_branches,
+                                        release_settings, pdb, mdb, cache),
+        _fetch_precomputed_commit_history_dags(repos, pdb, cache),
+    ]
+    matching_releases, pdags = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (matching_releases, pdags):
+        if isinstance(r, Exception):
+            raise r from None
+    matched_bys, releases, releases_new, release_settings = matching_releases
 
     def concat_releases(releases_new: pd.DataFrame,
                         releases_today: pd.DataFrame,
@@ -1152,35 +945,44 @@ async def map_releases_to_prs(repos: Iterable[str],
         releases_concat.reset_index(drop=True, inplace=True)
         return releases_concat
 
-    for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
-        if (repo_releases[Release.published_at.key] >= time_from).any():
-            tasks.append(_generate_released_prs_clause(
-                repo_releases, pdags.get(repo), time_from, mdb, pdb, cache))
-    if len(tasks) - (not truncate):
+    async def main_flow():
+        # ensure that our DAGs contain all the mentioned releases
+        rpak = Release.published_at.key
+        rrfnk = Release.repository_full_name.key
+        cols = (Release.sha.key, Release.commit_id.key, rpak, rrfnk)
+        dags = await _fetch_repository_commits(pdags, releases, cols, False, mdb, pdb, cache)
+        clauses = []
+        # find the released commit hashes by two DAG traversals
         with sentry_sdk.start_span(op="_generate_released_prs_clause"):
-            tasks = await asyncio.gather(*tasks, return_exceptions=True)
-        for task in tasks:
-            if isinstance(task, Exception):
-                raise task
-        if not truncate:
-            releases_today, _ = tasks[0]
-            releases_new = concat_releases(releases_new, releases_today)
-            tasks = tasks[1:]
-        prs = await _find_old_released_prs(tasks, time_from, authors, mergers, pr_blacklist, mdb)
-        return (
-            prs,
-            releases_new,
-            matched_bys,
-        )
-    if not truncate:
-        releases_today, _ = await tasks[0]
-        releases_new = concat_releases(releases_new, releases_today)
-    return (
-        pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
-                              if c.name != PullRequest.node_id.key]),
-        releases_new,
-        matched_bys,
-    )
+            for repo, repo_releases in releases.groupby(rrfnk, sort=False):
+                if (repo_releases[rpak] >= time_from).any():
+                    observed_commits = _extract_released_commits(
+                        repo_releases, dags[repo], time_from)
+                    if len(observed_commits):
+                        clauses.append(and_(
+                            PullRequest.repository_full_name == repo,
+                            PullRequest.merge_commit_sha.in_(observed_commits),
+                        ))
+        prs = await _find_old_released_prs(clauses, time_from, authors, mergers, pr_blacklist, mdb)
+        return prs, dags
+
+    async def maybe_load_all_releases():
+        if truncate:
+            return releases_new
+        today = datetime.combine((datetime.now(timezone.utc) + timedelta(days=1)).date(),
+                                 datetime.min.time(), tzinfo=timezone.utc)
+        if today > time_to:
+            releases_today, _ = await load_releases(
+                repos, branches, default_branches, time_to, today, release_settings,
+                mdb, pdb, cache)
+            return concat_releases(releases_new, releases_today)
+
+    results = await asyncio.gather(main_flow(), maybe_load_all_releases(), return_exceptions=True)
+    for r in results:
+        if isinstance(r, Exception):
+            raise r from None
+    (prs, dags), releases_new = results
+    return prs, releases_new, matched_bys, dags
 
 
 @sentry_span
@@ -1189,16 +991,8 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
     # we have to load releases in two separate batches: before and after time_from
     # that's because the release strategy can change depending on the time range
     # see ENG-710 and ENG-725
-    tasks = [
-        load_releases(repos, branches, default_branches, time_from, time_to, release_settings,
-                      mdb, pdb, cache),
-        _fetch_precomputed_commit_histories(repos, pdb),
-    ]
-    releases_new, pdags = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (releases_new, pdags):
-        if isinstance(r, Exception):
-            raise r from None
-    releases_new, matched_bys = releases_new
+    releases_new, matched_bys = await load_releases(
+        repos, branches, default_branches, time_from, time_to, release_settings, mdb, pdb, cache)
     # these matching rules must be applied in the past to stay consistent
     prefix = PREFIXES["github"]
     consistent_release_settings = {}
@@ -1212,7 +1006,7 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
     # let's try to find the releases not older than 5 weeks before `time_from`
     lookbehind_time_from = time_from - timedelta(days=5 * 7)
     tasks = [
-        _fetch_repository_first_commit_dates(repos, mdb, pdb),
+        _fetch_repository_first_commit_dates(repos, mdb, pdb, cache),
         load_releases(matched_bys, branches, default_branches, lookbehind_time_from, time_from,
                       consistent_release_settings, mdb, pdb, cache),
     ]
@@ -1224,11 +1018,7 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
     hard_repos = set(matched_bys) - set(releases_old[Release.repository_full_name.key].unique())
     if hard_repos:
         with sentry_sdk.start_span(op="_find_releases_for_matching_prs/hard_repos"):
-            repo_births = sorted(
-                (row["min"], row[PushCommit.repository_full_name.key])
-                for row in repo_births
-                if row[PushCommit.repository_full_name.key] in hard_repos
-            )
+            repo_births = sorted((v, k) for k, v in repo_births.items() if k in hard_repos)
             repo_births_dates = [rb[0].replace(tzinfo=timezone.utc) for rb in repo_births]
             repo_births_names = [rb[1] for rb in repo_births]
             del repo_births
@@ -1249,20 +1039,28 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
                 deeper_step *= 2
     releases = releases_new.append(releases_old)
     releases.reset_index(drop=True, inplace=True)
-    return matched_bys, pdags, releases, releases_new, consistent_release_settings
+    return matched_bys, releases, releases_new, consistent_release_settings
 
 
 @sentry_span
+@cached(
+    exptime=24 * 60 * 60,  # 1 day
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda repos, **_: (",".join(sorted(repos)),),
+    refresh_on_access=True,
+)
 async def _fetch_repository_first_commit_dates(repos: Iterable[str],
                                                mdb: databases.Database,
                                                pdb: databases.Database,
-                                               ) -> List[Mapping]:
-    result = await pdb.fetch_all(
+                                               cache: Optional[aiomcache.Client],
+                                               ) -> Dict[str, datetime]:
+    rows = await pdb.fetch_all(
         select([GitHubRepository.repository_full_name,
                 GitHubRepository.first_commit.label("min")])
         .where(GitHubRepository.repository_full_name.in_(repos)))
-    add_pdb_hits(pdb, "_fetch_repository_first_commit_dates", len(result))
-    missing = set(repos) - {r[0] for r in result}
+    add_pdb_hits(pdb, "_fetch_repository_first_commit_dates", len(rows))
+    missing = set(repos) - {r[0] for r in rows}
     add_pdb_misses(pdb, "_fetch_repository_first_commit_dates", len(missing))
     if missing:
         computed = await mdb.fetch_all(
@@ -1277,6 +1075,10 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
             values = [GitHubRepository(repository_full_name=r[0], first_commit=r[1], node_id=r[2])
                       .create_defaults().explode(with_primary_keys=True)
                       for r in computed]
+            if mdb.url.dialect == "sqlite":
+                for v in values:
+                    v[GitHubRepository.first_commit.key] = \
+                        v[GitHubRepository.first_commit.key].replace(tzinfo=timezone.utc)
 
             async def insert_repository():
                 try:
@@ -1287,7 +1089,11 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
                     log.warning("Failed to store %d rows: %s: %s",
                                 len(values), type(e).__name__, e)
             await defer(insert_repository(), "insert_repository")
-            result.extend(computed)
+            rows.extend(computed)
+    result = {r[0]: r[1] for r in rows}
+    if mdb.url.dialect == "sqlite" or pdb.url.dialect == "sqlite":
+        for k, v in result.items():
+            result[k] = v.replace(tzinfo=timezone.utc)
     return result
 
 
@@ -1296,129 +1102,105 @@ async def mine_releases(releases: pd.DataFrame,
                         time_boundary: datetime,
                         mdb: databases.Database,
                         pdb: databases.Database,
-                        cache: Optional[aiomcache.Client]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+                        cache: Optional[aiomcache.Client],
+                        ) -> Tuple[pd.DataFrame, List[Tuple[str, str]]]:
     """Collect details about each release published after `time_boundary` and calculate added \
     and deleted line statistics."""
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
-    pdags = await _fetch_precomputed_commit_histories(
-        releases[Release.repository_full_name.key].unique(), pdb)
-    miners = (
-        _mine_monorepo_releases(repo_releases, pdags.get(repo), time_boundary, mdb, pdb, cache)
-        for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False)
-        if (repo_releases[Release.published_at.key] >= time_boundary).any()
-    )
-    stats = await asyncio.gather(*miners, return_exceptions=True)
-    for s in stats:
-        if isinstance(s, BaseException):
-            raise s from None
-    user_columns = [User.login, User.avatar_url]
-    if stats:
-        stats = pd.concat(stats, copy=False)
-        people = set(chain(chain.from_iterable(stats["commit_authors"]), stats["publisher"]))
-        prefix = PREFIXES["github"]
-        stats["publisher"] = prefix + stats["publisher"]
-        stats["repository"] = prefix + stats["repository"]
-        for calist in stats["commit_authors"].values:
-            for i, v in enumerate(calist):
-                calist[i] = prefix + v
-        avatars = await read_sql_query(
-            select(user_columns).where(User.login.in_(people)), mdb, user_columns)
-        avatars[User.login.key] = prefix + avatars[User.login.key]
-        return stats, avatars
-    return pd.DataFrame(), pd.DataFrame(columns=[c.key for c in user_columns])
-
-
-@cached(
-    exptime=10 * 60,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
-    key=lambda releases, **_: (sorted(releases.index),),
-    refresh_on_access=True,
-)
-async def _mine_monorepo_releases(releases: pd.DataFrame,
-                                  pdag: Optional[bytes],
-                                  time_boundary: datetime,
-                                  mdb: databases.Database,
-                                  pdb: databases.Database,
-                                  cache: Optional[aiomcache.Client]) -> pd.DataFrame:
-    dag, new_releases, hash_to_release = await _extract_released_commits(
-        releases, pdag, time_boundary, mdb, pdb, cache)
-    stop_hashes = set(new_releases[Release.sha.key])
-    owned_commits = {}  # type: Dict[str, Set[str]]
-    neighbours = {}  # type: Dict[str, Set[str]]
-
-    def find_owned_commits(sha):
-        try:
-            return owned_commits[sha]
-        except KeyError:
-            accessible, boundaries, leaves = _traverse_commits(dag, sha, stop_hashes)
-            neighbours[sha] = boundaries.union(leaves)
-            for b in boundaries:
-                accessible -= find_owned_commits(b)
-            owned_commits[sha] = accessible
-            return accessible
-
-    for sha in new_releases[Release.sha.key].values:
-        find_owned_commits(sha)
-    data = []
-    commit_df_columns = [PushCommit.additions, PushCommit.deletions, PushCommit.author_login]
-    for release in new_releases.itertuples():
-        sha = getattr(release, Release.sha.key)
-        included_commits = owned_commits[sha]
-        repo = getattr(release, Release.repository_full_name.key)
-        df = await read_sql_query(
-            select(commit_df_columns)
-            .where(and_(PushCommit.repository_full_name == repo,
-                        PushCommit.sha.in_(included_commits))),
-            mdb, commit_df_columns)
-        try:
-            previous_published_at = max(releases.loc[hash_to_release[n], Release.published_at.key]
-                                        for n in neighbours[sha] if n in hash_to_release)
-        except ValueError:
-            # no previous releases
-            previous_published_at = await mdb.fetch_val(
-                select([func.min(PushCommit.committed_date)])
-                .where(and_(PushCommit.repository_full_name.in_(repo),
-                            PushCommit.sha.in_(included_commits))))
-        published_at = getattr(release, Release.published_at.key)
-        data.append([
-            getattr(release, Release.name.key) or getattr(release, Release.tag.key),
-            repo,
-            getattr(release, Release.url.key),
-            published_at,
-            (published_at - previous_published_at) if previous_published_at is not None
-            else timedelta(0),
-            df[PushCommit.additions.key].sum(),
-            df[PushCommit.deletions.key].sum(),
-            len(included_commits),
-            getattr(release, Release.author.key),
-            sorted(set(df[PushCommit.author_login.key]) - {None}),
-        ])
-    return pd.DataFrame.from_records(data, columns=[
-        "name", "repository", "url", "published", "age", "added_lines", "deleted_lines", "commits",
-        "publisher", "commit_authors"])
-
-
-def _traverse_commits(dag: Dict[str, List[str]],
-                      root: str,
-                      stops: Set[str]) -> Tuple[Set[str], Set[str], Set[str]]:
-    parents = [root]
-    visited = set()
-    boundaries = set()
-    leaves = set()
-    while parents:
-        x = parents.pop()
-        if x in visited:
+    tasks = [
+        load_commit_dags(releases, mdb, pdb, cache),
+        _fetch_repository_first_commit_dates(
+            releases[Release.repository_full_name.key].unique(), mdb, pdb, cache),
+    ]
+    dags, first_commit_dates = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (dags, first_commit_dates):
+        if isinstance(r, Exception):
+            raise r from None
+    repo_commit_ownership = {}
+    all_hashes = []
+    for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
+        if (repo_releases[Release.published_at.key] < time_boundary).all():
             continue
-        if x in stops and x != root:
-            boundaries.add(x)
-            continue
-        try:
-            children = dag[x]
-            parents.extend(children)
-        except KeyError:
-            leaves.add(x)
-            continue
-        visited.add(x)
-    return visited, boundaries, leaves
+        hashes, vertexes, edges = dags[repo]
+        ownership = mark_dag_access(hashes, vertexes, edges, repo_releases[Release.sha.key].values)
+        unmatched = np.where(ownership == len(releases))[0]
+        if len(unmatched) > 0:
+            hashes = np.delete(hashes, unmatched)
+            ownership = np.delete(ownership, unmatched)
+        order = np.argsort(ownership)
+        sorted_hashes = hashes[order]
+        sorted_ownership = ownership[order]
+        grouped_owned_hashes = np.split(
+            sorted_hashes, np.cumsum(np.unique(sorted_ownership, return_counts=True)[1])[:-1])
+        all_hashes.append(hashes)
+        repo_commit_ownership[repo] = repo_releases, grouped_owned_hashes
+    commits_df_columns = [
+        PushCommit.sha, PushCommit.additions, PushCommit.deletions, PushCommit.author_login,
+    ]
+    commits_df = await read_sql_query(
+        select(commits_df_columns)
+        .where(PushCommit.sha.in_(np.concatenate(all_hashes) if all_hashes else []))
+        .order_by(PushCommit.sha),
+        mdb, commits_df_columns, index=PushCommit.sha.key)
+    commits_index = commits_df.index.values.astype("U40")
+    commits_additions = commits_df[PushCommit.additions.key].values
+    commits_deletions = commits_df[PushCommit.deletions.key].values
+    commits_authors = commits_df[PushCommit.author_login.key].values
+    prefix = PREFIXES["github"]
+    mentioned_authors = set()
+
+    async def main_flow():
+        data = []
+        for repo, (repo_releases, owned_hashes) in repo_commit_ownership.items():
+            published_ats = repo_releases[Release.published_at.key]
+            for i, (my_name, my_tag, my_url, my_author, my_published_at) in enumerate(zip(
+                    repo_releases[Release.name.key].values,
+                    repo_releases[Release.tag.key].values,
+                    repo_releases[Release.url.key].values,
+                    repo_releases[Release.author.key].values,
+                    published_ats,
+            )):
+                if my_published_at < time_boundary:
+                    continue
+                found_indexes = searchsorted_inrange(commits_index, owned_hashes[i])
+                found_indexes = found_indexes[commits_index[found_indexes] == owned_hashes[i]]
+                my_additions = commits_additions[found_indexes].sum()
+                my_deletions = commits_deletions[found_indexes].sum()
+                my_authors = commits_authors[found_indexes]
+                my_authors = prefix + my_authors[my_authors.nonzero()[0]]
+                if i < len(published_ats) - 1:
+                    my_age = my_published_at - published_ats[i + 1]
+                else:
+                    my_age = my_published_at - first_commit_dates[repo]
+                mentioned_authors.add(my_author)
+                mentioned_authors.update(my_authors)
+                data.append([
+                    my_name or my_tag,
+                    prefix + repo,
+                    my_url,
+                    my_published_at,
+                    my_age,
+                    my_additions,
+                    my_deletions,
+                    len(found_indexes),
+                    prefix + my_author,
+                    my_authors.tolist(),
+                ])
+            await asyncio.sleep(0)
+        return pd.DataFrame.from_records(data, columns=[
+            "name", "repository", "url", "published", "age", "added_lines", "deleted_lines",
+            "commits", "publisher", "commit_authors"])
+
+    all_authors = np.concatenate([commits_authors, releases[Release.author.key].values])
+    all_authors = np.unique(all_authors[all_authors.nonzero()[0]])
+    tasks = [
+        mine_user_avatars(all_authors, mdb, cache, prefix=prefix),
+        main_flow(),
+    ]
+    avatars, mined_releases = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in avatars, mined_releases:
+        if isinstance(r, Exception):
+            raise r from None
+    avatars = [p for p in avatars if p[0] in mentioned_authors]
+    return mined_releases, avatars

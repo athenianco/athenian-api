@@ -20,15 +20,13 @@ from athenian.api.controllers.miners.github.label import mine_labels
 from athenian.api.controllers.miners.github.release import load_releases, mine_releases
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
-from athenian.api.controllers.miners.types import ParticipationKind, Property, \
-    PullRequestListItem
+from athenian.api.controllers.miners.types import ParticipationKind, Property, PullRequestListItem
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import PushCommit, Release, User
+from athenian.api.models.metadata.github import PushCommit, Release
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
-    ForbiddenError, \
-    InvalidRequestError
+    ForbiddenError, InvalidRequestError
 from athenian.api.models.web.developer_summary import DeveloperSummary
 from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
@@ -234,8 +232,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         releases, filt.date_from, request.mdb, request.pdb, request.cache)
     data = [FilteredRelease(**items) for _, items in stats.iterrows()]
     model = FilteredReleases(data=data, include=IncludedNativeUsers(users={
-        u: IncludedNativeUser(avatar=a) for u, a in zip(avatars[User.login.key].values,
-                                                        avatars[User.avatar_url.key].values)}))
+        u: IncludedNativeUser(avatar=a) for u, a in avatars}))
     return model_response(model)
 
 

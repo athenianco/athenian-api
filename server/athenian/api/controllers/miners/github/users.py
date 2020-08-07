@@ -34,8 +34,10 @@ async def mine_users(logins: Collection[str],
 )
 async def mine_user_avatars(logins: Collection[str],
                             db: databases.Database,
-                            cache: Optional[aiomcache.Client]) -> List[Tuple[str, str]]:
+                            cache: Optional[aiomcache.Client],
+                            prefix="",
+                            ) -> List[Tuple[str, str]]:
     """Fetch the user profile picture URL for each login."""
     rows = await db.fetch_all(select([User.login, User.avatar_url])
                               .where(User.login.in_(logins)))
-    return [(u[0], u[1]) for u in rows]
+    return [(prefix + u[0], u[1]) for u in rows]

@@ -186,5 +186,8 @@ class FriendlyJson:
             return obj.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339
         if isinstance(obj, datetime.date):
             return obj.strftime("%Y-%m-%d")
-        assert obj == obj, "%s: %s" % (type(obj), obj)
+        try:
+            assert obj == obj, "%s: %s" % (type(obj), obj)
+        except ValueError as e:
+            raise ValueError("%s: %s: %s" % (e, type(obj), obj)) from None
         return str(obj)

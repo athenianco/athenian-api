@@ -183,7 +183,7 @@ class PullRequestMiner:
         for r in (prs, released, unreleased):
             if isinstance(r, Exception):
                 raise r from None
-        released_prs, releases, matched_bys = released
+        released_prs, releases, matched_bys, dags = released
         prs = pd.concat([prs, released_prs, unreleased], copy=False)
         prs = prs[~prs.index.duplicated()]
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
@@ -193,7 +193,7 @@ class PullRequestMiner:
             # bypass the useless inner caching by calling __wrapped__ directly
             cls.mine_by_ids.__wrapped__(
                 cls, prs, unreleased.index, time_to, releases, matched_bys,
-                branches, default_branches, release_settings, mdb, pdb, cache,
+                branches, default_branches, dags, release_settings, mdb, pdb, cache,
                 truncate=truncate),
             load_open_pull_request_facts(prs, pdb),
         ]
@@ -235,6 +235,7 @@ class PullRequestMiner:
                           matched_bys: Dict[str, ReleaseMatch],
                           branches: pd.DataFrame,
                           default_branches: Dict[str, str],
+                          dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
                           release_settings: Dict[str, ReleaseMatchSetting],
                           mdb: databases.Database,
                           pdb: databases.Database,
@@ -298,7 +299,7 @@ class PullRequestMiner:
                     (~prs[PullRequest.merged_at.key].isnull()) & ~prs.index.isin(unreleased))[0])
             return await map_prs_to_releases(
                 merged_prs, releases, matched_bys, branches, default_branches, time_to,
-                release_settings, mdb, pdb, cache)
+                dags, release_settings, mdb, pdb, cache)
 
         @sentry_span
         async def fetch_labels():
