@@ -340,6 +340,21 @@ async def test_map_releases_to_prs_hard(
 
 
 @with_defer
+async def test_map_releases_to_prs_future(
+        branches, default_branches, mdb, pdb, release_match_setting_tag):
+    prs, releases, matched_bys, _ = await map_releases_to_prs(
+        ["src-d/go-git"],
+        branches, default_branches,
+        datetime(year=2018, month=7, day=31, tzinfo=timezone.utc),
+        datetime(year=2030, month=12, day=2, tzinfo=timezone.utc),
+        [], [],
+        release_match_setting_tag, mdb, pdb, None, truncate=False)
+    assert len(prs) > 0
+    assert releases is not None
+    assert len(releases) > 0
+
+
+@with_defer
 async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag, mdb, pdb):
     time_from = datetime(year=2015, month=10, day=13, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)

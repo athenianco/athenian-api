@@ -40,8 +40,8 @@ class PullRequest(Model):
         "stage_timings": StageTimings,
         "properties": List[str],
         "participants": List[PullRequestParticipant],
-        "labels": List[PullRequestLabel],
-        "jira": List[JIRAIssue],
+        "labels": Optional[List[PullRequestLabel]],
+        "jira": Optional[List[JIRAIssue]],
     }
 
     attribute_map = {
@@ -638,7 +638,7 @@ class PullRequest(Model):
         self._participants = participants
 
     @property
-    def labels(self) -> List[PullRequestLabel]:
+    def labels(self) -> Optional[List[PullRequestLabel]]:
         """Gets the labels of this PullRequest.
 
         List of developers related to this PR.
@@ -648,7 +648,7 @@ class PullRequest(Model):
         return self._labels
 
     @labels.setter
-    def labels(self, labels: List[PullRequestLabel]):
+    def labels(self, labels: Optional[List[PullRequestLabel]]):
         """Sets the labels of this PullRequest.
 
         List of developers related to this PR.
