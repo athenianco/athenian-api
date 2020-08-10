@@ -4,6 +4,7 @@ import pickle
 from typing import Dict
 
 from databases import Database
+import lz4.frame
 import numpy as np
 import pandas as pd
 import pytest
@@ -81,7 +82,8 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         mdb, pdb, None)
     await wait_deferred()
-    pdb_dag = pickle.loads(await pdb.fetch_val(select([GitHubCommitHistory.dag])))
+    pdb_dag = pickle.loads(lz4.frame.decompress(
+        await pdb.fetch_val(select([GitHubCommitHistory.dag]))))
     dag = await fetch_dag(mdb, branches[Branch.commit_id.key].tolist())
     assert not (set(dag["src-d/go-git"][0]) - set(pdb_dag[0]))
     assert len(released_prs) == 1

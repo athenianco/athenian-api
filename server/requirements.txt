@@ -28,3 +28,4 @@ backoff==1.10.0
 # end of gcloud-aio-kms unpinned deps
 pympler==0.8
 objgraph==3.4.1
+lz4==3.1.0

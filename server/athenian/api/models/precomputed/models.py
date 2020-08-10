@@ -87,7 +87,7 @@ class GitHubCommitHistory(Base, UpdatedMixin):
     __tablename__ = "github_commit_history"
 
     repository_full_name = Column(RepositoryFullName, primary_key=True)
-    format_version = Column(Integer(), primary_key=True, default=2, server_default="2")
+    format_version = Column(Integer(), primary_key=True, default=3, server_default="3")
     dag = Column(LargeBinary(), nullable=False)
 
 
