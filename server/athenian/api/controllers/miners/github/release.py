@@ -730,7 +730,7 @@ async def _fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarra
             missed_heads = [missed_heads[i] for _, i in order]
             missed_ids = [hash_to_id[h] for h in missed_heads]
             tasks.append(_fetch_commit_history_dag(
-                hashes, vertexes, edges, missed_heads, missed_ids, repo, mdb, pdb))
+                hashes, vertexes, edges, missed_heads, missed_ids, repo, mdb))
         else:
             if prune:
                 hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, required_heads)
@@ -746,7 +746,14 @@ async def _fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarra
             if isinstance(nd, Exception):
                 raise nd from None
             repo, hashes, vertexes, edges = nd
-            assert (hashes[1:] > hashes[:-1]).all(), repo
+            try:
+                assert (hashes[1:] > hashes[:-1]).all(), repo
+            except AssertionError as e:
+                import base64
+                import lzma
+                debug = base64.b64encode(lzma.compress(pickle.dumps(repos[repo] + (repo_heads[repo],))))  # noqa
+                logging.getLogger("athenian.api.debug.assert").info(debug.decode())
+                raise e from None
             sql_values.append(GitHubCommitHistory(
                 repository_full_name=repo,
                 dag=lz4.frame.compress(pickle.dumps((hashes, vertexes, edges))),
@@ -779,7 +786,6 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                                     head_ids: Sequence[str],
                                     repo: str,
                                     mdb: databases.Database,
-                                    pdb: databases.Database,
                                     ) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
     batch_size = 20
     while len(head_hashes) > 0:

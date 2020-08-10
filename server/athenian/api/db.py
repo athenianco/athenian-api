@@ -3,6 +3,7 @@ import base64
 import bz2
 from contextvars import ContextVar
 import logging
+import os
 import pickle
 import sys
 import time
@@ -171,7 +172,7 @@ class ParallelDatabase(databases.Database):
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
-_testing = "pytest" in sys.modules
+_testing = "pytest" in sys.modules or os.getenv("SENTRY_ENV", "development") == "development"
 
 
 async def _asyncpg_execute(self, query, args, limit, timeout, return_status=False):
