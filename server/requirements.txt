@@ -4,7 +4,7 @@ swagger-ui-bundle==0.0.8
 sqlalchemy==1.3.18
 asyncpg==0.20.1
 databases[postgresql,sqlite]==0.3.2
-xxhash==1.4.4
+xxhash==2.0.0
 # remember to change these versions in Dockerfile, too!
 numpy==1.19.1
 scipy==1.5.2
