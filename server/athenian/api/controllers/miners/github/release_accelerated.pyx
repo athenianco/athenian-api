@@ -95,8 +95,10 @@ def join_dags(hashes: np.ndarray,
     new_hashes.discard("")  # initial commit virtual parents
     new_hashes = np.sort(np.fromiter(new_hashes, count=len(new_hashes), dtype="U40"))
     if len(hashes) > 0:
-        found_matches = searchsorted_inrange(hashes, new_hashes)
-        distinct_mask = hashes[found_matches] != new_hashes
+        found_matches = np.searchsorted(hashes, new_hashes)
+        found_matches_in_range = found_matches.copy()
+        found_matches_in_range[found_matches == len(hashes)] = 0
+        distinct_mask = hashes[found_matches_in_range] != new_hashes
         found_matches = found_matches[distinct_mask]
         new_hashes = new_hashes[distinct_mask]
         result_hashes = np.insert(hashes, found_matches, new_hashes)

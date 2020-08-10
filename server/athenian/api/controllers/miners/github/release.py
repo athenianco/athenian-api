@@ -746,14 +746,7 @@ async def _fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarra
             if isinstance(nd, Exception):
                 raise nd from None
             repo, hashes, vertexes, edges = nd
-            try:
-                assert (hashes[1:] > hashes[:-1]).all(), repo
-            except AssertionError as e:
-                import base64
-                import lzma
-                debug = base64.b64encode(lzma.compress(pickle.dumps(repos[repo] + (repo_heads[repo],))))  # noqa
-                logging.getLogger("athenian.api.debug.assert").info(debug.decode())
-                raise e from None
+            assert (hashes[1:] > hashes[:-1]).all(), repo
             sql_values.append(GitHubCommitHistory(
                 repository_full_name=repo,
                 dag=lz4.frame.compress(pickle.dumps((hashes, vertexes, edges))),
