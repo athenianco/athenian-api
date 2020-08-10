@@ -12,6 +12,7 @@ from typing import Collection, Dict, Iterable, List, Optional, Sequence, Set, Tu
 import aiomcache
 import asyncpg
 import databases
+import lz4.frame
 import numpy as np
 import pandas as pd
 import sentry_sdk
@@ -661,7 +662,7 @@ async def _fetch_precomputed_commit_history_dags(
                 ghrc.format_version == ghrc.__table__.columns[ghrc.format_version.key].default.arg,
                 ghrc.repository_full_name.in_(repos),
             )))
-    dags = {row[0]: pickle.loads(row[1]) for row in rows}
+    dags = {row[0]: pickle.loads(lz4.frame.decompress(row[1])) for row in rows}
     for repo in repos:
         if repo not in dags:
             dags[repo] = _empty_dag()
@@ -745,8 +746,10 @@ async def _fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarra
             if isinstance(nd, Exception):
                 raise nd from None
             repo, hashes, vertexes, edges = nd
+            assert (hashes[1:] > hashes[:-1]).all()
             sql_values.append(GitHubCommitHistory(
-                repository_full_name=repo, dag=pickle.dumps((hashes, vertexes, edges)),
+                repository_full_name=repo,
+                dag=lz4.frame.compress(pickle.dumps((hashes, vertexes, edges))),
             ).create_defaults().explode(with_primary_keys=True))
             if prune:
                 hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, repo_heads[repo])

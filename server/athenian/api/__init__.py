@@ -24,6 +24,7 @@ import connexion
 from connexion.spec import OpenAPISpecification
 import databases
 import jinja2
+import numpy
 import pandas
 import pytz
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
@@ -501,6 +502,7 @@ def setup_context(log: logging.Logger) -> None:
     pandas.set_option("display.max_rows", 20)
     pandas.set_option("display.large_repr", "info")
     pandas.set_option("display.memory_usage", False)
+    numpy.set_printoptions(threshold=20)
 
 
 def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Client]:
