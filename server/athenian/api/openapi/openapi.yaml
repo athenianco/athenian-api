@@ -299,6 +299,45 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
       x-codegen-request-body-name: body
+  /filter/jira:
+    post:
+      operationId: filter_jira_stuff
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilterJIRAStuff'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FoundJIRAStuff'
+          description: List of found JIRA epics and labels, ordered by the last usage
+            date.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is not an account member.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account was not found.
+      security:
+      - bearerAuth: []
+      summary: Find JIRA epics and labels used in the specified date interval.
+      tags:
+      - filter
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.jira_controller
+      x-codegen-request-body-name: body
   /filter/labels:
     post:
       operationId: filter_labels
@@ -4232,4 +4271,136 @@ components:
       - metric
       - scale
       - ticks
+      type: object
+    FoundJIRAStuff:
+      additionalProperties: false
+      description: 'Response from `/filter/jira`: found JIRA epics and labels.'
+      example:
+        epics:
+        - id: DEV-158
+          title: Precomputed DB - stage 2
+          updated: 2020-08-03T23:47:00Z
+          children:
+          - DEV-157
+          - DEV-156
+          - DEV-533
+          - DEV-536
+          - DEV-538
+          - DEV-539
+          - DEV-620
+        - id: DEV-158
+          title: Precomputed DB - stage 2
+          updated: 2020-08-03T23:47:00Z
+          children:
+          - DEV-157
+          - DEV-156
+          - DEV-533
+          - DEV-536
+          - DEV-538
+          - DEV-539
+          - DEV-620
+        labels:
+        - title: performance
+          last_used: 2020-08-10T12:47:00Z
+          issues_count: 300
+          kind: Label
+        - title: performance
+          last_used: 2020-08-10T12:47:00Z
+          issues_count: 300
+          kind: Label
+      properties:
+        epics:
+          items:
+            $ref: '#/components/schemas/JIRAEpic'
+          type: array
+        labels:
+          items:
+            $ref: '#/components/schemas/JIRALabel'
+          type: array
+      required:
+      - epics
+      - labels
+      type: object
+    JIRAEpic:
+      additionalProperties: false
+      description: Details about a JIRA epic - a "big" issue with sub-issues.
+      example:
+        id: DEV-158
+        title: Precomputed DB - stage 2
+        updated: 2020-08-03T23:47:00Z
+        children:
+        - DEV-157
+        - DEV-156
+        - DEV-533
+        - DEV-536
+        - DEV-538
+        - DEV-539
+        - DEV-620
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        updated:
+          description: When this epic was last updated.
+          format: date-time
+          type: string
+        children:
+          description: IDs of the owned sub-issues.
+          items:
+            type: string
+          type: array
+      required:
+      - children
+      - id
+      - title
+      - updated
+      type: object
+    JIRALabel:
+      additionalProperties: false
+      description: Details about a JIRA label.
+      example:
+        title: performance
+        last_used: 2020-08-10T12:47:00Z
+        issues_count: 300
+        kind: Label
+      properties:
+        title:
+          type: string
+        last_used:
+          description: When this label was last assigned to an issue.
+          format: date-time
+          type: string
+        issues_count:
+          description: In how many issues (in the specified time interval) this label
+            was used.
+          type: integer
+        kind:
+          description: Label kind - "Label", "Component", etc.
+          type: string
+      required:
+      - issues_count
+      - last_used
+      - title
+      type: object
+    FilterJIRAStuff:
+      additionalProperties: false
+      description: Request of `/filter/jira` to retrieve epics and labels.
+      example:
+        account: 1
+        date_from: 2020-01-01T00:00:00Z
+        date_to: 2020-12-01T00:00:00Z
+      properties:
+        account:
+          type: integer
+        date_from:
+          format: date-time
+          type: string
+        date_to:
+          format: date-time
+          type: string
+      required:
+      - account
+      - date_from
+      - date_to
       type: object
