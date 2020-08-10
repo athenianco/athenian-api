@@ -746,7 +746,7 @@ async def _fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarra
             if isinstance(nd, Exception):
                 raise nd from None
             repo, hashes, vertexes, edges = nd
-            assert (hashes[1:] > hashes[:-1]).all()
+            assert (hashes[1:] > hashes[:-1]).all(), repo
             sql_values.append(GitHubCommitHistory(
                 repository_full_name=repo,
                 dag=lz4.frame.compress(pickle.dumps((hashes, vertexes, edges))),
