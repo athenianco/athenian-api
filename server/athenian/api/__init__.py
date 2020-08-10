@@ -24,6 +24,7 @@ import connexion
 from connexion.spec import OpenAPISpecification
 import databases
 import jinja2
+import pandas
 import pytz
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.executing import ExecutingIntegration
@@ -497,6 +498,9 @@ def setup_context(log: logging.Logger) -> None:
             scope.set_tag("commit", commit)
         if build_date is not None:
             scope.set_tag("build_date", build_date)
+    pandas.set_option("display.max_rows", 20)
+    pandas.set_option("display.large_repr", "info")
+    pandas.set_option("display.memory_usage", False)
 
 
 def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Client]:

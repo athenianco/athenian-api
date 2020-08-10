@@ -976,6 +976,7 @@ async def map_releases_to_prs(repos: Collection[str],
                 repos, branches, default_branches, time_to, today, release_settings,
                 mdb, pdb, cache)
             return concat_releases(releases_new, releases_today)
+        return releases_new
 
     results = await asyncio.gather(main_flow(), maybe_load_all_releases(), return_exceptions=True)
     for r in results:
