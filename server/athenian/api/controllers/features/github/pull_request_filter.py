@@ -25,7 +25,8 @@ from athenian.api.controllers.miners.github.precomputed_prs import discover_unre
     store_open_pull_request_facts, store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner, ReviewResolution
-from athenian.api.controllers.miners.github.release import dummy_releases_df, load_releases
+from athenian.api.controllers.miners.github.release import dummy_releases_df, load_commit_dags, \
+    load_releases
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, Participants, \
     Property, PullRequestFacts, PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting
@@ -404,12 +405,20 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
     if rel_time_from == rel_time_from:
         releases, matched_bys = await load_releases(
             prs, branches, default_branches, rel_time_from, now, release_settings, mdb, pdb, cache)
-        unreleased = await discover_unreleased_prs(
-            prs_df, releases, matched_bys, default_branches, release_settings, pdb)
+        tasks = [
+            load_commit_dags(releases, mdb, pdb, cache),
+            discover_unreleased_prs(
+                prs_df, releases, matched_bys, default_branches, release_settings, pdb),
+        ]
+        dags, unreleased = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in (dags, unreleased):
+            if isinstance(r, Exception):
+                raise r from None
     else:
         releases, matched_bys, unreleased = dummy_releases_df(), {}, []
+        dags = {}
     dfs = await PullRequestMiner.mine_by_ids(
-        prs_df, unreleased, now, releases, matched_bys, branches, default_branches,
+        prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
         release_settings, mdb, pdb, cache)
     prs = await list_with_yield(PullRequestMiner(prs_df, *dfs), "PullRequestMiner.__iter__")
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__",

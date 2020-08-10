@@ -1,5 +1,6 @@
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-import marshal
+import pickle
 from typing import Dict
 
 from databases import Database
@@ -15,14 +16,18 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
-from athenian.api.controllers.miners.github.release import _fetch_commit_history_dag, \
-    _fetch_first_parents, _fetch_repository_commits, _fetch_repository_first_commit_dates, \
-    _find_dead_merged_prs, load_releases, map_prs_to_releases, map_releases_to_prs
+from athenian.api.controllers.miners.github.release import \
+    _empty_dag, _fetch_first_parents, _fetch_repository_commits, \
+    _fetch_repository_first_commit_dates, _find_dead_merged_prs, load_releases, \
+    map_prs_to_releases, map_releases_to_prs
+from athenian.api.controllers.miners.github.release_accelerated import extract_subdag, join_dags, \
+    mark_dag_access
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, \
-    PushCommit, Release
+    Release
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
+from tests.controllers.conftest import fetch_dag
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
 
 
@@ -34,7 +39,7 @@ def generate_repo_settings(prs: pd.DataFrame) -> Dict[str, ReleaseMatchSetting]:
 
 
 @with_defer
-async def test_map_prs_to_releases_cache(branches, default_branches, mdb, pdb, cache):
+async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, pdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1126),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
@@ -46,23 +51,24 @@ async def test_map_prs_to_releases_cache(branches, default_branches, mdb, pdb, c
     tag = "https://github.com/src-d/go-git/releases/tag/v4.12.0"
     for i in range(2):
         released_prs = await map_prs_to_releases(
-            prs, releases, matched_bys, branches, default_branches, time_to, settings,
+            prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
             mdb, pdb, cache)
         assert len(cache.mem) > 0
         assert len(released_prs) == 1, str(i)
+        assert released_prs.iloc[0][Release.url.key] == tag
         assert released_prs.iloc[0][Release.published_at.key] == \
             pd.Timestamp("2019-06-18 22:57:34+0000", tzinfo=timezone.utc)
         assert released_prs.iloc[0][Release.author.key] == "mcuadros"
-        assert released_prs.iloc[0][Release.url.key] == tag
     released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, branches, default_branches, time_to, settings, mdb, pdb, None)
+        prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
+        mdb, pdb, None)
     # the PR was merged and released in the past, we must detect that
     assert len(released_prs) == 1
     assert released_prs.iloc[0][Release.url.key] == tag
 
 
 @with_defer
-async def test_map_prs_to_releases_pdb(branches, default_branches, mdb, pdb, cache):
+async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number.in_((1126, 1180))),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
@@ -72,8 +78,12 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, mdb, pdb, cac
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
         mdb, pdb, None)
     released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, branches, default_branches, time_to, settings, mdb, pdb, None)
+        prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
+        mdb, pdb, None)
     await wait_deferred()
+    pdb_dag = pickle.loads(await pdb.fetch_val(select([GitHubCommitHistory.dag])))
+    dag = await fetch_dag(mdb, branches[Branch.commit_id.key].tolist())
+    assert not (set(dag["src-d/go-git"][0]) - set(pdb_dag[0]))
     assert len(released_prs) == 1
     dummy_mdb = Database("sqlite://", force_rollback=True)
     await dummy_mdb.connect()
@@ -82,7 +92,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, mdb, pdb, cac
         await dummy_mdb.execute(CreateTable(PullRequestLabel.__table__).compile(
             dialect=dummy_mdb._backend._dialect).string)
         released_prs = await map_prs_to_releases(
-            prs, releases, matched_bys, branches, default_branches, time_to, settings,
+            prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
             dummy_mdb, pdb, None)
         assert len(released_prs) == 1
     finally:
@@ -90,7 +100,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, mdb, pdb, cac
 
 
 @with_defer
-async def test_map_prs_to_releases_empty(branches, default_branches, mdb, pdb, cache):
+async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, pdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1231),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
@@ -101,20 +111,21 @@ async def test_map_prs_to_releases_empty(branches, default_branches, mdb, pdb, c
         mdb, pdb, None)
     for i in range(2):
         released_prs = await map_prs_to_releases(
-            prs, releases, matched_bys, branches, default_branches, time_to, settings,
+            prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
             mdb, pdb, cache)
-        assert len(cache.mem) == 3, i
+        assert len(cache.mem) == 2, i
         assert released_prs.empty
     prs = prs.iloc[:0]
     released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, branches, default_branches, time_to, settings, mdb, pdb, cache)
-    assert len(cache.mem) == 3
+        prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
+        mdb, pdb, cache)
+    assert len(cache.mem) == 2
     assert released_prs.empty
 
 
 @with_defer
 async def test_map_prs_to_releases_precomputed_released(
-        branches, default_branches, mdb, pdb, release_match_setting_tag):
+        branches, default_branches, dag, mdb, pdb, release_match_setting_tag):
     time_to = datetime(year=2019, month=8, day=2, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=2)
 
@@ -150,14 +161,14 @@ async def test_map_prs_to_releases_precomputed_released(
             dialect=dummy_mdb._backend._dialect).string)
         with pytest.raises(Exception):
             await map_prs_to_releases(
-                prs, releases, matched_bys, branches, default_branches, time_to,
+                prs, releases, matched_bys, branches, default_branches, time_to, dag,
                 release_match_setting_tag, dummy_mdb, pdb, None)
 
         await store_precomputed_done_facts(
             true_prs, times, default_branches, release_match_setting_tag, pdb)
 
         released_prs = await map_prs_to_releases(
-            prs, releases, matched_bys, branches, default_branches, time_to,
+            prs, releases, matched_bys, branches, default_branches, time_to, dag,
             release_match_setting_tag, dummy_mdb, pdb, None)
         assert len(released_prs) == len(prs)
     finally:
@@ -167,22 +178,32 @@ async def test_map_prs_to_releases_precomputed_released(
 @with_defer
 async def test_map_releases_to_prs_early_merges(
         branches, default_branches, mdb, pdb, release_match_setting_tag):
-    prs, releases, matched_bys = await map_releases_to_prs(
+    prs, releases, matched_bys, dag = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=1, day=7, tzinfo=timezone.utc),
         datetime(year=2018, month=1, day=9, tzinfo=timezone.utc),
         [], [],
         release_match_setting_tag, mdb, pdb, None)
+    assert len(prs) == 61
     assert (prs[PullRequest.merged_at.key] >
             datetime(year=2017, month=9, day=4, tzinfo=timezone.utc)).all()
+    assert isinstance(dag, dict)
+    dag = dag["src-d/go-git"]
+    assert len(dag) == 3
+    assert len(dag[0]) == 1012
+    assert dag[0].dtype == np.dtype("U40")
+    assert len(dag[1]) == 1013
+    assert dag[1].dtype == np.uint32
+    assert len(dag[2]) == dag[1][-1]
+    assert dag[2].dtype == np.uint32
 
 
 @with_defer
 async def test_map_releases_to_prs_smoke(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
     for _ in range(2):
-        prs, releases, matched_bys = await map_releases_to_prs(
+        prs, releases, matched_bys, dag = await map_releases_to_prs(
             ["src-d/go-git"],
             branches, default_branches,
             datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
@@ -191,6 +212,7 @@ async def test_map_releases_to_prs_smoke(
             release_match_setting_tag, mdb, pdb, cache)
         await wait_deferred()
         assert len(prs) == 7
+        assert len(dag["src-d/go-git"][0]) == 1508
         assert (prs[PullRequest.merged_at.key] < pd.Timestamp(
             "2019-07-31 00:00:00", tzinfo=timezone.utc)).all()
         assert (prs[PullRequest.merged_at.key] > pd.Timestamp(
@@ -206,7 +228,7 @@ async def test_map_releases_to_prs_smoke(
 @with_defer
 async def test_map_releases_to_prs_no_truncate(
         branches, default_branches, mdb, pdb, release_match_setting_tag):
-    prs, releases, matched_bys = await map_releases_to_prs(
+    prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=7, day=31, tzinfo=timezone.utc),
@@ -223,21 +245,22 @@ async def test_map_releases_to_prs_no_truncate(
 @with_defer
 async def test_map_releases_to_prs_empty(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
-    prs, releases, matched_bys = await map_releases_to_prs(
+    prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
         [], [], release_match_setting_tag, mdb, pdb, cache)
+    await wait_deferred()
     assert prs.empty
-    assert len(cache.mem) == 1
+    assert len(cache.mem) == 3
     assert len(releases) == 2
     assert set(releases[Release.sha.key]) == {
         "0d1a009cbb604db18be960db5f1525b99a55d727",
         "6241d0e70427cb0db4ca00182717af88f638268c",
     }
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
-    prs, releases, matched_bys = await map_releases_to_prs(
+    prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
@@ -247,7 +270,7 @@ async def test_map_releases_to_prs_empty(
                 branches="master", tags=".*", match=ReleaseMatch.branch),
         }, mdb, pdb, cache)
     assert prs.empty
-    assert len(cache.mem) == 8
+    assert len(cache.mem) == 10
     assert len(releases) == 19
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
@@ -255,7 +278,7 @@ async def test_map_releases_to_prs_empty(
 @with_defer
 async def test_map_releases_to_prs_blacklist(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
-    prs, releases, matched_bys = await map_releases_to_prs(
+    prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
@@ -283,7 +306,7 @@ async def test_map_releases_to_prs_blacklist(
 async def test_map_releases_to_prs_authors_mergers(
         branches, default_branches, mdb, pdb, cache,
         release_match_setting_tag, authors, mergers, n):
-    prs, releases, matched_bys = await map_releases_to_prs(
+    prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
@@ -301,7 +324,7 @@ async def test_map_releases_to_prs_authors_mergers(
 @with_defer
 async def test_map_releases_to_prs_hard(
         branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
-    prs, releases, matched_bys = await map_releases_to_prs(
+    prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=6, day=18, tzinfo=timezone.utc),
@@ -317,7 +340,7 @@ async def test_map_releases_to_prs_hard(
 
 
 @with_defer
-async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, mdb, pdb):
+async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag, mdb, pdb):
     time_from = datetime(year=2015, month=10, day=13, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
     filters = [
@@ -334,7 +357,8 @@ async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, mdb
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
         mdb, pdb, None)
     released_prs = await map_prs_to_releases(
-        prs, releases, matched_bys, branches, default_branches, time_to, settings, mdb, pdb, None)
+        prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
+        mdb, pdb, None)
     assert set(released_prs[Release.url.key].unique()) == {
         None,
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc10",
@@ -464,7 +488,7 @@ async def test_load_releases_tag_or_branch_initial(branches, default_branches, m
 async def test_map_releases_to_prs_branches(branches, default_branches, mdb, pdb):
     date_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
-    prs, releases, matched_bys = await map_releases_to_prs(
+    prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         date_from,
@@ -528,22 +552,30 @@ async def test_load_releases_empty(branches, default_branches, mdb, pdb, repos):
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
 
+@pytest.mark.parametrize("prune", [False, True])
 @with_defer
-async def test_fetch_commit_history_smoke(mdb, pdb):
-    dag = await _fetch_commit_history_dag(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
-        ["d2a38b4a5965d529566566640519d03d2bd10f6c",
-         "31eae7b619d166c366bf5df4991f04ba8cebea0a"],
-        [0, 0],
-        mdb, pdb, None)
-    dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"] = set(
-        dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"])
+async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
+    dags = await _fetch_repository_commits(
+        {"src-d/go-git": _empty_dag()},
+        pd.DataFrame([
+            ("d2a38b4a5965d529566566640519d03d2bd10f6c",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+             525,
+             "src-d/go-git"),
+            ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+             611,
+             "src-d/go-git")],
+            columns=["1", "2", "3", "4"],
+        ),
+        ("1", "2", "3", "4"),
+        prune, mdb, pdb, None)
+    assert isinstance(dags, dict)
+    assert len(dags) == 1
+    hashes, vertexes, edges = dags["src-d/go-git"]
     ground_truth = {
-        "31eae7b619d166c366bf5df4991f04ba8cebea0a": {"b977a025ca21e3b5ca123d8093bd7917694f6da7",
-                                                     "d2a38b4a5965d529566566640519d03d2bd10f6c"},
+        "31eae7b619d166c366bf5df4991f04ba8cebea0a": ["b977a025ca21e3b5ca123d8093bd7917694f6da7",
+                                                     "d2a38b4a5965d529566566640519d03d2bd10f6c"],
         "b977a025ca21e3b5ca123d8093bd7917694f6da7": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
         "d2a38b4a5965d529566566640519d03d2bd10f6c": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
         "35b585759cbf29f8ec428ef89da20705d59f99ec": ["c2bbf9fe8009b22d0f390f3c8c3f13937067590f"],
@@ -553,99 +585,142 @@ async def test_fetch_commit_history_smoke(mdb, pdb):
         "5fddbeb678bd2c36c5e5c891ab8f2b143ced5baf": ["5d7303c49ac984a9fec60523f2d5297682e16646"],
         "5d7303c49ac984a9fec60523f2d5297682e16646": [],
     }
-    assert dag == ground_truth
-    dag = await _fetch_commit_history_dag(
-        marshal.dumps(dag),
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
-        ["31eae7b619d166c366bf5df4991f04ba8cebea0a",
-         "d2a38b4a5965d529566566640519d03d2bd10f6c"],
-        [0, 0],
-        Database("sqlite://"), pdb, None)
-    assert dag == ground_truth
-    with pytest.raises(Exception):
-        await _fetch_commit_history_dag(
-            marshal.dumps(dag),
-            "src-d/go-git",
-            ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
-            ["31eae7b619d166c366bf5df4991f04ba8cebea0a",
-             "1353ccd6944ab41082099b79979ded3223db98ec"],
-            [0, 0],
-            Database("sqlite://"), pdb,
-            None,
-        )
-
-
-@with_defer
-async def test_fetch_commit_history_initial_commit(mdb, pdb):
-    dag = await _fetch_commit_history_dag(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
-        ["5d7303c49ac984a9fec60523f2d5297682e16646"],
-        [0],
-        mdb, pdb, None)
-    assert dag == {"5d7303c49ac984a9fec60523f2d5297682e16646": []}
-
-
-@with_defer
-async def test_fetch_commit_history_cache(mdb, pdb, cache):
-    dag = await _fetch_commit_history_dag(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
-        ["d2a38b4a5965d529566566640519d03d2bd10f6c",
-         "31eae7b619d166c366bf5df4991f04ba8cebea0a"],
-        [0, 0],
-        mdb, pdb, cache)
+    for k, v in ground_truth.items():
+        vertex = np.where(hashes == k)[0][0]
+        assert hashes[edges[vertexes[vertex]:vertexes[vertex + 1]]].tolist() == v
+    assert len(hashes) == 9
     await wait_deferred()
-    dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"] = set(
-        dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"])
-    ground_truth = {
-        "31eae7b619d166c366bf5df4991f04ba8cebea0a": {"b977a025ca21e3b5ca123d8093bd7917694f6da7",
-                                                     "d2a38b4a5965d529566566640519d03d2bd10f6c"},
-        "b977a025ca21e3b5ca123d8093bd7917694f6da7": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
-        "d2a38b4a5965d529566566640519d03d2bd10f6c": ["35b585759cbf29f8ec428ef89da20705d59f99ec"],
-        "35b585759cbf29f8ec428ef89da20705d59f99ec": ["c2bbf9fe8009b22d0f390f3c8c3f13937067590f"],
-        "c2bbf9fe8009b22d0f390f3c8c3f13937067590f": ["fc9f0643b21cfe571046e27e0c4565f3a1ee96c8"],
-        "fc9f0643b21cfe571046e27e0c4565f3a1ee96c8": ["c088fd6a7e1a38e9d5a9815265cb575bb08d08ff"],
-        "c088fd6a7e1a38e9d5a9815265cb575bb08d08ff": ["5fddbeb678bd2c36c5e5c891ab8f2b143ced5baf"],
-        "5fddbeb678bd2c36c5e5c891ab8f2b143ced5baf": ["5d7303c49ac984a9fec60523f2d5297682e16646"],
-        "5d7303c49ac984a9fec60523f2d5297682e16646": [],
-    }
-    assert dag == ground_truth
-    dag = await _fetch_commit_history_dag(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw=="],
-        ["d2a38b4a5965d529566566640519d03d2bd10f6c",
-         "31eae7b619d166c366bf5df4991f04ba8cebea0a"],
-        [0, 0],
-        None, None, cache)
-    dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"] = set(
-        dag["31eae7b619d166c366bf5df4991f04ba8cebea0a"])
-    assert dag == ground_truth
+    dags2 = await _fetch_repository_commits(
+        dags,
+        pd.DataFrame([
+            ("d2a38b4a5965d529566566640519d03d2bd10f6c",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+             525,
+             "src-d/go-git"),
+            ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+             611,
+             "src-d/go-git")],
+            columns=["1", "2", "3", "4"],
+        ),
+        ("1", "2", "3", "4"),
+        prune, Database("sqlite://"), pdb, None)
+    assert pickle.dumps(dags2) == pickle.dumps(dags)
+    with pytest.raises(Exception):
+        await _fetch_repository_commits(
+            dags,
+            pd.DataFrame([
+                ("1353ccd6944ab41082099b79979ded3223db98ec",
+                 "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",  # noqa
+                 525,
+                 "src-d/go-git"),
+                ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
+                 "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",  # noqa
+                 611,
+                 "src-d/go-git")],
+                columns=["1", "2", "3", "4"],
+            ),
+            ("1", "2", "3", "4"),
+            prune, Database("sqlite://"), pdb, None)
+
+
+@pytest.mark.parametrize("prune", [False, True])
+@with_defer
+async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune):
+    dags = await _fetch_repository_commits(
+        {"src-d/go-git": _empty_dag()},
+        pd.DataFrame([
+            ("5d7303c49ac984a9fec60523f2d5297682e16646",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng==",
+             525,
+             "src-d/go-git")],
+            columns=["1", "2", "3", "4"],
+        ),
+        ("1", "2", "3", "4"),
+        prune, mdb, pdb, None)
+    hashes, vertexes, edges = dags["src-d/go-git"]
+    assert hashes == np.array(["5d7303c49ac984a9fec60523f2d5297682e16646"], dtype="U40")
+    assert (vertexes == np.array([0, 0], dtype=np.uint32)).all()
+    assert (edges == np.array([], dtype=np.uint32)).all()
 
 
 @with_defer
-async def test_fetch_commit_history_many(mdb, pdb):
-    commit_ids = [
-        "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
-        "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="] * 50
-    commit_shas = ["d2a38b4a5965d529566566640519d03d2bd10f6c",
-                   "31eae7b619d166c366bf5df4991f04ba8cebea0a"] * 50
-    dag = await _fetch_commit_history_dag(
-        None,
-        "src-d/go-git",
-        np.asarray(commit_ids),
-        np.asarray(commit_shas),
-        np.zeros(len(commit_ids)),
-        mdb, pdb, None)
-    assert dag
+async def test__fetch_repository_commits_cache(mdb, pdb, cache):
+    dags1 = await _fetch_repository_commits(
+        {"src-d/go-git": _empty_dag()},
+        pd.DataFrame([
+            ("d2a38b4a5965d529566566640519d03d2bd10f6c",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+             525,
+             "src-d/go-git"),
+            ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+             611,
+             "src-d/go-git")],
+            columns=["1", "2", "3", "4"],
+        ),
+        ("1", "2", "3", "4"),
+        False, mdb, pdb, cache)
+    await wait_deferred()
+    dags2 = await _fetch_repository_commits(
+        {"src-d/go-git": _empty_dag()},
+        pd.DataFrame([
+            ("d2a38b4a5965d529566566640519d03d2bd10f6c",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+             525,
+             "src-d/go-git"),
+            ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+             611,
+             "src-d/go-git")],
+            columns=["1", "2", "3", "4"],
+        ),
+        ("1", "2", "3", "4"),
+        False, None, None, cache)
+    assert pickle.dumps(dags1) == pickle.dumps(dags2)
+    fake_pdb = Database("sqlite://")
+
+    class FakeMetrics:
+        def get(self):
+            return defaultdict(int)
+
+    fake_pdb.metrics = {"hits": FakeMetrics(), "misses": FakeMetrics()}
+    with pytest.raises(Exception):
+        await _fetch_repository_commits(
+            {"src-d/go-git": _empty_dag()},
+            pd.DataFrame([
+                ("d2a38b4a5965d529566566640519d03d2bd10f6c",
+                 "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",  # noqa
+                 525,
+                 "src-d/go-git"),
+                ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
+                 "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",  # noqa
+                 611,
+                 "src-d/go-git")],
+                columns=["1", "2", "3", "4"],
+            ),
+            ("1", "2", "3", "4"),
+            True, None, fake_pdb, cache)
+
+
+@with_defer
+async def test__fetch_repository_commits_many(mdb, pdb):
+    dags = await _fetch_repository_commits(
+        {"src-d/go-git": _empty_dag()},
+        pd.DataFrame([
+            ("d2a38b4a5965d529566566640519d03d2bd10f6c",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+             525,
+             "src-d/go-git"),
+            ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
+             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+             611,
+             "src-d/go-git")] * 50,
+            columns=["1", "2", "3", "4"],
+        ),
+        ("1", "2", "3", "4"),
+        False, mdb, pdb, None)
+    assert len(dags["src-d/go-git"][0]) == 9
 
 
 @with_defer
@@ -769,40 +844,33 @@ async def test_fetch_first_parents_cache(mdb, pdb, cache):
 
 
 @with_defer
-async def test__fetch_repository_commits_smoke(mdb, pdb, cache):
-    repos = ["src-d/go-git"]
-    branches, default_branches = await extract_branches(repos, mdb, None)
-    commits = await _fetch_repository_commits(repos, branches, default_branches, mdb, pdb, cache)
+async def test__fetch_repository_commits_full(mdb, pdb, dag, cache):
+    branches, _ = await extract_branches(dag, mdb, None)
+    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date.key,
+            Branch.repository_full_name.key)
+    commits = await _fetch_repository_commits(dag, branches, cols, False, mdb, pdb, cache)
     await wait_deferred()
     assert len(commits) == 1
-    commits = commits["src-d/go-git"]
-    assert len(commits) == 1917
-    commits = await _fetch_repository_commits(repos, branches, default_branches, None, None, cache)
-    await wait_deferred()
-    assert len(commits) == 1
-    commits = commits["src-d/go-git"]
-    assert len(commits) == 1917
-    commits = await _fetch_repository_commits(repos, branches, default_branches, None, pdb, None)
-    await wait_deferred()
-    assert len(commits) == 1
-    commits = commits["src-d/go-git"]
-    assert len(commits) == 1917
+    assert len(commits["src-d/go-git"][0]) == 1919
     branches = branches.iloc[:1]
-    commits = await _fetch_repository_commits(repos, branches, default_branches, mdb, pdb, cache)
+    commits = await _fetch_repository_commits(commits, branches, cols, False, mdb, pdb, cache)
     await wait_deferred()
     assert len(commits) == 1
-    commits = commits["src-d/go-git"]
-    assert len(commits) == 1537  # without force-pushed commits
+    assert len(commits["src-d/go-git"][0]) == 1919  # without force-pushed commits
+    commits = await _fetch_repository_commits(commits, branches, cols, True, mdb, pdb, cache)
+    await wait_deferred()
+    assert len(commits) == 1
+    assert len(commits["src-d/go-git"][0]) == 1538  # without force-pushed commits
 
 
 @with_defer
-async def test__find_dead_merged_prs_smoke(mdb, pdb):
+async def test__find_dead_merged_prs_smoke(mdb, pdb, dag):
     prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
         mdb, PullRequest, index=PullRequest.node_id.key)
-    branches, default_branches = await extract_branches(["src-d/go-git"], mdb, None)
+    branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
     branches = branches.iloc[:1]
-    dead_prs = await _find_dead_merged_prs(prs, branches, default_branches, mdb, pdb, None)
+    dead_prs = await _find_dead_merged_prs(prs, dag, branches, mdb, pdb, None)
     assert len(dead_prs) == 159
     dead_prs = await mdb.fetch_all(
         select([PullRequest.number]).where(PullRequest.node_id.in_(dead_prs.index)))
@@ -810,28 +878,86 @@ async def test__find_dead_merged_prs_smoke(mdb, pdb):
 
 
 @with_defer
-async def test__find_dead_merged_prs_no_branches(mdb, pdb):
+async def test__find_dead_merged_prs_no_branches(mdb, pdb, dag):
     prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
         mdb, PullRequest, index=PullRequest.node_id.key)
-    branches, default_branches = await extract_branches(["src-d/go-git"], mdb, None)
+    branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
     branches = branches.iloc[:1]
     branches[Branch.repository_full_name.key] = "xxx"
-    dead_prs = await _find_dead_merged_prs(prs, branches, default_branches, mdb, pdb, None)
+    dags = dag.copy()
+    dags["xxx"] = _empty_dag()
+    dead_prs = await _find_dead_merged_prs(prs, dags, branches, mdb, pdb, None)
+    assert len(dead_prs) == 0
+    branches = branches.iloc[:0]
+    dead_prs = await _find_dead_merged_prs(prs, dags, branches, mdb, pdb, None)
     assert len(dead_prs) == 0
 
 
 @with_defer
-async def test__fetch_repository_first_commit_dates(mdb, pdb):
-    rows1 = await _fetch_repository_first_commit_dates(["src-d/go-git"], mdb, pdb)
+async def test__fetch_repository_first_commit_dates_pdb_cache(mdb, pdb, cache):
+    fcd1 = await _fetch_repository_first_commit_dates(["src-d/go-git"], mdb, pdb, cache)
     await wait_deferred()
-    rows2 = await _fetch_repository_first_commit_dates(["src-d/go-git"], None, pdb)
-    assert len(rows1) == len(rows2) == 1
-    assert rows1[0][0] == rows2[0][0]
-    assert rows1[0][1] == rows2[0][1]
-    assert rows1[0][PushCommit.repository_full_name.key] == \
-        rows2[0][PushCommit.repository_full_name.key]
-    assert rows1[0]["min"] == rows2[0]["min"]
+    fcd2 = await _fetch_repository_first_commit_dates(
+        ["src-d/go-git"], Database("sqlite://"), pdb, None)
+    fcd3 = await _fetch_repository_first_commit_dates(
+        ["src-d/go-git"], Database("sqlite://"), Database("sqlite://"), cache)
+    assert len(fcd1) == len(fcd2) == len(fcd3) == 1
+    assert fcd1["src-d/go-git"] == fcd2["src-d/go-git"] == fcd3["src-d/go-git"]
+    assert fcd1["src-d/go-git"].tzinfo == timezone.utc
+
+
+def test_extract_subdag_smoke():
+    hashes = np.array(["308a9f90707fb9d12cbcd28da1bc33da436386fe",
+                       "33cafc14532228edca160e46af10341a8a632e3e",
+                       "61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
+                       "a444ccadf5fddad6ad432c13a239c74636c7f94f"],
+                      dtype="U40")
+    vertexes = np.array([0, 1, 2, 3, 3], dtype=np.uint32)
+    edges = np.array([3, 0, 0], dtype=np.uint32)
+    heads = np.array(["61a719e0ff7522cc0d129acb3b922c94a8a5dbca"], dtype="U40")
+    new_hashes, new_vertexes, new_edges = extract_subdag(hashes, vertexes, edges, heads)
+    assert (new_hashes == np.array(["308a9f90707fb9d12cbcd28da1bc33da436386fe",
+                                    "61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
+                                    "a444ccadf5fddad6ad432c13a239c74636c7f94f"],
+                                   dtype="U40")).all()
+    assert (new_vertexes == np.array([0, 1, 2, 2], dtype=np.uint32)).all()
+    assert (new_edges == np.array([2, 0], dtype=np.uint32)).all()
+
+
+def test_join_dags_smoke():
+    hashes = np.array(["308a9f90707fb9d12cbcd28da1bc33da436386fe",
+                       "33cafc14532228edca160e46af10341a8a632e3e",
+                       "a444ccadf5fddad6ad432c13a239c74636c7f94f"],
+                      dtype="U40")
+    vertexes = np.array([0, 1, 2, 2], dtype=np.uint32)
+    edges = np.array([2, 0], dtype=np.uint32)
+    new_hashes, new_vertexes, new_edges = join_dags(
+        hashes, vertexes, edges, [("61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
+                                   "308a9f90707fb9d12cbcd28da1bc33da436386fe"),
+                                  ("308a9f90707fb9d12cbcd28da1bc33da436386fe",
+                                   "a444ccadf5fddad6ad432c13a239c74636c7f94f")])
+    assert (new_hashes == np.array(["308a9f90707fb9d12cbcd28da1bc33da436386fe",
+                                    "33cafc14532228edca160e46af10341a8a632e3e",
+                                    "61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
+                                    "a444ccadf5fddad6ad432c13a239c74636c7f94f"],
+                                   dtype="U40")).all()
+    assert (new_vertexes == np.array([0, 1, 2, 3, 3], dtype=np.uint32)).all()
+    assert (new_edges == np.array([3, 0, 0], dtype=np.uint32)).all()
+
+
+def test_mark_dag_access_smoke():
+    hashes = np.array(["308a9f90707fb9d12cbcd28da1bc33da436386fe",
+                       "33cafc14532228edca160e46af10341a8a632e3e",
+                       "61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
+                       "a444ccadf5fddad6ad432c13a239c74636c7f94f"],
+                      dtype="U40")
+    vertexes = np.array([0, 1, 2, 3, 3], dtype=np.uint32)
+    edges = np.array([3, 0, 0], dtype=np.uint32)
+    heads = np.array(["33cafc14532228edca160e46af10341a8a632e3e",
+                      "61a719e0ff7522cc0d129acb3b922c94a8a5dbca"], dtype="U40")
+    marks = mark_dag_access(hashes, vertexes, edges, heads)
+    assert (marks == np.array([1, 0, 1, 1], dtype=np.int64)).all()
 
 
 """

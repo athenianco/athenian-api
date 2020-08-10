@@ -5,6 +5,8 @@ import faker
 import pytest
 
 from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.release import _empty_dag, _fetch_commit_history_edges
+from athenian.api.controllers.miners.github.release_accelerated import join_dags
 from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 
@@ -89,6 +91,27 @@ def pr_samples():
 
         return [random_pr() for _ in range(n)]
     return generate
+
+
+_dag = None
+
+
+async def fetch_dag(mdb, heads=None):
+    if heads is None:
+        heads = [
+            "MDY6Q29tbWl0NDQ3MzkwNDQ6MTdkYmQ4ODY2MTZmODJiZTJhNTljMGQwMmZkOTNkM2Q2OWYyMzkyYw==",
+        ]
+    edges = await _fetch_commit_history_edges(heads, mdb)
+    return {"src-d/go-git": join_dags(*_empty_dag(), edges)}
+
+
+@pytest.fixture(scope="function")  # we cannot declare it "module" because of mdb's scope
+async def dag(mdb):
+    global _dag
+    if _dag is not None:
+        return _dag
+    _dag = await fetch_dag(mdb)
+    return _dag
 
 
 def pytest_configure(config):
