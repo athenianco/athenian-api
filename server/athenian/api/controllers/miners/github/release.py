@@ -452,7 +452,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
         if len(hashes) == 0:
             continue
         merge_hashes = repo_prs[PullRequest.merge_commit_sha.key].values.astype("U40")
-        merges_found = np.searchsorted(hashes, merge_hashes)
+        merges_found = searchsorted_inrange(hashes, merge_hashes)
         found_mask = hashes[merges_found] == merge_hashes
         found_releases = repo_releases[release_columns].take(ownership[merges_found[found_mask]])
         if not found_releases.empty:
