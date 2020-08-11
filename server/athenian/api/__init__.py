@@ -490,6 +490,7 @@ def setup_context(log: logging.Logger) -> None:
     )
     sentry_sdk.scope.add_global_event_processor(filter_sentry_events)
     sentry_sdk.utils.MAX_STRING_LENGTH = MAX_SENTRY_STRING_LENGTH
+    sentry_sdk.serializer.MAX_DATABAG_BREADTH = 16  # e.g., max number of locals in a stack frame
     with sentry_sdk.configure_scope() as scope:
         scope.set_tag("version", metadata.__version__)
         scope.set_tag("username", username)

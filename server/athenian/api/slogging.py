@@ -164,6 +164,7 @@ class StructuredHandler(logging.Handler):
             "source": "%s:%d" % (record.filename, record.lineno),
             "time": format_datetime(created),
             "thread": reduce_thread_id(record.thread),
+            "name": record.name,
         }
         if record.exc_info is not None:
             try:
