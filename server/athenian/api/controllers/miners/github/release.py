@@ -890,7 +890,16 @@ def _extract_released_commits(releases: pd.DataFrame,
         hashes, vertexes, edges, boundary_release_hash)
     # we are guaranteed that `ignored_hashes` are a subset of `visited_hashes`
     # so there is not overflow possible in np.searchsorted
-    released_hashes = np.delete(visited_hashes, np.searchsorted(visited_hashes, ignored_hashes))
+    try:
+        released_hashes = np.delete(visited_hashes, np.searchsorted(visited_hashes, ignored_hashes))  # noqa
+    except IndexError as e:
+        import lzma
+        import base64
+        data = base64.b64encode(lzma.compress(pickle.dumps((
+            hashes, vertexes, edges, new_releases[Release.sha.key].values.astype("U40"),
+            boundary_release_hash, visited_hashes, ignored_hashes))))
+        logging.getLogger("athenian.api.debug.index").info(data)
+        raise e from None
     return released_hashes
 
 
