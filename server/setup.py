@@ -32,8 +32,8 @@ setup(
     tests_require=[],
     package_data={"": ["requirements.txt"]},
     classifiers=[
-        "Development Status :: 1 - Planning",
-        "Programming Language :: Python :: 3.7",
+        "Development Status :: 4 - Beta",
         "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
     ],
 )
