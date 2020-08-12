@@ -193,9 +193,9 @@ async def test_map_releases_to_prs_early_merges(
     assert isinstance(dag, dict)
     dag = dag["src-d/go-git"]
     assert len(dag) == 3
-    assert len(dag[0]) == 1012
+    assert len(dag[0]) == 1015
     assert dag[0].dtype == np.dtype("U40")
-    assert len(dag[1]) == 1013
+    assert len(dag[1]) == 1016
     assert dag[1].dtype == np.uint32
     assert len(dag[2]) == dag[1][-1]
     assert dag[2].dtype == np.uint32
@@ -272,7 +272,7 @@ async def test_map_releases_to_prs_empty(
                 branches="master", tags=".*", match=ReleaseMatch.branch),
         }, mdb, pdb, cache)
     assert prs.empty
-    assert len(cache.mem) == 10
+    assert len(cache.mem) == 11
     assert len(releases) == 19
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 

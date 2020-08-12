@@ -1001,26 +1001,52 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
     # these matching rules must be applied in the past to stay consistent
     prefix = PREFIXES["github"]
     consistent_release_settings = {}
+    repos_matched_by_tag = []
+    repos_matched_by_branch = []
     for repo in repos:
         setting = release_settings[prefix + repo]
+        match = ReleaseMatch(matched_bys.get(repo, setting.match))
         consistent_release_settings[prefix + repo] = ReleaseMatchSetting(
             tags=setting.tags,
             branches=setting.branches,
-            match=ReleaseMatch(matched_bys.get(repo, setting.match)),
+            match=match,
         )
+        if match == ReleaseMatch.tag:
+            repos_matched_by_tag.append(repo)
+        elif match == ReleaseMatch.branch:
+            repos_matched_by_branch.append(repo)
+    # there are two groups of repos now: matched by tag and by branch
+    # we have to fetch *all* the tags from the past because:
+    # some repos fork a new branch for each release and make a unique release commit
+    # some repos maintain several major versions in parallel
+    # so when somebody releases 1.1.0 in August 2020 alongside with 2.0.0 released in June 2020
+    # and 1.0.0 in September 2018, we must load 1.0.0, otherwise the PR for 1.0.0 release
+    # will be matched to 1.1.0 in August 2020 and will have a HUGE release time
+
+    # we are golden if we match by branch, just one older merge preceeding `time_from` is fine
+    # so split repos and take two different logic paths
+
     # let's try to find the releases not older than 5 weeks before `time_from`
-    lookbehind_time_from = time_from - timedelta(days=5 * 7)
+    branch_lookbehind_time_from = time_from - timedelta(days=5 * 7)
+    tag_lookbehind_time_from = time_from - timedelta(days=2 * 365)
     tasks = [
-        _fetch_repository_first_commit_dates(repos, mdb, pdb, cache),
-        load_releases(matched_bys, branches, default_branches, lookbehind_time_from, time_from,
-                      consistent_release_settings, mdb, pdb, cache),
+        load_releases(repos_matched_by_branch, branches, default_branches,
+                      branch_lookbehind_time_from, time_from, consistent_release_settings,
+                      mdb, pdb, cache),
+        load_releases(repos_matched_by_tag, branches, default_branches,
+                      tag_lookbehind_time_from, time_from, consistent_release_settings,
+                      mdb, pdb, cache),
+        _fetch_repository_first_commit_dates(repos_matched_by_branch, mdb, pdb, cache),
     ]
-    repo_births, releases_old = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (repo_births, releases_old):
+    releases_old_branches, releases_old_tags, repo_births = await asyncio.gather(
+        *tasks, return_exceptions=True)
+    for r in (repo_births, releases_old_branches, releases_old_tags):
         if isinstance(r, Exception):
             raise r from None
-    releases_old = releases_old[0]
-    hard_repos = set(matched_bys) - set(releases_old[Release.repository_full_name.key].unique())
+    releases_old_branches = releases_old_branches[0]
+    releases_old_tags = releases_old_tags[0]
+    hard_repos = set(repos_matched_by_branch) - \
+        set(releases_old_branches[Release.repository_full_name.key].unique())
     if hard_repos:
         with sentry_sdk.start_span(op="_find_releases_for_matching_prs/hard_repos"):
             repo_births = sorted((v, k) for k, v in repo_births.items() if k in hard_repos)
@@ -1031,19 +1057,22 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
             while hard_repos:
                 # no previous releases were discovered for `hard_repos`, go deeper in history
                 hard_repos = hard_repos.intersection(repo_births_names[:bisect.bisect_right(
-                    repo_births_dates, lookbehind_time_from)])
+                    repo_births_dates, branch_lookbehind_time_from)])
                 if not hard_repos:
                     break
-                releases_old_hard, _ = await load_releases(
-                    hard_repos, branches, default_branches, lookbehind_time_from - deeper_step,
-                    lookbehind_time_from, consistent_release_settings, mdb, pdb, cache)
-                releases_old = releases_old.append(releases_old_hard)
-                hard_repos -= set(releases_old_hard[Release.repository_full_name.key].unique())
-                del releases_old_hard
-                lookbehind_time_from -= deeper_step
+                extra_releases, _ = await load_releases(
+                    hard_repos, branches, default_branches,
+                    branch_lookbehind_time_from - deeper_step, branch_lookbehind_time_from,
+                    consistent_release_settings, mdb, pdb, cache)
+                releases_old_branches = releases_old_branches.append(extra_releases)
+                hard_repos -= set(extra_releases[Release.repository_full_name.key].unique())
+                del extra_releases
+                branch_lookbehind_time_from -= deeper_step
                 deeper_step *= 2
-    releases = releases_new.append(releases_old)
-    releases.reset_index(drop=True, inplace=True)
+    releases = pd.concat([releases_new, releases_old_branches, releases_old_tags],
+                         ignore_index=True, copy=False)
+    releases.sort_values(Release.published_at.key,
+                         inplace=True, ascending=False, ignore_index=True)
     return matched_bys, releases, releases_new, consistent_release_settings
 
 
