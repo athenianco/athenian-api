@@ -120,7 +120,9 @@ async def no_default_user(app):
     app.app["auth"].default_user = default_user
 
 
-async def test_accept_invitation_smoke(client, headers, sdb, no_default_user):
+@pytest.mark.parametrize("single_tenant", [False, True])
+async def test_accept_invitation_smoke(client, headers, app, sdb, no_default_user, single_tenant):
+    app._auth0._single_tenant = single_tenant
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     body = {
         "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
