@@ -396,6 +396,8 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     add_pdb_hits(pdb, "map_prs_to_releases/unreleased", len(unreleased_prs))
     pr_releases = precomputed_pr_releases
     merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
+    if merged_prs.empty:
+        return pr_releases
     tasks = [
         _fetch_labels(merged_prs.index, mdb),
         _find_dead_merged_prs(merged_prs, dags, branches, mdb, pdb, cache),
