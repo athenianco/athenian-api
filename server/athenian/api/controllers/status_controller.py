@@ -4,6 +4,7 @@ import io
 from itertools import chain
 import logging
 import time
+from typing import Optional
 
 from aiohttp import web
 import objgraph
@@ -29,13 +30,16 @@ elapsed_error_threshold = 60
 _log = logging.getLogger("%s.elapsed" % metadata.__package__)
 
 
-def _after_response(request: web.Request, response: web.Response, start_time: float) -> None:
+def _after_response(request: web.Request,
+                    response: Optional[web.Response],
+                    start_time: float,
+                    ) -> None:
     db_elapsed = request.app["db_elapsed"].get()
     cache_context = request.app["cache_context"]
     pdb_context = request.app["pdb_context"]
     sdb_elapsed, mdb_elapsed, pdb_elapsed = \
         db_elapsed["sdb"], db_elapsed["mdb"], db_elapsed["pdb"]
-    try:
+    if response is not None:
         response.headers.add(
             "X-Performance-DB",
             "s %.3f, m %.3f, p %.3f" % (sdb_elapsed, mdb_elapsed, pdb_elapsed))
@@ -46,8 +50,6 @@ def _after_response(request: web.Request, response: web.Response, start_time: fl
         for k, v in pdb_context.items():
             s = sorted("%s %d" % p for p in v.get().items())
             response.headers.add("X-Performance-Precomputed-%s" % k.capitalize(), ", ".join(s))
-    except NameError:
-        pass
     request.app["state_db_latency"] \
         .labels(__package__, __version__, request.path) \
         .observe(sdb_elapsed)
@@ -73,10 +75,7 @@ def _after_response(request: web.Request, response: web.Response, start_time: fl
     request.app["precomputed_db_latency_ratio"] \
         .labels(__package__, __version__, request.path) \
         .observe(pdb_elapsed / elapsed)
-    try:
-        code = response.status
-    except NameError:
-        code = 500
+    code = response.status if response is not None else 500
     if elapsed > elapsed_error_threshold:
         _log.error("%s took %ds -> HTTP %d", request.path, int(elapsed), code)
     request.app["request_count"] \
@@ -99,6 +98,10 @@ async def instrument(request: web.Request, handler) -> web.Response:
         return response
     finally:
         if request.method != "OPTIONS":
+            try:
+                response
+            except NameError:
+                response = None
             _after_response(request, response, start_time)
 
 
