@@ -1,3 +1,4 @@
+from asyncio import IncompleteReadError
 from contextvars import ContextVar
 import functools
 import inspect
@@ -101,9 +102,9 @@ def cached(exptime: Union[int, Callable[..., int]],
                 if cache_key is not None:
                     try:
                         buffer = await client.get(cache_key)
-                    except aiomcache.exceptions.ClientException:
-                        log.exception("Failed to fetch cached %s/%s",
-                                      full_name, cache_key.decode())
+                    except (aiomcache.exceptions.ClientException, IncompleteReadError) as e:
+                        log.exception("Failed to fetch cached %s/%s: %s: %s",
+                                      full_name, cache_key.decode(), type(e).__name__, e)
                         buffer = None
                 else:
                     buffer = None
