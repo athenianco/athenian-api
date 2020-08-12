@@ -31,5 +31,5 @@ class AthenianWebRequest(web.Request):
     cache: Optional[aiomcache.Client]  # can be None
     user: lambda: User
     uid: str
-    native_uid: str
+    native_uid: Optional[str]  # None means a single tenant
     is_default_user: bool

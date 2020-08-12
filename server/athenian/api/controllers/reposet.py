@@ -130,7 +130,7 @@ async def resolve_repos(repositories: List[str],
 
 @sentry_span
 async def load_account_reposets(account: int,
-                                native_uid: str,
+                                native_uid: Optional[str],
                                 fields: list,
                                 sdb_conn: DatabaseLike,
                                 mdb_conn: DatabaseLike,
@@ -163,7 +163,7 @@ async def load_account_reposets(account: int,
 
 
 async def _load_account_reposets(account: int,
-                                 native_uid: str,
+                                 native_uid: Optional[str],
                                  fields: list,
                                  sdb_conn: databases.core.Connection,
                                  mdb_conn: databases.core.Connection,
@@ -190,9 +190,13 @@ async def _load_account_reposets(account: int,
             try:
                 iids = await get_github_installation_ids(account, sdb_conn, cache)
             except ResponseError:
-                iids = await mdb_conn.fetch_all(
-                    select([InstallationOwner.install_id])
-                    .where(InstallationOwner.user_id == int(native_uid)))
+                if native_uid is None:
+                    # single tenant mode, fetch all installations
+                    # if this happens on a regular cloud instance, everybody is deeply fucked
+                    cond = True
+                else:
+                    cond = InstallationOwner.user_id == int(native_uid)
+                iids = await mdb_conn.fetch_all(select([InstallationOwner.install_id]).where(cond))
                 iids = {r[0] for r in iids}
                 if not iids:
                     raise_no_source_data()
@@ -209,7 +213,8 @@ async def _load_account_reposets(account: int,
                         with_primary_keys=True)
                     await sdb_conn.execute(insert(AccountGitHubInstallation).values(values))
             repos = await mdb_conn.fetch_all(select([InstallationRepo.repo_full_name])
-                                             .where(InstallationRepo.install_id.in_(iids)))
+                                             .where(InstallationRepo.install_id.in_(iids))
+                                             .order_by(InstallationRepo.repo_full_name))
             prefix = PREFIXES["github"]
             repos = [(prefix + r[0]) for r in repos]
             rs = RepositorySet(

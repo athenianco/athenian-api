@@ -126,6 +126,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--memcached", required=False,
                         help="memcached (users profiles, preprocessed metadata cache) address, "
                              "for example, 0.0.0.0:11211")
+    parser.add_argument("--single-tenant", action="store_true",
+                        help="When is specified, the metadata DB is expected to contain all the "
+                             "installations belonging to the same, unique account. We ignore "
+                             "GitHub user IDs for matching accounts with metadata installations "
+                             "completely in that mode.")
     parser.add_argument("--ui", action="store_true", help="Enable the REST UI.")
     parser.add_argument("--no-google-kms", action="store_true",
                         help="Skip Google Key Management Service initialization. Personal Access "
@@ -184,8 +189,8 @@ class AthenianApp(connexion.AioHttpApp):
                  mdb_options: Optional[dict] = None,
                  sdb_options: Optional[dict] = None,
                  pdb_options: Optional[dict] = None,
-                 auth0_cls=Auth0,
-                 kms_cls=AthenianKMS,
+                 auth0_cls: Callable[[], Auth0] = Auth0,
+                 kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
                  cache: Optional[aiomcache.Client] = None):
         """
         Initialize the underlying connexion -> aiohttp application.
@@ -208,7 +213,6 @@ class AthenianApp(connexion.AioHttpApp):
                          server_args={"client_max_size": 256 * 1024})
         self.api_cls = ExactServersAioHttpApi
         invitation_controller.validate_env()
-        auth0_cls.ensure_static_configuration()
         self.app["auth"] = self._auth0 = auth0_cls(whitelist=[
             r"/v1/openapi.json$",
             r"/v1/ui(/|$)",
@@ -516,12 +520,11 @@ def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Clien
     return aiomcache.Client(host, port)
 
 
-def create_auth0_factory(force_user: str) -> Callable[[], Auth0]:
+def create_auth0_factory(single_tenant: bool, force_user: str) -> Callable[[], Auth0]:
     """Create the factory of Auth0 instances."""
     def factory(**kwargs):
-        return Auth0(**kwargs, force_user=force_user)
+        return Auth0(**kwargs, single_tenant=single_tenant, force_user=force_user)
 
-    factory.ensure_static_configuration = Auth0.ensure_static_configuration
     return factory
 
 
@@ -616,7 +619,7 @@ def main() -> Optional[AthenianApp]:
     hack_sqlite_hstore()
     patch_pandas()
     cache = create_memcached(args.memcached, log)
-    auth0_cls = create_auth0_factory(args.force_user)
+    auth0_cls = create_auth0_factory(args.single_tenant, args.force_user)
     kms_cls = None if args.no_google_kms else AthenianKMS
     app = AthenianApp(
         mdb_conn=args.metadata_db, sdb_conn=args.state_db, pdb_conn=args.precomputed_db,
