@@ -29,72 +29,77 @@ elapsed_error_threshold = 60
 _log = logging.getLogger("%s.elapsed" % metadata.__package__)
 
 
+def _after_response(request: web.Request, response: web.Response, start_time: float) -> None:
+    db_elapsed = request.app["db_elapsed"].get()
+    cache_context = request.app["cache_context"]
+    pdb_context = request.app["pdb_context"]
+    sdb_elapsed, mdb_elapsed, pdb_elapsed = \
+        db_elapsed["sdb"], db_elapsed["mdb"], db_elapsed["pdb"]
+    try:
+        response.headers.add(
+            "X-Performance-DB",
+            "s %.3f, m %.3f, p %.3f" % (sdb_elapsed, mdb_elapsed, pdb_elapsed))
+        for k, v in cache_context.items():
+            s = sorted("%s %d" % (f.replace("athenian.api.", ""), n)
+                       for f, n in v.get().items())
+            response.headers.add("X-Performance-Cache-%s" % k.capitalize(), ", ".join(s))
+        for k, v in pdb_context.items():
+            s = sorted("%s %d" % p for p in v.get().items())
+            response.headers.add("X-Performance-Precomputed-%s" % k.capitalize(), ", ".join(s))
+    except NameError:
+        pass
+    request.app["state_db_latency"] \
+        .labels(__package__, __version__, request.path) \
+        .observe(sdb_elapsed)
+    request.app["metadata_db_latency"] \
+        .labels(__package__, __version__, request.path) \
+        .observe(mdb_elapsed)
+    request.app["precomputed_db_latency"] \
+        .labels(__package__, __version__, request.path) \
+        .observe(pdb_elapsed)
+    request.app["request_in_progress"] \
+        .labels(__package__, __version__, request.path, request.method) \
+        .dec()
+    elapsed = time.time() - start_time
+    request.app["request_latency"] \
+        .labels(__package__, __version__, request.path) \
+        .observe(elapsed)
+    request.app["state_db_latency_ratio"] \
+        .labels(__package__, __version__, request.path) \
+        .observe(sdb_elapsed / elapsed)
+    request.app["metadata_db_latency_ratio"] \
+        .labels(__package__, __version__, request.path) \
+        .observe(mdb_elapsed / elapsed)
+    request.app["precomputed_db_latency_ratio"] \
+        .labels(__package__, __version__, request.path) \
+        .observe(pdb_elapsed / elapsed)
+    try:
+        code = response.status
+    except NameError:
+        code = 500
+    if elapsed > elapsed_error_threshold:
+        _log.error("%s took %ds -> HTTP %d", request.path, int(elapsed), code)
+    request.app["request_count"] \
+        .labels(__package__, __version__, request.method, request.path, code) \
+        .inc()
+
+
 @web.middleware
-async def instrument(request, handler):
+async def instrument(request: web.Request, handler) -> web.Response:
     """Middleware to count requests and record the elapsed time."""
     start_time = time.time()
     request.app["request_in_progress"] \
         .labels(__package__, __version__, request.path, request.method) \
         .inc()
-    db_elapsed = defaultdict(float)
-    request.app["db_elapsed"].set(db_elapsed)
-    cache_context = request.app["cache_context"]
-    pdb_context = request.app["pdb_context"]
-    for v in chain(cache_context.values(), pdb_context.values()):
+    request.app["db_elapsed"].set(defaultdict(float))
+    for v in chain(request.app["cache_context"].values(), request.app["pdb_context"].values()):
         v.set(defaultdict(int))
     try:
         response = await handler(request)  # type: web.Response
         return response
     finally:
-        sdb_elapsed, mdb_elapsed, pdb_elapsed = \
-            db_elapsed["sdb"], db_elapsed["mdb"], db_elapsed["pdb"]
-        try:
-            response.headers.add(
-                "X-Performance-DB",
-                "s %.3f, m %.3f, p %.3f" % (sdb_elapsed, mdb_elapsed, pdb_elapsed))
-            for k, v in cache_context.items():
-                s = sorted("%s %d" % (f.replace("athenian.api.", ""), n)
-                           for f, n in v.get().items())
-                response.headers.add("X-Performance-Cache-%s" % k.capitalize(), ", ".join(s))
-            for k, v in pdb_context.items():
-                s = sorted("%s %d" % p for p in v.get().items())
-                response.headers.add("X-Performance-Precomputed-%s" % k.capitalize(), ", ".join(s))
-        except NameError:
-            pass
-        request.app["state_db_latency"] \
-            .labels(__package__, __version__, request.path) \
-            .observe(sdb_elapsed)
-        request.app["metadata_db_latency"] \
-            .labels(__package__, __version__, request.path) \
-            .observe(mdb_elapsed)
-        request.app["precomputed_db_latency"] \
-            .labels(__package__, __version__, request.path) \
-            .observe(pdb_elapsed)
-        request.app["request_in_progress"] \
-            .labels(__package__, __version__, request.path, request.method) \
-            .dec()
-        elapsed = time.time() - start_time
-        request.app["request_latency"] \
-            .labels(__package__, __version__, request.path) \
-            .observe(elapsed)
-        request.app["state_db_latency_ratio"] \
-            .labels(__package__, __version__, request.path) \
-            .observe(sdb_elapsed / elapsed)
-        request.app["metadata_db_latency_ratio"] \
-            .labels(__package__, __version__, request.path) \
-            .observe(mdb_elapsed / elapsed)
-        request.app["precomputed_db_latency_ratio"] \
-            .labels(__package__, __version__, request.path) \
-            .observe(pdb_elapsed / elapsed)
-        try:
-            code = response.status
-        except NameError:
-            code = 500
-        if elapsed > elapsed_error_threshold:
-            _log.error("%s took %ds -> HTTP %d", request.path, int(elapsed), code)
-        request.app["request_count"] \
-            .labels(__package__, __version__, request.method, request.path, code) \
-            .inc()
+        if request.method != "OPTIONS":
+            _after_response(request, response, start_time)
 
 
 class StatusRenderer:
