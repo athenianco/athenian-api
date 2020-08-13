@@ -111,7 +111,7 @@ class GitHubMergedPullRequest(Base, UpdatedMixin):
     Mined releases that do *not* contain the given pull request.
 
     `pr_node_id` is a merged but not released yet PR node identifier.
-    According to `release_match`, any release with a node id in `checked_releases` does not
+    According to `release_match`, any release between `merged_at` and `checked_until` does not
     contain that PR.
     """
 
@@ -121,7 +121,7 @@ class GitHubMergedPullRequest(Base, UpdatedMixin):
     release_match = Column(Text(), primary_key=True)
     merged_at = Column(TIMESTAMP(timezone=True), nullable=False)
     repository_full_name = Column(RepositoryFullName, nullable=False)
-    checked_releases = Column(JHSTORE, nullable=False, server_default="")
+    checked_until = Column(TIMESTAMP(timezone=True), nullable=False)
     author = Column(CHAR(100))  # can be null, see @ghost
     merger = Column(CHAR(100))  # @ghost can merge, too
     labels = Column(JHSTORE, nullable=False, server_default="")

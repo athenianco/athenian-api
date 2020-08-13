@@ -419,7 +419,7 @@ async def test_discover_update_unreleased_prs_smoke(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     empty_rdf = new_released_prs_df()
     await update_unreleased_prs(
-        prs, empty_rdf, releases, {},
+        prs, empty_rdf, datetime(2018, 11, 1, tzinfo=utc), {},
         matched_bys, default_branches, release_match_setting_tag, pdb)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], None, default_branches,
@@ -430,10 +430,11 @@ async def test_discover_update_unreleased_prs_smoke(
     assert len(releases) == 1
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     await update_unreleased_prs(
-        prs, empty_rdf, releases, {},
+        prs, empty_rdf, datetime(2018, 11, 20, tzinfo=utc), {},
         matched_bys, default_branches, release_match_setting_tag, pdb)
     unreleased_prs = await discover_unreleased_prs(
-        prs, releases, matched_bys, default_branches, release_match_setting_tag, pdb)
+        prs, datetime(2018, 11, 20, tzinfo=utc), matched_bys, default_branches,
+        release_match_setting_tag, pdb)
     assert set(prs.index) == set(unreleased_prs)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], None, default_branches,
@@ -442,12 +443,8 @@ async def test_discover_update_unreleased_prs_smoke(
         release_match_setting_tag,
         mdb, pdb, None)
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
-    if pdb.url.dialect != "sqlite":
-        unreleased_prs = await discover_unreleased_prs(
-            prs, releases, matched_bys, default_branches, release_match_setting_tag, pdb)
-        assert set(prs.index) == set(unreleased_prs)
     unreleased_prs = await discover_unreleased_prs(
-        prs, releases, matched_bys, default_branches,
+        prs, datetime(2018, 11, 1, tzinfo=utc), matched_bys, default_branches,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="", tags="v.*", match=ReleaseMatch.tag)},
         pdb)
@@ -461,7 +458,8 @@ async def test_discover_update_unreleased_prs_smoke(
     assert len(releases) == 2
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     unreleased_prs = await discover_unreleased_prs(
-        prs, releases, matched_bys, default_branches, release_match_setting_tag, pdb)
+        prs, datetime(2019, 2, 1, tzinfo=utc), matched_bys, default_branches,
+        release_match_setting_tag, pdb)
     assert len(unreleased_prs) == 0
 
 
@@ -486,15 +484,16 @@ async def test_discover_update_unreleased_prs_released(
         prs, releases, matched_bys, pd.DataFrame(), {}, time_to, dag,
         release_match_setting_tag, mdb, pdb, None)
     await update_unreleased_prs(
-        prs, released_prs, releases, {},
+        prs, released_prs, time_to, {},
         matched_bys, default_branches, release_match_setting_tag, pdb)
     unreleased_prs = await discover_unreleased_prs(
-        prs, releases, matched_bys, default_branches, release_match_setting_tag, pdb)
+        prs, time_to, matched_bys, default_branches, release_match_setting_tag, pdb)
     assert len(unreleased_prs) == 1
     assert unreleased_prs[0] == "MDExOlB1bGxSZXF1ZXN0MjI2NTg3NjE1"
     releases = releases[releases[Release.published_at.key] < datetime(2018, 11, 1, tzinfo=utc)]
     unreleased_prs = await discover_unreleased_prs(
-        prs, releases, matched_bys, default_branches, release_match_setting_tag, pdb)
+        prs, releases[Release.published_at.key].max(), matched_bys, default_branches,
+        release_match_setting_tag, pdb)
     assert len(unreleased_prs) == 7
 
 

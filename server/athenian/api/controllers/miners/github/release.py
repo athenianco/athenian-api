@@ -31,6 +31,7 @@ from athenian.api.controllers.miners.github.release_accelerated import extract_s
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.github.users import mine_user_avatars
+from athenian.api.controllers.miners.types import dtmax
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
@@ -384,7 +385,8 @@ async def map_prs_to_releases(prs: pd.DataFrame,
         return pr_releases
     tasks = [
         discover_unreleased_prs(
-            prs, releases, matched_bys, default_branches, release_settings, pdb),
+            prs, dtmax(releases[Release.published_at.key].max(), time_to),
+            matched_bys, default_branches, release_settings, pdb),
         load_precomputed_pr_releases(
             prs.index, time_to, matched_bys, default_branches, release_settings, pdb, cache),
     ]
@@ -419,7 +421,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
         else:
             missed_released_prs = dead_prs
     await defer(update_unreleased_prs(
-        merged_prs, missed_released_prs, releases, labels, matched_bys, default_branches,
+        merged_prs, missed_released_prs, time_to, labels, matched_bys, default_branches,
         release_settings, pdb),
         "update_unreleased_prs(%d, %d)" % (len(merged_prs), len(missed_released_prs)))
     return pr_releases.append(missed_released_prs)

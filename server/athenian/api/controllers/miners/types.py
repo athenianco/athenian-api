@@ -323,3 +323,17 @@ class PullRequestFacts:
     def __hash__(self) -> int:
         """Implement hash()."""
         return hash(str(self))
+
+
+def dtmin(*args: Union[DT, float]) -> DT:
+    """Find the minimum of several dates handling NaNs gracefully."""
+    if all((arg != arg) for arg in args):
+        return None
+    return min(arg for arg in args if arg == arg)
+
+
+def dtmax(*args: Union[DT, float]) -> DT:
+    """Find the maximum of several dates handling NaNs gracefully."""
+    if all((arg != arg) for arg in args):
+        return None
+    return max(arg for arg in args if arg == arg)

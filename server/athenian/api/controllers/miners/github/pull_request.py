@@ -20,8 +20,8 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     load_inactive_merged_unreleased_prs, load_open_pull_request_facts
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
-from athenian.api.controllers.miners.types import DT, Fallback, MinedPullRequest, Participants, \
-    ParticipationKind, PullRequestFacts
+from athenian.api.controllers.miners.types import dtmin, Fallback, MinedPullRequest, \
+    Participants, ParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewComment, \
@@ -865,10 +865,3 @@ class PullRequestFactsMiner:
                            url, facts.merged.best, facts.released.best,
                            facts.released.best - facts.merged.best)
             raise ImpossiblePullRequest()
-
-
-def dtmin(*args: Union[DT, float]) -> DT:
-    """Find the minimum of several dates handling NaNs gracefully."""
-    if all((arg != arg) for arg in args):
-        return None
-    return min(arg for arg in args if arg == arg)
