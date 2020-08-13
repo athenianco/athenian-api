@@ -177,6 +177,8 @@ def mark_dag_access(hashes: np.ndarray,
                     vertexes: np.ndarray,
                     edges: np.ndarray,
                     heads: np.ndarray):
+    if len(hashes) == 0:
+        return np.array([], dtype=int)
     # we cannot sort heads because the order is important
     existing_heads = searchsorted_inrange(hashes, heads)
     missing_flag = len(heads)  # mark unmatched commits with this value

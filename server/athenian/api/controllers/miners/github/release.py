@@ -438,6 +438,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
         c.key for c in (Release.published_at, Release.author, Release.url,
                         Release.id, Release.repository_full_name)
     ] + [matched_by_column]
+    log = logging.getLogger("%s.map_prs_to_releases" % metadata.__package__)
     for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.key, sort=False):
         try:
             repo_releases = releases[repo]
@@ -446,6 +447,9 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
             continue
         repo_prs = repo_prs.take(np.where(~repo_prs[PullRequest.merge_commit_sha.key].isnull())[0])
         hashes, vertexes, edges = dags[repo]
+        if len(hashes):
+            log.error("Very suspicious: empty DAG for %s\n%s",
+                      repo, repo_releases.to_csv())
         ownership = mark_dag_access(hashes, vertexes, edges, repo_releases[Release.sha.key].values)
         unmatched = np.where(ownership == len(repo_releases))[0]
         if len(unmatched) > 0:
