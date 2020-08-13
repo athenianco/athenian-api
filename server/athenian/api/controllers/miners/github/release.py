@@ -862,13 +862,13 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
     ]
     if len(authors) and len(mergers):
         filters.append(or_(
-            PullRequest.user_login.in_(authors),
-            PullRequest.merged_by_login.in_(mergers),
+            PullRequest.user_login.in_any_values(authors),
+            PullRequest.merged_by_login.in_any_values(mergers),
         ))
     elif len(authors):
-        filters.append(PullRequest.user_login.in_(authors))
+        filters.append(PullRequest.user_login.in_any_values(authors))
     elif len(mergers):
-        filters.append(PullRequest.merged_by_login.in_(mergers))
+        filters.append(PullRequest.merged_by_login.in_any_values(mergers))
     if pr_blacklist is not None:
         filters.append(pr_blacklist)
     return await read_sql_query(select([PullRequest]).where(and_(*filters)),
@@ -971,7 +971,7 @@ async def map_releases_to_prs(repos: Collection[str],
                     if len(observed_commits):
                         clauses.append(and_(
                             PullRequest.repository_full_name == repo,
-                            PullRequest.merge_commit_sha.in_(observed_commits),
+                            PullRequest.merge_commit_sha.in_any_values(observed_commits),
                         ))
         prs = await _find_old_released_prs(clauses, time_from, authors, mergers, pr_blacklist, mdb)
         return prs, dags

@@ -143,7 +143,7 @@ class PullRequestMiner:
             PullRequest.repository_full_name.in_(repositories),
         ]
         if pr_blacklist is not None:
-            pr_blacklist = PullRequest.node_id.notin_(pr_blacklist)
+            pr_blacklist = PullRequest.node_id.notin_any_values(pr_blacklist)
             filters.append(pr_blacklist)
         if len(participants) == 1:
             if ParticipationKind.AUTHOR in participants:
