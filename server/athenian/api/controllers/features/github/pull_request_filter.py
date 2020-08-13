@@ -408,7 +408,8 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
         tasks = [
             load_commit_dags(releases, mdb, pdb, cache),
             discover_unreleased_prs(
-                prs_df, releases, matched_bys, default_branches, release_settings, pdb),
+                prs_df, releases[Release.published_at.key].max(), matched_bys, default_branches,
+                release_settings, pdb),
         ]
         dags, unreleased = await asyncio.gather(*tasks, return_exceptions=True)
         for r in (dags, unreleased):

@@ -14,7 +14,7 @@ from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
 from sqlalchemy.sql import operators
 from sqlalchemy.sql.compiler import OPERATORS
 from sqlalchemy.sql.elements import BinaryExpression, ClauseList, Grouping, UnaryExpression
-from sqlalchemy.sql.operators import custom_op, in_op, notin_op
+from sqlalchemy.sql.operators import ColumnOperators, custom_op, in_op, notin_op
 
 from athenian.api import slogging
 
@@ -115,7 +115,8 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
     if (operator is in_op or operator is notin_op) and right_len >= 10:
         left = compiler.process(binary.left, **kw)
         kw["literal_binds"] = True
-        use_any = compiler.dialect.name in ("postgres", "postgresql")
+        use_any = getattr(binary, "any_values", False) and \
+            compiler.dialect.name in ("postgres", "postgresql")
         negate = use_any and operator is notin_op
         if use_any:
             # ANY(VALUES ...) seems to be performing the best among these three:
@@ -133,6 +134,24 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
         return sql
 
     return compiler.visit_binary(binary, override_operator=override_operator, **kw)
+
+
+def in_any_values(self: ColumnOperators, other):
+    """Implement = ANY(VALUES (...), (...), ...) PostgreSQL operator."""
+    expr = self.in_(other)
+    expr.any_values = True
+    return expr
+
+
+def notin_any_values(self: ColumnOperators, other):
+    """Implement NOT = ANY(VALUES (...), (...), ...) PostgreSQL operator."""
+    expr = self.notin_(other)
+    expr.any_values = True
+    return expr
+
+
+ColumnOperators.in_any_values = in_any_values
+ColumnOperators.notin_any_values = notin_any_values
 
 
 slogging.trailing_dot_exceptions.add("alembic.runtime.migration")
