@@ -447,7 +447,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
             continue
         repo_prs = repo_prs.take(np.where(~repo_prs[PullRequest.merge_commit_sha.key].isnull())[0])
         hashes, vertexes, edges = dags[repo]
-        if len(hashes):
+        if len(hashes) == 0:
             log.error("Very suspicious: empty DAG for %s\n%s",
                       repo, repo_releases.to_csv())
         ownership = mark_dag_access(hashes, vertexes, edges, repo_releases[Release.sha.key].values)
