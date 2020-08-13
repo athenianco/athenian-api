@@ -7,13 +7,14 @@ from typing import Union
 from alembic import script
 from alembic.migration import MigrationContext
 import jinja2
-from sqlalchemy import create_engine
+from sqlalchemy import any_, create_engine
 from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
+from sqlalchemy.sql import operators
 from sqlalchemy.sql.compiler import OPERATORS
-from sqlalchemy.sql.elements import BinaryExpression, Grouping
-from sqlalchemy.sql.operators import in_op, notin_op
+from sqlalchemy.sql.elements import BinaryExpression, ClauseList, Grouping, UnaryExpression
+from sqlalchemy.sql.operators import custom_op, in_op, notin_op
 
 from athenian.api import slogging
 
@@ -82,6 +83,20 @@ def create_base() -> BaseType:
     return declarative_base(cls=(Refreshable, Explodable))
 
 
+class values(UnaryExpression):
+    """PostgreSQL "VALUES (...), (...), ..."."""
+
+    def __init__(self, element):
+        """Plug in UnaryExpression to provide the required syntax: there is no outer grouping, \
+        but each element is grouped separately."""
+        if isinstance(element, Grouping):
+            element = element.element
+        contents = ClauseList(*element.clauses, group_contents=False, group=False)
+        for i, clause in enumerate(contents.clauses):
+            contents.clauses[i] = Grouping(clause)
+        super().__init__(element=contents, operator=custom_op("VALUES "))
+
+
 @compiles(BinaryExpression)
 def compile_binary(binary, compiler, override_operator=None, **kw):
     """
@@ -97,11 +112,25 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
             right_len = len(binary.right.element.clauses)
         else:
             right_len = 0
-    if operator is in_op or operator is notin_op and right_len >= 10:
+    if (operator is in_op or operator is notin_op) and right_len >= 10:
         left = compiler.process(binary.left, **kw)
         kw["literal_binds"] = True
-        right = compiler.process(binary.right, **kw)
-        return left + OPERATORS[operator] + right
+        use_any = compiler.dialect.name in ("postgres", "postgresql")
+        negate = use_any and operator is notin_op
+        if use_any:
+            # ANY(VALUES ...) seems to be performing the best among these three:
+            # 1. IN (...)
+            # 2. IN(ARRAY[...])
+            # 3. IN(VALUES ...)
+            right = any_(values(binary.right))
+            operator = operators.eq
+        else:
+            right = binary.right
+        right = compiler.process(right, **kw)
+        sql = left + OPERATORS[operator] + right
+        if negate:
+            sql = "NOT (%s)" % sql
+        return sql
 
     return compiler.visit_binary(binary, override_operator=override_operator, **kw)
 
