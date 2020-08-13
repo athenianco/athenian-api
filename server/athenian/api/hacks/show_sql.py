@@ -24,7 +24,7 @@ def main():
     args = list(enumerate(args, start=1))
     for i, arg in reversed(args):
         if isinstance(arg, datetime):
-            arg = arg.isoformat(" ")
+            arg = "'%s'" % arg.isoformat(" ")
         elif isinstance(arg, pd.Series):
             arg = "ARRAY[" + ",".join("'%s'" % v for v in arg) + "]::text[]"
         elif isinstance(arg, str):

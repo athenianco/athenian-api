@@ -129,7 +129,7 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
                      ) -> timedelta:
             return times.released.value - times.work_began.best
 
-    calc = LeadTimeCalculator()
+    calc = LeadTimeCalculator(quantiles=(0, 1))
     for pr in pr_samples(100):
         calc(ensure_dtype(pr, dtype), datetime.now(), datetime.now())
     m = calc.value
@@ -149,7 +149,7 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
 
 
 def test_pull_request_average_metric_calculator_zeros_nonnegative(pr_samples):
-    calc = PullRequestAverageMetricCalculator()
+    calc = PullRequestAverageMetricCalculator(quantiles=(0, 1))
     calc.may_have_negative_values = False
     calc.samples.extend(pd.Timedelta(0) for _ in range(3))
     m = calc.value

@@ -4,7 +4,6 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_pull_request_metrics_item import \
     CalculatedPullRequestMetricsItem
-from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 
 
@@ -18,6 +17,7 @@ class CalculatedPullRequestMetrics(Model):
         "date_to": date,
         "timezone": int,
         "granularities": List[str],
+        "quantiles": List[float],
         "exclude_inactive": bool,
     }
 
@@ -28,6 +28,7 @@ class CalculatedPullRequestMetrics(Model):
         "date_to": "date_to",
         "timezone": "timezone",
         "granularities": "granularities",
+        "quantiles": "quantiles",
         "exclude_inactive": "exclude_inactive",
     }
 
@@ -41,6 +42,7 @@ class CalculatedPullRequestMetrics(Model):
         date_to: Optional[date] = None,
         timezone: Optional[int] = None,
         granularities: Optional[List[str]] = None,
+        quantiles: Optional[List[float]] = None,
         exclude_inactive: Optional[bool] = None,
     ):
         """CalculatedPullRequestMetrics - a model defined in OpenAPI
@@ -50,6 +52,7 @@ class CalculatedPullRequestMetrics(Model):
         :param date_from: The date_from of this CalculatedPullRequestMetrics.
         :param date_to: The date_to of this CalculatedPullRequestMetrics.
         :param granularities: The granularities of this CalculatedPullRequestMetrics.
+        :param quantiles: The quantiles of this CalculatedPullRequestMetrics.
         :param exclude_inactive: The exclude_inactive of this CalculatedPullRequestMetrics.
         """
         self._calculated = calculated
@@ -58,6 +61,7 @@ class CalculatedPullRequestMetrics(Model):
         self._date_to = date_to
         self._timezone = timezone
         self._granularities = granularities
+        self._quantiles = quantiles
         self._exclude_inactive = exclude_inactive
 
     @property
@@ -197,15 +201,23 @@ class CalculatedPullRequestMetrics(Model):
 
         :param granularities: The granularities of this CalculatedPullRequestMetrics.
         """
-        if granularities is None:
-            raise ValueError("Invalid value for `granularities`, must not be `None`")
-        for i, g in enumerate(granularities):
-            if not Granularity.format.match(g):
-                raise ValueError(
-                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/' %
-                    (i, g, Granularity.format.pattern))
-
         self._granularities = granularities
+
+    @property
+    def quantiles(self) -> Optional[List[float]]:
+        """Gets the quantiles of this CalculatedPullRequestMetrics.
+
+        :return: The quantiles of this CalculatedPullRequestMetrics.
+        """
+        return self._quantiles
+
+    @quantiles.setter
+    def quantiles(self, quantiles: Optional[List[float]]):
+        """Sets the quantiles of this CalculatedPullRequestMetrics.
+
+        :param quantiles: The quantiles of this CalculatedPullRequestMetrics.
+        """
+        self._quantiles = quantiles
 
     @property
     def exclude_inactive(self) -> bool:

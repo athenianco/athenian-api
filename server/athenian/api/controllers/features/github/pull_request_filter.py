@@ -55,10 +55,10 @@ class PullRequestListMiner:
         self._facts = facts
         self._properties = properties
         self._calcs = {
-            "wip": (WorkInProgressTimeCalculator(), Property.WIP),
-            "review": (ReviewTimeCalculator(), Property.REVIEWING),
-            "merge": (MergingTimeCalculator(), Property.MERGING),
-            "release": (ReleaseTimeCalculator(), Property.RELEASING),
+            "wip": (WorkInProgressTimeCalculator(quantiles=(0, 1)), Property.WIP),
+            "review": (ReviewTimeCalculator(quantiles=(0, 1)), Property.REVIEWING),
+            "merge": (MergingTimeCalculator(quantiles=(0, 1)), Property.MERGING),
+            "release": (ReleaseTimeCalculator(quantiles=(0, 1)), Property.RELEASING),
         }
         self._no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
         assert isinstance(time_from, datetime)

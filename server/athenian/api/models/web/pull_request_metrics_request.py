@@ -5,6 +5,7 @@ from athenian.api.models.web import Granularity
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
+from athenian.api.models.web.quantiles import validate_quantiles
 
 
 class PullRequestMetricsRequest(Model):
@@ -17,6 +18,7 @@ class PullRequestMetricsRequest(Model):
         "date_to": date,
         "timezone": int,
         "granularities": List[str],
+        "quantiles": List[float],
         "account": int,
         "exclude_inactive": bool,
     }
@@ -28,6 +30,7 @@ class PullRequestMetricsRequest(Model):
         "date_to": "date_to",
         "timezone": "timezone",
         "granularities": "granularities",
+        "quantiles": "quantiles",
         "account": "account",
         "exclude_inactive": "exclude_inactive",
     }
@@ -42,6 +45,7 @@ class PullRequestMetricsRequest(Model):
         date_to: Optional[date] = None,
         timezone: Optional[int] = None,
         granularities: Optional[List[str]] = None,
+        quantiles: Optional[List[float]] = None,
         account: Optional[int] = None,
         exclude_inactive: Optional[bool] = None,
     ):
@@ -53,6 +57,7 @@ class PullRequestMetricsRequest(Model):
         :param date_to: The date_to of this PullRequestMetricsRequest.
         :param timezone: The timezone of this PullRequestMetricsRequest.
         :param granularities: The granularities of this PullRequestMetricsRequest.
+        :param quantiles: The quantiles of this PullRequestMetricsRequest.
         :param account: The account of this PullRequestMetricsRequest.
         :param exclude_inactive: The exclude_inactive of this PullRequestMetricsRequest.
         """
@@ -62,6 +67,7 @@ class PullRequestMetricsRequest(Model):
         self._date_to = date_to
         self._timezone = timezone
         self._granularities = granularities
+        self._quantiles = quantiles
         self._account = account
         self._exclude_inactive = exclude_inactive
 
@@ -198,7 +204,7 @@ class PullRequestMetricsRequest(Model):
 
     @granularities.setter
     def granularities(self, granularities: List[str]):
-        """Sets the granularity of this PullRequestMetricsRequest.
+        """Sets the granularities of this PullRequestMetricsRequest.
 
         :param granularities: The granularities of this PullRequestMetricsRequest.
         """
@@ -211,6 +217,26 @@ class PullRequestMetricsRequest(Model):
                     (i, g, Granularity.format.pattern))
 
         self._granularities = granularities
+
+    @property
+    def quantiles(self) -> Optional[List[float]]:
+        """Gets the quantiles of this PullRequestMetricsRequest.
+
+        :return: The quantiles of this PullRequestMetricsRequest.
+        """
+        return self._quantiles
+
+    @quantiles.setter
+    def quantiles(self, quantiles: Optional[List[float]]):
+        """Sets the quantiles of this PullRequestMetricsRequest.
+
+        :param quantiles: The quantiles of this PullRequestMetricsRequest.
+        """
+        if quantiles is None:
+            self._quantiles = None
+            return
+        validate_quantiles(quantiles)
+        self._quantiles = quantiles
 
     @property
     def account(self) -> int:

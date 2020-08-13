@@ -2364,6 +2364,8 @@ components:
           items:
             $ref: '#/components/schemas/Granularity'
           type: array
+        quantiles:
+          $ref: '#/components/schemas/Quantiles'
         exclude_inactive:
           description: Value indicating whether PRs without events in the given time
             frame shall be ignored.
@@ -2433,6 +2435,18 @@ components:
       - for
       - values
       type: object
+    Quantiles:
+      description: Cut the distributions at certain quantiles. The default is [0, 1].
+      example:
+      - 0
+      - 0.95
+      items:
+        minimum: 0
+        maximum: 1
+        type: number
+      minItems: 2
+      maxItems: 2
+      type: array
     CalculatedPullRequestMetrics:
       additionalProperties: false
       description: The dates start from `date_from` and end earlier or equal to `date_to`.
@@ -2538,6 +2552,8 @@ components:
           items:
             $ref: '#/components/schemas/Granularity'
           type: array
+        quantiles:
+          $ref: '#/components/schemas/Quantiles'
         exclude_inactive:
           description: Repeats `PullRequestMetricsRequest.exclude_inactive`.
           type: boolean
@@ -2547,6 +2563,7 @@ components:
       - date_to
       - exclude_inactive
       - granularities
+      - quantiles
       - metrics
       type: object
     CalculatedPullRequestMetricValues:
@@ -4215,6 +4232,8 @@ components:
           description: Value indicating whether PRs without events in the given time
             frame shall be ignored.
           type: boolean
+        quantiles:
+          $ref: '#/components/schemas/Quantiles'
         account:
           description: Session account ID.
           type: integer

@@ -68,18 +68,19 @@ async def test_calc_histogram_prs_smoke(
 
 
 @pytest.mark.parametrize(
-    "metric, date_to, bins, scale, account, status",
+    "metric, date_to, bins, scale, quantiles, account, status",
     [
-        (PullRequestMetricID.PR_OPENED, "2020-01-23", 10, "log", 1, 400),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", -1, "log", 1, 400),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "xxx", 1, 400),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2015-01-23", 10, "linear", 1, 400),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "linear", 2, 422),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "linear", 4, 404),
+        (PullRequestMetricID.PR_OPENED, "2020-01-23", 10, "log", [0, 1], 1, 400),
+        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", -1, "log", [0, 1], 1, 400),
+        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "xxx", [0, 1], 1, 400),
+        (PullRequestMetricID.PR_CYCLE_TIME, "2015-01-23", 10, "linear", [0, 1], 1, 400),
+        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "linear", [0, 1], 2, 422),
+        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "linear", [0, 1], 4, 404),
+        (PullRequestMetricID.PR_CYCLE_TIME, "2015-11-23", 10, "linear", [-1, 1], 1, 400),
     ],
 )
 async def test_calc_histogram_prs_nasty_input(
-        client, headers, metric, date_to, bins, scale, account, status):
+        client, headers, metric, date_to, bins, scale, quantiles, account, status):
     body = {
         "for": [
             {
@@ -94,6 +95,7 @@ async def test_calc_histogram_prs_nasty_input(
         "date_to": date_to,
         "scale": scale,
         "bins": bins,
+        "quantiles": quantiles,
         "exclude_inactive": False,
         "account": account,
     }

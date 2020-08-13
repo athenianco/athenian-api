@@ -64,6 +64,7 @@ from athenian.api.models.web.pull_request_participant import PullRequestParticip
 from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.pull_request_set import PullRequestSet
 from athenian.api.models.web.pull_request_with import PullRequestWith
+from athenian.api.models.web.quantiles import validate_quantiles
 from athenian.api.models.web.release_match_request import ReleaseMatchRequest
 from athenian.api.models.web.release_match_setting import ReleaseMatchSetting
 from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy

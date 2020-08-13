@@ -30,7 +30,8 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     result = []
-    for service, (repos, devs, labels_include, for_set) in filters:
+
+    async def calculate_for_set_histograms(service, repos, devs, labels_include, for_set):
         calcs = defaultdict(list)
         # for each filter, we find the functions to calculate the histograms
         entries = METRIC_ENTRIES[service]["histogram"]
@@ -46,9 +47,12 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         for func, metrics in calcs.items():
             tasks.append(func(
                 metrics, Scale[filt.scale.upper()], filt.bins or 0, time_from, time_to,
-                repos, devs, labels_include, filt.exclude_inactive, release_settings,
-                request.mdb, request.pdb, request.cache))
-        all_histograms = await asyncio.gather(*tasks, return_exceptions=True)  # type: List[Histogram]  # noqa
+                filt.quantiles or (0, 1), repos, devs, labels_include, filt.exclude_inactive,
+                release_settings, request.mdb, request.pdb, request.cache))
+        if len(tasks) == 1:
+            all_histograms = [await tasks[0]]  # type: List[Histogram]
+        else:
+            all_histograms = await asyncio.gather(*tasks, return_exceptions=True)  # type: List[Histogram]  # noqa
         for metrics, histograms in zip(calcs.values(), all_histograms):
             if isinstance(histograms, Exception):
                 if isinstance(histograms, ValueError) and filt.scale == HistogramScale.LOG:
@@ -65,4 +69,14 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                     ticks=histogram.ticks,
                     frequencies=histogram.frequencies,
                 ))
+
+    tasks = []
+    for service, (repos, devs, labels_include, for_set) in filters:
+        tasks.append(calculate_for_set_histograms(service, repos, devs, labels_include, for_set))
+    if len(tasks) == 0:
+        await tasks[0]
+    else:
+        for err in await asyncio.gather(*tasks, return_exceptions=True):
+            if isinstance(err, Exception):
+                raise err from None
     return model_response(result)

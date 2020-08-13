@@ -5,6 +5,7 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.histogram_scale import HistogramScale
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
+from athenian.api.models.web.quantiles import validate_quantiles
 
 
 class PullRequestHistogramsRequest(Model):
@@ -19,6 +20,7 @@ class PullRequestHistogramsRequest(Model):
         "date_to": date,
         "timezone": int,
         "exclude_inactive": bool,
+        "quantiles": List[float],
         "account": int,
     }
 
@@ -31,6 +33,7 @@ class PullRequestHistogramsRequest(Model):
         "date_to": "date_to",
         "timezone": "timezone",
         "exclude_inactive": "exclude_inactive",
+        "quantiles": "quantiles",
         "account": "account",
     }
 
@@ -46,6 +49,7 @@ class PullRequestHistogramsRequest(Model):
         date_to: Optional[date] = None,
         timezone: Optional[int] = None,
         exclude_inactive: Optional[bool] = None,
+        quantiles: Optional[List[float]] = None,
         account: Optional[int] = None,
     ):
         """PullRequestHistogramsRequest - a model defined in OpenAPI
@@ -58,6 +62,7 @@ class PullRequestHistogramsRequest(Model):
         :param date_to: The date_to of this PullRequestHistogramsRequest.
         :param timezone: The timezone of this PullRequestHistogramsRequest.
         :param exclude_inactive: The exclude_inactive of this PullRequestHistogramsRequest.
+        :param quantiles: The quantiles of this PullRequestHistogramsRequest.
         :param account: The account of this PullRequestHistogramsRequest.
         """
         self._for_ = for_
@@ -68,6 +73,7 @@ class PullRequestHistogramsRequest(Model):
         self._date_to = date_to
         self._timezone = timezone
         self._exclude_inactive = exclude_inactive
+        self._quantiles = quantiles
         self._account = account
 
     @property
@@ -263,6 +269,26 @@ class PullRequestHistogramsRequest(Model):
             raise ValueError("Invalid value for `exclude_inactive`, must not be `None`")
 
         self._exclude_inactive = exclude_inactive
+
+    @property
+    def quantiles(self) -> Optional[List[float]]:
+        """Gets the quantiles of this PullRequestHistogramsRequest.
+
+        :return: The quantiles of this PullRequestHistogramsRequest.
+        """
+        return self._quantiles
+
+    @quantiles.setter
+    def quantiles(self, quantiles: Optional[List[float]]):
+        """Sets the quantiles of this PullRequestHistogramsRequest.
+
+        :param quantiles: The quantiles of this PullRequestHistogramsRequest.
+        """
+        if quantiles is None:
+            self._quantiles = None
+            return
+        validate_quantiles(quantiles)
+        self._quantiles = quantiles
 
     @property
     def account(self) -> int:

@@ -196,10 +196,18 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
     assert len(cm.calculated[0].values) > 0
 
 
-@pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2015-10-13", 200),
-                          (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
-async def test_calc_metrics_prs_nasty_input(client, headers, account, date_to, code):
+@pytest.mark.parametrize("account, date_to, quantiles, code",
+                         [(3, "2020-02-22", [0, 1], 403),
+                          (10, "2020-02-22", [0, 1], 403),
+                          (1, "2015-10-13", [0, 1], 200),
+                          (1, "2010-01-11", [0, 1], 400),
+                          (1, "2020-01-32", [0, 1], 400),
+                          (1, "2020-01-01", [-1, 0.5], 400),
+                          (1, "2020-01-01", [0, -1], 400),
+                          (1, "2020-01-01", [10, 20], 400),
+                          (1, "2020-01-01", [0.5, 0.25], 400),
+                          (1, "2020-01-01", [0.5, 0.5], 400)])
+async def test_calc_metrics_prs_nasty_input(client, headers, account, date_to, quantiles, code):
     """What if we specify a date that does not exist?"""
     body = {
         "for": [
@@ -220,6 +228,7 @@ async def test_calc_metrics_prs_nasty_input(client, headers, account, date_to, c
         "date_from": "2015-10-13",
         "date_to": date_to,
         "granularities": ["week"],
+        "quantiles": quantiles,
         "exclude_inactive": False,
         "account": account,
     }
@@ -433,6 +442,41 @@ async def test_calc_metrics_prs_labels_include(client, headers):
     assert response.status == 200, "Response body is : " + body
     cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
     assert cm.calculated[0].values[0].values[0] == 6
+
+
+async def test_calc_metrics_quantiles(client, headers):
+    body = {
+        "date_from": "2018-06-01",
+        "date_to": "2018-11-18",
+        "for": [{
+            "repositories": [
+                "github.com/src-d/go-git",
+            ],
+            "labels_include": [
+                "bug", "enhancement",
+            ],
+        }],
+        "granularities": ["all"],
+        "account": 1,
+        "metrics": [PullRequestMetricID.PR_WIP_TIME],
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(rbody))
+    wip1 = cm.calculated[0].values[0].values[0]
+    body["quantiles"] = [0.05, 0.95]
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(rbody))
+    wip2 = cm.calculated[0].values[0].values[0]
+    assert int(wip1[:-1]) > int(wip2[:-1])
 
 
 async def test_code_bypassing_prs_smoke(client, headers):

@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Callable, Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
 
 import networkx as nx
+import numpy as np
 
 from athenian.api.controllers.features.histogram import calculate_histogram, Histogram, Scale
 from athenian.api.controllers.features.metric import Metric, T
@@ -26,12 +27,13 @@ class PullRequestMetricCalculator(Generic[T]):
     # Types of dependencies - upstream PullRequestMetricCalculator-s.
     deps = tuple()
 
-    def __init__(self, *deps: "PullRequestMetricCalculator"):
+    def __init__(self, *deps: "PullRequestMetricCalculator", quantiles: Sequence[float]):
         """Initialize a new `PullRequestMetricCalculator` instance."""
         self.samples = []
         self._peek = None
         self._last_value = None
         self._calcs = []
+        self._quantiles = quantiles
         for calc in deps:
             for cls in self.deps:
                 if isinstance(calc, cls):
@@ -65,7 +67,7 @@ class PullRequestMetricCalculator(Generic[T]):
     def value(self) -> Metric[T]:
         """Return the current metric value."""
         if self._last_value is None:
-            self._last_value = self._value()
+            self._last_value = self._value(self._cut_by_quantiles())
         return self._last_value
 
     @property
@@ -78,9 +80,20 @@ class PullRequestMetricCalculator(Generic[T]):
         """Calculate the actual state update."""
         raise NotImplementedError
 
-    def _value(self) -> Metric[T]:
+    def _value(self, samples: Sequence[T]) -> Metric[T]:
         """Calculate the actual current metric value."""
         raise NotImplementedError
+
+    def _cut_by_quantiles(self) -> Sequence[T]:
+        """Cut from the left and the right of the distribution by quantiles."""
+        if not self.samples or (self._quantiles[0] == 0 and self._quantiles[1] == 1):
+            return self.samples
+        cut_values = np.quantile(self.samples, self._quantiles)
+        samples = np.asarray(self.samples)
+        if self._quantiles[0] != 0:
+            samples = np.delete(samples, samples < cut_values[0])
+        samples = np.delete(samples, samples > cut_values[1])
+        return samples
 
 
 class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
@@ -88,15 +101,15 @@ class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
 
     may_have_negative_values: bool
 
-    def _value(self) -> Metric[T]:
+    def _value(self, samples: Sequence[T]) -> Metric[T]:
         """Calculate the current metric value."""
-        if not self.samples:
+        if len(samples) == 0:
             return Metric(False, None, None, None)
         assert self.may_have_negative_values is not None
         if not self.may_have_negative_values:
-            zero = type(self.samples[0])(0)
-            assert all(s >= zero for s in self.samples), str(self.samples)
-        return Metric(True, *mean_confidence_interval(self.samples, self.may_have_negative_values))
+            zero = type(samples[0])(0)
+            assert all(s >= zero for s in samples), str(samples)
+        return Metric(True, *mean_confidence_interval(samples, self.may_have_negative_values))
 
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[T]:
@@ -107,11 +120,11 @@ class PullRequestAverageMetricCalculator(PullRequestMetricCalculator[T]):
 class PullRequestMedianMetricCalculator(PullRequestMetricCalculator[T]):
     """Median calculator."""
 
-    def _value(self) -> Metric[T]:
+    def _value(self, samples: Sequence[T]) -> Metric[T]:
         """Calculate the current metric value."""
-        if not self.samples:
+        if len(samples) == 0:
             return Metric(False, None, None, None)
-        return Metric(True, *median_confidence_interval(self.samples))
+        return Metric(True, *median_confidence_interval(samples))
 
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[T]:
@@ -122,10 +135,10 @@ class PullRequestMedianMetricCalculator(PullRequestMetricCalculator[T]):
 class PullRequestSumMetricCalculator(PullRequestMetricCalculator[T]):
     """Sum calculator."""
 
-    def _value(self) -> Metric[T]:
+    def _value(self, samples: Sequence[T]) -> Metric[T]:
         """Calculate the current metric value."""
-        exists = bool(self.samples)
-        return Metric(exists, sum(self.samples) if exists else None, None, None)
+        exists = len(samples) > 0
+        return Metric(exists, sum(samples) if exists else None, None, None)
 
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[T]:
@@ -147,7 +160,7 @@ class PullRequestHistogramCalculator(PullRequestMetricCalculator):
 
     def histogram(self, scale: Scale, bins: int) -> Histogram[T]:
         """Calculate the histogram over the current distribution."""
-        samples = self.samples
+        samples = self._cut_by_quantiles()
         if scale == Scale.LOG:
             shift_log = getattr(self, "_shift_log", None)  # type: Optional[Callable[[T], T]]
             if shift_log is not None:
@@ -179,13 +192,15 @@ class PullRequestMetricCalculatorEnsemble(Generic[T]):
 
     def __init__(self,
                  *metrics: str,
-                 class_mapping: Dict[str, Type[PullRequestMetricCalculator]] = metric_calculators):
+                 class_mapping: Dict[str, Type[PullRequestMetricCalculator]] = metric_calculators,
+                 quantiles: Sequence[float]):
         """Initialize a new instance of PullRequestMetricCalculatorEnsemble class."""
         metric_classes = {class_mapping[m]: m for m in metrics}
-        self._calcs, self._metrics = self._plan_classes(metric_classes)
+        self._calcs, self._metrics = self._plan_classes(metric_classes, quantiles)
 
     @staticmethod
     def _plan_classes(metric_classes: Dict[Type[PullRequestMetricCalculator], str],
+                      quantiles: Sequence[float],
                       ) -> Tuple[List[PullRequestMetricCalculator],
                                  Dict[str, PullRequestMetricCalculator]]:
         dig = nx.DiGraph()
@@ -203,7 +218,8 @@ class PullRequestMetricCalculatorEnsemble(Generic[T]):
         metrics = {}
         cls_instances = {}
         for cls in reversed(list(nx.topological_sort(dig))):
-            calc = cls(*[cls_instances[dep] for dep in cls.deps])
+            calc = cls(*[cls_instances[dep] for dep in cls.deps],
+                       quantiles=quantiles)
             calcs.append(calc)
             cls_instances[cls] = calc
             try:
@@ -235,9 +251,9 @@ class PullRequestMetricCalculatorEnsemble(Generic[T]):
 class PullRequestHistogramCalculatorEnsemble(PullRequestMetricCalculatorEnsemble[T]):
     """Like PullRequestMetricCalculatorEnsemble, but for histograms."""
 
-    def __init__(self, *metrics: str):
+    def __init__(self, *metrics: str, quantiles: Sequence[float]):
         """Initialize a new instance of PullRequestHistogramCalculatorEnsemble class."""
-        super().__init__(*metrics, class_mapping=histogram_calculators)
+        super().__init__(*metrics, class_mapping=histogram_calculators, quantiles=quantiles)
 
     def histograms(self, scale: Scale, bins: int) -> Dict[str, Histogram[T]]:
         """Calculate the current histograms."""
@@ -249,7 +265,8 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
 
     def __init__(self,
                  metrics: Sequence[str],
-                 time_intervals: Sequence[datetime]):
+                 time_intervals: Sequence[datetime],
+                 quantiles: Sequence[float]):
         """
         Initialize a new instance of `BinnedPullRequestMetricCalculator`.
 
@@ -259,9 +276,13 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
                                not included.
         """
         self.calcs_regular = PullRequestMetricCalculatorEnsemble(
-            *[m for m in metrics if not metric_calculators[m].requires_full_span])
+            *[m for m in metrics if not metric_calculators[m].requires_full_span],
+            quantiles=quantiles,
+        )
         self.calcs_full_span = PullRequestMetricCalculatorEnsemble(
-            *[m for m in metrics if metric_calculators[m].requires_full_span])
+            *[m for m in metrics if metric_calculators[m].requires_full_span],
+            quantiles=quantiles,
+        )
         self.metrics = metrics
         assert len(time_intervals) >= 2
         self.time_intervals = time_intervals
