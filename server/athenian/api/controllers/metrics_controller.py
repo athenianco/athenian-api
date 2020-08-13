@@ -343,6 +343,8 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
         for_sets.append(for_set)
     all_stats = await asyncio.gather(*tasks, return_exceptions=True)
     for stats, for_set in zip(all_stats, for_sets):
+        if isinstance(stats, Exception):
+            raise stats from None
         met.calculated.append(CalculatedDeveloperMetricsItem(
             for_=for_set,
             values=[[getattr(s, DeveloperTopic(t).name) for t in filt.metrics] for s in stats],
