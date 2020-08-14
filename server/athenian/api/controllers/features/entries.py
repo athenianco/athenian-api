@@ -132,10 +132,11 @@ async def calc_pull_request_facts_github(time_from: datetime,
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda metrics, time_intervals, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
+    key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
     (
         ",".join(sorted(metrics)),
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+        ",".join(str(q) for q in quantiles),
         ",".join(sorted(repositories)),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
         ",".join(sorted(labels)),
@@ -145,6 +146,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
 )
 async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
+                                                quantiles: Sequence[float],
                                                 repositories: Set[str],
                                                 participants: Participants,
                                                 labels: Set[str],
@@ -161,7 +163,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
         release_settings, mdb, pdb, cache)
     with sentry_sdk.start_span(op="BinnedPullRequestMetricCalculator.__call__",
                                description=str(len(mined_facts))):
-        return [BinnedPullRequestMetricCalculator(metrics, ts)(mined_facts)
+        return [BinnedPullRequestMetricCalculator(metrics, ts, quantiles)(mined_facts)
                 for ts in time_intervals]
 
 
@@ -185,11 +187,30 @@ async def calc_code_metrics(prop: FilterCommitsProperty,
 
 
 @sentry_span
+@cached(
+    exptime=PullRequestMiner.CACHE_TTL,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda metrics, scale, bins, time_from, time_to, quantiles, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
+    (
+        ",".join(sorted(metrics)),
+        scale.value,
+        bins,
+        time_from, time_to,
+        ",".join(str(q) for q in quantiles),
+        ",".join(sorted(repositories)),
+        ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+        ",".join(sorted(labels)),
+        exclude_inactive,
+        release_settings,
+    ),
+)
 async def calc_pull_request_histogram_github(metrics: Sequence[str],
                                              scale: Scale,
                                              bins: int,
                                              time_from: datetime,
                                              time_to: datetime,
+                                             quantiles: Sequence[float],
                                              repositories: Set[str],
                                              participants: Participants,
                                              labels: Set[str],
@@ -203,7 +224,7 @@ async def calc_pull_request_histogram_github(metrics: Sequence[str],
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, repositories, participants, labels, exclude_inactive,
         release_settings, mdb, pdb, cache)
-    ensemble = PullRequestHistogramCalculatorEnsemble(*metrics)
+    ensemble = PullRequestHistogramCalculatorEnsemble(*metrics, quantiles=quantiles)
     for facts in mined_facts:
         ensemble(facts, time_from, time_to)
     histograms = ensemble.histograms(scale, bins)

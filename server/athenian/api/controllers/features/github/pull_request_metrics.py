@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Sequence
 
 from athenian.api.controllers.features.github.pull_request import \
     PullRequestAverageMetricCalculator, PullRequestCounter, PullRequestMetricCalculator, \
@@ -160,7 +160,7 @@ class CycleTimeCalculator(PullRequestMetricCalculator[timedelta]):
             MergingTimeCalculator,
             ReleaseTimeCalculator)
 
-    def _value(self) -> Metric[timedelta]:
+    def _value(self, samples: Sequence[timedelta]) -> Metric[timedelta]:
         """Calculate the current metric value."""
         exists = False
         ct = ct_conf_min = ct_conf_max = timedelta(0)
@@ -185,6 +185,9 @@ class CycleTimeCalculator(PullRequestMetricCalculator[timedelta]):
                 exists = True
                 sumval += calc.peek
         return sumval if exists else None
+
+    def _cut_by_quantiles(self) -> Sequence[timedelta]:
+        return self.samples
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT)
@@ -310,14 +313,14 @@ class FlowRatioCalculator(PullRequestMetricCalculator[float]):
 
     deps = (OpenedCalculator, ClosedCalculator)
 
-    def __init__(self, *deps: PullRequestMetricCalculator):
+    def __init__(self, *deps: PullRequestMetricCalculator, quantiles: Sequence[float]):
         """Initialize a new instance of FlowRatioCalculator."""
-        super().__init__(*deps)
+        super().__init__(*deps, quantiles=quantiles)
         if isinstance(self._calcs[1], OpenedCalculator):
             self._calcs = list(reversed(self._calcs))
         self._opened, self._closed = self._calcs
 
-    def _value(self) -> Metric[float]:
+    def _value(self, samples: Sequence[float]) -> Metric[float]:
         """Calculate the current metric value."""
         opened = self._opened.value
         closed = self._closed.value
@@ -331,6 +334,9 @@ class FlowRatioCalculator(PullRequestMetricCalculator[float]):
                  **kwargs) -> Optional[float]:
         """Calculate the actual state update."""
         return None
+
+    def _cut_by_quantiles(self) -> Sequence[float]:
+        return self.samples
 
 
 @register_metric(PullRequestMetricID.PR_SIZE)

@@ -23,9 +23,9 @@ from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDevelo
     DeveloperMetricsRequest, ForSet, ForSetDevelopers, Granularity, Model
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
-# from athenian.api.models.no_source_data_error import NoSourceDataError
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
+from athenian.api.tracing import sentry_span
 
 #               service                 developers            originals
 FilterPRs = Tuple[str, Tuple[Set[str], Participants, Set[str], ForSet]]
@@ -69,26 +69,34 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     met.date_to = filt.date_to
     met.timezone = filt.timezone
     met.granularities = filt.granularities
+    met.quantiles = filt.quantiles
     met.metrics = filt.metrics
     met.exclude_inactive = filt.exclude_inactive
     met.calculated = []
 
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(repos)
-    for service, (repos, devs, labels_include, for_set) in filters:
+
+    @sentry_span
+    async def calculate_for_set_metrics(service, repos, devs, labels_include, for_set):
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
         entries = METRIC_ENTRIES[service]["linear"]
         for m in filt.metrics:
             calcs[entries[m]].append(m)
+        if len(calcs) == 0:
+            return
         gresults = []
-        # for each metric, we find the function to calculate and call it
         tasks = []
+        # for each metric, we find the function to calculate and call it
         for func, metrics in calcs.items():
             tasks.append(func(
-                metrics, time_intervals, repos, devs, labels_include, filt.exclude_inactive,
-                release_settings, request.mdb, request.pdb, request.cache))
-        all_mvs = await asyncio.gather(*tasks, return_exceptions=True)
+                metrics, time_intervals, filt.quantiles or (0, 1), repos, devs, labels_include,
+                filt.exclude_inactive, release_settings, request.mdb, request.pdb, request.cache))
+        if len(tasks) > 1:
+            all_mvs = await asyncio.gather(*tasks, return_exceptions=True)
+        else:
+            all_mvs = [await tasks[0]]
         for metrics, mvs in zip(calcs.values(), all_mvs):
             if isinstance(mvs, Exception):
                 raise mvs from None
@@ -116,6 +124,16 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
                     v.confidence_maxs = None
                     v.confidence_scores = None
             met.calculated.append(cm)
+
+    tasks = []
+    for service, (repos, devs, labels_include, for_set) in filters:
+        tasks.append(calculate_for_set_metrics(service, repos, devs, labels_include, for_set))
+    if len(tasks) == 1:
+        await tasks[0]
+    else:
+        for err in await asyncio.gather(*tasks, return_exceptions=True):
+            if isinstance(err, Exception):
+                raise err from None
     return model_response(met)
 
 

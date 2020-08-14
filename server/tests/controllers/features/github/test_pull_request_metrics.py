@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import itertools
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -9,7 +10,8 @@ from sqlalchemy import select
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github, \
     calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request import \
-    BinnedPullRequestMetricCalculator, histogram_calculators, PullRequestMetricCalculatorEnsemble
+    BinnedPullRequestMetricCalculator, histogram_calculators, PullRequestMetricCalculator, \
+    PullRequestMetricCalculatorEnsemble, register_metric
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
     ClosedCalculator, CycleCounter, CycleTimeCalculator, FlowRatioCalculator, LeadCounter, \
     LeadTimeCalculator, MergingCounter, MergingTimeCalculator, OpenedCalculator, \
@@ -42,7 +44,7 @@ def random_dropout(pr, prob):
      ReleaseTimeCalculator, LeadTimeCalculator, WaitFirstReviewTimeCalculator,
      ], ((datetime, timedelta), (pd.Timestamp, pd.Timedelta))))
 def test_pull_request_metrics_timedelta_stability(pr_samples, cls, dtypes):  # noqa: F811
-    calc = cls()
+    calc = cls(quantiles=(0, 1))
     time_from = datetime.now(tz=timezone.utc) - timedelta(days=10000)
     time_to = datetime.now(tz=timezone.utc)
     for pr in pr_samples(1000):
@@ -60,7 +62,7 @@ def test_pull_request_metrics_timedelta_stability(pr_samples, cls, dtypes):  # n
                           (WaitFirstReviewTimeCalculator, "first_comment_on_first_review"),
                           ])
 def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa: F811
-    calc = cls()
+    calc = cls(quantiles=(0, 1))
     for pr in pr_samples(100):
         time_from = datetime.now(tz=timezone.utc) - timedelta(days=10000)
         for attr in peak_attr.split(","):
@@ -86,7 +88,7 @@ def test_pull_request_metrics_float_binned(pr_samples, metric):  # noqa: F811
     time_to = (datetime.now(tz=timezone.utc) - timedelta(days=365 // 2)).date()
     time_intervals = [datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc)
                       for i in Granularity.split("month", time_from, time_to)]
-    binned = BinnedPullRequestMetricCalculator([metric], time_intervals)
+    binned = BinnedPullRequestMetricCalculator([metric], time_intervals, quantiles=(0, 1))
     samples = pr_samples(1000)
     if metric == PullRequestMetricID.PR_REJECTED:
         for i, s in enumerate(samples):
@@ -103,7 +105,7 @@ def test_pull_request_metrics_float_binned(pr_samples, metric):  # noqa: F811
 
 
 def test_pull_request_opened_no(pr_samples):  # noqa: F811
-    calc = OpenedCalculator()
+    calc = OpenedCalculator(quantiles=(0, 1))
     time_to = datetime.now(tz=timezone.utc)
     time_from = time_to - timedelta(days=180)
     n = 0
@@ -117,7 +119,7 @@ def test_pull_request_opened_no(pr_samples):  # noqa: F811
 
 
 def test_pull_request_closed_no(pr_samples):  # noqa: F811
-    calc = ClosedCalculator()
+    calc = ClosedCalculator(quantiles=(0, 1))
     time_from = datetime.now(tz=timezone.utc) - timedelta(days=365 * 3)
     time_to = time_from + timedelta(days=7)
     for pr in pr_samples(100):
@@ -127,9 +129,11 @@ def test_pull_request_closed_no(pr_samples):  # noqa: F811
 
 
 def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator(OpenedCalculator(), ClosedCalculator())
-    open_calc = OpenedCalculator()
-    closed_calc = ClosedCalculator()
+    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
+                               ClosedCalculator(quantiles=(0, 1)),
+                               quantiles=(0, 1))
+    open_calc = OpenedCalculator(quantiles=(0, 1))
+    closed_calc = ClosedCalculator(quantiles=(0, 1))
     time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
     time_to = datetime.now(tz=timezone.utc)
     for pr in pr_samples(1000):
@@ -147,13 +151,17 @@ def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
 
 
 def test_pull_request_flow_ratio_zeros():
-    calc = FlowRatioCalculator(OpenedCalculator(), ClosedCalculator())
+    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
+                               ClosedCalculator(quantiles=(0, 1)),
+                               quantiles=(0, 1))
     m = calc.value
     assert not m.exists
 
 
 def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator(OpenedCalculator(), ClosedCalculator())
+    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
+                               ClosedCalculator(quantiles=(0, 1)),
+                               quantiles=(0, 1))
     time_to = datetime.now(tz=timezone.utc)
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
@@ -168,7 +176,9 @@ def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
 
 
 def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator(OpenedCalculator(), ClosedCalculator())
+    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
+                               ClosedCalculator(quantiles=(0, 1)),
+                               quantiles=(0, 1))
     time_to = datetime.now(tz=timezone.utc) - timedelta(days=180)
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
@@ -192,7 +202,9 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
                           AllCounter,
                           ])
 def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
-    calc = cls(*(dep1(*(dep2() for dep2 in dep1.deps)) for dep1 in cls.deps))
+    calc = cls(*(dep1(*(dep2(quantiles=(0, 1)) for dep2 in dep1.deps),
+                      quantiles=(0, 1)) for dep1 in cls.deps),
+               quantiles=(0, 1))
     nones = nonones = 0
     for pr in pr_samples(1000):
         time_to = datetime.now(tz=timezone.utc)
@@ -231,7 +243,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
         cache = memcached
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
-    args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]],
+    args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1],
             {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, cache)
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     await wait_deferred()
@@ -253,7 +265,7 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
         mdb, pdb, cache, release_match_setting_tag):
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=10, day=1, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]],
+    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1],
             {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, cache]
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     release_match_setting_tag = {
@@ -271,16 +283,16 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
     time_middle = time_from + timedelta(days=14)
     time_to = datetime(year=2016, month=12, day=15, tzinfo=timezone.utc)
     metric1 = (await calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]],
+        [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]], [0, 1],
         {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, None,
     ))[0][0][0].value
     metric2 = (await calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]],
+        [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]], [0, 1],
         {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, None,
     ))[0][0][0].value
     metric1_ext, metric2_ext = (m[0].value for m in (
         await calc_pull_request_metrics_line_github(
-            [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]],
+            [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]], [0, 1],
             {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, None,
         )
     )[0])
@@ -293,12 +305,12 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
         mdb, pdb, cache, release_match_setting_tag):
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]],
+    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 1],
             {"src-d/go-git"}, {}, set(), False, release_match_setting_tag, mdb, pdb, cache]
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     await wait_deferred()
     assert metrics.value == 7
-    args[5] = True
+    args[6] = True
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     await wait_deferred()
     assert metrics.value == 6
@@ -306,14 +318,14 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     date_to = datetime(year=2017, month=5, day=25, tzinfo=timezone.utc)
     args[0] = [PullRequestMetricID.PR_RELEASE_COUNT]
     args[1] = [[date_from, date_to]]
-    args[5] = False
+    args[6] = False
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     await wait_deferred()
     assert metrics.value == 71
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     await wait_deferred()
     assert metrics.value == 71
-    args[5] = True
+    args[6] = True
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics.value == 71
 
@@ -322,12 +334,17 @@ def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
     ensemble = PullRequestMetricCalculatorEnsemble(PullRequestMetricID.PR_CYCLE_TIME,
                                                    PullRequestMetricID.PR_WIP_COUNT,
                                                    PullRequestMetricID.PR_RELEASE_TIME,
-                                                   PullRequestMetricID.PR_CLOSED)
-    release_time = ReleaseTimeCalculator()
-    wip_count = WorkInProgressCounter(WorkInProgressTimeCalculator())
-    cycle_time = CycleTimeCalculator(WorkInProgressTimeCalculator(), ReviewTimeCalculator(),
-                                     MergingTimeCalculator(), ReleaseTimeCalculator())
-    closed = ClosedCalculator()
+                                                   PullRequestMetricID.PR_CLOSED,
+                                                   quantiles=(0, 1))
+    release_time = ReleaseTimeCalculator(quantiles=(0, 1))
+    wip_count = WorkInProgressCounter(WorkInProgressTimeCalculator(quantiles=(0, 1)),
+                                      quantiles=(0, 1))
+    cycle_time = CycleTimeCalculator(WorkInProgressTimeCalculator(quantiles=(0, 1)),
+                                     ReviewTimeCalculator(quantiles=(0, 1)),
+                                     MergingTimeCalculator(quantiles=(0, 1)),
+                                     ReleaseTimeCalculator(quantiles=(0, 1)),
+                                     quantiles=(0, 1))
+    closed = ClosedCalculator(quantiles=(0, 1))
     time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
     time_to = datetime.now(tz=timezone.utc)
     for _ in range(2):
@@ -350,7 +367,7 @@ def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
 
 
 def test_pull_request_metric_calculator_ensemble_empty(pr_samples):
-    ensemble = PullRequestMetricCalculatorEnsemble()
+    ensemble = PullRequestMetricCalculatorEnsemble(quantiles=(0, 1))
     time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
     time_to = datetime.now(tz=timezone.utc)
     for pr in pr_samples(1):
@@ -374,9 +391,41 @@ async def test_calc_pull_request_facts_github_open_precomputed(
 
 
 def test_size_calculator_shift_log():
-    calc = histogram_calculators[PullRequestMetricID.PR_SIZE]()
+    calc = histogram_calculators[PullRequestMetricID.PR_SIZE](quantiles=(0, 1))
     calc.samples = [0, 10, 0, 20, 150, 0]
     h = calc.histogram(Scale.LOG, 3)
     assert h.ticks[0] == 1
     for f in h.frequencies:
         assert f == f
+
+
+@register_metric("test")
+class QuantileTestingMetric(PullRequestMetricCalculator):
+    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[timedelta]:
+        """Calculate the actual state update."""
+        return facts.released.best - facts.created.best
+
+    def _value(self, samples: Sequence[timedelta]) -> Tuple[timedelta, int]:
+        """Calculate the actual current metric value."""
+        return np.asarray(samples).sum(), len(samples)
+
+
+def test_quantiles(pr_samples):
+    time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
+    time_to = datetime.now(tz=timezone.utc)
+    samples = pr_samples(200)
+    ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0, 1))
+    for pr in samples:
+        ensemble(pr, time_from, time_to)
+    m1, c1 = ensemble.values()["test"]
+    ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0, 0.9))
+    for pr in samples:
+        ensemble(pr, time_from, time_to)
+    m2, c2 = ensemble.values()["test"]
+    ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0.1, 0.9))
+    for pr in samples:
+        ensemble(pr, time_from, time_to)
+    m3, c3 = ensemble.values()["test"]
+    assert m1 > m2 > m3
+    assert c1 > c2 > c3
