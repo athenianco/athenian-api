@@ -69,8 +69,12 @@ class PullRequestMiner:
 
     @sentry_span
     def _postprocess_cached_prs(
-            result: Tuple[List[pd.DataFrame], Dict[str, PullRequestFacts],
-                          Set[str], Participants, Set[str]],
+            result: Tuple[List[pd.DataFrame],
+                          Dict[str, PullRequestFacts],
+                          Set[str],
+                          Participants,
+                          Set[str],
+                          Dict[str, ReleaseMatch]],
             date_to: date,
             repositories: Set[str],
             participants: Participants,
@@ -79,7 +83,7 @@ class PullRequestMiner:
             truncate: bool,
             **_) -> Tuple[List[pd.DataFrame], Dict[str, PullRequestFacts],
                           Set[str], Participants, Set[str]]:
-        dfs, _, cached_repositories, cached_participants, cached_labels = result
+        dfs, _, cached_repositories, cached_participants, cached_labels, _ = result
         if repositories - cached_repositories:
             raise CancelCache()
         cls = PullRequestMiner
@@ -112,7 +116,6 @@ class PullRequestMiner:
             ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []), truncate,
         ),
         postprocess=_postprocess_cached_prs,
-        version=3,
     )
     async def _mine(cls,
                     date_from: date,
@@ -129,8 +132,12 @@ class PullRequestMiner:
                     cache: Optional[aiomcache.Client],
                     pr_blacklist: Optional[Collection[str]],
                     truncate: bool,
-                    ) -> Tuple[List[pd.DataFrame], Dict[str, PullRequestFacts],
-                               Set[str], Participants, Set[str]]:
+                    ) -> Tuple[List[pd.DataFrame],
+                               Dict[str, PullRequestFacts],
+                               Set[str],
+                               Participants,
+                               Set[str],
+                               Dict[str, ReleaseMatch]]:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
         assert isinstance(repositories, set)
@@ -202,15 +209,18 @@ class PullRequestMiner:
             for r in external_data:
                 if isinstance(r, Exception):
                     raise r from None
-        dfs = [prs, *external_data[0]]
-        open_facts = external_data[1]
+        dfs = [prs, *external_data[0][0]]
+        facts = external_data[1]  # open PR precomputed facts
+        for k, v in external_data[0][1].items():  # merged unreleased PR precomputed facts
+            if v is not None:
+                facts[k] = v
         to_drop = cls._find_drop_by_participants(dfs, participants, None if truncate else time_to)
         to_drop |= cls._find_drop_by_labels(prs, dfs[-1], labels)
         if exclude_inactive:
             to_drop |= cls._find_drop_by_inactive(dfs, time_from, time_to)
         cls._drop(dfs, to_drop)
         # we don't care about the precomputed facts, they are here for the reference
-        return dfs, open_facts, repositories, participants, labels
+        return dfs, facts, repositories, participants, labels, matched_bys
 
     _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
 
@@ -225,7 +235,6 @@ class PullRequestMiner:
             ",".join(releases[Release.id.key].values), time_to.timestamp(),
             truncate,
         ),
-        version=2,
     )
     async def mine_by_ids(cls,
                           prs: pd.DataFrame,
@@ -241,15 +250,18 @@ class PullRequestMiner:
                           pdb: databases.Database,
                           cache: Optional[aiomcache.Client],
                           truncate: bool = True,
-                          ) -> List[pd.DataFrame]:
+                          ) -> Tuple[List[pd.DataFrame], Dict[str, PullRequestFacts]]:
         """
         Fetch PR metadata for certain PRs.
 
         :param prs: pandas DataFrame with fetched PullRequest-s. Only the details about those PRs \
                     will be loaded from the DB.
         :param truncate: Do not load anything after `time_to`.
+        :return: List of mined DataFrame-s + mapping to pickle-d PullRequestFacts for unreleased \
+                 merged PR. Why so complex? Performance.
         """
         node_ids = prs.index if len(prs) > 0 else set()
+        facts = {}  # precomputed PullRequestFacts about merged unreleased PRs
 
         @sentry_span
         async def fetch_reviews():
@@ -291,15 +303,17 @@ class PullRequestMiner:
 
         @sentry_span
         async def map_releases():
+            nonlocal facts
             if truncate:
                 merged_prs = prs.take(np.where(
                     (prs[PullRequest.merged_at.key] <= time_to) & ~prs.index.isin(unreleased))[0])
             else:
                 merged_prs = prs.take(np.where(
                     (~prs[PullRequest.merged_at.key].isnull()) & ~prs.index.isin(unreleased))[0])
-            return await map_prs_to_releases(
+            df, facts = await map_prs_to_releases(
                 merged_prs, releases, matched_bys, branches, default_branches, time_to,
                 dags, release_settings, mdb, pdb, cache)
+            return df
 
         @sentry_span
         async def fetch_labels():
@@ -316,7 +330,7 @@ class PullRequestMiner:
         for df in dfs:
             if isinstance(df, Exception):
                 raise df from None
-        return dfs
+        return dfs, facts
 
     @classmethod
     @sentry_span
@@ -337,10 +351,17 @@ class PullRequestMiner:
                    cache: Optional[aiomcache.Client],
                    pr_blacklist: Optional[Collection[str]] = None,
                    truncate: bool = True,
-                   ) -> Tuple["PullRequestMiner", Dict[str, PullRequestFacts]]:
+                   ) -> Tuple["PullRequestMiner",
+                              Dict[str, PullRequestFacts],
+                              Dict[str, ReleaseMatch]]:
         """
-        Create a new `PullRequestMiner` from the metadata DB according to the specified filters. \
-        Fetch the precomputed facts about open pull requests (optimization makes us do it here).
+        Mine metadata about pull requests according to the numerous filters.
+
+        First returned item: a new `PullRequestMiner` with the PRs satisfying \
+                             to the specified filters.
+        Second returned item: the precomputed facts about unreleased pull requests. \
+                              This is an optimization which breaks the abstraction a bit.
+        The third returned item: the `matched_bys` - release matches for each repository.
 
         :param date_from: Fetch PRs created starting from this date, inclusive.
         :param date_to: Fetch PRs created ending with this date, inclusive.
@@ -364,7 +385,7 @@ class PullRequestMiner:
         date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
-        dfs, open_facts, _, _, _ = await cls._mine(
+        dfs, facts, _, _, _, matched_bys = await cls._mine(
             date_from, date_to, repositories, participants, labels, branches, default_branches,
             exclude_inactive, release_settings, mdb, pdb, cache, pr_blacklist=pr_blacklist,
             truncate=truncate)
@@ -372,7 +393,7 @@ class PullRequestMiner:
         if truncate:
             for df in dfs:
                 cls._truncate_timestamps(df, time_to)
-        return cls(*dfs), open_facts
+        return cls(*dfs), facts, matched_bys
 
     @staticmethod
     def _check_participants_compatibility(cached_participants: Participants,

@@ -31,7 +31,7 @@ from athenian.api.controllers.miners.github.release_accelerated import extract_s
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.github.users import mine_user_avatars
-from athenian.api.controllers.miners.types import dtmax
+from athenian.api.controllers.miners.types import dtmax, PullRequestFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
@@ -375,14 +375,14 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               mdb: databases.Database,
                               pdb: databases.Database,
                               cache: Optional[aiomcache.Client],
-                              ) -> pd.DataFrame:
+                              ) -> Tuple[pd.DataFrame, Dict[str, PullRequestFacts]]:
     """Match the merged pull requests to the nearest releases that include them."""
     assert isinstance(time_to, datetime)
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
     pr_releases = new_released_prs_df()
     if prs.empty:
-        return pr_releases
+        return pr_releases, {}
     tasks = [
         discover_unreleased_prs(
             prs, dtmax(releases[Release.published_at.key].max(), time_to),
@@ -399,7 +399,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     pr_releases = precomputed_pr_releases
     merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
     if merged_prs.empty:
-        return pr_releases
+        return pr_releases, unreleased_prs
     tasks = [
         _fetch_labels(merged_prs.index, mdb),
         _find_dead_merged_prs(merged_prs, dags, branches, mdb, pdb, cache),
@@ -424,7 +424,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
         merged_prs, missed_released_prs, time_to, labels, matched_bys, default_branches,
         release_settings, pdb),
         "update_unreleased_prs(%d, %d)" % (len(merged_prs), len(missed_released_prs)))
-    return pr_releases.append(missed_released_prs)
+    return pr_releases.append(missed_released_prs), unreleased_prs
 
 
 async def _map_prs_to_releases(prs: pd.DataFrame,

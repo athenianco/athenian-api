@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
@@ -9,7 +10,7 @@ from dateutil.rrule import DAILY, rrule
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, insert, join, or_, select
+from sqlalchemy import and_, insert, join, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.functions import ReturnTypeFromArgs
@@ -28,7 +29,7 @@ from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewRequest, Release
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
-    GitHubMergedPullRequest, GitHubOpenPullRequestFacts
+    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
 from athenian.api.tracing import sentry_span
 
 
@@ -471,40 +472,50 @@ async def discover_unreleased_prs(prs: pd.DataFrame,
                                   matched_bys: Dict[str, ReleaseMatch],
                                   default_branches: Dict[str, str],
                                   release_settings: Dict[str, ReleaseMatchSetting],
-                                  pdb: databases.Database) -> List[str]:
+                                  pdb: databases.Database,
+                                  ) -> Dict[str, Optional[PullRequestFacts]]:
     """
-    Load the list PR node identifiers which we are sure are not released in one of `releases`.
+    Load the mapping from PR node identifiers which we are sure are not released in one of \
+    `releases` to the `pickle`-d facts.
 
     For each merged PR we maintain the set of releases that do include that PR.
     """
     filters = []
-    prefix = PREFIXES["github"]
     assert time_to.tzinfo is not None
     for repo in prs[PullRequest.repository_full_name.key].unique():
-        try:
-            matched_by = matched_bys[repo]
-        except KeyError:
+        if (release_match := _extract_release_match(
+                repo, matched_bys, default_branches, release_settings)) is None:
             # no new releases
             continue
-        release_setting = release_settings[prefix + repo]
-        if matched_by == ReleaseMatch.tag:
-            release_match = "tag|" + release_setting.tags
-        elif matched_by == ReleaseMatch.branch:
-            branch = release_setting.branches.replace(
-                default_branch_alias, default_branches[repo])
-            release_match = "branch|" + branch
-        else:
-            raise AssertionError("Unsupported release match %s" % matched_by)
-        repo_filters = [GitHubMergedPullRequest.repository_full_name == repo,
-                        GitHubMergedPullRequest.release_match == release_match]
+        repo_filters = [GitHubMergedPullRequestFacts.repository_full_name == repo,
+                        GitHubMergedPullRequestFacts.release_match == release_match]
         filters.append(and_(*repo_filters))
     with sentry_sdk.start_span(op="discover_unreleased_prs/fetch"):
         rows = await pdb.fetch_all(
-            select([GitHubMergedPullRequest.pr_node_id])
-            .where(and_(GitHubMergedPullRequest.pr_node_id.in_(prs.index),
-                        GitHubMergedPullRequest.checked_until >= time_to,
+            select([GitHubMergedPullRequestFacts.pr_node_id,
+                    GitHubMergedPullRequestFacts.data])
+            .where(and_(GitHubMergedPullRequestFacts.pr_node_id.in_(prs.index),
+                        GitHubMergedPullRequestFacts.checked_until >= time_to,
                         or_(*filters))))
-    return [r[0] for r in rows]
+    return {r[0]: (pickle.loads(r[1]) if r[1] is not None else None) for r in rows}
+
+
+def _extract_release_match(repo: str,
+                           matched_bys: Dict[str, ReleaseMatch],
+                           default_branches: Dict[str, str],
+                           release_settings: Dict[str, ReleaseMatchSetting]) -> Optional[str]:
+    try:
+        matched_by = matched_bys[repo]
+    except KeyError:
+        return None
+    release_setting = release_settings[PREFIXES["github"] + repo]
+    if matched_by == ReleaseMatch.tag:
+        return "tag|" + release_setting.tags
+    if matched_by == ReleaseMatch.branch:
+        branch = release_setting.branches.replace(
+            default_branch_alias, default_branches[repo])
+        return "branch|" + branch
+    raise AssertionError("Unsupported release match %s" % matched_by)
 
 
 class greatest(ReturnTypeFromArgs):  # noqa
@@ -521,12 +532,12 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                                 release_settings: Dict[str, ReleaseMatchSetting],
                                 pdb: databases.Database) -> None:
     """
-    Append new releases which do *not* include the specified merged PRs.
+    Bump the last check timestamps for unreleased merged PRs.
 
     :param merged_prs: Merged PRs to update in the pdb.
-    :param time_to: Until when we checked releases for those PRs.
-    :param releases: All the releases that were considered in mapping `merged_prs` to \
-                     `released_prs`.
+    :param released_prs: Released PRs among `merged_prs`. They should be marked as checked until \
+                         the release publish time.
+    :param time_to: Until when we checked releases for the specified PRs.
     """
     assert time_to.tzinfo is not None
     postgres = pdb.url.dialect in ("postgres", "postgresql")
@@ -534,22 +545,11 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
     release_times = dict(zip(released_prs.index.values,
                              released_prs[Release.published_at.key] - timedelta(minutes=1)))
     with sentry_sdk.start_span(op="update_unreleased_prs/generate"):
-        prefix = PREFIXES["github"]
         for repo, repo_prs in merged_prs.groupby(PullRequest.repository_full_name.key, sort=False):
-            try:
-                matched_by = matched_bys[repo]
-            except KeyError:
+            if (release_match := _extract_release_match(
+                    repo, matched_bys, default_branches, release_settings)) is None:
                 # no new releases
                 continue
-            release_setting = release_settings[prefix + repo]
-            if matched_by == ReleaseMatch.tag:
-                release_match = "tag|" + release_setting.tags
-            elif matched_by == ReleaseMatch.branch:
-                branch = release_setting.branches.replace(
-                    default_branch_alias, default_branches[repo])
-                release_match = "branch|" + branch
-            else:
-                raise AssertionError("Unsupported release match %s" % matched_by)
             for node_id, merged_at, author, merger in zip(
                     repo_prs.index.values, repo_prs[PullRequest.merged_at.key],
                     repo_prs[PullRequest.user_login.key].values,
@@ -558,7 +558,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                     checked_until = min(time_to, release_times[node_id] - timedelta(seconds=1))
                 except KeyError:
                     checked_until = time_to
-                values.append(GitHubMergedPullRequest(
+                values.append(GitHubMergedPullRequestFacts(
                     pr_node_id=node_id,
                     release_match=release_match,
                     repository_full_name=repo,
@@ -571,21 +571,81 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
         if not values:
             return
         if postgres:
-            sql = postgres_insert(GitHubMergedPullRequest)
+            sql = postgres_insert(GitHubMergedPullRequestFacts)
             sql = sql.on_conflict_do_update(
-                constraint=GitHubMergedPullRequest.__table__.primary_key,
+                constraint=GitHubMergedPullRequestFacts.__table__.primary_key,
                 set_={
-                    GitHubMergedPullRequest.checked_until.key: greatest(
-                        GitHubMergedPullRequest.checked_until, sql.excluded.checked_until),
-                    GitHubMergedPullRequest.updated_at.key: sql.excluded.updated_at,
+                    GitHubMergedPullRequestFacts.checked_until.key: greatest(
+                        GitHubMergedPullRequestFacts.checked_until, sql.excluded.checked_until),
+                    GitHubMergedPullRequestFacts.labels.key:
+                        GitHubMergedPullRequestFacts.labels + sql.excluded.labels,
+                    GitHubMergedPullRequestFacts.updated_at.key: sql.excluded.updated_at,
                 },
             )
         else:
             # this is wrong but we just cannot update SQLite properly
             # nothing will break though
-            sql = insert(GitHubMergedPullRequest).prefix_with("OR REPLACE")
+            sql = insert(GitHubMergedPullRequestFacts).prefix_with("OR REPLACE")
     with sentry_sdk.start_span(op="update_unreleased_prs/execute"):
         await pdb.execute_many(sql, values)
+
+
+@sentry_span
+async def store_merged_unreleased_pull_request_facts(
+        merged_prs_and_facts: Iterable[Tuple[Mapping[str, Any], PullRequestFacts]],
+        matched_bys: Dict[str, ReleaseMatch],
+        default_branches: Dict[str, str],
+        release_settings: Dict[str, ReleaseMatchSetting],
+        pdb: databases.Database) -> None:
+    """
+    Persist the facts about merged unreleased pull requests to the database.
+
+    Each passed PR must be merged and not released, we raise an assertion otherwise.
+    """
+    postgres = pdb.url.dialect in ("postgres", "postgresql")
+    if not postgres:
+        assert pdb.url.dialect == "sqlite"
+    values = []
+    for pr, facts in merged_prs_and_facts:
+        assert facts.merged and not facts.released
+        repo = pr[PullRequest.repository_full_name.key]
+        if (release_match := _extract_release_match(
+                repo, matched_bys, default_branches, release_settings)) is None:
+            # no new releases
+            continue
+        values.append(GitHubMergedPullRequestFacts(
+            pr_node_id=pr[PullRequest.node_id.key],
+            release_match=release_match,
+            data=pickle.dumps(facts),
+            # the following are needed just to please PostgreSQL, they are not actually written
+            merged_at=facts.merged.best,
+            repository_full_name=repo,
+            checked_until=facts.merged.best,
+            labels={},
+        ).create_defaults().explode(with_primary_keys=True))
+    if postgres:
+        sql = postgres_insert(GitHubMergedPullRequestFacts)
+        sql = sql.on_conflict_do_update(
+            constraint=GitHubMergedPullRequestFacts.__table__.primary_key,
+            set_={
+                GitHubMergedPullRequestFacts.data.key: sql.excluded.data,
+            },
+        )
+        with sentry_sdk.start_span(op="store_open_pull_request_facts/execute"):
+            await pdb.execute_many(sql, values)
+    else:
+        ghmprf = GitHubMergedPullRequestFacts
+        tasks = [
+            pdb.execute(update(ghmprf).where(and_(
+                ghmprf.pr_node_id == v[ghmprf.pr_node_id.key],
+                ghmprf.release_match == v[ghmprf.release_match.key],
+                ghmprf.format_version == v[ghmprf.format_version.key],
+            )).values({ghmprf.data: v[ghmprf.data.key],
+                       ghmprf.updated_at: datetime.now(timezone.utc)})) for v in values
+        ]
+        for err in await asyncio.gather(*tasks, return_exceptions=True):
+            if isinstance(err, Exception):
+                raise err from None
 
 
 @sentry_span
@@ -613,30 +673,30 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
                                               ) -> pd.DataFrame:
     """Discover PRs which were merged before `time_from` and still not released."""
     postgres = pdb.url.dialect in ("postgres", "postgresql")
-    selected = [GitHubMergedPullRequest.pr_node_id,
-                GitHubMergedPullRequest.repository_full_name,
-                GitHubMergedPullRequest.release_match]
+    selected = [GitHubMergedPullRequestFacts.pr_node_id,
+                GitHubMergedPullRequestFacts.repository_full_name,
+                GitHubMergedPullRequestFacts.release_match]
     filters = [
         or_(GitHubDonePullRequestFacts.pr_done_at.is_(None),
             GitHubDonePullRequestFacts.pr_done_at >= time_to),
-        GitHubMergedPullRequest.repository_full_name.in_(repos),
-        GitHubMergedPullRequest.merged_at < time_from,
+        GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
+        GitHubMergedPullRequestFacts.merged_at < time_from,
     ]
-    for role, col in ((ParticipationKind.AUTHOR, GitHubMergedPullRequest.author),
-                      (ParticipationKind.MERGER, GitHubMergedPullRequest.merger)):
+    for role, col in ((ParticipationKind.AUTHOR, GitHubMergedPullRequestFacts.author),
+                      (ParticipationKind.MERGER, GitHubMergedPullRequestFacts.merger)):
         people = participants.get(role)
         if people:
             filters.append(col.in_(people))
     if len(labels) > 0:
         if postgres:
-            filters.append(GitHubMergedPullRequest.labels.has_any(labels))
+            filters.append(GitHubMergedPullRequestFacts.labels.has_any(labels))
         else:
-            selected.append(GitHubMergedPullRequest.labels)
+            selected.append(GitHubMergedPullRequestFacts.labels)
             if not isinstance(labels, set):
                 labels = set(labels)
-    body = join(GitHubMergedPullRequest, GitHubDonePullRequestFacts, and_(
-        GitHubDonePullRequestFacts.pr_node_id == GitHubMergedPullRequest.pr_node_id,
-        GitHubDonePullRequestFacts.release_match == GitHubMergedPullRequest.release_match,
+    body = join(GitHubMergedPullRequestFacts, GitHubDonePullRequestFacts, and_(
+        GitHubDonePullRequestFacts.pr_node_id == GitHubMergedPullRequestFacts.pr_node_id,
+        GitHubDonePullRequestFacts.release_match == GitHubMergedPullRequestFacts.release_match,
         GitHubDonePullRequestFacts.repository_full_name.in_(repos),
         GitHubDonePullRequestFacts.pr_created_at < time_from,
     ), isouter=True)
@@ -652,7 +712,7 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
             continue
         # we do not care about the exact release match
         if len(labels) > 0 and not postgres and \
-                not labels.intersection(row[GitHubMergedPullRequest.labels.key]):
+                not labels.intersection(row[GitHubMergedPullRequestFacts.labels.key]):
             continue
         node_ids.append(row[0])
     add_pdb_hits(pdb, "inactive_merged_unreleased", len(node_ids))
@@ -697,7 +757,7 @@ async def load_open_pull_request_facts(prs: pd.DataFrame,
 
 @sentry_span
 async def store_open_pull_request_facts(
-        open_prs_and_facts: Iterable[Tuple[Dict[str, Any], PullRequestFacts]],
+        open_prs_and_facts: Iterable[Tuple[Mapping[str, Any], PullRequestFacts]],
         pdb: databases.Database) -> None:
     """
     Persist the facts about open pull requests to the database.
