@@ -350,7 +350,7 @@ async def _filter_pull_requests(properties: Set[Property],
                         await store_missed_open_facts()
                 elif pr_facts.merged and not pr_facts.released:
                     missed_merged_unreleased_facts_counter += 1
-                    missed_merged_unreleased_facts.append((pr, pr_facts))
+                    missed_merged_unreleased_facts.append((pr.pr, pr_facts))
                     if (len(missed_merged_unreleased_facts) + 1) % 100 == 0:
                         await store_missed_merged_unreleased_facts()
             else:

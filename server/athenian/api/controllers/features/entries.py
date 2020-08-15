@@ -131,7 +131,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
                     "store_open_pull_request_facts(%d)" % len(open_pr_facts))
     if len(merged_unreleased_pr_facts) > 0:
         await defer(store_merged_unreleased_pull_request_facts(
-            merged_unreleased_pr_facts, matched_bys, default_branches, release_settings),
+            merged_unreleased_pr_facts, matched_bys, default_branches, release_settings, pdb),
             "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts))
     return mined_facts
 
