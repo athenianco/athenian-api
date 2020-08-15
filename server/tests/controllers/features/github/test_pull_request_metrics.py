@@ -22,7 +22,8 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.models.precomputed.models import GitHubOpenPullRequestFacts
+from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts, \
+    GitHubOpenPullRequestFacts
 from athenian.api.models.web import Granularity, PullRequestMetricID
 from tests.conftest import has_memcached
 from tests.controllers.features.github.test_pull_request import ensure_dtype
@@ -386,6 +387,24 @@ async def test_calc_pull_request_facts_github_open_precomputed(
     await wait_deferred()
     open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
     assert len(open_facts) == 21
+    facts2 = await calc_pull_request_facts_github(*args)
+    assert set(facts1) == set(facts2)
+
+
+@with_defer
+async def test_calc_pull_request_facts_github_unreleased_precomputed(
+        mdb, pdb, release_match_setting_tag):
+    time_from = datetime(year=2019, month=10, day=30, tzinfo=timezone.utc)
+    time_to = datetime(year=2019, month=11, day=2, tzinfo=timezone.utc)
+    args = (time_from, time_to, {"src-d/go-git"}, {}, set(), False, release_match_setting_tag,
+            mdb, pdb, None)
+    facts1 = await calc_pull_request_facts_github(*args)
+    await wait_deferred()
+    unreleased_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
+    assert len(unreleased_facts) == 2
+    for row in unreleased_facts:
+        assert row[GitHubMergedPullRequestFacts.data.key] is not None, \
+            row[GitHubMergedPullRequestFacts.pr_node_id.key]
     facts2 = await calc_pull_request_facts_github(*args)
     assert set(facts1) == set(facts2)
 
