@@ -487,9 +487,8 @@ async def discover_unreleased_prs(prs: pd.DataFrame,
                 repo, matched_bys, default_branches, release_settings)) is None:
             # no new releases
             continue
-        repo_filters = [GitHubMergedPullRequestFacts.repository_full_name == repo,
-                        GitHubMergedPullRequestFacts.release_match == release_match]
-        filters.append(and_(*repo_filters))
+        filters.append(and_(GitHubMergedPullRequestFacts.repository_full_name == repo,
+                            GitHubMergedPullRequestFacts.release_match == release_match))
     with sentry_sdk.start_span(op="discover_unreleased_prs/fetch"):
         rows = await pdb.fetch_all(
             select([GitHubMergedPullRequestFacts.pr_node_id,
