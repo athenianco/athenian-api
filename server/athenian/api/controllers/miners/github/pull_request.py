@@ -17,10 +17,10 @@ from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_inactive_merged_unreleased_prs, load_open_pull_request_facts
+    discover_unreleased_prs, load_inactive_merged_unreleased_prs, load_open_pull_request_facts
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
-from athenian.api.controllers.miners.types import dtmin, Fallback, MinedPullRequest, \
+from athenian.api.controllers.miners.types import dtmax, dtmin, Fallback, MinedPullRequest, \
     Participants, ParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
@@ -303,16 +303,26 @@ class PullRequestMiner:
 
         @sentry_span
         async def map_releases():
-            nonlocal facts
             if truncate:
-                merged_prs = prs.take(np.where(
-                    (prs[PullRequest.merged_at.key] <= time_to) & ~prs.index.isin(unreleased))[0])
+                merged_mask = prs[PullRequest.merged_at.key] <= time_to
             else:
-                merged_prs = prs.take(np.where(
-                    (~prs[PullRequest.merged_at.key].isnull()) & ~prs.index.isin(unreleased))[0])
-            df, facts = await map_prs_to_releases(
+                merged_mask = ~prs[PullRequest.merged_at.key].isnull()
+            merged_mask &= ~prs.index.isin(unreleased)
+            merged_prs = prs.take(np.where(merged_mask)[0])
+            subtasks = [map_prs_to_releases(
                 merged_prs, releases, matched_bys, branches, default_branches, time_to,
-                dags, release_settings, mdb, pdb, cache)
+                dags, release_settings, mdb, pdb, cache),
+                discover_unreleased_prs(
+                    prs.take(np.where(~merged_mask)[0]),
+                    dtmax(releases[Release.published_at.key].max(), time_to),
+                    matched_bys, default_branches, release_settings, pdb)]
+            df_facts, other_facts = await asyncio.gather(*subtasks, return_exceptions=True)
+            for r in (df_facts, other_facts):
+                if isinstance(r, Exception):
+                    raise r from None
+            nonlocal facts
+            df, facts = df_facts
+            facts.update(other_facts)
             return df
 
         @sentry_span

@@ -296,7 +296,10 @@ async def _filter_pull_requests(properties: Set[Property],
         if isinstance(r, Exception):
             raise r from None
     pr_miner, unreleased_facts, matched_bys = pr_miner
+    # we want the released PR facts to overwrite the others
+    facts, unreleased_facts = unreleased_facts, facts
     facts.update(unreleased_facts)
+    del unreleased_facts
 
     prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
 
