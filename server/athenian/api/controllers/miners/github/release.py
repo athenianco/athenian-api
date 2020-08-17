@@ -261,11 +261,16 @@ async def _match_releases_by_branch(repos: Iterable[str],
         for repo, branches in branches_matched.items()
     ]
     all_merge_commits = []
+    pdb_hits = 0
     with sentry_sdk.start_span(op="_match_releases_by_branch/_fetch_merge_points"):
-        for mps in await asyncio.gather(*mp_tasks, return_exceptions=True):
-            if isinstance(mps, Exception):
-                raise mps from None
+        for tr in await asyncio.gather(*mp_tasks, return_exceptions=True):
+            if isinstance(tr, Exception):
+                raise tr from None
+            mps, pdb_hit = tr
             all_merge_commits.extend(mps)
+            pdb_hits += pdb_hit
+    add_pdb_hits(pdb, "_fetch_first_parents", pdb_hits)
+    add_pdb_misses(pdb, "_fetch_first_parents", len(mp_tasks) - pdb_hits)
     all_commits = await _fetch_commits(all_merge_commits, mdb, cache)
     del all_merge_commits
     pseudo_releases = []
@@ -338,12 +343,12 @@ async def _fetch_merge_points(data: Optional[bytes],
                               mdb: databases.Database,
                               pdb: databases.Database,
                               cache: Optional[aiomcache.Client],
-                              ) -> Set[str]:
-    first_parents = await _fetch_first_parents(
+                              ) -> Tuple[Set[str], bool]:
+    first_parents, pdb_hit = await _fetch_first_parents(
         data, repo, commit_ids, time_from, time_to, mdb, pdb, cache)
     if merge_commit_ids is not None:
         first_parents.update(merge_commit_ids)
-    return first_parents
+    return first_parents, pdb_hit
 
 
 @sentry_span
@@ -544,6 +549,7 @@ async def _fetch_labels(node_ids: Iterable[str], mdb: databases.Database) -> Dic
         ",".join(sorted(commit_ids)), time_from.timestamp(), time_to.timestamp(),
     ),
     refresh_on_access=True,
+    version=2,
 )
 async def _fetch_first_parents(data: Optional[bytes],
                                repo: str,
@@ -553,7 +559,7 @@ async def _fetch_first_parents(data: Optional[bytes],
                                mdb: databases.Database,
                                pdb: databases.Database,
                                cache: Optional[aiomcache.Client],
-                               ) -> Set[str]:
+                               ) -> Tuple[Set[str], bool]:
     # Git parent-child is reversed github_node_commit_parents' parent-child.
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
@@ -573,7 +579,6 @@ async def _fetch_first_parents(data: Optional[bytes],
         need_update = True
 
     if need_update:
-        add_pdb_misses(pdb, "_fetch_first_parents", 1)
         quote = "`" if mdb.url.dialect == "sqlite" else ""
         query = f"""
             WITH RECURSIVE commit_first_parents AS (
@@ -648,13 +653,11 @@ async def _fetch_first_parents(data: Optional[bytes],
         else:
             raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
         await defer(pdb.execute(sql), "_fetch_first_parents/pdb")
-    else:  # if need_update
-        add_pdb_hits(pdb, "_fetch_first_parents", 1)
 
     time_from = time_from.replace(tzinfo=None)
     time_to = time_to.replace(tzinfo=None)
     result = set(first_parents[(time_from <= timestamps) & (timestamps < time_to)].tolist())
-    return result
+    return result, not need_update
 
 
 @sentry_span
