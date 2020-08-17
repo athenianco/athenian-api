@@ -473,7 +473,7 @@ def setup_context(log: logging.Logger) -> None:
     if sentry_env != "development":
         traces_sample_rate = float(os.getenv("SENTRY_SAMPLING_RATE", "0.2"))
     else:
-        traces_sample_rate = 1.0
+        traces_sample_rate = 0
     if traces_sample_rate > 0:
         log.info("Sentry tracing is ON: sampling rate %.2f", traces_sample_rate)
     sentry_log = logging.getLogger("sentry_sdk.errors")
