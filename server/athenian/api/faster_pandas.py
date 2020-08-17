@@ -2,14 +2,20 @@ from datetime import timezone
 from functools import lru_cache
 
 from pandas.core import algorithms
-from pandas.core.arrays import datetimes
+from pandas.core.arrays import DatetimeArray, datetimes
 from pandas.core.arrays.datetimelike import DatetimeLikeArrayMixin
+from pandas.core.dtypes import common
 from pandas.core.dtypes.dtypes import DatetimeTZDtype
 from pandas.core.internals import Block
 
 
 def patch_pandas():
     """Patch pandas internals to increase performance on small DataFrame-s."""
+    common.pandas_dtype = lru_cache()(common.pandas_dtype)
+    datetimes.pandas_dtype = common.pandas_dtype
+    common.is_dtype_equal = lru_cache()(common.is_dtype_equal)
+    datetimes.is_dtype_equal = common.is_dtype_equal
+
     DatetimeTZDtype.utc = DatetimeTZDtype(tz=timezone.utc)
 
     def cached_utc_new(cls, *args, **kwargs):
@@ -29,6 +35,16 @@ def patch_pandas():
         return original_take(self, indices, allow_fill=False)
 
     DatetimeLikeArrayMixin.take = fast_take
+
+    original_tz_convert = DatetimeArray.tz_convert
+
+    def fast_tz_convert(self, tz):
+        if tz is None:
+            return self
+        return original_tz_convert(self, tz)
+
+    DatetimeArray.tz_convert = fast_tz_convert
+
     original_ftype_getter = Block.ftype.getter
     ftype_cache = {}
 
