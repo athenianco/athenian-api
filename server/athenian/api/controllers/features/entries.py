@@ -31,7 +31,7 @@ from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRe
 from athenian.api.controllers.miners.types import Participants, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
-from athenian.api.defer import defer
+from athenian.api.defer import defer, wait_deferred
 from athenian.api.models.metadata.github import PushCommit
 from athenian.api.tracing import sentry_span
 
@@ -130,6 +130,8 @@ async def calc_pull_request_facts_github(time_from: datetime,
         await defer(store_open_pull_request_facts(open_pr_facts, pdb),
                     "store_open_pull_request_facts(%d)" % len(open_pr_facts))
     if len(merged_unreleased_pr_facts) > 0:
+        if pdb.url.dialect == "sqlite":
+            await wait_deferred()  # wait for update_unreleased_prs
         await defer(store_merged_unreleased_pull_request_facts(
             merged_unreleased_pr_facts, matched_bys, default_branches, release_settings, pdb),
             "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts))

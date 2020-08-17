@@ -32,7 +32,7 @@ from athenian.api.controllers.miners.types import Label, MinedPullRequest, Parti
     Property, PullRequestFacts, PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import set_pdb_hits, set_pdb_misses
-from athenian.api.defer import defer
+from athenian.api.defer import defer, wait_deferred
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, PullRequestLabel, \
     PullRequestReview, PullRequestReviewComment, Release
@@ -319,6 +319,8 @@ async def _filter_pull_requests(properties: Set[Property],
                         "store_open_pull_request_facts(%d)" % len(missed_open_facts))
 
         async def store_missed_merged_unreleased_facts():
+            if pdb.url.dialect == "sqlite":
+                await wait_deferred()  # wait for update_unreleased_prs
             await defer(store_merged_unreleased_pull_request_facts(
                 missed_merged_unreleased_facts, matched_bys, default_branches,
                 release_settings, pdb),

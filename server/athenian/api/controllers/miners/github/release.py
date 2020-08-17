@@ -425,17 +425,9 @@ async def map_prs_to_releases(prs: pd.DataFrame,
             missed_released_prs = pd.concat([missed_released_prs, dead_prs])
         else:
             missed_released_prs = dead_prs
-    # we cannot defer() this! we write the new facts for these PRs afterward and race against
-    with sentry_sdk.start_span(op="update_unreleased_prs(%d, %d)" % (
-            len(merged_prs), len(missed_released_prs))):
-        try:
-            await update_unreleased_prs(
-                merged_prs, missed_released_prs, time_to, labels, matched_bys, default_branches,
-                release_settings, pdb)
-        except Exception:
-            logging.getLogger("%s.update_unreleased_prs" % metadata.__package__).exception(
-                "Failed to store %d merged unreleased PRs in the pdb",
-                len(merged_prs) - len(missed_released_prs))
+    await defer(update_unreleased_prs(merged_prs, missed_released_prs, time_to, labels,
+                                      matched_bys, default_branches, release_settings, pdb),
+                "update_unreleased_prs(%d, %d)" % (len(merged_prs), len(missed_released_prs)))
     return pr_releases.append(missed_released_prs), unreleased_prs
 
 
