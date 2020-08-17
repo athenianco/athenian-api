@@ -745,7 +745,7 @@ async def test_pr_miner_unreleased_facts(
     true_pr_node_set = {pr[PullRequest.node_id.key] for pr, _ in chain(
         open_prs_and_facts, merged_unreleased_prs_and_facts)}
     assert set(unreleased_facts) == true_pr_node_set
-    assert len(miner) == 326
+    assert len(miner) == 325
     dropped = miner.drop(unreleased_facts)
     assert set(dropped) == set(unreleased_facts)
-    assert len(miner) == 294
+    assert len(miner) == 293

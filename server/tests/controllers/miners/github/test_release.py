@@ -190,7 +190,7 @@ async def test_map_releases_to_prs_early_merges(
         datetime(year=2018, month=1, day=9, tzinfo=timezone.utc),
         [], [],
         release_match_setting_tag, mdb, pdb, None)
-    assert len(prs) == 61
+    assert len(prs) == 60
     assert (prs[PullRequest.merged_at.key] >
             datetime(year=2017, month=9, day=4, tzinfo=timezone.utc)).all()
     assert isinstance(dag, dict)

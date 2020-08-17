@@ -423,9 +423,14 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     # we cannot defer() this! we write the new facts for these PRs afterward and race against
     with sentry_sdk.start_span(op="update_unreleased_prs(%d, %d)" % (
             len(merged_prs), len(missed_released_prs))):
-        await update_unreleased_prs(
-            merged_prs, missed_released_prs, time_to, labels, matched_bys, default_branches,
-            release_settings, pdb)
+        try:
+            await update_unreleased_prs(
+                merged_prs, missed_released_prs, time_to, labels, matched_bys, default_branches,
+                release_settings, pdb)
+        except Exception:
+            logging.getLogger("%s.update_unreleased_prs" % metadata.__package__).exception(
+                "Failed to store %d merged unreleased PRs in the pdb",
+                len(merged_prs) - len(missed_released_prs))
     return pr_releases.append(missed_released_prs), unreleased_prs
 
 
@@ -886,17 +891,16 @@ def _extract_released_commits(releases: pd.DataFrame,
     new_releases = releases.take(np.where(time_mask)[0])
     assert not new_releases.empty, "you must check this before calling me"
     hashes, vertexes, edges = dag
-    # the latest release before the time boundary
-    if not time_mask.all():
-        boundary_release_hash = releases[Release.sha.key].values[~time_mask][
-            [np.argsort(releases[Release.published_at.key].values[~time_mask])[-1]]].astype("U40")
-    else:
-        boundary_release_hash = None
     visited_hashes, _, _ = extract_subdag(
         hashes, vertexes, edges, new_releases[Release.sha.key].values.astype("U40"))
-    if boundary_release_hash is None:
+    # we need to traverse the DAG from *all* the previous releases because of release branches
+    if not time_mask.all():
+        boundary_release_hashes = releases[Release.sha.key].values[~time_mask].astype("U40")
+    else:
+        boundary_release_hashes = []
+    if len(boundary_release_hashes) == 0:
         return visited_hashes
-    ignored_hashes, _, _ = extract_subdag(hashes, vertexes, edges, boundary_release_hash)
+    ignored_hashes, _, _ = extract_subdag(hashes, vertexes, edges, boundary_release_hashes)
     deleted_indexes = np.searchsorted(visited_hashes, ignored_hashes)
     # boundary_release_hash may touch some unique hashes not present in visited_hashes
     deleted_indexes = deleted_indexes[deleted_indexes < len(visited_hashes)]
