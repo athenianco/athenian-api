@@ -129,10 +129,9 @@ class MinedPullRequest:
             ParticipationKind.MERGER: {merger} if merger else set(),
             ParticipationKind.RELEASER: {releaser} if releaser else set(),
         }
-        try:
-            participants[ParticipationKind.REVIEWER].remove(author)
-        except (KeyError, TypeError):
-            pass
+        reviewers = participants[ParticipationKind.REVIEWER]
+        if author in reviewers:
+            reviewers.remove(author)
         return participants
 
     @staticmethod
