@@ -1,12 +1,12 @@
 from datetime import timezone
 from functools import lru_cache
 
+from pandas import Series
 from pandas.core import algorithms
 from pandas.core.arrays import DatetimeArray, datetimes
 from pandas.core.arrays.datetimelike import DatetimeLikeArrayMixin
 from pandas.core.dtypes import common
 from pandas.core.dtypes.dtypes import DatetimeTZDtype
-from pandas.core.internals import Block
 
 
 def patch_pandas():
@@ -45,19 +45,6 @@ def patch_pandas():
 
     DatetimeArray.tz_convert = fast_tz_convert
 
-    original_ftype_getter = Block.ftype.getter
-    ftype_cache = {}
-
-    def fast_ftype(self):
-        key = (self.dtype, self._ftype)
-        try:
-            return ftype_cache[key]
-        except KeyError:
-            ftype_cache[key] = ftype = original_ftype_getter(self)
-            return ftype
-
-    Block.ftype = property(fast_ftype)
-
     original_get_take_nd_function = algorithms._get_take_nd_function
     cached_get_take_nd_function = lru_cache()(algorithms._get_take_nd_function)
 
@@ -69,3 +56,13 @@ def patch_pandas():
     algorithms._get_take_nd_function = _get_take_nd_function
 
     datetimes._validate_dt64_dtype = lru_cache()(datetimes._validate_dt64_dtype)
+
+    # https://github.com/pandas-dev/pandas/issues/35768
+    original_series_take = Series.take
+
+    def safe_take(self, indices, axis=0, is_copy=None, **kwargs) -> Series:
+        kwargs.pop("fill_value", None)
+        kwargs.pop("allow_fill", None)
+        return original_series_take(self, indices, axis=axis, is_copy=is_copy, **kwargs)
+
+    Series.take = safe_take

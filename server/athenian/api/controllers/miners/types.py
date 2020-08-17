@@ -261,8 +261,12 @@ class PullRequestFacts:
     """Various PR event timestamps and other properties."""
 
     @property
-    def work_began(self) -> Fallback[DT]:  # PR_B   noqa: D102
-        return Fallback.min(self.created, self.first_commit)
+    def work_began(self) -> DT:                          # PR_B   noqa: D102
+        try:
+            # fast path
+            return min(self.created.best, self.first_commit.best)
+        except TypeError:
+            return Fallback.min(self.created, self.first_commit).best
 
     created: Fallback[DT]                                # PR_C
     first_commit: Fallback[DT]                           # PR_CC
@@ -317,7 +321,7 @@ class PullRequestFacts:
 
     def __lt__(self, other: "PullRequestFacts") -> bool:
         """Order by `work_began`."""
-        return self.work_began.best < other.work_began.best
+        return self.work_began < other.work_began
 
     def __hash__(self) -> int:
         """Implement hash()."""

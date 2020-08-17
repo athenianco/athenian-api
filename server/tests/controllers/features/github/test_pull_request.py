@@ -127,7 +127,7 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
 
         def _analyze(self, times: PullRequestFacts, min_time: datetime, max_time: datetime,
                      ) -> timedelta:
-            return times.released.value - times.work_began.best
+            return times.released.value - times.work_began
 
     calc = LeadTimeCalculator(quantiles=(0, 1))
     for pr in pr_samples(100):
