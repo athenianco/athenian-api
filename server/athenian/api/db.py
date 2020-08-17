@@ -1,8 +1,8 @@
 import asyncio
 import base64
-import bz2
 from contextvars import ContextVar
 import logging
+import lzma
 import math
 import os
 import pickle
@@ -184,7 +184,7 @@ async def _asyncpg_execute(self, query, args, limit, timeout, return_status=Fals
         if len(description) > MAX_SENTRY_STRING_LENGTH:
             transaction = sentry_sdk.Hub.current.scope.transaction
             if transaction is not None and transaction.sampled:
-                data = base64.b64encode(bz2.compress(pickle.dumps((query, args)))).decode()
+                data = base64.b64encode(lzma.compress(pickle.dumps((query, args)))).decode()
                 description = str(uuid.uuid4())
                 chunk_size = 99000
                 chunks = int(math.ceil(len(data) / 99000))

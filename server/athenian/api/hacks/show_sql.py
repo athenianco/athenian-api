@@ -1,6 +1,6 @@
 import base64
-import bz2
 from datetime import datetime
+import lzma
 import pickle
 import sys
 
@@ -13,7 +13,7 @@ def main():
     pd.set_option("display.max_columns", None)
     pd.set_option("display.max_colwidth", None)
     data = input()
-    query, args = pickle.loads(bz2.decompress(base64.b64decode(data)))
+    query, args = pickle.loads(lzma.decompress(base64.b64decode(data)))
     if not query.endswith(";"):
         query = query + ";"
     explain = "EXPLAIN (ANALYZE, BUFFERS)"

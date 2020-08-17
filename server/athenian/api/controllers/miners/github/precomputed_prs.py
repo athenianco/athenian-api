@@ -605,6 +605,7 @@ async def store_merged_unreleased_pull_request_facts(
     if not postgres:
         assert pdb.url.dialect == "sqlite"
     values = []
+    dt = datetime(2000, 1, 1, tzinfo=timezone.utc)
     for pr, facts in merged_prs_and_facts:
         assert facts.merged and not facts.released
         repo = pr[PullRequest.repository_full_name.key]
@@ -616,10 +617,12 @@ async def store_merged_unreleased_pull_request_facts(
             pr_node_id=pr[PullRequest.node_id.key],
             release_match=release_match,
             data=pickle.dumps(facts),
-            # the following are needed just to please PostgreSQL, they are not actually written
-            merged_at=facts.merged.best,
-            repository_full_name=repo,
-            checked_until=facts.merged.best,
+            # the following does not matter, are not updated so we set to 0xdeadbeef
+            repository_full_name="",
+            checked_until=dt,
+            merged_at=dt,
+            author="",
+            merger="",
             labels={},
         ).create_defaults().explode(with_primary_keys=True))
     if postgres:
