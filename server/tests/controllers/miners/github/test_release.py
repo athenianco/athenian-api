@@ -745,7 +745,7 @@ async def test__fetch_repository_commits_many(mdb, pdb):
 
 @with_defer
 async def test_fetch_first_parents_smoke(mdb, pdb):
-    fp = await _fetch_first_parents(
+    fp, hit = await _fetch_first_parents(
         None,
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
@@ -753,6 +753,7 @@ async def test_fetch_first_parents_smoke(mdb, pdb):
         datetime(2015, 4, 5),
         datetime(2015, 5, 20),
         mdb, pdb, None)
+    assert not hit
     await wait_deferred()
     ground_truth = {
         "MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng==",
@@ -761,7 +762,7 @@ async def test_fetch_first_parents_smoke(mdb, pdb):
     }
     assert fp == ground_truth
     obj = await pdb.fetch_val(select([GitHubCommitFirstParents.commits]))
-    fp = await _fetch_first_parents(
+    fp, hit = await _fetch_first_parents(
         obj,
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
@@ -769,6 +770,7 @@ async def test_fetch_first_parents_smoke(mdb, pdb):
         datetime(2015, 4, 5),
         datetime(2015, 5, 20),
         Database("sqlite://"), pdb, None)
+    assert hit
     await wait_deferred()
     assert fp == ground_truth
     with pytest.raises(Exception):
@@ -783,7 +785,7 @@ async def test_fetch_first_parents_smoke(mdb, pdb):
 
 @with_defer
 async def test_fetch_first_parents_initial_commit(mdb, pdb):
-    fp = await _fetch_first_parents(
+    fp, _ = await _fetch_first_parents(
         None,
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
@@ -793,7 +795,7 @@ async def test_fetch_first_parents_initial_commit(mdb, pdb):
     assert fp == {
         "MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng==",
     }
-    fp = await _fetch_first_parents(
+    fp, _ = await _fetch_first_parents(
         None,
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
@@ -805,7 +807,7 @@ async def test_fetch_first_parents_initial_commit(mdb, pdb):
 
 @with_defer
 async def test_fetch_first_parents_index_error(mdb, pdb):
-    fp1 = await _fetch_first_parents(
+    fp1, _ = await _fetch_first_parents(
         None,
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
@@ -815,7 +817,7 @@ async def test_fetch_first_parents_index_error(mdb, pdb):
     await wait_deferred()
     data = await pdb.fetch_val(select([GitHubCommitFirstParents.commits]))
     assert data
-    fp2 = await _fetch_first_parents(
+    fp2, _ = await _fetch_first_parents(
         data,
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWZkZGJlYjY3OGJkMmMzNmM1ZTVjODkxYWI4ZjJiMTQzY2VkNWJhZg=="],
@@ -842,7 +844,7 @@ async def test_fetch_first_parents_cache(mdb, pdb, cache):
         "MDY6Q29tbWl0NDQ3MzkwNDQ6YzA4OGZkNmE3ZTFhMzhlOWQ1YTk4MTUyNjVjYjU3NWJiMDhkMDhmZg==",
     }
     await wait_deferred()
-    fp = await _fetch_first_parents(
+    fp, _ = await _fetch_first_parents(
         None,
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
