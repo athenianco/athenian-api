@@ -7,7 +7,7 @@ import logging
 import marshal
 import pickle
 import re
-from typing import Collection, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Collection, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import asyncpg
@@ -27,11 +27,11 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_precomputed_pr_releases, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_accelerated import extract_subdag, join_dags, \
-    mark_dag_access, searchsorted_inrange
+    mark_dag_access, mark_dag_parents, searchsorted_inrange
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.github.users import mine_user_avatars
-from athenian.api.controllers.miners.types import dtmax, PullRequestFacts
+from athenian.api.controllers.miners.types import dtmax, PullRequestFacts, ReleaseFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
@@ -963,15 +963,15 @@ async def map_releases_to_prs(repos: Collection[str],
     assert isinstance(pdb, databases.Database)
 
     tasks = [
-        _find_releases_for_matching_prs(repos, time_from, time_to, branches, default_branches,
-                                        release_settings, pdb, mdb, cache),
+        _find_releases_for_matching_prs(repos, branches, default_branches, time_from, time_to,
+                                        release_settings, mdb, pdb, cache),
         _fetch_precomputed_commit_history_dags(repos, pdb, cache),
     ]
     matching_releases, pdags = await asyncio.gather(*tasks, return_exceptions=True)
     for r in (matching_releases, pdags):
         if isinstance(r, Exception):
             raise r from None
-    matched_bys, releases, releases_new, release_settings = matching_releases
+    matched_bys, releases, releases_in_time_range, release_settings = matching_releases
 
     def concat_releases(releases_new: pd.DataFrame,
                         releases_today: pd.DataFrame,
@@ -1003,31 +1003,42 @@ async def map_releases_to_prs(repos: Collection[str],
 
     async def maybe_load_all_releases():
         if truncate:
-            return releases_new
+            return releases_in_time_range
         today = datetime.combine((datetime.now(timezone.utc) + timedelta(days=1)).date(),
                                  datetime.min.time(), tzinfo=timezone.utc)
         if today > time_to:
             releases_today, _ = await load_releases(
                 repos, branches, default_branches, time_to, today, release_settings,
                 mdb, pdb, cache)
-            return concat_releases(releases_new, releases_today)
-        return releases_new
+            return concat_releases(releases_in_time_range, releases_today)
+        return releases_in_time_range
 
     results = await asyncio.gather(main_flow(), maybe_load_all_releases(), return_exceptions=True)
     for r in results:
         if isinstance(r, Exception):
             raise r from None
-    (prs, dags), releases_new = results
-    return prs, releases_new, matched_bys, dags
+    (prs, dags), releases_in_time_range = results
+    return prs, releases_in_time_range, matched_bys, dags
 
 
 @sentry_span
-async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, default_branches,
-                                          release_settings, pdb, mdb, cache):
+async def _find_releases_for_matching_prs(repos: Iterable[str],
+                                          branches: pd.DataFrame,
+                                          default_branches: Dict[str, str],
+                                          time_from: datetime,
+                                          time_to: datetime,
+                                          release_settings: Dict[str, ReleaseMatchSetting],
+                                          mdb: databases.Database,
+                                          pdb: databases.Database,
+                                          cache: Optional[aiomcache.Client],
+                                          ) -> Tuple[Dict[str, str],
+                                                     pd.DataFrame,
+                                                     pd.DataFrame,
+                                                     Dict[str, ReleaseMatchSetting]]:
     # we have to load releases in two separate batches: before and after time_from
     # that's because the release strategy can change depending on the time range
     # see ENG-710 and ENG-725
-    releases_new, matched_bys = await load_releases(
+    releases_in_time_range, matched_bys = await load_releases(
         repos, branches, default_branches, time_from, time_to, release_settings, mdb, pdb, cache)
     # these matching rules must be applied in the past to stay consistent
     prefix = PREFIXES["github"]
@@ -1100,11 +1111,11 @@ async def _find_releases_for_matching_prs(repos, time_from, time_to, branches, d
                 del extra_releases
                 branch_lookbehind_time_from -= deeper_step
                 deeper_step *= 2
-    releases = pd.concat([releases_new, releases_old_branches, releases_old_tags],
+    releases = pd.concat([releases_in_time_range, releases_old_branches, releases_old_tags],
                          ignore_index=True, copy=False)
     releases.sort_values(Release.published_at.key,
                          inplace=True, ascending=False, ignore_index=True)
-    return matched_bys, releases, releases_new, consistent_release_settings
+    return matched_bys, releases, releases_in_time_range, consistent_release_settings
 
 
 @sentry_span
@@ -1163,32 +1174,48 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
 
 
 @sentry_span
-async def mine_releases(releases: pd.DataFrame,
-                        time_boundary: datetime,
+@cached(
+    exptime=60 * 60,  # 1 hour
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda repos, time_from, time_to, settings, **_: (
+        ",".join(sorted(repos)), time_from, time_to, settings),
+)
+async def mine_releases(repos: Iterable[str],
+                        branches: pd.DataFrame,
+                        default_branches: Dict[str, str],
+                        time_from: datetime,
+                        time_to: datetime,
+                        settings: Dict[str, ReleaseMatchSetting],
                         mdb: databases.Database,
                         pdb: databases.Database,
                         cache: Optional[aiomcache.Client],
-                        ) -> Tuple[pd.DataFrame, List[Tuple[str, str]]]:
-    """Collect details about each release published after `time_boundary` and calculate added \
-    and deleted line statistics."""
-    assert isinstance(mdb, databases.Database)
-    assert isinstance(pdb, databases.Database)
+                        ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                   List[Tuple[str, str]],
+                                   Dict[str, ReleaseMatch]]:
+    """Collect details about each release published between `time_from` and `time_to` and \
+    calculate various statistics."""
+    _, releases, _, settings = await _find_releases_for_matching_prs(
+        repos, branches, default_branches, time_from, time_to, settings, mdb, pdb, cache)
     tasks = [
         load_commit_dags(releases, mdb, pdb, cache),
-        _fetch_repository_first_commit_dates(
-            releases[Release.repository_full_name.key].unique(), mdb, pdb, cache),
+        _fetch_repository_first_commit_dates(repos, mdb, pdb, cache),
     ]
-    dags, first_commit_dates = await asyncio.gather(*tasks, return_exceptions=True)
+    with sentry_sdk.start_span(op="mine_releases/commits"):
+        dags, first_commit_dates = await asyncio.gather(*tasks, return_exceptions=True)
     for r in (dags, first_commit_dates):
         if isinstance(r, Exception):
             raise r from None
-    repo_commit_ownership = {}
+    repo_releases_analyzed = {}
     all_hashes = []
     for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
-        if (repo_releases[Release.published_at.key] < time_boundary).all():
+        if (repo_releases[Release.published_at.key] < time_from).all():
             continue
         hashes, vertexes, edges = dags[repo]
-        ownership = mark_dag_access(hashes, vertexes, edges, repo_releases[Release.sha.key].values)
+        release_hashes = repo_releases[Release.sha.key].values
+        release_timestamps = repo_releases[Release.published_at.key].values
+        parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_timestamps)
+        ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
         unmatched = np.where(ownership == len(releases))[0]
         if len(unmatched) > 0:
             hashes = np.delete(hashes, unmatched)
@@ -1199,7 +1226,7 @@ async def mine_releases(releases: pd.DataFrame,
         grouped_owned_hashes = np.split(
             sorted_hashes, np.cumsum(np.unique(sorted_ownership, return_counts=True)[1])[:-1])
         all_hashes.append(hashes)
-        repo_commit_ownership[repo] = repo_releases, grouped_owned_hashes
+        repo_releases_analyzed[repo] = repo_releases, grouped_owned_hashes, parents
     commits_df_columns = [
         PushCommit.sha, PushCommit.additions, PushCommit.deletions, PushCommit.author_login,
     ]
@@ -1215,57 +1242,59 @@ async def mine_releases(releases: pd.DataFrame,
     prefix = PREFIXES["github"]
     mentioned_authors = set()
 
+    @sentry_span
     async def main_flow():
         data = []
-        for repo, (repo_releases, owned_hashes) in repo_commit_ownership.items():
+        for repo, (repo_releases, owned_hashes, parents) in repo_releases_analyzed.items():
             published_ats = repo_releases[Release.published_at.key]
-            for i, (my_name, my_tag, my_url, my_author, my_published_at) in enumerate(zip(
-                    repo_releases[Release.name.key].values,
-                    repo_releases[Release.tag.key].values,
-                    repo_releases[Release.url.key].values,
-                    repo_releases[Release.author.key].values,
-                    published_ats,
-            )):
-                if my_published_at < time_boundary:
+            for i, (my_name, my_tag, my_url, my_author, my_published_at, my_matched_by) in \
+                    enumerate(zip(repo_releases[Release.name.key].values,
+                                  repo_releases[Release.tag.key].values,
+                                  repo_releases[Release.url.key].values,
+                                  repo_releases[Release.author.key].values,
+                                  published_ats,
+                                  repo_releases[matched_by_column].values)):
+                if my_published_at < time_from:
                     continue
+                # it is guaranteed that all releases are older than `time_to`
                 found_indexes = searchsorted_inrange(commits_index, owned_hashes[i])
                 found_indexes = found_indexes[commits_index[found_indexes] == owned_hashes[i]]
                 my_additions = commits_additions[found_indexes].sum()
                 my_deletions = commits_deletions[found_indexes].sum()
                 my_authors = commits_authors[found_indexes]
                 my_authors = prefix + my_authors[my_authors.nonzero()[0]]
-                if i < len(published_ats) - 1:
-                    my_age = my_published_at - published_ats[i + 1]
+                parent = parents[i]
+                if parent < len(repo_releases):
+                    my_age = my_published_at - repo_releases[Release.published_at.key][parent]
                 else:
                     my_age = my_published_at - first_commit_dates[repo]
                 mentioned_authors.add(my_author)
                 mentioned_authors.update(my_authors)
-                data.append([
-                    my_name or my_tag,
-                    prefix + repo,
-                    my_url,
-                    my_published_at,
-                    my_age,
-                    my_additions,
-                    my_deletions,
-                    len(found_indexes),
-                    prefix + my_author,
-                    my_authors.tolist(),
-                ])
+                data.append(({Release.name.key: my_name or my_tag,
+                              Release.repository_full_name.key: prefix + repo,
+                              Release.url.key: my_url,
+                              Release.published_at.key: my_published_at,
+                              Release.author.key: prefix + my_author},
+                             ReleaseFacts(published=my_published_at,
+                                          matched_by=ReleaseMatch(my_matched_by),
+                                          age=my_age,
+                                          additions=my_additions,
+                                          deletions=my_deletions,
+                                          commits_count=len(found_indexes),
+                                          authors=my_authors.tolist())))
             await asyncio.sleep(0)
-        return pd.DataFrame.from_records(data, columns=[
-            "name", "repository", "url", "published", "age", "added_lines", "deleted_lines",
-            "commits", "publisher", "commit_authors"])
+        return data
 
     all_authors = np.concatenate([commits_authors, releases[Release.author.key].values])
     all_authors = np.unique(all_authors[all_authors.nonzero()[0]])
     tasks = [
-        mine_user_avatars(all_authors, mdb, cache, prefix=prefix),
         main_flow(),
+        mine_user_avatars(all_authors, mdb, cache, prefix=prefix),
     ]
-    avatars, mined_releases = await asyncio.gather(*tasks, return_exceptions=True)
+    with sentry_sdk.start_span(op="main_flow + avatars"):
+        mined_releases, avatars = await asyncio.gather(*tasks, return_exceptions=True)
     for r in avatars, mined_releases:
         if isinstance(r, Exception):
             raise r from None
     avatars = [p for p in avatars if p[0] in mentioned_authors]
-    return mined_releases, avatars
+    return mined_releases, avatars, {r: v.match for r, v in settings.items()}

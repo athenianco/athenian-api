@@ -4564,10 +4564,10 @@ components:
         for:
           $ref: '#/components/schemas/RepositorySet'
         matches:
-          description: Applied release matching strategies for the repositories in `for`.
-          items:
+          additionalProperties:
             $ref: '#/components/schemas/ReleaseMatchStrategy'
-          type: array
+          description: Applied release matching strategies for the repositories in `for`.
+          type: object
         metrics:
           items:
             $ref: '#/components/schemas/ReleaseMetricID'

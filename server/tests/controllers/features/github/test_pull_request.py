@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from athenian.api.controllers.features.github.pull_request import \
-    PullRequestAverageMetricCalculator, PullRequestMedianMetricCalculator
+from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
+    MedianMetricCalculator
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
 from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
@@ -117,9 +117,9 @@ def ensure_dtype(pr, dtype):
 @pytest.mark.parametrize(
     "cls, negative, dtype",
     ((*t[0], t[1]) for t in itertools.product(
-        [(PullRequestAverageMetricCalculator, False),
-         (PullRequestAverageMetricCalculator, True),
-         (PullRequestMedianMetricCalculator, False)],
+        [(AverageMetricCalculator, False),
+         (AverageMetricCalculator, True),
+         (MedianMetricCalculator, False)],
         [datetime, pd.Timestamp])))
 def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
     class LeadTimeCalculator(cls):
@@ -149,7 +149,7 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
 
 
 def test_pull_request_average_metric_calculator_zeros_nonnegative(pr_samples):
-    calc = PullRequestAverageMetricCalculator(quantiles=(0, 1))
+    calc = AverageMetricCalculator(quantiles=(0, 1))
     calc.may_have_negative_values = False
     calc.samples.extend(pd.Timedelta(0) for _ in range(3))
     m = calc.value

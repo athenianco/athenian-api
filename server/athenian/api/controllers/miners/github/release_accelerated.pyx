@@ -3,8 +3,11 @@
 # distutils: language = c++
 
 cimport cython
-from libc.stdint cimport uint32_t, int64_t
+from cython.operator cimport dereference
+from libc.stdint cimport uint32_t, int64_t, uint64_t
 from libcpp.vector cimport vector
+from libcpp.unordered_map cimport pair, unordered_map
+from libcpp.unordered_set cimport unordered_set
 import numpy as np
 from typing import List, Tuple
 
@@ -176,7 +179,7 @@ cdef void _recalculate_vertices_and_edges(const int64_t[:] found_matches,
 def mark_dag_access(hashes: np.ndarray,
                     vertexes: np.ndarray,
                     edges: np.ndarray,
-                    heads: np.ndarray):
+                    heads: np.ndarray) -> np.ndarray:
     if len(hashes) == 0:
         return np.array([], dtype=int)
     # we cannot sort heads because the order is important
@@ -215,3 +218,67 @@ cdef void _mark_dag_access(const uint32_t[:] vertexes,
                 edge = edges[j]
                 if marked[edge] == missing_flag:
                     boilerplate.push_back(edge)
+
+
+def mark_dag_parents(hashes: np.ndarray,
+                     vertexes: np.ndarray,
+                     edges: np.ndarray,
+                     heads: np.ndarray,
+                     timestamps: np.ndarray) -> np.ndarray:
+    if len(hashes) == 0:
+        return np.array([], dtype=int)
+    # we cannot sort heads because the order is important
+    heads = searchsorted_inrange(hashes, heads).astype(np.uint32)
+    timestamps = timestamps.view(np.uint64)
+    parents = np.zeros_like(heads, dtype=np.int64)
+    _mark_dag_parents(vertexes, edges, heads, timestamps, parents)
+    return parents
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _mark_dag_parents(const uint32_t[:] vertexes,
+                            const uint32_t[:] edges,
+                            const uint32_t[:] heads,
+                            const uint64_t[:] timestamps,
+                            int64_t[:] parents) nogil:
+    cdef uint32_t not_found = len(vertexes), head, peek, edge
+    cdef uint64_t max_timestamp, timestamp, head_timestamp
+    cdef int64_t i, j, max_stop
+    cdef unordered_map[uint32_t, int64_t] stops
+    cdef unordered_map[uint32_t, int64_t].iterator stop_it
+    cdef unordered_set[uint32_t] visited
+    cdef vector[uint32_t] boilerplate
+    for i in range(len(heads)):
+        head = heads[i]
+        if head < not_found:
+            stops.insert(pair[uint32_t, int64_t](head, i))
+    for i in range(len(heads)):
+        head = heads[i]
+        if head == not_found:
+            parents[head] = not_found
+            continue
+        head_timestamp = timestamps[i]
+        max_stop = len(heads)
+        max_timestamp = 0
+        visited.clear()
+        boilerplate.push_back(head)
+        while not boilerplate.empty():
+            peek = boilerplate.back()
+            boilerplate.pop_back()
+            if visited.count(peek):
+                continue
+            visited.insert(peek)
+            stop_it = stops.find(peek)
+            if peek != head and stop_it != stops.end():
+                j = dereference(stop_it).second
+                timestamp = timestamps[j]
+                if max_timestamp < timestamp < head_timestamp:
+                    max_timestamp = timestamp
+                    max_stop = j
+            else:
+                for j in range(vertexes[peek], vertexes[peek + 1]):
+                    edge = edges[j]
+                    if not visited.count(edge):
+                        boilerplate.push_back(edge)
+        parents[i] = max_stop

@@ -34,7 +34,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     async def calculate_for_set_histograms(service, repos, devs, labels_include, for_set):
         calcs = defaultdict(list)
         # for each filter, we find the functions to calculate the histograms
-        entries = METRIC_ENTRIES[service]["histogram"]
+        entries = METRIC_ENTRIES[service]["prs_histogram"]
         for m in filt.metrics:
             try:
                 calcs[entries[m]].append(m)

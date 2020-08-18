@@ -1,16 +1,16 @@
 from datetime import datetime, timedelta
 from typing import Optional, Sequence
 
-from athenian.api.controllers.features.github.pull_request import \
-    PullRequestAverageMetricCalculator, PullRequestCounter, PullRequestMetricCalculator, \
-    PullRequestSumMetricCalculator, register_metric
+from athenian.api.controllers.features.github.pull_request import register_metric
 from athenian.api.controllers.features.metric import Metric
+from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
+    Counter, MetricCalculator, SumMetricCalculator
 from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.models.web import PullRequestMetricID
 
 
 @register_metric(PullRequestMetricID.PR_WIP_TIME)
-class WorkInProgressTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
+class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
     """Time of work in progress metric."""
 
     may_have_negative_values = False
@@ -39,14 +39,14 @@ class WorkInProgressTimeCalculator(PullRequestAverageMetricCalculator[timedelta]
 
 
 @register_metric(PullRequestMetricID.PR_WIP_COUNT)
-class WorkInProgressCounter(PullRequestCounter):
+class WorkInProgressCounter(Counter):
     """Count the number of PRs that were used to calculate PR_WIP_TIME."""
 
     deps = (WorkInProgressTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_REVIEW_TIME)
-class ReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
+class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
     """Time of the review process metric."""
 
     may_have_negative_values = False
@@ -74,14 +74,14 @@ class ReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_REVIEW_COUNT)
-class ReviewCounter(PullRequestCounter):
+class ReviewCounter(Counter):
     """Count the number of PRs that were used to calculate PR_REVIEW_TIME."""
 
     deps = (ReviewTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_MERGING_TIME)
-class MergingTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
+class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
     """Time to merge after finishing the review metric."""
 
     may_have_negative_values = False
@@ -102,14 +102,14 @@ class MergingTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_MERGING_COUNT)
-class MergingCounter(PullRequestCounter):
+class MergingCounter(Counter):
     """Count the number of PRs that were used to calculate PR_MERGING_TIME."""
 
     deps = (MergingTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_RELEASE_TIME)
-class ReleaseTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
+class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
     """Time to appear in a release after merging metric."""
 
     may_have_negative_values = False
@@ -124,14 +124,14 @@ class ReleaseTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_RELEASE_COUNT)
-class ReleaseCounter(PullRequestCounter):
+class ReleaseCounter(Counter):
     """Count the number of PRs that were used to calculate PR_RELEASE_TIME."""
 
     deps = (ReleaseTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_TIME)
-class LeadTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
+class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
     """Time to appear in a release since starting working on the PR."""
 
     may_have_negative_values = False
@@ -145,14 +145,14 @@ class LeadTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_COUNT)
-class LeadCounter(PullRequestCounter):
+class LeadCounter(Counter):
     """Count the number of PRs that were used to calculate PR_LEAD_TIME."""
 
     deps = (LeadTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_TIME)
-class CycleTimeCalculator(PullRequestMetricCalculator[timedelta]):
+class CycleTimeCalculator(MetricCalculator[timedelta]):
     """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, and PR_RELEASE_TIME."""
 
     deps = (WorkInProgressTimeCalculator,
@@ -193,7 +193,7 @@ class CycleTimeCalculator(PullRequestMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT)
-class CycleCounter(PullRequestCounter):
+class CycleCounter(Counter):
     """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, \
     or PR_RELEASE_TIME."""
 
@@ -201,7 +201,7 @@ class CycleCounter(PullRequestCounter):
 
 
 @register_metric(PullRequestMetricID.PR_ALL_COUNT)
-class AllCounter(PullRequestSumMetricCalculator[int]):
+class AllCounter(SumMetricCalculator[int]):
     """Count all the PRs that are active in the given time interval."""
 
     requires_full_span = True
@@ -228,7 +228,7 @@ class AllCounter(PullRequestSumMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME)
-class WaitFirstReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
+class WaitFirstReviewTimeCalculator(AverageMetricCalculator[timedelta]):
     """Elapsed time between requesting the review for the first time and getting it."""
 
     may_have_negative_values = False
@@ -243,14 +243,14 @@ class WaitFirstReviewTimeCalculator(PullRequestAverageMetricCalculator[timedelta
 
 
 @register_metric(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT)
-class WaitFirstReviewCounter(PullRequestCounter):
+class WaitFirstReviewCounter(Counter):
     """Count PRs that were used to calculate PR_WAIT_FIRST_REVIEW_TIME."""
 
     deps = (WaitFirstReviewTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_OPENED)
-class OpenedCalculator(PullRequestSumMetricCalculator[int]):
+class OpenedCalculator(SumMetricCalculator[int]):
     """Number of open PRs."""
 
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
@@ -262,7 +262,7 @@ class OpenedCalculator(PullRequestSumMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_MERGED)
-class MergedCalculator(PullRequestSumMetricCalculator[int]):
+class MergedCalculator(SumMetricCalculator[int]):
     """Number of merged PRs."""
 
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
@@ -274,7 +274,7 @@ class MergedCalculator(PullRequestSumMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_REJECTED)
-class RejectedCalculator(PullRequestSumMetricCalculator[int]):
+class RejectedCalculator(SumMetricCalculator[int]):
     """Number of rejected PRs."""
 
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
@@ -286,7 +286,7 @@ class RejectedCalculator(PullRequestSumMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_CLOSED)
-class ClosedCalculator(PullRequestSumMetricCalculator[int]):
+class ClosedCalculator(SumMetricCalculator[int]):
     """Number of closed PRs."""
 
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
@@ -298,7 +298,7 @@ class ClosedCalculator(PullRequestSumMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_RELEASED)
-class ReleasedCalculator(PullRequestSumMetricCalculator[int]):
+class ReleasedCalculator(SumMetricCalculator[int]):
     """Number of released PRs."""
 
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
@@ -310,12 +310,12 @@ class ReleasedCalculator(PullRequestSumMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_FLOW_RATIO)
-class FlowRatioCalculator(PullRequestMetricCalculator[float]):
+class FlowRatioCalculator(MetricCalculator[float]):
     """PR flow ratio - opened / closed - calculator."""
 
     deps = (OpenedCalculator, ClosedCalculator)
 
-    def __init__(self, *deps: PullRequestMetricCalculator, quantiles: Sequence[float]):
+    def __init__(self, *deps: MetricCalculator, quantiles: Sequence[float]):
         """Initialize a new instance of FlowRatioCalculator."""
         super().__init__(*deps, quantiles=quantiles)
         if isinstance(self._calcs[1], OpenedCalculator):
@@ -342,7 +342,7 @@ class FlowRatioCalculator(PullRequestMetricCalculator[float]):
 
 
 @register_metric(PullRequestMetricID.PR_SIZE)
-class SizeCalculator(PullRequestAverageMetricCalculator[int]):
+class SizeCalculator(AverageMetricCalculator[int]):
     """Average PR size.."""
 
     may_have_negative_values = False
