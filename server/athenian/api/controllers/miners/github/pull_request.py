@@ -197,11 +197,10 @@ class PullRequestMiner:
         if truncate:
             cls._truncate_timestamps(prs, time_to)
         tasks = [
-            # bypass the useless inner caching by calling __wrapped__ directly
-            cls.mine_by_ids.__wrapped__(
-                cls, prs, unreleased.index, time_to, releases, matched_bys,
-                branches, default_branches, dags, release_settings, mdb, pdb, cache,
-                truncate=truncate),
+            # bypass the useless inner caching by calling _mine_by_ids directly
+            cls._mine_by_ids(
+                prs, unreleased.index, time_to, releases, matched_bys, branches, default_branches,
+                dags, release_settings, mdb, pdb, cache, truncate=truncate),
             load_open_pull_request_facts(prs, pdb),
         ]
         with sentry_sdk.start_span(op="PullRequestMiner.mine/external_data"):
@@ -225,7 +224,6 @@ class PullRequestMiner:
     _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
 
     @classmethod
-    @sentry_span
     @cached(
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=pickle.dumps,
@@ -260,6 +258,27 @@ class PullRequestMiner:
         :return: List of mined DataFrame-s + mapping to pickle-d PullRequestFacts for unreleased \
                  merged PR. Why so complex? Performance.
         """
+        return await cls._mine_by_ids(
+            prs, unreleased, time_to, releases, matched_bys, branches, default_branches, dags,
+            release_settings, mdb, pdb, cache, truncate=truncate)
+
+    @classmethod
+    @sentry_span
+    async def _mine_by_ids(cls,
+                           prs: pd.DataFrame,
+                           unreleased: Collection[str],
+                           time_to: datetime,
+                           releases: pd.DataFrame,
+                           matched_bys: Dict[str, ReleaseMatch],
+                           branches: pd.DataFrame,
+                           default_branches: Dict[str, str],
+                           dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
+                           release_settings: Dict[str, ReleaseMatchSetting],
+                           mdb: databases.Database,
+                           pdb: databases.Database,
+                           cache: Optional[aiomcache.Client],
+                           truncate: bool = True,
+                           ) -> Tuple[List[pd.DataFrame], Dict[str, PullRequestFacts]]:
         node_ids = prs.index if len(prs) > 0 else set()
         facts = {}  # precomputed PullRequestFacts about merged unreleased PRs
 
@@ -333,13 +352,22 @@ class PullRequestMiner:
                          PullRequestLabel.color],
                 created_at=False)
 
+        # the order is important: it provides the best performance
+        # we launch coroutines from the heaviest to the lightest
         dfs = await asyncio.gather(
-            fetch_commits(), fetch_reviews(), fetch_review_comments(), fetch_review_requests(),
-            fetch_comments(), map_releases(), fetch_labels(),
+            map_releases(),
+            fetch_commits(),
+            fetch_reviews(),
+            fetch_review_comments(),
+            fetch_review_requests(),
+            fetch_comments(),
+            fetch_labels(),
             return_exceptions=True)
         for df in dfs:
             if isinstance(df, Exception):
                 raise df from None
+        # move the releases df to match the expected sequence in __init__ and everywhere else
+        dfs.insert(5, dfs.pop(0))
         return dfs, facts
 
     @classmethod
