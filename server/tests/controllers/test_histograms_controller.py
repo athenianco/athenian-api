@@ -23,7 +23,7 @@ from athenian.api.models.web import CalculatedPullRequestHistogram, PullRequestM
                       (["60s", "128s", "275s", "590s", "1266s", "2714s", "5818s", "12470s",
                         "26730s", "57293s", "122803s", "263218s", "564186s", "1209285s",
                         "2591999s"],
-                       [167, 71, 76, 47, 37, 34, 39, 27, 38, 39, 32, 29, 18, 24]))]))
+                       [174, 65, 69, 42, 37, 35, 42, 27, 41, 40, 34, 28, 20, 24]))]))
 async def test_calc_histogram_prs_smoke(
         client, headers, metric, cached, app, client_cache, result):
     if cached:
