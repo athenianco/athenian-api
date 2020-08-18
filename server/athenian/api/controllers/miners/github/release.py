@@ -16,7 +16,7 @@ import lz4.frame
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, distinct, func, insert, join, or_, select
+from sqlalchemy import and_, desc, func, insert, join, or_, select
 from sqlalchemy.cprocessors import str_to_datetime
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql.elements import BinaryExpression, ClauseElement
@@ -131,18 +131,23 @@ async def _match_releases_by_tag_or_branch(repos: Iterable[str],
                                            pdb: databases.Database,
                                            cache: Optional[aiomcache.Client],
                                            ) -> Tuple[pd.DataFrame, Dict[str, ReleaseMatch]]:
-    probe = await read_sql_query(
-        select([distinct(Release.repository_full_name)])
-        .where(and_(Release.repository_full_name.in_(repos),
-                    Release.published_at.between(
-            time_from - tag_by_branch_probe_lookaround,
-            time_to + tag_by_branch_probe_lookaround),
-        )),
-        mdb, [Release.repository_full_name.key])
+    with sentry_sdk.start_span(op="fetch_tags_probe"):
+        releases = await read_sql_query(
+            select([Release])
+            .where(and_(Release.published_at.between(time_from - tag_by_branch_probe_lookaround,
+                                                     time_to + tag_by_branch_probe_lookaround),
+                        Release.repository_full_name.in_(repos),
+                        Release.commit_id.isnot(None)))
+            .order_by(desc(Release.published_at)),
+            mdb, Release, index=[Release.repository_full_name.key, Release.tag.key])
     matched = []
-    repos_by_tag = probe[Release.repository_full_name.key].values
+    repos_by_tag = releases.index.get_level_values(0).unique()
     if repos_by_tag.size > 0:
-        matched.append(_match_releases_by_tag(repos_by_tag, time_from, time_to, settings, mdb))
+        # exclude the releases outside of the actual time interval
+        releases = releases.take(np.where(
+            releases[Release.published_at.key].between(time_from, time_to))[0])
+        matched.append(_match_releases_by_tag(repos_by_tag, time_from, time_to, settings, mdb,
+                                              releases=releases))
     repos_by_branch = set(repos) - set(repos_by_tag)
     if repos_by_branch:
         matched.append(_match_releases_by_branch(
@@ -162,16 +167,18 @@ async def _match_releases_by_tag(repos: Iterable[str],
                                  time_from: datetime,
                                  time_to: datetime,
                                  settings: Dict[str, ReleaseMatchSetting],
-                                 db: databases.Database,
+                                 mdb: databases.Database,
+                                 releases: Optional[pd.DataFrame] = None,
                                  ) -> pd.DataFrame:
-    with sentry_sdk.start_span(op="fetch_tags"):
-        releases = await read_sql_query(
-            select([Release])
-            .where(and_(Release.published_at.between(time_from, time_to),
-                        Release.repository_full_name.in_(repos),
-                        Release.commit_id.isnot(None)))
-            .order_by(desc(Release.published_at)),
-            db, Release, index=[Release.repository_full_name.key, Release.tag.key])
+    if releases is None:
+        with sentry_sdk.start_span(op="fetch_tags"):
+            releases = await read_sql_query(
+                select([Release])
+                .where(and_(Release.published_at.between(time_from, time_to),
+                            Release.repository_full_name.in_(repos),
+                            Release.commit_id.isnot(None)))
+                .order_by(desc(Release.published_at)),
+                mdb, Release, index=[Release.repository_full_name.key, Release.tag.key])
     releases = releases[~releases.index.duplicated(keep="first")]
     regexp_cache = {}
     matched = []
