@@ -480,8 +480,10 @@ async def discover_unreleased_prs(prs: pd.DataFrame,
 
     For each merged PR we maintain the set of releases that do include that PR.
     """
-    filters = []
+    if time_to != time_to:
+        return {}
     assert time_to.tzinfo is not None
+    filters = []
     for repo in prs[PullRequest.repository_full_name.key].unique():
         if (release_match := _extract_release_match(
                 repo, matched_bys, default_branches, release_settings)) is None:
