@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -23,3 +24,8 @@ def test_serialize_datetime_no_utc():
     obj = [pd.Timestamp(0)]
     with pytest.raises(AssertionError):
         FriendlyJson.dumps(obj)
+
+
+def test_serialize_numpy():
+    assert FriendlyJson.serialize(np.int64(7)) == 7
+    assert FriendlyJson.serialize(np.double(7.5)) == 7.5

@@ -5,6 +5,7 @@ from typing import Union
 
 from dateutil.parser import parse as parse_datetime
 from dateutil.tz import tzutc
+import numpy as np
 
 from athenian.api import typing_utils
 
@@ -186,6 +187,10 @@ class FriendlyJson:
             return obj.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339
         if isinstance(obj, datetime.date):
             return obj.strftime("%Y-%m-%d")
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
         try:
             assert obj == obj, "%s: %s" % (type(obj), obj)
         except ValueError as e:

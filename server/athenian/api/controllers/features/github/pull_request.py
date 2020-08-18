@@ -91,8 +91,8 @@ class PullRequestMetricCalculator(Generic[T]):
         cut_values = np.quantile(self.samples, self._quantiles)
         samples = np.asarray(self.samples)
         if self._quantiles[0] != 0:
-            samples = np.delete(samples, samples < cut_values[0])
-        samples = np.delete(samples, samples > cut_values[1])
+            samples = np.delete(samples, np.where(samples < cut_values[0])[0])
+        samples = np.delete(samples, np.where(samples > cut_values[1])[0])
         return samples
 
 
@@ -289,7 +289,7 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
 
     def __call__(self, items: Iterable[PullRequestFacts]) -> List[List[Metric[T]]]:
         """
-        Calculate the binned metrics.
+        Calculate the binned metrics on a series of PullRequestFacts.
 
         For each time interval we collect the list of PRs that are relevant and measure \
         the specified metrics.
