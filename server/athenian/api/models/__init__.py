@@ -2,6 +2,7 @@
 import logging
 import os
 import subprocess
+import sys
 from typing import Union
 
 from alembic import script
@@ -203,7 +204,8 @@ def migrate(name: str, url=None, exec=True):
     path = os.path.relpath(root)
     with open("alembic.ini", "w") as fout:
         fout.write(t.render(url=url, path=path))
-    args = ["alembic", "alembic", "upgrade", "head"]
+    args = [sys.executable, sys.executable, "-m", "athenian.api.sentry_wrapper",
+            "alembic.config", "upgrade", "head"]
     if os.getenv("OFFLINE"):
         args.append("--sql")
     if exec:
