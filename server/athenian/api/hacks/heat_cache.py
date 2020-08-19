@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from tqdm import tqdm
 
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
-    enable_defer, ParallelDatabase, ResponseError, setup_cache_metrics, setup_context, \
+    enable_defer, ParallelDatabase, patch_pandas, ResponseError, setup_cache_metrics, \
+    setup_context, \
     wait_deferred
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
@@ -46,6 +47,7 @@ def _parse_args():
 def main():
     """Go away linter."""
     athenian.api.db._testing = True
+    patch_pandas()
 
     log = logging.getLogger("heater")
     args = _parse_args()
