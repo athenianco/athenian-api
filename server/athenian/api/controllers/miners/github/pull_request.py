@@ -759,7 +759,8 @@ class PullRequestFactsMiner:
         first_commit = Fallback(pr.commits[PullRequestCommit.authored_date.key].min(), None)
         # yes, first_commit uses authored_date while last_commit uses committed_date
         last_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].max(), None)
-        authored_comments = pr.comments[PullRequestReviewComment.user_login.key].values
+        # convert to "U" dtype to enable sorting in np.in1d
+        authored_comments = pr.comments[PullRequestReviewComment.user_login.key].values.astype("U")
         external_comments_times = pr.comments[PullRequestComment.created_at.key].take(
             np.where((authored_comments != pr.pr[PullRequest.user_login.key]) &
                      np.in1d(authored_comments, self._bots, invert=True))[0])

@@ -1,5 +1,6 @@
 from datetime import timedelta, timezone
 from random import randint
+import warnings
 
 import faker
 import pytest
@@ -9,6 +10,11 @@ from athenian.api.controllers.miners.github.release import _empty_dag, _fetch_co
 from athenian.api.controllers.miners.github.release_accelerated import join_dags
 from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+
+
+@pytest.fixture(scope="function")
+def no_deprecation_warnings():
+    warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
 
 
 @pytest.fixture(scope="module")
