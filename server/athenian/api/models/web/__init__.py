@@ -5,13 +5,13 @@ from athenian.api.models.web.base_model_ import Enum, Model
 from athenian.api.models.web.calculated_developer_metrics import CalculatedDeveloperMetrics
 from athenian.api.models.web.calculated_developer_metrics_item import \
     CalculatedDeveloperMetricsItem
+from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues
 from athenian.api.models.web.calculated_pull_request_histogram import \
     CalculatedPullRequestHistogram
-from athenian.api.models.web.calculated_pull_request_metric_values import \
-    CalculatedPullRequestMetricValues
 from athenian.api.models.web.calculated_pull_request_metrics import CalculatedPullRequestMetrics
 from athenian.api.models.web.calculated_pull_request_metrics_item import \
     CalculatedPullRequestMetricsItem
+from athenian.api.models.web.calculated_release_metric import CalculatedReleaseMetric
 from athenian.api.models.web.code_bypassing_p_rs_measurement import CodeBypassingPRsMeasurement
 from athenian.api.models.web.code_filter import CodeFilter
 from athenian.api.models.web.commit import Commit
@@ -68,6 +68,8 @@ from athenian.api.models.web.quantiles import validate_quantiles
 from athenian.api.models.web.release_match_request import ReleaseMatchRequest
 from athenian.api.models.web.release_match_setting import ReleaseMatchSetting
 from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
+from athenian.api.models.web.release_metric_id import ReleaseMetricID
+from athenian.api.models.web.release_metrics_request import ReleaseMetricsRequest
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.models.web.repository_set_with_name import RepositorySetWithName

@@ -18,9 +18,9 @@ from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
-    CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
-    CalculatedPullRequestMetricValues, CodeBypassingPRsMeasurement, CodeFilter, \
-    DeveloperMetricsRequest, ForSet, ForSetDevelopers, Granularity, Model
+    CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
+    CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, ForSet, ForSetDevelopers, \
+    Granularity, Model
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.request import AthenianWebRequest
@@ -111,7 +111,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
             cm = CalculatedPullRequestMetricsItem(
                 for_=for_set,
                 granularity=granularity,
-                values=[CalculatedPullRequestMetricValues(
+                values=[CalculatedLinearMetricValues(
                     date=(d - tzoffset).date(),
                     values=[results[m][i].value for m in met.metrics],
                     confidence_mins=[results[m][i].confidence_min for m in met.metrics],
@@ -368,3 +368,8 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
             values=[[getattr(s, DeveloperTopic(t).name) for t in filt.metrics] for s in stats],
         ))
     return model_response(met)
+
+
+async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Calculate linear metrics over releases."""
+    raise NotImplementedError

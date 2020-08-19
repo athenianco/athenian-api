@@ -2,7 +2,7 @@ from athenian.api.models.web.base_model_ import Enum, Model
 
 
 class PullRequestMetricID(Model, metaclass=Enum):
-    """Linear metric identifier."""
+    """Linear PR metric identifier."""
 
     PR_WIP_TIME = "pr-wip-time"
     PR_WIP_COUNT = "pr-wip-count"

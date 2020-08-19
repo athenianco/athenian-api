@@ -1,8 +1,8 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.calculated_pull_request_metric_values import \
-    CalculatedPullRequestMetricValues
+from athenian.api.models.web.calculated_linear_metric_values import \
+    CalculatedLinearMetricValues
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.granularity import Granularity
 
@@ -13,7 +13,7 @@ class CalculatedPullRequestMetricsItem(Model):
     openapi_types = {
         "for_": ForSet,
         "granularity": str,
-        "values": List[CalculatedPullRequestMetricValues],
+        "values": List[CalculatedLinearMetricValues],
     }
 
     attribute_map = {"for_": "for", "granularity": "granularity", "values": "values"}
@@ -23,7 +23,7 @@ class CalculatedPullRequestMetricsItem(Model):
     def __init__(self,
                  for_: Optional[ForSet] = None,
                  granularity: Optional[str] = None,
-                 values: Optional[List[CalculatedPullRequestMetricValues]] = None):
+                 values: Optional[List[CalculatedLinearMetricValues]] = None):
         """CalculatedPullRequestMetricsItem - a model defined in OpenAPI
 
         :param for_: The for_ of this CalculatedPullRequestMetricsItem.
@@ -82,7 +82,7 @@ class CalculatedPullRequestMetricsItem(Model):
         """Gets the values of this CalculatedPullRequestMetricsItem.
 
         :return: The values of this CalculatedPullRequestMetricsItem.
-        :rtype: List[CalculatedPullRequestMetricValues]
+        :rtype: List[CalculatedLinearMetricValues]
         """
         return self._values
 
@@ -91,7 +91,7 @@ class CalculatedPullRequestMetricsItem(Model):
         """Sets the values of this CalculatedPullRequestMetricsItem.
 
         :param values: The values of this CalculatedPullRequestMetricsItem.
-        :type values: List[CalculatedPullRequestMetricValues]
+        :type values: List[CalculatedLinearMetricValues]
         """
         if values is None:
             raise ValueError("Invalid value for `values`, must not be `None`")

@@ -924,6 +924,54 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.metrics_controller
       x-codegen-request-body-name: body
+  /metrics/releases:
+    post:
+      operationId: calc_metrics_releases_linear
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseMetricsRequest'
+        description: Desired metric definitions.
+        required: true
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculatedReleaseMetrics'
+          description: Calculated metrics.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request was invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to calculate metrics on behalf of the
+            specified account.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoSourceDataError'
+          description: No data is available to calculate metrics for the given repositories.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: Calculate linear metrics over releases.
+      tags:
+      - metrics
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.metrics_controller
+      x-codegen-request-body-name: body
   /reposet/create:
     post:
       operationId: create_reposet
@@ -2429,23 +2477,24 @@ components:
           $ref: '#/components/schemas/Granularity'
         values:
           items:
-            $ref: '#/components/schemas/CalculatedPullRequestMetricValues'
+            $ref: '#/components/schemas/CalculatedLinearMetricValues'
           type: array
       required:
       - for
       - values
       type: object
     Quantiles:
-      description: Cut the distributions at certain quantiles. The default is [0, 1].
+      description: |-
+        Cut the distributions at certain quantiles. The default is [0, 1].
       example:
       - 0
       - 0.95
       items:
-        minimum: 0
         maximum: 1
+        minimum: 0
         type: number
-      minItems: 2
       maxItems: 2
+      minItems: 2
       type: array
     CalculatedPullRequestMetrics:
       additionalProperties: false
@@ -2563,10 +2612,10 @@ components:
       - date_to
       - exclude_inactive
       - granularities
-      - quantiles
       - metrics
+      - quantiles
       type: object
-    CalculatedPullRequestMetricValues:
+    CalculatedLinearMetricValues:
       additionalProperties: false
       example:
         date: 2020-01-23
@@ -4422,4 +4471,117 @@ components:
       - account
       - date_from
       - date_to
+      type: object
+    ReleaseMetricsRequest:
+      additionalProperties: false
+      description: Request of `/metrics/releases` to calculate metrics on releases.
+      example:
+        for:
+        - athenianco/athenian-api
+        - athenianco/athenian-webapp
+        metrics:
+        - release-count
+        granularities:
+        - day
+        date_from: 2020-01-01T00:00:00Z
+        date_to: 2020-10-01T00:00:00Z
+        account: 1
+      properties:
+        for:
+          description: List of repository groups for which to calculate the metrics.
+          items:
+            $ref: '#/components/schemas/RepositorySet'
+          type: array
+        metrics:
+          description: List of desired release metrics.
+          items:
+            $ref: '#/components/schemas/ReleaseMetricID'
+          type: array
+        date_from:
+          description: Date from when to start measuring the metrics.
+          format: date
+          type: string
+        date_to:
+          description: Date up to which to measure the metrics.
+          format: date
+          type: string
+        granularities:
+          items:
+            $ref: '#/components/schemas/Granularity'
+          type: array
+        quantiles:
+          $ref: '#/components/schemas/Quantiles'
+        timezone:
+          $ref: '#/components/schemas/TimeZone'
+        account:
+          description: Session account ID.
+          type: integer
+      required:
+      - account
+      - date_from
+      - date_to
+      - for
+      - granularities
+      - metrics
+      type: object
+    ReleaseMetricID:
+      description: Supported release metrics.
+      enum:
+      - release-count
+      - release-size
+      - release-age
+      type: string
+    CalculatedReleaseMetrics:
+      description: Response from `/metrics/releases`.
+      items:
+        $ref: '#/components/schemas/CalculatedReleaseMetric'
+      type: array
+    CalculatedReleaseMetric:
+      additionalProperties: false
+      description: Calculated release metric values.
+      example:
+        for:
+        - athenianco/athenian-api
+        - athenianco/athenian-webapp
+        metrics:
+        - release-count
+        granularity: day
+        values:
+          date: 2020-01-23
+          values:
+          - 0.8008282
+          - 0.8008282
+          confidence_mins:
+          - 0.5
+          - 0.5
+          confidence_maxs:
+          - 1.0
+          - 1.0
+          confidence_scores:
+          - 75
+          - 75
+      properties:
+        for:
+          $ref: '#/components/schemas/RepositorySet'
+        matches:
+          description: Applied release matching strategies for the repositories in `for`.
+          items:
+            $ref: '#/components/schemas/ReleaseMatchStrategy'
+          type: array
+        metrics:
+          items:
+            $ref: '#/components/schemas/ReleaseMetricID'
+          type: array
+        granularity:
+          $ref: '#/components/schemas/Granularity'
+        values:
+          items:
+            $ref: '#/components/schemas/CalculatedLinearMetricValues'
+          type: array
+      required:
+      - for
+      - granularity
+      - matches
+      - metrics
+      - values
       type: object
