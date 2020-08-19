@@ -1,16 +1,23 @@
+import logging
 import sys
 import traceback
 
+import sentry_sdk
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from athenian.api import metadata, setup_context
 from athenian.api.models.metadata.github import Base
+from athenian.api.slogging import setup as setup_logging
 
 
 def main() -> int:
     """Try to fetch one example of each model in the metadata schema from a real DB instance."""
+    setup_logging(logging.INFO, not sys.stdout.isatty())
+    log = logging.getLogger("%s.metadata" % metadata.__package__)
+    setup_context(log)
     engine = create_engine(sys.argv[1])
-    print("Checking the metadata schema...\n", flush=True)
+    log.info("Checking the metadata schema...\n")
     errors = []
     for model in Base._decl_class_registry.values():
         session = sessionmaker(bind=engine)()
@@ -21,24 +28,23 @@ def main() -> int:
                 continue
             try:
                 session.query(model).first()
-            except Exception:
+            except Exception as e:
                 errors.append((model, traceback.format_exc()))
+                sentry_sdk.capture_exception(e)
                 status = "❌"
             else:
                 status = "✔️"
-            print("%s  github.%s / %s" % (status, model.__name__, model.__tablename__), flush=True)
+            log.info("%s  github.%s / %s" % (status, model.__name__, model.__tablename__))
         finally:
             session.close()
     for model, exc in errors:
-        print("=" * 80, file=sys.stderr)
-        print("github.%s / %s\n" % (model.__name__, model.__tablename__), file=sys.stderr)
-        print(exc, file=sys.stderr)
-        print(file=sys.stderr)
+        log.info("=" * 80)
+        log.info("github.%s / %s\n" % (model.__name__, model.__tablename__))
+        log.info("%s\n", exc)
     if not errors:
         # Synchronization level: 100%.
         from random import choice
-        print()
-        print(choice(nge_phrases))
+        log.info("\n%s", choice(nge_phrases))
     return int(bool(errors))
 
 
