@@ -797,9 +797,11 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                                     repo: str,
                                     mdb: databases.Database,
                                     ) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
+    # Find all the top-level commit hashes.
+    stop_hashes = hashes[np.delete(np.arange(len(hashes)), np.unique(edges))]
     batch_size = 20
     while len(head_hashes) > 0:
-        new_edges = await _fetch_commit_history_edges(head_ids[:batch_size], mdb)
+        new_edges = await _fetch_commit_history_edges(head_ids[:batch_size], stop_hashes, mdb)
         if not new_edges:
             new_edges = [(h, "") for h in np.sort(np.unique(head_hashes[:batch_size]))]
         hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges)
@@ -815,6 +817,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
 
 
 async def _fetch_commit_history_edges(commit_ids: Iterable[str],
+                                      stop_hashes: Iterable[str],
                                       mdb: databases.Database) -> List[Tuple]:
     # SQL credits: @dennwc
     query = f"""
@@ -839,6 +842,7 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
                             INNER JOIN commit_history h ON h.parent = p.parent_id
                             LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
                             LEFT JOIN github_node_commit cc ON p.child_id = cc.id
+                    WHERE pc.oid NOT IN ('{"', '".join(stop_hashes)}')
             ) SELECT
                 child_oid,
                 parent_oid

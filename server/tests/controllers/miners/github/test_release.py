@@ -18,7 +18,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import store_precomp
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
 from athenian.api.controllers.miners.github.release import \
-    _empty_dag, _fetch_first_parents, _fetch_repository_commits, \
+    _empty_dag, _fetch_commit_history_dag, _fetch_first_parents, _fetch_repository_commits, \
     _fetch_repository_first_commit_dates, _find_dead_merged_prs, load_releases, \
     map_prs_to_releases, map_releases_to_prs
 from athenian.api.controllers.miners.github.release_accelerated import extract_subdag, join_dags, \
@@ -980,6 +980,21 @@ def test_mark_dag_access_smoke():
                       "61a719e0ff7522cc0d129acb3b922c94a8a5dbca"], dtype="U40")
     marks = mark_dag_access(hashes, vertexes, edges, heads)
     assert (marks == np.array([1, 0, 1, 1], dtype=np.int64)).all()
+
+
+async def test__fetch_commit_history_dag_stops(mdb, dag):
+    hashes, vertexes, edges = dag["src-d/go-git"]
+    subhashes, subvertexes, subedges = extract_subdag(
+        hashes, vertexes, edges, ["364866fc77fac656e103c1048dd7da4764c6d9d9"])
+    assert len(subhashes) < len(hashes)
+    _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
+        subhashes, subvertexes, subedges,
+        ["f6305131a06bd94ef39e444b60f773db75b054f6"],
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6MTdkYmQ4ODY2MTZmODJiZTJhNTljMGQwMmZkOTNkM2Q2OWYyMzkyYw=="],
+        "src-d/go-git", mdb)
+    assert (newhashes == hashes).all()
+    assert (newvertexes == vertexes).all()
+    assert (newedges == edges).all()
 
 
 """
