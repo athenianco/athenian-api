@@ -101,7 +101,7 @@ async def fetch_dag(mdb, heads=None):
         heads = [
             "MDY6Q29tbWl0NDQ3MzkwNDQ6MTdkYmQ4ODY2MTZmODJiZTJhNTljMGQwMmZkOTNkM2Q2OWYyMzkyYw==",
         ]
-    edges = await _fetch_commit_history_edges(heads, mdb)
+    edges = await _fetch_commit_history_edges(heads, [], mdb)
     return {"src-d/go-git": join_dags(*_empty_dag(), edges)}
 
 
