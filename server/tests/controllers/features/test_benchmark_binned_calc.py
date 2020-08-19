@@ -31,7 +31,7 @@ def test_binned_calc_es(benchmark, no_warnings):
     metrics = list(PullRequestMetricID)
 
     def calc():
-        return [BinnedPullRequestMetricCalculator(metrics, ts)(mined_facts)
+        return [BinnedPullRequestMetricCalculator(metrics, ts, quantiles=(0, 0.95))(mined_facts)
                 for ts in time_intervals]
 
     benchmark(calc)

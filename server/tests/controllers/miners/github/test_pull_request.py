@@ -328,7 +328,7 @@ def validate_pull_request_facts(prmeta: Dict[str, Any], prt: PullRequestFacts):
             continue
         if k not in ("first_commit", "last_commit", "last_commit_before_first_review"):
             assert prt.created <= v, k
-        assert prt.work_began <= v, k
+        assert prt.work_began <= v.best, k
         if prt.closed and k != "released":
             assert prt.closed >= v
         if prt.released:

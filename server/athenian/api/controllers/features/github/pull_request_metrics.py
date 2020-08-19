@@ -34,7 +34,7 @@ class WorkInProgressTimeCalculator(PullRequestAverageMetricCalculator[timedelta]
                 # This PR is 100% closed.
                 wip_end = facts.closed.best
         if wip_end is not None and min_time <= wip_end < max_time:
-            return wip_end - facts.work_began.best
+            return wip_end - facts.work_began
         return None
 
 
@@ -140,7 +140,7 @@ class LeadTimeCalculator(PullRequestAverageMetricCalculator[timedelta]):
                  **kwargs) -> Optional[timedelta]:
         """Calculate the actual state update."""
         if facts.released and min_time <= facts.released.best < max_time:
-            return facts.released.best - facts.work_began.best
+            return facts.released.best - facts.work_began
         return None
 
 
@@ -178,13 +178,15 @@ class CycleTimeCalculator(PullRequestMetricCalculator[timedelta]):
                  **kwargs) -> Optional[timedelta]:
         """Update the states of the underlying calcs and return whether at least one of the PR's \
         metrics exists."""
-        exists = False
-        sumval = timedelta(0)
+        sumval = None
         for calc in self._calcs:
-            if calc.peek is not None:
-                exists = True
-                sumval += calc.peek
-        return sumval if exists else None
+            peek = calc.peek
+            if peek is not None:
+                if sumval is None:
+                    sumval = peek
+                else:
+                    sumval += peek
+        return sumval
 
     def _cut_by_quantiles(self) -> Sequence[timedelta]:
         return self.samples
@@ -207,7 +209,7 @@ class AllCounter(PullRequestSumMetricCalculator[int]):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
-        pr_started = facts.created.best  # not `work_began.best`! It breaks granular measurements.
+        pr_started = facts.created.best  # not `work_began`! It breaks granular measurements.
         cut_before_released = (
             pr_started < min_time and facts.released and facts.released.best < min_time
         )

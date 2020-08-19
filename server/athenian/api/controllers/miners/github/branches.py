@@ -31,7 +31,7 @@ async def extract_branches(repos: Iterable[str],
                                     Branch.commit_sha.isnot(None))), db, Branch)
     log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
     default_branches = {}
-    for repo, repo_branches in branches.groupby(Branch.repository_full_name.key):
+    for repo, repo_branches in branches.groupby(Branch.repository_full_name.key, sort=False):
         try:
             default_branch = \
                 repo_branches[Branch.branch_name.key][repo_branches[Branch.is_default.key]].iloc[0]

@@ -33,7 +33,7 @@ class PullRequestMetricCalculator(Generic[T]):
         self._peek = None
         self._last_value = None
         self._calcs = []
-        self._quantiles = quantiles
+        self._quantiles = np.asarray(quantiles)
         for calc in deps:
             for cls in self.deps:
                 if isinstance(calc, cls):
@@ -88,8 +88,8 @@ class PullRequestMetricCalculator(Generic[T]):
         """Cut from the left and the right of the distribution by quantiles."""
         if not self.samples or (self._quantiles[0] == 0 and self._quantiles[1] == 1):
             return self.samples
-        cut_values = np.quantile(self.samples, self._quantiles)
         samples = np.asarray(self.samples)
+        cut_values = np.quantile(samples, self._quantiles)
         if self._quantiles[0] != 0:
             samples = np.delete(samples, np.where(samples < cut_values[0])[0])
         samples = np.delete(samples, np.where(samples > cut_values[1])[0])
@@ -324,7 +324,7 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
         bins = [[] for _ in borders[:-1]]
         pos = 0
         for item in items:
-            while pos < len(borders) - 1 and item.work_began.best > borders[pos + 1]:
+            while pos < len(borders) - 1 and item.work_began > borders[pos + 1]:
                 pos += 1
             endpoint = item.max_timestamp()
             span = pos
@@ -338,7 +338,7 @@ class BinnedPullRequestMetricCalculator(Generic[T]):
         bins = [[] for _ in borders[:-1]]
         pos = 0
         for item in items:
-            while pos < len(borders) - 1 and item.work_began.best > borders[pos + 1]:
+            while pos < len(borders) - 1 and item.work_began > borders[pos + 1]:
                 pos += 1
             endpoint = item.released.best if item.released else borders[-1]
             span = pos
