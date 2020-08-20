@@ -844,7 +844,7 @@ async def test_fetch_first_parents_cache(mdb, pdb, cache):
         "MDY6Q29tbWl0NDQ3MzkwNDQ6YzA4OGZkNmE3ZTFhMzhlOWQ1YTk4MTUyNjVjYjU3NWJiMDhkMDhmZg==",
     }
     await wait_deferred()
-    fp, _ = await _fetch_first_parents(
+    fp, hit = await _fetch_first_parents(
         None,
         "src-d/go-git",
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
@@ -853,6 +853,7 @@ async def test_fetch_first_parents_cache(mdb, pdb, cache):
         datetime(2015, 5, 20),
         None, None, cache)
     await wait_deferred()
+    assert hit
     assert fp == ground_truth
     with pytest.raises(Exception):
         await _fetch_first_parents(
@@ -863,6 +864,43 @@ async def test_fetch_first_parents_cache(mdb, pdb, cache):
             datetime(2015, 4, 6),
             datetime(2015, 5, 20),
             None, None, cache)
+
+
+@with_defer
+async def test_fetch_first_parents_append(mdb, pdb):
+    fp, hit = await _fetch_first_parents(
+        None,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NDRjMzY0ZmUzYjdiOGNkYzBmOTYyM2FmZTg3MGQ2NzgxYTk3ZWJiNA=="],
+        datetime(2010, 4, 5),
+        datetime(2020, 5, 20),
+        mdb, pdb, None)
+    # 44c364fe3b7b8cdc0f9623afe870d6781a97ebb4
+    assert not hit
+    await wait_deferred()
+    assert len(fp) == 569
+    assert "MDY6Q29tbWl0NDQ3MzkwNDQ6NDRjMzY0ZmUzYjdiOGNkYzBmOTYyM2FmZTg3MGQ2NzgxYTk3ZWJiNA==" in fp
+    fp, hit = await _fetch_first_parents(
+        None,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6MWE3ZGI4NWJjYTcwMjdkOTBhZmRiNWNlNzExNjIyYWFhYzlmZWFlZA=="],
+        datetime(2010, 4, 5),
+        datetime(2020, 5, 20),
+        mdb, pdb, None)
+    # 9d0f15c4fa712cdacfa3887e9baac918f093fbf6
+    assert not hit
+    assert len(fp) == 772
+    assert "MDY6Q29tbWl0NDQ3MzkwNDQ6MWE3ZGI4NWJjYTcwMjdkOTBhZmRiNWNlNzExNjIyYWFhYzlmZWFlZA==" in fp
+    await pdb.execute(delete(GitHubCommitFirstParents))
+    fp, hit = await _fetch_first_parents(
+        None,
+        "src-d/go-git",
+        ["MDY6Q29tbWl0NDQ3MzkwNDQ6MWE3ZGI4NWJjYTcwMjdkOTBhZmRiNWNlNzExNjIyYWFhYzlmZWFlZA=="],
+        datetime(2010, 4, 5),
+        datetime(2020, 5, 20),
+        mdb, pdb, None)
+    assert not hit
+    assert len(fp) == 772
 
 
 @with_defer

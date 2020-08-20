@@ -343,7 +343,7 @@ async def _fetch_pr_merge_commits(branches_matched: Dict[str, pd.DataFrame],
 
 async def _fetch_merge_points(data: Optional[bytes],
                               repo: str,
-                              commit_ids: Iterable[str],
+                              commit_ids: Sequence[str],
                               merge_commit_ids: Optional[Iterable[str]],
                               time_from: datetime,
                               time_to: datetime,
@@ -547,12 +547,13 @@ async def _fetch_labels(node_ids: Iterable[str], mdb: databases.Database) -> Dic
     key=lambda repo, commit_ids, time_from, time_to, **_: (
         ",".join(sorted(commit_ids)), time_from.timestamp(), time_to.timestamp(),
     ),
+    postprocess=lambda result, **_: (result[0], True),
     refresh_on_access=True,
     version=2,
 )
 async def _fetch_first_parents(data: Optional[bytes],
                                repo: str,
-                               commit_ids: Iterable[str],
+                               commit_ids: Sequence[str],
                                time_from: datetime,
                                time_to: datetime,
                                mdb: databases.Database,
@@ -565,17 +566,24 @@ async def _fetch_first_parents(data: Optional[bytes],
 
     if data is not None:
         f = BytesIO(data)
-        first_parents = pickle.load(f)
-        need_update = \
-            (first_parents[searchsorted_inrange(first_parents, commit_ids)] != commit_ids).any()
-        if not need_update:
-            timestamps = pickle.load(f)
-        else:
-            del first_parents
-        del f
         del data
+        first_parents = pickle.load(f)
+        timestamps = pickle.load(f)
+        del f
+        commit_ids = np.asarray(commit_ids, dtype="U")
+        commit_ids = commit_ids[first_parents[searchsorted_inrange(first_parents, commit_ids)]
+                                != commit_ids]
+        need_update = len(commit_ids) > 0
+        if need_update:
+            order = np.flip(np.argsort(timestamps))
+            time_boundary = time_from.date()
+            stop_hashes = first_parents[order[np.arange(0, len(order), max(1, len(order) // 20))]]
     else:
         need_update = True
+        first_parents = np.array([], dtype="U40")
+        timestamps = np.array([], dtype="datetime64[us]")
+        time_boundary = datetime(2000, 1, 1, tzinfo=timezone.utc).date()
+        stop_hashes = []
 
     if need_update:
         quote = "`" if mdb.url.dialect == "sqlite" else ""
@@ -603,7 +611,10 @@ async def _fetch_first_parents(data: Optional[bytes],
                             INNER JOIN commit_first_parents h ON h.parent = p.parent_id
                             LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
                             LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-                    WHERE p.{quote}index{quote} = 0 AND cc.id IS NOT NULL
+                    WHERE p.{quote}index{quote} = 0
+                          AND cc.id IS NOT NULL
+                          AND pc.committed_date >= '{time_boundary}'
+                          AND pc.oid NOT IN ('{"', '".join(stop_hashes)}')
             ) SELECT
                 parent_id,
                 committed_date
@@ -627,14 +638,15 @@ async def _fetch_first_parents(data: Optional[bytes],
                 rows = await conn.fetch_all(query)
 
         utc = timezone.utc
-        first_parents = np.asarray([r[0] for r in rows])
+        first_parents = np.append(first_parents, [r[0] for r in rows])
         if mdb.url.dialect == "sqlite":
-            timestamps = np.fromiter((str_to_datetime(r[1]).replace(tzinfo=utc) for r in rows),
-                                     "datetime64[us]", count=len(rows))
+            timestamps = np.append(
+                timestamps, np.fromiter((str_to_datetime(r[1]).replace(tzinfo=utc) for r in rows),
+                                        "datetime64[us]", count=len(rows)))
         else:
-            timestamps = np.fromiter((r[1] for r in rows), "datetime64[us]", count=len(rows))
-        order = np.argsort(first_parents)
-        first_parents = first_parents[order]
+            timestamps = np.append(
+                timestamps, np.fromiter((r[1] for r in rows), "datetime64[us]", count=len(rows)))
+        first_parents, order = np.unique(first_parents, return_index=True)
         timestamps = timestamps[order]
         f = BytesIO()
         pickle.dump(first_parents, f)
@@ -655,7 +667,8 @@ async def _fetch_first_parents(data: Optional[bytes],
 
     time_from = time_from.replace(tzinfo=None)
     time_to = time_to.replace(tzinfo=None)
-    result = set(first_parents[(time_from <= timestamps) & (timestamps < time_to)].tolist())
+    # need to convert from numpy.str_ to str
+    result = {str(s) for s in first_parents[(time_from <= timestamps) & (timestamps < time_to)]}
     return result, not need_update
 
 
