@@ -17,7 +17,7 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.label import mine_labels
-from athenian.api.controllers.miners.github.release import load_releases, mine_releases
+from athenian.api.controllers.miners.github.release import mine_releases
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.miners.types import ParticipationKind, Property, PullRequestListItem
@@ -225,12 +225,20 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     branches, default_branches = await extract_branches(repos, request.mdb, request.cache)
-    releases, _ = await load_releases(
-        repos, branches, default_branches, filt.date_from - timedelta(days=365), filt.date_to,
-        settings, request.mdb, request.pdb, request.cache, index=Release.id.key)
-    stats, avatars = await mine_releases(
-        releases, filt.date_from, request.mdb, request.pdb, request.cache)
-    data = [FilteredRelease(**items) for _, items in stats.iterrows()]
+    releases, avatars, _ = await mine_releases(
+        repos, branches, default_branches, filt.date_from, filt.date_to, settings,
+        request.mdb, request.pdb, request.cache)
+    data = [FilteredRelease(name=details[Release.name.key],
+                            repository=details[Release.repository_full_name.key],
+                            url=details[Release.url.key],
+                            publisher=details[Release.author.key],
+                            published=details[Release.published_at.key],
+                            age=stats.age,
+                            added_lines=stats.additions,
+                            deleted_lines=stats.deletions,
+                            commits=stats.commits_count,
+                            commit_authors=stats.authors)
+            for details, stats in releases]
     model = FilteredReleases(data=data, include=IncludedNativeUsers(users={
         u: IncludedNativeUser(avatar=a) for u, a in avatars}))
     return model_response(model)

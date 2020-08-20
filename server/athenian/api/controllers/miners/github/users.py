@@ -1,6 +1,6 @@
 import marshal
 import pickle
-from typing import Any, Collection, List, Mapping, Optional, Tuple
+from typing import Any, Collection, Iterable, List, Mapping, Optional, Tuple
 
 import aiomcache
 import databases
@@ -32,7 +32,7 @@ async def mine_users(logins: Collection[str],
     deserialize=marshal.loads,
     key=lambda logins, **_: (",".join(sorted(logins)),),
 )
-async def mine_user_avatars(logins: Collection[str],
+async def mine_user_avatars(logins: Iterable[str],
                             db: databases.Database,
                             cache: Optional[aiomcache.Client],
                             prefix="",

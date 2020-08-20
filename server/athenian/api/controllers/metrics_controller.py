@@ -19,8 +19,9 @@ from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
-    CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, ForSet, ForSetDevelopers, \
-    Granularity, Model
+    CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, \
+    ForSet, ForSetDevelopers, \
+    Granularity, Model, ReleaseMetricsRequest
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.request import AthenianWebRequest
@@ -81,12 +82,11 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     async def calculate_for_set_metrics(service, repos, devs, labels_include, for_set):
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
-        entries = METRIC_ENTRIES[service]["linear"]
+        entries = METRIC_ENTRIES[service]["prs_linear"]
         for m in filt.metrics:
             calcs[entries[m]].append(m)
         if len(calcs) == 0:
             return
-        gresults = []
         tasks = []
         # for each metric, we find the function to calculate and call it
         for func, metrics in calcs.items():
@@ -97,6 +97,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
             all_mvs = await asyncio.gather(*tasks, return_exceptions=True)
         else:
             all_mvs = [await tasks[0]]
+        gresults = []
         for metrics, mvs in zip(calcs.values(), all_mvs):
             if isinstance(mvs, Exception):
                 raise mvs from None
@@ -170,7 +171,7 @@ def _split_to_time_intervals(date_from: date,
 async def compile_repos_and_devs_prs(for_sets: List[ForSet],
                                      request: AthenianWebRequest,
                                      account: int,
-                                     ) -> (List[FilterPRs], List[str]):
+                                     ) -> (List[FilterPRs], Set[str]):
     """
     Build the list of filters for a given list of ForSet-s.
 
@@ -188,7 +189,7 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
     async with request.sdb.connection() as sdb_conn:
         for i, for_set in enumerate(for_sets):
             repos, service = await _extract_repos(
-                request, account, for_set, i, all_repos, checkers, sdb_conn)
+                request, account, for_set.repositories, i, all_repos, checkers, sdb_conn)
             prefix = PREFIXES[service]
             devs = {}
             for k, v in (for_set.with_ or {}).items():
@@ -227,7 +228,7 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
     async with request.sdb.connection() as sdb_conn:
         for i, for_set in enumerate(for_sets):
             repos, service = await _extract_repos(
-                request, account, for_set, i, all_repos, checkers, sdb_conn)
+                request, account, for_set.repositories, i, all_repos, checkers, sdb_conn)
             prefix = PREFIXES[service]
             devs = []
             for dev in (for_set.developers or []):
@@ -243,7 +244,7 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
 
 async def _extract_repos(request: AthenianWebRequest,
                          account: int,
-                         for_set: Union[ForSet, ForSetDevelopers],
+                         for_set: List[str],
                          for_set_index: int,
                          all_repos: Set[str],
                          checkers: Dict[str, AccessChecker],
@@ -254,7 +255,7 @@ async def _extract_repos(request: AthenianWebRequest,
     for repo in chain.from_iterable(await asyncio.gather(
             *[resolve_reposet(r, ".for[%d].repositories[%d]" % (for_set_index, j), user, account,
                               sdb, request.cache)
-              for j, r in enumerate(for_set.repositories)])):
+              for j, r in enumerate(for_set)])):
         for key, prefix in PREFIXES.items():
             if repo.startswith(prefix):
                 if service is None:
@@ -370,6 +371,96 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     return model_response(met)
 
 
+async def _compile_repos_releases(request: AthenianWebRequest,
+                                  for_sets: List[List[str]],
+                                  account: int,
+                                  ) -> Tuple[List[Tuple[str, Tuple[Set[str], List[str]]]],
+                                             Set[str]]:
+    filters = []
+    checkers = {}
+    all_repos = set()
+    async with request.sdb.connection() as sdb_conn:
+        for i, for_set in enumerate(for_sets):
+            repos, service = await _extract_repos(
+                request, account, for_set, i, all_repos, checkers, sdb_conn)
+            filters.append((PREFIXES[service], (repos, for_set)))
+    return filters, all_repos
+
+
 async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate linear metrics over releases."""
-    raise NotImplementedError
+    try:
+        filt = ReleaseMetricsRequest.from_dict(body)  # type: ReleaseMetricsRequest
+    except ValueError as e:
+        # for example, passing a date with day=32
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+    filters, repos = await _compile_repos_releases(request, filt.for_, filt.account)
+    time_intervals, tzoffset = _split_to_time_intervals(
+        filt.date_from, filt.date_to, filt.granularities, filt.timezone)
+    release_settings = \
+        await Settings.from_request(request, filt.account).list_release_matches(repos)
+    met = []
+
+    @sentry_span
+    async def calculate_for_set_metrics(service, repos, for_set):
+        calcs = defaultdict(list)
+        # for each filter, we find the functions to measure the metrics
+        entries = METRIC_ENTRIES[service]["releases_linear"]
+        for m in filt.metrics:
+            calcs[entries[m]].append(m)
+        if len(calcs) == 0:
+            return
+        tasks = []
+        # for each metric, we find the function to calculate and call it
+        for func, metrics in calcs.items():
+            tasks.append(func(
+                metrics, time_intervals, filt.quantiles or (0, 1), repos, release_settings,
+                request.mdb, request.pdb, request.cache))
+        if len(tasks) > 1:
+            all_mvs = await asyncio.gather(*tasks, return_exceptions=True)
+        else:
+            all_mvs = [await tasks[0]]
+        gresults = []
+        for metrics, mvs in zip(calcs.values(), all_mvs):
+            if isinstance(mvs, Exception):
+                raise mvs from None
+            mvs, release_matches = mvs
+            release_matches = {k: v.name for k, v in release_matches.items()}
+            assert len(mvs) == len(time_intervals)
+            for mv, ts in zip(mvs, time_intervals):
+                assert len(mv) == len(ts) - 1
+                mr = {}
+                gresults.append((mr, release_matches))
+                for i, m in enumerate(metrics):
+                    mr[m] = [r[i] for r in mv]
+        for granularity, (results, release_matches), ts in zip(
+                filt.granularities, gresults, time_intervals):
+            cm = CalculatedReleaseMetric(
+                for_=for_set,
+                matches=release_matches,
+                metrics=filt.metrics,
+                granularity=granularity,
+                values=[CalculatedLinearMetricValues(
+                    date=(d - tzoffset).date(),
+                    values=[results[m][i].value for m in filt.metrics],
+                    confidence_mins=[results[m][i].confidence_min for m in filt.metrics],
+                    confidence_maxs=[results[m][i].confidence_max for m in filt.metrics],
+                    confidence_scores=[results[m][i].confidence_score() for m in filt.metrics],
+                ) for i, d in enumerate(ts[:-1])])
+            for v in cm.values:
+                if sum(1 for c in v.confidence_scores if c is not None) == 0:
+                    v.confidence_mins = None
+                    v.confidence_maxs = None
+                    v.confidence_scores = None
+            met.append(cm)
+
+    tasks = []
+    for service, (repos, for_set) in filters:
+        tasks.append(calculate_for_set_metrics(service, repos, for_set))
+    if len(tasks) == 1:
+        await tasks[0]
+    else:
+        for err in await asyncio.gather(*tasks, return_exceptions=True):
+            if isinstance(err, Exception):
+                raise err from None
+    return model_response(met)

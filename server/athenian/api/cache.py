@@ -5,7 +5,7 @@ import inspect
 import logging
 import pickle
 import time
-from typing import Any, ByteString, Callable, Coroutine, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, Coroutine, Mapping, Optional, Tuple, Union
 
 from aiohttp import web
 import aiomcache
@@ -35,8 +35,8 @@ def gen_cache_key(fmt: str, *args) -> bytes:
 
 
 def cached(exptime: Union[int, Callable[..., int]],
-           serialize: Callable[[Any], ByteString],
-           deserialize: Callable[[ByteString], Any],
+           serialize: Callable[[Any], bytes],
+           deserialize: Callable[[bytes], Any],
            key: Callable[..., Optional[Tuple]],
            cache: Optional[Callable[..., Optional[aiomcache.Client]]] = None,
            refresh_on_access=False,

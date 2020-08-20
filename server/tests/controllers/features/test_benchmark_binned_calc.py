@@ -4,7 +4,8 @@ from pathlib import Path
 import pickle
 
 from athenian.api.controllers.features.github.pull_request import \
-    BinnedPullRequestMetricCalculator, metric_calculators
+    metric_calculators
+from athenian.api.controllers.features.metric_calculator import BinnedMetricCalculator
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
 from athenian.api.models.web import PullRequestMetricID
 
@@ -12,7 +13,7 @@ from athenian.api.models.web import PullRequestMetricID
 def test_binned_calc_lab(benchmark, pr_samples, no_deprecation_warnings):
     metric_calcs = [metric_calculators[m]() for m in PullRequestMetricID]
     ts = [datetime.now(timezone.utc) - timedelta(days=365 * 3), datetime.now(timezone.utc)]
-    bin_calc = BinnedPullRequestMetricCalculator(metric_calcs, ts)
+    bin_calc = BinnedMetricCalculator(metric_calcs, ts)
     prs = pr_samples(2000)
     benchmark(bin_calc, prs)
 
@@ -23,7 +24,7 @@ def test_binned_calc_es(benchmark, no_deprecation_warnings):
     metrics = list(PullRequestMetricID)
 
     def calc():
-        return [BinnedPullRequestMetricCalculator(metrics, ts, quantiles=(0, 0.95))(mined_facts)
+        return [BinnedMetricCalculator(metrics, ts, quantiles=(0, 0.95))(mined_facts)
                 for ts in time_intervals]
 
     benchmark(calc)

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues
@@ -10,7 +10,7 @@ class CalculatedReleaseMetric(Model):
 
     openapi_types = {
         "for_": List[str],
-        "matches": List[str],
+        "matches": Dict[str, str],
         "metrics": List[str],
         "granularity": str,
         "values": List[CalculatedLinearMetricValues],
@@ -29,7 +29,7 @@ class CalculatedReleaseMetric(Model):
     def __init__(
         self,
         for_: List[str] = None,
-        matches: Optional[List[str]] = None,
+        matches: Optional[Dict[str, str]] = None,
         metrics: List[str] = None,
         granularity: str = None,
         values: List[CalculatedLinearMetricValues] = None,
@@ -68,7 +68,7 @@ class CalculatedReleaseMetric(Model):
         self._for_ = for_
 
     @property
-    def matches(self) -> List[str]:
+    def matches(self) -> Dict[str, str]:
         """Gets the matches of this CalculatedReleaseMetric.
 
         :return: The matches of this CalculatedReleaseMetric.
@@ -76,7 +76,7 @@ class CalculatedReleaseMetric(Model):
         return self._matches
 
     @matches.setter
-    def matches(self, matches: List[str]):
+    def matches(self, matches: Dict[str, str]):
         """Sets the matches of this CalculatedReleaseMetric.
 
         :param matches: The matches of this CalculatedReleaseMetric.

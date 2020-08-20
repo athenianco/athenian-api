@@ -10,7 +10,7 @@ from sqlalchemy import select
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github, \
     calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request import \
-    BinnedPullRequestMetricCalculator, histogram_calculators, PullRequestMetricCalculator, \
+    histogram_calculators, MetricCalculator, PullRequestBinnedMetricCalculator, \
     PullRequestMetricCalculatorEnsemble, register_metric
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
     ClosedCalculator, CycleCounter, CycleTimeCalculator, FlowRatioCalculator, LeadCounter, \
@@ -89,7 +89,7 @@ def test_pull_request_metrics_float_binned(pr_samples, metric):  # noqa: F811
     time_to = (datetime.now(tz=timezone.utc) - timedelta(days=365 // 2)).date()
     time_intervals = [datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc)
                       for i in Granularity.split("month", time_from, time_to)]
-    binned = BinnedPullRequestMetricCalculator([metric], time_intervals, quantiles=(0, 1))
+    binned = PullRequestBinnedMetricCalculator([metric], time_intervals, quantiles=(0, 1))
     samples = pr_samples(1000)
     if metric == PullRequestMetricID.PR_REJECTED:
         for i, s in enumerate(samples):
@@ -419,7 +419,7 @@ def test_size_calculator_shift_log():
 
 
 @register_metric("test")
-class QuantileTestingMetric(PullRequestMetricCalculator):
+class QuantileTestingMetric(MetricCalculator):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[timedelta]:
         """Calculate the actual state update."""

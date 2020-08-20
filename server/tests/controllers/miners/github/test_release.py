@@ -22,7 +22,7 @@ from athenian.api.controllers.miners.github.release import \
     _fetch_repository_first_commit_dates, _find_dead_merged_prs, load_releases, \
     map_prs_to_releases, map_releases_to_prs
 from athenian.api.controllers.miners.github.release_accelerated import extract_subdag, join_dags, \
-    mark_dag_access
+    mark_dag_access, mark_dag_parents
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, \
@@ -1033,6 +1033,30 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
     assert (newhashes == hashes).all()
     assert (newvertexes == vertexes).all()
     assert (newedges == edges).all()
+
+
+async def test_mark_dag_parents_smoke(
+        branches, default_branches, mdb, pdb, release_match_setting_tag, dag):
+    hashes, vertexes, edges = dag["src-d/go-git"]
+    date_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    date_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
+    releases, matched_bys = await load_releases(
+        ["src-d/go-git"],
+        branches, default_branches,
+        date_from,
+        date_to,
+        release_match_setting_tag,
+        mdb,
+        pdb,
+        None,
+    )
+    release_hashes = releases[Release.sha.key].values
+    release_dates = releases[Release.published_at.key].values
+    parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates)
+    assert (parents == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                        18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 34, 53,
+                        35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 53, 47, 48, 49, 50, 51,
+                        52, 53]).all()
 
 
 """

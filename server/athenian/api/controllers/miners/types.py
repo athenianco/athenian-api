@@ -7,6 +7,7 @@ from typing import Any, Dict, Generic, List, Mapping, Optional, Set, TypeVar, Un
 import numpy as np
 import pandas as pd
 
+from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
@@ -340,3 +341,16 @@ def dtmax(*args: Union[DT, float]) -> DT:
     if all((arg != arg) for arg in args):
         return None
     return max(arg for arg in args if arg == arg)
+
+
+@dataclasses.dataclass(frozen=True)
+class ReleaseFacts:
+    """Various release properties and statistics."""
+
+    published: datetime
+    matched_by: ReleaseMatch
+    age: timedelta
+    additions: int
+    deletions: int
+    commits_count: int
+    authors: List[str]
