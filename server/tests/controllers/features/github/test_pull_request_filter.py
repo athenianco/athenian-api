@@ -86,24 +86,23 @@ async def test_pr_list_miner_match_metrics_all_count(
         assert colors == {"84b6eb", "b0f794", "fc2929", "4faccc", "fbca04"}
 
 
-@pytest.mark.parametrize("year, check", [[2016, True], [2018, False]])
 @with_defer
 async def test_pr_list_miner_release_settings(
-        mdb, pdb, release_match_setting_tag, cache, year, check):
-    time_from = datetime(year=year, month=1, day=1, tzinfo=timezone.utc)
-    time_to = datetime(year=year + 1, month=1, day=1, tzinfo=timezone.utc)
+        mdb, pdb, release_match_setting_tag, cache):
+    time_from = datetime(year=2016, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     prs1 = await filter_pull_requests(
         {Property.RELEASING}, time_from, time_to, {"src-d/go-git"}, {}, set(), False,
         release_match_setting_tag, mdb, pdb, cache)
     assert prs1
-    release_match_setting_tag = {
+    await wait_deferred()
+    release_match_setting_branch = {
         "github.com/src-d/go-git": ReleaseMatchSetting("master", "unknown", ReleaseMatch.branch),
     }
     prs2 = await filter_pull_requests(
         {Property.RELEASING}, time_from, time_to, {"src-d/go-git"}, {}, set(), False,
-        release_match_setting_tag, mdb, pdb, cache)
-    assert bool(prs2) == check
-    assert prs1 != prs2
+        release_match_setting_branch, mdb, pdb, cache)
+    assert not prs2
 
 
 @with_defer

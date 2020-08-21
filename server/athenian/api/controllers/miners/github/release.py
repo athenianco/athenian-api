@@ -37,8 +37,8 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepository, PullRequest, \
-    PullRequestLabel, PushCommit, Release
+from athenian.api.models.metadata.github import Branch, NodeCommit, \
+    NodeRepository, PullRequest, PullRequestLabel, PushCommit, Release
 from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory, \
     GitHubRepository
 from athenian.api.tracing import sentry_span
@@ -1226,7 +1226,11 @@ async def mine_releases(repos: Iterable[str],
         all_hashes.append(hashes)
         repo_releases_analyzed[repo] = repo_releases, grouped_owned_hashes, parents
     commits_df_columns = [
-        PushCommit.sha, PushCommit.additions, PushCommit.deletions, PushCommit.author_login,
+        PushCommit.sha,
+        PushCommit.additions,
+        PushCommit.deletions,
+        PushCommit.author_login,
+        PushCommit.node_id,
     ]
     commits_df = await read_sql_query(
         select(commits_df_columns)
@@ -1234,9 +1238,15 @@ async def mine_releases(repos: Iterable[str],
         .order_by(PushCommit.sha),
         mdb, commits_df_columns, index=PushCommit.sha.key)
     commits_index = commits_df.index.values.astype("U40")
+    commit_ids = commits_df[PushCommit.node_id.key].values
     commits_additions = commits_df[PushCommit.additions.key].values
     commits_deletions = commits_df[PushCommit.deletions.key].values
     commits_authors = commits_df[PushCommit.author_login.key].values
+    prs_rows = await mdb.fetch_all(
+        select([PullRequest.merge_commit_id])
+        .where(PullRequest.merge_commit_id.in_(commit_ids))
+        .order_by(PullRequest.merge_commit_id))
+    prs_commit_ids = np.asarray([r[0] for r in prs_rows])
     prefix = PREFIXES["github"]
     mentioned_authors = set()
 
@@ -1260,6 +1270,9 @@ async def mine_releases(repos: Iterable[str],
                 my_additions = commits_additions[found_indexes].sum()
                 my_deletions = commits_deletions[found_indexes].sum()
                 my_authors = commits_authors[found_indexes]
+                my_commit_ids = commit_ids[found_indexes]
+                my_prs_indexes = searchsorted_inrange(prs_commit_ids, my_commit_ids)
+                my_prs_count = (prs_commit_ids[my_prs_indexes] == my_commit_ids).sum()
                 my_authors = prefix + my_authors[my_authors.nonzero()[0]]
                 parent = parents[i]
                 if parent < len(repo_releases):
@@ -1279,6 +1292,7 @@ async def mine_releases(repos: Iterable[str],
                                           additions=my_additions,
                                           deletions=my_deletions,
                                           commits_count=len(found_indexes),
+                                          prs_count=my_prs_count,
                                           authors=my_authors.tolist())))
             await asyncio.sleep(0)
         return data

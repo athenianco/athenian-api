@@ -12,12 +12,12 @@ from athenian.api.cache import cached
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
-from athenian.api.controllers.features.github.pull_request import \
+from athenian.api.controllers.features.github.pull_request_metrics import \
     histogram_calculators as pr_histogram_calculators, \
     metric_calculators as pr_metric_calculators, \
     PullRequestBinnedMetricCalculator, PullRequestHistogramCalculatorEnsemble
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
-from athenian.api.controllers.features.github.release import \
+from athenian.api.controllers.features.github.release_metrics import \
     metric_calculators as release_metric_calculators, ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.histogram import Histogram, Scale
 from athenian.api.controllers.features.metric import Metric

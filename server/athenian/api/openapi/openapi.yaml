@@ -4528,8 +4528,29 @@ components:
       description: Supported release metrics.
       enum:
       - release-count
-      - release-size
+      - release-tag-count
+      - release-branch-count
+      - release-prs
+      - release-tag-prs
+      - release-branch-prs
+      - release-commits
+      - release-tag-commits
+      - release-branch-commits
+      - release-lines
+      - release-tag-lines
+      - release-branch-lines
+      - release-avg-prs
+      - release-tag-avg-prs
+      - release-branch-avg-prs
+      - release-avg-commits
+      - release-tag-avg-commits
+      - release-branch-avg-commits
+      - release-avg-lines
+      - release-tag-avg-lines
+      - release-branch-avg-lines
       - release-age
+      - release-tag-age
+      - release-branch-age
       type: string
     CalculatedReleaseMetrics:
       description: Response from `/metrics/releases`.
