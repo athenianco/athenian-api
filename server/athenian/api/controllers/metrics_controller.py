@@ -383,7 +383,7 @@ async def _compile_repos_releases(request: AthenianWebRequest,
         for i, for_set in enumerate(for_sets):
             repos, service = await _extract_repos(
                 request, account, for_set, i, all_repos, checkers, sdb_conn)
-            filters.append((PREFIXES[service], (repos, for_set)))
+            filters.append((service, (repos, for_set)))
     return filters, all_repos
 
 

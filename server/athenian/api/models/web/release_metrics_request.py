@@ -10,7 +10,7 @@ class ReleaseMetricsRequest(Model):
     """Request of `/metrics/releases` to calculate metrics on releases."""
 
     openapi_types = {
-        "for_": List[List],
+        "for_": List[List[str]],
         "metrics": List[str],
         "date_from": date,
         "date_to": date,
@@ -35,7 +35,7 @@ class ReleaseMetricsRequest(Model):
 
     def __init__(
         self,
-        for_: Optional[List[List]] = None,
+        for_: Optional[List[List[str]]] = None,
         metrics: Optional[List[str]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
@@ -106,8 +106,10 @@ class ReleaseMetricsRequest(Model):
         """
         if metrics is None:
             raise ValueError("Invalid value for `metrics`, must not be `None`")
-        if metrics not in ReleaseMetricID:
-            raise ValueError("`metrics` must consist only of %s" % list(ReleaseMetricID))
+        for i, metric in enumerate(metrics):
+            if metric not in ReleaseMetricID:
+                raise ValueError("`metrics[%d]` = '%s' must be one of %s" % (
+                    i, metric, list(ReleaseMetricID)))
 
         self._metrics = metrics
 
