@@ -362,3 +362,7 @@ class ReleaseFacts:
     commits_count: int
     prs_count: int
     authors: List[str]
+
+    def max_timestamp(self) -> datetime:
+        """Find the maximum timestamp contained in the struct."""
+        return self.published

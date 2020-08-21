@@ -7,7 +7,8 @@ import pytest
 
 from athenian.api import FriendlyJson
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRequestMetrics, \
-    CodeBypassingPRsMeasurement, DeveloperMetricID, PullRequestMetricID, PullRequestWith
+    CodeBypassingPRsMeasurement, DeveloperMetricID, PullRequestMetricID, PullRequestWith, \
+    ReleaseMetricID
 
 
 @pytest.mark.parametrize(
@@ -696,3 +697,19 @@ async def test_developer_metrics_order(client, headers):
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].for_.developers == body["for"][0]["developers"]
     assert result.calculated[0].values == [[8], [14]]
+
+
+async def test_release_metrics_smoke(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [["{1}"]],
+        "metrics": list(ReleaseMetricID),
+        "granularities": ["all", "3 month"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
