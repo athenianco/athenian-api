@@ -262,12 +262,18 @@ class PullRequestFacts:
     """Various PR event timestamps and other properties."""
 
     @property
-    def work_began(self) -> DT:                          # PR_B   noqa: D102
+    def work_began(self) -> DT:                          # PR_B
+        """Return the earliest timestamp related to this PR."""
         try:
             # fast path
             return min(self.created.best, self.first_commit.best)
         except TypeError:
             return Fallback.min(self.created, self.first_commit).best
+
+    @property
+    def done(self) -> bool:
+        """Decide whether the facts will never change for this PR."""
+        return self.released or self.force_push_dropped or (self.closed and not self.merged)
 
     created: Fallback[DT]                                # PR_C
     first_commit: Fallback[DT]                           # PR_CC
@@ -283,6 +289,7 @@ class PullRequestFacts:
     last_passed_checks: Fallback[DT]                     # PR_VF
     released: Fallback[DT]                               # PR_R
     size: int
+    force_push_dropped: bool
 
     def max_timestamp(self) -> DT:
         """Find the maximum timestamp contained in the struct."""

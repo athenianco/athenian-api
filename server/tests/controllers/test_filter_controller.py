@@ -403,7 +403,7 @@ async def validate_prs_response(response: ClientResponse,
     assert len(prs.data) > 0, text
     numbers = set()
     total_comments = total_commits = total_review_comments = total_released = total_rejected = \
-        total_review_requests = total_reviews = 0
+        total_review_requests = total_reviews = total_force_push_dropped = 0
     tdz = timedelta(0)
     timings = defaultdict(lambda: tdz)
     for pr in prs.data:
@@ -494,6 +494,7 @@ async def validate_prs_response(response: ClientResponse,
                     assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
                 else:
                     assert PullRequestProperty.FORCE_PUSH_DROPPED in pr.properties, str(pr)
+                    total_force_push_dropped += 1
             else:
                 assert PullRequestProperty.REJECTION_HAPPENED in pr.properties, str(pr)
                 total_rejected += 1
@@ -599,13 +600,14 @@ async def validate_prs_response(response: ClientResponse,
         assert total_reviews > 0
     if props not in ({PullRequestProperty.RELEASE_HAPPENED}, {PullRequestProperty.MERGE_HAPPENED},
                      {PullRequestProperty.RELEASING}, {PullRequestProperty.MERGING},
-                     {PullRequestProperty.REVIEWING}, {PullRequestProperty.WIP}):
+                     {PullRequestProperty.REVIEWING}, {PullRequestProperty.WIP},
+                     {PullRequestProperty.FORCE_PUSH_DROPPED}):
         assert total_rejected > 0
     else:
         assert total_rejected == 0
     if props not in ({PullRequestProperty.RELEASING}, {PullRequestProperty.MERGING},
                      {PullRequestProperty.REJECTION_HAPPENED}, {PullRequestProperty.REVIEWING},
-                     {PullRequestProperty.WIP}):
+                     {PullRequestProperty.WIP}, {PullRequestProperty.FORCE_PUSH_DROPPED}):
         assert total_released > 0
     else:
         assert total_released == 0
@@ -613,6 +615,8 @@ async def validate_prs_response(response: ClientResponse,
             PullRequestProperty.REVIEW_HAPPENED, PullRequestProperty.APPROVE_HAPPENED,
             PullRequestProperty.CHANGES_REQUEST_HAPPENED}.intersection(props):
         assert total_review_requests > 0
+    if PullRequestProperty.FORCE_PUSH_DROPPED in props:
+        assert total_force_push_dropped > 0
     for k, v in timings.items():
         assert v > tdz, k
 

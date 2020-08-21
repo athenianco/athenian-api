@@ -115,11 +115,11 @@ async def calc_pull_request_facts_github(time_from: datetime,
                 continue
             mined_prs.append(pr)
             mined_facts.append(facts)
-            if facts.released or (facts.closed and not facts.merged):
+            if facts.done:
                 done_count += 1
-            if not facts.closed:
+            elif not facts.closed:
                 open_pr_facts.append((pr.pr, facts))
-            elif not facts.released and facts.merged:
+            else:
                 merged_unreleased_pr_facts.append((pr.pr, facts))
     add_pdb_misses(pdb, "precomputed_done_facts", done_count)
     add_pdb_misses(pdb, "precomputed_open_facts", len(open_pr_facts))

@@ -20,6 +20,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_unreleased_prs, load_inactive_merged_unreleased_prs, load_open_pull_request_facts
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
+from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import dtmax, dtmin, Fallback, MinedPullRequest, \
     Participants, ParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
@@ -887,6 +888,7 @@ class PullRequestFactsMiner:
                            additions, deletions)
             raise ImpossiblePullRequest()
         size = additions + deletions
+        force_push_dropped = pr.release[matched_by_column] == ReleaseMatch.force_push_drop
         facts = PullRequestFacts(
             created=created_at,
             first_commit=first_commit,
@@ -902,6 +904,7 @@ class PullRequestFactsMiner:
             released=released_at,
             closed=closed_at,
             size=size,
+            force_push_dropped=force_push_dropped,
         )
         self._validate(facts, pr.pr[PullRequest.htmlurl.key])
         return facts

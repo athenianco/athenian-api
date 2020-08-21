@@ -366,7 +366,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
         assert pr.pr[PullRequest.created_at.key] == facts.created.best
         activity_days = set()
         if not facts.released:
-            if not facts.closed or facts.merged:
+            if not (facts.force_push_dropped or (facts.closed and not facts.merged)):
                 continue
             done_at = facts.closed.best
         else:
@@ -556,9 +556,14 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                     repo_prs[PullRequest.user_login.key].values,
                     repo_prs[PullRequest.merged_by_login.key].values):
                 try:
-                    checked_until = min(time_to, release_times[node_id] - timedelta(seconds=1))
+                    released_time = release_times[node_id]
                 except KeyError:
                     checked_until = time_to
+                else:
+                    if released_time == released_time:
+                        checked_until = min(time_to, released_time - timedelta(seconds=1))
+                    else:
+                        checked_until = merged_at  # force_push_drop
                 values.append(GitHubMergedPullRequestFacts(
                     pr_node_id=node_id,
                     release_match=release_match,

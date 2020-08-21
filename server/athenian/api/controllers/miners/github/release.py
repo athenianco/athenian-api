@@ -508,12 +508,11 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
         return new_released_prs_df()
     rfnkey = PullRequest.repository_full_name.key
     mchkey = PullRequest.merge_commit_sha.key
-    clskey = PullRequest.closed_at.key
     dead_prs = []
     cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date.key,
             Branch.repository_full_name.key)
     dags = await _fetch_repository_commits(dags, branches, cols, True, mdb, pdb, cache)
-    for repo, repo_prs in prs[[mchkey, rfnkey, clskey]].groupby(rfnkey, sort=False):
+    for repo, repo_prs in prs[[mchkey, rfnkey]].groupby(rfnkey, sort=False):
         hashes, _, _ = dags[repo]
         if len(hashes) == 0:
             # no branches found in `_fetch_repository_commits()`
@@ -521,9 +520,8 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
         pr_merge_hashes = repo_prs[mchkey].values.astype("U40")
         indexes = searchsorted_inrange(hashes, pr_merge_hashes)
         dead_indexes = np.where(pr_merge_hashes != hashes[indexes])[0]
-        dead_prs.extend((pr_id, ct, None, None, None, repo, ReleaseMatch.force_push_drop)
-                        for pr_id, ct in zip(repo_prs.index.values.take(dead_indexes),
-                                             repo_prs[clskey].take(dead_indexes)))
+        dead_prs.extend((pr_id, None, None, None, None, repo, ReleaseMatch.force_push_drop)
+                        for pr_id in repo_prs.index.values[dead_indexes])
         await asyncio.sleep(0)
     return new_released_prs_df(dead_prs)
 
