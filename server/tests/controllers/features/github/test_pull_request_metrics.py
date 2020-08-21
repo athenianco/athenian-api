@@ -9,15 +9,15 @@ from sqlalchemy import select
 
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github, \
     calc_pull_request_metrics_line_github
-from athenian.api.controllers.features.github.pull_request import \
-    histogram_calculators, MetricCalculator, PullRequestBinnedMetricCalculator, \
-    PullRequestMetricCalculatorEnsemble, register_metric
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
-    ClosedCalculator, CycleCounter, CycleTimeCalculator, FlowRatioCalculator, LeadCounter, \
-    LeadTimeCalculator, MergingCounter, MergingTimeCalculator, OpenedCalculator, \
-    ReleaseCounter, ReleaseTimeCalculator, ReviewCounter, ReviewTimeCalculator, \
-    WaitFirstReviewTimeCalculator, WorkInProgressCounter, WorkInProgressTimeCalculator
+    ClosedCalculator, CycleCounter, CycleTimeCalculator, FlowRatioCalculator, \
+    histogram_calculators, LeadCounter, LeadTimeCalculator, MergingCounter, \
+    MergingTimeCalculator, OpenedCalculator, PullRequestBinnedMetricCalculator, \
+    PullRequestMetricCalculatorEnsemble, register_metric, ReleaseCounter, ReleaseTimeCalculator, \
+    ReviewCounter, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, WorkInProgressCounter, \
+    WorkInProgressTimeCalculator
 from athenian.api.controllers.features.histogram import Scale
+from athenian.api.controllers.features.metric_calculator import MetricCalculator
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting

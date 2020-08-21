@@ -20,7 +20,7 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestFacts
 from athenian.api.controllers.miners.github.release import \
     _empty_dag, _fetch_commit_history_dag, _fetch_first_parents, _fetch_repository_commits, \
     _fetch_repository_first_commit_dates, _find_dead_merged_prs, load_releases, \
-    map_prs_to_releases, map_releases_to_prs
+    map_prs_to_releases, map_releases_to_prs, mine_releases
 from athenian.api.controllers.miners.github.release_accelerated import extract_subdag, join_dags, \
     mark_dag_access, mark_dag_parents
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
@@ -402,13 +402,13 @@ async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag
     }
 
 
-def check_branch_releases(releases: pd.DataFrame, n: int, date_from: datetime, date_to: datetime):
+def check_branch_releases(releases: pd.DataFrame, n: int, time_from: datetime, time_to: datetime):
     assert len(releases) == n
     assert "mcuadros" in set(releases[Release.author.key])
     assert len(releases[Release.commit_id.key].unique()) == n
     assert releases[Release.id.key].all()
     assert all(len(n) == 40 for n in releases[Release.name.key])
-    assert releases[Release.published_at.key].between(date_from, date_to).all()
+    assert releases[Release.published_at.key].between(time_from, time_to).all()
     assert (releases[Release.repository_full_name.key] == "src-d/go-git").all()
     assert all(len(n) == 40 for n in releases[Release.sha.key])
     assert len(releases[Release.sha.key].unique()) == n
@@ -419,13 +419,13 @@ def check_branch_releases(releases: pd.DataFrame, n: int, date_from: datetime, d
 @pytest.mark.parametrize("branches_", ["{{default}}", "master", "m.*"])
 @with_defer
 async def test_load_releases_branches(branches, default_branches, mdb, pdb, cache, branches_):
-    date_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
-    date_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
+    time_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"],
         branches, default_branches,
-        date_from,
-        date_to,
+        time_from,
+        time_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches=branches_, tags="", match=ReleaseMatch.branch)},
         mdb,
@@ -433,18 +433,18 @@ async def test_load_releases_branches(branches, default_branches, mdb, pdb, cach
         cache,
     )
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
-    check_branch_releases(releases, 240, date_from, date_to)
+    check_branch_releases(releases, 242, time_from, time_to)
 
 
 @with_defer
 async def test_load_releases_branches_empty(branches, default_branches, mdb, pdb, cache):
-    date_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
-    date_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
+    time_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"],
         branches, default_branches,
-        date_from,
-        date_to,
+        time_from,
+        time_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="unknown", tags="", match=ReleaseMatch.branch)},
         mdb,
@@ -455,20 +455,20 @@ async def test_load_releases_branches_empty(branches, default_branches, mdb, pdb
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
 
-@pytest.mark.parametrize("date_from, n", [
+@pytest.mark.parametrize("time_from, n", [
     (datetime(year=2017, month=10, day=4, tzinfo=timezone.utc), 45),
     (datetime(year=2017, month=9, day=4, tzinfo=timezone.utc), 1),
     (datetime(year=2017, month=12, day=8, tzinfo=timezone.utc), 0),
 ])
 @with_defer
 async def test_load_releases_tag_or_branch_dates(
-        branches, default_branches, mdb, pdb, cache, date_from, n):
-    date_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
+        branches, default_branches, mdb, pdb, cache, time_from, n):
+    time_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"],
         branches, default_branches,
-        date_from,
-        date_to,
+        time_from,
+        time_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags=".*", match=ReleaseMatch.tag_or_branch)},
         mdb,
@@ -476,7 +476,7 @@ async def test_load_releases_tag_or_branch_dates(
         cache,
     )
     if n > 1:
-        check_branch_releases(releases, n, date_from, date_to)
+        check_branch_releases(releases, n, time_from, time_to)
         assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
     else:
         assert len(releases) == n
@@ -488,13 +488,13 @@ async def test_load_releases_tag_or_branch_dates(
 
 @with_defer
 async def test_load_releases_tag_or_branch_initial(branches, default_branches, mdb, pdb):
-    date_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
-    date_to = datetime(year=2015, month=10, day=22, tzinfo=timezone.utc)
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2015, month=10, day=22, tzinfo=timezone.utc)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"],
         branches, default_branches,
-        date_from,
-        date_to,
+        time_from,
+        time_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags="", match=ReleaseMatch.branch)},
         mdb,
@@ -502,18 +502,18 @@ async def test_load_releases_tag_or_branch_initial(branches, default_branches, m
         None,
     )
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
-    check_branch_releases(releases, 17, date_from, date_to)
+    check_branch_releases(releases, 17, time_from, time_to)
 
 
 @with_defer
 async def test_map_releases_to_prs_branches(branches, default_branches, mdb, pdb):
-    date_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
-    date_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
+    time_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
     prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
-        date_from,
-        date_to,
+        time_from,
+        time_to,
         [], [],
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags="", match=ReleaseMatch.branch)},
@@ -543,13 +543,13 @@ async def test_load_releases_empty(branches, default_branches, mdb, pdb, repos):
     assert releases.empty
     if repos:
         assert matched_bys == {"src-d/gitbase": ReleaseMatch.branch}
-    date_from = datetime(year=2017, month=3, day=4, tzinfo=timezone.utc)
-    date_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
+    time_from = datetime(year=2017, month=3, day=4, tzinfo=timezone.utc)
+    time_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"],
         branches, default_branches,
-        date_from,
-        date_to,
+        time_from,
+        time_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags="", match=ReleaseMatch.tag)},
         mdb,
@@ -561,8 +561,8 @@ async def test_load_releases_empty(branches, default_branches, mdb, pdb, repos):
     releases, matched_bys = await load_releases(
         ["src-d/go-git"],
         branches, default_branches,
-        date_from,
-        date_to,
+        time_from,
+        time_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="", tags=".*", match=ReleaseMatch.branch)},
         mdb,
@@ -1041,13 +1041,13 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
 async def test_mark_dag_parents_smoke(
         branches, default_branches, mdb, pdb, release_match_setting_tag, dag):
     hashes, vertexes, edges = dag["src-d/go-git"]
-    date_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
-    date_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"],
         branches, default_branches,
-        date_from,
-        date_to,
+        time_from,
+        time_to,
         release_match_setting_tag,
         mdb,
         pdb,
@@ -1060,6 +1060,31 @@ async def test_mark_dag_parents_smoke(
                         18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 34, 53,
                         35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 53, 47, 48, 49, 50, 51,
                         52, 53]).all()
+
+
+@with_defer
+async def test_mine_releases_full_span(mdb, pdb, release_match_setting_tag):
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
+    releases, avatars, matched_bys = await mine_releases(
+        ["src-d/go-git"], None, {}, time_from, time_to, release_match_setting_tag, mdb, pdb, None)
+    assert len(releases) == 53
+    assert len(avatars) == 114
+    assert matched_bys == {"github.com/src-d/go-git": ReleaseMatch.tag}
+    for details, facts in releases:
+        assert details[Release.name.key]
+        assert details[Release.url.key]
+        assert details[Release.author.key]
+        assert details[Release.repository_full_name.key] == "github.com/src-d/go-git"
+        assert len(facts.authors) > 0
+        assert facts.age
+        assert facts.additions > 0
+        assert facts.deletions > 0
+        assert facts.commits_count > 0
+        assert facts.prs_count > 0 or facts.published <= pd.Timestamp(
+            "2017-02-01 09:51:10+0000", tz="UTC")
+        assert time_from < facts.published < time_to
+        assert facts.matched_by == ReleaseMatch.tag
 
 
 """

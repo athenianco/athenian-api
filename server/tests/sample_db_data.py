@@ -7,7 +7,7 @@ from sqlalchemy.cprocessors import str_to_date, str_to_datetime
 import sqlalchemy.orm
 
 from athenian.api.controllers import invitation_controller
-from athenian.api.models.metadata.github import Base
+from athenian.api.models.metadata.github import Base, PullRequest, PushCommit
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubInstallation, \
     Feature, FeatureComponent, Invitation, RepositorySet, UserAccount
 
@@ -71,6 +71,11 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                                 print(k, '"%s"' % p.decode())
                             raise e from None
                 session.add(model(**kwargs))
+    session.flush()
+    # append missed merge commit IDs to PRs
+    commit_ids = {h: n for h, n in session.query(PushCommit.sha, PushCommit.node_id)}
+    for pr in session.query(PullRequest).filter(PullRequest.merge_commit_sha.isnot(None)):
+        pr.merge_commit_id = commit_ids[pr.merge_commit_sha]
 
 
 def fill_state_session(session: sqlalchemy.orm.Session):
