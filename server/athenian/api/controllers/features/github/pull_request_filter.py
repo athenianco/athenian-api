@@ -76,8 +76,8 @@ class PullRequestListMiner:
         np_time_from = np.datetime64(time_from.replace(tzinfo=None))
         author = pr.pr[PullRequest.user_login.key]
         props = set()
-        if facts.released or (facts.closed and not facts.merged):
-            if pr.release[Release.url.key] is None:
+        if facts.done:
+            if facts.force_push_dropped:
                 props.add(Property.FORCE_PUSH_DROPPED)
             props.add(Property.DONE)
         elif facts.merged:
@@ -105,8 +105,7 @@ class PullRequestListMiner:
             props.add(Property.MERGE_HAPPENED)
         if not facts.merged and facts.closed and facts.closed.best > time_from:
             props.add(Property.REJECTION_HAPPENED)
-        if facts.released and facts.released.best > time_from and \
-                pr.release[Release.url.key] is not None:
+        if facts.released and facts.released.best > time_from:
             props.add(Property.RELEASE_HAPPENED)
         review_states = pr.reviews[PullRequestReview.state.key]
         if ((review_states.values == ReviewResolution.CHANGES_REQUESTED.value)

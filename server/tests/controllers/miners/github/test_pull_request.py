@@ -724,15 +724,20 @@ async def test_pr_miner_unreleased_facts(
     assert unreleased_facts == {}
     open_prs_and_facts = []
     merged_unreleased_prs_and_facts = []
+    force_push_dropped = []
     facts_miner = PullRequestFactsMiner(await bots(mdb))
     for pr in miner:
         facts = facts_miner(pr)
         if not facts.closed:
             open_prs_and_facts.append((pr.pr, facts))
         elif facts.merged and not facts.released:
-            merged_unreleased_prs_and_facts.append((pr.pr, facts))
+            if not facts.force_push_dropped:
+                merged_unreleased_prs_and_facts.append((pr.pr, facts))
+            else:
+                force_push_dropped.append((pr.pr, facts))
     assert len(open_prs_and_facts) == 21
     assert len(merged_unreleased_prs_and_facts) == 11
+    assert len(force_push_dropped) == 1
     discovered = await discover_unreleased_prs(
         miner._prs, time_to, matched_bys, default_branches, release_match_setting_tag, pdb)
     assert {pr[PullRequest.node_id.key] for pr, _ in merged_unreleased_prs_and_facts} == \

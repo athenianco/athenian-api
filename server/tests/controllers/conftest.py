@@ -93,6 +93,7 @@ def pr_samples():
                 released=Fallback(released_at, None),
                 closed=Fallback(closed_at, None),
                 size=randint(10, 1000),
+                force_push_dropped=False,
             )
 
         return [random_pr() for _ in range(n)]

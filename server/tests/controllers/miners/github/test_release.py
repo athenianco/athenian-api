@@ -23,6 +23,7 @@ from athenian.api.controllers.miners.github.release import \
     map_prs_to_releases, map_releases_to_prs
 from athenian.api.controllers.miners.github.release_accelerated import extract_subdag, join_dags, \
     mark_dag_access, mark_dag_parents
+from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, \
@@ -932,6 +933,8 @@ async def test__find_dead_merged_prs_smoke(mdb, pdb, dag):
     branches = branches.iloc[:1]
     dead_prs = await _find_dead_merged_prs(prs, dag, branches, mdb, pdb, None)
     assert len(dead_prs) == 159
+    assert dead_prs[Release.published_at.key].isnull().all()
+    assert (dead_prs[matched_by_column] == ReleaseMatch.force_push_drop).all()
     dead_prs = await mdb.fetch_all(
         select([PullRequest.number]).where(PullRequest.node_id.in_(dead_prs.index)))
     assert {pr[0] for pr in dead_prs} == set(force_push_dropped_go_git_pr_numbers)
