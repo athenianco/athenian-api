@@ -145,12 +145,28 @@ class SumMetricCalculator(MetricCalculator[T]):
 
 
 class Counter(SumMetricCalculator[int]):
-    """Count the number of PRs that were used to calculate the specified metric."""
+    """Count the number of PRs that were used to calculate the specified metric, \
+    the quantiles are ignored."""
 
     def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
         return int(self._calcs[0].peek is not None)
+
+
+class CounterWithQuantiles(MetricCalculator[T]):
+    """Count the number of PRs that were used to calculate the specified metric, \
+    the quantiles are respected."""
+
+    def _value(self, samples: Sequence[T]) -> Metric[int]:
+        """Calculate the current metric value."""
+        exists = len(samples) > 0
+        return Metric(exists, len(samples) if exists else None, None, None)
+
+    def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
+                 **kwargs) -> Optional[T]:
+        """Calculate the actual state update."""
+        return self._calcs[0].peek
 
 
 class HistogramCalculator(MetricCalculator):

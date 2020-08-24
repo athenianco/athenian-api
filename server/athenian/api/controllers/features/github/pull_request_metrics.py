@@ -3,7 +3,8 @@ from typing import Dict, Optional, Sequence, Type
 
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedMetricCalculator, Counter, HistogramCalculator, HistogramCalculatorEnsemble, \
+    BinnedMetricCalculator, Counter, CounterWithQuantiles, HistogramCalculator, \
+    HistogramCalculatorEnsemble, \
     MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
 from athenian.api.controllers.miners.types import PullRequestFacts, T
 from athenian.api.models.web import PullRequestMetricID
@@ -88,7 +89,15 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
 
 @register_metric(PullRequestMetricID.PR_WIP_COUNT)
 class WorkInProgressCounter(Counter):
-    """Count the number of PRs that were used to calculate PR_WIP_TIME."""
+    """Count the number of PRs that were used to calculate PR_WIP_TIME \
+    disregarding the quantiles."""
+
+    deps = (WorkInProgressTimeCalculator,)
+
+
+@register_metric(PullRequestMetricID.PR_WIP_COUNT_Q)
+class WorkInProgressCounterWithQuantiles(CounterWithQuantiles):
+    """Count the number of PRs that were used to calculate PR_WIP_TIME respecting the quantiles."""
 
     deps = (WorkInProgressTimeCalculator,)
 
@@ -123,7 +132,16 @@ class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
 
 @register_metric(PullRequestMetricID.PR_REVIEW_COUNT)
 class ReviewCounter(Counter):
-    """Count the number of PRs that were used to calculate PR_REVIEW_TIME."""
+    """Count the number of PRs that were used to calculate PR_REVIEW_TIME disregarding \
+    the quantiles."""
+
+    deps = (ReviewTimeCalculator,)
+
+
+@register_metric(PullRequestMetricID.PR_REVIEW_COUNT_Q)
+class ReviewCounterWithQuantiles(CounterWithQuantiles):
+    """Count the number of PRs that were used to calculate PR_REVIEW_TIME respecting \
+    the quantiles."""
 
     deps = (ReviewTimeCalculator,)
 
@@ -151,7 +169,16 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
 
 @register_metric(PullRequestMetricID.PR_MERGING_COUNT)
 class MergingCounter(Counter):
-    """Count the number of PRs that were used to calculate PR_MERGING_TIME."""
+    """Count the number of PRs that were used to calculate PR_MERGING_TIME disregarding \
+    the quantiles."""
+
+    deps = (MergingTimeCalculator,)
+
+
+@register_metric(PullRequestMetricID.PR_MERGING_COUNT_Q)
+class MergingCounterWithQuantiles(CounterWithQuantiles):
+    """Count the number of PRs that were used to calculate PR_MERGING_TIME respecting \
+    the quantiles."""
 
     deps = (MergingTimeCalculator,)
 
@@ -173,7 +200,16 @@ class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
 
 @register_metric(PullRequestMetricID.PR_RELEASE_COUNT)
 class ReleaseCounter(Counter):
-    """Count the number of PRs that were used to calculate PR_RELEASE_TIME."""
+    """Count the number of PRs that were used to calculate PR_RELEASE_TIME disregarding \
+    the quantiles."""
+
+    deps = (ReleaseTimeCalculator,)
+
+
+@register_metric(PullRequestMetricID.PR_RELEASE_COUNT_Q)
+class ReleaseCounterWithQuantiles(CounterWithQuantiles):
+    """Count the number of PRs that were used to calculate PR_RELEASE_TIME respecting \
+    the quantiles."""
 
     deps = (ReleaseTimeCalculator,)
 
@@ -194,7 +230,16 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
 
 @register_metric(PullRequestMetricID.PR_LEAD_COUNT)
 class LeadCounter(Counter):
-    """Count the number of PRs that were used to calculate PR_LEAD_TIME."""
+    """Count the number of PRs that were used to calculate PR_LEAD_TIME disregarding \
+    the quantiles."""
+
+    deps = (LeadTimeCalculator,)
+
+
+@register_metric(PullRequestMetricID.PR_LEAD_COUNT_Q)
+class LeadCounterWithQuantiles(CounterWithQuantiles):
+    """Count the number of PRs that were used to calculate PR_LEAD_TIME respecting \
+    the quantiles."""
 
     deps = (LeadTimeCalculator,)
 
@@ -243,7 +288,15 @@ class CycleTimeCalculator(MetricCalculator[timedelta]):
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT)
 class CycleCounter(Counter):
     """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, \
-    or PR_RELEASE_TIME."""
+    or PR_RELEASE_TIME disregarding the quantiles."""
+
+    deps = (CycleTimeCalculator,)
+
+
+@register_metric(PullRequestMetricID.PR_CYCLE_COUNT_Q)
+class CycleCounterWithQuantiles(CounterWithQuantiles):
+    """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, \
+    or PR_RELEASE_TIME respecting the quantiles."""
 
     deps = (CycleTimeCalculator,)
 
@@ -292,7 +345,15 @@ class WaitFirstReviewTimeCalculator(AverageMetricCalculator[timedelta]):
 
 @register_metric(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT)
 class WaitFirstReviewCounter(Counter):
-    """Count PRs that were used to calculate PR_WAIT_FIRST_REVIEW_TIME."""
+    """Count PRs that were used to calculate PR_WAIT_FIRST_REVIEW_TIME disregarding \
+    the quantiles."""
+
+    deps = (WaitFirstReviewTimeCalculator,)
+
+
+@register_metric(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT_Q)
+class WaitFirstReviewCounterWithQunatiles(CounterWithQuantiles):
+    """Count PRs that were used to calculate PR_WAIT_FIRST_REVIEW_TIME respecting the quantiles."""
 
     deps = (WaitFirstReviewTimeCalculator,)
 
