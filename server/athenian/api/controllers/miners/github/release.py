@@ -1276,16 +1276,18 @@ async def mine_releases(repos: Iterable[str],
                 my_authors = prefix + my_authors[my_authors.nonzero()[0]]
                 parent = parents[i]
                 if parent < len(repo_releases):
-                    my_age = my_published_at - repo_releases[Release.published_at.key][parent]
+                    my_age = my_published_at - repo_releases[Release.published_at.key]._ixs(parent)
                 else:
                     my_age = my_published_at - first_commit_dates[repo]
-                mentioned_authors.add(my_author)
+                if my_author is not None:
+                    mentioned_authors.add(my_author)
+                    my_author = prefix + my_author
                 mentioned_authors.update(my_authors)
                 data.append(({Release.name.key: my_name or my_tag,
                               Release.repository_full_name.key: prefix + repo,
                               Release.url.key: my_url,
                               Release.published_at.key: my_published_at,
-                              Release.author.key: prefix + my_author},
+                              Release.author.key: my_author},
                              ReleaseFacts(published=my_published_at,
                                           matched_by=ReleaseMatch(my_matched_by),
                                           age=my_age,

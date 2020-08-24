@@ -4491,8 +4491,8 @@ components:
       description: Request of `/metrics/releases` to calculate metrics on releases.
       example:
         for:
-        - athenianco/athenian-api
-        - athenianco/athenian-webapp
+        - - athenianco/athenian-api
+          - athenianco/athenian-webapp
         metrics:
         - release-count
         granularities:
