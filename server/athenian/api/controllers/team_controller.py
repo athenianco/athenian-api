@@ -29,7 +29,7 @@ async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
     :param body: Team creation request body.
 
     """
-    body = TeamCreateRequest.from_dict(body)  # type: TeamCreateRequest
+    body = TeamCreateRequest.from_dict(body)
     user = request.uid
     account = body.account
     name = _check_name(body.name)
@@ -107,7 +107,7 @@ async def update_team(request: AthenianWebRequest, id: int,
     :param id: Numeric identifier of the team to update.
     :param body: Team update request body.
     """
-    body = TeamUpdateRequest.from_dict(body)  # type: TeamUpdateRequest
+    body = TeamUpdateRequest.from_dict(body)
     user = request.uid
     name = _check_name(body.name)
     async with request.sdb.connection() as sdb_conn:

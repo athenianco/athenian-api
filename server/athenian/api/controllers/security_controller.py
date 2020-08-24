@@ -51,7 +51,7 @@ async def create_token(request: AthenianWebRequest, body: dict) -> web.Response:
     kms = request.app["kms"]
     if kms is None:
         raise ResponseError(ServerNotImplementedError(detail="Google KMS was not initialized."))
-    model = CreateTokenRequest.from_dict(body)  # type: CreateTokenRequest
+    model = CreateTokenRequest.from_dict(body)
     _check_token_name(model.name)
     async with request.sdb.connection() as conn:
         await get_user_account_status(request.uid, model.account, conn, request.cache)
@@ -78,7 +78,7 @@ async def delete_token(request: AthenianWebRequest, id: int) -> web.Response:
 
 async def patch_token(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
     """Change Personal Access Token's details."""
-    model = PatchTokenRequest.from_dict(body)  # type: PatchTokenRequest
+    model = PatchTokenRequest.from_dict(body)
     _check_token_name(model.name)
     async with request.sdb.connection() as conn:
         await _check_token_access(request, id, conn)

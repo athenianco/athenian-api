@@ -679,7 +679,7 @@ async def test_filter_prs_developer_filter(client, headers):
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     assert response.status == 200
     obj = json.loads((await response.read()).decode("utf-8"))
-    prs = PullRequestSet.from_dict(obj)  # type: PullRequestSet
+    prs = PullRequestSet.from_dict(obj)
     assert len(prs.data) == 27
     for pr in prs.data:
         passed = False
@@ -704,7 +704,7 @@ async def test_filter_prs_exclude_inactive(client, headers):
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     assert response.status == 200
     obj = json.loads((await response.read()).decode("utf-8"))
-    prs = PullRequestSet.from_dict(obj)  # type: PullRequestSet
+    prs = PullRequestSet.from_dict(obj)
     assert len(prs.data) == 6
 
 
@@ -844,7 +844,7 @@ async def test_filter_commits_bypassing_prs_no_with(client, cached, headers, app
         method="POST", path="/v1/filter/commits", headers=headers, json=body)
     assert response.status == 200
     commits = CommitsList.from_dict(
-        json.loads((await response.read()).decode("utf-8")))  # type: CommitsList
+        json.loads((await response.read()).decode("utf-8")))
     assert len(commits.data) == 0
     assert len(commits.include.users) == 0
     body["date_to"] = "2020-02-22"
@@ -890,7 +890,7 @@ async def test_filter_releases_by_tag(client, headers):
         method="POST", path="/v1/filter/releases", headers=headers, json=body)
     response_text = (await response.read()).decode("utf-8")
     assert response.status == 200, response_text
-    releases = FilteredReleases.from_dict(json.loads(response_text))  # type: FilteredReleases
+    releases = FilteredReleases.from_dict(json.loads(response_text))
     releases.include.users = set(releases.include.users)
     assert len(releases.include.users) == 71
     assert "github.com/mcuadros" in releases.include.users
@@ -957,7 +957,7 @@ async def test_get_prs_smoke(client, headers):
         method="POST", path="/v1/get/pull_requests", headers=headers, json=body)
     response_body = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 200, response_body
-    model = PullRequestSet.from_dict(response_body)  # type: PullRequestSet
+    model = PullRequestSet.from_dict(response_body)
     assert len(model.data) == 51
 
 

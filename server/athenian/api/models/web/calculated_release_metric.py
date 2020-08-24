@@ -102,8 +102,10 @@ class CalculatedReleaseMetric(Model):
         """
         if metrics is None:
             raise ValueError("Invalid value for `metrics`, must not be `None`")
-        if metrics not in ReleaseMetricID:
-            raise ValueError("`metrics` must consist only of %s" % list(ReleaseMetricID))
+        for i, metric in enumerate(metrics):
+            if metric not in ReleaseMetricID:
+                raise ValueError("`metrics[%d]` = '%s' must be one of %s" % (
+                    i, metric, list(ReleaseMetricID)))
 
         self._metrics = metrics
 

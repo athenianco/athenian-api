@@ -25,7 +25,7 @@ async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Resp
     """Set the release matching rule for a list of repositories."""
     if request.is_default_user:
         return ResponseError(ForbiddenError("%s is the default user" % request.uid)).response
-    rule = ReleaseMatchRequest.from_dict(body)  # type: ReleaseMatchRequest
+    rule = ReleaseMatchRequest.from_dict(body)
     settings = Settings.from_request(request, rule.account)
     match = ReleaseMatch[rule.match]
     repos = await settings.set_release_matches(rule.repositories, rule.branches, rule.tags, match)

@@ -1,13 +1,15 @@
 from collections import defaultdict
 from datetime import date, timedelta
 import itertools
+import json
 
 import pandas as pd
 import pytest
 
 from athenian.api import FriendlyJson
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRequestMetrics, \
-    CodeBypassingPRsMeasurement, DeveloperMetricID, PullRequestMetricID, PullRequestWith, \
+    CalculatedReleaseMetric, CodeBypassingPRsMeasurement, DeveloperMetricID, PullRequestMetricID, \
+    PullRequestWith, \
     ReleaseMetricID
 
 
@@ -713,3 +715,82 @@ async def test_release_metrics_smoke(client, headers):
     )
     rbody = (await response.read()).decode("utf-8")
     assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+    assert len(models) == 2
+    for model in models:
+        assert model.for_ == ["{1}"]
+        assert model.metrics == body["metrics"]
+        assert model.matches == {
+            "github.com/src-d/go-git": "tag",
+            "github.com/src-d/gitbase": "branch",
+        }
+        assert model.granularity in body["granularities"]
+        for mv in model.values:
+            exist = any(v is not None for v in mv.values)
+            for metric, value in zip(model.metrics, mv.values):
+                if "branch" in metric:
+                    assert value is None, metric
+                else:
+                    if exist:
+                        assert value is not None, metric
+        if model.granularity == "all":
+            assert len(model.values) == 1
+            assert any(v is not None for v in model.values[0].values)
+        else:
+            assert any(v is not None for values in model.values for v in values.values)
+            assert len(model.values) == 9
+
+
+@pytest.mark.parametrize("account, date_to, quantiles, extra_metrics, code",
+                         [(3, "2020-02-22", [0, 1], [], 403),
+                          (10, "2020-02-22", [0, 1], [], 403),
+                          (1, "2015-10-13", [0, 1], [], 200),
+                          (1, "2015-10-13", [0, 1], ["whatever"], 400),
+                          (1, "2010-01-11", [0, 1], [], 400),
+                          (1, "2020-01-32", [0, 1], [], 400),
+                          (1, "2020-01-01", [-1, 0.5], [], 400),
+                          (1, "2020-01-01", [0, -1], [], 400),
+                          (1, "2020-01-01", [10, 20], [], 400),
+                          (1, "2020-01-01", [0.5, 0.25], [], 400),
+                          (1, "2020-01-01", [0.5, 0.5], [], 400)])
+async def test_release_metrics_nasty_input(
+        client, headers, account, date_to, quantiles, extra_metrics, code):
+    body = {
+        "for": [["{1}"], ["{1}"]],
+        "metrics": [ReleaseMetricID.TAG_RELEASE_AGE] + extra_metrics,
+        "date_from": "2015-10-13",
+        "date_to": date_to,
+        "granularities": ["4 month"],
+        "quantiles": quantiles,
+        "account": account,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == code, "Response body is : " + body
+
+
+async def test_release_metrics_quantiles(client, headers):
+    for q, gt in ((0.95, "2176285s"), (1, "2779256s")):
+        body = {
+            "account": 1,
+            "date_from": "2015-01-12",
+            "date_to": "2020-03-01",
+            "for": [["{1}"], ["github.com/src-d/go-git"]],
+            "metrics": [ReleaseMetricID.TAG_RELEASE_AGE],
+            "granularities": ["all"],
+            "quantiles": [0, q],
+        }
+        response = await client.request(
+            method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+        )
+        rbody = (await response.read()).decode("utf-8")
+        assert response.status == 200, rbody
+        rbody = json.loads(rbody)
+        models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+        assert len(models) == 2
+        assert models[0].values == models[1].values
+        model = models[0]
+        assert model.values[0].values == [gt]

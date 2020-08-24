@@ -18,7 +18,7 @@ class Model:
     attribute_map = {}
 
     @classmethod
-    def from_dict(cls, dikt: dict) -> T:
+    def from_dict(cls: typing.Type[T], dikt: dict) -> T:
         """Returns the dict as a model."""
         return serialization.deserialize_model(dikt, cls)
 
@@ -56,7 +56,8 @@ class Model:
 
     def __repr__(self):
         """For debugging."""
-        return "%s(%s)" % (type(self).__name__, ", ".join("%s=%r" % p for p in vars(self).items()))
+        return "%s(%s)" % (type(self).__name__, ", ".join(
+            "%s=%r" % p for p in self.to_dict().items()))
 
     def __str__(self):
         """For `print` and `pprint`."""

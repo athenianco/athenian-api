@@ -21,7 +21,7 @@ from athenian.api.response import model_response
 async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms over PR distributions."""
     try:
-        filt = PullRequestHistogramsRequest.from_dict(body)  # type: PullRequestHistogramsRequest
+        filt = PullRequestHistogramsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response

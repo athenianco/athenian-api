@@ -45,7 +45,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     :type body: dict | bytes
     """
     try:
-        filt = PullRequestMetricsRequest.from_dict(body)  # type: PullRequestMetricsRequest
+        filt = PullRequestMetricsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
@@ -290,7 +290,7 @@ async def _extract_repos(request: AthenianWebRequest,
 async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Measure the amount of code that was pushed outside of pull requests."""
     try:
-        filt = CodeFilter.from_dict(body)  # type: CodeFilter
+        filt = CodeFilter.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
@@ -334,7 +334,7 @@ def resolve_time_from_and_to(filt: Model) -> Tuple[datetime, datetime]:
 async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over developer activities."""
     try:
-        filt = DeveloperMetricsRequest.from_dict(body)  # type: DeveloperMetricsRequest
+        filt = DeveloperMetricsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
@@ -390,7 +390,7 @@ async def _compile_repos_releases(request: AthenianWebRequest,
 async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate linear metrics over releases."""
     try:
-        filt = ReleaseMetricsRequest.from_dict(body)  # type: ReleaseMetricsRequest
+        filt = ReleaseMetricsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
