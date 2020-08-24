@@ -53,7 +53,7 @@ from athenian.api.tracing import sentry_span
 async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find developers that made an action within the given timeframe."""
     try:
-        filt = FilterContributorsRequest.from_dict(body)  # type: FilterContributorsRequest
+        filt = FilterContributorsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
@@ -78,7 +78,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
 async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find repositories that were updated within the given timeframe."""
     try:
-        filt = GenericFilterRequest.from_dict(body)  # type: GenericFilterRequest
+        filt = GenericFilterRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
@@ -113,7 +113,7 @@ async def _common_filter_preprocess(filt: Union[GenericFilterRequest,
 async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """List pull requests that satisfy the query."""
     try:
-        filt = FilterPullRequestsRequest.from_dict(body)  # type: FilterPullRequestsRequest
+        filt = FilterPullRequestsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
@@ -246,7 +246,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
 
 async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """List pull requests by repository and number."""
-    body = GetPullRequestsRequest.from_dict(body)  # type: GetPullRequestsRequest
+    body = GetPullRequestsRequest.from_dict(body)
     repos = {}
     for p in body.prs:
         repos.setdefault(p.repository, set()).update(p.numbers)
@@ -300,7 +300,7 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
 
 async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find labels used in the given repositories."""
-    body = FilterLabelsRequest.from_dict(body)  # type: FilterLabelsRequest
+    body = FilterLabelsRequest.from_dict(body)
     repos = await resolve_repos(body.repositories, body.account, request.uid, request.native_uid,
                                 request.sdb, request.mdb, request.cache, request.app["slack"])
     labels = await mine_labels(repos, request.mdb, request.cache)

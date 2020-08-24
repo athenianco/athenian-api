@@ -114,7 +114,7 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
     :type id: int
     :param body: New reposet definition.
     """
-    body = RepositorySetWithName.from_dict(body)  # type: RepositorySetWithName
+    body = RepositorySetWithName.from_dict(body)
     async with request.sdb.connection() as sdb_conn:
         rs, is_admin = await fetch_reposet(
             id, [RepositorySet], request.uid, sdb_conn, request.cache)
