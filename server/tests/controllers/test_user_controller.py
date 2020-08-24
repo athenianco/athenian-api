@@ -72,6 +72,7 @@ async def test_get_default_user(client, headers, gkwillie):
         "id": "github|60340680",
         "login": "gkwillie",
         "name": "Groundskeeper Willie",
+        "email": "<classified>",
         "native_id": "60340680",
         "picture": "https://avatars0.githubusercontent.com/u/60340680?v=4",
         "accounts": {},
@@ -84,9 +85,11 @@ async def test_get_account_members_smoke(client, headers):
     )
     body = json.loads((await response.read()).decode("utf-8"))
     assert len(body["admins"]) == 1
-    assert body["admins"][0]["email"] == "vadim@athenian.co"
+    assert body["admins"][0]["name"] == "Vadim Markovtsev"
+    assert body["admins"][0]["email"] == "<classified>"  # "vadim@athenian.co"
     assert len(body["regulars"]) == 1
-    assert body["regulars"][0]["email"] == "eiso@athenian.co"
+    assert body["regulars"][0]["name"] == "Eiso Kant"
+    assert body["regulars"][0]["email"] == "<classified>"  # "eiso@athenian.co"
 
 
 @pytest.mark.parametrize("account, code", [[3, 403], [4, 404]])
@@ -141,15 +144,18 @@ async def test_get_users_query_size_limit(xapp):
     users = await xapp._auth0.get_users(
         ["auth0|5e1f6dfb57bc640ea390557b"] * 200 + ["auth0|5e1f6e2e8bfa520ea5290741"] * 200)
     assert len(users) == 2
-    assert users["auth0|5e1f6dfb57bc640ea390557b"].email == "vadim@athenian.co"
-    assert users["auth0|5e1f6e2e8bfa520ea5290741"].email == "eiso@athenian.co"
+    assert users["auth0|5e1f6dfb57bc640ea390557b"].name == "Vadim Markovtsev"
+    assert users["auth0|5e1f6dfb57bc640ea390557b"].email == "<classified>"  # "vadim@athenian.co"
+    assert users["auth0|5e1f6e2e8bfa520ea5290741"].name == "Eiso Kant"
+    assert users["auth0|5e1f6e2e8bfa520ea5290741"].email == "<classified>"  # "eiso@athenian.co"
 
 
 async def test_get_users_rate_limit(xapp):
     users = await asyncio.gather(*[xapp._auth0.get_user("auth0|5e1f6dfb57bc640ea390557b")
                                    for _ in range(20)])
     for u in users:
-        assert u.email == "vadim@athenian.co"
+        assert u.name == "Vadim Markovtsev"
+        assert u.email == "<classified>"  # "vadim@athenian.co"
 
 
 async def test_become_db(client, headers, sdb):
@@ -170,7 +176,7 @@ async def test_become_db(client, headers, sdb):
     assert body1 == {
         "id": "auth0|5e1f6e2e8bfa520ea5290741",
         "login": "eiso",
-        "email": "eiso@athenian.co",
+        "email": "<classified>",  # "eiso@athenian.co",
         "name": "Eiso Kant",
         "native_id": "5e1f6e2e8bfa520ea5290741",
         "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
@@ -184,7 +190,7 @@ async def test_become_db(client, headers, sdb):
     assert body3 == {
         "id": "auth0|5e1f6dfb57bc640ea390557b",
         "login": "vadim",
-        "email": "vadim@athenian.co",
+        "email": "<classified>",  # "vadim@athenian.co",
         "name": "Vadim Markovtsev",
         "native_id": "5e1f6dfb57bc640ea390557b",
         "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
@@ -206,7 +212,7 @@ async def test_become_header(client, headers, sdb):
     assert body == {
         "id": "auth0|5e1f6e2e8bfa520ea5290741",
         "login": "eiso",
-        "email": "eiso@athenian.co",
+        "email": "<classified>",  # "eiso@athenian.co",
         "name": "Eiso Kant",
         "native_id": "5e1f6e2e8bfa520ea5290741",
         "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa

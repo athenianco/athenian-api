@@ -31,7 +31,8 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
         prefix = PREFIXES["github"]
         contributors = [
             Contributor(login=f"{prefix}{u['login']}", name=u["name"],
-                        email=u["email"], picture=u["avatar_url"])
+                        email="<classified>",  # u["email"] TODO(vmarkovtsev): DEV-87
+                        picture=u["avatar_url"])
             for u in users
         ]
         return model_response(contributors)

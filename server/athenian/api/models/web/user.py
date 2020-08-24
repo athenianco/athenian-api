@@ -79,6 +79,7 @@ class User(Model):
             native_id = identities[0]["user_id"]
         else:
             native_id = id.rsplit("|", 1)[1]
+        email = "<classified>"  # TODO(vmarkovtsev): https://athenianco.atlassian.net/browse/DEV-87
         return cls(
             id=id,
             native_id=native_id,

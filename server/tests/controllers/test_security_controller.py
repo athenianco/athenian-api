@@ -30,7 +30,7 @@ async def test_create_token_auth(client, headers, app):
     del response["updated"]
     assert response == {
         "id": "auth0|5e1f6dfb57bc640ea390557b",
-        "email": "vadim@athenian.co",
+        "email": "<classified>",  # "vadim@athenian.co",
         "name": "Vadim Markovtsev",
         "login": "vadim",
         "native_id": "5e1f6dfb57bc640ea390557b",
