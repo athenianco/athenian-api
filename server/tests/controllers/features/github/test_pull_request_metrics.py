@@ -10,12 +10,14 @@ from sqlalchemy import select
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github, \
     calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
-    ClosedCalculator, CycleCounter, CycleTimeCalculator, FlowRatioCalculator, \
-    histogram_calculators, LeadCounter, LeadTimeCalculator, MergingCounter, \
-    MergingTimeCalculator, OpenedCalculator, PullRequestBinnedMetricCalculator, \
-    PullRequestMetricCalculatorEnsemble, register_metric, ReleaseCounter, ReleaseTimeCalculator, \
-    ReviewCounter, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, WorkInProgressCounter, \
-    WorkInProgressTimeCalculator
+    ClosedCalculator, CycleCounter, CycleCounterWithQuantiles, CycleTimeCalculator, \
+    FlowRatioCalculator, histogram_calculators, LeadCounter, LeadCounterWithQuantiles, \
+    LeadTimeCalculator, MergingCounter, MergingCounterWithQuantiles, MergingTimeCalculator, \
+    OpenedCalculator, PullRequestBinnedMetricCalculator, \
+    PullRequestMetricCalculatorEnsemble, register_metric, ReleaseCounter, \
+    ReleaseCounterWithQuantiles, ReleaseTimeCalculator, ReviewCounter, \
+    ReviewCounterWithQuantiles, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
+    WorkInProgressCounter, WorkInProgressCounterWithQuantiles, WorkInProgressTimeCalculator
 from athenian.api.controllers.features.histogram import Scale
 from athenian.api.controllers.features.metric_calculator import MetricCalculator
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
@@ -200,8 +202,7 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
                           ReleaseCounter,
                           LeadCounter,
                           CycleCounter,
-                          AllCounter,
-                          ])
+                          AllCounter])
 def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
     calc = cls(*(dep1(*(dep2(quantiles=(0, 1)) for dep2 in dep1.deps),
                       quantiles=(0, 1)) for dep1 in cls.deps),
@@ -230,6 +231,30 @@ def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
     if cls not in (WorkInProgressCounter, CycleCounter, AllCounter):
         assert nones > 0
     assert nonones > 0
+
+
+@pytest.mark.parametrize("cls_q, cls",
+                         [(WorkInProgressCounterWithQuantiles, WorkInProgressCounter),
+                          (ReviewCounterWithQuantiles, ReviewCounter),
+                          (MergingCounterWithQuantiles, MergingCounter),
+                          (ReleaseCounterWithQuantiles, ReleaseCounter),
+                          (LeadCounterWithQuantiles, LeadCounter),
+                          (CycleCounterWithQuantiles, CycleCounter)])
+def test_pull_request_metrics_counts(pr_samples, cls_q, cls):  # noqa: F811
+    calc_q = cls_q(*(dep1(*(dep2(quantiles=(0, 0.95)) for dep2 in dep1.deps),
+                          quantiles=(0, 0.95)) for dep1 in cls_q.deps),
+                   quantiles=(0, 0.95))
+    calc = cls(*calc_q._calcs, quantiles=(0, 0.95))
+    for pr in pr_samples(1000):
+        time_to = datetime.now(tz=timezone.utc)
+        time_from = time_to - timedelta(days=10000)
+        for dep1 in calc._calcs:
+            for dep2 in dep1._calcs:
+                dep2(pr, time_from, time_to)
+            dep1(pr, time_from, time_to)
+        calc_q(pr, time_from, time_to)
+        calc(pr, time_from, time_to)
+    assert 0 < calc_q.value.value < calc.value.value
 
 
 @pytest.mark.parametrize("with_memcached, with_mine_cache_wipe",

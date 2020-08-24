@@ -1778,43 +1778,57 @@ components:
       description: |-
         Currently supported PR metric types.
         * `pr-wip-time`: average time spent in Work In Progress stage.
-        * `pr-wip-count`: number of PRs used to calculate `pr-wip-time`.
+        * `pr-wip-count`: number of PRs used to calculate `pr-wip-time` disregarding the quantiles.
+        * `pr-wip-count-q`: number of PRs used to calculate `pr-wip-time` after applying the quantiles.
         * `pr-review-time`: average time spent in Review stage.
-        * `pr-review-count`: number of PRs used to calculate `pr-review-time`.
+        * `pr-review-count`: number of PRs used to calculate `pr-review-time` disregarding the quantiles.
+        * `pr-review-count-q`: number of PRs used to calculate `pr-review-time` after applying the quantiles.
         * `pr-merging-time`: average time spent in Merge stage.
-        * `pr-merging-count`: number of PRs used to calculate `pr-merging-time`.
+        * `pr-merging-count`: number of PRs used to calculate `pr-merging-time` disregarding the quantiles.
+        * `pr-merging-count-q`: number of PRs used to calculate `pr-merging-time` after applying the quantiles.
         * `pr-release-time`: average time spent in Release stage.
-        * `pr-release-count`: number of PRs used to calculate `pr-release-time`.
+        * `pr-release-count`: number of PRs used to calculate `pr-release-time` disregarding the quantiles.
+        * `pr-release-count-q`: number of PRs used to calculate `pr-release-time` after applying the quantiles.
         * `pr-lead-time`: average Lead Time - time between the work started and the release.
-        * `pr-lead-count`: number of PRs used to calculate `pr-lead-time`. It should be the same as `pr-release-count`.
+        * `pr-lead-count`: number of PRs used to calculate `pr-lead-time` disregarding the quantiles. It should be the same as `pr-release-count`.
+        * `pr-lead-count-q`: number of PRs used to calculate `pr-lead-time` after applying the quantiles.
         * `pr-cycle-time`: Cycle Time - sum of correspodning `pr-wip-time`, `pr-review-time`, `pr-merging-time`, and `pr-release-time`.
-        * `pr-cycle-count`: number of PRs used to calculate `pr-cycle-time`. It equals to the overall number of PRs observed in the given time window.
-        * `pr-all-count`: equals to the sum of `pr-cycle-count` with the number of PRs which are still not done on the specified time interval but don't have any stage-changing events. This metric should be exactly the same as the number of PRs returned by `/filter/prs`.
+        * `pr-cycle-count`: number of PRs used to calculate `pr-cycle-time` disregarding the quantiles. It equals to the overall number of PRs observed in the given time window.
+        * `pr-cycle-count-q`: number of PRs used to calculate `pr-cycle-time` after applying the quantiles.
+        * `pr-all-count`: equals to the sum of `pr-cycle-count` with the number of PRs which are still not done on the specified time interval but don't have any stage-changing events. This metric should be exactly the same as the number of PRs returned by `/filter/prs`. The quantiles are ignored.
         * `pr-wait-first-review-time`: average time of waiting for the first review.
         * `pr-wait-first-review-count`: number of PRs used to calculate `pr-wait-first-review`. Note: this is *not* the same as the number of PRs waiting for the first review.
+        * `pr-wait-first-review-count-q`: number of PRs used to calculate `pr-wait-first-review after applying the quantiles.
         * `pr-flow-ratio`: ratio of opened to closed PRs.
         * `pr-opened`: number of opened PRs.
         * `pr-merged`: number of merged PRs.
         * `pr-rejected`: number of rejected PRs.
         * `pr-closed`: number of closed PRs.
         * `pr-released`: number of released PRs.
-        * `pr-size`: average size of PRs (added + deleted lines) which are active on the time interval.
+        * `pr-size`: average size of PRs (added + deleted lines) which are active on the time interval after applying the quantiles.
       enum:
       - pr-wip-time
       - pr-wip-count
+      - pr-wip-count-q
       - pr-review-time
       - pr-review-count
+      - pr-review-count-q
       - pr-merging-time
       - pr-merging-count
+      - pr-merging-count-q
       - pr-release-time
       - pr-release-count
+      - pr-release-count-q
       - pr-lead-time
       - pr-lead-count
+      - pr-lead-count-q
       - pr-cycle-time
       - pr-cycle-count
+      - pr-cycle-count-q
       - pr-all-count
       - pr-wait-first-review-time
       - pr-wait-first-review-count
+      - pr-wait-first-review-count-q
       - pr-flow-ratio
       - pr-opened
       - pr-merged
@@ -4525,7 +4539,32 @@ components:
       - metrics
       type: object
     ReleaseMetricID:
-      description: Supported release metrics.
+      description: |-
+        Currently supported release metric types.
+        * `release-count` - number of all releases in the time interval.
+        * `release-tag-count` - number of releases by tag in the time interval.
+        * `release-branch-count` - number of releases by branch merge in the time interval.
+        * `release-prs` - number of PRs released in the time interval.
+        * `release-tag-prs` - number of PRs released by tag in the time interval.
+        * `release-branch-prs` - number of PRs released by branch merge in the time interval.
+        * `release-commits` - number of commits which were released in the time interval.
+        * `release-tag-commits` - number of commits which were released by tag in the time interval.
+        * `release-branch-commits` - number of commits which were released by branch merge in the time interval.
+        * `release-lines` - sum of the changed (added or removed) diff lines of the commits released in the time interval.
+        * `release-tag-lines` - sum of the changed (added or removed) diff lines of the commits released by tag in the time interval.
+        * `release-branch-lines` - sum of the changed (added or removed) diff lines of the commits released by branch merge in the time interval.
+        * `release-avg-prs` - average (by release) number of PRs released in the time interval. Quantiles are applied.
+        * `release-tag-avg-prs` - average (by release) number of PRs released by tag in the time interval. Quantiles are applied.
+        * `release-branch-avg-prs` - average number of PRs released by branch merge in the time interval. Quantiles are applied.
+        * `release-avg-commits` - average (by release) number of commits released in the time interval. Quantiles are applied.
+        * `release-tag-avg-commits` - average (by release) number of commits released by tag in the time interval. Quantiles are applied.
+        * `release-branch-avg-commits` - average (by release) number of commits released by branch merge in the time interval. Quantiles are applied.
+        * `release-avg-lines` - average (by release) number of changed (added + removed) diff lines of the commits released in the time interval. Quantiles are applied.
+        * `release-tag-avg-lines` - average (by release) number of changed (added + removed) diff lines of the commits released by tag in the time interval. Quantiles are applied.
+        * `release-branch-avg-lines` - average (by release) number of changed (added + removed) diff lines of the commits released by branch merge in the time interval. Quantiles are applied.
+        * `release-age` - average timedelta between releases of the same alignment (as determined by the commit DAG). Quantiles are applied.
+        * `release-tag-age` - average timedelta between releases by tag of the same alignment (as determined by the commit DAG). Quantiles are applied.
+        * `release-branch-age` - average timedelta between releases by branch of the same alignment (as determined by the commit DAG). Quantiles are applied.
       enum:
       - release-count
       - release-tag-count
