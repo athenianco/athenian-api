@@ -3768,13 +3768,11 @@ components:
         include:
           $ref: '#/components/schemas/IncludedNativeUsers'
         data:
-          $ref: '#/components/schemas/FilteredReleasesItems'
+          description: List of matching release metadata.
+          items:
+            $ref: '#/components/schemas/FilteredRelease'
+          type: array
       type: object
-    FilteredReleasesItems:
-      description: List of release metadata.
-      items:
-        $ref: '#/components/schemas/FilteredRelease'
-      type: array
     FilteredRelease:
       additionalProperties: false
       description: Various information about a repository release.
@@ -3788,6 +3786,12 @@ components:
         publisher_avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
         repository: github.com/athenianco/athenian-api
         url: https://github.com/athenianco/athenian-api/releases/tag/v0.0.93
+        prs:
+        - number: 176
+          title: Fix first account creation
+          additions: 34
+          deletions: 3
+          author: github.com/se7entyse7en
       properties:
         name:
           description: Title of the release.
@@ -3822,9 +3826,14 @@ components:
           description: Login of the person who created the release.
           type: string
         commit_authors:
-          description: List of released commit authors' logins.
+          description: List of released commit commit_authors' logins.
           items:
             $ref: '#/components/schemas/DeveloperID'
+          type: array
+        prs:
+          description: List of released pull requests.
+          items:
+            $ref: '#/components/schemas/ReleasedPullRequest'
           type: array
       required:
       - added_lines
@@ -3833,10 +3842,32 @@ components:
       - commits
       - deleted_lines
       - name
+      - prs
       - published
       - publisher
       - repository
       - url
+      type: object
+    ReleasedPullRequest:
+      additionalProperties: false
+      description: Details about a pull request listed in `/filter/releases`.
+      properties:
+        number:
+          type: integer
+        title:
+          type: string
+        additions:
+          type: integer
+        deletions:
+          type: integer
+        author:
+          $ref: '#/components/schemas/DeveloperID'
+      required:
+      - additions
+      - author
+      - deletions
+      - number
+      - title
       type: object
     ReleaseMatchRequest:
       additionalProperties: false
@@ -4626,7 +4657,8 @@ components:
         matches:
           additionalProperties:
             $ref: '#/components/schemas/ReleaseMatchStrategy'
-          description: Applied release matching strategies for the repositories in `for`.
+          description: Applied release matching strategies for the repositories in
+            `for`.
           type: object
         metrics:
           items:

@@ -95,7 +95,7 @@ class ReleasePRsMixin:
     may_have_negative_values = False
 
     def _extract(self, facts: ReleaseFacts) -> int:
-        return facts.prs_count
+        return len(facts.prs)
 
 
 class ReleaseCommitsMixin:

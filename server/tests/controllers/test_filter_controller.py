@@ -895,6 +895,7 @@ async def test_filter_releases_by_tag(client, headers):
     assert len(releases.include.users) == 71
     assert "github.com/mcuadros" in releases.include.users
     assert len(releases.data) == 21
+    pr_numbers = set()
     for release in releases.data:
         assert release.publisher.startswith("github.com/"), str(release)
         assert len(release.commit_authors) > 0, str(release)
@@ -910,6 +911,15 @@ async def test_filter_releases_by_tag(client, headers):
         assert release.published >= datetime(year=2018, month=1, day=12, tzinfo=timezone.utc), \
             str(release)
         assert release.repository.startswith("github.com/"), str(release)
+        assert len(release.prs) > 0
+        for pr in release.prs:
+            assert pr.number > 0
+            assert pr.number not in pr_numbers
+            pr_numbers.add(pr.number)
+            assert pr.title
+            assert pr.additions + pr.deletions > 0 or pr.number in {804}
+            assert (pr.author is None and pr.number in {749, 1203}) \
+                or pr.author.startswith("github.com/")
 
 
 @pytest.mark.filter_releases
