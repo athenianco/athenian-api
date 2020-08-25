@@ -18,7 +18,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import store_precomp
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
 from athenian.api.controllers.miners.github.release import \
-    _empty_dag, _fetch_commit_history_dag, _fetch_first_parents, _fetch_repository_commits, \
+    _empty_dag, _fetch_commit_history_dag, _fetch_repository_commits, \
     _fetch_repository_first_commit_dates, _find_dead_merged_prs, load_releases, \
     map_prs_to_releases, map_releases_to_prs, mine_releases
 from athenian.api.controllers.miners.github.release_accelerated import extract_subdag, join_dags, \
@@ -28,7 +28,7 @@ from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, \
     Release
-from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory
+from athenian.api.models.precomputed.models import GitHubCommitHistory
 from tests.controllers.conftest import fetch_dag
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
 
@@ -276,7 +276,7 @@ async def test_map_releases_to_prs_empty(
                 branches="master", tags=".*", match=ReleaseMatch.branch),
         }, mdb, pdb, cache)
     assert prs.empty
-    assert len(cache.mem) == 11
+    assert len(cache.mem) == 8
     assert len(releases) == 19
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
@@ -433,7 +433,7 @@ async def test_load_releases_branches(branches, default_branches, mdb, pdb, cach
         cache,
     )
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
-    check_branch_releases(releases, 242, time_from, time_to)
+    check_branch_releases(releases, 240, time_from, time_to)
 
 
 @with_defer
@@ -745,166 +745,6 @@ async def test__fetch_repository_commits_many(mdb, pdb):
 
 
 @with_defer
-async def test_fetch_first_parents_smoke(mdb, pdb):
-    fp, hit = await _fetch_first_parents(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
-        datetime(2015, 4, 5),
-        datetime(2015, 5, 20),
-        mdb, pdb, None)
-    assert not hit
-    await wait_deferred()
-    ground_truth = {
-        "MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng==",
-        "MDY6Q29tbWl0NDQ3MzkwNDQ6NWZkZGJlYjY3OGJkMmMzNmM1ZTVjODkxYWI4ZjJiMTQzY2VkNWJhZg==",
-        "MDY6Q29tbWl0NDQ3MzkwNDQ6YzA4OGZkNmE3ZTFhMzhlOWQ1YTk4MTUyNjVjYjU3NWJiMDhkMDhmZg==",
-    }
-    assert fp == ground_truth
-    obj = await pdb.fetch_val(select([GitHubCommitFirstParents.commits]))
-    fp, hit = await _fetch_first_parents(
-        obj,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
-        datetime(2015, 4, 5),
-        datetime(2015, 5, 20),
-        Database("sqlite://"), pdb, None)
-    assert hit
-    await wait_deferred()
-    assert fp == ground_truth
-    with pytest.raises(Exception):
-        await _fetch_first_parents(
-            obj,
-            "src-d/go-git",
-            ["MDY6Q29tbWl0NDQ3MzkwNDQ6OTQwNDYwZjU0MjJiMDJmMDEzNTEzOTZhZjcwM2U5YjYzZTg1OTZhZQ=="],
-            datetime(2015, 4, 5),
-            datetime(2015, 5, 20),
-            Database("sqlite://"), pdb, None)
-
-
-@with_defer
-async def test_fetch_first_parents_initial_commit(mdb, pdb):
-    fp, _ = await _fetch_first_parents(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
-        datetime(2015, 4, 5),
-        datetime(2015, 5, 20),
-        mdb, pdb, None)
-    assert fp == {
-        "MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng==",
-    }
-    fp, _ = await _fetch_first_parents(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
-        datetime(2015, 3, 5),
-        datetime(2015, 3, 20),
-        mdb, pdb, None)
-    assert fp == set()
-
-
-@with_defer
-async def test_fetch_first_parents_index_error(mdb, pdb):
-    fp1, _ = await _fetch_first_parents(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng=="],
-        datetime(2015, 4, 5),
-        datetime(2015, 5, 20),
-        mdb, pdb, None)
-    await wait_deferred()
-    data = await pdb.fetch_val(select([GitHubCommitFirstParents.commits]))
-    assert data
-    fp2, _ = await _fetch_first_parents(
-        data,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NWZkZGJlYjY3OGJkMmMzNmM1ZTVjODkxYWI4ZjJiMTQzY2VkNWJhZg=="],
-        datetime(2015, 4, 5),
-        datetime(2015, 5, 20),
-        mdb, pdb, None)
-    await wait_deferred()
-    assert fp1 != fp2
-
-
-@with_defer
-async def test_fetch_first_parents_cache(mdb, pdb, cache):
-    await _fetch_first_parents(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ=="],
-        datetime(2015, 4, 5),
-        datetime(2015, 5, 20),
-        mdb, pdb, cache)
-    ground_truth = {
-        "MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng==",
-        "MDY6Q29tbWl0NDQ3MzkwNDQ6NWZkZGJlYjY3OGJkMmMzNmM1ZTVjODkxYWI4ZjJiMTQzY2VkNWJhZg==",
-        "MDY6Q29tbWl0NDQ3MzkwNDQ6YzA4OGZkNmE3ZTFhMzhlOWQ1YTk4MTUyNjVjYjU3NWJiMDhkMDhmZg==",
-    }
-    await wait_deferred()
-    fp, hit = await _fetch_first_parents(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw=="],
-        datetime(2015, 4, 5),
-        datetime(2015, 5, 20),
-        None, None, cache)
-    await wait_deferred()
-    assert hit
-    assert fp == ground_truth
-    with pytest.raises(Exception):
-        await _fetch_first_parents(
-            None,
-            "src-d/go-git",
-            ["MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw=="],
-            datetime(2015, 4, 6),
-            datetime(2015, 5, 20),
-            None, None, cache)
-
-
-@with_defer
-async def test_fetch_first_parents_append(mdb, pdb):
-    fp, hit = await _fetch_first_parents(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6NDRjMzY0ZmUzYjdiOGNkYzBmOTYyM2FmZTg3MGQ2NzgxYTk3ZWJiNA=="],
-        datetime(2010, 4, 5),
-        datetime(2020, 5, 20),
-        mdb, pdb, None)
-    # 44c364fe3b7b8cdc0f9623afe870d6781a97ebb4
-    assert not hit
-    await wait_deferred()
-    assert len(fp) == 569
-    assert "MDY6Q29tbWl0NDQ3MzkwNDQ6NDRjMzY0ZmUzYjdiOGNkYzBmOTYyM2FmZTg3MGQ2NzgxYTk3ZWJiNA==" in fp
-    fp, hit = await _fetch_first_parents(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6MWE3ZGI4NWJjYTcwMjdkOTBhZmRiNWNlNzExNjIyYWFhYzlmZWFlZA=="],
-        datetime(2010, 4, 5),
-        datetime(2020, 5, 20),
-        mdb, pdb, None)
-    # 9d0f15c4fa712cdacfa3887e9baac918f093fbf6
-    assert not hit
-    assert len(fp) == 772
-    assert "MDY6Q29tbWl0NDQ3MzkwNDQ6MWE3ZGI4NWJjYTcwMjdkOTBhZmRiNWNlNzExNjIyYWFhYzlmZWFlZA==" in fp
-    await pdb.execute(delete(GitHubCommitFirstParents))
-    fp, hit = await _fetch_first_parents(
-        None,
-        "src-d/go-git",
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6MWE3ZGI4NWJjYTcwMjdkOTBhZmRiNWNlNzExNjIyYWFhYzlmZWFlZA=="],
-        datetime(2010, 4, 5),
-        datetime(2020, 5, 20),
-        mdb, pdb, None)
-    assert not hit
-    assert len(fp) == 772
-
-
-@with_defer
 async def test__fetch_repository_commits_full(mdb, pdb, dag, cache):
     branches, _ = await extract_branches(dag, mdb, None)
     cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date.key,
@@ -997,16 +837,25 @@ def test_join_dags_smoke():
     edges = np.array([2, 0], dtype=np.uint32)
     new_hashes, new_vertexes, new_edges = join_dags(
         hashes, vertexes, edges, [("61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
-                                   "308a9f90707fb9d12cbcd28da1bc33da436386fe"),
+                                   "308a9f90707fb9d12cbcd28da1bc33da436386fe",
+                                   0),
                                   ("308a9f90707fb9d12cbcd28da1bc33da436386fe",
-                                   "a444ccadf5fddad6ad432c13a239c74636c7f94f")])
+                                   "a444ccadf5fddad6ad432c13a239c74636c7f94f",
+                                   0),
+                                  ("8d27ef15cc9b334667d8adc9ce538222c5ac3607",
+                                   "33cafc14532228edca160e46af10341a8a632e3e",
+                                   1),
+                                  ("8d27ef15cc9b334667d8adc9ce538222c5ac3607",
+                                   "308a9f90707fb9d12cbcd28da1bc33da436386fe",
+                                   0)])
     assert (new_hashes == np.array(["308a9f90707fb9d12cbcd28da1bc33da436386fe",
                                     "33cafc14532228edca160e46af10341a8a632e3e",
                                     "61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
+                                    "8d27ef15cc9b334667d8adc9ce538222c5ac3607",
                                     "a444ccadf5fddad6ad432c13a239c74636c7f94f"],
                                    dtype="U40")).all()
-    assert (new_vertexes == np.array([0, 1, 2, 3, 3], dtype=np.uint32)).all()
-    assert (new_edges == np.array([3, 0, 0], dtype=np.uint32)).all()
+    assert (new_vertexes == np.array([0, 1, 2, 3, 5, 5], dtype=np.uint32)).all()
+    assert (new_edges == np.array([4, 0, 0, 0, 1], dtype=np.uint32)).all()
 
 
 def test_mark_dag_access_smoke():

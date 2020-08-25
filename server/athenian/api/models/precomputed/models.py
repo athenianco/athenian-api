@@ -112,23 +112,8 @@ class GitHubCommitHistory(Base, UpdatedMixin):
     __tablename__ = "github_commit_history"
 
     repository_full_name = Column(RepositoryFullName, primary_key=True)
-    format_version = Column(Integer(), primary_key=True, default=3, server_default="3")
+    format_version = Column(Integer(), primary_key=True, default=4, server_default="4")
     dag = Column(LargeBinary(), nullable=False)
-
-
-class GitHubCommitFirstParents(Base, UpdatedMixin):
-    """
-    Mined Git commit first parents - commits that follow the main branch.
-
-    We save first parent commit node identifiers and their commit timestamps per repo.
-    They are independently pickled and their byte streams are concatenated to `commits`.
-    """
-
-    __tablename__ = "github_commit_first_parents"
-
-    repository_full_name = Column(RepositoryFullName, primary_key=True)
-    format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
-    commits = Column(LargeBinary(), nullable=False)
 
 
 class GitHubRepository(Base, UpdatedMixin):
