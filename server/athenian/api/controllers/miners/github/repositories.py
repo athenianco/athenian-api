@@ -27,6 +27,7 @@ from athenian.api.tracing import sentry_span
 async def mine_repositories(repos: Collection[str],
                             time_from: datetime,
                             time_to: datetime,
+                            exclude_inactive: bool,
                             db: databases.Database,
                             cache: Optional[aiomcache.Client],
                             ) -> List[str]:
@@ -36,15 +37,19 @@ async def mine_repositories(repos: Collection[str],
 
     @sentry_span
     async def fetch_prs():
+        conditions = [
+            PullRequest.updated_at.between(time_from, time_to),
+            PullRequest.created_at.between(time_from, time_to),
+            PullRequest.closed_at.between(time_from, time_to),
+        ]
+        if not exclude_inactive:
+            conditions.append(and_(PullRequest.created_at < time_to,
+                                   PullRequest.closed_at.is_(None)))
         return await db.fetch_all(
             select([distinct(PullRequest.repository_full_name)])
             .where(and_(PullRequest.repository_full_name.in_(repos),
                         PullRequest.hidden.is_(False),
-                        or_(PullRequest.created_at.between(time_from, time_to),
-                            and_(PullRequest.created_at < time_to,
-                                 PullRequest.closed_at.is_(None)),
-                            PullRequest.closed_at.between(time_from, time_to),
-                            PullRequest.updated_at.between(time_from, time_to)))))
+                        or_(*conditions))))
 
     @sentry_span
     async def fetch_comments():

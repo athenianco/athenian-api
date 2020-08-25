@@ -34,10 +34,11 @@ from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contributors_request import FilterContributorsRequest
 from athenian.api.models.web.filter_labels_request import FilterLabelsRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
+from athenian.api.models.web.filter_releases_request import FilterReleasesRequest
+from athenian.api.models.web.filter_repositories_request import FilterRepositoriesRequest
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.filtered_releases import FilteredReleases
-from athenian.api.models.web.generic_filter_request import GenericFilterRequest
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
@@ -80,17 +81,18 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
 async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find repositories that were updated within the given timeframe."""
     try:
-        filt = GenericFilterRequest.from_dict(body)
+        filt = FilterRepositoriesRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     repos = await _common_filter_preprocess(filt, request)
     repos = await mine_repositories(
-        repos, filt.date_from, filt.date_to, request.mdb, request.cache)
+        repos, filt.date_from, filt.date_to, filt.exclude_inactive, request.mdb, request.cache)
     return web.json_response(repos)
 
 
-async def _common_filter_preprocess(filt: Union[GenericFilterRequest,
+async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
+                                                FilterRepositoriesRequest,
                                                 FilterPullRequestsRequest,
                                                 FilterCommitsRequest],
                                     request: AthenianWebRequest,
@@ -219,7 +221,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
 async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find releases that were published in the given time fram in the given repositories."""
     try:
-        filt = GenericFilterRequest.from_dict(body)
+        filt = FilterReleasesRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
