@@ -944,7 +944,7 @@ async def map_releases_to_prs(repos: Collection[str],
     """Find pull requests which were released between `time_from` and `time_to` but merged before \
     `time_from`.
 
-    :param authors: Required PR authors.
+    :param authors: Required PR commit_authors.
     :param mergers: Required PR mergers.
     :param truncate: Do not load releases after `time_to`.
     :return: pd.DataFrame with found PRs that were created before `time_from` and released \
@@ -1178,6 +1178,7 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
     deserialize=pickle.loads,
     key=lambda repos, time_from, time_to, settings, **_: (
         ",".join(sorted(repos)), time_from, time_to, settings),
+    version=2,
 )
 async def mine_releases(repos: Iterable[str],
                         branches: pd.DataFrame,
@@ -1193,6 +1194,7 @@ async def mine_releases(repos: Iterable[str],
                                    Dict[str, ReleaseMatch]]:
     """Collect details about each release published between `time_from` and `time_to` and \
     calculate various statistics."""
+    prefix = PREFIXES["github"]
     _, releases, _, settings = await _find_releases_for_matching_prs(
         repos, branches, default_branches, time_from, time_to, settings, mdb, pdb, cache)
     tasks = [
@@ -1242,13 +1244,30 @@ async def mine_releases(repos: Iterable[str],
     commits_additions = commits_df[PushCommit.additions.key].values
     commits_deletions = commits_df[PushCommit.deletions.key].values
     commits_authors = commits_df[PushCommit.author_login.key].values
-    prs_rows = await mdb.fetch_all(
-        select([PullRequest.merge_commit_id])
+    prs_columns = [
+        PullRequest.merge_commit_id,
+        PullRequest.number,
+        PullRequest.title,
+        PullRequest.additions,
+        PullRequest.deletions,
+        PullRequest.user_login,
+    ]
+    prs_df = await read_sql_query(
+        select(prs_columns)
         .where(PullRequest.merge_commit_id.in_(commit_ids))
-        .order_by(PullRequest.merge_commit_id))
-    prs_commit_ids = np.asarray([r[0] for r in prs_rows])
-    prefix = PREFIXES["github"]
-    mentioned_authors = set()
+        .order_by(PullRequest.merge_commit_id),
+        mdb, prs_columns)
+    prs_commit_ids = prs_df[PullRequest.merge_commit_id.key].values.astype("U")
+    prs_authors = prs_df[PullRequest.user_login.key]
+    not_null_mask = ~prs_authors.isnull()
+    prs_authors = prs_authors.values
+    mentioned_authors = set(prs_authors[not_null_mask])
+    prs_authors[not_null_mask] = prefix + prs_authors[not_null_mask]
+    del not_null_mask
+    prs_numbers = prs_df[PullRequest.number.key].values
+    prs_titles = prs_df[PullRequest.title.key].values
+    prs_additions = prs_df[PullRequest.additions.key].values
+    prs_deletions = prs_df[PullRequest.deletions.key].values
 
     @sentry_span
     async def main_flow():
@@ -1272,7 +1291,14 @@ async def mine_releases(repos: Iterable[str],
                 my_authors = commits_authors[found_indexes]
                 my_commit_ids = commit_ids[found_indexes]
                 my_prs_indexes = searchsorted_inrange(prs_commit_ids, my_commit_ids)
-                my_prs_count = (prs_commit_ids[my_prs_indexes] == my_commit_ids).sum()
+                my_prs_indexes = my_prs_indexes[prs_commit_ids[my_prs_indexes] == my_commit_ids]
+                my_prs = pd.DataFrame(dict(zip(
+                    [c.key for c in prs_columns[1:]],
+                    [prs_numbers[my_prs_indexes],
+                     prs_titles[my_prs_indexes],
+                     prs_additions[my_prs_indexes],
+                     prs_deletions[my_prs_indexes],
+                     prs_authors[my_prs_indexes]])))
                 my_authors = prefix + my_authors[my_authors.nonzero()[0]]
                 parent = parents[i]
                 if parent < len(repo_releases):
@@ -1294,8 +1320,8 @@ async def mine_releases(repos: Iterable[str],
                                           additions=my_additions,
                                           deletions=my_deletions,
                                           commits_count=len(found_indexes),
-                                          prs_count=my_prs_count,
-                                          authors=my_authors.tolist())))
+                                          prs=my_prs,
+                                          commit_authors=my_authors.tolist())))
             await asyncio.sleep(0)
         return data
 

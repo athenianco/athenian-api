@@ -9,6 +9,7 @@ from aiohttp import web
 import aiomcache
 import databases
 from dateutil.parser import parse as parse_datetime
+import pandas as pd
 
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
@@ -24,7 +25,7 @@ from athenian.api.controllers.miners.types import ParticipationKind, Property, P
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import PushCommit, Release
+from athenian.api.models.metadata.github import PullRequest, PushCommit, Release
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
     ForbiddenError, InvalidRequestError
 from athenian.api.models.web.developer_summary import DeveloperSummary
@@ -44,6 +45,7 @@ from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_set import PullRequestSet
+from athenian.api.models.web.released_pull_request import ReleasedPullRequest
 from athenian.api.models.web.stage_timings import StageTimings
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
@@ -233,15 +235,35 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
                             url=details[Release.url.key],
                             publisher=details[Release.author.key],
                             published=details[Release.published_at.key],
-                            age=stats.age,
-                            added_lines=stats.additions,
-                            deleted_lines=stats.deletions,
-                            commits=stats.commits_count,
-                            commit_authors=stats.authors)
-            for details, stats in releases]
+                            age=facts.age,
+                            added_lines=facts.additions,
+                            deleted_lines=facts.deletions,
+                            commits=facts.commits_count,
+                            commit_authors=facts.commit_authors,
+                            prs=_extract_release_prs(facts.prs))
+            for details, facts in releases]
     model = FilteredReleases(data=data, include=IncludedNativeUsers(users={
         u: IncludedNativeUser(avatar=a) for u, a in avatars}))
     return model_response(model)
+
+
+def _extract_release_prs(prs: pd.DataFrame) -> List[ReleasedPullRequest]:
+    return [
+        ReleasedPullRequest(
+            number=number,
+            title=title,
+            additions=adds,
+            deletions=dels,
+            author=author,
+        )
+        for number, title, adds, dels, author in zip(
+            prs[PullRequest.number.key].values,
+            prs[PullRequest.title.key].values,
+            prs[PullRequest.additions.key].values,
+            prs[PullRequest.deletions.key].values,
+            prs[PullRequest.user_login.key].values,
+        )
+    ]
 
 
 async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:

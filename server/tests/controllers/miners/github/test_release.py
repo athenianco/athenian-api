@@ -1076,12 +1076,12 @@ async def test_mine_releases_full_span(mdb, pdb, release_match_setting_tag):
         assert details[Release.url.key]
         assert details[Release.author.key]
         assert details[Release.repository_full_name.key] == "github.com/src-d/go-git"
-        assert len(facts.authors) > 0
+        assert len(facts.commit_authors) > 0
         assert facts.age
         assert facts.additions > 0
         assert facts.deletions > 0
         assert facts.commits_count > 0
-        assert facts.prs_count > 0 or facts.published <= pd.Timestamp(
+        assert not facts.prs.empty or facts.published <= pd.Timestamp(
             "2017-02-01 09:51:10+0000", tz="UTC")
         assert time_from < facts.published < time_to
         assert facts.matched_by == ReleaseMatch.tag

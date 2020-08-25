@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.released_pull_request import ReleasedPullRequest
 
 
 class FilteredRelease(Model):
@@ -18,6 +19,7 @@ class FilteredRelease(Model):
         "commits": int,
         "publisher": str,
         "commit_authors": List[str],
+        "prs": List[ReleasedPullRequest],
     }
 
     attribute_map = {
@@ -31,6 +33,7 @@ class FilteredRelease(Model):
         "commits": "commits",
         "publisher": "publisher",
         "commit_authors": "commit_authors",
+        "prs": "prs",
     }
 
     __slots__ = ["_" + k for k in openapi_types]
@@ -47,6 +50,7 @@ class FilteredRelease(Model):
         commits: Optional[int] = None,
         publisher: Optional[str] = None,
         commit_authors: Optional[List[str]] = None,
+        prs: Optional[List[ReleasedPullRequest]] = None,
     ):
         """FilteredRelease - a model defined in OpenAPI
 
@@ -71,6 +75,7 @@ class FilteredRelease(Model):
         self._commits = commits
         self._publisher = publisher
         self._commit_authors = commit_authors
+        self._prs = prs
 
     @property
     def name(self) -> str:
@@ -281,23 +286,46 @@ class FilteredRelease(Model):
 
     @property
     def commit_authors(self) -> List[str]:
-        """Gets the commit authors of this FilteredRelease.
+        """Gets the commit commit_authors of this FilteredRelease.
 
         Profile picture of the person who created the release.
 
-        :return: The commit authors of this FilteredRelease.
+        :return: The commit commit_authors of this FilteredRelease.
         """
         return self._commit_authors
 
     @commit_authors.setter
     def commit_authors(self, commit_authors: List[str]):
-        """Sets the commit authors of this FilteredRelease.
+        """Sets the commit commit_authors of this FilteredRelease.
 
         Profile picture of the person who created the release.
 
-        :param commit_authors: The commit authors of this FilteredRelease.
+        :param commit_authors: The commit commit_authors of this FilteredRelease.
         """
         if commit_authors is None:
             raise ValueError("Invalid value for `commit_authors`, must not be `None`")
 
         self._commit_authors = commit_authors
+
+    @property
+    def prs(self) -> List[ReleasedPullRequest]:
+        """Gets the commit prs of this FilteredRelease.
+
+        List of released pull requests.
+
+        :return: The commit prs of this FilteredRelease.
+        """
+        return self._prs
+
+    @prs.setter
+    def prs(self, prs: List[ReleasedPullRequest]):
+        """Sets the commit prs of this FilteredRelease.
+
+        List of released pull requests.
+
+        :param prs: The commit prs of this FilteredRelease.
+        """
+        if prs is None:
+            raise ValueError("Invalid value for `prs`, must not be `None`")
+
+        self._prs = prs
