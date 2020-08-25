@@ -5,9 +5,9 @@
 cimport cython
 from cython.operator cimport dereference
 from libc.stdint cimport uint32_t, int64_t, uint64_t
+from libc.string cimport memset
 from libcpp.vector cimport vector
 from libcpp.unordered_map cimport pair, unordered_map
-from libcpp.unordered_set cimport unordered_set
 import numpy as np
 from typing import List, Tuple
 
@@ -90,11 +90,16 @@ cdef uint32_t _extract_subdag(const uint32_t[:] vertexes,
     return left_count
 
 
+cdef struct Edge:
+    uint32_t vertex
+    uint32_t position
+
+
 def join_dags(hashes: np.ndarray,
               vertexes: np.ndarray,
               edges: np.ndarray,
-              new_edges: List[Tuple[str, str]]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    new_hashes = {k for k, v in new_edges}.union(v for k, v in new_edges)
+              new_edges: List[Tuple[str, str, int]]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    new_hashes = {k for k, v, _ in new_edges}.union(v for k, v, _ in new_edges)
     new_hashes.discard("")  # initial commit virtual parents
     new_hashes = np.sort(np.fromiter(new_hashes, count=len(new_hashes), dtype="U40"))
     if len(hashes) > 0:
@@ -114,15 +119,15 @@ def join_dags(hashes: np.ndarray,
     else:
         hashes_map = new_hashes_map
     del new_hashes
-    cdef vector[vector[uint32_t]] new_edges_lists = vector[vector[uint32_t]](len(new_hashes_map))
+    cdef vector[vector[Edge]] new_edges_lists = vector[vector[Edge]](len(new_hashes_map))
     new_edges_counter = 0
-    for k, v in new_edges:
+    for k, v, pos in new_edges:
         if not v:
             # initial commit
             continue
         i = new_hashes_map.get(k, None)
         if i is not None:
-            new_edges_lists[i].push_back(hashes_map[v])
+            new_edges_lists[i].push_back(Edge(hashes_map[v], pos))
             new_edges_counter += 1
     old_vertex_map = np.zeros(len(hashes), dtype=np.uint32)
     result_vertexes = np.zeros(len(result_hashes) + 1, dtype=np.uint32)
@@ -140,14 +145,15 @@ def join_dags(hashes: np.ndarray,
 cdef void _recalculate_vertices_and_edges(const int64_t[:] found_matches,
                                           const uint32_t[:] vertexes,
                                           const uint32_t[:] edges,
-                                          vector[vector[uint32_t]] new_edges_lists,
+                                          vector[vector[Edge]] new_edges_lists,
                                           uint32_t[:] old_vertex_map,
                                           uint32_t[:] result_vertexes,
                                           uint32_t[:] result_edges) nogil:
     cdef uint32_t j, left, offset = 0, pos = 0, list_size
     cdef uint32_t old_edge_i = 0, new_edge_i = 0, size = len(result_vertexes) - 1, i
-    cdef const vector[uint32_t] *new_edge_list
+    cdef const vector[Edge] *new_edge_list
     cdef bint has_old = len(vertexes) > 1
+    cdef Edge edge
     if has_old:
         # populate old_vertex_map
         for i in range(size):
@@ -170,7 +176,8 @@ cdef void _recalculate_vertices_and_edges(const int64_t[:] found_matches,
             new_edge_list = &new_edges_lists[new_edge_i]
             list_size = new_edge_list.size()
             for j in range(list_size):
-                result_edges[pos + j] = new_edge_list.at(j)
+                edge = new_edge_list.at(j)
+                result_edges[pos + edge.position] = edge.vertex
             pos += list_size
             new_edge_i += 1
     result_vertexes[size] = pos
@@ -247,7 +254,7 @@ cdef void _mark_dag_parents(const uint32_t[:] vertexes,
     cdef int64_t i, j, max_stop
     cdef unordered_map[uint32_t, int64_t] stops
     cdef unordered_map[uint32_t, int64_t].iterator stop_it
-    cdef unordered_set[uint32_t] visited
+    cdef vector[char] visited = vector[char](len(vertexes))
     cdef vector[uint32_t] boilerplate
     for i in range(len(heads)):
         head = heads[i]
@@ -261,14 +268,14 @@ cdef void _mark_dag_parents(const uint32_t[:] vertexes,
         head_timestamp = timestamps[i]
         max_stop = len(heads)
         max_timestamp = 0
-        visited.clear()
+        memset(visited.data(), 0, visited.size())
         boilerplate.push_back(head)
         while not boilerplate.empty():
             peek = boilerplate.back()
             boilerplate.pop_back()
-            if visited.count(peek):
+            if visited[peek]:
                 continue
-            visited.insert(peek)
+            visited[peek] = 1
             stop_it = stops.find(peek)
             if peek != head and stop_it != stops.end():
                 j = dereference(stop_it).second
@@ -279,6 +286,35 @@ cdef void _mark_dag_parents(const uint32_t[:] vertexes,
             else:
                 for j in range(vertexes[peek], vertexes[peek + 1]):
                     edge = edges[j]
-                    if not visited.count(edge):
+                    if not visited[edge]:
                         boilerplate.push_back(edge)
         parents[i] = max_stop
+
+
+def extract_first_parents(hashes: np.ndarray,
+                          vertexes: np.ndarray,
+                          edges: np.ndarray,
+                          heads: np.ndarray) -> np.ndarray:
+    heads = np.sort(heads)
+    heads = searchsorted_inrange(hashes, heads).astype(np.uint32)
+    first_parents = np.zeros_like(hashes, dtype=np.bool_)
+    _extract_first_parents(vertexes, edges, heads, first_parents)
+    return hashes[first_parents]
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _extract_first_parents(const uint32_t[:] vertexes,
+                                 const uint32_t[:] edges,
+                                 const uint32_t[:] heads,
+                                 char[:] first_parents) nogil:
+    cdef uint32_t head
+    cdef int i
+    for i in range(len(heads)):
+        head = heads[i]
+        while not first_parents[head]:
+            first_parents[head] = 1
+            if vertexes[head + 1] > vertexes[head]:
+                head = edges[vertexes[head]]
+            else:
+                break

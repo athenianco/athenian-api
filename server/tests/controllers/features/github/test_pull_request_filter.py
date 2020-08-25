@@ -102,7 +102,7 @@ async def test_pr_list_miner_release_settings(
     prs2 = await filter_pull_requests(
         {Property.RELEASING}, time_from, time_to, {"src-d/go-git"}, {}, set(), False,
         release_match_setting_branch, mdb, pdb, cache)
-    assert not prs2
+    assert len(prs2) == 96  # force-push-dropped PRs still accessible from the artificial branches
 
 
 @with_defer

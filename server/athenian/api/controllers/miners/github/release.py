@@ -1,13 +1,11 @@
 import asyncio
 import bisect
 from datetime import datetime, timedelta, timezone
-from io import BytesIO
 from itertools import chain
 import logging
-import marshal
 import pickle
 import re
-from typing import Any, Collection, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Collection, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import aiomcache
 import asyncpg
@@ -17,7 +15,6 @@ import numpy as np
 import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, desc, func, insert, join, or_, select
-from sqlalchemy.cprocessors import str_to_datetime
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql.elements import BinaryExpression, ClauseElement
 
@@ -26,8 +23,8 @@ from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_que
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_precomputed_pr_releases, update_unreleased_prs
-from athenian.api.controllers.miners.github.release_accelerated import extract_subdag, join_dags, \
-    mark_dag_access, mark_dag_parents, searchsorted_inrange
+from athenian.api.controllers.miners.github.release_accelerated import extract_first_parents, \
+    extract_subdag, join_dags, mark_dag_access, mark_dag_parents, searchsorted_inrange
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.github.users import mine_user_avatars
@@ -37,10 +34,9 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import Branch, NodeCommit, \
-    NodeRepository, PullRequest, PullRequestLabel, PushCommit, Release
-from athenian.api.models.precomputed.models import GitHubCommitFirstParents, GitHubCommitHistory, \
-    GitHubRepository
+from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepository, PullRequest, \
+    PullRequestLabel, PushCommit, Release
+from athenian.api.models.precomputed.models import GitHubCommitHistory, GitHubRepository
 from athenian.api.tracing import sentry_span
 
 
@@ -218,72 +214,22 @@ async def _match_releases_by_branch(repos: Iterable[str],
                                     pdb: databases.Database,
                                     cache: Optional[aiomcache.Client],
                                     ) -> pd.DataFrame:
-    regexp_cache = {}
-    branches_matched = {}
-    prefix = PREFIXES["github"]
     branches = branches.take(np.where(branches[Branch.repository_full_name.key].isin(repos))[0])
-    for repo, repo_branches in branches.groupby(Branch.repository_full_name.key, sort=False):
-        regexp = settings[prefix + repo].branches
-        default_branch = default_branches[repo]
-        regexp = regexp.replace(default_branch_alias, default_branch)
-        if not regexp.endswith("$"):
-            regexp += "$"
-        # note: dict.setdefault() is not good here because re.compile() will be evaluated
-        try:
-            regexp = regexp_cache[regexp]
-        except KeyError:
-            regexp = regexp_cache[regexp] = re.compile(regexp)
-        matched = repo_branches[repo_branches[Branch.branch_name.key].str.match(regexp)]
-        if not matched.empty:
-            branches_matched[repo] = matched
+    branches_matched = _match_branches_by_release_settings(branches, default_branches, settings)
     if not branches_matched:
         return dummy_releases_df()
-
-    ghcfp = GitHubCommitFirstParents
-    default_version = ghcfp.__table__.columns[ghcfp.format_version.key].default.arg
-
-    async def _fetch_commit_first_parents_pdb():
-        with sentry_sdk.start_span(op="_match_releases_by_branch/_fetch_commit_first_parents_pdb"):
-            return await pdb.fetch_all(
-                select([ghcfp.repository_full_name, ghcfp.commits])
-                .where(and_(ghcfp.repository_full_name.in_(branches_matched),
-                            ghcfp.format_version == default_version)))
-
-    pre_mp_tasks = [
-        _fetch_commit_first_parents_pdb(),
-        _fetch_pr_merge_commits(branches_matched, time_from, time_to, mdb, cache),
-    ]
-    data_rows, pr_merge_commits = await asyncio.gather(*pre_mp_tasks, return_exceptions=True)
-    for r in (data_rows, pr_merge_commits):
-        if isinstance(r, Exception):
-            raise r from None
-    data_by_repo = {
-        r[ghcfp.repository_full_name.key]: r[ghcfp.commits.key]
-        for r in data_rows
-    }
-    del data_rows
-    mp_tasks = [
-        _fetch_merge_points(data_by_repo.get(repo), repo, branches[Branch.commit_id.key].values,
-                            pr_merge_commits.get(repo), time_from, time_to, mdb, pdb, cache)
-        for repo, branches in branches_matched.items()
-    ]
-    all_merge_commits = []
-    pdb_hits = 0
-    with sentry_sdk.start_span(op="_match_releases_by_branch/_fetch_merge_points"):
-        for tr in await asyncio.gather(*mp_tasks, return_exceptions=True):
-            if isinstance(tr, Exception):
-                raise tr from None
-            mps, pdb_hit = tr
-            all_merge_commits.extend(mps)
-            pdb_hits += pdb_hit
-    add_pdb_hits(pdb, "_fetch_first_parents", pdb_hits)
-    add_pdb_misses(pdb, "_fetch_first_parents", len(mp_tasks) - pdb_hits)
-    all_commits = await _fetch_commits(all_merge_commits, mdb, cache)
-    del all_merge_commits
+    dags = await _fetch_precomputed_commit_history_dags(branches_matched, pdb, cache)
+    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date.key,
+            Branch.repository_full_name.key)
+    dags = await _fetch_repository_commits(dags, branches, cols, False, mdb, pdb, cache)
+    first_shas = [extract_first_parents(*dags[repo], branches[Branch.commit_sha.key].values)
+                  for repo, branches in branches_matched.items()]
+    first_shas = np.sort(np.concatenate(first_shas))
+    first_commits = await _fetch_commits(first_shas, time_from, time_to, mdb, cache)
     pseudo_releases = []
     for repo in branches_matched:
-        commits = all_commits.take(
-            np.where(all_commits[PushCommit.repository_full_name.key] == repo)[0])
+        commits = first_commits.take(
+            np.where(first_commits[PushCommit.repository_full_name.key] == repo)[0])
         gh_merge = ((commits[PushCommit.committer_name.key] == "GitHub")
                     & (commits[PushCommit.committer_email.key] == "noreply@github.com"))
         commits[PushCommit.author_login.key].where(
@@ -306,56 +252,28 @@ async def _match_releases_by_branch(repos: Iterable[str],
     return pseudo_releases
 
 
-@sentry_span
-@cached(
-    exptime=60 * 60,  # 1 hour
-    serialize=marshal.dumps,
-    deserialize=marshal.loads,
-    key=lambda branches_matched, time_from, time_to, **_: (
-        ";".join("%s:%s" % (k, ",".join(sorted(v[Branch.branch_name.key].values)))
-                 for k, v in branches_matched.items()),
-        time_from.timestamp(), time_to.timestamp(),
-    ),
-    refresh_on_access=True,
-)
-async def _fetch_pr_merge_commits(branches_matched: Dict[str, pd.DataFrame],
-                                  time_from: datetime,
-                                  time_to: datetime,
-                                  db: databases.Database,
-                                  cache: Optional[aiomcache.Client]) -> Dict[str, List[str]]:
-    branch_filters = []
-    for repo, branches in branches_matched.items():
-        branch_filters.append(and_(PullRequest.repository_full_name == repo,
-                                   PullRequest.base_ref.in_(branches[Branch.branch_name.key])))
-    rows = await db.fetch_all(
-        select([PullRequest.repository_full_name, PullRequest.merge_commit_id])
-        .where(and_(
-            or_(*branch_filters),
-            PullRequest.merged_at.between(time_from, time_to),
-            PullRequest.merge_commit_id.isnot(None),
-        )))
-    pr_merge_commits_by_repo = {}
-    for r in rows:
-        pr_merge_commits_by_repo.setdefault(r[PullRequest.repository_full_name.key], []).append(
-            r[PullRequest.merge_commit_id.key])
-    return pr_merge_commits_by_repo
-
-
-async def _fetch_merge_points(data: Optional[bytes],
-                              repo: str,
-                              commit_ids: Sequence[str],
-                              merge_commit_ids: Optional[Iterable[str]],
-                              time_from: datetime,
-                              time_to: datetime,
-                              mdb: databases.Database,
-                              pdb: databases.Database,
-                              cache: Optional[aiomcache.Client],
-                              ) -> Tuple[Set[str], bool]:
-    first_parents, pdb_hit = await _fetch_first_parents(
-        data, repo, commit_ids, time_from, time_to, mdb, pdb, cache)
-    if merge_commit_ids is not None:
-        first_parents.update(merge_commit_ids)
-    return first_parents, pdb_hit
+def _match_branches_by_release_settings(branches: pd.DataFrame,
+                                        default_branches: Dict[str, str],
+                                        settings: Dict[str, ReleaseMatchSetting],
+                                        ) -> Dict[str, pd.DataFrame]:
+    prefix = PREFIXES["github"]
+    branches_matched = {}
+    regexp_cache = {}
+    for repo, repo_branches in branches.groupby(Branch.repository_full_name.key, sort=False):
+        regexp = settings[prefix + repo].branches
+        default_branch = default_branches[repo]
+        regexp = regexp.replace(default_branch_alias, default_branch)
+        if not regexp.endswith("$"):
+            regexp += "$"
+        # note: dict.setdefault() is not good here because re.compile() will be evaluated
+        try:
+            regexp = regexp_cache[regexp]
+        except KeyError:
+            regexp = regexp_cache[regexp] = re.compile(regexp)
+        matched = repo_branches[repo_branches[Branch.branch_name.key].str.match(regexp)]
+        if not matched.empty:
+            branches_matched[repo] = matched
+    return branches_matched
 
 
 @sentry_span
@@ -363,14 +281,19 @@ async def _fetch_merge_points(data: Optional[bytes],
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda commit_ids, **_: (",".join(sorted(commit_ids)),),
+    # commit_shas are already sorted
+    key=lambda commit_shas, time_from, time_to, **_: (",".join(commit_shas), time_from, time_to),
     refresh_on_access=True,
 )
-async def _fetch_commits(commit_ids: List[str],
+async def _fetch_commits(commit_shas: Sequence[str],
+                         time_from: datetime,
+                         time_to: datetime,
                          db: databases.Database,
                          cache: Optional[aiomcache.Client]) -> pd.DataFrame:
     return await read_sql_query(
-        select([PushCommit]).where(PushCommit.node_id.in_(commit_ids))
+        select([PushCommit])
+        .where(and_(PushCommit.sha.in_(commit_shas),
+                    PushCommit.committed_date.between(time_from, time_to)))
         .order_by(desc(PushCommit.commit_date)),
         db, PushCommit)
 
@@ -538,138 +461,6 @@ async def _fetch_labels(node_ids: Iterable[str], mdb: databases.Database) -> Dic
     return labels
 
 
-@cached(
-    exptime=60 * 60,  # 1 hour
-    serialize=marshal.dumps,
-    deserialize=marshal.loads,
-    key=lambda repo, commit_ids, time_from, time_to, **_: (
-        ",".join(sorted(commit_ids)), time_from.timestamp(), time_to.timestamp(),
-    ),
-    postprocess=lambda result, **_: (result[0], True),
-    refresh_on_access=True,
-    version=2,
-)
-async def _fetch_first_parents(data: Optional[bytes],
-                               repo: str,
-                               commit_ids: Sequence[str],
-                               time_from: datetime,
-                               time_to: datetime,
-                               mdb: databases.Database,
-                               pdb: databases.Database,
-                               cache: Optional[aiomcache.Client],
-                               ) -> Tuple[Set[str], bool]:
-    # Git parent-child is reversed github_node_commit_parents' parent-child.
-    assert isinstance(mdb, databases.Database)
-    assert isinstance(pdb, databases.Database)
-
-    if data is not None:
-        f = BytesIO(data)
-        del data
-        first_parents = pickle.load(f)
-        timestamps = pickle.load(f)
-        del f
-        commit_ids = np.asarray(commit_ids, dtype="U")
-        commit_ids = commit_ids[first_parents[searchsorted_inrange(first_parents, commit_ids)]
-                                != commit_ids]
-        need_update = len(commit_ids) > 0
-        if need_update:
-            order = np.flip(np.argsort(timestamps))
-            time_boundary = time_from.date()
-            stop_hashes = first_parents[order[np.arange(0, len(order), max(1, len(order) // 20))]]
-    else:
-        need_update = True
-        first_parents = np.array([], dtype="U40")
-        timestamps = np.array([], dtype="datetime64[us]")
-        time_boundary = datetime(2000, 1, 1, tzinfo=timezone.utc).date()
-        stop_hashes = []
-
-    if need_update:
-        quote = "`" if mdb.url.dialect == "sqlite" else ""
-        query = f"""
-            WITH RECURSIVE commit_first_parents AS (
-                SELECT
-                    p.child_id AS parent,
-                    cc.id AS parent_id,
-                    cc.committed_date as committed_date
-                FROM
-                    github_node_commit_parents p
-                        LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
-                        LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-                WHERE
-                        p.parent_id IN ('{"', '".join(commit_ids)}')
-                    AND p.{quote}index{quote} = 0
-                    AND cc.id IS NOT NULL
-                UNION
-                    SELECT
-                        p.child_id AS parent,
-                        cc.id AS parent_id,
-                        cc.committed_date as committed_date
-                    FROM
-                        github_node_commit_parents p
-                            INNER JOIN commit_first_parents h ON h.parent = p.parent_id
-                            LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
-                            LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-                    WHERE p.{quote}index{quote} = 0
-                          AND cc.id IS NOT NULL
-                          AND pc.committed_date >= '{time_boundary}'
-                          AND pc.oid NOT IN ('{"', '".join(stop_hashes)}')
-            ) SELECT
-                parent_id,
-                committed_date
-            FROM
-                commit_first_parents
-            UNION
-                SELECT
-                    id as parent_id,
-                    committed_date
-                FROM
-                    github_node_commit
-                WHERE
-                    id IN ('{"', '".join(commit_ids)}');"""
-
-        async with mdb.connection() as conn:
-            if isinstance(conn.raw_connection, asyncpg.connection.Connection):
-                # this works much faster then iterate() / fetch_all()
-                async with conn._query_lock:
-                    rows = await conn.raw_connection.fetch(query)
-            else:
-                rows = await conn.fetch_all(query)
-
-        utc = timezone.utc
-        first_parents = np.append(first_parents, [r[0] for r in rows])
-        if mdb.url.dialect == "sqlite":
-            timestamps = np.append(
-                timestamps, np.fromiter((str_to_datetime(r[1]).replace(tzinfo=utc) for r in rows),
-                                        "datetime64[us]", count=len(rows)))
-        else:
-            timestamps = np.append(
-                timestamps, np.fromiter((r[1] for r in rows), "datetime64[us]", count=len(rows)))
-        first_parents, order = np.unique(first_parents, return_index=True)
-        timestamps = timestamps[order]
-        f = BytesIO()
-        pickle.dump(first_parents, f)
-        pickle.dump(timestamps, f)
-        values = GitHubCommitFirstParents(repository_full_name=repo, commits=f.getvalue()) \
-            .create_defaults().explode(with_primary_keys=True)
-        if pdb.url.dialect in ("postgres", "postgresql"):
-            sql = postgres_insert(GitHubCommitFirstParents).values(values)
-            sql = sql.on_conflict_do_update(
-                constraint=GitHubCommitFirstParents.__table__.primary_key,
-                set_={GitHubCommitFirstParents.commits.key: sql.excluded.commits,
-                      GitHubCommitFirstParents.updated_at.key: sql.excluded.updated_at})
-        elif pdb.url.dialect == "sqlite":
-            sql = insert(GitHubCommitFirstParents).values(values).prefix_with("OR REPLACE")
-        else:
-            raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-        await defer(pdb.execute(sql), "_fetch_first_parents/pdb")
-
-    time_from = time_from.replace(tzinfo=None)
-    time_to = time_to.replace(tzinfo=None)
-    # need to convert from numpy.str_ to str
-    result = {str(s) for s in first_parents[(time_from <= timestamps) & (timestamps < time_to)]}
-    return result, not need_update
-
-
 @sentry_span
 @cached(
     exptime=60 * 60,  # 1 hour
@@ -814,7 +605,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
     while len(head_hashes) > 0:
         new_edges = await _fetch_commit_history_edges(head_ids[:batch_size], stop_hashes, mdb)
         if not new_edges:
-            new_edges = [(h, "") for h in np.sort(np.unique(head_hashes[:batch_size]))]
+            new_edges = [(h, "", 0) for h in np.sort(np.unique(head_hashes[:batch_size]))]
         hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges)
         head_hashes = head_hashes[batch_size:]
         head_ids = head_ids[batch_size:]
@@ -831,34 +622,39 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
                                       stop_hashes: Iterable[str],
                                       mdb: databases.Database) -> List[Tuple]:
     # SQL credits: @dennwc
+    quote = "`" if mdb.url.dialect == "sqlite" else ""
     query = f"""
-            WITH RECURSIVE commit_history AS (
+        WITH RECURSIVE commit_history AS (
+            SELECT
+                p.child_id AS parent,
+                p.{quote}index{quote} AS parent_index,
+                pc.oid AS child_oid,
+                cc.oid AS parent_oid
+            FROM
+                github_node_commit_parents p
+                    LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
+                    LEFT JOIN github_node_commit cc ON p.child_id = cc.id
+            WHERE
+                p.parent_id IN ('{"', '".join(commit_ids)}')
+            UNION
                 SELECT
                     p.child_id AS parent,
+                    p.{quote}index{quote} AS parent_index,
                     pc.oid AS child_oid,
                     cc.oid AS parent_oid
                 FROM
                     github_node_commit_parents p
+                        INNER JOIN commit_history h ON h.parent = p.parent_id
                         LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
                         LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-                WHERE
-                    p.parent_id IN ('{"', '".join(commit_ids)}')
-                UNION
-                    SELECT
-                        p.child_id AS parent,
-                        pc.oid AS child_oid,
-                        cc.oid AS parent_oid
-                    FROM
-                        github_node_commit_parents p
-                            INNER JOIN commit_history h ON h.parent = p.parent_id
-                            LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
-                            LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-                    WHERE pc.oid NOT IN ('{"', '".join(stop_hashes)}')
-            ) SELECT
-                child_oid,
-                parent_oid
-            FROM
-                commit_history;"""
+                WHERE pc.oid NOT IN ('{"', '".join(stop_hashes)}')
+        ) SELECT
+            child_oid,
+            parent_oid,
+            parent_index
+        FROM
+            commit_history;
+    """
     async with mdb.connection() as conn:
         if isinstance(conn.raw_connection, asyncpg.connection.Connection):
             # this works much faster then iterate() / fetch_all()
