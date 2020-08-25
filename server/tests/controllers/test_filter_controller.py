@@ -39,8 +39,8 @@ async def test_filter_repositories_no_repos(client, headers):
 @pytest.mark.filter_repositories
 async def test_filter_repositories_smoke(client, headers):
     body = {
-        "date_from": "2015-10-13",
-        "date_to": "2020-01-23",
+        "date_from": "2017-09-16",
+        "date_to": "2017-09-17",
         "timezone": 60,
         "account": 1,
         "in": ["github.com/src-d/go-git"],
@@ -50,6 +50,22 @@ async def test_filter_repositories_smoke(client, headers):
     repos = json.loads((await response.read()).decode("utf-8"))
     assert repos == ["github.com/src-d/go-git"]
     body["in"] = ["github.com/src-d/gitbase"]
+    response = await client.request(
+        method="POST", path="/v1/filter/repositories", headers=headers, json=body)
+    repos = json.loads((await response.read()).decode("utf-8"))
+    assert repos == []
+
+
+@pytest.mark.filter_repositories
+async def test_filter_repositories_exclude_inactive(client, headers):
+    body = {
+        "date_from": "2017-09-16",
+        "date_to": "2017-09-17",
+        "timezone": 60,
+        "account": 1,
+        "in": ["github.com/src-d/go-git"],
+        "exclude_inactive": True,
+    }
     response = await client.request(
         method="POST", path="/v1/filter/repositories", headers=headers, json=body)
     repos = json.loads((await response.read()).decode("utf-8"))
