@@ -144,9 +144,13 @@ class SumMetricCalculator(MetricCalculator[T]):
         raise NotImplementedError
 
 
-class Counter(SumMetricCalculator[int]):
+class Counter(MetricCalculator[int]):
     """Count the number of PRs that were used to calculate the specified metric, \
     the quantiles are ignored."""
+
+    def _value(self, samples: Sequence[int]) -> Metric[int]:
+        """Calculate the current metric value."""
+        return Metric(True, sum(samples) if len(samples) else 0, None, None)
 
     def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[int]:
@@ -154,14 +158,13 @@ class Counter(SumMetricCalculator[int]):
         return int(self._calcs[0].peek is not None)
 
 
-class CounterWithQuantiles(MetricCalculator[T]):
+class CounterWithQuantiles(MetricCalculator[int]):
     """Count the number of PRs that were used to calculate the specified metric, \
     the quantiles are respected."""
 
     def _value(self, samples: Sequence[T]) -> Metric[int]:
         """Calculate the current metric value."""
-        exists = len(samples) > 0
-        return Metric(exists, len(samples) if exists else None, None, None)
+        return Metric(True, len(samples), None, None)
 
     def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[T]:
