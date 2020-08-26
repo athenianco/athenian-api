@@ -599,8 +599,22 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                                     repo: str,
                                     mdb: databases.Database,
                                     ) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
+    max_stops = 100
     # Find all the top-level commit hashes.
-    stop_hashes = hashes[np.delete(np.arange(len(hashes)), np.unique(edges))]
+    unique_edges = np.unique(edges)
+    stop_heads = hashes[np.delete(np.arange(len(hashes)), unique_edges)]
+    if len(stop_heads) > max_stops:
+        rows = await mdb.fetch_all(select([NodeCommit.oid])
+                                   .where(NodeCommit.oid.in_(stop_heads))
+                                   .order_by(desc(NodeCommit.committed_date))
+                                   .limit(max_stops))
+        stop_heads = np.fromiter((r[0] for r in rows), dtype="U40", count=len(rows))
+    # We can still branch from an arbitrary point. Choose another random 100 nodes.
+    if len(unique_edges) >= max_stops:
+        stop_randoms = hashes[unique_edges[::len(unique_edges) // max_stops]]
+    else:
+        stop_randoms = hashes[unique_edges]
+    stop_hashes = np.concatenate([stop_heads, stop_randoms])
     batch_size = 20
     while len(head_hashes) > 0:
         new_edges = await _fetch_commit_history_edges(head_ids[:batch_size], stop_hashes, mdb)
