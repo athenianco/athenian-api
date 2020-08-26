@@ -22,7 +22,7 @@ from athenian.api.controllers.miners.github.release import \
     _fetch_repository_first_commit_dates, _find_dead_merged_prs, load_releases, \
     map_prs_to_releases, map_releases_to_prs, mine_releases
 from athenian.api.controllers.miners.github.release_accelerated import extract_subdag, join_dags, \
-    mark_dag_access, mark_dag_parents
+    mark_dag_access, mark_dag_parents, partition_dag
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
@@ -870,6 +870,15 @@ def test_mark_dag_access_smoke():
                       "61a719e0ff7522cc0d129acb3b922c94a8a5dbca"], dtype="U40")
     marks = mark_dag_access(hashes, vertexes, edges, heads)
     assert (marks == np.array([1, 0, 1, 1], dtype=np.int64)).all()
+
+
+async def test_partition_dag(dag):
+    hashes, vertexes, edges = dag["src-d/go-git"]
+    p = partition_dag(hashes, vertexes, edges, ["ad9456267524e08efcf4486cadfb6cef8d182677"])
+    assert p.tolist() == ["ad9456267524e08efcf4486cadfb6cef8d182677"]
+    p = partition_dag(hashes, vertexes, edges, ["7cd021554eb318165dd28988fe1675a5e5c32601"])
+    assert p.tolist() == ["7cd021554eb318165dd28988fe1675a5e5c32601",
+                          "ced875aec7bef9113e1c37b1b811a59e17dbd138"]
 
 
 async def test__fetch_commit_history_dag_stops(mdb, dag):

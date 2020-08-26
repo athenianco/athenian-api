@@ -177,7 +177,7 @@ _testing = "pytest" in sys.modules or os.getenv("SENTRY_ENV", "development") == 
 
 
 async def _asyncpg_execute(self, query: str, args, limit, timeout, return_status=False):
-    description = query.strip()
+    description = query = query.strip()
     if (query.startswith("SELECT") or query.startswith("WITH")) and not _testing:
         if len(description) <= MAX_SENTRY_STRING_LENGTH and args:
             description += " | " + str(args)
@@ -185,11 +185,12 @@ async def _asyncpg_execute(self, query: str, args, limit, timeout, return_status
             transaction = sentry_sdk.Hub.current.scope.transaction
             if transaction is not None and transaction.sampled:
                 data = base64.b64encode(lzma.compress(pickle.dumps((query, args)))).decode()
-                description = str(uuid.uuid4())
+                query_id = str(uuid.uuid4())
+                description = "%s\n%s..." % (query_id, query[:1000])
                 chunk_size = 99000
                 chunks = int(math.ceil(len(data) / 99000))
                 for i in range(chunks):
-                    _sql_log.info("%d / %d %s %s", i + 1, chunks, description,
+                    _sql_log.info("%d / %d %s %s", i + 1, chunks, query_id,
                                   data[chunk_size * i: chunk_size * (i + 1)])
     with sentry_sdk.start_span(op="sql", description=description) as span:
         result = await self._execute_original(query, args, limit, timeout, return_status)
