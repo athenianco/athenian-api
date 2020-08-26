@@ -23,7 +23,9 @@ from athenian.api.controllers.miners.github.label import mine_labels
 from athenian.api.controllers.miners.github.release import mine_releases
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
-from athenian.api.controllers.miners.types import ParticipationKind, Property, PullRequestListItem
+from athenian.api.controllers.miners.types import ParticipationKind, Property, PullRequestEvent, \
+    PullRequestListItem, \
+    PullRequestStage
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
@@ -127,9 +129,20 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
-    props = set(getattr(Property, p.upper()) for p in (filt.properties or []))
-    if not props:
-        props = set(Property)
+    if not filt.properties:
+        events = set(getattr(PullRequestEvent, e.upper()) for e in (filt.events or []))
+        stages = set(getattr(PullRequestStage, s.upper()) for s in (filt.stages or []))
+    else:
+        events = set()
+        stages = set()
+        props = set(getattr(Property, p.upper()) for p in (filt.properties or []))
+        if props:
+            for s in range(Property.WIP, Property.DONE + 1):
+                if Property(s) in props:
+                    stages.add(PullRequestStage(s))
+            for e in range(Property.CREATED, Property.RELEASE_HAPPENED + 1):
+                if Property(e) in props:
+                    events.add(PullRequestEvent(e - Property.CREATED + 1))
     participants = {ParticipationKind[k.upper()]: {d.split("/", 1)[1] for d in v}
                     for k, v in (filt.with_ or {}).items() if v}
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
@@ -141,14 +154,25 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     except ResponseError:
         jira = JIRAFilter.empty()
     prs = await filter_pull_requests(
-        props, filt.date_from, filt.date_to, repos, participants, labels, jira,
+        events, stages, filt.date_from, filt.date_to, repos, participants, labels, jira,
         filt.exclude_inactive, settings, filt.limit or 0, request.mdb, request.pdb, request.cache)
     return await _build_github_prs_response(prs, request.mdb, request.cache)
 
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
     props = vars(pr).copy()
-    props["properties"] = sorted(p.name.lower() for p in pr.properties)
+    if pr.events_time_machine is not None:
+        props["events_time_machine"] = sorted(p.name.lower() for p in pr.events_time_machine)
+    if pr.stages_time_machine is not None:
+        props["stages_time_machine"] = sorted(p.name.lower() for p in pr.stages_time_machine)
+    props["events_now"] = sorted(p.name.lower() for p in pr.events_now)
+    props["stages_now"] = sorted(p.name.lower() for p in pr.stages_now)
+    properties = []
+    for s in (pr.stages_time_machine or []):
+        properties.append(Property(s).name.lower())
+    for e in pr.events_now:
+        properties.append(Property(e + Property.CREATED - 1).name.lower())
+    props["properties"] = properties
     props["stage_timings"] = StageTimings(**pr.stage_timings)
     participants = defaultdict(list)
     prefix = PREFIXES["github"]

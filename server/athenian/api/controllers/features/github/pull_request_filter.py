@@ -27,11 +27,12 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     load_precomputed_done_facts_reponums, store_merged_unreleased_pull_request_facts, \
     store_open_pull_request_facts, store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
-    PullRequestFactsMiner, PullRequestMiner, ReviewResolution
+    PRDataFrames, PullRequestFactsMiner, PullRequestMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release import dummy_releases_df, \
     fetch_precomputed_commit_history_dags, load_commit_dags, load_releases
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, Participants, \
-    Property, PullRequestFacts, PullRequestJIRAIssueItem, PullRequestListItem
+    PullRequestEvent, PullRequestFacts, PullRequestJIRAIssueItem, PullRequestListItem, \
+    PullRequestStage
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import set_pdb_hits, set_pdb_misses
 from athenian.api.defer import defer, wait_deferred
@@ -50,14 +51,19 @@ class PullRequestListMiner:
 
     def __init__(self,
                  prs: List[MinedPullRequest],
+                 dfs: PRDataFrames,
                  facts: Dict[str, PullRequestFacts],
-                 properties: Set[Property],
+                 events: Set[PullRequestEvent],
+                 stages: Set[PullRequestStage],
                  time_from: datetime,
-                 time_to: datetime):
+                 time_to: datetime,
+                 with_time_machine: bool):
         """Initialize a new instance of `PullRequestListMiner`."""
         self._prs = prs
+        self._dfs = dfs
         self._facts = facts
-        self._properties = properties
+        self._events = events
+        self._stages = stages
         self._calcs = {
             "wip": WorkInProgressTimeCalculator(quantiles=(0, 1)),
             "review": ReviewTimeCalculator(quantiles=(0, 1)),
@@ -69,105 +75,102 @@ class PullRequestListMiner:
         self._time_from = time_from
         self._time_to = time_to
         self._now = datetime.now(tz=timezone.utc)
+        self._with_time_machine = with_time_machine
 
     @classmethod
-    def _collect_properties(cls,
-                            facts: PullRequestFacts,
-                            pr: MinedPullRequest,
-                            time_from: datetime,
-                            ) -> Set[Property]:
-        np_time_from = np.datetime64(time_from.replace(tzinfo=None))
-        author = pr.pr[PullRequest.user_login.key]
-        props = set()
+    def _collect_events_and_stages(cls,
+                                   facts: PullRequestFacts,
+                                   hard_events: Dict[PullRequestEvent, bool],
+                                   time_from: datetime,
+                                   ) -> Tuple[Set[PullRequestEvent], Set[PullRequestStage]]:
+        events = set()
+        stages = set()
         if facts.done:
             if facts.force_push_dropped:
-                props.add(Property.FORCE_PUSH_DROPPED)
-            props.add(Property.DONE)
+                stages.add(PullRequestStage.FORCE_PUSH_DROPPED)
+            stages.add(PullRequestStage.DONE)
         elif facts.merged:
-            props.add(Property.RELEASING)
+            stages.add(PullRequestStage.RELEASING)
         elif facts.approved:
-            props.add(Property.MERGING)
+            stages.add(PullRequestStage.MERGING)
         elif facts.first_review_request:
-            props.add(Property.REVIEWING)
+            stages.add(PullRequestStage.REVIEWING)
         else:
-            props.add(Property.WIP)
-        if facts.created > time_from:
-            props.add(Property.CREATED)
-        if (pr.commits[PullRequestCommit.committed_date.key].values > np_time_from).any():
-            props.add(Property.COMMIT_HAPPENED)
-        review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.key].values
-        if ((review_submitted_ats > np_time_from)
-                & (pr.reviews[PullRequestReview.user_login.key].values != author)).any():
-            props.add(Property.REVIEW_HAPPENED)
-        if facts.first_review_request_exact and facts.first_review_request_exact > time_from:
-            props.add(Property.REVIEW_REQUEST_HAPPENED)
-        if facts.approved and facts.approved > time_from:
-            props.add(Property.APPROVE_HAPPENED)
-        if facts.merged and facts.merged > time_from:
-            props.add(Property.MERGE_HAPPENED)
-        if not facts.merged and facts.closed and facts.closed > time_from:
-            props.add(Property.REJECTION_HAPPENED)
-        if facts.released and facts.released > time_from:
-            props.add(Property.RELEASE_HAPPENED)
-        review_states = pr.reviews[PullRequestReview.state.key]
-        if ((review_states.values == ReviewResolution.CHANGES_REQUESTED.value)
-                & (review_submitted_ats > np_time_from)).any():
-            props.add(Property.CHANGES_REQUEST_HAPPENED)
-        return props
+            stages.add(PullRequestStage.WIP)
+        if facts.created >= time_from:
+            events.add(PullRequestEvent.CREATED)
+        if hard_events[PullRequestEvent.COMMITTED]:
+            events.add(PullRequestEvent.COMMITTED)
+        if hard_events[PullRequestEvent.REVIEWED]:
+            events.add(PullRequestEvent.REVIEWED)
+        if facts.first_review_request_exact and facts.first_review_request_exact >= time_from:
+            events.add(PullRequestEvent.REVIEW_REQUESTED)
+        if facts.approved and facts.approved >= time_from:
+            events.add(PullRequestEvent.APPROVED)
+        if facts.merged and facts.merged >= time_from:
+            events.add(PullRequestEvent.MERGED)
+        if not facts.merged and facts.closed and facts.closed >= time_from:
+            events.add(PullRequestEvent.REJECTED)
+        if facts.released and facts.released >= time_from:
+            events.add(PullRequestEvent.RELEASED)
+        if hard_events[PullRequestEvent.CHANGES_REQUESTED]:
+            events.add(PullRequestEvent.CHANGES_REQUESTED)
+        return events, stages
 
     def _compile(self,
                  pr: MinedPullRequest,
                  facts: PullRequestFacts,
                  stage_timings: Dict[str, timedelta],
+                 hard_events_time_machine: Dict[PullRequestEvent, Set[str]],
+                 hard_events_now: Dict[PullRequestEvent, Set[str]],
                  ) -> Optional[PullRequestListItem]:
         """
         Match the PR to the required participants and properties and produce PullRequestListItem.
 
         We return None if the PR does not match.
         """
-        pr_today = pr
-        pr_time_machine = pr.truncate(
-            self._time_to, ignore=("review_comments", "review_requests", "comments"))
-        facts_today = facts
-        facts_time_machine = facts.truncate(self._time_to)
-        props_time_machine = self._collect_properties(
-            facts_time_machine, pr_time_machine, self._time_from)
-        if not self._properties.intersection(props_time_machine):
-            return None
-        props_today = self._collect_properties(facts_today, pr_today, self._no_time_from)
-        author = pr_today.pr[PullRequest.user_id.key]
-        external_reviews_mask = pr_today.reviews[PullRequestReview.user_id.key].values != author
-        external_review_times = pr_today.reviews[PullRequestReview.created_at.key].values[
+        facts_now = facts
+        pr_node_id = pr.pr[PullRequest.node_id.key]
+        if self._with_time_machine:
+            facts_time_machine = facts.truncate(self._time_to)
+            events_time_machine, stages_time_machine = self._collect_events_and_stages(
+                facts_time_machine,
+                {k: (pr_node_id in v) for k, v in hard_events_time_machine.items()},
+                self._time_from)
+            if (self._stages and not self._stages.intersection(stages_time_machine)) or \
+                    (self._events and not self._events.intersection(events_time_machine)):
+                return None
+        else:
+            events_time_machine = stages_time_machine = None
+        events_now, stages_now = self._collect_events_and_stages(
+            facts_now,
+            {k: (pr_node_id in v) for k, v in hard_events_now.items()},
+            self._no_time_from)
+        author = pr.pr[PullRequest.user_id.key]
+        external_reviews_mask = pr.reviews[PullRequestReview.user_id.key].values != author
+        external_review_times = pr.reviews[PullRequestReview.created_at.key].values[
             external_reviews_mask]
         first_review = pd.Timestamp(external_review_times.min(), tz=timezone.utc) \
             if len(external_review_times) > 0 else None
         review_comments = (
-            pr_today.review_comments[PullRequestReviewComment.user_id.key].values != author
+            pr.review_comments[PullRequestReviewComment.user_id.key].values != author
         ).sum()
-        delta_comments = len(pr_today.review_comments) - review_comments
+        delta_comments = len(pr.review_comments) - review_comments
         reviews = external_reviews_mask.sum()
-        for p in range(Property.WIP, Property.DONE + 1):
-            p = Property(p)
-            if p in props_time_machine:
-                props_today.add(p)
-            else:
-                try:
-                    props_today.remove(p)
-                except KeyError:
-                    pass
-        updated_at = pr_today.pr[PullRequest.updated_at.key]
+        updated_at = pr.pr[PullRequest.updated_at.key]
         assert updated_at == updated_at
-        if pr_today.labels.empty:
+        if pr.labels.empty:
             labels = None
         else:
             labels = [
                 Label(name=name, description=description, color=color)
                 for name, description, color in zip(
-                    pr_today.labels[PullRequestLabel.name.key].values,
-                    pr_today.labels[PullRequestLabel.description.key].values,
-                    pr_today.labels[PullRequestLabel.color.key].values,
-                )]
-        if pr_today.jiras.empty:
+                    pr.labels[PullRequestLabel.name.key].values,
+                    pr.labels[PullRequestLabel.description.key].values,
+                    pr.labels[PullRequestLabel.color.key].values,
+                )
+            ]
+        if pr.jiras.empty:
             jira = None
         else:
             jira = [
@@ -177,36 +180,39 @@ class PullRequestListMiner:
                                          labels=labels or None,
                                          type=itype)
                 for (key, title, epic, labels, itype) in zip(
-                    pr_today.jiras.index.values,
-                    pr_today.jiras[Issue.title.key].values,
-                    pr_today.jiras["epic"].values,
-                    pr_today.jiras[Issue.labels.key].values,
-                    pr_today.jiras[Issue.type.key].values,
+                    pr.jiras.index.values,
+                    pr.jiras[Issue.title.key].values,
+                    pr.jiras["epic"].values,
+                    pr.jiras[Issue.labels.key].values,
+                    pr.jiras[Issue.type.key].values,
                 )
             ]
         return PullRequestListItem(
-            repository=self._prefix + pr_today.pr[PullRequest.repository_full_name.key],
-            number=pr_today.pr[PullRequest.number.key],
-            title=pr_today.pr[PullRequest.title.key],
-            size_added=pr_today.pr[PullRequest.additions.key],
-            size_removed=pr_today.pr[PullRequest.deletions.key],
-            files_changed=pr_today.pr[PullRequest.changed_files.key],
-            created=pr_today.pr[PullRequest.created_at.key],
+            repository=self._prefix + pr.pr[PullRequest.repository_full_name.key],
+            number=pr.pr[PullRequest.number.key],
+            title=pr.pr[PullRequest.title.key],
+            size_added=pr.pr[PullRequest.additions.key],
+            size_removed=pr.pr[PullRequest.deletions.key],
+            files_changed=pr.pr[PullRequest.changed_files.key],
+            created=pr.pr[PullRequest.created_at.key],
             updated=updated_at,
-            closed=facts_today.closed,
-            comments=len(pr_today.comments) + delta_comments,
-            commits=len(pr_today.commits),
-            review_requested=facts_today.first_review_request_exact,
+            closed=facts_now.closed,
+            comments=len(pr.comments) + delta_comments,
+            commits=len(pr.commits),
+            review_requested=facts_now.first_review_request_exact,
             first_review=first_review,
-            approved=facts_today.approved,
+            approved=facts_now.approved,
             review_comments=review_comments,
             reviews=reviews,
-            merged=facts_today.merged,
-            released=facts_today.released,
-            release_url=pr_today.release[Release.url.key],
-            properties=props_today,
+            merged=facts_now.merged,
+            released=facts_now.released,
+            release_url=pr.release[Release.url.key],
+            events_now=events_now,
+            stages_now=stages_now,
+            events_time_machine=events_time_machine,
+            stages_time_machine=stages_time_machine,
             stage_timings=stage_timings,
-            participants=pr_today.participants(),
+            participants=pr.participants(),
             labels=labels,
             jira=jira,
         )
@@ -247,9 +253,59 @@ class PullRequestListMiner:
             stage_timings[k] = calc.peek
         return stage_timings
 
+    @sentry_span
+    def _calc_hard_events(self) -> Tuple[Dict[PullRequestEvent, Set[str]],
+                                         Dict[PullRequestEvent, Set[str]]]:
+        events_time_machine = {}
+        events_now = {}
+        dfs = self._dfs
+        time_from = np.datetime64(self._time_from.replace(tzinfo=None))
+        time_to = np.datetime64(self._time_to.replace(tzinfo=None))
+
+        index = dfs.commits.index.get_level_values(0).values
+        committed_date = dfs.commits[PullRequestCommit.committed_date.key].values
+        events_now[PullRequestEvent.COMMITTED] = set(index[committed_date == committed_date])
+        if self._with_time_machine:
+            events_time_machine[PullRequestEvent.COMMITTED] = \
+                set(index[(committed_date >= time_from) & (committed_date < time_to)])
+
+        prr_ulk = PullRequestReview.user_login.key
+        prr_sak = PullRequestReview.submitted_at.key
+        reviews = dfs.reviews[[prr_ulk, prr_sak]].droplevel(1)
+        original_reviews_index = reviews.index.values
+        reviews = reviews.join(dfs.prs[[PullRequest.user_login.key, PullRequest.closed_at.key]],
+                               rsuffix="_pr")
+        index = reviews.index.values
+        submitted_at = reviews[prr_sak].values
+        closed_at = reviews[PullRequest.closed_at.key].values
+        not_closed_mask = closed_at != closed_at
+        closed_at[not_closed_mask] = submitted_at[not_closed_mask]
+        mask = (
+            (submitted_at <= closed_at)
+            &
+            (reviews[prr_ulk].values != reviews[PullRequest.user_login.key + "_pr"].values)
+        )
+        events_now[PullRequestEvent.REVIEWED] = set(index[mask])
+        if self._with_time_machine:
+            mask &= (submitted_at >= time_from) & (submitted_at < time_to)
+            events_time_machine[PullRequestEvent.REVIEWED] = set(index[mask])
+
+        submitted_at = dfs.reviews[prr_sak].values
+        # no need to check submitted_at <= closed_at because GitHub disallows that
+        mask = dfs.reviews[PullRequestReview.state.key].values == \
+            ReviewResolution.CHANGES_REQUESTED.value
+        events_now[PullRequestEvent.CHANGES_REQUESTED] = set(original_reviews_index[mask])
+        if self._with_time_machine:
+            mask &= (submitted_at >= time_from) & (submitted_at < time_to)
+            events_time_machine[PullRequestEvent.CHANGES_REQUESTED] = \
+                set(original_reviews_index[mask])
+
+        return events_time_machine, events_now
+
     def __iter__(self) -> Generator[PullRequestListItem, None, None]:
         """Iterate over individual pull requests."""
         stage_timings = self._calc_stage_timings()
+        hard_events_time_machine, hard_events_now = self._calc_hard_events()
         facts = self._facts
         node_id_key = PullRequest.node_id.key
         for i, pr in enumerate(self._prs):
@@ -258,13 +314,15 @@ class PullRequestListMiner:
                 seconds = stage_timings[k][i]
                 if seconds is not None:
                     pr_stage_timings[k] = timedelta(seconds=seconds)
-            item = self._compile(pr, facts[pr.pr[node_id_key]], pr_stage_timings)
+            item = self._compile(pr, facts[pr.pr[node_id_key]], pr_stage_timings,
+                                 hard_events_time_machine, hard_events_now)
             if item is not None:
                 yield item
 
 
 @sentry_span
-async def filter_pull_requests(properties: Set[Property],
+async def filter_pull_requests(events: Set[PullRequestEvent],
+                               stages: Set[PullRequestStage],
                                time_from: datetime,
                                time_to: datetime,
                                repos: Set[str],
@@ -287,7 +345,7 @@ async def filter_pull_requests(properties: Set[Property],
     :param repos: List of repository names without the service prefix.
     """
     prs, _, _ = await _filter_pull_requests(
-        properties, time_from, time_to, repos, participants, labels, jira, exclude_inactive,
+        events, stages, time_from, time_to, repos, participants, labels, jira, exclude_inactive,
         release_settings, limit, mdb, pdb, cache)
     return prs
 
@@ -389,19 +447,20 @@ def _filter_by_jira_issue_types(prs: List[PullRequestListItem],
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, properties, participants, exclude_inactive, release_settings, **_: (  # noqa
+    key=lambda time_from, time_to, repos, events, stages, participants, exclude_inactive, release_settings, **_: (  # noqa
         time_from.timestamp(),
         time_to.timestamp(),
         ",".join(sorted(repos)),
-        ",".join(s.name.lower() for s in sorted(properties)),
+        ",".join(s.name.lower() for s in sorted(events)),
+        ",".join(s.name.lower() for s in sorted(stages)),
         sorted((k.name.lower(), sorted(v)) for k, v in participants.items()),
         exclude_inactive,
         release_settings,
     ),
     postprocess=_postprocess_filtered_prs,
-    version=2,
 )
-async def _filter_pull_requests(properties: Set[Property],
+async def _filter_pull_requests(events: Set[PullRequestEvent],
+                                stages: Set[PullRequestStage],
                                 time_from: datetime,
                                 time_to: datetime,
                                 repos: Set[str],
@@ -415,7 +474,8 @@ async def _filter_pull_requests(properties: Set[Property],
                                 pdb: databases.Database,
                                 cache: Optional[aiomcache.Client],
                                 ) -> Tuple[List[PullRequestListItem], LabelFilter, JIRAFilter]:
-    assert isinstance(properties, set)
+    assert isinstance(events, set)
+    assert isinstance(stages, set)
     assert isinstance(repos, set)
     log = logging.getLogger("%s.filter_pull_requests" % metadata.__package__)
     # required to efficiently use the cache with timezones
@@ -517,7 +577,7 @@ async def _filter_pull_requests(properties: Set[Property],
         log.info("total fact evals: %d", fact_evals)
 
     prs = await list_with_yield(
-        PullRequestListMiner(prs, facts, properties, time_from, time_to),
+        PullRequestListMiner(prs, pr_miner.dfs, facts, events, stages, time_from, time_to, True),
         "PullRequestListMiner.__iter__",
     )
 
@@ -600,7 +660,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
                 facts[node_id] = facts_miner(pr)
                 pdb_misses += 1
     miner = PullRequestListMiner(
-        prs, facts, set(Property), prs_df[PullRequest.created_at.key].nonemin(), now)
+        prs, dfs, facts, set(), set(), datetime(1970, 1, 1, tzinfo=timezone.utc), now, False)
     prs = await list_with_yield(miner, "PullRequestListMiner.__iter__")
     set_pdb_hits(pdb, "filter_pull_requests/facts", len(prs) - pdb_misses)
     set_pdb_misses(pdb, "filter_pull_requests/facts", pdb_misses)

@@ -9,9 +9,7 @@ import pandas as pd
 
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
-    Release
-from athenian.api.models.metadata.jira import Issue
+    PullRequestCommit, PullRequestReview, Release
 
 
 class ParticipationKind(IntEnum):
@@ -54,6 +52,31 @@ class Property(IntEnum):
     REJECTION_HAPPENED = auto()
     RELEASE_HAPPENED = auto()
     # events end
+
+
+class PullRequestEvent(IntEnum):
+    """PR's modelled lifecycle event."""
+
+    CREATED = auto()
+    COMMITTED = auto()
+    REVIEWED = auto()
+    APPROVED = auto()
+    REVIEW_REQUESTED = auto()
+    CHANGES_REQUESTED = auto()
+    MERGED = auto()
+    REJECTED = auto()
+    RELEASED = auto()
+
+
+class PullRequestStage(IntEnum):
+    """PR's modelled lifecycle stage."""
+
+    WIP = auto()
+    REVIEWING = auto()
+    MERGING = auto()
+    RELEASING = auto()
+    FORCE_PUSH_DROPPED = auto()
+    DONE = auto()
 
 
 @dataclass(frozen=True)
@@ -100,7 +123,10 @@ class PullRequestListItem:
     released: Optional[pd.Timestamp]
     release_url: str
     stage_timings: Dict[str, timedelta]
-    properties: Set[Property]
+    events_time_machine: Optional[Set[PullRequestEvent]]
+    stages_time_machine: Optional[Set[PullRequestStage]]
+    events_now: Set[PullRequestEvent]
+    stages_now: Set[PullRequestStage]
     participants: Participants
     labels: List[Label]
     jira: Optional[List[PullRequestJIRAIssueItem]]
@@ -153,44 +179,6 @@ class MinedPullRequest:
     def _extract_people(df: pd.DataFrame, col: str) -> Set[str]:
         values = df[col].values
         return set(values[np.where(values)[0]])
-
-    def truncate(self, dt: datetime, ignore=tuple()) -> "MinedPullRequest":
-        """
-        Create a copy of the PR data without timestamps bigger than or equal to `dt`.
-
-        :param ignore: Field names to not truncate.
-        """
-        pr = self.pr
-        assert pr[PullRequest.created_at.key] < dt
-        closed_at = pr[PullRequest.closed_at.key]
-        if closed_at is not None and closed_at >= dt:
-            pr = pr.copy()
-            pr[PullRequest.closed_at.key] = None
-            pr[PullRequest.merged_at.key] = None
-        # we ignore PullRequest.updated_at
-        release = self.release
-        published_at = release[Release.published_at.key]
-        if published_at is not None and published_at >= dt:
-            release = {k: None for k in release}
-        jiras = self.jiras
-        if not jiras.empty:
-            jira_indexes = np.where(jiras[Issue.created.key] < dt)[0]
-            if len(jira_indexes) < len(jiras):
-                jiras = jiras.take(jira_indexes)
-        dfs = {}
-        dt = np.datetime64(dt.replace(tzinfo=None))
-        for name, col in (("commits", PullRequestCommit.committed_date),
-                          ("review_requests", PullRequestReviewRequest.created_at),
-                          ("review_comments", PullRequestReviewComment.created_at),
-                          ("reviews", PullRequestReview.created_at),
-                          ("comments", PullRequestComment.created_at)):
-            df = getattr(self, name)  # type: pd.DataFrame
-            if name not in ignore:
-                left = np.where(df[col.key].values < dt)[0]
-                if len(left) < len(df):
-                    df = df.take(left)
-            dfs[name] = df
-        return MinedPullRequest(pr=pr, release=release, labels=self.labels, jiras=jiras, **dfs)
 
 
 T = TypeVar("T")

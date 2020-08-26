@@ -11,6 +11,7 @@ from athenian.api.controllers.features.histogram import calculate_histogram, His
 from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
+from athenian.api.tracing import sentry_span
 
 
 class MetricCalculator(Generic[T]):
@@ -252,6 +253,7 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
         return {k: v.histogram(scale, bins) for k, v in self._metrics.items()}
 
 
+@sentry_span
 def df_from_dataclasses(items: Iterable[Any], length: Optional[int] = None) -> pd.DataFrame:
     """Combine several dataclasses to a Pandas DataFrame."""
     columns = {}
