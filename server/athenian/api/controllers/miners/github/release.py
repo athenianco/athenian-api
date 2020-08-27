@@ -24,7 +24,8 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_precomputed_pr_releases, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_accelerated import extract_first_parents, \
-    extract_subdag, join_dags, mark_dag_access, mark_dag_parents, searchsorted_inrange
+    extract_subdag, join_dags, mark_dag_access, mark_dag_parents, partition_dag, \
+    searchsorted_inrange
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.github.users import mine_user_avatars
@@ -219,6 +220,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
     if not branches_matched:
         return dummy_releases_df()
     dags = await _fetch_precomputed_commit_history_dags(branches_matched, pdb, cache)
+
     cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date.key,
             Branch.repository_full_name.key)
     dags = await _fetch_repository_commits(dags, branches, cols, False, mdb, pdb, cache)
@@ -599,22 +601,30 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                                     repo: str,
                                     mdb: databases.Database,
                                     ) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
-    max_stops = 100
-    # Find all the top-level commit hashes.
-    unique_edges = np.unique(edges)
-    stop_heads = hashes[np.delete(np.arange(len(hashes)), unique_edges)]
-    if len(stop_heads) > max_stops:
-        rows = await mdb.fetch_all(select([NodeCommit.oid])
-                                   .where(NodeCommit.oid.in_(stop_heads))
-                                   .order_by(desc(NodeCommit.committed_date))
-                                   .limit(max_stops))
-        stop_heads = np.fromiter((r[0] for r in rows), dtype="U40", count=len(rows))
-    # We can still branch from an arbitrary point. Choose another random 100 nodes.
-    if len(unique_edges) >= max_stops:
-        stop_randoms = hashes[unique_edges[::len(unique_edges) // max_stops]]
+    max_stop_heads = 25
+    max_inner_partitions = 25
+    # Find max `max_stop_heads` top-level most recent commit hashes.
+    stop_heads = hashes[np.delete(np.arange(len(hashes)), np.unique(edges))]
+    if len(stop_heads) > 0:
+        if len(stop_heads) > max_stop_heads:
+            min_commit_time = datetime.now(timezone.utc) - timedelta(days=90)
+            rows = await mdb.fetch_all(select([NodeCommit.oid])
+                                       .where(and_(NodeCommit.oid.in_(stop_heads),
+                                                   NodeCommit.committed_date > min_commit_time))
+                                       .order_by(desc(NodeCommit.committed_date))
+                                       .limit(max_stop_heads))
+            stop_heads = np.fromiter((r[0] for r in rows), dtype="U40", count=len(rows))
+        first_parents = extract_first_parents(hashes, vertexes, edges, stop_heads, max_depth=1000)
+        # We can still branch from an arbitrary point. Choose `max_partitions` graph partitions.
+        if len(first_parents) >= max_inner_partitions:
+            step = len(first_parents) // max_inner_partitions
+            partition_seeds = first_parents[:max_inner_partitions * step:step]
+        else:
+            partition_seeds = first_parents
+        partition_seeds = np.concatenate([stop_heads, partition_seeds])
+        stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds)
     else:
-        stop_randoms = hashes[unique_edges]
-    stop_hashes = np.concatenate([stop_heads, stop_randoms])
+        stop_hashes = []
     batch_size = 20
     while len(head_hashes) > 0:
         new_edges = await _fetch_commit_history_edges(head_ids[:batch_size], stop_hashes, mdb)
@@ -661,7 +671,8 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
                         INNER JOIN commit_history h ON h.parent = p.parent_id
                         LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
                         LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-                WHERE pc.oid NOT IN ('{"', '".join(stop_hashes)}')
+                WHERE     pc.oid NOT IN ('{"', '".join(stop_hashes)}')
+                      AND p.parent_id NOT IN ('{"', '".join(commit_ids)}')
         ) SELECT
             child_oid,
             parent_oid,

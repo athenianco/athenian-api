@@ -235,7 +235,9 @@ def mark_dag_parents(hashes: np.ndarray,
     if len(hashes) == 0:
         return np.array([], dtype=int)
     # we cannot sort heads because the order is important
-    heads = searchsorted_inrange(hashes, heads).astype(np.uint32)
+    found_heads = searchsorted_inrange(hashes, heads)
+    found_heads[hashes[found_heads] != heads] = len(vertexes)
+    heads = found_heads.astype(np.uint32)
     timestamps = timestamps.view(np.uint64)
     parents = np.zeros_like(heads, dtype=np.int64)
     _mark_dag_parents(vertexes, edges, heads, timestamps, parents)
@@ -254,7 +256,7 @@ cdef void _mark_dag_parents(const uint32_t[:] vertexes,
     cdef int64_t i, j, max_stop
     cdef unordered_map[uint32_t, int64_t] stops
     cdef unordered_map[uint32_t, int64_t].iterator stop_it
-    cdef vector[char] visited = vector[char](len(vertexes))
+    cdef vector[char] visited = vector[char](len(vertexes) - 1)
     cdef vector[uint32_t] boilerplate
     for i in range(len(heads)):
         head = heads[i]
@@ -263,7 +265,7 @@ cdef void _mark_dag_parents(const uint32_t[:] vertexes,
     for i in range(len(heads)):
         head = heads[i]
         if head == not_found:
-            parents[head] = not_found
+            parents[i] = len(heads)
             continue
         head_timestamp = timestamps[i]
         max_stop = len(heads)
@@ -294,11 +296,13 @@ cdef void _mark_dag_parents(const uint32_t[:] vertexes,
 def extract_first_parents(hashes: np.ndarray,
                           vertexes: np.ndarray,
                           edges: np.ndarray,
-                          heads: np.ndarray) -> np.ndarray:
+                          heads: np.ndarray,
+                          max_depth: int = 0) -> np.ndarray:
     heads = np.sort(heads)
-    heads = searchsorted_inrange(hashes, heads).astype(np.uint32)
+    found_heads = searchsorted_inrange(hashes, heads)
+    heads = found_heads[hashes[found_heads] == heads].astype(np.uint32)
     first_parents = np.zeros_like(hashes, dtype=np.bool_)
-    _extract_first_parents(vertexes, edges, heads, first_parents)
+    _extract_first_parents(vertexes, edges, heads, max_depth, first_parents)
     return hashes[first_parents]
 
 
@@ -307,14 +311,66 @@ def extract_first_parents(hashes: np.ndarray,
 cdef void _extract_first_parents(const uint32_t[:] vertexes,
                                  const uint32_t[:] edges,
                                  const uint32_t[:] heads,
+                                 int max_depth,
                                  char[:] first_parents) nogil:
     cdef uint32_t head
-    cdef int i
+    cdef int i, depth
     for i in range(len(heads)):
         head = heads[i]
+        depth = 0
         while not first_parents[head]:
             first_parents[head] = 1
+            depth += 1
+            if max_depth > 0 and depth >= max_depth:
+                break
             if vertexes[head + 1] > vertexes[head]:
                 head = edges[vertexes[head]]
             else:
                 break
+
+
+def partition_dag(hashes: np.ndarray,
+                  vertexes: np.ndarray,
+                  edges: np.ndarray,
+                  seeds: np.ndarray) -> np.ndarray:
+    seeds = np.sort(seeds)
+    found_seeds = searchsorted_inrange(hashes, seeds)
+    seeds = found_seeds[hashes[found_seeds] == seeds].astype(np.uint32)
+    borders = np.zeros_like(hashes, dtype=np.bool_)
+    _partition_dag(vertexes, edges, seeds, borders)
+    return hashes[borders]
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _partition_dag(const uint32_t[:] vertexes,
+                         const uint32_t[:] edges,
+                         const uint32_t[:] heads,
+                         char[:] borders) nogil:
+    cdef vector[uint32_t] boilerplate
+    cdef vector[char] visited = vector[char](len(vertexes) - 1)
+    cdef int i, v
+    cdef uint32_t head, edge, peek, j
+    for i in range(len(heads)):
+        head = heads[i]
+        # traverse the DAG from top to bottom, marking the visited nodes
+        memset(visited.data(), 0, visited.size())
+        boilerplate.push_back(head)
+        while not boilerplate.empty():
+            peek = boilerplate.back()
+            boilerplate.pop_back()
+            if visited[peek]:
+                continue
+            visited[peek] = 1
+            for j in range(vertexes[peek], vertexes[peek + 1]):
+                edge = edges[j]
+                if not visited[edge]:
+                    boilerplate.push_back(edge)
+        # include every visited node with back edges from non-visited nodes in the partition_dag
+        for v in range(len(vertexes) - 1):
+            if visited[v]:
+                continue
+            for j in range(vertexes[v], vertexes[v + 1]):
+                edge = edges[j]
+                if visited[edge]:
+                    borders[edge] = 1
