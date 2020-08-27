@@ -622,6 +622,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
         else:
             partition_seeds = first_parents
         partition_seeds = np.concatenate([stop_heads, partition_seeds])
+        # the expansion factor is ~6x, so 2 * 25 -> 300
         stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds)
     else:
         stop_hashes = []
