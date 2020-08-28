@@ -339,3 +339,10 @@ class Bot(Base):
 
 class NodeRepositoryRef(Base, ParentChildMixin):
     __tablename__ = "github_node_repository_refs"
+
+
+class NodePullRequestJiraIssues(Base, IDMixin):
+    __tablename__ = "github.node_pull_request_jira_issues"
+
+    jira_acc = Column(BigInteger, nullable=False)
+    jira_id = Column(Text, nullable=False)

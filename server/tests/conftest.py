@@ -38,7 +38,8 @@ from athenian.api import AthenianApp, check_collation, create_memcached, hack_sq
     hack_sqlite_hstore, ParallelDatabase, patch_pandas, setup_cache_metrics
 from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
-from athenian.api.models.metadata.github import Base as MetadataBase, PullRequest
+from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
+from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.precomputed.models import Base as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
 from tests.sample_db_data import fill_metadata_session, fill_state_session
@@ -273,7 +274,8 @@ def metadata_db() -> str:
         metadata_db_path = db_dir / "mdb.sqlite"
         conn_str = "sqlite:///%s" % metadata_db_path
     engine = create_engine(conn_str)
-    MetadataBase.metadata.create_all(engine)
+    GithubBase.metadata.create_all(engine)
+    JiraBase.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     if session.query(func.count(PullRequest.node_id)).one()[0] == 0:
         try:
