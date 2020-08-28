@@ -219,7 +219,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
     branches_matched = _match_branches_by_release_settings(branches, default_branches, settings)
     if not branches_matched:
         return dummy_releases_df()
-    dags = await _fetch_precomputed_commit_history_dags(branches_matched, pdb, cache)
+    dags = await fetch_precomputed_commit_history_dags(branches_matched, pdb, cache)
     cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date.key,
             Branch.repository_full_name.key)
     dags = await _fetch_repository_commits(dags, branches, cols, False, mdb, pdb, cache)
@@ -469,13 +469,14 @@ async def _fetch_labels(node_ids: Iterable[str], mdb: databases.Database) -> Dic
     deserialize=pickle.loads,
     key=lambda repos, **_: (",".join(sorted(repos)),),
 )
-async def _fetch_precomputed_commit_history_dags(
+async def fetch_precomputed_commit_history_dags(
         repos: Iterable[str],
         pdb: databases.Database,
         cache: Optional[aiomcache.Client],
 ) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Load commit DAGs from the pdb."""
     ghrc = GitHubCommitHistory
-    with sentry_sdk.start_span(op="_fetch_precomputed_commit_history_dags/pdb"):
+    with sentry_sdk.start_span(op="fetch_precomputed_commit_history_dags/pdb"):
         rows = await pdb.fetch_all(
             select([ghrc.repository_full_name, ghrc.dag])
             .where(and_(
@@ -499,8 +500,8 @@ async def load_commit_dags(releases: pd.DataFrame,
                            cache: Optional[aiomcache.Client],
                            ) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """Produce the commit history DAGs which should contain the specified releases."""
-    pdags = await _fetch_precomputed_commit_history_dags(
-        releases[Release.repository_full_name.key].values, pdb, cache)
+    pdags = await fetch_precomputed_commit_history_dags(
+        releases[Release.repository_full_name.key].unique(), pdb, cache)
     cols = (Release.sha.key, Release.commit_id.key, Release.published_at.key,
             Release.repository_full_name.key)
     return await _fetch_repository_commits(pdags, releases, cols, False, mdb, pdb, cache)
@@ -784,7 +785,7 @@ async def map_releases_to_prs(repos: Collection[str],
     tasks = [
         _find_releases_for_matching_prs(repos, branches, default_branches, time_from, time_to,
                                         release_settings, mdb, pdb, cache),
-        _fetch_precomputed_commit_history_dags(repos, pdb, cache),
+        fetch_precomputed_commit_history_dags(repos, pdb, cache),
     ]
     matching_releases, pdags = await asyncio.gather(*tasks, return_exceptions=True)
     for r in (matching_releases, pdags):
