@@ -26,8 +26,8 @@ from athenian.api.controllers.miners.github.precomputed_prs import discover_unre
     store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner, ReviewResolution
-from athenian.api.controllers.miners.github.release import dummy_releases_df, load_commit_dags, \
-    load_releases
+from athenian.api.controllers.miners.github.release import dummy_releases_df, \
+    fetch_precomputed_commit_history_dags, load_commit_dags, load_releases
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, Participants, \
     Property, PullRequestFacts, PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting
@@ -440,7 +440,8 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
                 raise r from None
     else:
         releases, matched_bys, unreleased = dummy_releases_df(), {}, {}
-        dags = {}
+        dags = await fetch_precomputed_commit_history_dags(
+            prs_df[PullRequest.repository_full_name.key].unique(), pdb, cache)
     dfs, _ = await PullRequestMiner.mine_by_ids(
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
         release_settings, mdb, pdb, cache)
