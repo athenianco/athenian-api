@@ -828,6 +828,17 @@ def test_extract_subdag_smoke():
     assert (new_edges == np.array([2, 0], dtype=np.uint32)).all()
 
 
+def test_extract_subdag_empty():
+    hashes = np.array([], dtype="U40")
+    vertexes = np.array([0], dtype=np.uint32)
+    edges = np.array([], dtype=np.uint32)
+    heads = np.array(["61a719e0ff7522cc0d129acb3b922c94a8a5dbca"], dtype="U40")
+    new_hashes, new_vertexes, new_edges = extract_subdag(hashes, vertexes, edges, heads)
+    assert len(new_hashes) == 0
+    assert (new_vertexes == vertexes).all()
+    assert len(new_edges) == 0
+
+
 def test_join_dags_smoke():
     hashes = np.array(["308a9f90707fb9d12cbcd28da1bc33da436386fe",
                        "33cafc14532228edca160e46af10341a8a632e3e",
@@ -872,6 +883,16 @@ def test_mark_dag_access_smoke():
     assert (marks == np.array([1, 0, 1, 1], dtype=np.int64)).all()
 
 
+def test_mark_dag_access_empty():
+    hashes = np.array([], dtype="U40")
+    vertexes = np.array([0], dtype=np.uint32)
+    edges = np.array([], dtype=np.uint32)
+    heads = np.array(["33cafc14532228edca160e46af10341a8a632e3e",
+                      "61a719e0ff7522cc0d129acb3b922c94a8a5dbca"], dtype="U40")
+    marks = mark_dag_access(hashes, vertexes, edges, heads)
+    assert len(marks) == 0
+
+
 async def test_partition_dag(dag):
     hashes, vertexes, edges = dag["src-d/go-git"]
     p = partition_dag(hashes, vertexes, edges, ["ad9456267524e08efcf4486cadfb6cef8d182677"])
@@ -879,6 +900,14 @@ async def test_partition_dag(dag):
     p = partition_dag(hashes, vertexes, edges, ["7cd021554eb318165dd28988fe1675a5e5c32601"])
     assert p.tolist() == ["7cd021554eb318165dd28988fe1675a5e5c32601",
                           "ced875aec7bef9113e1c37b1b811a59e17dbd138"]
+
+
+def test_partition_dag_empty():
+    hashes = np.array([], dtype="U40")
+    vertexes = np.array([0], dtype=np.uint32)
+    edges = np.array([], dtype=np.uint32)
+    p = partition_dag(hashes, vertexes, edges, ["ad9456267524e08efcf4486cadfb6cef8d182677"])
+    assert len(p) == 0
 
 
 async def test__fetch_commit_history_dag_stops(mdb, dag):
@@ -918,6 +947,30 @@ async def test_mark_dag_parents_smoke(
                         18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 34, 53,
                         35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 53, 47, 48, 49, 50, 51,
                         52, 53]).all()
+
+
+async def test_mark_dag_parents_empty(
+        branches, default_branches, mdb, pdb, release_match_setting_tag, dag):
+    hashes, vertexes, edges = dag["src-d/go-git"]
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
+    releases, matched_bys = await load_releases(
+        ["src-d/go-git"],
+        branches, default_branches,
+        time_from,
+        time_to,
+        release_match_setting_tag,
+        mdb,
+        pdb,
+        None,
+    )
+    release_hashes = releases[Release.sha.key].values
+    release_dates = releases[Release.published_at.key].values
+    hashes = np.array([], dtype="U40")
+    vertexes = np.array([0], dtype=np.uint32)
+    edges = np.array([], dtype=np.uint32)
+    parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates)
+    assert len(parents) == 0
 
 
 @with_defer

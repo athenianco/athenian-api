@@ -25,9 +25,12 @@ def extract_subdag(hashes: np.ndarray,
     assert len(vertexes) == len(hashes) + 1
     if len(hashes) == 0:
         return hashes, vertexes, edges
-    heads = np.sort(heads)
-    existing_heads = searchsorted_inrange(hashes, heads)
-    existing_heads = existing_heads[hashes[existing_heads] == heads].astype(np.uint32)
+    if len(hashes):
+        heads = np.sort(heads)
+        existing_heads = searchsorted_inrange(hashes, heads)
+        existing_heads = existing_heads[hashes[existing_heads] == heads].astype(np.uint32)
+    else:
+        existing_heads = np.array([], dtype=np.uint32)
     left_vertexes_map = np.zeros_like(vertexes, shape=len(hashes))
     left_vertexes = np.zeros_like(vertexes)
     left_edges = np.zeros_like(edges)
@@ -192,8 +195,12 @@ def mark_dag_access(hashes: np.ndarray,
     # we cannot sort heads because the order is important
     existing_heads = searchsorted_inrange(hashes, heads)
     missing_flag = len(heads)  # mark unmatched commits with this value
-    flags = np.where(hashes[existing_heads] == heads)[0]
-    heads = existing_heads[flags].astype(np.uint32)
+    if len(hashes):
+        flags = np.where(hashes[existing_heads] == heads)[0]
+        heads = existing_heads[flags].astype(np.uint32)
+    else:
+        flags = np.array([], dtype=int)
+        heads = np.array([], dtype=np.uint32)
     marked = np.full(len(hashes), missing_flag, int)
     _mark_dag_access(vertexes, edges, heads, flags, missing_flag, marked)
     return marked
@@ -235,8 +242,11 @@ def mark_dag_parents(hashes: np.ndarray,
     if len(hashes) == 0:
         return np.array([], dtype=int)
     # we cannot sort heads because the order is important
-    found_heads = searchsorted_inrange(hashes, heads)
-    found_heads[hashes[found_heads] != heads] = len(vertexes)
+    if len(hashes):
+        found_heads = searchsorted_inrange(hashes, heads)
+        found_heads[hashes[found_heads] != heads] = len(vertexes)
+    else:
+        found_heads = np.full(len(heads), len(vertexes), int)
     heads = found_heads.astype(np.uint32)
     timestamps = timestamps.view(np.uint64)
     parents = np.zeros_like(heads, dtype=np.int64)
@@ -299,8 +309,11 @@ def extract_first_parents(hashes: np.ndarray,
                           heads: np.ndarray,
                           max_depth: int = 0) -> np.ndarray:
     heads = np.sort(heads)
-    found_heads = searchsorted_inrange(hashes, heads)
-    heads = found_heads[hashes[found_heads] == heads].astype(np.uint32)
+    if len(hashes):
+        found_heads = searchsorted_inrange(hashes, heads)
+        heads = found_heads[hashes[found_heads] == heads].astype(np.uint32)
+    else:
+        heads = np.array([], dtype=np.uint32)
     first_parents = np.zeros_like(hashes, dtype=np.bool_)
     _extract_first_parents(vertexes, edges, heads, max_depth, first_parents)
     return hashes[first_parents]
@@ -334,8 +347,11 @@ def partition_dag(hashes: np.ndarray,
                   edges: np.ndarray,
                   seeds: np.ndarray) -> np.ndarray:
     seeds = np.sort(seeds)
-    found_seeds = searchsorted_inrange(hashes, seeds)
-    seeds = found_seeds[hashes[found_seeds] == seeds].astype(np.uint32)
+    if len(hashes):
+        found_seeds = searchsorted_inrange(hashes, seeds)
+        seeds = found_seeds[hashes[found_seeds] == seeds].astype(np.uint32)
+    else:
+        seeds = np.array([], dtype=np.uint32)
     borders = np.zeros_like(hashes, dtype=np.bool_)
     _partition_dag(vertexes, edges, seeds, borders)
     return hashes[borders]
