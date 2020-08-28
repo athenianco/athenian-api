@@ -1062,11 +1062,12 @@ async def mine_releases(repos: Iterable[str],
         PushCommit.author_login,
         PushCommit.node_id,
     ]
-    commits_df = await read_sql_query(
-        select(commits_df_columns)
-        .where(PushCommit.sha.in_(np.concatenate(all_hashes) if all_hashes else []))
-        .order_by(PushCommit.sha),
-        mdb, commits_df_columns, index=PushCommit.sha.key)
+    with sentry_sdk.start_span(op="fetch_commits"):
+        commits_df = await read_sql_query(
+            select(commits_df_columns)
+            .where(PushCommit.sha.in_(np.concatenate(all_hashes) if all_hashes else []))
+            .order_by(PushCommit.sha),
+            mdb, commits_df_columns, index=PushCommit.sha.key)
     commits_index = commits_df.index.values.astype("U40")
     commit_ids = commits_df[PushCommit.node_id.key].values
     commits_additions = commits_df[PushCommit.additions.key].values
@@ -1080,11 +1081,12 @@ async def mine_releases(repos: Iterable[str],
         PullRequest.deletions,
         PullRequest.user_login,
     ]
-    prs_df = await read_sql_query(
-        select(prs_columns)
-        .where(PullRequest.merge_commit_id.in_(commit_ids))
-        .order_by(PullRequest.merge_commit_id),
-        mdb, prs_columns)
+    with sentry_sdk.start_span(op="fetch_pull_requests"):
+        prs_df = await read_sql_query(
+            select(prs_columns)
+            .where(PullRequest.merge_commit_id.in_(commit_ids))
+            .order_by(PullRequest.merge_commit_id),
+            mdb, prs_columns)
     prs_commit_ids = prs_df[PullRequest.merge_commit_id.key].values.astype("U")
     prs_authors = prs_df[PullRequest.user_login.key]
     not_null_mask = ~prs_authors.isnull()
