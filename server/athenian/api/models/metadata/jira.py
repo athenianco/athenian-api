@@ -1,4 +1,4 @@
-from sqlalchemy import ARRAY, BigInteger, Boolean, Column, JSON, Text, TIMESTAMP
+from sqlalchemy import ARRAY, BigInteger, Boolean, Column, Text, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 
 
@@ -26,7 +26,7 @@ class Issue(Base):
     title = Column(Text, nullable=False)
     type = Column(Text, nullable=False)
     status = Column(Text)
-    labels = ARRAY(Text).with_variant(JSON, "sqlite")
+    labels = Column(ARRAY(Text))
     epic_id = Column(BigInteger)
     created = Column(TIMESTAMP(timezone=True), nullable=False)
     updated = Column(TIMESTAMP(timezone=True), nullable=False)
