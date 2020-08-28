@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from athenian.api import metadata, setup_context
-from athenian.api.models.metadata.github import Base
+from athenian.api.models.metadata import github, jira
 from athenian.api.slogging import setup as setup_logging
 
 
@@ -17,26 +17,29 @@ def main() -> int:
     log = logging.getLogger("%s.metadata" % metadata.__package__)
     setup_context(log)
     engine = create_engine(sys.argv[1])
-    log.info("Checking the metadata schema...\n")
+    log.info("Checking the metadata schema...")
     errors = []
-    for model in Base._decl_class_registry.values():
-        session = sessionmaker(bind=engine)()
-        try:
+    for module in github, jira:
+        for model in module.Base._decl_class_registry.values():
+            session = sessionmaker(bind=engine)()
             try:
-                model.__name__, model.__tablename__
-            except AttributeError:
-                continue
-            try:
-                session.query(model).first()
-            except Exception as e:
-                errors.append((model, traceback.format_exc()))
-                sentry_sdk.capture_exception(e)
-                status = "❌"
-            else:
-                status = "✔️"
-            log.info("%s  github.%s / %s" % (status, model.__name__, model.__tablename__))
-        finally:
-            session.close()
+                try:
+                    table = model.__table__
+                except AttributeError:
+                    continue
+                try:
+                    session.query(model).first()
+                except Exception as e:
+                    errors.append((model, traceback.format_exc()))
+                    sentry_sdk.capture_exception(e)
+                    status = "❌"
+                else:
+                    status = "✔️"
+                log.info("%s  %s.%s / %s%s",
+                         status, module.__name__.rsplit(".", 1)[1], model.__name__,
+                         (table.schema + ".") if table.schema is not None else "", table.name)
+            finally:
+                session.close()
     for model, exc in errors:
         log.info("=" * 80)
         log.info("github.%s / %s\n" % (model.__name__, model.__tablename__))

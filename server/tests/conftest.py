@@ -3,6 +3,7 @@ import base64
 from collections import defaultdict
 from contextvars import ContextVar
 from datetime import datetime, timezone
+from itertools import chain
 import logging
 import os
 from pathlib import Path
@@ -274,6 +275,15 @@ def metadata_db() -> str:
         metadata_db_path = db_dir / "mdb.sqlite"
         conn_str = "sqlite:///%s" % metadata_db_path
     engine = create_engine(conn_str)
+    if engine.url.drivername == "postgresql":
+        engine.execute("CREATE SCHEMA IF NOT EXISTS github;")
+        engine.execute("CREATE SCHEMA IF NOT EXISTS jira;")
+    else:
+        for table in chain(GithubBase.metadata.tables.values(),
+                           JiraBase.metadata.tables.values()):
+            if table.schema is not None:
+                table.name = ".".join([table.schema, table.name])
+                table.schema = None
     GithubBase.metadata.create_all(engine)
     JiraBase.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
