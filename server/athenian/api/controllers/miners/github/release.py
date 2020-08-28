@@ -220,7 +220,6 @@ async def _match_releases_by_branch(repos: Iterable[str],
     if not branches_matched:
         return dummy_releases_df()
     dags = await _fetch_precomputed_commit_history_dags(branches_matched, pdb, cache)
-
     cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date.key,
             Branch.repository_full_name.key)
     dags = await _fetch_repository_commits(dags, branches, cols, False, mdb, pdb, cache)
@@ -1045,8 +1044,15 @@ async def mine_releases(repos: Iterable[str],
         order = np.argsort(ownership)
         sorted_hashes = hashes[order]
         sorted_ownership = ownership[order]
-        grouped_owned_hashes = np.split(
-            sorted_hashes, np.cumsum(np.unique(sorted_ownership, return_counts=True)[1])[:-1])
+        unique_owners, unique_owned_counts = np.unique(sorted_ownership, return_counts=True)
+        grouped_owned_hashes = np.split(sorted_hashes, np.cumsum(unique_owned_counts)[:-1])
+        # fill the gaps for releases with 0 owned commits
+        series = np.arange(len(repo_releases))
+        ssis = np.searchsorted(unique_owners, series)
+        missing = ssis[unique_owners[ssis] != series]
+        grouped_owned_hashes = np.insert(grouped_owned_hashes,
+                                         missing,
+                                         [np.array([], dtype="U40")] * len(missing))
         all_hashes.append(hashes)
         repo_releases_analyzed[repo] = repo_releases, grouped_owned_hashes, parents
     commits_df_columns = [
@@ -1112,8 +1118,13 @@ async def mine_releases(repos: Iterable[str],
                 my_deletions = commits_deletions[found_indexes].sum()
                 my_authors = commits_authors[found_indexes]
                 my_commit_ids = commit_ids[found_indexes]
-                my_prs_indexes = searchsorted_inrange(prs_commit_ids, my_commit_ids)
-                my_prs_indexes = my_prs_indexes[prs_commit_ids[my_prs_indexes] == my_commit_ids]
+                if len(prs_commit_ids):
+                    my_prs_indexes = searchsorted_inrange(prs_commit_ids, my_commit_ids)
+                    if len(my_prs_indexes):
+                        my_prs_indexes = my_prs_indexes[
+                            prs_commit_ids[my_prs_indexes] == my_commit_ids]
+                else:
+                    my_prs_indexes = np.array([], dtype=int)
                 my_prs = pd.DataFrame(dict(zip(
                     [c.key for c in prs_columns[1:]],
                     [prs_numbers[my_prs_indexes],
