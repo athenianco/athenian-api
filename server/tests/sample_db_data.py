@@ -1,4 +1,5 @@
 import datetime
+from itertools import chain
 from lzma import LZMAFile
 import os
 from pathlib import Path
@@ -7,14 +8,17 @@ from sqlalchemy.cprocessors import str_to_date, str_to_datetime
 import sqlalchemy.orm
 
 from athenian.api.controllers import invitation_controller
-from athenian.api.models.metadata.github import Base, PullRequest, PushCommit
+from athenian.api.models.metadata.github import Base as GithubBase, PullRequest, PushCommit
+from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubInstallation, \
     Feature, FeatureComponent, Invitation, RepositorySet, UserAccount
 
 
 def fill_metadata_session(session: sqlalchemy.orm.Session):
     models = {}
-    for cls in Base._decl_class_registry.values():
+    tables = {**GithubBase.metadata.tables, **JiraBase.metadata.tables}
+    for cls in chain(GithubBase._decl_class_registry.values(),
+                     JiraBase._decl_class_registry.values()):
         table = getattr(cls, "__table__", None)
         if table is not None:
             models[table.fullname] = cls
@@ -38,7 +42,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                     table = table[7:]
                 model = models[table]
                 columns = {}
-                for c in Base.metadata.tables[table].columns:
+                for c in tables[table].columns:
                     pt = c.type.python_type
                     if pt is datetime.date:
                         ctor = str_to_date
