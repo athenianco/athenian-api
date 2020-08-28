@@ -212,6 +212,7 @@ class AthenianApp(connexion.AioHttpApp):
         super().__init__(__package__, specification_dir=specification_dir, options=options,
                          server_args={"client_max_size": 256 * 1024})
         self.api_cls = ExactServersAioHttpApi
+        self._devenv = os.getenv("SENTRY_ENV", "development") == "development"
         invitation_controller.validate_env()
         self.app["auth"] = self._auth0 = auth0_cls(whitelist=[
             r"/v1/openapi.json$",
@@ -378,7 +379,8 @@ class AthenianApp(connexion.AioHttpApp):
         except ResponseError as e:
             return e.response
         finally:
-            await wait_deferred()
+            if self._devenv:
+                await wait_deferred()
             self._requests -= 1
             if self._requests == 0 and self._shutting_down:
                 asyncio.ensure_future(self._raise_graceful_exit())
