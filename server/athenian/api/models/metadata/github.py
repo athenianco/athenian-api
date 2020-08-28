@@ -342,7 +342,8 @@ class NodeRepositoryRef(Base, ParentChildMixin):
 
 
 class NodePullRequestJiraIssues(Base, IDMixin):
-    __tablename__ = "github.node_pull_request_jira_issues"
+    __tablename__ = "node_pull_request_jira_issues"
+    __table_args__ = {"schema": "github"}
 
     jira_acc = Column(BigInteger, nullable=False)
     jira_id = Column(Text, nullable=False)

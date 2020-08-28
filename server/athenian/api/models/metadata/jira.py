@@ -3,10 +3,11 @@ from sqlalchemy.ext.declarative import declarative_base
 
 
 Base = declarative_base()
+Base.__table_args__ = {"schema": "jira"}
 
 
 class Epic(Base):
-    __tablename__ = "jira.epic"
+    __tablename__ = "epic"
 
     acc_id = Column(BigInteger, primary_key=True)
     id = Column(BigInteger, primary_key=True)
@@ -17,7 +18,7 @@ class Epic(Base):
 
 
 class Issue(Base):
-    __tablename__ = "jira.issue"
+    __tablename__ = "issue"
 
     acc_id = Column(BigInteger, primary_key=True)
     id = Column(BigInteger, primary_key=True)
