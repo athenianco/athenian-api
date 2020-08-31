@@ -21,8 +21,6 @@ class JIRAEpic(Model):
         "children": "children",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         id: Optional[str] = None,
@@ -41,6 +39,10 @@ class JIRAEpic(Model):
         self._title = title
         self._updated = updated
         self._children = children
+
+    def __lt__(self, other: "JIRAEpic") -> bool:
+        """Support sorting."""
+        return self._id < other._id
 
     @property
     def id(self) -> str:

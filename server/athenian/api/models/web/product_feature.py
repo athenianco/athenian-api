@@ -8,7 +8,6 @@ class ProductFeature(Model):
 
     openapi_types = {"name": str, "parameters": object}
     attribute_map = {"name": "name", "parameters": "parameters"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, name: Optional[str] = None, parameters: Optional[dict] = None):
         """ProductFeature - a model defined in OpenAPI

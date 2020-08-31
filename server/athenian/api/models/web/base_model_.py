@@ -1,3 +1,4 @@
+from abc import ABCMeta
 import pprint
 import typing
 
@@ -6,8 +7,39 @@ from athenian.api import serialization, typing_utils
 T = typing.TypeVar("T")
 
 
-class Model:
-    """Base API model class. Handles object -> {} and {} -> object transformations."""
+class Slots(ABCMeta):
+    """Set __slots__ according to the declared `openapi_types`."""
+
+    def __new__(mcs, name, bases, dikt):
+        """Insert __slots__ to the class' __dict__."""
+        try:
+            openapi_types = dikt["openapi_types"]
+        except KeyError:
+            for base in bases:
+                try:
+                    openapi_types = base.openapi_types
+                except AttributeError:
+                    continue
+                else:
+                    break
+        dikt["__slots__"] = ["_" + k for k in openapi_types]
+        return type.__new__(mcs, name, bases, dikt)
+
+    def __instancecheck__(cls, instance):
+        """Override for isinstance(instance, cls)."""
+        return type.__instancecheck__(cls, instance)
+
+    def __subclasscheck__(cls, subclass):
+        """Override for issubclass(subclass, cls)."""
+        return type.__subclasscheck__(cls, subclass)
+
+
+class Model(metaclass=Slots):
+    """
+    Base API model class. Handles object -> {} and {} -> object transformations.
+
+    Ojo: you should not rename the file to stay compatible with the generated code.
+    """
 
     # openapiTypes: The key is attribute name and the
     # value is attribute type.
@@ -65,20 +97,26 @@ class Model:
 
     def __eq__(self, other):
         """Returns true if both objects are equal."""
-        return self.__dict__ == other.__dict__
+        slots = self.__slots__
+        return {k: getattr(self, k) for k in slots} == {k: getattr(other, k) for k in slots}
 
     def __ne__(self, other):
         """Returns true if both objects are not equal."""
         return not self == other
 
 
-class Enum(type):
+class Enum(Slots):
     """Trivial enumeration metaclass."""
 
-    def __init__(cls, name, bases, attrs):
+    def __new__(mcs, name, bases, dikt):
+        """Override Slots.__new__."""
+        dikt["__slots__"] = []
+        return type.__new__(mcs, name, bases, dikt)
+
+    def __init__(cls, name, bases, dikt):
         """Initialize a new enumeration class type."""
-        super().__init__(name, bases, attrs)
-        cls.__members = set(v for k, v in attrs.items() if not k.startswith("__"))
+        super().__init__(name, bases, dikt)
+        cls.__members = set(v for k, v in dikt.items() if not k.startswith("__"))
 
     def __iter__(cls) -> typing.Iterable[str]:
         """Iterate the enum members."""

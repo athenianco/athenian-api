@@ -6,7 +6,6 @@ class Versions(Model):
 
     openapi_types = {"api": str}
     attribute_map = {"api": "api"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, api: str = None):
         """Versions - a model defined in OpenAPI

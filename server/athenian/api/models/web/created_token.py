@@ -8,7 +8,6 @@ class CreatedToken(Model):
 
     openapi_types = {"id": int, "token": str}
     attribute_map = {"id": "id", "token": "token"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, id: Optional[int] = None, token: Optional[str] = None):
         """CreatedToken - a model defined in OpenAPI

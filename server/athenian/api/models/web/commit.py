@@ -29,8 +29,6 @@ class Commit(Model):
         "files_changed": "files_changed",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         repository: Optional[str] = None,

@@ -182,7 +182,7 @@ async def _load_account_reposets(account: int,
 
     def raise_no_source_data():
         raise ResponseError(NoSourceDataError(
-            detail="The metadata installation has not registered yet."))
+            detail="The primary metadata application has not been installed yet."))
 
     try:
         async with sdb_conn.transaction():

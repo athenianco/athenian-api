@@ -22,8 +22,6 @@ class ForSet(Model):
         "jira": "jira",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         repositories: Optional[List[str]] = None,

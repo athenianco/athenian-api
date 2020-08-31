@@ -26,8 +26,6 @@ class RepositorySetListItem(Model):
         "items_count": "items_count",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         id: Optional[int] = None,

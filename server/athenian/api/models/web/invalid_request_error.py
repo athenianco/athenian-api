@@ -10,7 +10,6 @@ class InvalidRequestError(GenericError):
     openapi_types["pointer"] = str
     attribute_map = GenericError.attribute_map.copy()
     attribute_map["pointer"] = "pointer"
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(
         self,

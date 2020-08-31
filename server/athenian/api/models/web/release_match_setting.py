@@ -21,8 +21,6 @@ class ReleaseMatchSetting(Model):
         "default_branch": "default_branch",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(self,
                  branches: Optional[str] = None,
                  tags: Optional[str] = None,

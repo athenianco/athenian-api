@@ -2,11 +2,12 @@ from datetime import date
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
 
 
-class DeveloperMetricsRequest(Model):
+class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
     """Request for calculating metrics on top of developer activities."""
 
     openapi_types = {
@@ -26,8 +27,6 @@ class DeveloperMetricsRequest(Model):
         "timezone": "timezone",
         "account": "account",
     }
-
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(
         self,
@@ -102,99 +101,3 @@ class DeveloperMetricsRequest(Model):
             raise ValueError("Unsupported values of `metrics`: %s" % diff)
 
         self._metrics = metrics
-
-    @property
-    def date_from(self) -> date:
-        """Gets the date_from of this DeveloperMetricsRequest.
-
-        Date from when to start measuring the metrics.
-
-        :return: The date_from of this DeveloperMetricsRequest.
-        """
-        return self._date_from
-
-    @date_from.setter
-    def date_from(self, date_from: date):
-        """Sets the date_from of this DeveloperMetricsRequest.
-
-        Date from when to start measuring the metrics.
-
-        :param date_from: The date_from of this DeveloperMetricsRequest.
-        """
-        if date_from is None:
-            raise ValueError("Invalid value for `date_from`, must not be `None`")
-
-        self._date_from = date_from
-
-    @property
-    def date_to(self) -> date:
-        """Gets the date_to of this DeveloperMetricsRequest.
-
-        Date up to which to measure the metrics.
-
-        :return: The date_to of this DeveloperMetricsRequest.
-        """
-        return self._date_to
-
-    @date_to.setter
-    def date_to(self, date_to: date):
-        """Sets the date_to of this DeveloperMetricsRequest.
-
-        Date up to which to measure the metrics.
-
-        :param date_to: The date_to of this DeveloperMetricsRequest.
-        """
-        if date_to is None:
-            raise ValueError("Invalid value for `date_to`, must not be `None`")
-
-        self._date_to = date_to
-
-    @property
-    def timezone(self) -> int:
-        """Gets the timezone of this PullRequestMetricsRequest.
-
-        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
-
-        :return: The timezone of this PullRequestMetricsRequest.
-        """
-        return self._timezone
-
-    @timezone.setter
-    def timezone(self, timezone: int):
-        """Sets the timezone of this PullRequestMetricsRequest.
-
-        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
-
-        :param timezone: The timezone of this PullRequestMetricsRequest.
-        """
-        if timezone is not None and timezone > 720:
-            raise ValueError(
-                "Invalid value for `timezone`, must be a value less than or equal to `720`")
-        if timezone is not None and timezone < -720:
-            raise ValueError(
-                "Invalid value for `timezone`, must be a value greater than or equal to `-720`")
-
-        self._timezone = timezone
-
-    @property
-    def account(self) -> int:
-        """Gets the account of this DeveloperMetricsRequest.
-
-        Session account ID.
-
-        :return: The account of this DeveloperMetricsRequest.
-        """
-        return self._account
-
-    @account.setter
-    def account(self, account: int):
-        """Sets the account of this DeveloperMetricsRequest.
-
-        Session account ID.
-
-        :param account: The account of this DeveloperMetricsRequest.
-        """
-        if account is None:
-            raise ValueError("Invalid value for `account`, must not be `None`")
-
-        self._account = account

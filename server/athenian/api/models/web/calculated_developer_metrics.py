@@ -26,8 +26,6 @@ class CalculatedDeveloperMetrics(Model):
         "metrics": "metrics",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         calculated: Optional[List[CalculatedDeveloperMetricsItem]] = None,

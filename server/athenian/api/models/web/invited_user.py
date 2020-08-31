@@ -10,7 +10,6 @@ class InvitedUser(Model):
 
     openapi_types = {"account": int, "user": User}
     attribute_map = {"account": "account", "user": "user"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, account: int = None, user: User = None):
         """InvitedUser - a model defined in OpenAPI

@@ -1,7 +1,7 @@
 from athenian.api.models.web.account import Account
 from athenian.api.models.web.account_user_change_request import AccountUserChangeRequest, \
     UserChangeStatus
-from athenian.api.models.web.base_model_ import Enum, Model
+from athenian.api.models.web.base_model_ import Enum, Model, Slots
 from athenian.api.models.web.calculated_developer_metrics import CalculatedDeveloperMetrics
 from athenian.api.models.web.calculated_developer_metrics_item import \
     CalculatedDeveloperMetricsItem
@@ -18,6 +18,7 @@ from athenian.api.models.web.commit import Commit
 from athenian.api.models.web.commit_filter import CommitFilter
 from athenian.api.models.web.commit_signature import CommitSignature
 from athenian.api.models.web.commits_list import CommitsList
+from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
 from athenian.api.models.web.contributor import Contributor
 from athenian.api.models.web.create_token_request import CreateTokenRequest
 from athenian.api.models.web.created_identifier import CreatedIdentifier

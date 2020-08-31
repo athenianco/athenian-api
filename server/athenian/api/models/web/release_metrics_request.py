@@ -1,12 +1,14 @@
 from datetime import date
 from typing import List, Optional
 
-from athenian.api.models.web import Granularity, validate_quantiles
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
+from athenian.api.models.web.granularity import Granularity
+from athenian.api.models.web.quantiles import validate_quantiles
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
 
 
-class ReleaseMetricsRequest(Model):
+class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
     """Request of `/metrics/releases` to calculate metrics on releases."""
 
     openapi_types = {
@@ -30,8 +32,6 @@ class ReleaseMetricsRequest(Model):
         "timezone": "timezone",
         "account": "account",
     }
-
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(
         self,
@@ -114,52 +114,6 @@ class ReleaseMetricsRequest(Model):
         self._metrics = metrics
 
     @property
-    def date_from(self) -> date:
-        """Gets the date_from of this ReleaseMetricsRequest.
-
-        Date from when to start measuring the metrics.
-
-        :return: The date_from of this ReleaseMetricsRequest.
-        """
-        return self._date_from
-
-    @date_from.setter
-    def date_from(self, date_from: date):
-        """Sets the date_from of this ReleaseMetricsRequest.
-
-        Date from when to start measuring the metrics.
-
-        :param date_from: The date_from of this ReleaseMetricsRequest.
-        """
-        if date_from is None:
-            raise ValueError("Invalid value for `date_from`, must not be `None`")
-
-        self._date_from = date_from
-
-    @property
-    def date_to(self) -> date:
-        """Gets the date_to of this ReleaseMetricsRequest.
-
-        Date up to which to measure the metrics.
-
-        :return: The date_to of this ReleaseMetricsRequest.
-        """
-        return self._date_to
-
-    @date_to.setter
-    def date_to(self, date_to: date):
-        """Sets the date_to of this ReleaseMetricsRequest.
-
-        Date up to which to measure the metrics.
-
-        :param date_to: The date_to of this ReleaseMetricsRequest.
-        """
-        if date_to is None:
-            raise ValueError("Invalid value for `date_to`, must not be `None`")
-
-        self._date_to = date_to
-
-    @property
     def granularities(self) -> List[str]:
         """Gets the granularities of this ReleaseMetricsRequest.
 
@@ -202,53 +156,3 @@ class ReleaseMetricsRequest(Model):
             return
         validate_quantiles(quantiles)
         self._quantiles = quantiles
-
-    @property
-    def timezone(self) -> int:
-        """Gets the timezone of this ReleaseMetricsRequest.
-
-        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
-
-        :return: The timezone of this ReleaseMetricsRequest.
-        """
-        return self._timezone
-
-    @timezone.setter
-    def timezone(self, timezone: int):
-        """Sets the timezone of this ReleaseMetricsRequest.
-
-        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
-
-        :param timezone: The timezone of this ReleaseMetricsRequest.
-        """
-        if timezone is not None and timezone > 720:
-            raise ValueError(
-                "Invalid value for `timezone`, must be a value less than or equal to `720`")
-        if timezone is not None and timezone < -720:
-            raise ValueError(
-                "Invalid value for `timezone`, must be a value greater than or equal to `-720`")
-
-        self._timezone = timezone
-
-    @property
-    def account(self) -> int:
-        """Gets the account of this ReleaseMetricsRequest.
-
-        Session account ID.
-
-        :return: The account of this ReleaseMetricsRequest.
-        """
-        return self._account
-
-    @account.setter
-    def account(self, account: int):
-        """Sets the account of this ReleaseMetricsRequest.
-
-        Session account ID.
-
-        :param account: The account of this ReleaseMetricsRequest.
-        """
-        if account is None:
-            raise ValueError("Invalid value for `account`, must not be `None`")
-
-        self._account = account

@@ -11,7 +11,6 @@ class RepositorySetWithName(Model):
 
     openapi_types = {"name": Optional[str], "items": List[str], "precomputed": Optional[bool]}
     attribute_map = {"name": "name", "items": "items", "precomputed": "precomputed"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self,
                  name: Optional[str] = None,

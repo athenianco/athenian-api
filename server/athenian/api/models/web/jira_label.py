@@ -21,8 +21,6 @@ class JIRALabel(Model):
         "kind": "kind",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         title: Optional[str] = None,
@@ -41,6 +39,10 @@ class JIRALabel(Model):
         self._last_used = last_used
         self._issues_count = issues_count
         self._kind = kind
+
+    def __lt__(self, other: "JIRALabel") -> bool:
+        """Support sorting."""
+        return self._title < other._title
 
     @property
     def title(self) -> str:

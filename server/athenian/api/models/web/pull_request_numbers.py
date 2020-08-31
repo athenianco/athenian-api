@@ -8,7 +8,6 @@ class PullRequestNumbers(Model):
 
     openapi_types = {"repository": str, "numbers": List[int]}
     attribute_map = {"repository": "repository", "numbers": "numbers"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, repository: str = None, numbers: List[int] = None):
         """PullRequestNumbers - a model defined in OpenAPI

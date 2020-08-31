@@ -70,7 +70,6 @@ class PullRequest(Model):
         "labels": "labels",
         "jira": "jira",
     }
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(
         self,
