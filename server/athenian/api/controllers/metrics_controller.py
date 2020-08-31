@@ -20,8 +20,7 @@ from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
     CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, \
-    ForSet, ForSetDevelopers, \
-    Granularity, Model, ReleaseMetricsRequest
+    ForSet, ForSetDevelopers, Granularity, ReleaseMetricsRequest
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.request import AthenianWebRequest
@@ -316,21 +315,6 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     return model_response(model)
 
 
-def resolve_time_from_and_to(filt: Model) -> Tuple[datetime, datetime]:
-    """Extract the time window from the request model: the timestamps of `from` and `to`."""
-    if filt.date_from > filt.date_to:
-        raise ResponseError(InvalidRequestError(
-            "`date_to` may not be less than `date_from`",
-            detail="from:%s > to:%s" % (filt.date_from, filt.date_to)))
-    time_from = datetime.combine(filt.date_from, datetime.min.time(), tzinfo=timezone.utc)
-    time_to = datetime.combine(filt.date_to, datetime.max.time(), tzinfo=timezone.utc)
-    if filt.timezone is not None:
-        tzoffset = timedelta(minutes=-filt.timezone)
-        time_from += tzoffset
-        time_to += tzoffset
-    return time_from, time_to
-
-
 async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over developer activities."""
     try:
@@ -353,7 +337,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     met.metrics = filt.metrics
     met.calculated = []
     topics = {DeveloperTopic(t) for t in filt.metrics}
-    time_from, time_to = resolve_time_from_and_to(filt)
+    time_from, time_to = filt.resolve_time_from_and_to()
     tasks = []
     for_sets = []
     for service, (repos, devs, labels_include, for_set) in filters:
