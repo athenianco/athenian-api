@@ -1,14 +1,15 @@
-from datetime import date, datetime
+from datetime import date
 from typing import List, Optional
 
-from athenian.api.models.web import Granularity
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
 from athenian.api.models.web.for_set import ForSet
+from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 from athenian.api.models.web.quantiles import validate_quantiles
 
 
-class PullRequestMetricsRequest(Model):
+class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
     """TRequest for calculating metrics on top of pull requests data."""
 
     openapi_types = {
@@ -116,83 +117,6 @@ class PullRequestMetricsRequest(Model):
         self._metrics = metrics
 
     @property
-    def date_from(self) -> date:
-        """Gets the date_from of this PullRequestMetricsRequest.
-
-        The date from when to start measuring the metrics.
-
-        :return: The date_from of this PullRequestMetricsRequest.
-        """
-        return self._date_from
-
-    @date_from.setter
-    def date_from(self, date_from: date):
-        """Sets the date_from of this PullRequestMetricsRequest.
-
-        The date from when to start measuring the metrics.
-
-        :param date_from: The date_from of this PullRequestMetricsRequest.
-        """
-        if date_from is None:
-            raise ValueError("Invalid value for `date_from`, must not be `None`")
-
-        if isinstance(date_from, datetime):
-            date_from = date_from.date()
-        self._date_from = date_from
-
-    @property
-    def date_to(self) -> date:
-        """Gets the date_to of this PullRequestMetricsRequest.
-
-        The date up to which to measure the metrics.
-
-        :return: The date_to of this PullRequestMetricsRequest.
-        """
-        return self._date_to
-
-    @date_to.setter
-    def date_to(self, date_to: date):
-        """Sets the date_to of this PullRequestMetricsRequest.
-
-        The date up to which to measure the metrics.
-
-        :param date_to: The date_to of this PullRequestMetricsRequest.
-        """
-        if date_to is None:
-            raise ValueError("Invalid value for `date_to`, must not be `None`")
-
-        if isinstance(date_to, datetime):
-            date_to = date_to.date()
-        self._date_to = date_to
-
-    @property
-    def timezone(self) -> int:
-        """Gets the timezone of this PullRequestMetricsRequest.
-
-        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
-
-        :return: The timezone of this PullRequestMetricsRequest.
-        """
-        return self._timezone
-
-    @timezone.setter
-    def timezone(self, timezone: int):
-        """Sets the timezone of this PullRequestMetricsRequest.
-
-        Local time zone offset in minutes, used to adjust `date_from` and `date_to`.
-
-        :param timezone: The timezone of this PullRequestMetricsRequest.
-        """
-        if timezone is not None and timezone > 720:
-            raise ValueError(
-                "Invalid value for `timezone`, must be a value less than or equal to `720`")
-        if timezone is not None and timezone < -720:
-            raise ValueError(
-                "Invalid value for `timezone`, must be a value greater than or equal to `-720`")
-
-        self._timezone = timezone
-
-    @property
     def granularities(self) -> List[str]:
         """Gets the granularities of this PullRequestMetricsRequest.
 
@@ -235,25 +159,6 @@ class PullRequestMetricsRequest(Model):
             return
         validate_quantiles(quantiles)
         self._quantiles = quantiles
-
-    @property
-    def account(self) -> int:
-        """Gets the account of this PullRequestMetricsRequest.
-
-        :return: The account of this PullRequestMetricsRequest.
-        """
-        return self._account
-
-    @account.setter
-    def account(self, account: int):
-        """Sets the account of this PullRequestMetricsRequest.
-
-        :param account: The account of this PullRequestMetricsRequest.
-        """
-        if account is None:
-            raise ValueError("Invalid value for `account`, must not be `None`")
-
-        self._account = account
 
     @property
     def exclude_inactive(self) -> bool:
