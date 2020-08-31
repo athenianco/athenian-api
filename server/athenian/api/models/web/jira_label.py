@@ -40,6 +40,10 @@ class JIRALabel(Model):
         self._issues_count = issues_count
         self._kind = kind
 
+    def __lt__(self, other: "JIRALabel") -> bool:
+        """Support sorting."""
+        return self._title < other._title
+
     @property
     def title(self) -> str:
         """Gets the title of this JIRALabel.

@@ -1,5 +1,4 @@
 from abc import ABCMeta
-from collections.abc import Mapping
 import pprint
 import typing
 
@@ -98,7 +97,8 @@ class Model(metaclass=Slots):
 
     def __eq__(self, other):
         """Returns true if both objects are equal."""
-        return self.__dict__ == other.__dict__
+        slots = self.__slots__
+        return {k: getattr(self, k) for k in slots} == {k: getattr(other, k) for k in slots}
 
     def __ne__(self, other):
         """Returns true if both objects are not equal."""

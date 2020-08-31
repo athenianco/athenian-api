@@ -179,7 +179,7 @@ async def test_get_release_match_settings_existing(client, headers, sdb):
     assert response.status == 200
     settings = {}
     for k, v in json.loads((await response.read()).decode("utf-8")).items():
-        if v["default_branch"] is None:
+        if k != "github.com/src-d/go-git":
             v["default_branch"] = "whatever"
         settings[k] = ReleaseMatchSetting.from_dict(v)
     assert settings["github.com/src-d/go-git"] == ReleaseMatchSetting(

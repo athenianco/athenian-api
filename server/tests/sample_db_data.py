@@ -1,5 +1,6 @@
 import datetime
 from itertools import chain
+import json
 from lzma import LZMAFile
 import os
 from pathlib import Path
@@ -11,10 +12,11 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest, PushCommit
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubInstallation, \
-    Feature, FeatureComponent, Invitation, RepositorySet, UserAccount
+    AccountJiraInstallation, Feature, FeatureComponent, Invitation, RepositorySet, UserAccount
 
 
 def fill_metadata_session(session: sqlalchemy.orm.Session):
+    sqlite = session.bind.dialect.name == "sqlite"
     models = {}
     tables = {**GithubBase.metadata.tables, **JiraBase.metadata.tables}
     for cls in chain(GithubBase._decl_class_registry.values(),
@@ -50,6 +52,11 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                         ctor = str_to_datetime
                     elif pt is bool:
                         ctor = lambda x: x == "t" or x == "1"  # noqa:E731
+                    elif pt is list:
+                        if sqlite:
+                            ctor = lambda x: json.dumps([s for s in x.strip("{}").split(",") if s])  # noqa
+                        else:
+                            ctor = lambda x: [s for s in x.strip("{}").split(",") if s]  # noqa
                     else:
                         ctor = lambda x: x  # noqa:E731
                     columns[c.name] = ctor
@@ -116,3 +123,4 @@ def fill_state_session(session: sqlalchemy.orm.Session):
     session.flush()
     session.add(AccountFeature(account_id=1, feature_id=1, enabled=True,
                                parameters={"a": "x"}))
+    session.add(AccountJiraInstallation(id=1, account_id=1))

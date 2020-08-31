@@ -40,6 +40,10 @@ class JIRAEpic(Model):
         self._updated = updated
         self._children = children
 
+    def __lt__(self, other: "JIRAEpic") -> bool:
+        """Support sorting."""
+        return self._id < other._id
+
     @property
     def id(self) -> str:
         """Gets the id of this JIRAEpic.
