@@ -28,8 +28,6 @@ class DeveloperUpdates(Model):
         "releaser": "releaser",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         prs: Optional[int] = None,

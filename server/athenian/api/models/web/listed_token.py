@@ -9,7 +9,6 @@ class ListedToken(Model):
 
     openapi_types = {"id": int, "name": str, "last_used": datetime}
     attribute_map = {"id": "id", "name": "name", "last_used": "last_used"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self,
                  id: Optional[int] = None,

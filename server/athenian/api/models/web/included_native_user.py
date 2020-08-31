@@ -8,7 +8,6 @@ class IncludedNativeUser(Model):
 
     openapi_types = {"avatar": str}
     attribute_map = {"avatar": "avatar"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, avatar: Optional[str] = None):
         """IncludedNativeUser - a model defined in OpenAPI

@@ -9,7 +9,6 @@ class GetPullRequestsRequest(Model):
 
     openapi_types = {"account": int, "prs": List[PullRequestNumbers]}
     attribute_map = {"account": "account", "prs": "prs"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, account: int = None, prs: List[PullRequestNumbers] = None):
         """GetPullRequestsRequest - a model defined in OpenAPI

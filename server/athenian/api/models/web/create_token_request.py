@@ -8,7 +8,6 @@ class CreateTokenRequest(Model):
 
     openapi_types = {"account": int, "name": str}
     attribute_map = {"account": "account", "name": "name"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, account: Optional[int] = None, name: Optional[str] = None):
         """CreateTokenRequest - a model defined in OpenAPI

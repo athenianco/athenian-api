@@ -27,8 +27,6 @@ class DeveloperMetricsRequest(Model):
         "account": "account",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         for_: Optional[List[ForSetDevelopers]] = None,

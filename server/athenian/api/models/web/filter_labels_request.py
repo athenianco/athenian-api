@@ -12,7 +12,6 @@ class FilterLabelsRequest(Model):
 
     openapi_types = {"account": int, "repositories": List[str]}
     attribute_map = {"account": "account", "repositories": "repositories"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, account: Optional[int] = None, repositories: Optional[List[str]] = None):
         """FilterLabelsRequest - a model defined in OpenAPI

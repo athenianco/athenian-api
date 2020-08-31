@@ -21,8 +21,6 @@ class JIRALabel(Model):
         "kind": "kind",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         title: Optional[str] = None,

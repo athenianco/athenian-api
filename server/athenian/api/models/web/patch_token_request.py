@@ -8,7 +8,6 @@ class PatchTokenRequest(Model):
 
     openapi_types = {"name": str}
     attribute_map = {"name": "name"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, name: Optional[str] = None):
         """PatchTokenRequest - a model defined in OpenAPI

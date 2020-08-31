@@ -8,7 +8,6 @@ class TeamUpdateRequest(Model):
 
     openapi_types = {"name": str, "members": List[str]}
     attribute_map = {"name": "name", "members": "members"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(
             self,

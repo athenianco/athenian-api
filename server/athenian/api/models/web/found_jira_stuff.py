@@ -13,7 +13,6 @@ class FoundJIRAStuff(Model):
 
     openapi_types = {"epics": List[JIRAEpic], "labels": List[JIRALabel]}
     attribute_map = {"epics": "epics", "labels": "labels"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self,
                  epics: Optional[List[JIRAEpic]] = None,

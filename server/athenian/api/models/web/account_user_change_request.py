@@ -14,7 +14,6 @@ class AccountUserChangeRequest(Model):
 
     openapi_types = {"account": int, "user": str, "status": str}
     attribute_map = {"account": "account", "user": "user", "status": "status"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, account: int = None, user: str = None, status: str = None):
         """AccountUserChangeRequest - a model defined in OpenAPI

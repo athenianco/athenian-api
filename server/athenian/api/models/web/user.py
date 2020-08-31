@@ -34,8 +34,6 @@ class User(Model):
         "accounts": "accounts",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         id: Optional[str] = None,

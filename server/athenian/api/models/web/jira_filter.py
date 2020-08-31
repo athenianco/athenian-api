@@ -20,8 +20,6 @@ class JIRAFilter(Model):
         "issue_types": "issue_types",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         epics: Optional[List[str]] = None,

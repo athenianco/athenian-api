@@ -22,8 +22,6 @@ class ReleasedPullRequest(Model):
         "author": "author",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         number: Optional[int] = None,

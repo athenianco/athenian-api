@@ -10,7 +10,6 @@ class FilteredLabel(PullRequestLabel):
     openapi_types["used_prs"] = int
     attribute_map = PullRequestLabel.attribute_map.copy()
     attribute_map["used_prs"] = "used_prs"
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(
         self,

@@ -14,8 +14,6 @@ class PullRequestLabel(Model):
         "color": "color",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         name: Optional[str] = None,

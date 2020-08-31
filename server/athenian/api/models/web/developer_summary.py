@@ -19,8 +19,6 @@ class DeveloperSummary(Model):
         "updates": "updates",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
-
     def __init__(
         self,
         login: str = None,

@@ -17,7 +17,6 @@ class PullRequestParticipant(Model):
                 STATUS_COMMENTER, STATUS_MERGER, STATUS_RELEASER}
     openapi_types = {"id": str, "status": List[str]}
     attribute_map = {"id": "id", "status": "status"}
-    __slots__ = ["_" + k for k in openapi_types]
 
     def __init__(self, id: Optional[str] = None, status: Optional[List[str]] = None):
         """PullRequestParticipant - a model defined in OpenAPI
