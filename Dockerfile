@@ -1,7 +1,8 @@
 FROM ubuntu:20.04
 
 ENV BROWSER=/browser \
-    LC_ALL=en_US.UTF-8
+    LC_ALL=en_US.UTF-8 \
+    SETUPTOOLS_USE_DISTUTILS=stdlib
 
 RUN echo '#!/bin/bash\n\
 \n\
@@ -77,7 +78,6 @@ RUN apt-get update && \
     pip3 install --no-cache-dir -r /server/requirements.txt && \
     patch /usr/local/lib/python*/dist-packages/databases/backends/postgres.py /databases.patch && \
     patch /usr/local/lib/python*/dist-packages/prometheus_client/exposition.py /prometheus_client.patch && \
-    rm /databases.patch && \
     apt-get remove -y patch && \
     apt-get autoremove -y && \
     apt-get clean && \
