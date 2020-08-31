@@ -28,6 +28,7 @@ from athenian.api.models.web.developer_summary import DeveloperSummary
 from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contributors_request import FilterContributorsRequest
+from athenian.api.models.web.filter_jira_stuff import FilterJIRAStuff
 from athenian.api.models.web.filter_labels_request import FilterLabelsRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
 from athenian.api.models.web.filter_releases_request import FilterReleasesRequest
@@ -37,6 +38,7 @@ from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
+from athenian.api.models.web.found_jira_stuff import FoundJIRAStuff
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, \
     ForbiddenError, GenericError, NotFoundError, ServerNotImplementedError
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
@@ -49,8 +51,10 @@ from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.invitation_check_result import InvitationCheckResult
 from athenian.api.models.web.invitation_link import InvitationLink
 from athenian.api.models.web.invited_user import InvitedUser
+from athenian.api.models.web.jira_epic import JIRAEpic
 from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.jira_issue import JIRAIssue
+from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
 from athenian.api.models.web.patch_token_request import PatchTokenRequest

@@ -4537,17 +4537,20 @@ components:
       description: Request of `/filter/jira` to retrieve epics and labels.
       example:
         account: 1
-        date_from: 2020-01-01T00:00:00Z
-        date_to: 2020-12-01T00:00:00Z
+        date_from: 2020-01-01
+        date_to: 2020-12-01
+        timezone: 120
       properties:
         account:
           type: integer
         date_from:
-          format: date-time
+          format: date
           type: string
         date_to:
-          format: date-time
+          format: date
           type: string
+        timezone:
+          $ref: '#/components/schemas/TimeZone'
       required:
       - account
       - date_from
