@@ -134,6 +134,7 @@ matrix:
       before_script: *_setup_postgres
       addons: *_addons
       script:
+        - set -e
         - docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
         - docker build -t test --build-arg base=${GOOGLE_DOCKER_IMAGE} server/tests
         - run="docker run --network=host --rm -v $(pwd):/io -w /io --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ -e ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE=https://installation.athenian.co/jira/%s/atlassian-connect.json test -m coverage"
@@ -146,6 +147,7 @@ matrix:
         - $run xml
         - docker rmi test
         - sed -i 's/[\./]server[\./]//g' coverage.xml
+        - set +e
       after_success:
         - codecov
     - if: branch = master AND type != pull_request AND commit_message !~ /Bump version/

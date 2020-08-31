@@ -1,5 +1,6 @@
 from importlib.machinery import SourceFileLoader
 import os
+from pathlib import Path
 
 from setuptools import find_packages, setup
 # The following import has to stay after imports from `setuptools`:
@@ -7,7 +8,10 @@ from setuptools import find_packages, setup
 #     error-each-element-of-ext-modules-option-must-be-an-extension-instance-or-2-t
 from Cython.Build import cythonize  # noqa: I100
 
-version = SourceFileLoader("version", "athenian/api/metadata.py").load_module()
+project_root = Path(__file__).parent
+code_root = project_root / "athenian" / "api"
+os.chdir(str(project_root))
+version = SourceFileLoader("version", str(code_root / "metadata.py")).load_module()
 
 with open(os.path.join(os.path.dirname(__file__), "../README.md"), encoding="utf-8") as f:
     long_description = f.read()
@@ -25,7 +29,8 @@ setup(
     url="https://github.com/athenian/athenian-api",
     download_url="https://github.com/athenian/athenian-api",
     packages=find_packages(exclude=["tests"]),
-    ext_modules=cythonize("athenian/api/controllers/miners/github/release_accelerated.pyx"),
+    ext_modules=cythonize(str(
+        code_root / "controllers" / "miners" / "github" / "release_accelerated.pyx")),
     namespace_packages=["athenian"],
     keywords=[],
     install_requires=[],
