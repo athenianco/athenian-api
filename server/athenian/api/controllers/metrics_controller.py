@@ -11,6 +11,7 @@ import databases.core
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
 from athenian.api.controllers.miners.access_classes import access_classes, AccessChecker
+from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
 from athenian.api.controllers.miners.types import Participants, ParticipationKind
@@ -202,7 +203,8 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
                             pointer=".for[%d].with" % i,
                         ))
                     dk.add(dev[len(prefix):])
-            filters.append((service, (repos, devs, set(for_set.labels_include or []), for_set)))
+            labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
+            filters.append((service, (repos, devs, labels, for_set)))
     return filters, all_repos
 
 
@@ -237,7 +239,8 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
                         pointer=".for[%d].developers" % i,
                     ))
                 devs.append(dev[len(prefix):])
-            filters.append((service, (repos, devs, set(for_set.labels_include or []), for_set)))
+            labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
+            filters.append((service, (repos, devs, labels, for_set)))
     return filters, all_repos
 
 

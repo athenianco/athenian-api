@@ -70,8 +70,8 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 ))
 
     tasks = []
-    for service, (repos, devs, labels_include, for_set) in filters:
-        tasks.append(calculate_for_set_histograms(service, repos, devs, labels_include, for_set))
+    for service, (repos, devs, labels, for_set) in filters:
+        tasks.append(calculate_for_set_histograms(service, repos, devs, labels, for_set))
     if len(tasks) == 0:
         await tasks[0]
     else:

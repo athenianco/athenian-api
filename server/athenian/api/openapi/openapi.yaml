@@ -2335,6 +2335,11 @@ components:
           items:
             type: string
           type: array
+        labels_exclude:
+          description: None of these labels must be present in each analyzed PR.
+          items:
+            type: string
+          type: array
         jira:
           $ref: '#/components/schemas/JIRAFilter'
       required:
@@ -2358,6 +2363,12 @@ components:
         labels_include:
           description: PRs must be labeled with at least one name from this list so
             that the related metrics include them.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: PRs must not be labeled with any name from this list so that
+            the related metrics exclude them.
           items:
             type: string
           type: array
@@ -2852,6 +2863,11 @@ components:
         labels_include:
           description: At least one of these labels must be present in each returned
             PR.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: None of these labels must be present in each returned PR.
           items:
             type: string
           type: array

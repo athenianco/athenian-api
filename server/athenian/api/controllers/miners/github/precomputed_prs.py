@@ -10,7 +10,7 @@ from dateutil.rrule import DAILY, rrule
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, insert, join, or_, select, update
+from sqlalchemy import and_, insert, join, not_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.functions import ReturnTypeFromArgs
@@ -18,6 +18,7 @@ from sqlalchemy.sql.functions import ReturnTypeFromArgs
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
+from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, Participants, \
@@ -28,7 +29,7 @@ from athenian.api.db import add_pdb_hits
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewRequest, Release
-from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
+from athenian.api.models.precomputed.models import Base, GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
 from athenian.api.tracing import sentry_span
 
@@ -148,14 +149,24 @@ def _build_participants_filters(participants: Participants,
             ghprt.commit_authors, ghprt.commit_committers])
 
 
-def _build_labels_filters(labels: Collection[str],
+def _build_labels_filters(model: Base,
+                          labels: LabelFilter,
                           filters: list,
                           selected: list,
                           postgres: bool) -> None:
     if postgres:
-        filters.append(GitHubDonePullRequestFacts.labels.has_any(labels))
+        if labels.include:
+            filters.append(model.labels.has_any(labels.include))
+        if labels.exclude:
+            filters.append(not_(model.labels.has_any(labels.exclude)))
     else:
-        selected.append(GitHubDonePullRequestFacts.labels)
+        selected.append(model.labels)
+
+
+def _labels_are_incompatible(filter: LabelFilter, labels: Iterable[str]) -> bool:
+    return ((filter.include and not filter.include.intersection(labels))
+            or
+            (filter.exclude and filter.exclude.intersection(labels)))
 
 
 def _check_participants(row: Mapping, participants: Participants) -> bool:
@@ -181,7 +192,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
                                               time_to: datetime,
                                               repos: Collection[str],
                                               participants: Participants,
-                                              labels: Collection[str],
+                                              labels: LabelFilter,
                                               default_branches: Dict[str, str],
                                               exclude_inactive: bool,
                                               release_settings: Dict[str, ReleaseMatchSetting],
@@ -201,10 +212,8 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
     filters = _create_common_filters(time_from, time_to, repos)
     if len(participants) > 0:
         _build_participants_filters(participants, filters, selected, postgres)
-    if len(labels) > 0:
-        _build_labels_filters(labels, filters, selected, postgres)
-        if not postgres and not isinstance(labels, set):
-            labels = set(labels)
+    if labels:
+        _build_labels_filters(GitHubDonePullRequestFacts, labels, filters, selected, postgres)
     if exclude_inactive:
         # timezones: date_from and date_to may be not exactly 00:00
         date_from_day = datetime.combine(
@@ -231,7 +240,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
         if not postgres:
             if len(participants) > 0 and not _check_participants(row, participants):
                 continue
-            if len(labels) > 0 and not labels.intersection(row[ghprt.labels.key]):
+            if labels and _labels_are_incompatible(labels, row[ghprt.labels.key]):
                 continue
             if exclude_inactive:
                 activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -665,7 +674,7 @@ async def store_merged_unreleased_pull_request_facts(
     key=lambda time_from, time_to, repos, participants, labels, default_branches, release_settings, **_: (  # noqa
         time_from.timestamp(), time_to.timestamp(), ",".join(sorted(repos)),
         sorted((k.name.lower(), sorted(v)) for k, v in participants.items()),
-        ",".join(sorted(labels)), sorted(default_branches.items()), release_settings,
+        labels, sorted(default_branches.items()), release_settings,
     ),
     refresh_on_access=True,
 )
@@ -673,7 +682,7 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
                                               time_to: datetime,
                                               repos: Collection[str],
                                               participants: Participants,
-                                              labels: Collection[str],
+                                              labels: LabelFilter,
                                               default_branches: Dict[str, str],
                                               release_settings: Dict[str, ReleaseMatchSetting],
                                               mdb: databases.Database,
@@ -696,13 +705,8 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
         people = participants.get(role)
         if people:
             filters.append(col.in_(people))
-    if len(labels) > 0:
-        if postgres:
-            filters.append(GitHubMergedPullRequestFacts.labels.has_any(labels))
-        else:
-            selected.append(GitHubMergedPullRequestFacts.labels)
-            if not isinstance(labels, set):
-                labels = set(labels)
+    if labels:
+        _build_labels_filters(GitHubMergedPullRequestFacts, labels, filters, selected, postgres)
     body = join(GitHubMergedPullRequestFacts, GitHubDonePullRequestFacts, and_(
         GitHubDonePullRequestFacts.pr_node_id == GitHubMergedPullRequestFacts.pr_node_id,
         GitHubDonePullRequestFacts.release_match == GitHubMergedPullRequestFacts.release_match,
@@ -720,8 +724,8 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
         if dump is None:
             continue
         # we do not care about the exact release match
-        if len(labels) > 0 and not postgres and \
-                not labels.intersection(row[GitHubMergedPullRequestFacts.labels.key]):
+        if labels and not postgres and _labels_are_incompatible(
+                labels, row[GitHubMergedPullRequestFacts.labels.key]):
             continue
         node_ids.append(row[0])
     add_pdb_hits(pdb, "inactive_merged_unreleased", len(node_ids))

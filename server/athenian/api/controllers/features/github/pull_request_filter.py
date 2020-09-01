@@ -18,6 +18,7 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
+from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
@@ -215,7 +216,7 @@ async def filter_pull_requests(properties: Set[Property],
                                time_to: datetime,
                                repos: Set[str],
                                participants: Participants,
-                               labels: Set[str],
+                               labels: LabelFilter,
                                exclude_inactive: bool,
                                release_settings: Dict[str, ReleaseMatchSetting],
                                mdb: databases.Database,
@@ -236,14 +237,19 @@ async def filter_pull_requests(properties: Set[Property],
     return prs
 
 
-def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem], Set[str]],
-                              labels: Set[str], **_):
+def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem], LabelFilter],
+                              labels: LabelFilter, **_):
     prs, cached_labels = result
     if cached_labels == labels:
         return prs, labels
-    if cached_labels and (not labels or labels - cached_labels):
+    if not cached_labels.compatible_with(labels):
         raise CancelCache()
-    prs = [pr for pr in prs if labels.intersection({label.name for label in (pr.labels or [])})]
+    if labels.include:
+        prs = [pr for pr in prs
+               if labels.include.intersection({label.name for label in (pr.labels or [])})]
+    if labels.exclude:
+        prs = [pr for pr in prs
+               if not labels.exclude.intersection({label.name for label in (pr.labels or [])})]
     return prs, labels
 
 
@@ -261,22 +267,22 @@ def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem], Set[str]]
         release_settings,
     ),
     postprocess=_postprocess_filtered_prs,
+    version=2,
 )
 async def _filter_pull_requests(properties: Set[Property],
                                 time_from: datetime,
                                 time_to: datetime,
                                 repos: Set[str],
                                 participants: Participants,
-                                labels: Set[str],
+                                labels: LabelFilter,
                                 exclude_inactive: bool,
                                 release_settings: Dict[str, ReleaseMatchSetting],
                                 mdb: databases.Database,
                                 pdb: databases.Database,
                                 cache: Optional[aiomcache.Client],
-                                ) -> Tuple[List[PullRequestListItem], Set[str]]:
+                                ) -> Tuple[List[PullRequestListItem], LabelFilter]:
     assert isinstance(properties, set)
     assert isinstance(repos, set)
-    assert isinstance(labels, set)
     log = logging.getLogger("%s.filter_pull_requests" % metadata.__package__)
     # required to efficiently use the cache with timezones
     date_from, date_to = coarsen_time_interval(time_from, time_to)

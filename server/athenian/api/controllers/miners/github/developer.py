@@ -9,10 +9,11 @@ from typing import Collection, Dict, List, Optional, Sequence, Set, Union
 import aiomcache
 import databases
 import pandas as pd
-from sqlalchemy import and_, distinct, func, join, select
+from sqlalchemy import and_, distinct, func, join, or_, select
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
+from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.pull_request import ReviewResolution
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestLabel, PullRequestReview, PullRequestReviewComment, PushCommit, Release
@@ -61,7 +62,7 @@ async def _set_commits(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                        topics: Set[str],
                        devs: Sequence[str],
                        repos: Collection[str],
-                       labels: Set[str],
+                       labels: LabelFilter,
                        time_from: datetime,
                        time_to: datetime,
                        conn: databases.core.Connection,
@@ -85,7 +86,7 @@ async def _set_prs_created(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
                            topics: Set[str],
                            devs: Sequence[str],
                            repos: Collection[str],
-                           labels: Set[str],
+                           labels: LabelFilter,
                            time_from: datetime,
                            time_to: datetime,
                            conn: databases.core.Connection,
@@ -101,7 +102,7 @@ async def _set_prs_reviewed(stats_by_dev: Dict[str, Dict[str, Union[int, float]]
                             topics: Set[str],
                             devs: Sequence[str],
                             repos: Collection[str],
-                            labels: Set[str],
+                            labels: LabelFilter,
                             time_from: datetime,
                             time_to: datetime,
                             conn: databases.core.Connection,
@@ -117,7 +118,7 @@ async def _set_prs_merged(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                           topics: Set[str],
                           devs: Sequence[str],
                           repos: Collection[str],
-                          labels: Set[str],
+                          labels: LabelFilter,
                           time_from: datetime,
                           time_to: datetime,
                           conn: databases.core.Connection,
@@ -133,7 +134,7 @@ async def _set_releases(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                         topics: Set[str],
                         devs: Sequence[str],
                         repos: Collection[str],
-                        labels: Set[str],
+                        labels: LabelFilter,
                         time_from: datetime,
                         time_to: datetime,
                         conn: databases.core.Connection,
@@ -149,7 +150,7 @@ async def _set_reviews(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                        topics: Set[str],
                        devs: Sequence[str],
                        repos: Collection[str],
-                       labels: Set[str],
+                       labels: LabelFilter,
                        time_from: datetime,
                        time_to: datetime,
                        conn: databases.core.Connection,
@@ -194,7 +195,7 @@ async def _set_pr_comments(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
                            topics: Set[str],
                            devs: Sequence[str],
                            repos: Collection[str],
-                           labels: Set[str],
+                           labels: LabelFilter,
                            time_from: datetime,
                            time_to: datetime,
                            conn: databases.core.Connection,
@@ -238,7 +239,7 @@ processors = [
 async def calc_developer_metrics(devs: Sequence[str],
                                  repos: Collection[str],
                                  topics: Set[DeveloperTopic],
-                                 labels: Set[str],
+                                 labels: LabelFilter,
                                  time_from: datetime,
                                  time_to: datetime,
                                  db: databases.Database,
@@ -271,7 +272,7 @@ CACHE_EXPIRATION_TIME = 5 * 60  # 5 min
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, **_: (
+    key=lambda devs, repos, time_from, time_to, labels, **_: (
         ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal()),
 )
 async def _fetch_developer_commits(devs: Sequence[str],
@@ -295,12 +296,14 @@ async def _fetch_developer_commits(devs: Sequence[str],
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, **_: (
-        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal()),
+    key=lambda devs, repos, labels, time_from, time_to, **_: (
+        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
+        labels,
+    ),
 )
 async def _fetch_developer_created_prs(devs: Sequence[str],
                                        repos: Collection[str],
-                                       labels: Set[str],
+                                       labels: LabelFilter,
                                        time_from: datetime,
                                        time_to: datetime,
                                        db: databases.core.Connection,
@@ -312,11 +315,14 @@ async def _fetch_developer_created_prs(devs: Sequence[str],
             query.select_from(join(
                 PullRequest, PullRequestLabel,
                 PullRequest.node_id == PullRequestLabel.pull_request_node_id,
+                isouter=not labels.include,
             )).where(and_(
                 PullRequest.created_at.between(time_from, time_to),
                 PullRequest.user_login.in_(devs),
                 PullRequest.repository_full_name.in_(repos),
-                PullRequestLabel.name.in_(labels),
+                PullRequestLabel.name.in_(labels.include) if labels.include else True,
+                or_(PullRequestLabel.name.notin_(labels.exclude),
+                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
             ))
         )
     else:
@@ -339,12 +345,14 @@ async def _fetch_developer_created_prs(devs: Sequence[str],
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, **_: (
-        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal()),
+    key=lambda devs, repos, time_from, time_to, labels, **_: (
+        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
+        labels,
+    ),
 )
 async def _fetch_developer_merged_prs(devs: Sequence[str],
                                       repos: Collection[str],
-                                      labels: Set[str],
+                                      labels: LabelFilter,
                                       time_from: datetime,
                                       time_to: datetime,
                                       db: databases.core.Connection,
@@ -356,11 +364,14 @@ async def _fetch_developer_merged_prs(devs: Sequence[str],
             query.select_from(join(
                 PullRequest, PullRequestLabel,
                 PullRequest.node_id == PullRequestLabel.pull_request_node_id,
+                isouter=not labels.include,
             )).where(and_(
                 PullRequest.merged_at.between(time_from, time_to),
                 PullRequest.merged_by_login.in_(devs),
                 PullRequest.repository_full_name.in_(repos),
-                PullRequestLabel.name.in_(labels),
+                PullRequestLabel.name.in_(labels.include) if labels.include else True,
+                or_(PullRequestLabel.name.notin_(labels.exclude),
+                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
             ))
         )
     else:
@@ -408,12 +419,14 @@ async def _fetch_developer_releases(devs: Sequence[str],
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, **_: (
-        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal()),
+    key=lambda devs, repos, time_from, time_to, labels, **_: (
+        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
+        labels,
+    ),
 )
 async def _fetch_developer_reviewed_prs(devs: Sequence[str],
                                         repos: Collection[str],
-                                        labels: Set[str],
+                                        labels: LabelFilter,
                                         time_from: datetime,
                                         time_to: datetime,
                                         db: databases.core.Connection,
@@ -425,12 +438,15 @@ async def _fetch_developer_reviewed_prs(devs: Sequence[str],
         query = (
             query.select_from(join(
                 PullRequestReview, PullRequestLabel,
-                PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id))
-            .where(and_(
+                PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+                isouter=not labels.include,
+            )).where(and_(
                 PullRequestReview.submitted_at.between(time_from, time_to),
                 PullRequestReview.user_login.in_(devs),
                 PullRequestReview.repository_full_name.in_(repos),
-                PullRequestLabel.name.in_(labels),
+                PullRequestLabel.name.in_(labels.include) if labels.include else True,
+                or_(PullRequestLabel.name.notin_(labels.exclude),
+                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
             ))
         )
     else:
@@ -453,12 +469,14 @@ async def _fetch_developer_reviewed_prs(devs: Sequence[str],
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, **_: (
-        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal()),
+    key=lambda devs, repos, time_from, time_to, labels, **_: (
+        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
+        labels,
+    ),
 )
 async def _fetch_developer_reviews(devs: Sequence[str],
                                    repos: Collection[str],
-                                   labels: Set[str],
+                                   labels: LabelFilter,
                                    time_from: datetime,
                                    time_to: datetime,
                                    db: databases.core.Connection,
@@ -470,12 +488,15 @@ async def _fetch_developer_reviews(devs: Sequence[str],
         query = (
             query.select_from(join(
                 PullRequestReview, PullRequestLabel,
-                PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id))
-            .where(and_(
+                PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+                isouter=not labels.include,
+            )).where(and_(
                 PullRequestReview.submitted_at.between(time_from, time_to),
                 PullRequestReview.user_login.in_(devs),
                 PullRequestReview.repository_full_name.in_(repos),
-                PullRequestLabel.name.in_(labels),
+                PullRequestLabel.name.in_(labels.include) if labels.include else True,
+                or_(PullRequestLabel.name.notin_(labels.exclude),
+                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
             ))
         )
     else:
@@ -498,12 +519,14 @@ async def _fetch_developer_reviews(devs: Sequence[str],
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, **_: (
-        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal()),
+    key=lambda devs, repos, time_from, time_to, labels, **_: (
+        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
+        labels,
+    ),
 )
 async def _fetch_developer_review_comments(devs: Sequence[str],
                                            repos: Collection[str],
-                                           labels: Set[str],
+                                           labels: LabelFilter,
                                            time_from: datetime,
                                            time_to: datetime,
                                            db: databases.core.Connection,
@@ -516,11 +539,14 @@ async def _fetch_developer_review_comments(devs: Sequence[str],
             query.select_from(join(
                 PullRequestReviewComment, PullRequestLabel,
                 PullRequestReviewComment.pull_request_node_id == PullRequestLabel.pull_request_node_id,  # noqa
+                isouter=not labels.include,
             )).where(and_(
                 PullRequestReviewComment.created_at.between(time_from, time_to),
                 PullRequestReviewComment.user_login.in_(devs),
                 PullRequestReviewComment.repository_full_name.in_(repos),
-                PullRequestLabel.name.in_(labels),
+                PullRequestLabel.name.in_(labels.include) if labels.include else True,
+                or_(PullRequestLabel.name.notin_(labels.exclude),
+                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
             ))
         )
     else:
@@ -543,12 +569,14 @@ async def _fetch_developer_review_comments(devs: Sequence[str],
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, **_: (
-        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal()),
+    key=lambda devs, repos, time_from, time_to, labels, **_: (
+        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
+        labels,
+    ),
 )
 async def _fetch_developer_regular_pr_comments(devs: Sequence[str],
                                                repos: Collection[str],
-                                               labels: Set[str],
+                                               labels: LabelFilter,
                                                time_from: datetime,
                                                time_to: datetime,
                                                db: databases.core.Connection,
@@ -559,12 +587,15 @@ async def _fetch_developer_regular_pr_comments(devs: Sequence[str],
         query = (
             query.select_from(join(
                 PullRequestComment, PullRequestLabel,
-                PullRequestComment.pull_request_node_id == PullRequestLabel.pull_request_node_id))
-            .where(and_(
+                PullRequestComment.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+                isouter=not labels.include,
+            )).where(and_(
                 PullRequestComment.created_at.between(time_from, time_to),
                 PullRequestComment.user_login.in_(devs),
                 PullRequestComment.repository_full_name.in_(repos),
-                PullRequestLabel.name.in_(labels),
+                PullRequestLabel.name.in_(labels.include) if labels.include else True,
+                or_(PullRequestLabel.name.notin_(labels.exclude),
+                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
             ))
         )
     else:

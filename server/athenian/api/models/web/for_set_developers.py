@@ -11,6 +11,7 @@ class ForSetDevelopers(Model):
         "repositories": List[str],
         "developers": List[str],
         "labels_include": List[str],
+        "labels_exclude": List[str],
         "jira": JIRAFilter,
     }
 
@@ -18,6 +19,7 @@ class ForSetDevelopers(Model):
         "repositories": "repositories",
         "developers": "developers",
         "labels_include": "labels_include",
+        "labels_exclude": "labels_exclude",
         "jira": "jira",
     }
 
@@ -26,6 +28,7 @@ class ForSetDevelopers(Model):
         repositories: Optional[List[str]] = None,
         developers: Optional[List[str]] = None,
         labels_include: Optional[List[str]] = None,
+        labels_exclude: Optional[List[str]] = None,
         jira: Optional[JIRAFilter] = None,
     ):
         """ForSet - a model defined in OpenAPI
@@ -33,11 +36,13 @@ class ForSetDevelopers(Model):
         :param repositories: The repositories of this ForSetDevelopers.
         :param developers: The developers of this ForSetDevelopers.
         :param labels_include: The labels_include of this ForSetDevelopers.
+        :param labels_exclude: The labels_exclude of this ForSetDevelopers.
         :param jira: The jira of this ForSetDevelopers.
         """
         self._repositories = repositories
         self._developers = developers
         self._labels_include = labels_include
+        self._labels_exclude = labels_exclude
         self._jira = jira
 
     @property
@@ -93,6 +98,22 @@ class ForSetDevelopers(Model):
         :param labels_include: The labels_include of this ForSetDevelopers.
         """
         self._labels_include = labels_include
+
+    @property
+    def labels_exclude(self) -> List[str]:
+        """Gets the labels_exclude of this ForSetDevelopers.
+
+        :return: The labels_exclude of this ForSetDevelopers.
+        """
+        return self._labels_exclude
+
+    @labels_exclude.setter
+    def labels_exclude(self, labels_exclude: List[str]):
+        """Sets the labels_exclude of this ForSetDevelopers.
+
+        :param labels_exclude: The labels_exclude of this ForSetDevelopers.
+        """
+        self._labels_exclude = labels_exclude
 
     @property
     def jira(self) -> Optional[JIRAFilter]:

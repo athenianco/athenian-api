@@ -16,6 +16,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
+from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_unreleased_prs, load_inactive_merged_unreleased_prs, load_open_pull_request_facts
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
@@ -74,12 +75,12 @@ class PullRequestMiner:
                           Dict[str, PullRequestFacts],
                           Set[str],
                           Participants,
-                          Set[str],
+                          LabelFilter,
                           Dict[str, ReleaseMatch]],
             date_to: date,
             repositories: Set[str],
             participants: Participants,
-            labels: Set[str],
+            labels: LabelFilter,
             pr_blacklist: Optional[Collection[str]],
             truncate: bool,
             **_) -> Tuple[List[pd.DataFrame], Dict[str, PullRequestFacts],
@@ -90,7 +91,7 @@ class PullRequestMiner:
         cls = PullRequestMiner
         if not cls._check_participants_compatibility(cached_participants, participants):
             raise CancelCache()
-        if cached_labels and (not labels or labels - cached_labels):
+        if not cached_labels.compatible_with(labels):
             raise CancelCache()
         to_remove = set()
         if pr_blacklist:
@@ -117,13 +118,14 @@ class PullRequestMiner:
             ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []), truncate,
         ),
         postprocess=_postprocess_cached_prs,
+        version=2,
     )
     async def _mine(cls,
                     date_from: date,
                     date_to: date,
                     repositories: Set[str],
                     participants: Participants,
-                    labels: Set[str],
+                    labels: LabelFilter,
                     branches: pd.DataFrame,
                     default_branches: Dict[str, str],
                     exclude_inactive: bool,
@@ -137,12 +139,11 @@ class PullRequestMiner:
                                Dict[str, PullRequestFacts],
                                Set[str],
                                Participants,
-                               Set[str],
+                               LabelFilter,
                                Dict[str, ReleaseMatch]]:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
         assert isinstance(repositories, set)
-        assert isinstance(labels, set)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
         filters = [
             sql.or_(PullRequest.closed_at.is_(None), PullRequest.closed_at >= time_from),
@@ -380,7 +381,7 @@ class PullRequestMiner:
                    time_to: datetime,
                    repositories: Set[str],
                    participants: Participants,
-                   labels: Set[str],
+                   labels: LabelFilter,
                    branches: pd.DataFrame,
                    default_branches: Dict[str, str],
                    exclude_inactive: bool,
@@ -409,7 +410,7 @@ class PullRequestMiner:
         :param repositories: PRs must belong to these repositories (prefix excluded).
         :param participants: PRs must have these user IDs in the specified participation roles \
                              (OR aggregation). An empty dict means everybody.
-        :param labels: PRs must be labeled with at least one name from this set.
+        :param labels: PRs must be labeled according to this filter's include & exclude sets.
         :param branches: Preloaded DataFrame with branches in the specified repositories.
         :param default_branches: Mapping from repository names to their default branch names.
         :param exclude_inactive: Ors must have at least one event in the given time frame.
@@ -540,12 +541,28 @@ class PullRequestMiner:
     def _find_drop_by_labels(cls,
                              prs: pd.DataFrame,
                              df_labels: pd.DataFrame,
-                             labels: Set[str]) -> pd.Index:
+                             labels: LabelFilter) -> pd.Index:
         if not labels:
             return pd.Index([])
-        return prs.index.unique().difference(df_labels.index.get_level_values(0).take(
-            np.where(np.in1d(df_labels[PullRequestLabel.name.key].values, list(labels)))[0],
-        ).unique())
+        df_labels_index = df_labels.index.get_level_values(0)
+        df_labels_names = df_labels[PullRequestLabel.name.key].values
+        left_include = left_exclude = None
+        if labels.include:
+            left_include = df_labels_index.take(
+                np.where(np.in1d(df_labels_names, list(labels.include)))[0],
+            ).unique()
+        if labels.exclude:
+            left_exclude = df_labels_index.unique().difference(df_labels_index.take(
+                np.where(np.in1d(df_labels_names, list(labels.exclude)))[0],
+            ).unique())
+        if labels.include:
+            if labels.exclude:
+                left = left_include.intersection(left_exclude)
+            else:
+                left = left_include
+        else:
+            left = left_exclude
+        return prs.index.unique().difference(left)
 
     @classmethod
     @sentry_span
