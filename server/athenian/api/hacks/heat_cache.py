@@ -15,10 +15,10 @@ from tqdm import tqdm
 
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
     enable_defer, ParallelDatabase, patch_pandas, ResponseError, setup_cache_metrics, \
-    setup_context, \
-    wait_deferred
+    setup_context, wait_deferred
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.settings import Settings
@@ -132,7 +132,8 @@ def main():
                     time_to,
                     repos,
                     {},
-                    set(),
+                    LabelFilter.empty(),
+                    JIRAFilter.empty(),
                     False,
                     settings,
                     mdb,

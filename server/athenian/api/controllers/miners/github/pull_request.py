@@ -16,7 +16,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
-from athenian.api.controllers.miners.filters import LabelFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_unreleased_prs, load_inactive_merged_unreleased_prs, load_open_pull_request_facts
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
@@ -76,22 +76,23 @@ class PullRequestMiner:
                           Set[str],
                           Participants,
                           LabelFilter,
+                          JIRAFilter,
                           Dict[str, ReleaseMatch]],
             date_to: date,
             repositories: Set[str],
             participants: Participants,
             labels: LabelFilter,
+            jira: JIRAFilter,
             pr_blacklist: Optional[Collection[str]],
             truncate: bool,
             **_) -> Tuple[List[pd.DataFrame], Dict[str, PullRequestFacts],
                           Set[str], Participants, Set[str]]:
-        dfs, _, cached_repositories, cached_participants, cached_labels, _ = result
-        if repositories - cached_repositories:
-            raise CancelCache()
+        dfs, _, cached_repositories, cached_participants, cached_labels, cached_jira, _ = result
         cls = PullRequestMiner
-        if not cls._check_participants_compatibility(cached_participants, participants):
-            raise CancelCache()
-        if not cached_labels.compatible_with(labels):
+        if (repositories - cached_repositories or
+                not cls._check_participants_compatibility(cached_participants, participants) or
+                not cached_labels.compatible_with(labels) or
+                not cached_jira.compatible_with(jira)):
             raise CancelCache()
         to_remove = set()
         if pr_blacklist:
@@ -126,6 +127,7 @@ class PullRequestMiner:
                     repositories: Set[str],
                     participants: Participants,
                     labels: LabelFilter,
+                    jira: JIRAFilter,
                     branches: pd.DataFrame,
                     default_branches: Dict[str, str],
                     exclude_inactive: bool,
@@ -140,6 +142,7 @@ class PullRequestMiner:
                                Set[str],
                                Participants,
                                LabelFilter,
+                               JIRAFilter,
                                Dict[str, ReleaseMatch]]:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
@@ -221,7 +224,7 @@ class PullRequestMiner:
             to_drop |= cls._find_drop_by_inactive(dfs, time_from, time_to)
         cls._drop(dfs, to_drop)
         # we don't care about the precomputed facts, they are here for the reference
-        return dfs, facts, repositories, participants, labels, matched_bys
+        return dfs, facts, repositories, participants, labels, jira, matched_bys
 
     _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
 
@@ -382,6 +385,7 @@ class PullRequestMiner:
                    repositories: Set[str],
                    participants: Participants,
                    labels: LabelFilter,
+                   jira: JIRAFilter,
                    branches: pd.DataFrame,
                    default_branches: Dict[str, str],
                    exclude_inactive: bool,
@@ -411,6 +415,7 @@ class PullRequestMiner:
         :param participants: PRs must have these user IDs in the specified participation roles \
                              (OR aggregation). An empty dict means everybody.
         :param labels: PRs must be labeled according to this filter's include & exclude sets.
+        :param jira: JIRA filters for those PRs that are matched with JIRA issues.
         :param branches: Preloaded DataFrame with branches in the specified repositories.
         :param default_branches: Mapping from repository names to their default branch names.
         :param exclude_inactive: Ors must have at least one event in the given time frame.
@@ -425,10 +430,10 @@ class PullRequestMiner:
         date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
-        dfs, facts, _, _, _, matched_bys = await cls._mine(
-            date_from, date_to, repositories, participants, labels, branches, default_branches,
-            exclude_inactive, release_settings, mdb, pdb, cache, pr_blacklist=pr_blacklist,
-            truncate=truncate)
+        dfs, facts, _, _, _, _, matched_bys = await cls._mine(
+            date_from, date_to, repositories, participants, labels, jira, branches,
+            default_branches, exclude_inactive, release_settings, mdb, pdb, cache,
+            pr_blacklist=pr_blacklist, truncate=truncate)
         cls._truncate_prs(dfs, time_from, time_to)
         if truncate:
             for df in dfs:

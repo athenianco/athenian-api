@@ -11,7 +11,7 @@ import databases.core
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
 from athenian.api.controllers.miners.access_classes import access_classes, AccessChecker
-from athenian.api.controllers.miners.filters import LabelFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
 from athenian.api.controllers.miners.types import Participants, ParticipationKind
@@ -79,7 +79,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         await Settings.from_request(request, filt.account).list_release_matches(repos)
 
     @sentry_span
-    async def calculate_for_set_metrics(service, repos, devs, labels_include, for_set):
+    async def calculate_for_set_metrics(service, repos, devs, labels, jira, for_set):
         calcs = defaultdict(list)
         # for each filter, we find the functions to measure the metrics
         entries = METRIC_ENTRIES[service]["prs_linear"]
@@ -91,7 +91,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         # for each metric, we find the function to calculate and call it
         for func, metrics in calcs.items():
             tasks.append(func(
-                metrics, time_intervals, filt.quantiles or (0, 1), repos, devs, labels_include,
+                metrics, time_intervals, filt.quantiles or (0, 1), repos, devs, labels, jira,
                 filt.exclude_inactive, release_settings, request.mdb, request.pdb, request.cache))
         if len(tasks) > 1:
             all_mvs = await asyncio.gather(*tasks, return_exceptions=True)
@@ -127,8 +127,8 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
             met.calculated.append(cm)
 
     tasks = []
-    for service, (repos, devs, labels_include, for_set) in filters:
-        tasks.append(calculate_for_set_metrics(service, repos, devs, labels_include, for_set))
+    for service, (repos, devs, labels, jira, for_set) in filters:
+        tasks.append(calculate_for_set_metrics(service, repos, devs, labels, jira, for_set))
     if len(tasks) == 1:
         await tasks[0]
     else:
@@ -204,7 +204,8 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
                         ))
                     dk.add(dev[len(prefix):])
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-            filters.append((service, (repos, devs, labels, for_set)))
+            jira = JIRAFilter.from_web(for_set.jira)
+            filters.append((service, (repos, devs, labels, jira, for_set)))
     return filters, all_repos
 
 
@@ -240,7 +241,8 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
                     ))
                 devs.append(dev[len(prefix):])
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-            filters.append((service, (repos, devs, labels, for_set)))
+            jira = JIRAFilter.from_web(for_set.jira)
+            filters.append((service, (repos, devs, labels, jira, for_set)))
     return filters, all_repos
 
 
@@ -343,9 +345,9 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     time_from, time_to = filt.resolve_time_from_and_to()
     tasks = []
     for_sets = []
-    for service, (repos, devs, labels_include, for_set) in filters:
+    for service, (repos, devs, labels, jira, for_set) in filters:
         tasks.append(METRIC_ENTRIES[service]["developers"](
-            devs, repos, topics, labels_include, time_from, time_to, request.mdb, request.cache))
+            devs, repos, topics, labels, jira, time_from, time_to, request.mdb, request.cache))
         for_sets.append(for_set)
     all_stats = await asyncio.gather(*tasks, return_exceptions=True)
     for stats, for_set in zip(all_stats, for_sets):

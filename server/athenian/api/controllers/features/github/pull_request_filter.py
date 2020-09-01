@@ -18,7 +18,7 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
-from athenian.api.controllers.miners.filters import LabelFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
@@ -217,6 +217,7 @@ async def filter_pull_requests(properties: Set[Property],
                                repos: Set[str],
                                participants: Participants,
                                labels: LabelFilter,
+                               jira: JIRAFilter,
                                exclude_inactive: bool,
                                release_settings: Dict[str, ReleaseMatchSetting],
                                mdb: databases.Database,
@@ -231,18 +232,17 @@ async def filter_pull_requests(properties: Set[Property],
 
     :param repos: List of repository names without the service prefix.
     """
-    prs, _ = await _filter_pull_requests(
-        properties, time_from, time_to, repos, participants, labels, exclude_inactive,
+    prs, _, _ = await _filter_pull_requests(
+        properties, time_from, time_to, repos, participants, labels, jira, exclude_inactive,
         release_settings, mdb, pdb, cache)
     return prs
 
 
-def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem], LabelFilter],
-                              labels: LabelFilter, **_):
-    prs, cached_labels = result
-    if cached_labels == labels:
-        return prs, labels
-    if not cached_labels.compatible_with(labels):
+def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem], LabelFilter, JIRAFilter],
+                              labels: LabelFilter, jira: JIRAFilter, **_):
+    prs, cached_labels, cached_jira = result
+    if (not cached_labels.compatible_with(labels) or
+            not cached_jira.compatible_with(jira)):
         raise CancelCache()
     if labels.include:
         prs = [pr for pr in prs
@@ -250,7 +250,7 @@ def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem], LabelFilt
     if labels.exclude:
         prs = [pr for pr in prs
                if not labels.exclude.intersection({label.name for label in (pr.labels or [])})]
-    return prs, labels
+    return prs, labels, jira
 
 
 @cached(
@@ -275,12 +275,13 @@ async def _filter_pull_requests(properties: Set[Property],
                                 repos: Set[str],
                                 participants: Participants,
                                 labels: LabelFilter,
+                                jira: JIRAFilter,
                                 exclude_inactive: bool,
                                 release_settings: Dict[str, ReleaseMatchSetting],
                                 mdb: databases.Database,
                                 pdb: databases.Database,
                                 cache: Optional[aiomcache.Client],
-                                ) -> Tuple[List[PullRequestListItem], LabelFilter]:
+                                ) -> Tuple[List[PullRequestListItem], LabelFilter, JIRAFilter]:
     assert isinstance(properties, set)
     assert isinstance(repos, set)
     log = logging.getLogger("%s.filter_pull_requests" % metadata.__package__)
@@ -289,7 +290,7 @@ async def _filter_pull_requests(properties: Set[Property],
     branches, default_branches = await extract_branches(repos, mdb, cache)
     tasks = (
         PullRequestMiner.mine(
-            date_from, date_to, time_from, time_to, repos, participants, labels, branches,
+            date_from, date_to, time_from, time_to, repos, participants, labels, jira, branches,
             default_branches, exclude_inactive, release_settings, mdb, pdb, cache,
             truncate=False),
         load_precomputed_done_facts_filters(
@@ -388,7 +389,7 @@ async def _filter_pull_requests(properties: Set[Property],
     )
 
     log.debug("return %d PRs", len(prs))
-    return prs, labels
+    return prs, labels, jira
 
 
 @sentry_span

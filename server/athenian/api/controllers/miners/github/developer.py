@@ -13,7 +13,7 @@ from sqlalchemy import and_, distinct, func, join, or_, select
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
-from athenian.api.controllers.miners.filters import LabelFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import ReviewResolution
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestLabel, PullRequestReview, PullRequestReviewComment, PushCommit, Release
@@ -63,6 +63,7 @@ async def _set_commits(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                        devs: Sequence[str],
                        repos: Collection[str],
                        labels: LabelFilter,
+                       jira: JIRAFilter,
                        time_from: datetime,
                        time_to: datetime,
                        conn: databases.core.Connection,
@@ -87,6 +88,7 @@ async def _set_prs_created(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
                            devs: Sequence[str],
                            repos: Collection[str],
                            labels: LabelFilter,
+                           jira: JIRAFilter,
                            time_from: datetime,
                            time_to: datetime,
                            conn: databases.core.Connection,
@@ -103,6 +105,7 @@ async def _set_prs_reviewed(stats_by_dev: Dict[str, Dict[str, Union[int, float]]
                             devs: Sequence[str],
                             repos: Collection[str],
                             labels: LabelFilter,
+                            jira: JIRAFilter,
                             time_from: datetime,
                             time_to: datetime,
                             conn: databases.core.Connection,
@@ -119,6 +122,7 @@ async def _set_prs_merged(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                           devs: Sequence[str],
                           repos: Collection[str],
                           labels: LabelFilter,
+                          jira: JIRAFilter,
                           time_from: datetime,
                           time_to: datetime,
                           conn: databases.core.Connection,
@@ -135,6 +139,7 @@ async def _set_releases(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                         devs: Sequence[str],
                         repos: Collection[str],
                         labels: LabelFilter,
+                        jira: JIRAFilter,
                         time_from: datetime,
                         time_to: datetime,
                         conn: databases.core.Connection,
@@ -151,6 +156,7 @@ async def _set_reviews(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                        devs: Sequence[str],
                        repos: Collection[str],
                        labels: LabelFilter,
+                       jira: JIRAFilter,
                        time_from: datetime,
                        time_to: datetime,
                        conn: databases.core.Connection,
@@ -196,6 +202,7 @@ async def _set_pr_comments(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
                            devs: Sequence[str],
                            repos: Collection[str],
                            labels: LabelFilter,
+                           jira: JIRAFilter,
                            time_from: datetime,
                            time_to: datetime,
                            conn: databases.core.Connection,
@@ -240,6 +247,7 @@ async def calc_developer_metrics(devs: Sequence[str],
                                  repos: Collection[str],
                                  topics: Set[DeveloperTopic],
                                  labels: LabelFilter,
+                                 jira: JIRAFilter,
                                  time_from: datetime,
                                  time_to: datetime,
                                  db: databases.Database,
@@ -257,7 +265,7 @@ async def calc_developer_metrics(devs: Sequence[str],
     for key, setter in processors:
         if key.intersection(topics):
             tasks.append(setter(
-                stats_by_dev, topics, devs, repos, labels, time_from, time_to, db, cache))
+                stats_by_dev, topics, devs, repos, labels, jira, time_from, time_to, db, cache))
     errors = await asyncio.gather(*tasks, return_exceptions=True)
     for err in errors:
         if isinstance(err, Exception):
@@ -272,7 +280,7 @@ CACHE_EXPIRATION_TIME = 5 * 60  # 5 min
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, labels, **_: (
+    key=lambda devs, repos, time_from, time_to, **_: (
         ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal()),
 )
 async def _fetch_developer_commits(devs: Sequence[str],
