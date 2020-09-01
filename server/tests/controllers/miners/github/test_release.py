@@ -12,6 +12,7 @@ from sqlalchemy import delete, select, sql
 from sqlalchemy.schema import CreateTable
 
 from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import store_precomputed_done_facts
@@ -142,7 +143,8 @@ async def test_map_prs_to_releases_precomputed_released(
         time_to,
         {"src-d/go-git"},
         {},
-        set(),
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
         branches, default_branches,
         False,
         release_match_setting_tag,

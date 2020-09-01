@@ -14,7 +14,7 @@ import pandas as pd
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
 from athenian.api.controllers.miners.access_classes import access_classes
-from athenian.api.controllers.miners.filters import LabelFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
@@ -131,8 +131,9 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = {r.split("/", 1)[1] for r in repos}
     labels = LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude)
+    jira = JIRAFilter.from_web(filt.jira)
     prs = await filter_pull_requests(
-        props, filt.date_from, filt.date_to, repos, participants, labels,
+        props, filt.date_from, filt.date_to, repos, participants, labels, jira,
         filt.exclude_inactive, settings, request.mdb, request.pdb, request.cache)
     return await _build_github_prs_response(prs, request.mdb, request.cache)
 

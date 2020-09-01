@@ -21,7 +21,7 @@ from athenian.api.controllers.features.github.release_metrics import \
     metric_calculators as release_metric_calculators, ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.histogram import Histogram, Scale
 from athenian.api.controllers.features.metric import Metric
-from athenian.api.controllers.miners.filters import LabelFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
@@ -46,13 +46,14 @@ from athenian.api.tracing import sentry_span
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
+    key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, **_:  # noqa
     (
         time_from,
         time_to,
         ",".join(sorted(repositories)),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
         labels,
+        jira,
         exclude_inactive,
         release_settings,
     ),
@@ -62,6 +63,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
                                          repositories: Set[str],
                                          participants: Participants,
                                          labels: LabelFilter,
+                                         jira: JIRAFilter,
                                          exclude_inactive: bool,
                                          release_settings: Dict[str, ReleaseMatchSetting],
                                          mdb: Database,
@@ -92,7 +94,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
     # are effectively discarded later in BinnedMetricCalculator
     miner, unreleased_facts, matched_bys = await PullRequestMiner.mine(
-        date_from, date_to, time_from, time_to, repositories, participants, labels,
+        date_from, date_to, time_from, time_to, repositories, participants, labels, jira,
         branches, default_branches, exclude_inactive, release_settings,
         mdb, pdb, cache, pr_blacklist=blacklist)
     precomputed_unreleased_prs = miner.drop(unreleased_facts)
@@ -166,6 +168,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 repositories: Set[str],
                                                 participants: Participants,
                                                 labels: LabelFilter,
+                                                jira: JIRAFilter,
                                                 exclude_inactive: bool,
                                                 release_settings: Dict[str, ReleaseMatchSetting],
                                                 mdb: Database,
@@ -175,7 +178,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
     """Calculate pull request metrics on GitHub."""
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
-        time_from, time_to, repositories, participants, labels, exclude_inactive,
+        time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
         release_settings, mdb, pdb, cache)
     with sentry_sdk.start_span(op="PullRequestBinnedMetricCalculator.__call__",
                                description=str(len(mined_facts))):
@@ -229,6 +232,7 @@ async def calc_pull_request_histogram_github(metrics: Sequence[str],
                                              repositories: Set[str],
                                              participants: Participants,
                                              labels: LabelFilter,
+                                             jira: JIRAFilter,
                                              exclude_inactive: bool,
                                              release_settings: Dict[str, ReleaseMatchSetting],
                                              mdb: Database,
@@ -237,7 +241,7 @@ async def calc_pull_request_histogram_github(metrics: Sequence[str],
                                              ) -> List[Histogram]:
     """Calculate the pull request histograms on GitHub."""
     mined_facts = await calc_pull_request_facts_github(
-        time_from, time_to, repositories, participants, labels, exclude_inactive,
+        time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
         release_settings, mdb, pdb, cache)
     ensemble = PullRequestHistogramCalculatorEnsemble(*metrics, quantiles=quantiles)
     for facts in mined_facts:

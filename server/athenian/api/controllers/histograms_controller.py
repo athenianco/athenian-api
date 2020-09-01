@@ -30,7 +30,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     result = []
 
-    async def calculate_for_set_histograms(service, repos, devs, labels_include, for_set):
+    async def calculate_for_set_histograms(service, repos, devs, labels, jira, for_set):
         calcs = defaultdict(list)
         # for each filter, we find the functions to calculate the histograms
         entries = METRIC_ENTRIES[service]["prs_histogram"]
@@ -46,7 +46,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         for func, metrics in calcs.items():
             tasks.append(func(
                 metrics, Scale[filt.scale.upper()], filt.bins or 0, time_from, time_to,
-                filt.quantiles or (0, 1), repos, devs, labels_include, filt.exclude_inactive,
+                filt.quantiles or (0, 1), repos, devs, labels, jira, filt.exclude_inactive,
                 release_settings, request.mdb, request.pdb, request.cache))
         if len(tasks) == 1:
             all_histograms = [await tasks[0]]  # type: List[Histogram]
@@ -70,8 +70,8 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 ))
 
     tasks = []
-    for service, (repos, devs, labels, for_set) in filters:
-        tasks.append(calculate_for_set_histograms(service, repos, devs, labels, for_set))
+    for service, (repos, devs, labels, jira, for_set) in filters:
+        tasks.append(calculate_for_set_histograms(service, repos, devs, labels, jira, for_set))
     if len(tasks) == 0:
         await tasks[0]
     else:
