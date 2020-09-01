@@ -650,6 +650,83 @@ async def test_developer_metrics_labels_include(client, headers, metric, value):
     assert result.calculated[0].values == value
 
 
+async def test_developer_metrics_labels_exclude(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["{1}"],
+            "developers": ["github.com/mcuadros", "github.com/smola",
+                           "github.com/jfontan", "github.com/ajnavarro"],
+            "labels_exclude": ["bug", "enhancement"],
+        }],
+        "metrics": [DeveloperMetricID.PRS_CREATED],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert not result.calculated[0].for_.labels_include
+    assert result.calculated[0].for_.labels_exclude == ["bug", "enhancement"]
+    assert result.calculated[0].values == [[14], [8], [26], [7]]
+
+
+async def test_developer_metrics_labels_include_exclude(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["{1}"],
+            "developers": ["github.com/mcuadros", "github.com/smola",
+                           "github.com/jfontan", "github.com/ajnavarro"],
+            "labels_include": ["bug"],
+            "labels_exclude": ["enhancement"],
+        }],
+        "metrics": [DeveloperMetricID.PRS_CREATED],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert result.calculated[0].for_.labels_include == ["bug"]
+    assert result.calculated[0].for_.labels_exclude == ["enhancement"]
+    assert result.calculated[0].values == [[0], [0], [1], [0]]
+
+
+async def test_developer_metrics_labels_contradiction(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["{1}"],
+            "developers": ["github.com/mcuadros", "github.com/smola",
+                           "github.com/jfontan", "github.com/ajnavarro"],
+            "labels_include": ["bug"],
+            "labels_exclude": ["bug"],
+        }],
+        "metrics": [DeveloperMetricID.PRS_CREATED],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert result.calculated[0].for_.labels_include == ["bug"]
+    assert result.calculated[0].for_.labels_exclude == ["bug"]
+    assert result.calculated[0].values == [[0], [0], [0], [0]]
+
+
 @pytest.mark.parametrize("account, date_to, code",
                          [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2018-01-12", 200),
                           (1, "2018-01-11", 400), (1, "2019-01-32", 400)])

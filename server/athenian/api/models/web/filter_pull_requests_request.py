@@ -20,6 +20,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         "properties": List[str],
         "with_": PullRequestWith,
         "labels_include": List[str],
+        "labels_exclude": List[str],
         "exclude_inactive": bool,
         "jira": JIRAFilter,
     }
@@ -33,6 +34,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         "properties": "properties",
         "with_": "with",
         "labels_include": "labels_include",
+        "labels_exclude": "labels_exclude",
         "exclude_inactive": "exclude_inactive",
         "jira": "jira",
     }
@@ -47,6 +49,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         properties: Optional[List[str]] = None,
         with_: Optional[PullRequestWith] = None,
         labels_include: Optional[List[str]] = None,
+        labels_exclude: Optional[List[str]] = None,
         exclude_inactive: Optional[bool] = None,
         jira: Optional[JIRAFilter] = None,
     ):
@@ -60,6 +63,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         :param properties: The properties of this FilterPullRequestsRequest.
         :param with_: The with_ of this FilterPullRequestsRequest.
         :param labels_include: The labels_include of this FilterPullRequestsRequest.
+        :param labels_exclude: The labels_exclude of this FilterPullRequestsRequest.
         :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
         :param jira: The jira of this FilterPullRequestsRequest.
         """
@@ -71,6 +75,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         self._properties = properties
         self._with_ = with_
         self._labels_include = labels_include
+        self._labels_exclude = labels_exclude
         self._exclude_inactive = exclude_inactive
         self._jira = jira
 
@@ -147,6 +152,22 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         :param labels_include: The labels_include of this FilterPullRequestsRequest.
         """
         self._labels_include = labels_include
+
+    @property
+    def labels_exclude(self) -> Optional[List[str]]:
+        """Gets the labels_exclude of this FilterPullRequestsRequest.
+
+        :return: The labels_exclude of this FilterPullRequestsRequest.
+        """
+        return self._labels_exclude
+
+    @labels_exclude.setter
+    def labels_exclude(self, labels_exclude: List[str]):
+        """Sets the labels_exclude of this FilterPullRequestsRequest.
+
+        :param labels_exclude: The labels_exclude of this FilterPullRequestsRequest.
+        """
+        self._labels_exclude = labels_exclude
 
     @property
     def exclude_inactive(self) -> bool:
