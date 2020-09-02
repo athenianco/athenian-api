@@ -785,6 +785,7 @@ async def map_releases_to_prs(repos: Collection[str],
     assert isinstance(time_to, datetime)
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
+    assert isinstance(pr_blacklist, (BinaryExpression, type(None)))
 
     tasks = [
         _find_releases_for_matching_prs(repos, branches, default_branches, time_from, time_to,

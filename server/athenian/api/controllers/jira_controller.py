@@ -1,7 +1,6 @@
 import asyncio
 from datetime import timezone
 from itertools import chain, groupby
-import json
 import marshal
 from operator import itemgetter
 from typing import Optional
@@ -91,11 +90,6 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                         Issue.created < time_to,
                         or_(Issue.resolved.is_(None), Issue.resolved >= time_from),
                         )))
-        if mdb.url.dialect == "sqlite":
-            for i, row in enumerate(label_rows):
-                row = dict(row)
-                row[Issue.labels.key] = json.loads(row[Issue.labels.key])
-                label_rows[i] = row
         labels = set(chain.from_iterable(r[Issue.labels.key] for r in label_rows))
         labels = {k: JIRALabel(title=k, kind="regular", issues_count=0) for k in labels}
         for row in label_rows:

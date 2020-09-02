@@ -1,12 +1,12 @@
 import datetime
 from itertools import chain
-import json
 from lzma import LZMAFile
 import os
 from pathlib import Path
 
 from sqlalchemy.cprocessors import str_to_date, str_to_datetime
 import sqlalchemy.orm
+from sqlalchemy.sql.type_api import Variant
 
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest, PushCommit
@@ -16,7 +16,6 @@ from athenian.api.models.state.models import Account, AccountFeature, AccountGit
 
 
 def fill_metadata_session(session: sqlalchemy.orm.Session):
-    sqlite = session.bind.dialect.name == "sqlite"
     models = {}
     tables = {**GithubBase.metadata.tables, **JiraBase.metadata.tables}
     for cls in chain(GithubBase._decl_class_registry.values(),
@@ -45,18 +44,18 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                 model = models[table]
                 columns = {}
                 for c in tables[table].columns:
-                    pt = c.type.python_type
+                    if isinstance(c.type, Variant):
+                        pt = c.type.load_dialect_impl(session.bind.dialect).python_type
+                    else:
+                        pt = c.type.python_type
                     if pt is datetime.date:
                         ctor = str_to_date
                     elif pt is datetime.datetime:
                         ctor = str_to_datetime
                     elif pt is bool:
                         ctor = lambda x: x == "t" or x == "1"  # noqa:E731
-                    elif pt is list:
-                        if sqlite:
-                            ctor = lambda x: json.dumps([s for s in x.strip("{}").split(",") if s])  # noqa
-                        else:
-                            ctor = lambda x: [s for s in x.strip("{}").split(",") if s]  # noqa
+                    elif issubclass(pt, (list, dict)):
+                        ctor = lambda x: [s for s in x.strip("{}").split(",") if s]  # noqa
                     else:
                         ctor = lambda x: x  # noqa:E731
                     columns[c.name] = ctor

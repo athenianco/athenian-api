@@ -47,8 +47,7 @@ from athenian.api.defer import enable_defer, wait_deferred
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.metadata import __package__
-from athenian.api.models import check_collation, check_schema_version, DBSchemaMismatchError, \
-    hack_sqlite_arrays, hack_sqlite_hstore
+from athenian.api.models import check_collation, check_schema_version, DBSchemaMismatchError
 from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
@@ -617,8 +616,6 @@ def main() -> Optional[AthenianApp]:
     setup_context(log)
     if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):
         return None
-    hack_sqlite_arrays()
-    hack_sqlite_hstore()
     patch_pandas()
     cache = create_memcached(args.memcached, log)
     auth0_cls = create_auth0_factory(args.single_tenant, args.force_user)

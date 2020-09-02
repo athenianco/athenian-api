@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import CHAR, Column, func, Integer, JSON, LargeBinary, String, Text, TIMESTAMP
-from sqlalchemy.dialects.postgresql import ARRAY, HSTORE
+from sqlalchemy.dialects import postgresql, sqlite
 
 from athenian.api.models import create_base
 
@@ -9,8 +9,8 @@ from athenian.api.models import create_base
 Base = create_base()
 
 
-TSARRAY = ARRAY(TIMESTAMP(timezone=True)).with_variant(JSON(), "sqlite")
-JHSTORE = HSTORE().with_variant(JSON(), "sqlite")
+TSARRAY = postgresql.ARRAY(TIMESTAMP(timezone=True)).with_variant(JSON(), sqlite.dialect.name)
+HSTORE = postgresql.HSTORE().with_variant(JSON(), sqlite.dialect.name)
 RepositoryFullName = String(39 + 1 + 100)  # user / project taken from the factual GitHub limits
 
 
@@ -50,11 +50,11 @@ class GitHubDonePullRequestFacts(Base, UpdatedMixin):
     releaser = Column(CHAR(100))
     release_url = Column(Text())
     release_node_id = Column(Text())
-    reviewers = Column(JHSTORE, nullable=False, server_default="")
-    commenters = Column(JHSTORE, nullable=False, server_default="")
-    commit_authors = Column(JHSTORE, nullable=False, server_default="")
-    commit_committers = Column(JHSTORE, nullable=False, server_default="")
-    labels = Column(JHSTORE, nullable=False, server_default="")
+    reviewers = Column(HSTORE, nullable=False, server_default="")
+    commenters = Column(HSTORE, nullable=False, server_default="")
+    commit_authors = Column(HSTORE, nullable=False, server_default="")
+    commit_committers = Column(HSTORE, nullable=False, server_default="")
+    labels = Column(HSTORE, nullable=False, server_default="")
     activity_days = Column(TSARRAY, nullable=False, server_default="{}")
     data = Column(LargeBinary(), nullable=False)
 
@@ -94,7 +94,7 @@ class GitHubMergedPullRequestFacts(Base, UpdatedMixin):
     checked_until = Column(TIMESTAMP(timezone=True), nullable=False)
     author = Column(CHAR(100))  # can be null, see @ghost
     merger = Column(CHAR(100))  # @ghost can merge, too
-    labels = Column(JHSTORE, nullable=False, server_default="")
+    labels = Column(HSTORE, nullable=False, server_default="")
     data = Column(LargeBinary())  # can be null, we run a 2-step update procedure
 
 

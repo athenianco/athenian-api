@@ -10,8 +10,10 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import select, sql
+from sqlalchemy import sql
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
+from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
@@ -25,9 +27,11 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import dtmax, dtmin, Fallback, MinedPullRequest, \
     Participants, ParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
-from athenian.api.models.metadata.github import Base, PullRequest, PullRequestComment, \
+from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, PullRequest, \
+    PullRequestComment, \
     PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewComment, \
     PullRequestReviewRequest, Release
+from athenian.api.models.metadata.jira import Issue
 from athenian.api.tracing import sentry_span
 
 
@@ -148,35 +152,14 @@ class PullRequestMiner:
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
         assert isinstance(repositories, set)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
-        filters = [
-            sql.or_(PullRequest.closed_at.is_(None), PullRequest.closed_at >= time_from),
-            PullRequest.created_at < time_to,
-            PullRequest.hidden.is_(False),
-            PullRequest.repository_full_name.in_(repositories),
-        ]
         if pr_blacklist is not None:
-            pr_blacklist = PullRequest.node_id.notin_any_values(pr_blacklist)
-            filters.append(pr_blacklist)
-        if len(participants) == 1:
-            if ParticipationKind.AUTHOR in participants:
-                filters.append(PullRequest.user_login.in_(participants[ParticipationKind.AUTHOR]))
-            elif ParticipationKind.MERGER in participants:
-                filters.append(
-                    PullRequest.merged_by_login.in_(participants[ParticipationKind.MERGER]))
-        elif len(participants) == 2 and ParticipationKind.AUTHOR in participants and \
-                ParticipationKind.MERGER in participants:
-            filters.append(sql.or_(
-                PullRequest.user_login.in_(participants[ParticipationKind.AUTHOR]),
-                PullRequest.merged_by_login.in_(participants[ParticipationKind.MERGER]),
-            ))
-
-        @sentry_span
-        async def fetch_prs() -> pd.DataFrame:
-            return await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                                        mdb, PullRequest, index=PullRequest.node_id.key)
-
+            if len(pr_blacklist) > 0:
+                pr_blacklist = PullRequest.node_id.notin_any_values(pr_blacklist)
+            else:
+                pr_blacklist = None
         tasks = [
-            fetch_prs(),
+            cls._fetch_prs(
+                time_from, time_to, repositories, participants, jira, pr_blacklist, mdb),
             map_releases_to_prs(
                 repositories, branches, default_branches, time_from, time_to,
                 participants.get(ParticipationKind.AUTHOR, []),
@@ -196,7 +179,12 @@ class PullRequestMiner:
             if isinstance(r, Exception):
                 raise r from None
         released_prs, releases, matched_bys, dags = released
-        prs = pd.concat([prs, released_prs, unreleased], copy=False)
+        if jira:
+            extra_prs = pd.concat([released_prs, unreleased], copy=False)
+            extra_prs = await cls._filter_jira(extra_prs, jira, mdb)
+            prs = pd.concat([prs, extra_prs], copy=False)
+        else:
+            prs = pd.concat([prs, released_prs, unreleased], copy=False)
         prs = prs[~prs.index.duplicated()]
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
         if truncate:
@@ -440,6 +428,88 @@ class PullRequestMiner:
                 cls._truncate_timestamps(df, time_to)
         return cls(*dfs), facts, matched_bys
 
+    @classmethod
+    @sentry_span
+    async def _fetch_prs(cls,
+                         time_from: datetime,
+                         time_to: datetime,
+                         repositories: Set[str],
+                         participants: Participants,
+                         jira: JIRAFilter,
+                         pr_blacklist: Optional[BinaryExpression],
+                         mdb: databases.Database) -> pd.DataFrame:
+        postgres = mdb.url.dialect in ("postgres", "postgresql")
+        filters = [
+            sql.or_(PullRequest.closed_at.is_(None), PullRequest.closed_at >= time_from),
+            PullRequest.created_at < time_to,
+            PullRequest.hidden.is_(False),
+            PullRequest.repository_full_name.in_(repositories),
+        ]
+        if pr_blacklist is not None:
+            filters.append(pr_blacklist)
+        if len(participants) == 1:
+            if ParticipationKind.AUTHOR in participants:
+                filters.append(PullRequest.user_login.in_(participants[ParticipationKind.AUTHOR]))
+            elif ParticipationKind.MERGER in participants:
+                filters.append(
+                    PullRequest.merged_by_login.in_(participants[ParticipationKind.MERGER]))
+        elif len(participants) == 2 and ParticipationKind.AUTHOR in participants and \
+                ParticipationKind.MERGER in participants:
+            filters.append(sql.or_(
+                PullRequest.user_login.in_(participants[ParticipationKind.AUTHOR]),
+                PullRequest.merged_by_login.in_(participants[ParticipationKind.MERGER]),
+            ))
+        if not jira:
+            query = sql.select([PullRequest]).where(sql.and_(*filters))
+        else:
+            query = cls._generate_jira_prs_query(filters, jira, postgres)
+        return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
+
+    @classmethod
+    @sentry_span
+    async def _filter_jira(cls,
+                           prs: pd.DataFrame,
+                           jira: JIRAFilter,
+                           mdb: databases.Database) -> pd.DataFrame:
+        assert jira
+        postgres = mdb.url.dialect in ("postgres", "postgresql")
+        filters = [PullRequest.node_id.in_(prs.index.values)]
+        query = cls._generate_jira_prs_query(filters, jira, postgres)
+        return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
+
+    @staticmethod
+    def _generate_jira_prs_query(filters: list, jira: JIRAFilter, postgres: bool) -> sql.Select:
+        _map = aliased(NodePullRequestJiraIssues, name="m")
+        _issue = aliased(Issue, name="j")
+        if postgres:
+            if jira.labels.include:
+                filters.append(_issue.labels.overlap(jira.labels.include))
+            if jira.labels.exclude:
+                filters.append(sql.not_(_issue.labels.overlap(jira.labels.exclude)))
+        else:
+            # neither 100% correct nor efficient, but enough for local development
+            if jira.labels.include:
+                filters.append(sql.or_(*(
+                    _issue.labels.like("%%%s%%" % s) for s in jira.labels.include)))
+            if jira.labels.exclude:
+                filters.append(sql.and_(*(sql.not_(
+                    _issue.labels.like("%%%s%%" % s) for s in jira.labels.exclude))))
+        if jira.issue_types:
+            filters.append(_issue.type.in_(jira.issue_types))
+        if not jira.epics:
+            return sql.select([PullRequest]).select_from(sql.join(
+                PullRequest, sql.join(_map, _issue, _map.jira_id == _issue.id),
+                PullRequest.node_id == _map.node_id,
+            )).where(sql.and_(*filters))
+        _issue_epic = aliased(Issue, name="e")
+        filters.append(_issue_epic.key.in_(jira.epics))
+        return sql.select([PullRequest]).select_from(sql.join(
+            PullRequest, sql.join(
+                _map, sql.join(_issue, _issue_epic, _issue.epic_id == _issue_epic.id),
+                _map.jira_id == _issue.id),
+            PullRequest.node_id == _map.node_id,
+        )).where(sql.and_(*filters))
+
     @staticmethod
     def _check_participants_compatibility(cached_participants: Participants,
                                           participants: Participants) -> bool:
@@ -571,6 +641,16 @@ class PullRequestMiner:
 
     @classmethod
     @sentry_span
+    def _find_drop_by_jira(cls,
+                           prs: pd.DataFrame,
+                           df_jira: pd.DataFrame,
+                           jira: JIRAFilter) -> pd.Index:
+        if not jira:
+            return pd.Index([])
+        raise NotImplementedError
+
+    @classmethod
+    @sentry_span
     def _find_drop_by_inactive(cls,
                                dfs: List[pd.DataFrame],
                                time_from: datetime,
@@ -611,7 +691,7 @@ class PullRequestMiner:
         else:
             filters = node_id_filter
         df = await read_sql_query(
-            select(columns or [model_cls]).where(filters),
+            sql.select(columns or [model_cls]).where(filters),
             con=conn,
             columns=columns or model_cls,
             index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])

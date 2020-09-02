@@ -9,7 +9,6 @@ from alembic import script
 from alembic.migration import MigrationContext
 import jinja2
 from sqlalchemy import any_, create_engine
-from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
 from sqlalchemy.sql import operators
@@ -212,13 +211,3 @@ def migrate(name: str, url=None, exec=True):
         os.execlp(*args)
     else:
         subprocess.run(" ".join(args[1:]), check=True, shell=True)
-
-
-def hack_sqlite_arrays():
-    """Hack SQLite compiler to handle ARRAY fields."""
-    SQLiteTypeCompiler.visit_ARRAY = lambda self, type_, **kw: "JSON"
-
-
-def hack_sqlite_hstore():
-    """Hack SQLite compiler to handle HSTORE fields."""
-    SQLiteTypeCompiler.visit_HSTORE = lambda self, type_, **kw: "JSON"
