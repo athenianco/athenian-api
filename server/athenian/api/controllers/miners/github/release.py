@@ -1042,7 +1042,7 @@ async def mine_releases(repos: Iterable[str],
         release_timestamps = repo_releases[Release.published_at.key].values
         parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_timestamps)
         ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
-        unmatched = np.where(ownership == len(releases))[0]
+        unmatched = np.where(ownership == len(release_hashes))[0]
         if len(unmatched) > 0:
             hashes = np.delete(hashes, unmatched)
             ownership = np.delete(ownership, unmatched)
@@ -1055,9 +1055,11 @@ async def mine_releases(repos: Iterable[str],
         series = np.arange(len(repo_releases))
         ssis = np.searchsorted(unique_owners, series)
         missing = ssis[unique_owners[ssis] != series]
-        grouped_owned_hashes = np.insert(grouped_owned_hashes,
-                                         missing,
-                                         [np.array([], dtype="U40")] * len(missing))
+        if len(missing):
+            empty = np.array([], dtype="U40")
+            for i in missing:
+                grouped_owned_hashes.insert(i, empty)
+        assert len(grouped_owned_hashes) == len(repo_releases)
         all_hashes.append(hashes)
         repo_releases_analyzed[repo] = repo_releases, grouped_owned_hashes, parents
     commits_df_columns = [
