@@ -9,11 +9,11 @@ from libc.string cimport memset
 from libcpp.vector cimport vector
 from libcpp.unordered_map cimport pair, unordered_map
 import numpy as np
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 
-def searchsorted_inrange(a, v, side="left", sorter=None):
-    r = np.searchsorted(a, v, side=side, sorter=sorter)
+def searchsorted_inrange(a: np.ndarray, v: Any, side="left", sorter=None):
+    r = np.searchsorted(a, np.atleast_1d(v), side=side, sorter=sorter)
     r[r == len(a)] = 0  # whatever index is fine
     return r
 
