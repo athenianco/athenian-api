@@ -35,8 +35,8 @@ from sqlalchemy.ext.declarative import DeclarativeMeta
 from sqlalchemy.orm import sessionmaker
 import uvloop
 
-from athenian.api import AthenianApp, check_collation, create_memcached, hack_sqlite_arrays, \
-    hack_sqlite_hstore, ParallelDatabase, patch_pandas, setup_cache_metrics
+from athenian.api import AthenianApp, check_collation, create_memcached, ParallelDatabase, \
+    patch_pandas, setup_cache_metrics
 from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
@@ -62,10 +62,6 @@ override_mdb = os.getenv("OVERRIDE_MDB")
 override_sdb = os.getenv("OVERRIDE_SDB")
 override_pdb = os.getenv("OVERRIDE_PDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
-
-
-hack_sqlite_arrays()
-hack_sqlite_hstore()
 
 
 class FakeCache:

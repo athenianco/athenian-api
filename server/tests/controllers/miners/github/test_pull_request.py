@@ -801,3 +801,42 @@ async def test_pr_miner_unreleased_facts(
     dropped = miner.drop(unreleased_facts)
     assert set(dropped) == set(unreleased_facts)
     assert len(miner) == 293
+
+
+@with_defer
+async def test_pr_miner_jira_labels(
+        branches, default_branches, mdb, pdb, release_match_setting_tag):
+    date_from = date(year=2018, month=1, day=1)
+    date_to = date(year=2020, month=4, day=1)
+    time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+    time_to = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
+    args = [
+        date_from,
+        date_to,
+        time_from,
+        time_to,
+        {"src-d/go-git"},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter(LabelFilter({"performance"}, set()), set(), set()),
+        branches, default_branches,
+        False,
+        release_match_setting_tag,
+        mdb,
+        pdb,
+        None,
+    ]
+    miner, _, _ = await PullRequestMiner.mine(*args)
+    numbers = {pr.pr[PullRequest.number.key] for pr in miner}
+    assert {720, 721, 739, 740, 742,
+            744, 751, 768, 771, 776,
+            783, 784, 789, 797, 803,
+            808, 815, 824, 825, 874} == numbers
+    args[7] = JIRAFilter(LabelFilter.empty(), {"DEV-149"}, set())
+    miner, _, _ = await PullRequestMiner.mine(*args)
+    numbers = {pr.pr[PullRequest.number.key] for pr in miner}
+    assert {821, 833, 846, 861} == numbers
+    args[7] = JIRAFilter(LabelFilter.empty(), set(), {"Bug"})
+    miner, _, _ = await PullRequestMiner.mine(*args)
+    numbers = {pr.pr[PullRequest.number.key] for pr in miner}
+    assert {800, 769, 896, 762, 807, 778, 855, 816, 754, 724, 790, 759, 792, 794, 795} == numbers

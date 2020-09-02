@@ -11,6 +11,7 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.state.models import Base as StateBase
+from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 from athenian.api.typing_utils import DatabaseLike
 
 
@@ -45,8 +46,13 @@ async def read_sql_query(sql: ClauseElement,
     try:
         data = await con.fetch_all(query=sql)
     except Exception as e:
+        try:
+            sql = str(sql)
+        except Exception:
+            sql = repr(sql)
+        sql = textwrap.shorten(sql, MAX_SENTRY_STRING_LENGTH - 500)
         logging.getLogger("%s.read_sql_query" % metadata.__package__).error(
-            "%s: %s; %s", type(e).__name__, e, textwrap.shorten(str(sql), 1000))
+            "%s: %s; %s", type(e).__name__, e, sql)
         raise e from None
     return wrap_sql_query(data, columns, index)
 
