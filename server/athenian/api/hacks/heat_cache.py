@@ -23,7 +23,7 @@ from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.settings import Settings
 import athenian.api.db
-from athenian.api.models.metadata import PREFIXES
+from athenian.api.models.metadata import dereference_schemas, PREFIXES
 from athenian.api.models.metadata.github import PullRequestLabel, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts
@@ -83,6 +83,8 @@ def main():
             "hits": ContextVar("pdb_hits", default=defaultdict(int)),
             "misses": ContextVar("pdb_misses", default=defaultdict(int)),
         }
+        if mdb.url.dialect == "sqlite":
+            dereference_schemas()
 
         nonlocal return_code
         return_code = await sync_labels(log, mdb, pdb)

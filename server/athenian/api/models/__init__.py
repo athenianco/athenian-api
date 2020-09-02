@@ -1,4 +1,3 @@
-"""The following two classes compensate the absent ORM layer in databases.Database."""
 import logging
 import os
 import subprocess

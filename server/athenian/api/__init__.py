@@ -48,6 +48,7 @@ from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.metadata import __package__
 from athenian.api.models import check_collation, check_schema_version, DBSchemaMismatchError
+from athenian.api.models.metadata import dereference_schemas
 from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
@@ -274,6 +275,8 @@ class AthenianApp(connexion.AioHttpApp):
             setattr(self, shortcut, measure_db_overhead_and_retry(db, shortcut, self.app))
             if shortcut == "pdb":
                 self.pdb.metrics = pdbctx
+            elif shortcut == "mdb" and db.url.dialect == "sqlite":
+                dereference_schemas()
 
         self.app.on_shutdown.append(self.shutdown)
         # schedule the DB connections when the server starts
