@@ -348,4 +348,4 @@ class NodePullRequestJiraIssues(Base, IDMixin):
     __table_args__ = {"schema": "github"}
 
     jira_acc = Column(BigInteger, nullable=False)
-    jira_id = Column(BigInteger, nullable=False)
+    jira_id = Column(Text, nullable=False)
