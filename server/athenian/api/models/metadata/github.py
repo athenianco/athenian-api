@@ -58,7 +58,8 @@ class PullRequestPKMixin:
 
 
 class InstallationOwner(Base, UpdatedMixin):
-    __tablename__ = "github_installation_owners"
+    __tablename__ = "installation_owners"
+    __table_args__ = {"schema": "github"}
 
     install_id = Column(BigInteger, primary_key=True)
     user_id = Column(BigInteger, primary_key=True)
@@ -66,7 +67,8 @@ class InstallationOwner(Base, UpdatedMixin):
 
 
 class InstallationRepo(Base):
-    __tablename__ = "github_installation_repos_compat"
+    __tablename__ = "installation_repos_compat"
+    __table_args__ = {"schema": "github"}
 
     install_id = Column(BigInteger, primary_key=True)
     event_id = Column(Text, nullable=False)
