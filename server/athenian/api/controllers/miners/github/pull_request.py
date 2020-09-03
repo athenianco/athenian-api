@@ -4,7 +4,8 @@ from datetime import date, datetime, timezone
 from enum import Enum
 import logging
 import pickle
-from typing import Collection, Dict, Generator, Iterator, List, Optional, Set, Tuple, Union
+from typing import Collection, Dict, Generator, Iterator, List, Optional, Sequence, Set, Tuple, \
+    Union
 
 import aiomcache
 import databases
@@ -118,6 +119,7 @@ class PullRequestMiner:
         time_to = None if truncate else pd.Timestamp(date_to, tzinfo=timezone.utc)
         to_remove.update(cls._find_drop_by_participants(dfs, participants, time_to))
         to_remove.update(cls._find_drop_by_labels(dfs, labels))
+        to_remove.update(cls._find_drop_by_jira(dfs, jira))
         cls._drop(dfs, to_remove)
         return result
 
@@ -641,13 +643,21 @@ class PullRequestMiner:
             return pd.Index([])
         df_labels_index = dfs.labels.index.get_level_values(0)
         df_labels_names = dfs.labels[PullRequestLabel.name.key].values
+        left = cls._find_left_by_labels(df_labels_index, df_labels_names, labels)
+        return dfs.prs.index.difference(left)
+
+    @classmethod
+    def _find_left_by_labels(cls,
+                             df_labels_index: pd.Index,
+                             df_labels_names: Sequence[str],
+                             labels: LabelFilter) -> pd.Index:
         left_include = left_exclude = None
         if labels.include:
             left_include = df_labels_index.take(
                 np.where(np.in1d(df_labels_names, list(labels.include)))[0],
             ).unique()
         if labels.exclude:
-            left_exclude = df_labels_index.unique().difference(df_labels_index.take(
+            left_exclude = df_labels_index.difference(df_labels_index.take(
                 np.where(np.in1d(df_labels_names, list(labels.exclude)))[0],
             ).unique())
         if labels.include:
@@ -657,17 +667,30 @@ class PullRequestMiner:
                 left = left_include
         else:
             left = left_exclude
-        return dfs.prs.index.unique().difference(left)
+        return left
 
     @classmethod
     @sentry_span
-    def _find_drop_by_jira(cls,
-                           prs: pd.DataFrame,
-                           df_jira: pd.DataFrame,
-                           jira: JIRAFilter) -> pd.Index:
+    def _find_drop_by_jira(cls, dfs: PRDataFrames, jira: JIRAFilter) -> pd.Index:
         if not jira:
             return pd.Index([])
-        raise NotImplementedError
+        left = []
+        jira_index = dfs.jiras.index.get_level_values(0)
+        if jira.labels:
+            df_labels_names = dfs.jiras[Issue.labels.key].values
+            df_labels_index = pd.Index(np.repeat(jira_index, [len(v) for v in df_labels_names]))
+            df_labels_names = list(pd.core.common.flatten(df_labels_names))
+            left.append(cls._find_left_by_labels(df_labels_index, df_labels_names, jira.labels))
+        if jira.epics:
+            left.append(jira_index.take(np.where(
+                dfs.jiras["epic"].isin(jira.epics))[0]).unique())
+        if jira.issue_types:
+            left.append(dfs.jiras.index.get_level_values(0).take(np.where(
+                dfs.jiras[Issue.type.key].isin(jira.issue_types))[0]).unique())
+        result = left[0]
+        for other in left[1:]:
+            result = result.intersection(other)
+        return dfs.prs.index.difference(result)
 
     @classmethod
     @sentry_span
