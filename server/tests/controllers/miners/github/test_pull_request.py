@@ -892,3 +892,39 @@ async def test_pr_miner_jira_fetch(
     assert labels == {"enhancement", "new-charts", "metrics", "usability", "security"}
     assert epics == {"DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"}
     assert types == {"Task", "Story"}
+
+
+@with_defer
+async def test_pr_miner_jira_cache(
+        branches, default_branches, mdb, pdb, release_match_setting_tag, cache):
+    date_from = date(year=2018, month=1, day=1)
+    date_to = date(year=2020, month=4, day=1)
+    time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
+    time_to = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
+    args = [
+        date_from,
+        date_to,
+        time_from,
+        time_to,
+        {"src-d/go-git"},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        branches, default_branches,
+        False,
+        release_match_setting_tag,
+        mdb,
+        pdb,
+        cache,
+    ]
+    miner, _, _ = await PullRequestMiner.mine(*args)
+    await wait_deferred()
+    assert len(miner) == 325
+    args[7] = JIRAFilter(LabelFilter({"enhancement"}, set()), {"DEV-149"}, {"Task"})
+    args[-3] = args[-2] = None
+    miner, _, _ = await PullRequestMiner.mine(*args)
+    assert len(miner) == 3
+    for pr in miner:
+        assert "enhancement" in pr.jira["labels"]
+        assert pr.jira["epic"] == "DEV-149"
+        assert pr.jira[Issue.type.key] == "Task"
