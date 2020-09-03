@@ -3,7 +3,6 @@ import base64
 from collections import defaultdict
 from contextvars import ContextVar
 from datetime import datetime, timezone
-from itertools import chain
 import logging
 import os
 from pathlib import Path
@@ -39,6 +38,7 @@ from athenian.api import AthenianApp, check_collation, create_memcached, Paralle
     patch_pandas, setup_cache_metrics
 from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
+from athenian.api.models.metadata import dereference_schemas
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.precomputed.models import Base as PrecomputedBase
@@ -275,11 +275,7 @@ def metadata_db() -> str:
         engine.execute("CREATE SCHEMA IF NOT EXISTS github;")
         engine.execute("CREATE SCHEMA IF NOT EXISTS jira;")
     else:
-        for table in chain(GithubBase.metadata.tables.values(),
-                           JiraBase.metadata.tables.values()):
-            if table.schema is not None:
-                table.name = ".".join([table.schema, table.name])
-                table.schema = None
+        dereference_schemas()
     GithubBase.metadata.create_all(engine)
     JiraBase.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()

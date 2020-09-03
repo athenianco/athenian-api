@@ -452,7 +452,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
     dfs, _ = await PullRequestMiner.mine_by_ids(
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
         release_settings, mdb, pdb, cache)
-    prs = await list_with_yield(PullRequestMiner(prs_df, *dfs), "PullRequestMiner.__iter__")
+    prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
     for k, v in unreleased.items():
         if v is not None and k not in facts:
             facts[k] = v

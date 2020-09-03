@@ -111,6 +111,7 @@ class MinedPullRequest:
     comments: pd.DataFrame
     release: Dict[str, Any]
     labels: pd.DataFrame
+    jira: Dict[str, Any]
 
     def participants(self) -> Participants:
         """Collect unique developer logins that are mentioned in this pull request."""
@@ -140,8 +141,7 @@ class MinedPullRequest:
         values = df[col].values
         return set(values[np.where(values)[0]])
 
-    def truncate(self, dt: Union[pd.Timestamp, datetime],
-                 ignore=tuple()) -> "MinedPullRequest":
+    def truncate(self, dt: datetime, ignore=tuple()) -> "MinedPullRequest":
         """
         Create a copy of the PR data without timestamps bigger than or equal to `dt`.
 
@@ -172,7 +172,7 @@ class MinedPullRequest:
                 if len(left) < len(df):
                     df = df.take(left)
             dfs[name] = df
-        return MinedPullRequest(pr=pr, release=release, labels=self.labels, **dfs)
+        return MinedPullRequest(pr=pr, release=release, labels=self.labels, jira=self.jira, **dfs)
 
 
 T = TypeVar("T")
