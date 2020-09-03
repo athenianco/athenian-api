@@ -11,19 +11,30 @@ class FoundJIRAStuff(Model):
     Do not edit the class manually.
     """
 
-    openapi_types = {"epics": List[JIRAEpic], "labels": List[JIRALabel]}
-    attribute_map = {"epics": "epics", "labels": "labels"}
+    openapi_types = {
+        "epics": List[JIRAEpic],
+        "labels": List[JIRALabel],
+        "issue_types": List[str],
+    }
+    attribute_map = {
+        "epics": "epics",
+        "labels": "labels",
+        "issue_types": "issue_types",
+    }
 
     def __init__(self,
                  epics: Optional[List[JIRAEpic]] = None,
-                 labels: Optional[List[JIRALabel]] = None):
+                 labels: Optional[List[JIRALabel]] = None,
+                 issue_types: Optional[List[str]] = None):
         """FoundJIRAStuff - a model defined in OpenAPI
 
         :param epics: The epics of this FoundJIRAStuff.
         :param labels: The labels of this FoundJIRAStuff.
+        :param issue_types: The issue_types of this FoundJIRAStuff.
         """
         self._epics = epics
         self._labels = labels
+        self._issue_types = issue_types
 
     @property
     def epics(self) -> List[JIRAEpic]:
@@ -62,3 +73,22 @@ class FoundJIRAStuff(Model):
             raise ValueError("Invalid value for `labels`, must not be `None`")
 
         self._labels = labels
+
+    @property
+    def issue_types(self) -> List[str]:
+        """Gets the issue_types of this FoundJIRAStuff.
+
+        :return: The issue_types of this FoundJIRAStuff.
+        """
+        return self._issue_types
+
+    @issue_types.setter
+    def issue_types(self, issue_types: List[str]):
+        """Sets the issue_types of this
+
+        :param issue_types: The issue_types of this FoundJIRAStuff.
+        """
+        if issue_types is None:
+            raise ValueError("Invalid value for `issue_types`, must not be `None`")
+
+        self._issue_types = issue_types

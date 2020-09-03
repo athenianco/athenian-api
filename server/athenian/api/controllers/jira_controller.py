@@ -83,15 +83,16 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         return epics
 
     @sentry_span
-    async def labels_flow():
+    async def issue_flow():
         label_rows = await mdb.fetch_all(
-            select([Issue.id, Issue.labels, Issue.updated])
+            select([Issue.id, Issue.labels, Issue.type, Issue.updated])
             .where(and_(Issue.acc_id == jira_id,
                         Issue.created < time_to,
                         or_(Issue.resolved.is_(None), Issue.resolved >= time_from),
                         )))
         labels = set(chain.from_iterable(r[Issue.labels.key] for r in label_rows))
         labels = {k: JIRALabel(title=k, kind="regular", issues_count=0) for k in labels}
+        types = sorted(set(r[Issue.type.key] for r in label_rows))
         for row in label_rows:
             updated = row[Issue.updated.key]
             for label in row[Issue.labels.key]:
@@ -102,11 +103,12 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         if mdb.url.dialect == "sqlite":
             for label in labels.values():
                 label.last_used = label.last_used.replace(tzinfo=timezone.utc)
-        return sorted(labels.values())
+        return sorted(labels.values()), types
 
     with sentry_sdk.start_span(op="mdb"):
-        epics, labels = await asyncio.gather(epic_flow(), labels_flow(), return_exceptions=True)
-        for r in (epics, labels):
+        epics, issues = await asyncio.gather(epic_flow(), issue_flow(), return_exceptions=True)
+        for r in (epics, issues):
             if isinstance(r, Exception):
                 raise r from None
-    return model_response(FoundJIRAStuff(epics=epics, labels=labels))
+    labels, types = issues
+    return model_response(FoundJIRAStuff(epics=epics, labels=labels, issue_types=types))
