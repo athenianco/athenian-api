@@ -373,7 +373,9 @@ class PullRequestMiner:
                 _issue_epic.key.label("epic"),
             ]
             import os
-            if os.getenv("SENTRY_ENV", "development") != "development":
+            env = os.getenv("SENTRY_ENV", "development")
+            if env != "development":
+                cls.log.warning("JIRA is disabled in environment %s", env)
                 return pd.DataFrame([], columns=[c.key for c in selected],
                                     index=[PullRequest.node_id.key, _issue.key.key])
             return await read_sql_query(
@@ -531,7 +533,7 @@ class PullRequestMiner:
                 filters.append(sql.or_(*(
                     _issue.labels.like("%%%s%%" % s) for s in jira.labels.include)))
             if jira.labels.exclude:
-                filters.append(sql.and_(*(sql.not_(
+                filters.append(sql.not_(sql.or_(*(
                     _issue.labels.like("%%%s%%" % s) for s in jira.labels.exclude))))
         if jira.issue_types:
             filters.append(_issue.type.in_(jira.issue_types))
