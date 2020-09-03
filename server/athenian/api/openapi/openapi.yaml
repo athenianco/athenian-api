@@ -4141,8 +4141,8 @@ components:
         labels_exclude:
         - feature
         issue_types:
-        - bug
-        - task
+        - Bug
+        - Task
       properties:
         epics:
           description: PRs must be linked to at least one JIRA epic from the list.

@@ -375,6 +375,30 @@ async def test_filter_prs_created_timezone(client, headers, timezone, must_match
     assert matched == must_match
 
 
+async def test_filter_prs_jira(client, headers, app, filter_prs_single_prop_cache):
+    app._cache = filter_prs_single_prop_cache
+    body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-04-23",
+        "account": 1,
+        "in": [],
+        "jira": {
+            "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
+            "labels_include": ["performance", "enhancement"],
+            "labels_exclude": ["security"],
+            "issue_types": ["Task"],
+        },
+        "properties": [PullRequestProperty.MERGE_HAPPENED],
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    prs = PullRequestSet.from_dict(json.loads(text))
+    assert len(prs.data) == 2
+
+
 open_go_git_pr_numbers = {
     570, 816, 970, 1273, 1069, 1086, 1098, 1139, 1152, 1153, 1173, 1238, 1243, 1246, 1254, 1270,
     1269, 1272, 1286, 1291, 1285,
@@ -413,7 +437,7 @@ async def validate_prs_response(response: ClientResponse,
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     obj = json.loads(text)
-    prs = PullRequestSet.from_dict(obj)  # type: PullRequestSet
+    prs = PullRequestSet.from_dict(obj)
     users = prs.include.users
     assert len(users) > 0, text
     assert len(prs.data) > 0, text

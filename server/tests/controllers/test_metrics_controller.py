@@ -482,6 +482,35 @@ async def test_calc_metrics_quantiles(client, headers):
     assert int(wip1[:-1]) > int(wip2[:-1])
 
 
+async def test_calc_metrics_prs_jira(client, headers):
+    """Metrics over PRs filtered by JIRA properties."""
+    body = {
+        "for": [{
+            "repositories": ["{1}"],
+            "jira": {
+                "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
+                "labels_include": ["performance", "enhancement"],
+                "labels_exclude": ["security"],
+                "issue_types": ["Task"],
+            },
+        }],
+        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularities": ["all"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
+    assert len(cm.calculated[0].values) > 0
+    assert cm.calculated[0].values[0].values[0] == "478544s"
+
+
 async def test_code_bypassing_prs_smoke(client, headers):
     body = {
         "account": 1,

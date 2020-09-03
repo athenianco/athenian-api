@@ -250,6 +250,9 @@ def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem], LabelFilt
     if labels.exclude:
         prs = [pr for pr in prs
                if not labels.exclude.intersection({label.name for label in (pr.labels or [])})]
+    if jira:
+        # TODO(vmarkovtsev): properly filter jira
+        raise CancelCache()
     return prs, labels, jira
 
 
