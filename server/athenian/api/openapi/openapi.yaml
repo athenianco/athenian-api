@@ -4439,7 +4439,7 @@ components:
       type: object
     FoundJIRAStuff:
       additionalProperties: false
-      description: 'Response from `/filter/jira`: found JIRA epics and labels.'
+      description: 'Response from `/filter/jira`: found JIRA epics, labels, and issue types.'
       example:
         epics:
         - id: DEV-158
@@ -4482,9 +4482,15 @@ components:
           items:
             $ref: '#/components/schemas/JIRALabel'
           type: array
+        issue_types:
+          description: Types of the updated issues.
+          items:
+            type: string
+          type: array
       required:
       - epics
       - labels
+      - issue_types
       type: object
     JIRAEpic:
       additionalProperties: false

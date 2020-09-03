@@ -58,6 +58,7 @@ async def test_filter_jira_smoke(client, headers):
         JIRAEpic(id="PRO-1", title="Dogfooding instance",
                  updated=datetime(2020, 8, 14, 10, 53, 9, tzinfo=tzutc()), children=[]),
     ]
+    assert model.issue_types == ["Design document", "Epic", "Story", "Subtask", "Task"]
 
 
 @pytest.mark.parametrize("account, date_to, timezone, status", [
