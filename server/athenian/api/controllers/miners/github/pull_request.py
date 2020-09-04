@@ -381,8 +381,11 @@ class PullRequestMiner:
             return await read_sql_query(
                 sql.select(selected).select_from(sql.join(
                     PullRequest, sql.join(
-                        _map, sql.join(_issue, _issue_epic, _issue.epic_id == _issue_epic.id),
-                        _map.jira_id == _issue.id),
+                        _map, sql.join(_issue, _issue_epic, sql.and_(
+                            _issue.epic_id == _issue_epic.id,
+                            _issue.acc_id == _issue_epic.acc_id)),
+                        sql.and_(_map.jira_id == _issue.id,
+                                 _map.jira_acc == _issue.acc_id)),
                     PullRequest.node_id == _map.node_id,
                 )).where(PullRequest.node_id.in_(node_ids)),
                 mdb, columns=selected, index=[PullRequest.node_id.key, _issue.key.key])
