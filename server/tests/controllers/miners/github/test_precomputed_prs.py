@@ -73,7 +73,7 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
         review_comments=gen_dummy_df(s.first_comment_on_first_review.best),
         review_requests=gen_dummy_df(s.first_review_request.best),
         labels=pd.DataFrame.from_records(([["bug"]], [["feature"]])[i % 2], columns=["name"]),
-        jira={},
+        jiras=pd.DataFrame(),
     ) for i, s in enumerate(samples)]
     await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
     # we should not crash on repeat
@@ -129,7 +129,7 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
                                           [["feature"]],
                                           [["bug"], ["bad"]],
                                           [["feature"], ["bad"]])[i % 4], columns=["name"]),
-        jira={},
+        jiras=pd.DataFrame(),
     ) for i, s in enumerate(samples)]
     await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
     time_from = min(s.created.best for s in samples)
@@ -236,7 +236,7 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_
         review_comments=gen_dummy_df(s.first_comment_on_first_review.best),
         review_requests=gen_dummy_df(s.first_comment_on_first_review.best),
         labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
-        jira={},
+        jiras=pd.DataFrame(),
     ) for s in samples]
     await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
     time_from = samples[1].created.best + timedelta(days=1)
@@ -285,7 +285,7 @@ async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
         review_comments=gen_dummy_df(s.first_comment_on_first_review.best),
         review_requests=gen_dummy_df(s.first_review_request.best),
         labels=pd.DataFrame.from_records(([["bug"]], [["feature"]])[i % 2], columns=["name"]),
-        jira={},
+        jiras=pd.DataFrame(),
     ) for i, s in enumerate(samples)]
     await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
     query1 = {"one": {pr.pr[PullRequest.number.key] for pr in prs
@@ -334,7 +334,7 @@ def _gen_one_pr(pr_samples):
         review_comments=gen_dummy_df(s.first_comment_on_first_review.best),
         review_requests=gen_dummy_df(s.first_review_request.best),
         labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
-        jira={},
+        jiras=pd.DataFrame(),
     )]
     return samples, prs, settings
 
@@ -624,7 +624,7 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
         review_comments=gen_dummy_df(samples[0].first_comment_on_first_review.best),
         review_requests=gen_dummy_df(samples[0].first_review_request.best),
         labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
-        jira={},
+        jiras=pd.DataFrame(),
     )]
     await store_precomputed_done_facts(prs, [None], default_branches, settings, pdb)
     with pytest.raises(AssertionError):

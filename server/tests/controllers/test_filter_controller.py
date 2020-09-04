@@ -382,21 +382,35 @@ async def test_filter_prs_jira(client, headers, app, filter_prs_single_prop_cach
         "date_to": "2020-04-23",
         "account": 1,
         "in": [],
-        "jira": {
-            "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
-            "labels_include": ["performance", "enhancement"],
-            "labels_exclude": ["security"],
-            "issue_types": ["Task"],
-        },
         "properties": [PullRequestProperty.MERGE_HAPPENED],
         "exclude_inactive": False,
+    }
+    if len(filter_prs_single_prop_cache.mem) == 0:
+        response = await client.request(
+            method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+        text = (await response.read()).decode("utf-8")
+        assert response.status == 200, text
+    body["jira"] = {
+        "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
+        "labels_include": ["performance", "enhancement"],
+        "labels_exclude": ["security"],
+        "issue_types": ["Task"],
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     prs = PullRequestSet.from_dict(json.loads(text))
+    data1 = prs.data
     assert len(prs.data) == 2
+    filter_prs_single_prop_cache.mem.clear()
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    prs = PullRequestSet.from_dict(json.loads(text))
+    data2 = prs.data
+    assert data1 == data2
 
 
 open_go_git_pr_numbers = {

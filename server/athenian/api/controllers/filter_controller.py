@@ -28,7 +28,7 @@ from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PushCommit, Release
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
-    ForbiddenError, InvalidRequestError
+    ForbiddenError, InvalidRequestError, JIRAIssue
 from athenian.api.models.web.developer_summary import DeveloperSummary
 from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
@@ -151,6 +151,12 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
     props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
     if pr.labels is not None:
         props["labels"] = [PullRequestLabel(**label.__dict__) for label in pr.labels]
+    if pr.jira is not None:
+        props["jira"] = jira = [JIRAIssue(**issue.__dict__) for issue in pr.jira]
+        for issue in jira:
+            if issue.labels is not None:
+                # it is a set, must be a list
+                issue.labels = sorted(issue.labels)
     return WebPullRequest(**props)
 
 
