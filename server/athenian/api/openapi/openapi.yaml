@@ -4459,11 +4459,14 @@ components:
         - title: performance
           last_used: 2020-08-10T12:47:00Z
           issues_count: 300
-          kind: Label
+          kind: regular
         - title: performance
           last_used: 2020-08-10T12:47:00Z
           issues_count: 300
-          kind: Label
+          kind: regular
+        issue_types:
+        - Story
+        - Task
       properties:
         epics:
           items:

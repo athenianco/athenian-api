@@ -21,6 +21,12 @@ async def test_filter_jira_smoke(client, headers):
     assert response.status == 200, "Response body is : " + body
     model = FoundJIRAStuff.from_dict(json.loads(body))
     assert model.labels == [
+        JIRALabel(title="API",
+                  last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                  issues_count=4, kind="component"),
+        JIRALabel(title="Webapp",
+                  last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                  issues_count=1, kind="component"),
         JIRALabel(title="accounts", last_used=datetime(2020, 4, 3, 18, 47, 43, tzinfo=tzutc()),
                   issues_count=1, kind="regular"),
         JIRALabel(title="bug", last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),

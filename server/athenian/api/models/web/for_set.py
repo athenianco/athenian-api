@@ -10,7 +10,7 @@ class ForSet(Model):
 
     openapi_types = {
         "repositories": List[str],
-        "with_": PullRequestWith,
+        "with_": Optional[PullRequestWith],
         "labels_include": Optional[List[str]],
         "labels_exclude": Optional[List[str]],
         "jira": Optional[JIRAFilter],
