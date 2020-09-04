@@ -5,6 +5,7 @@ from itertools import chain
 from typing import Any, Dict
 
 import pandas as pd
+from pandas.core.dtypes.common import is_datetime64_any_dtype
 from pandas.testing import assert_frame_equal
 import pytest
 
@@ -880,15 +881,15 @@ async def test_pr_miner_jira_fetch(
     epics = set()
     types = set()
     for pr in miner:
-        jira = pr.jira
-        if (pr_labels := jira[Issue.labels.key]) is not None:
-            labels.update(pr_labels)
-            assert isinstance(jira[Issue.created.key], datetime)
-            assert isinstance(jira[Issue.updated.key], datetime)
-        if (pr_epic := jira["epic"]) is not None:
-            epics.add(pr_epic)
-        if (pr_type := jira[Issue.type.key]) is not None:
-            types.add(pr_type)
+        jira = pr.jiras
+        if not (pr_labels := jira[Issue.labels.key]).empty:
+            labels.update(pr_labels.iloc[0])
+            assert is_datetime64_any_dtype(jira[Issue.created.key])
+            assert is_datetime64_any_dtype(jira[Issue.updated.key])
+        if not (pr_epic := jira["epic"]).empty:
+            epics.add(pr_epic.iloc[0])
+        if not (pr_type := jira[Issue.type.key]).empty:
+            types.add(pr_type.iloc[0])
     assert labels == {"enhancement", "new-charts", "metrics", "usability", "security"}
     assert epics == {"DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"}
     assert types == {"Task", "Story"}
@@ -925,9 +926,9 @@ async def test_pr_miner_jira_cache(
     miner, _, _ = await PullRequestMiner.mine(*args)
     assert len(miner) == 3
     for pr in miner:
-        assert "enhancement" in pr.jira["labels"]
-        assert pr.jira["epic"] == "DEV-149"
-        assert pr.jira[Issue.type.key] == "Task"
+        assert "enhancement" in pr.jiras["labels"].iloc[0]
+        assert pr.jiras["epic"].iloc[0] == "DEV-149"
+        assert pr.jiras[Issue.type.key].iloc[0] == "Task"
     args[7] = JIRAFilter(LabelFilter({"enhancement,performance"}, set()), {"DEV-149"}, {"Task"})
     miner, _, _ = await PullRequestMiner.mine(*args)
     assert len(miner) == 0

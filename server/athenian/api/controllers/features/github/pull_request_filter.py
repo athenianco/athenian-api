@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
-from typing import Dict, Generator, List, Optional, Set, Tuple
+from typing import Callable, Dict, Generator, List, Optional, Set, Tuple
 
 import aiomcache
 import databases
@@ -30,13 +30,14 @@ from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRe
 from athenian.api.controllers.miners.github.release import dummy_releases_df, \
     fetch_precomputed_commit_history_dags, load_commit_dags, load_releases
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, Participants, \
-    Property, PullRequestFacts, PullRequestListItem
+    Property, PullRequestFacts, PullRequestJIRAIssueItem, PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import set_pdb_hits, set_pdb_misses
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, PullRequestLabel, \
     PullRequestReview, PullRequestReviewComment, Release
+from athenian.api.models.metadata.jira import Issue
 from athenian.api.tracing import sentry_span
 
 
@@ -174,6 +175,23 @@ class PullRequestListMiner:
                     pr_today.labels[PullRequestLabel.description.key].values,
                     pr_today.labels[PullRequestLabel.color.key].values,
                 )]
+        if pr_today.jiras.empty:
+            jira = None
+        else:
+            jira = [
+                PullRequestJIRAIssueItem(id=key,
+                                         title=title,
+                                         epic=epic,
+                                         labels=labels or None,
+                                         type=itype)
+                for (key, title, epic, labels, itype) in zip(
+                    pr_today.jiras.index.values,
+                    pr_today.jiras[Issue.title.key].values,
+                    pr_today.jiras["epic"].values,
+                    pr_today.jiras[Issue.labels.key].values,
+                    pr_today.jiras[Issue.type.key].values,
+                )
+            ]
         return PullRequestListItem(
             repository=self._prefix + pr_today.pr[PullRequest.repository_full_name.key],
             number=pr_today.pr[PullRequest.number.key],
@@ -198,6 +216,7 @@ class PullRequestListMiner:
             stage_timings=stage_timings,
             participants=pr_today.participants(),
             labels=labels,
+            jira=jira,
         )
 
     def __iter__(self) -> Generator[PullRequestListItem, None, None]:
@@ -244,16 +263,91 @@ def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem], LabelFilt
     if (not cached_labels.compatible_with(labels) or
             not cached_jira.compatible_with(jira)):
         raise CancelCache()
-    if labels.include:
-        prs = [pr for pr in prs
-               if labels.include.intersection({label.name for label in (pr.labels or [])})]
-    if labels.exclude:
-        prs = [pr for pr in prs
-               if not labels.exclude.intersection({label.name for label in (pr.labels or [])})]
+    if labels:
+        prs = _filter_by_labels(prs, labels, _extract_pr_labels)
     if jira:
-        # TODO(vmarkovtsev): properly filter jira
-        raise CancelCache()
+        if jira.labels:
+            prs = _filter_by_labels(prs, jira.labels, _extract_jira_labels)
+        if jira.epics:
+            prs = _filter_by_jira_epics(prs, jira.epics)
+        if jira.issue_types:
+            prs = _filter_by_jira_issue_types(prs, jira.issue_types)
     return prs, labels, jira
+
+
+def _extract_pr_labels(pr: PullRequestListItem) -> Optional[Set[str]]:
+    if pr.labels is None:
+        return None
+    return {lbl.name for lbl in pr.labels}
+
+
+def _extract_jira_labels(pr: PullRequestListItem) -> Optional[Set[str]]:
+    if pr.jira is None:
+        return None
+    labels = set()
+    for issue in pr.jira:
+        if issue.labels is not None:
+            labels.update(issue.labels)
+    return labels or None
+
+
+def _filter_by_labels(prs: List[PullRequestListItem],
+                      labels: LabelFilter,
+                      labels_getter: Callable[[PullRequestListItem], Optional[Set[str]]],
+                      ) -> List[PullRequestListItem]:
+    if labels.include:
+        singles, multiples = LabelFilter.split(labels.include)
+        singles = set(singles)
+        for i, g in enumerate(multiples):
+            multiples[i] = set(g)
+        new_prs = []
+        for pr in prs:
+            pr_labels = labels_getter(pr)
+            if pr_labels is None or not singles.intersection(pr_labels):
+                continue
+            for group in multiples:
+                if not pr_labels.issuperset(group):
+                    break
+            else:
+                new_prs.append(pr)
+        prs = new_prs
+    if labels.exclude:
+        new_prs = []
+        for pr in prs:
+            pr_labels = labels_getter(pr)
+            if pr_labels is not None and labels.exclude.intersection(pr_labels):
+                continue
+            new_prs.append(pr)
+        prs = new_prs
+    return prs
+
+
+def _filter_by_jira_epics(prs: List[PullRequestListItem],
+                          epics: Set[str],
+                          ) -> List[PullRequestListItem]:
+    new_prs = []
+    for pr in prs:
+        if pr.jira is None:
+            continue
+        for issue in pr.jira:
+            if issue.epic in epics:
+                new_prs.append(pr)
+                break
+    return new_prs
+
+
+def _filter_by_jira_issue_types(prs: List[PullRequestListItem],
+                                types: Set[str],
+                                ) -> List[PullRequestListItem]:
+    new_prs = []
+    for pr in prs:
+        if pr.jira is None:
+            continue
+        for issue in pr.jira:
+            if issue.type in types:
+                new_prs.append(pr)
+                break
+    return new_prs
 
 
 @cached(

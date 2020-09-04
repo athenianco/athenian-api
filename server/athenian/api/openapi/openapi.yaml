@@ -4188,15 +4188,6 @@ components:
         epic:
           description: Identifier of the epic that owns this issue.
           type: string
-        parent:
-          description: If this issue is a subissue, identifier of the higher level
-            issue.
-          type: string
-        children:
-          description: If this issue has subissues, identifiers of all the subissues.
-          items:
-            type: string
-          type: array
         labels:
           description: List of JIRA labels in this issue.
           items:

@@ -62,6 +62,7 @@ override_mdb = os.getenv("OVERRIDE_MDB")
 override_sdb = os.getenv("OVERRIDE_SDB")
 override_pdb = os.getenv("OVERRIDE_PDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
+logging.getLogger("aiosqlite").setLevel(logging.CRITICAL)
 
 
 class FakeCache:

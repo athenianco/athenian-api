@@ -11,6 +11,7 @@ from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
     Release
+from athenian.api.models.metadata.jira import Issue
 
 
 class ParticipationKind(IntEnum):
@@ -65,6 +66,17 @@ class Label:
 
 
 @dataclass(frozen=True)
+class PullRequestJIRAIssueItem:
+    """JIRA PR properties."""
+
+    id: str
+    title: str
+    labels: Optional[Set[str]]
+    epic: Optional[str]
+    type: str
+
+
+@dataclass(frozen=True)
 class PullRequestListItem:
     """General PR properties used to list PRs on the frontend."""
 
@@ -91,6 +103,7 @@ class PullRequestListItem:
     properties: Set[Property]
     participants: Participants
     labels: List[Label]
+    jira: Optional[List[PullRequestJIRAIssueItem]]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -111,7 +124,7 @@ class MinedPullRequest:
     comments: pd.DataFrame
     release: Dict[str, Any]
     labels: pd.DataFrame
-    jira: Dict[str, Any]
+    jiras: pd.DataFrame
 
     def participants(self) -> Participants:
         """Collect unique developer logins that are mentioned in this pull request."""
@@ -159,6 +172,10 @@ class MinedPullRequest:
         published_at = release[Release.published_at.key]
         if published_at is not None and published_at >= dt:
             release = {k: None for k in release}
+        jiras = self.jiras
+        jira_mask = jiras[Issue.created.key] < dt
+        if not jira_mask.all():
+            jiras = jiras.take(np.where(jira_mask)[0])
         dfs = {}
         dt = np.datetime64(dt.replace(tzinfo=None))
         for name, col in (("commits", PullRequestCommit.committed_date),
@@ -172,7 +189,7 @@ class MinedPullRequest:
                 if len(left) < len(df):
                     df = df.take(left)
             dfs[name] = df
-        return MinedPullRequest(pr=pr, release=release, labels=self.labels, jira=self.jira, **dfs)
+        return MinedPullRequest(pr=pr, release=release, labels=self.labels, jiras=jiras, **dfs)
 
 
 T = TypeVar("T")

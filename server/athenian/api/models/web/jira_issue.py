@@ -9,10 +9,8 @@ class JIRAIssue(Model):
     openapi_types = {
         "id": str,
         "title": str,
-        "epic": str,
-        "parent": str,
-        "children": List[str],
-        "labels": List[str],
+        "epic": Optional[str],
+        "labels": Optional[List[str]],
         "type": str,
     }
 
@@ -20,8 +18,6 @@ class JIRAIssue(Model):
         "id": "id",
         "title": "title",
         "epic": "epic",
-        "parent": "parent",
-        "children": "children",
         "labels": "labels",
         "type": "type",
     }
@@ -33,8 +29,6 @@ class JIRAIssue(Model):
         id: Optional[str] = None,
         title: Optional[str] = None,
         epic: Optional[str] = None,
-        parent: Optional[str] = None,
-        children: Optional[List[str]] = None,
         labels: Optional[List[str]] = None,
         type: Optional[str] = None,
     ):
@@ -51,8 +45,6 @@ class JIRAIssue(Model):
         self._id = id
         self._title = title
         self._epic = epic
-        self._parent = parent
-        self._children = children
         self._labels = labels
         self._type = type
 
@@ -103,7 +95,7 @@ class JIRAIssue(Model):
         self._title = title
 
     @property
-    def epic(self) -> str:
+    def epic(self) -> Optional[str]:
         """Gets the epic of this JIRAIssue.
 
         Identifier of the epic that owns this issue.
@@ -113,7 +105,7 @@ class JIRAIssue(Model):
         return self._epic
 
     @epic.setter
-    def epic(self, epic: str):
+    def epic(self, epic: Optional[str]):
         """Sets the epic of this JIRAIssue.
 
         Identifier of the epic that owns this issue.
@@ -123,47 +115,7 @@ class JIRAIssue(Model):
         self._epic = epic
 
     @property
-    def parent(self) -> str:
-        """Gets the parent of this JIRAIssue.
-
-        If this issue is a subissue, identifier of the higher level issue.
-
-        :return: The parent of this JIRAIssue.
-        """
-        return self._parent
-
-    @parent.setter
-    def parent(self, parent: str):
-        """Sets the parent of this JIRAIssue.
-
-        If this issue is a subissue, identifier of the higher level issue.
-
-        :param parent: The parent of this JIRAIssue.
-        """
-        self._parent = parent
-
-    @property
-    def children(self) -> List[str]:
-        """Gets the children of this JIRAIssue.
-
-        If this issue has subissues, identifiers of all the subissues.
-
-        :return: The children of this JIRAIssue.
-        """
-        return self._children
-
-    @children.setter
-    def children(self, children: List[str]):
-        """Sets the children of this JIRAIssue.
-
-        If this issue has subissues, identifiers of all the subissues.
-
-        :param children: The children of this JIRAIssue.
-        """
-        self._children = children
-
-    @property
-    def labels(self) -> List[str]:
+    def labels(self) -> Optional[List[str]]:
         """Gets the labels of this JIRAIssue.
 
         List of JIRA labels in this issue.
@@ -173,7 +125,7 @@ class JIRAIssue(Model):
         return self._labels
 
     @labels.setter
-    def labels(self, labels: List[str]):
+    def labels(self, labels: Optional[List[str]]):
         """Sets the labels of this JIRAIssue.
 
         List of JIRA labels in this issue.
