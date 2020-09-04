@@ -524,7 +524,9 @@ class PullRequestMiner:
         _issue = aliased(Issue, name="j")
         if postgres:
             if jira.labels.include:
-                filters.append(_issue.labels.overlap(jira.labels.include))
+                singles, multiples = LabelFilter.split(jira.labels.include)
+                filters.append(sql.or_(_issue.labels.overlap(singles),
+                                       *(_issue.labels.contains(m) for m in multiples)))
             if jira.labels.exclude:
                 filters.append(sql.not_(_issue.labels.overlap(jira.labels.exclude)))
         else:
@@ -659,9 +661,18 @@ class PullRequestMiner:
                              labels: LabelFilter) -> pd.Index:
         left_include = left_exclude = None
         if labels.include:
+            singles, multiples = LabelFilter.split(labels.include)
             left_include = df_labels_index.take(
-                np.where(np.in1d(df_labels_names, list(labels.include)))[0],
+                np.where(np.in1d(df_labels_names, singles))[0],
             ).unique()
+            for group in multiples:
+                passed = df_labels_index
+                for label in group:
+                    passed = passed.intersection(
+                        df_labels_index.take(np.where(df_labels_names == label)))
+                    if passed.empty:
+                        break
+                left_include = left_include.union(passed)
         if labels.exclude:
             left_exclude = df_labels_index.difference(df_labels_index.take(
                 np.where(np.in1d(df_labels_names, list(labels.exclude)))[0],

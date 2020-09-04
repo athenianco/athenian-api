@@ -928,3 +928,11 @@ async def test_pr_miner_jira_cache(
         assert "enhancement" in pr.jira["labels"]
         assert pr.jira["epic"] == "DEV-149"
         assert pr.jira[Issue.type.key] == "Task"
+    args[7] = JIRAFilter(LabelFilter({"enhancement,performance"}, set()), {"DEV-149"}, {"Task"})
+    miner, _, _ = await PullRequestMiner.mine(*args)
+    assert len(miner) == 0
+    args[-3] = mdb
+    args[-2] = pdb
+    args[-1] = None
+    miner, _, _ = await PullRequestMiner.mine(*args)
+    assert len(miner) == 0

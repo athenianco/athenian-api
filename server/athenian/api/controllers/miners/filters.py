@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Iterable, Optional, Set
+from typing import Iterable, List, Optional, Set, Tuple
 
 from athenian.api.models.web.jira_filter import JIRAFilter as WebJIRAFilter
 
@@ -43,6 +43,19 @@ class LabelFilter:
             and
             ((not self.exclude) or (other.exclude and self.exclude.issubset(other.exclude)))
         )
+
+    @classmethod
+    def split(cls, labels: Set[str]) -> Tuple[List[str], List[List[str]]]:
+        """Split labels by comma "," and divide into two groups: singles and multiples."""
+        singles = []
+        multiples = []
+        for label in labels:
+            parts = label.split(",")
+            if len(parts) == 1:
+                singles.append(parts[0])
+                continue
+            multiples.append([p.strip() for p in parts])
+        return singles, multiples
 
 
 @dataclass(frozen=True)
