@@ -102,5 +102,5 @@ class JIRAFilter:
             return cls.empty()
         labels = LabelFilter.from_iterables(model.labels_include, model.labels_exclude)
         return JIRAFilter(labels=labels,
-                          epics=set(model.epics),
-                          issue_types=set(model.issue_types))
+                          epics=set(model.epics) if model.epics else set(),
+                          issue_types=set(model.issue_types) if model.issue_types else set())

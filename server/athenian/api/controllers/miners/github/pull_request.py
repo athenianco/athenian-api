@@ -372,17 +372,14 @@ class PullRequestMiner:
                 _issue.created, _issue.updated, _issue.resolved, _issue.labels,
                 _issue_epic.key.label("epic"),
             ]
-            import os
-            env = os.getenv("SENTRY_ENV", "development")
-            if env != "development":
-                cls.log.warning("JIRA is disabled in environment %s", env)
-                return pd.DataFrame([], columns=[c.key for c in selected],
-                                    index=[PullRequest.node_id.key, _issue.key.key])
             return await read_sql_query(
                 sql.select(selected).select_from(sql.join(
                     PullRequest, sql.join(
-                        _map, sql.join(_issue, _issue_epic, _issue.epic_id == _issue_epic.id),
-                        _map.jira_id == _issue.id),
+                        _map, sql.join(_issue, _issue_epic, sql.and_(
+                            _issue.epic_id == _issue_epic.id,
+                            _issue.acc_id == _issue_epic.acc_id)),
+                        sql.and_(_map.jira_id == _issue.id,
+                                 _map.jira_acc == _issue.acc_id)),
                     PullRequest.node_id == _map.node_id,
                 )).where(PullRequest.node_id.in_(node_ids)),
                 mdb, columns=selected, index=[PullRequest.node_id.key, _issue.key.key])
