@@ -124,3 +124,20 @@ class GitHubRepository(Base, UpdatedMixin):
     node_id = Column(CHAR(32), primary_key=True)
     repository_full_name = Column(RepositoryFullName, nullable=False)
     first_commit = Column(TIMESTAMP(timezone=True), nullable=False)
+
+
+class GitHubRelease(Base):
+    """Mined repository releases."""
+
+    __tablename__ = "github_releases"
+
+    id = Column(Text, primary_key=True)
+    release_match = Column(Text(), primary_key=True)
+    repository_full_name = Column(RepositoryFullName, nullable=False)
+    author = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
+    published_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    tag = Column(Text)
+    url = Column(Text, nullable=False)
+    sha = Column(Text, nullable=False)
+    commit_id = Column(Text, nullable=False)
