@@ -265,7 +265,6 @@ class Release(Base,
     author = Column(Text, nullable=False)
     name = Column(Text)
     published_at = Column(TIMESTAMP(timezone=True))
-    updated_at = Column(TIMESTAMP(timezone=True))
     tag = Column(Text)
     url = Column(Text)
     sha = Column(Text, nullable=False)
