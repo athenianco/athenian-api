@@ -17,7 +17,8 @@ class LabelFilter:
                        exclude: Optional[Iterable[str]],
                        ) -> "LabelFilter":
         """Initialize a new instance of LabelFilter from two iterables."""
-        return cls(include=set(include or []), exclude=set(exclude or []))
+        return cls(include=set(s.lower() for s in (include or [])),
+                   exclude=set(s.lower() for s in (exclude or [])))
 
     @classmethod
     def empty(cls) -> "LabelFilter":
@@ -62,6 +63,7 @@ class LabelFilter:
 class JIRAFilter:
     """JIRA traits to select assigned PRs."""
 
+    account: int
     labels: LabelFilter
     epics: Set[str]
     issue_types: Set[str]
@@ -69,11 +71,12 @@ class JIRAFilter:
     @classmethod
     def empty(cls) -> "JIRAFilter":
         """Initialize an empty JIRAFilter."""
-        return cls(LabelFilter.empty(), set(), set())
+        return cls(0, LabelFilter.empty(), set(), set())
 
     def __bool__(self) -> bool:
         """Return value indicating whether this filter is not an identity."""
-        return bool(self.labels) or bool(self.epics) or bool(self.issue_types)
+        return self.account > 0 and (
+            bool(self.labels) or bool(self.epics) or bool(self.issue_types))
 
     def __str__(self) -> str:
         """Implement str()."""
@@ -81,7 +84,8 @@ class JIRAFilter:
 
     def __repr__(self) -> str:
         """Implement repr()."""
-        return "JIRAFilter(%r, %r, %r)" % (self.labels, self.epics, self.issue_types)
+        return "JIRAFilter(%r, %r, %r, %r)" % (
+            self.account, self.labels, self.epics, self.issue_types)
 
     def compatible_with(self, other: "JIRAFilter") -> bool:
         """Check whether the `other` filter can be applied to the items filtered by `self`."""
@@ -96,11 +100,12 @@ class JIRAFilter:
         return True
 
     @classmethod
-    def from_web(cls, model: Optional[WebJIRAFilter]) -> "JIRAFilter":
+    def from_web(cls, model: Optional[WebJIRAFilter], account: int) -> "JIRAFilter":
         """Initialize a new JIRAFilter from the corresponding web model."""
         if model is None:
             return cls.empty()
         labels = LabelFilter.from_iterables(model.labels_include, model.labels_exclude)
-        return JIRAFilter(labels=labels,
-                          epics=set(model.epics) if model.epics else set(),
-                          issue_types=set(model.issue_types) if model.issue_types else set())
+        return JIRAFilter(account=account,
+                          labels=labels,
+                          epics={s.upper() for s in (model.epics or [])},
+                          issue_types={s.lower() for s in (model.issue_types or [])})

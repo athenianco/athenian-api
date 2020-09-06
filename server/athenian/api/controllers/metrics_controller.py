@@ -10,6 +10,7 @@ import databases.core
 
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
+from athenian.api.controllers.jira_controller import get_jira_installation
 from athenian.api.controllers.miners.access_classes import access_classes, AccessChecker
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
@@ -204,7 +205,11 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
                         ))
                     dk.add(dev[len(prefix):])
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-            jira = JIRAFilter.from_web(for_set.jira)
+            try:
+                jira = JIRAFilter.from_web(
+                    for_set.jira, await get_jira_installation(account, request.sdb, request.cache))
+            except ResponseError:
+                jira = JIRAFilter.empty()
             filters.append((service, (repos, devs, labels, jira, for_set)))
     return filters, all_repos
 
@@ -241,7 +246,11 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
                     ))
                 devs.append(dev[len(prefix):])
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-            jira = JIRAFilter.from_web(for_set.jira)
+            try:
+                jira = JIRAFilter.from_web(
+                    for_set.jira, await get_jira_installation(account, request.sdb, request.cache))
+            except ResponseError:
+                jira = JIRAFilter.empty()
             filters.append((service, (repos, devs, labels, jira, for_set)))
     return filters, all_repos
 

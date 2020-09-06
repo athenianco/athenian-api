@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass, fields as dataclass_fields
 from datetime import date, datetime, timezone
 from enum import Enum
+from itertools import chain
 import logging
 import pickle
 from typing import Collection, Dict, Generator, Iterator, List, Optional, Sequence, Set, Tuple, \
@@ -11,6 +12,7 @@ import aiomcache
 import databases
 import numpy as np
 import pandas as pd
+from pandas.core.common import flatten
 import sentry_sdk
 from sqlalchemy import sql
 from sqlalchemy.orm import aliased
@@ -32,7 +34,7 @@ from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, PullRequest, \
     PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
     PullRequestReviewComment, PullRequestReviewRequest, Release
-from athenian.api.models.metadata.jira import Issue
+from athenian.api.models.metadata.jira import Component, Issue
 from athenian.api.tracing import sentry_span
 
 
@@ -369,10 +371,10 @@ class PullRequestMiner:
             _issue_epic = aliased(Issue, name="e")
             selected = [
                 PullRequest.node_id, _issue.key, _issue.title, _issue.type, _issue.status,
-                _issue.created, _issue.updated, _issue.resolved, _issue.labels,
-                _issue_epic.key.label("epic"),
+                _issue.created, _issue.updated, _issue.resolved, _issue.labels, _issue.components,
+                _issue.acc_id, _issue_epic.key.label("epic"),
             ]
-            return await read_sql_query(
+            df = await read_sql_query(
                 sql.select(selected).select_from(sql.join(
                     PullRequest, sql.join(
                         _map, sql.join(_issue, _issue_epic, sql.and_(
@@ -383,6 +385,30 @@ class PullRequestMiner:
                     PullRequest.node_id == _map.node_id,
                 )).where(PullRequest.node_id.in_(node_ids)),
                 mdb, columns=selected, index=[PullRequest.node_id.key, _issue.key.key])
+            if df.empty:
+                df.drop([Issue.acc_id.key, Issue.components.key], inplace=True, axis=1)
+                return df
+            components = df[[Issue.acc_id.key, Issue.components.key]] \
+                .groupby(Issue.acc_id.key, sort=False).aggregate(lambda s: set(flatten(s)))
+            rows = await mdb.fetch_all(
+                sql.select([Component.acc_id, Component.id, Component.name])
+                .where(sql.or_(*(sql.and_(Component.id.in_(vals),
+                                          Component.acc_id == int(acc))
+                                 for acc, vals in zip(components.index.values,
+                                                      components[Issue.components.key].values)))))
+            cmap = {}
+            for r in rows:
+                cmap.setdefault(r[0], {})[r[1]] = r[2].lower()
+            df[Issue.labels.key] = (
+                df[Issue.labels.key].apply(lambda i: [s.lower() for s in i])
+                +
+                df[[Issue.acc_id.key, Issue.components.key]]
+                .apply(lambda row: [cmap[row[Issue.acc_id.key]][c]
+                                    for c in row[Issue.components.key]],
+                       axis=1)
+            )
+            df.drop([Issue.acc_id.key, Issue.components.key], inplace=True, axis=1)
+            return df
 
         # the order is important: it provides the best performance
         # we launch coroutines from the heaviest to the lightest
@@ -500,7 +526,7 @@ class PullRequestMiner:
         if not jira:
             query = sql.select([PullRequest]).where(sql.and_(*filters))
         else:
-            query = cls._generate_jira_prs_query(filters, jira, postgres)
+            query = await cls._generate_jira_prs_query(filters, jira, postgres, mdb)
         return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
 
     @classmethod
@@ -512,30 +538,75 @@ class PullRequestMiner:
         assert jira
         postgres = mdb.url.dialect in ("postgres", "postgresql")
         filters = [PullRequest.node_id.in_(prs.index.values)]
-        query = cls._generate_jira_prs_query(filters, jira, postgres)
+        query = await cls._generate_jira_prs_query(filters, jira, postgres, mdb)
         return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
 
     @staticmethod
-    def _generate_jira_prs_query(filters: list, jira: JIRAFilter, postgres: bool) -> sql.Select:
+    async def _generate_jira_prs_query(filters: list,
+                                       jira: JIRAFilter,
+                                       postgres: bool,
+                                       mdb: databases.Database) -> sql.Select:
         _map = aliased(NodePullRequestJiraIssues, name="m")
         _issue = aliased(Issue, name="j")
+        if jira.labels:
+            all_labels = set()
+            for label in chain(jira.labels.include, jira.labels.exclude):
+                for part in label.split(","):
+                    all_labels.add(part.strip())
+            rows = await mdb.fetch_all(sql.select([Component.id, Component.name]).where(sql.and_(
+                sql.func.lower(Component.name).in_(all_labels),
+                Component.acc_id == jira.account,
+            )))
+            components = {r[1].lower(): r[0] for r in rows}
         if postgres:
             if jira.labels.include:
                 singles, multiples = LabelFilter.split(jira.labels.include)
-                filters.append(sql.or_(_issue.labels.overlap(singles),
-                                       *(_issue.labels.contains(m) for m in multiples)))
+                or_items = []
+                if singles:
+                    or_items.append(_issue.labels.overlap(singles))
+                or_items.extend(_issue.labels.contains(m) for m in multiples)
+                if components:
+                    if singles:
+                        cinc = [components[s] for s in singles if s in components]
+                        if cinc:
+                            or_items.append(_issue.components.overlap(cinc))
+                    if multiples:
+                        cinc = [[components[c] for c in g if c in components] for g in multiples]
+                        or_items.extend(_issue.components.contains(g) for g in cinc if g)
+                filters.append(sql.or_(*or_items))
             if jira.labels.exclude:
                 filters.append(sql.not_(_issue.labels.overlap(jira.labels.exclude)))
+                if components:
+                    filters.append(sql.not_(_issue.components.overlap(
+                        [components[s] for s in jira.labels.exclude if s in components])))
         else:
             # neither 100% correct nor efficient, but enough for local development
             if jira.labels.include:
-                filters.append(sql.or_(*(
-                    _issue.labels.like("%%%s%%" % s) for s in jira.labels.include)))
+                or_items = []
+                singles, multiples = LabelFilter.split(jira.labels.include)
+                or_items.extend(_issue.labels.like("%%%s%%" % s) for s in singles)
+                or_items.extend(
+                    sql.and_(*(_issue.labels.like("%%%s%%" % s) for s in g)) for g in multiples)
+                if components:
+                    if singles:
+                        or_items.extend(
+                            _issue.components.like("%%%s%%" % components[s])
+                            for s in singles if s in components)
+                    if multiples:
+                        or_items.extend(
+                            sql.and_(*(_issue.components.like("%%%s%%" % components[s]) for s in g
+                                       if s in components))
+                            for g in multiples)
+                filters.append(sql.or_(*or_items))
             if jira.labels.exclude:
                 filters.append(sql.not_(sql.or_(*(
                     _issue.labels.like("%%%s%%" % s) for s in jira.labels.exclude))))
+                if components:
+                    filters.append(sql.not_(sql.or_(*(
+                        _issue.components.like("%%%s%%" % components[s])
+                        for s in jira.labels.exclude if s in components))))
         if jira.issue_types:
-            filters.append(_issue.type.in_(jira.issue_types))
+            filters.append(sql.func.lower(_issue.type).in_(jira.issue_types))
         if not jira.epics:
             return sql.select([PullRequest]).select_from(sql.join(
                 PullRequest, sql.join(_map, _issue, _map.jira_id == _issue.id),
@@ -647,7 +718,7 @@ class PullRequestMiner:
         if not labels:
             return pd.Index([])
         df_labels_index = dfs.labels.index.get_level_values(0)
-        df_labels_names = dfs.labels[PullRequestLabel.name.key].values
+        df_labels_names = dfs.labels[PullRequestLabel.name.key].str.lower().values
         left = cls._find_left_by_labels(df_labels_index, df_labels_names, labels)
         return dfs.prs.index.difference(left)
 
@@ -700,7 +771,7 @@ class PullRequestMiner:
                 dfs.jiras["epic"].isin(jira.epics))[0]).unique())
         if jira.issue_types:
             left.append(dfs.jiras.index.get_level_values(0).take(np.where(
-                dfs.jiras[Issue.type.key].isin(jira.issue_types))[0]).unique())
+                dfs.jiras[Issue.type.key].str.lower().isin(jira.issue_types))[0]).unique())
         result = left[0]
         for other in left[1:]:
             result = result.intersection(other)
