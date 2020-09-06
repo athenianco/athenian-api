@@ -28,7 +28,16 @@ class Issue(Base):
     type = Column(Text, nullable=False)
     status = Column(Text)
     labels = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
+    components = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
     epic_id = Column(Text)
     created = Column(TIMESTAMP(timezone=True), nullable=False)
     updated = Column(TIMESTAMP(timezone=True), nullable=False)
     resolved = Column(TIMESTAMP(timezone=True))
+
+
+class Component(Base):
+    __tablename__ = "component"
+
+    acc_id = Column(BigInteger, primary_key=True)
+    id = Column(Text, primary_key=True)
+    name = Column(Text, nullable=False)

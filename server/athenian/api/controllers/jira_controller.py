@@ -1,6 +1,8 @@
 import asyncio
+from collections import Counter
 from datetime import timezone
 from itertools import chain, groupby
+import logging
 import marshal
 from operator import itemgetter
 from typing import Optional
@@ -10,9 +12,10 @@ import aiomcache
 import sentry_sdk
 from sqlalchemy import and_, or_, select
 
+from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_user_account_status
-from athenian.api.models.metadata.jira import Issue
+from athenian.api.models.metadata.jira import Component, Issue
 from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import FilterJIRAStuff, FoundJIRAStuff, InvalidRequestError, \
     JIRAEpic, JIRALabel, NoSourceDataError
@@ -55,6 +58,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             await get_user_account_status(request.uid, filt.account, conn, request.cache)
             jira_id = await get_jira_installation(filt.account, request.sdb, request.cache)
     mdb = request.mdb
+    log = logging.getLogger("%s.filter_jira_stuff" % metadata.__package__)
 
     @sentry_span
     async def epic_flow():
@@ -85,25 +89,67 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     @sentry_span
     async def issue_flow():
         label_rows = await mdb.fetch_all(
-            select([Issue.id, Issue.labels, Issue.type, Issue.updated])
+            select([Issue.id, Issue.labels, Issue.components, Issue.type, Issue.updated])
             .where(and_(Issue.acc_id == jira_id,
                         Issue.created < time_to,
                         or_(Issue.resolved.is_(None), Issue.resolved >= time_from),
                         )))
-        labels = set(chain.from_iterable(r[Issue.labels.key] for r in label_rows))
-        labels = {k: JIRALabel(title=k, kind="regular", issues_count=0) for k in labels}
-        types = sorted(set(r[Issue.type.key] for r in label_rows))
+        components = Counter(chain.from_iterable(
+            (r[Issue.components.key] or ()) for r in label_rows))
+
+        @sentry_span
+        async def fetch_components():
+            return await mdb.fetch_all(
+                select([Component.id, Component.name])
+                .where(and_(
+                    Component.id.in_(components),
+                    Component.acc_id == jira_id,
+                )))
+
+        @sentry_span
+        async def main_flow():
+            labels = Counter(chain.from_iterable((r[Issue.labels.key] or ()) for r in label_rows))
+            labels = {k: JIRALabel(title=k, kind="regular", issues_count=v)
+                      for k, v in labels.items()}
+            for row in label_rows:
+                updated = row[Issue.updated.key]
+                for label in (row[Issue.labels.key] or ()):
+                    label = labels[label]  # type: JIRALabel
+                    if label.last_used is None or label.last_used < updated:
+                        label.last_used = updated
+            types = sorted(set(r[Issue.type.key] for r in label_rows))
+            if mdb.url.dialect == "sqlite":
+                for label in labels.values():
+                    label.last_used = label.last_used.replace(tzinfo=timezone.utc)
+            return labels, types
+
+        component_names, issues = await asyncio.gather(
+            fetch_components(), main_flow(), return_exceptions=True)
+        for e in (components, issues):
+            if isinstance(e, Exception):
+                raise e from None
+        labels, types = issues
+
+        components = {
+            row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
+            for row in component_names
+        }
         for row in label_rows:
             updated = row[Issue.updated.key]
-            for label in row[Issue.labels.key]:
-                label = labels[label]  # type: JIRALabel
+            for component in (row[Issue.components.key] or ()):
+                try:
+                    label = components[component]  # type: JIRALabel
+                except KeyError:
+                    log.error("Missing JIRA component: %s" % component)
+                    continue
                 if label.last_used is None or label.last_used < updated:
                     label.last_used = updated
-                label.issues_count += 1
         if mdb.url.dialect == "sqlite":
-            for label in labels.values():
+            for label in components.values():
                 label.last_used = label.last_used.replace(tzinfo=timezone.utc)
-        return sorted(labels.values()), types
+
+        labels = sorted(chain(components.values(), labels.values()))
+        return labels, types
 
     with sentry_sdk.start_span(op="mdb"):
         epics, issues = await asyncio.gather(epic_flow(), issue_flow(), return_exceptions=True)
