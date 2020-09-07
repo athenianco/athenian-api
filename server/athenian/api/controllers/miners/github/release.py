@@ -32,13 +32,13 @@ from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.miners.types import dtmax, PullRequestFacts, ReleaseFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
-from athenian.api.db import add_pdb_hits, add_pdb_misses
+from athenian.api.db import add_pdb_hits, add_pdb_misses, greatest, least
 from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepository, PullRequest, \
     PullRequestLabel, PushCommit, Release
 from athenian.api.models.precomputed.models import GitHubCommitHistory, \
-    GitHubRelease as PrecomputedRelease, GitHubRepository
+    GitHubRelease as PrecomputedRelease, GitHubReleaseMatchTimespan, GitHubRepository
 from athenian.api.tracing import sentry_span
 
 
@@ -64,6 +64,119 @@ async def load_releases(repos: Iterable[str],
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
     assert time_from <= time_to
+    sqlite = pdb.url.dialect == "sqlite"
+
+    match_groups, repos_count = _group_repos_by_release_match(repos, default_branches, settings)
+    tasks = [
+        _fetch_precomputed_releases(match_groups, time_from, time_to, pdb, index=index),
+        _fetch_precomputed_release_match_spans(match_groups, pdb),
+    ]
+    releases, spans = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (releases, spans):
+        if isinstance(r, Exception):
+            raise r from None
+    applied_matches = releases[[Release.repository_full_name.key, matched_by_column]].groupby(
+        Release.repository_full_name.key, sort=False,
+    )[matched_by_column].nth(0).to_dict()
+    settings = settings.copy()
+    prefix = PREFIXES["github"]
+    for k, v in applied_matches.items():
+        s = settings[prefix + k]
+        if s.match == ReleaseMatch.tag_or_branch and v == ReleaseMatch.tag:
+            settings[prefix + k] = ReleaseMatchSetting(
+                tags=s.tags, branches=s.branches, match=ReleaseMatch.tag)
+        else:
+            applied_matches[k] = ReleaseMatch(v)
+    missing_high = []
+    missing_low = []
+    missing_all = []
+    for repo in repos:
+        try:
+            rt_from, rt_to = spans[repo][applied_matches[repo]]
+        except KeyError:
+            missing_all.append(repo)
+            continue
+        if time_from < rt_from and time_to > rt_to and \
+                settings[prefix + repo].match == ReleaseMatch.tag_or_branch:
+            # we don't want different release strategies applied to both ends
+            missing_all.append(repo)
+            continue
+        if time_from < rt_from:
+            missing_low.append((rt_from, repo))
+        if time_to > rt_to:
+            missing_high.append((rt_to, repo))
+    tasks = []
+    if missing_high:
+        missing_high.sort()
+        tasks.append(_load_releases(
+            [r for _, r in missing_high], branches, default_branches, missing_high[0][0], time_to,
+            settings, mdb, pdb, cache, index=index))
+    if missing_low:
+        missing_low.sort()
+        tasks.append(_load_releases(
+            [r for _, r in missing_low], branches, default_branches, time_from, missing_low[-1][0],
+            settings, mdb, pdb, cache, index=index))
+    if missing_all:
+        tasks.append(_load_releases(
+            missing_all, branches, default_branches, time_from, time_to,
+            settings, mdb, pdb, cache, index=index))
+    if tasks:
+        missings = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in missings:
+            if isinstance(r, Exception):
+                raise r from None
+        missings = pd.concat(missings, copy=False)
+
+        async def store_precomputed():
+            # we must execute these in sequence to stay consistent
+            # the transaction is not necessary
+            await _store_precomputed_releases(missings, default_branches, settings, pdb)
+            await _store_precomputed_release_match_spans(match_groups, time_from, time_to, pdb)
+
+        await defer(store_precomputed(),
+                    "store_precomputed(%d, %d)" % (len(missings), repos_count))
+
+        releases = pd.concat([releases, missings], copy=False)
+        releases.sort_values(Release.published_at.key,
+                             inplace=True, ascending=False, ignore_index=True)
+        if sqlite:
+            if index is not None:
+                releases = releases.take(np.where(~releases.index.duplicated())[0])
+            else:
+                releases.drop_duplicates(Release.id.key, inplace=True, ignore_index=True)
+        elif index is None:
+            releases.reset_index(drop=True, inplace=True)
+        if missing_all:
+            rrfnk = Release.repository_full_name.key
+            mr = releases[[rrfnk, matched_by_column]]
+            missing_applied_matches = \
+                mr.take(np.where(np.in1d(mr[rrfnk].values, missing_all))[0]) \
+                .groupby(rrfnk, sort=False)[matched_by_column] \
+                .nth(0).to_dict()
+            for r, v in missing_applied_matches.items():
+                applied_matches[r] = ReleaseMatch(v)
+    for r in repos:
+        if r in applied_matches:
+            continue
+        match = settings[prefix + r].match
+        if match == ReleaseMatch.tag_or_branch:
+            match = ReleaseMatch.branch
+        applied_matches[r] = match
+    return releases, applied_matches
+
+
+@sentry_span
+async def _load_releases(repos: Iterable[str],
+                         branches: pd.DataFrame,
+                         default_branches: Dict[str, str],
+                         time_from: datetime,
+                         time_to: datetime,
+                         settings: Dict[str, ReleaseMatchSetting],
+                         mdb: databases.Database,
+                         pdb: databases.Database,
+                         cache: Optional[aiomcache.Client],
+                         index: Optional[Union[str, Sequence[str]]] = None,
+                         ) -> pd.DataFrame:
     repos_by_tag = []
     repos_by_tag_or_branch = []
     repos_by_branch = []
@@ -77,12 +190,9 @@ async def load_releases(repos: Iterable[str],
         elif v.match == ReleaseMatch.branch:
             repos_by_branch.append(repo)
     result = []
-    applied_matches = {}
     if repos_by_tag:
         result.append(_match_releases_by_tag(
             repos_by_tag, time_from, time_to, settings, mdb))
-        for k in repos_by_tag:
-            applied_matches[k] = ReleaseMatch.tag
     if repos_by_tag_or_branch:
         result.append(_match_releases_by_tag_or_branch(
             repos_by_tag_or_branch, branches, default_branches, time_from, time_to, settings,
@@ -91,25 +201,19 @@ async def load_releases(repos: Iterable[str],
         result.append(_match_releases_by_branch(
             repos_by_branch, branches, default_branches, time_from, time_to, settings,
             mdb, pdb, cache))
-        for k in repos_by_branch:
-            applied_matches[k] = ReleaseMatch.branch
     result = await asyncio.gather(*result, return_exceptions=True)
-    for i, r in enumerate(result):
+    for r in result:
         if isinstance(r, Exception):
-            raise r
-        if isinstance(r, tuple):
-            r, am = r
-            result[i] = r
-            applied_matches.update(am)
+            raise r from None
     result = pd.concat(result) if result else dummy_releases_df()
     if index is not None:
         result.set_index(index, inplace=True)
     else:
         result.reset_index(drop=True, inplace=True)
-    return result, applied_matches
+    return result
 
 
-def dummy_releases_df():
+def dummy_releases_df() -> pd.DataFrame:
     """Create an empty releases DataFrame."""
     return pd.DataFrame(
         columns=[c.name for c in Release.__table__.columns] + [matched_by_column])
@@ -128,7 +232,7 @@ async def _match_releases_by_tag_or_branch(repos: Iterable[str],
                                            mdb: databases.Database,
                                            pdb: databases.Database,
                                            cache: Optional[aiomcache.Client],
-                                           ) -> Tuple[pd.DataFrame, Dict[str, ReleaseMatch]]:
+                                           ) -> pd.DataFrame:
     with sentry_sdk.start_span(op="fetch_tags_probe"):
         releases = await read_sql_query(
             select([Release])
@@ -155,25 +259,21 @@ async def _match_releases_by_tag_or_branch(repos: Iterable[str],
     for m in matched:
         if isinstance(m, Exception):
             raise m
-    applied_matches = {**{k: ReleaseMatch.tag for k in repos_by_tag},
-                       **{k: ReleaseMatch.branch for k in repos_by_branch}}
-    return pd.concat(matched), applied_matches
+    return pd.concat(matched)
 
 
-@sentry_span
-async def _fetch_precomputed_releases(repos: Iterable[str],
-                                      time_from: datetime,
-                                      time_to: datetime,
-                                      default_branches: Dict[str, str],
-                                      settings: Dict[str, ReleaseMatchSetting],
-                                      pdb: databases.Database,
-                                      ) -> pd.DataFrame:
+def _group_repos_by_release_match(repos: Iterable[str],
+                                  default_branches: Dict[str, str],
+                                  settings: Dict[str, ReleaseMatchSetting],
+                                  ) -> Tuple[Dict[ReleaseMatch, Dict[str, List[str]]], int]:
     match_groups = {
         ReleaseMatch.tag: {},
         ReleaseMatch.branch: {},
     }
     prefix = PREFIXES["github"]
+    count = 0
     for repo in repos:
+        count += 1
         rms = settings[prefix + repo]
         if rms.match in (ReleaseMatch.tag, ReleaseMatch.tag_or_branch):
             match_groups[ReleaseMatch.tag].setdefault(rms.tags, []).append(repo)
@@ -181,60 +281,153 @@ async def _fetch_precomputed_releases(repos: Iterable[str],
             match_groups[ReleaseMatch.branch].setdefault(
                 rms.branches.replace(default_branch_alias, default_branches[repo]), [],
             ).append(repo)
+    return match_groups, count
+
+
+@sentry_span
+async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+                                      time_from: datetime,
+                                      time_to: datetime,
+                                      pdb: databases.Database,
+                                      index: Optional[Union[str, Sequence[str]]] = None,
+                                      ) -> pd.DataFrame:
     prel = PrecomputedRelease
     df = await read_sql_query(
         select([prel])
         .where(and_(or_(*(and_(prel.release_match == "tag|" + m,
                                prel.repository_full_name.in_(r))
-                          for m, r in match_groups[ReleaseMatch.tag].items()),
+                          for m, r in match_groups.get(ReleaseMatch.tag, {}).items()),
                         *(and_(prel.release_match == "branch|" + m,
                                prel.repository_full_name.in_(r))
-                          for m, r in match_groups[ReleaseMatch.branch].items())),
+                          for m, r in match_groups.get(ReleaseMatch.branch, {}).items())),
                     prel.published_at.between(time_from, time_to)))
         .order_by(desc(prel.published_at)),
         pdb, prel,
     )
     matched_by_tag_mask = df[prel.release_match.key].str.startswith("tag|")
     matched_by_branch_mask = df[prel.release_match.key].str.startswith("branch|")
+    repos = df[prel.repository_full_name.key].values
+    ambiguous_repos = np.intersect1d(repos[matched_by_tag_mask], repos[matched_by_branch_mask])
+    if len(ambiguous_repos):
+        matched_by_branch_mask[np.in1d(repos, ambiguous_repos)] = False
     df[matched_by_column] = None
     df[matched_by_column][matched_by_tag_mask] = ReleaseMatch.tag
     df[matched_by_column][matched_by_branch_mask] = ReleaseMatch.branch
-    df[matched_by_column] = df[matched_by_column].astype(int)
     df.drop(prel.release_match.key, inplace=True, axis=1)
+    df = df.take(np.where(~df[matched_by_column].isnull())[0])
+    df[matched_by_column] = df[matched_by_column].astype(int)
+    if index is not None:
+        df.set_index(index, inplace=True)
+    else:
+        df.reset_index(drop=True, inplace=True)
     return df
 
 
 @sentry_span
-async def _store_precomputed_releases(releases_by_branch: pd.DataFrame,
-                                      releases_by_tag: pd.DataFrame,
+async def _fetch_precomputed_release_match_spans(
+        match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+        pdb: databases.Database) -> Dict[str, Dict[str, Tuple[datetime, datetime]]]:
+    ghrts = GitHubReleaseMatchTimespan
+    sqlite = pdb.url.dialect == "sqlite"
+    rows = await pdb.fetch_all(
+        select([ghrts.repository_full_name, ghrts.release_match, ghrts.time_from, ghrts.time_to])
+        .where(or_(*(and_(ghrts.release_match == "tag|" + m,
+                          ghrts.repository_full_name.in_(r))
+                     for m, r in match_groups.get(ReleaseMatch.tag, {}).items()),
+                   *(and_(ghrts.release_match == "branch|" + m,
+                          ghrts.repository_full_name.in_(r))
+                     for m, r in match_groups.get(ReleaseMatch.branch, {}).items()))))
+    spans = {}
+    for row in rows:
+        if row[ghrts.release_match.key].startswith("tag|"):
+            release_match = ReleaseMatch.tag
+        else:
+            release_match = ReleaseMatch.branch
+        times = row[ghrts.time_from.key], row[ghrts.time_to.key]
+        if sqlite:
+            times = tuple(t.replace(tzinfo=timezone.utc) for t in times)
+        spans.setdefault(row[ghrts.repository_full_name.key], {})[release_match] = times
+    return spans
+
+
+@sentry_span
+async def _store_precomputed_release_match_spans(
+        match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+        time_from: datetime,
+        time_to: datetime,
+        pdb: databases.Database) -> None:
+    inserted = []
+    for rm, pair in match_groups.items():
+        if rm == ReleaseMatch.tag:
+            prefix = "tag|"
+        elif rm == ReleaseMatch.branch:
+            prefix = "branch|"
+        else:
+            raise AssertionError("Impossible release match: %s" % rm)
+        for val, repos in pair.items():
+            rms = prefix + val
+            for repo in repos:
+                inserted.append(GitHubReleaseMatchTimespan(
+                    repository_full_name=repo,
+                    release_match=rms,
+                    time_from=time_from,
+                    time_to=time_to,
+                ).explode(with_primary_keys=True))
+    if not inserted:
+        return
+    if pdb.url.dialect in ("postgres", "postgresql"):
+        sql = postgres_insert(GitHubReleaseMatchTimespan)
+        sql = sql.on_conflict_do_update(
+            constraint=GitHubReleaseMatchTimespan.__table__.primary_key,
+            set_={
+                GitHubReleaseMatchTimespan.time_from.key: least(
+                    sql.excluded.time_from, GitHubReleaseMatchTimespan.time_from),
+                GitHubReleaseMatchTimespan.time_to.key: greatest(
+                    sql.excluded.time_to, GitHubReleaseMatchTimespan.time_to),
+            },
+        )
+    elif pdb.url.dialect == "sqlite":
+        sql = insert(GitHubReleaseMatchTimespan).prefix_with("OR REPLACE")
+    else:
+        raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
+    with sentry_sdk.start_span(op="_store_precomputed_release_match_spans/execute_many"):
+        await pdb.execute_many(sql, inserted)
+
+
+@sentry_span
+async def _store_precomputed_releases(releases: pd.DataFrame,
                                       default_branches: Dict[str, str],
                                       settings: Dict[str, ReleaseMatchSetting],
                                       pdb: databases.Database) -> None:
     inserted = []
     prefix = PREFIXES["github"]
-    columns = [Release.id,
-               Release.repository_full_name,
-               Release.author,
-               Release.name,
-               Release.tag,
-               Release.url,
-               Release.sha,
-               Release.commit_id,
-               Release.published_at]
-    for row in zip(*(releases_by_branch[c.key].values for c in columns[:-1]),
-                   releases_by_branch[Release.published_at.key]):
-        obj = {columns[i].key: v for i, v in enumerate(row)}
+    columns = [Release.id.key,
+               Release.repository_full_name.key,
+               Release.author.key,
+               Release.name.key,
+               Release.tag.key,
+               Release.url.key,
+               Release.sha.key,
+               Release.commit_id.key,
+               matched_by_column,
+               Release.published_at.key]
+    for row in zip(*(releases[c].values for c in columns[:-1]),
+                   releases[Release.published_at.key]):
+        obj = {columns[i]: v for i, v in enumerate(row)}
         repo = row[1]
-        obj[PrecomputedRelease.release_match.key] = "branch|" + \
-            settings[prefix + repo].branches.replace(default_branch_alias, default_branches[repo])
+        if obj[matched_by_column] == ReleaseMatch.branch:
+            obj[PrecomputedRelease.release_match.key] = "branch|" + \
+                settings[prefix + repo].branches.replace(default_branch_alias,
+                                                         default_branches[repo])
+        elif obj[matched_by_column] == ReleaseMatch.tag:
+            obj[PrecomputedRelease.release_match.key] = "tag|" + settings[prefix + row[1]].tags
+        else:
+            raise AssertionError("Impossible release match: %s" % obj)
+        del obj[matched_by_column]
         inserted.append(obj)
-    for row in zip(*(releases_by_tag[c.key].values for c in columns[:-1]),
-                   releases_by_tag[Release.published_at.key]):
-        obj = {columns[i].key: v for i, v in enumerate(row)}
-        obj[PrecomputedRelease.release_match.key] = "tag|" + settings[prefix + row[1]].tags
-        inserted.append(obj)
-    with sentry_sdk.start_span(op="_store_precomputed_releases/execute_many"):
-        await pdb.execute_many(insert(PrecomputedRelease), inserted)
+    if inserted:
+        with sentry_sdk.start_span(op="_store_precomputed_releases/execute_many"):
+            await pdb.execute_many(insert(PrecomputedRelease), inserted)
 
 
 @sentry_span

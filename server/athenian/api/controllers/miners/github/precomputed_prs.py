@@ -13,7 +13,6 @@ import sentry_sdk
 from sqlalchemy import and_, insert, join, not_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
-from sqlalchemy.sql.functions import ReturnTypeFromArgs
 
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
@@ -25,7 +24,7 @@ from athenian.api.controllers.miners.types import MinedPullRequest, Participants
     ParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
-from athenian.api.db import add_pdb_hits
+from athenian.api.db import add_pdb_hits, greatest
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewRequest, Release
@@ -526,10 +525,6 @@ def _extract_release_match(repo: str,
             default_branch_alias, default_branches[repo])
         return "branch|" + branch
     raise AssertionError("Unsupported release match %s" % matched_by)
-
-
-class greatest(ReturnTypeFromArgs):  # noqa
-    pass
 
 
 @sentry_span

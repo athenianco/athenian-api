@@ -36,7 +36,8 @@ def release_match_setting_branch():
 
 @pytest.fixture(scope="module")
 def default_branches():
-    return {"src-d/go-git": "master"}
+    return {"src-d/go-git": "master",
+            "src-d/gitbase": "master"}
 
 
 _branches = None

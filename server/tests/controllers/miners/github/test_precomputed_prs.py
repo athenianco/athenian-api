@@ -427,6 +427,7 @@ async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pd
     assert released_prs.empty
 
 
+@with_defer
 async def test_discover_update_unreleased_prs_smoke(
         mdb, pdb, default_branches, release_match_setting_tag):
     prs = await read_sql_query(

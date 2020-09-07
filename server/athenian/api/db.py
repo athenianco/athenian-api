@@ -17,6 +17,7 @@ import databases.core
 from databases.interfaces import ConnectionBackend, TransactionBackend
 import sentry_sdk
 from sqlalchemy.sql import ClauseElement
+from sqlalchemy.sql.functions import ReturnTypeFromArgs
 
 from athenian.api import metadata
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
@@ -210,3 +211,11 @@ asyncpg.Connection._execute_original = asyncpg.Connection._Connection__execute
 asyncpg.Connection._Connection__execute = _asyncpg_execute
 asyncpg.Connection._executemany_original = asyncpg.Connection._executemany
 asyncpg.Connection._executemany = _asyncpg_executemany
+
+
+class greatest(ReturnTypeFromArgs):  # noqa
+    """SQL GREATEST function."""
+
+
+class least(ReturnTypeFromArgs):  # noqa
+    """SQL LEAST function."""
