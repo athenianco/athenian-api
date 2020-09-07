@@ -287,7 +287,7 @@ def _extract_jira_labels(pr: PullRequestListItem) -> Optional[Set[str]]:
     labels = set()
     for issue in pr.jira:
         if issue.labels is not None:
-            labels.update(issue.labels)
+            labels.update(s.lower() for s in issue.labels)
     return labels or None
 
 
@@ -344,7 +344,7 @@ def _filter_by_jira_issue_types(prs: List[PullRequestListItem],
         if pr.jira is None:
             continue
         for issue in pr.jira:
-            if issue.type in types:
+            if issue.type.lower() in types:
                 new_prs.append(pr)
                 break
     return new_prs

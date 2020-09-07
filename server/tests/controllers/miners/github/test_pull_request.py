@@ -829,7 +829,7 @@ async def test_pr_miner_jira_filter(
         {"src-d/go-git"},
         {},
         LabelFilter.empty(),
-        JIRAFilter(LabelFilter({"performance"}, set()), set(), set()),
+        JIRAFilter(1, LabelFilter({"performance"}, set()), set(), set()),
         branches, default_branches,
         False,
         release_match_setting_tag,
@@ -843,14 +843,23 @@ async def test_pr_miner_jira_filter(
             744, 751, 768, 771, 776,
             783, 784, 789, 797, 803,
             808, 815, 824, 825, 874} == numbers
-    args[7] = JIRAFilter(LabelFilter.empty(), {"DEV-149"}, set())
+    args[7] = JIRAFilter(1, LabelFilter.empty(), {"DEV-149"}, set())
     miner, _, _ = await PullRequestMiner.mine(*args)
     numbers = {pr.pr[PullRequest.number.key] for pr in miner}
     assert {821, 833, 846, 861} == numbers
-    args[7] = JIRAFilter(LabelFilter.empty(), set(), {"Bug"})
+    args[7] = JIRAFilter(1, LabelFilter.empty(), set(), {"bug"})
     miner, _, _ = await PullRequestMiner.mine(*args)
     numbers = {pr.pr[PullRequest.number.key] for pr in miner}
     assert {800, 769, 896, 762, 807, 778, 855, 816, 754, 724, 790, 759, 792, 794, 795} == numbers
+    args[7] = JIRAFilter(1, LabelFilter({"api"}, set()), set(), {"task"})
+    miner, _, _ = await PullRequestMiner.mine(*args)
+    numbers = {pr.pr[PullRequest.number.key] for pr in miner}
+    assert {710, 712, 716, 720, 721,
+            739, 740, 742, 744, 751,
+            766, 768, 771, 776, 782,
+            783, 784, 786, 789, 797,
+            803, 808, 810, 815, 824,
+            825, 833, 846, 861} == numbers
 
 
 @with_defer
@@ -890,7 +899,8 @@ async def test_pr_miner_jira_fetch(
             epics.add(pr_epic.iloc[0])
         if not (pr_type := jira[Issue.type.key]).empty:
             types.add(pr_type.iloc[0])
-    assert labels == {"enhancement", "new-charts", "metrics", "usability", "security"}
+    assert labels == {"enhancement", "new-charts", "metrics", "usability", "security",
+                      "api", "webapp", "data retrieval", "infrastructure"}
     assert epics == {"DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"}
     assert types == {"Task", "Story"}
 
@@ -921,7 +931,7 @@ async def test_pr_miner_jira_cache(
     miner, _, _ = await PullRequestMiner.mine(*args)
     await wait_deferred()
     assert len(miner) == 325
-    args[7] = JIRAFilter(LabelFilter({"enhancement"}, set()), {"DEV-149"}, {"Task"})
+    args[7] = JIRAFilter(1, LabelFilter({"enhancement"}, set()), {"DEV-149"}, {"task"})
     args[-3] = args[-2] = None
     miner, _, _ = await PullRequestMiner.mine(*args)
     assert len(miner) == 3
@@ -929,7 +939,7 @@ async def test_pr_miner_jira_cache(
         assert "enhancement" in pr.jiras["labels"].iloc[0]
         assert pr.jiras["epic"].iloc[0] == "DEV-149"
         assert pr.jiras[Issue.type.key].iloc[0] == "Task"
-    args[7] = JIRAFilter(LabelFilter({"enhancement,performance"}, set()), {"DEV-149"}, {"Task"})
+    args[7] = JIRAFilter(1, LabelFilter({"enhancement,performance"}, set()), {"DEV-149"}, {"task"})
     miner, _, _ = await PullRequestMiner.mine(*args)
     assert len(miner) == 0
     args[-3] = mdb
