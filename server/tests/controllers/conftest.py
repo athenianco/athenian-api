@@ -9,7 +9,8 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.release import _empty_dag, _fetch_commit_history_edges
 from athenian.api.controllers.miners.github.release_accelerated import join_dags
 from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
+    ReleaseMatchSetting
 
 
 @pytest.fixture(scope="function")
@@ -22,6 +23,14 @@ def release_match_setting_tag():
     return {
         "github.com/src-d/go-git": ReleaseMatchSetting(
             branches="", tags=".*", match=ReleaseMatch.tag),
+    }
+
+
+@pytest.fixture(scope="module")
+def release_match_setting_branch():
+    return {
+        "github.com/src-d/go-git": ReleaseMatchSetting(
+            branches=default_branch_alias, tags=".*", match=ReleaseMatch.branch),
     }
 
 
