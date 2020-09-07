@@ -7,6 +7,7 @@ from databases import Database
 import lz4.frame
 import numpy as np
 import pandas as pd
+from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import delete, select, sql
 from sqlalchemy.schema import CreateTable
@@ -19,9 +20,9 @@ from athenian.api.controllers.miners.github.precomputed_prs import store_precomp
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
 from athenian.api.controllers.miners.github.release import \
-    _empty_dag, _fetch_commit_history_dag, _fetch_repository_commits, \
-    _fetch_repository_first_commit_dates, _find_dead_merged_prs, load_releases, \
-    map_prs_to_releases, map_releases_to_prs, mine_releases
+    _empty_dag, _fetch_commit_history_dag, _fetch_precomputed_releases, _fetch_repository_commits,\
+    _fetch_repository_first_commit_dates, _find_dead_merged_prs, _store_precomputed_releases, \
+    dummy_releases_df, load_releases, map_prs_to_releases, map_releases_to_prs, mine_releases
 from athenian.api.controllers.miners.github.release_accelerated import extract_subdag, join_dags, \
     mark_dag_access, mark_dag_parents, partition_dag
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
@@ -998,6 +999,27 @@ async def test_mine_releases_full_span(mdb, pdb, release_match_setting_tag):
             "2017-02-01 09:51:10+0000", tz="UTC")
         assert time_from < facts.published < time_to
         assert facts.matched_by == ReleaseMatch.tag
+
+
+@pytest.mark.parametrize("settings_index", [0, 1])
+@with_defer
+async def test_precomputed_releases_low_level(
+        mdb, pdb, branches, default_branches,
+        release_match_setting_tag, release_match_setting_branch, settings_index):
+    settings = [release_match_setting_tag, release_match_setting_branch][settings_index]
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
+    releases, _ = await load_releases(
+        ["src-d/go-git"], branches, default_branches, time_from, time_to,
+        settings, mdb, pdb, None)
+    dfs = [dummy_releases_df(), releases]
+    if settings_index:
+        dfs = reversed(dfs)
+    await _store_precomputed_releases(*dfs, default_branches, settings, pdb)
+    prels = await _fetch_precomputed_releases(
+        ["src-d/go-git"], time_from, time_to, default_branches, settings, pdb)
+    prels = prels[releases.columns]
+    assert_frame_equal(releases, prels)
 
 
 """

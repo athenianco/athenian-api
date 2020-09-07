@@ -37,7 +37,8 @@ from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepository, PullRequest, \
     PullRequestLabel, PushCommit, Release
-from athenian.api.models.precomputed.models import GitHubCommitHistory, GitHubRepository
+from athenian.api.models.precomputed.models import GitHubCommitHistory, \
+    GitHubRelease as PrecomputedRelease, GitHubRepository
 from athenian.api.tracing import sentry_span
 
 
@@ -157,6 +158,83 @@ async def _match_releases_by_tag_or_branch(repos: Iterable[str],
     applied_matches = {**{k: ReleaseMatch.tag for k in repos_by_tag},
                        **{k: ReleaseMatch.branch for k in repos_by_branch}}
     return pd.concat(matched), applied_matches
+
+
+@sentry_span
+async def _fetch_precomputed_releases(repos: Iterable[str],
+                                      time_from: datetime,
+                                      time_to: datetime,
+                                      default_branches: Dict[str, str],
+                                      settings: Dict[str, ReleaseMatchSetting],
+                                      pdb: databases.Database,
+                                      ) -> pd.DataFrame:
+    match_groups = {
+        ReleaseMatch.tag: {},
+        ReleaseMatch.branch: {},
+    }
+    prefix = PREFIXES["github"]
+    for repo in repos:
+        rms = settings[prefix + repo]
+        if rms.match in (ReleaseMatch.tag, ReleaseMatch.tag_or_branch):
+            match_groups[ReleaseMatch.tag].setdefault(rms.tags, []).append(repo)
+        if rms.match in (ReleaseMatch.branch, ReleaseMatch.tag_or_branch):
+            match_groups[ReleaseMatch.branch].setdefault(
+                rms.branches.replace(default_branch_alias, default_branches[repo]), [],
+            ).append(repo)
+    prel = PrecomputedRelease
+    df = await read_sql_query(
+        select([prel])
+        .where(and_(or_(*(and_(prel.release_match == "tag|" + m,
+                               prel.repository_full_name.in_(r))
+                          for m, r in match_groups[ReleaseMatch.tag].items()),
+                        *(and_(prel.release_match == "branch|" + m,
+                               prel.repository_full_name.in_(r))
+                          for m, r in match_groups[ReleaseMatch.branch].items())),
+                    prel.published_at.between(time_from, time_to)))
+        .order_by(desc(prel.published_at)),
+        pdb, prel,
+    )
+    matched_by_tag_mask = df[prel.release_match.key].str.startswith("tag|")
+    matched_by_branch_mask = df[prel.release_match.key].str.startswith("branch|")
+    df[matched_by_column] = None
+    df[matched_by_column][matched_by_tag_mask] = ReleaseMatch.tag
+    df[matched_by_column][matched_by_branch_mask] = ReleaseMatch.branch
+    df[matched_by_column] = df[matched_by_column].astype(int)
+    df.drop(prel.release_match.key, inplace=True, axis=1)
+    return df
+
+
+@sentry_span
+async def _store_precomputed_releases(releases_by_branch: pd.DataFrame,
+                                      releases_by_tag: pd.DataFrame,
+                                      default_branches: Dict[str, str],
+                                      settings: Dict[str, ReleaseMatchSetting],
+                                      pdb: databases.Database) -> None:
+    inserted = []
+    prefix = PREFIXES["github"]
+    columns = [Release.id,
+               Release.repository_full_name,
+               Release.author,
+               Release.name,
+               Release.tag,
+               Release.url,
+               Release.sha,
+               Release.commit_id,
+               Release.published_at]
+    for row in zip(*(releases_by_branch[c.key].values for c in columns[:-1]),
+                   releases_by_branch[Release.published_at.key]):
+        obj = {columns[i].key: v for i, v in enumerate(row)}
+        repo = row[1]
+        obj[PrecomputedRelease.release_match.key] = "branch|" + \
+            settings[prefix + repo].branches.replace(default_branch_alias, default_branches[repo])
+        inserted.append(obj)
+    for row in zip(*(releases_by_tag[c.key].values for c in columns[:-1]),
+                   releases_by_tag[Release.published_at.key]):
+        obj = {columns[i].key: v for i, v in enumerate(row)}
+        obj[PrecomputedRelease.release_match.key] = "tag|" + settings[prefix + row[1]].tags
+        inserted.append(obj)
+    with sentry_sdk.start_span(op="_store_precomputed_releases/execute_many"):
+        await pdb.execute_many(insert(PrecomputedRelease), inserted)
 
 
 @sentry_span
@@ -299,7 +377,7 @@ async def _fetch_commits(commit_shas: Sequence[str],
         select([PushCommit])
         .where(and_(PushCommit.sha.in_(commit_shas),
                     PushCommit.committed_date.between(time_from, time_to)))
-        .order_by(desc(PushCommit.commit_date)),
+        .order_by(desc(PushCommit.committed_date)),
         db, PushCommit)
 
 
