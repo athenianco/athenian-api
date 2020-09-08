@@ -2877,6 +2877,12 @@ components:
           type: boolean
         jira:
           $ref: '#/components/schemas/JIRAFilter'
+        limit:
+          description: Maximum number of pull requests to return. The list is sorted
+            by the last update timestamp. `null` means no limit.
+          minimum: 1
+          nullable: true
+          type: integer
       required:
       - account
       - date_from

@@ -139,7 +139,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         jira = JIRAFilter.empty()
     prs = await filter_pull_requests(
         props, filt.date_from, filt.date_to, repos, participants, labels, jira,
-        filt.exclude_inactive, settings, request.mdb, request.pdb, request.cache)
+        filt.exclude_inactive, settings, filt.limit or 0, request.mdb, request.pdb, request.cache)
     return await _build_github_prs_response(prs, request.mdb, request.cache)
 
 

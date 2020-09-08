@@ -131,12 +131,11 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda date_from, date_to, exclude_inactive, release_settings, pr_blacklist, truncate, **_: (  # noqa
+        key=lambda date_from, date_to, exclude_inactive, release_settings, limit, pr_blacklist, truncate, **_: (  # noqa
             date_from.toordinal(), date_to.toordinal(), exclude_inactive, release_settings,
-            ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []), truncate,
+            limit, ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []), truncate,
         ),
         postprocess=_postprocess_cached_prs,
-        version=3,
     )
     async def _mine(cls,
                     date_from: date,
@@ -149,6 +148,7 @@ class PullRequestMiner:
                     default_branches: Dict[str, str],
                     exclude_inactive: bool,
                     release_settings: Dict[str, ReleaseMatchSetting],
+                    limit: int,
                     mdb: databases.Database,
                     pdb: databases.Database,
                     cache: Optional[aiomcache.Client],
@@ -176,9 +176,9 @@ class PullRequestMiner:
                 repositories, branches, default_branches, time_from, time_to,
                 participants.get(ParticipationKind.AUTHOR, []),
                 participants.get(ParticipationKind.MERGER, []),
-                release_settings, mdb, pdb, cache, pr_blacklist, truncate),
+                release_settings, limit, mdb, pdb, cache, pr_blacklist, truncate),
             cls._fetch_prs(
-                time_from, time_to, repositories, participants, jira, pr_blacklist, mdb),
+                time_from, time_to, repositories, participants, jira, limit, pr_blacklist, mdb),
         ]
         if not exclude_inactive:
             tasks.append(load_inactive_merged_unreleased_prs(
@@ -200,6 +200,9 @@ class PullRequestMiner:
         else:
             prs = pd.concat([prs, released_prs, unreleased], copy=False)
         prs = prs[~prs.index.duplicated()]
+        if 0 < limit < len(prs):
+            prs = prs.take(np.argpartition(
+                prs[PullRequest.updated_at.key].values, len(prs) - limit)[len(prs) - limit:])
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
         if truncate:
             cls._truncate_timestamps(prs, time_to)
@@ -445,6 +448,7 @@ class PullRequestMiner:
                    mdb: databases.Database,
                    pdb: databases.Database,
                    cache: Optional[aiomcache.Client],
+                   limit: int = 0,
                    pr_blacklist: Optional[Collection[str]] = None,
                    truncate: bool = True,
                    ) -> Tuple["PullRequestMiner",
@@ -472,6 +476,8 @@ class PullRequestMiner:
         :param default_branches: Mapping from repository names to their default branch names.
         :param exclude_inactive: Ors must have at least one event in the given time frame.
         :param release_settings: Release match settings of the account.
+        :param limit: Maximum number of PRs to return. The list is sorted by the last update \
+                      timestamp. 0 means no limit.
         :param mdb: Metadata db instance.
         :param pdb: Precomputed db instance.
         :param cache: memcached client to cache the collected data.
@@ -484,7 +490,7 @@ class PullRequestMiner:
         assert time_to <= date_to_with_time
         dfs, facts, _, _, _, _, matched_bys = await cls._mine(
             date_from, date_to, repositories, participants, labels, jira, branches,
-            default_branches, exclude_inactive, release_settings, mdb, pdb, cache,
+            default_branches, exclude_inactive, release_settings, limit, mdb, pdb, cache,
             pr_blacklist=pr_blacklist, truncate=truncate)
         cls._truncate_prs(dfs, time_from, time_to)
         if truncate:
@@ -500,6 +506,7 @@ class PullRequestMiner:
                          repositories: Set[str],
                          participants: Participants,
                          jira: JIRAFilter,
+                         limit: int,
                          pr_blacklist: Optional[BinaryExpression],
                          mdb: databases.Database) -> pd.DataFrame:
         postgres = mdb.url.dialect in ("postgres", "postgresql")
@@ -527,6 +534,8 @@ class PullRequestMiner:
             query = sql.select([PullRequest]).where(sql.and_(*filters))
         else:
             query = await cls._generate_jira_prs_query(filters, jira, postgres, mdb)
+        if limit > 0:
+            query = query.order_by(sql.desc(PullRequest.updated_at)).limit(limit)
         return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
 
     @classmethod
