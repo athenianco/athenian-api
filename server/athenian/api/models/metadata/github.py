@@ -348,3 +348,10 @@ class NodePullRequestJiraIssues(Base, IDMixin):
 
     jira_acc = Column(BigInteger, nullable=False)
     jira_id = Column(Text, nullable=False)
+
+
+class SchemaMigration(Base):
+    __tablename__ = "schema_migrations"
+
+    version = Column(BigInteger, primary_key=True)
+    dirty = Column(Boolean, nullable=False)

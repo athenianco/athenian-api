@@ -3,6 +3,7 @@ import json
 import pytest
 
 from athenian.api import metadata
+from athenian.api.models.metadata import __min_version__
 
 
 async def test_versions(client, headers):
@@ -12,6 +13,7 @@ async def test_versions(client, headers):
     assert response.status == 200
     body = json.loads((await response.read()).decode("utf-8"))
     assert body["api"] == metadata.__version__
+    assert body["metadata"] == str(__min_version__)
 
 
 async def test_status(client, headers, client_cache, app):

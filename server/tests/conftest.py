@@ -38,7 +38,7 @@ from athenian.api import AthenianApp, check_collation, create_memcached, Paralle
     patch_pandas, setup_cache_metrics
 from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
-from athenian.api.models.metadata import dereference_schemas
+from athenian.api.models import metadata
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.precomputed.models import Base as PrecomputedBase
@@ -266,6 +266,7 @@ def client(loop, aiohttp_client, app):
 
 @pytest.fixture(scope="module")
 def metadata_db() -> str:
+    metadata.__version__ = metadata.__min_version__
     if override_mdb:
         conn_str = override_mdb
     else:
@@ -276,7 +277,7 @@ def metadata_db() -> str:
         engine.execute("CREATE SCHEMA IF NOT EXISTS github;")
         engine.execute("CREATE SCHEMA IF NOT EXISTS jira;")
     else:
-        dereference_schemas()
+        metadata.dereference_schemas()
     GithubBase.metadata.create_all(engine)
     JiraBase.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
