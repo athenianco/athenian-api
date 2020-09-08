@@ -14,7 +14,7 @@ import lz4.frame
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, func, insert, join, or_, select
+from sqlalchemy import and_, desc, false, func, insert, join, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql.elements import BinaryExpression, ClauseElement
 
@@ -66,6 +66,8 @@ async def load_releases(repos: Iterable[str],
     assert time_from <= time_to
 
     match_groups, repos_count = _group_repos_by_release_match(repos, default_branches, settings)
+    if repos_count == 0:
+        return dummy_releases_df(), {}
     tasks = [
         _fetch_precomputed_releases(match_groups, time_from, time_to, pdb, index=index),
         _fetch_precomputed_release_match_spans(match_groups, pdb),
@@ -280,6 +282,23 @@ def _group_repos_by_release_match(repos: Iterable[str],
     return match_groups, count
 
 
+def _match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+                         model) -> ClauseElement:
+    or_items = []
+    tags, branches = match_groups.get(ReleaseMatch.tag), match_groups.get(ReleaseMatch.branch)
+    if tags:
+        or_items.extend(and_(model.release_match == "tag|" + m,
+                             model.repository_full_name.in_(r))
+                        for m, r in tags.items())
+    if branches:
+        or_items.extend(and_(model.release_match == "branch|" + m,
+                             model.repository_full_name.in_(r))
+                        for m, r in match_groups.get(ReleaseMatch.branch, {}).items())
+    if or_items:
+        return or_(*or_items)
+    return false()
+
+
 @sentry_span
 async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
                                       time_from: datetime,
@@ -290,12 +309,7 @@ async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str,
     prel = PrecomputedRelease
     df = await read_sql_query(
         select([prel])
-        .where(and_(or_(*(and_(prel.release_match == "tag|" + m,
-                               prel.repository_full_name.in_(r))
-                          for m, r in match_groups.get(ReleaseMatch.tag, {}).items()),
-                        *(and_(prel.release_match == "branch|" + m,
-                               prel.repository_full_name.in_(r))
-                          for m, r in match_groups.get(ReleaseMatch.branch, {}).items())),
+        .where(and_(_match_groups_to_sql(match_groups, prel),
                     prel.published_at.between(time_from, time_to)))
         .order_by(desc(prel.published_at)),
         pdb, prel,
@@ -307,8 +321,8 @@ async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str,
     if len(ambiguous_repos):
         matched_by_branch_mask[np.in1d(repos, ambiguous_repos)] = False
     df[matched_by_column] = None
-    df[matched_by_column][matched_by_tag_mask] = ReleaseMatch.tag
-    df[matched_by_column][matched_by_branch_mask] = ReleaseMatch.branch
+    df.loc[matched_by_tag_mask, matched_by_column] = ReleaseMatch.tag
+    df.loc[matched_by_branch_mask, matched_by_column] = ReleaseMatch.branch
     df.drop(prel.release_match.key, inplace=True, axis=1)
     df = df.take(np.where(~df[matched_by_column].isnull())[0])
     df[matched_by_column] = df[matched_by_column].astype(int)
@@ -327,12 +341,7 @@ async def _fetch_precomputed_release_match_spans(
     sqlite = pdb.url.dialect == "sqlite"
     rows = await pdb.fetch_all(
         select([ghrts.repository_full_name, ghrts.release_match, ghrts.time_from, ghrts.time_to])
-        .where(or_(*(and_(ghrts.release_match == "tag|" + m,
-                          ghrts.repository_full_name.in_(r))
-                     for m, r in match_groups.get(ReleaseMatch.tag, {}).items()),
-                   *(and_(ghrts.release_match == "branch|" + m,
-                          ghrts.repository_full_name.in_(r))
-                     for m, r in match_groups.get(ReleaseMatch.branch, {}).items()))))
+        .where(_match_groups_to_sql(match_groups, ghrts)))
     spans = {}
     for row in rows:
         if row[ghrts.release_match.key].startswith("tag|"):
