@@ -1,7 +1,7 @@
 from datetime import timezone
 from functools import lru_cache
 
-from pandas import Series
+from pandas import Series, set_option
 from pandas.core import algorithms
 from pandas.core.arrays import DatetimeArray, datetimes
 from pandas.core.arrays.datetimelike import DatetimeLikeArrayMixin
@@ -11,6 +11,7 @@ from pandas.core.dtypes.dtypes import DatetimeTZDtype
 
 def patch_pandas():
     """Patch pandas internals to increase performance on small DataFrame-s."""
+    set_option("mode.chained_assignment", "raise")
     common.pandas_dtype = lru_cache()(common.pandas_dtype)
     datetimes.pandas_dtype = common.pandas_dtype
     common.is_dtype_equal = lru_cache()(common.is_dtype_equal)
