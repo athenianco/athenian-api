@@ -134,7 +134,7 @@ class GitHubRelease(Base):
     id = Column(Text, primary_key=True)
     release_match = Column(Text(), primary_key=True)
     repository_full_name = Column(RepositoryFullName, nullable=False)
-    author = Column(Text, nullable=False)
+    author = Column(Text)
     name = Column(Text, nullable=False)
     published_at = Column(TIMESTAMP(timezone=True), nullable=False)
     tag = Column(Text)
