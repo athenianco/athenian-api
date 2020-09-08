@@ -12,8 +12,8 @@ import prometheus_client
 import pympler.muppy
 import pympler.summary
 
-from athenian.api import metadata
 from athenian.api.metadata import __package__, __version__
+import athenian.api.models.metadata as metadata
 from athenian.api.models.web import BadRequestError
 from athenian.api.models.web.versions import Versions
 from athenian.api.response import model_response, ResponseError
@@ -21,13 +21,12 @@ from athenian.api.response import model_response, ResponseError
 
 async def get_versions(request: web.Request) -> web.Response:
     """Return the versions of the backend components."""
-    # TODO(vmarkovtsev): add metadata
-    model = Versions(api=metadata.__version__)
+    model = Versions(api=__version__, metadata=str(metadata.__version__))
     return model_response(model)
 
 
 elapsed_error_threshold = 60
-_log = logging.getLogger("%s.elapsed" % metadata.__package__)
+_log = logging.getLogger("%s.elapsed" % __package__)
 
 
 def _after_response(request: web.Request,
@@ -237,7 +236,7 @@ def setup_status(app) -> prometheus_client.CollectorRegistry:
     )
     app["db_elapsed"] = ContextVar("db_elapsed", default=None)
     prometheus_client.Info("server", "API server version", registry=registry).info({
-        "version": metadata.__version__,
+        "version": __version__,
         "commit": getattr(metadata, "__commit__", "null"),
         "build_date": getattr(metadata, "__date__", "null"),
     })

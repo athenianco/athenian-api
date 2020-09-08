@@ -4022,12 +4022,16 @@ components:
     Versions:
       additionalProperties: false
       example:
-        api: v0.2.10
+        api: 0.2.10
+        metadata: 14
       properties:
         api:
           type: string
+        metadata:
+          type: string
       required:
       - api
+      - metadata
       type: object
     GetPullRequestsRequest:
       additionalProperties: false

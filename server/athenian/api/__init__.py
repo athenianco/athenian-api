@@ -47,8 +47,10 @@ from athenian.api.defer import enable_defer, wait_deferred
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.metadata import __package__
-from athenian.api.models import check_collation, check_schema_version, DBSchemaMismatchError
-from athenian.api.models.metadata import dereference_schemas
+from athenian.api.models import check_alembic_schema_version, check_collation, \
+    DBSchemaMismatchError
+from athenian.api.models.metadata import check_schema_version as check_mdb_schema_version, \
+    dereference_schemas
 from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
@@ -576,11 +578,12 @@ def check_schema_versions(metadata_db: str,
                           ) -> bool:
     """Validate schema versions in parallel threads."""
     passed = True
+    logging.getLogger("alembic.runtime.migration").setLevel(logging.WARNING)
 
-    def check(name, cs):
+    def check_alembic(name, cs):
         nonlocal passed
         try:
-            check_schema_version(name, cs, log)
+            check_alembic_schema_version(name, cs, log)
             check_collation(cs)
         except DBSchemaMismatchError as e:
             passed = False
@@ -589,9 +592,21 @@ def check_schema_versions(metadata_db: str,
             passed = False
             log.exception("while checking %s", name)
 
-    checkers = [threading.Thread(target=check, args=args)
+    def check_metadata(cs):
+        nonlocal passed
+        try:
+            check_mdb_schema_version(cs, log)
+            check_collation(cs)
+        except DBSchemaMismatchError as e:
+            passed = False
+            log.error("metadata schema version check failed: %s", e)
+        except Exception:
+            passed = False
+            log.exception("while checking metadata")
+
+    checkers = [threading.Thread(target=check_alembic, args=args)
                 for args in (("state", state_db), ("precomputed", precomputed_db))]
-    checkers.append(threading.Thread(target=check_collation, args=(metadata_db,)))
+    checkers.append(threading.Thread(target=check_metadata, args=(metadata_db,)))
     for t in checkers:
         t.start()
     for t in checkers:

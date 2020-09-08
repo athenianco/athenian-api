@@ -7,7 +7,7 @@ from sqlalchemy import and_, create_engine, func
 from sqlalchemy.orm import sessionmaker
 
 from athenian.api.controllers import invitation_controller
-from athenian.api.models import check_schema_version
+from athenian.api.models import check_alembic_schema_version
 from athenian.api.models.state.models import Account, Invitation
 from athenian.api.slogging import add_logging_args
 
@@ -26,7 +26,7 @@ def main(conn_str: str, force_new: bool = False) -> None:
     """Add an admin invitation DB record and print the invitation URL."""
     invitation_controller.validate_env()
     log = logging.getLogger("invite_admin")
-    check_schema_version("state", conn_str, log)
+    check_alembic_schema_version("state", conn_str, log)
     engine = create_engine(conn_str)
     session = sessionmaker(bind=engine)()
     salt = randint(0, (1 << 16) - 1)

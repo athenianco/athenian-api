@@ -9,7 +9,9 @@ import sqlalchemy.orm
 from sqlalchemy.sql.type_api import Variant
 
 from athenian.api.controllers import invitation_controller
-from athenian.api.models.metadata.github import Base as GithubBase, PullRequest, PushCommit
+from athenian.api.models.metadata import __min_version__
+from athenian.api.models.metadata.github import Base as GithubBase, PullRequest, PushCommit, \
+    SchemaMigration
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubInstallation, \
     AccountJiraInstallation, Feature, FeatureComponent, Invitation, RepositorySet, UserAccount
@@ -81,6 +83,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                                 print(k, '"%s"' % p.decode())
                             raise e from None
                 session.add(model(**kwargs))
+    session.add(SchemaMigration(version=__min_version__, dirty=False))
     session.flush()
     # append missed merge commit IDs to PRs
     commit_ids = {h: n for h, n in session.query(PushCommit.sha, PushCommit.node_id)}

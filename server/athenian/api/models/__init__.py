@@ -160,7 +160,7 @@ class DBSchemaMismatchError(Exception):
     """Error raised if the DB schema versions do not match."""
 
 
-def check_schema_version(name: str, conn_str: str, log: logging.Logger) -> None:
+def check_alembic_schema_version(name: str, conn_str: str, log: logging.Logger) -> None:
     """Raise DBSchemaVersionMismatchError if the real (connected) DB schema version \
     does not match the required (declared in the code) version."""
     directory = script.ScriptDirectory(os.path.join(os.path.dirname(__file__), name))
