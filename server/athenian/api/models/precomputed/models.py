@@ -141,3 +141,14 @@ class GitHubRelease(Base):
     url = Column(Text, nullable=False)
     sha = Column(Text, nullable=False)
     commit_id = Column(Text, nullable=False)
+
+
+class GitHubReleaseMatchTimespan(Base):
+    """For which dates we matched releases."""
+
+    __tablename__ = "github_release_match_spans"
+
+    repository_full_name = Column(RepositoryFullName, primary_key=True)
+    release_match = Column(Text(), primary_key=True)
+    time_from = Column(TIMESTAMP(timezone=True), nullable=False)
+    time_to = Column(TIMESTAMP(timezone=True), nullable=False)
