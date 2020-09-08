@@ -239,6 +239,7 @@ async def filter_pull_requests(properties: Set[Property],
                                jira: JIRAFilter,
                                exclude_inactive: bool,
                                release_settings: Dict[str, ReleaseMatchSetting],
+                               limit: int,
                                mdb: databases.Database,
                                pdb: databases.Database,
                                cache: Optional[aiomcache.Client],
@@ -253,7 +254,7 @@ async def filter_pull_requests(properties: Set[Property],
     """
     prs, _, _ = await _filter_pull_requests(
         properties, time_from, time_to, repos, participants, labels, jira, exclude_inactive,
-        release_settings, mdb, pdb, cache)
+        release_settings, limit, mdb, pdb, cache)
     return prs
 
 
@@ -375,6 +376,7 @@ async def _filter_pull_requests(properties: Set[Property],
                                 jira: JIRAFilter,
                                 exclude_inactive: bool,
                                 release_settings: Dict[str, ReleaseMatchSetting],
+                                limit: int,
                                 mdb: databases.Database,
                                 pdb: databases.Database,
                                 cache: Optional[aiomcache.Client],
@@ -389,7 +391,7 @@ async def _filter_pull_requests(properties: Set[Property],
         PullRequestMiner.mine(
             date_from, date_to, time_from, time_to, repos, participants, labels, jira, branches,
             default_branches, exclude_inactive, release_settings, mdb, pdb, cache,
-            truncate=False),
+            truncate=False, limit=limit),
         load_precomputed_done_facts_filters(
             time_from, time_to, repos, participants, labels, default_branches, exclude_inactive,
             release_settings, pdb),

@@ -23,6 +23,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         "labels_exclude": List[str],
         "exclude_inactive": bool,
         "jira": JIRAFilter,
+        "limit": int,
     }
 
     attribute_map = {
@@ -37,6 +38,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         "labels_exclude": "labels_exclude",
         "exclude_inactive": "exclude_inactive",
         "jira": "jira",
+        "limit": "limit",
     }
 
     def __init__(
@@ -52,6 +54,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         labels_exclude: Optional[List[str]] = None,
         exclude_inactive: Optional[bool] = None,
         jira: Optional[JIRAFilter] = None,
+        limit: Optional[int] = None,
     ):
         """FilterPullRequestsRequest - a model defined in OpenAPI
 
@@ -66,6 +69,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         :param labels_exclude: The labels_exclude of this FilterPullRequestsRequest.
         :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
         :param jira: The jira of this FilterPullRequestsRequest.
+        :param limit: The limit of this FilterPullRequestsRequest.
         """
         self._account = account
         self._date_from = date_from
@@ -78,6 +82,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         self._labels_exclude = labels_exclude
         self._exclude_inactive = exclude_inactive
         self._jira = jira
+        self._limit = limit
 
     @property
     def in_(self) -> List[str]:
@@ -207,3 +212,26 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         :param jira: The jira of this FilterPullRequestsRequest.
         """
         self._jira = jira
+
+    @property
+    def limit(self) -> int:
+        """Gets the limit of this FilterPullRequestsRequest.
+
+        Value indicating whether PRs without events in the given time frame shall be ignored.
+
+        :return: The limit of this FilterPullRequestsRequest.
+        """
+        return self._limit
+
+    @limit.setter
+    def limit(self, limit: int):
+        """Sets the limit of this FilterPullRequestsRequest.
+
+        Value indicating whether PRs without events in the given time frame shall be ignored.
+
+        :param limit: The limit of this FilterPullRequestsRequest.
+        """
+        if limit is not None and limit < 1:
+            raise ValueError("`limit` must be greater than 0: %s" % limit)
+
+        self._limit = limit

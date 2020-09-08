@@ -975,6 +975,7 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
                                  time_boundary: datetime,
                                  authors: Collection[str],
                                  mergers: Collection[str],
+                                 limit: int,
                                  pr_blacklist: Optional[BinaryExpression],
                                  mdb: databases.Database,
                                  ) -> pd.DataFrame:
@@ -997,8 +998,10 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
         filters.append(PullRequest.merged_by_login.in_any_values(mergers))
     if pr_blacklist is not None:
         filters.append(pr_blacklist)
-    return await read_sql_query(select([PullRequest]).where(and_(*filters)),
-                                mdb, PullRequest, index=PullRequest.node_id.key)
+    query = select([PullRequest]).where(and_(*filters))
+    if limit > 0:
+        query = query.order_by(desc(PullRequest.updated_at)).limit(limit)
+    return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
 
 
 @sentry_span
@@ -1036,6 +1039,7 @@ async def map_releases_to_prs(repos: Collection[str],
                               authors: Collection[str],
                               mergers: Collection[str],
                               release_settings: Dict[str, ReleaseMatchSetting],
+                              limit: int,
                               mdb: databases.Database,
                               pdb: databases.Database,
                               cache: Optional[aiomcache.Client],
@@ -1048,6 +1052,8 @@ async def map_releases_to_prs(repos: Collection[str],
 
     :param authors: Required PR commit_authors.
     :param mergers: Required PR mergers.
+    :param limit: Maximum number of PRs to return. The list is sorted by the last update \
+                  timestamp.
     :param truncate: Do not load releases after `time_to`.
     :return: pd.DataFrame with found PRs that were created before `time_from` and released \
              between `time_from` and `time_to` \
@@ -1099,7 +1105,8 @@ async def map_releases_to_prs(repos: Collection[str],
                             PullRequest.repository_full_name == repo,
                             PullRequest.merge_commit_sha.in_any_values(observed_commits),
                         ))
-        prs = await _find_old_released_prs(clauses, time_from, authors, mergers, pr_blacklist, mdb)
+        prs = await _find_old_released_prs(
+            clauses, time_from, authors, mergers, limit, pr_blacklist, mdb)
         return prs, dags
 
     async def maybe_load_all_releases():

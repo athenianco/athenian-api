@@ -297,13 +297,15 @@ async def test_filter_prs_shot(client, headers, mdb):
         "with": {
             "author": ["github.com/mcuadros"],
         },
+        "limit": 70,
         "exclude_inactive": False,
     }
     time_to = datetime(year=2018, month=1, day=24, tzinfo=timezone.utc)
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, {PullRequestProperty.MERGE_HAPPENED},
-                                {"author": ["github.com/mcuadros"]}, time_to)
+    n = await validate_prs_response(response, {PullRequestProperty.MERGE_HAPPENED},
+                                    {"author": ["github.com/mcuadros"]}, time_to)
+    assert n == 69  # it is 75 without the limit
 
 
 @pytest.mark.filter_pull_requests
@@ -447,7 +449,7 @@ will_never_be_released_go_git_pr_numbers = {
 async def validate_prs_response(response: ClientResponse,
                                 props: Set[str],
                                 parts: Dict[str, Collection[str]],
-                                time_to: datetime):
+                                time_to: datetime) -> int:
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     obj = json.loads(text)
@@ -673,6 +675,7 @@ async def validate_prs_response(response: ClientResponse,
         assert total_force_push_dropped > 0
     for k, v in timings.items():
         assert v > tdz, k
+    return len(prs.data)
 
 
 @pytest.mark.filter_pull_requests
