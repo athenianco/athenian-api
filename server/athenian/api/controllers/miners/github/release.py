@@ -64,7 +64,6 @@ async def load_releases(repos: Iterable[str],
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
     assert time_from <= time_to
-    sqlite = pdb.url.dialect == "sqlite"
 
     match_groups, repos_count = _group_repos_by_release_match(repos, default_branches, settings)
     tasks = [
@@ -139,13 +138,10 @@ async def load_releases(repos: Iterable[str],
         releases = pd.concat([releases, missings], copy=False)
         releases.sort_values(Release.published_at.key,
                              inplace=True, ascending=False, ignore_index=True)
-        if sqlite:
-            if index is not None:
-                releases = releases.take(np.where(~releases.index.duplicated())[0])
-            else:
-                releases.drop_duplicates(Release.id.key, inplace=True, ignore_index=True)
-        elif index is None:
-            releases.reset_index(drop=True, inplace=True)
+        if index is not None:
+            releases = releases.take(np.where(~releases.index.duplicated())[0])
+        else:
+            releases.drop_duplicates(Release.id.key, inplace=True, ignore_index=True)
         if missing_all:
             rrfnk = Release.repository_full_name.key
             mr = releases[[rrfnk, matched_by_column]]
