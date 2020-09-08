@@ -430,9 +430,17 @@ async def _store_precomputed_releases(releases: pd.DataFrame,
             raise AssertionError("Impossible release match: %s" % obj)
         del obj[matched_by_column]
         inserted.append(obj)
+
+    if pdb.url.dialect in ("postgres", "postgresql"):
+        sql = postgres_insert(PrecomputedRelease)
+        sql = sql.on_conflict_do_nothing()
+    elif pdb.url.dialect == "sqlite":
+        sql = insert(PrecomputedRelease).prefix_with("OR IGNORE")
+    else:
+        raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
     if inserted:
         with sentry_sdk.start_span(op="_store_precomputed_releases/execute_many"):
-            await pdb.execute_many(insert(PrecomputedRelease), inserted)
+            await pdb.execute_many(sql, inserted)
 
 
 @sentry_span
