@@ -1,12 +1,13 @@
 from datetime import timedelta
 
+import numpy as np
 import pytest
 
 from athenian.api.controllers.features.histogram import calculate_histogram, Scale
 
 
 def test_calculate_histogram_empty():
-    h = calculate_histogram([], Scale.LOG, 10)
+    h = calculate_histogram(np.array([]), Scale.LOG, 10)
     assert h.bins == 0
     assert h.scale == Scale.LOG
     assert h.ticks == []
@@ -14,7 +15,9 @@ def test_calculate_histogram_empty():
 
 
 def test_calculate_histogram_timedelta_linear_fixed():
-    h = calculate_histogram([timedelta(seconds=n) for n in range(1000)], Scale.LINEAR, 10)
+    h = calculate_histogram(
+        np.array([timedelta(seconds=n) for n in range(1000)], dtype="timedelta64[s]"),
+        Scale.LINEAR, 10)
     assert h.bins == 10
     assert h.scale == Scale.LINEAR
     assert h.ticks == [timedelta(seconds=60), timedelta(seconds=153), timedelta(seconds=247),
@@ -25,7 +28,9 @@ def test_calculate_histogram_timedelta_linear_fixed():
 
 
 def test_calculate_histogram_timedelta_linear_auto():
-    h = calculate_histogram([timedelta(seconds=n) for n in range(1000)], Scale.LINEAR, 0)
+    h = calculate_histogram(
+        np.array([timedelta(seconds=n) for n in range(1000)], dtype="timedelta64[s]"),
+        Scale.LINEAR, 0)
     assert h.bins == 12
     assert h.scale == Scale.LINEAR
     assert h.ticks == [timedelta(seconds=60), timedelta(seconds=138), timedelta(seconds=216),
@@ -37,7 +42,9 @@ def test_calculate_histogram_timedelta_linear_auto():
 
 
 def test_calculate_histogram_timedelta_log_fixed():
-    h = calculate_histogram([timedelta(seconds=n) for n in range(1000)], Scale.LOG, 10)
+    h = calculate_histogram(
+        np.array([timedelta(seconds=n) for n in range(1000)], dtype="timedelta64[s]"),
+        Scale.LOG, 10)
     assert h.bins == 10
     assert h.scale == Scale.LOG
     assert h.ticks == [timedelta(seconds=60), timedelta(seconds=79), timedelta(seconds=105),
@@ -48,7 +55,9 @@ def test_calculate_histogram_timedelta_log_fixed():
 
 
 def test_calculate_histogram_timedelta_log_auto():
-    h = calculate_histogram([timedelta(seconds=n) for n in range(1000)], Scale.LOG, 0)
+    h = calculate_histogram(
+        np.array([timedelta(seconds=n) for n in range(1000)], dtype="timedelta64[s]"),
+        Scale.LOG, 0)
     assert h.bins == 15
     assert h.scale == Scale.LOG
     assert h.ticks == [timedelta(seconds=60), timedelta(seconds=72), timedelta(seconds=87),
@@ -62,11 +71,11 @@ def test_calculate_histogram_timedelta_log_auto():
 
 def test_calculate_histogram_negative_log_error():
     with pytest.raises(ValueError):
-        calculate_histogram([-10, 10], Scale.LOG, 10)
+        calculate_histogram(np.array([-10, 10]), Scale.LOG, 10)
 
 
 def test_calculate_histogram_int_linear_fixed():
-    h = calculate_histogram([n for n in range(1000)], Scale.LINEAR, 9)
+    h = calculate_histogram(np.arange(1000), Scale.LINEAR, 9)
     assert h.bins == 9
     assert h.scale == Scale.LINEAR
     assert h.ticks == [0.0, 111.0, 222.0, 333.0, 444.0, 555.0, 666.0, 777.0, 888.0, 999.0]
@@ -74,7 +83,7 @@ def test_calculate_histogram_int_linear_fixed():
 
 
 def test_calculate_histogram_int_log_fixed():
-    h = calculate_histogram([n for n in range(1, 1000)], Scale.LOG, 10)
+    h = calculate_histogram(np.arange(1, 1000), Scale.LOG, 10)
     assert h.bins == 10
     assert h.scale == Scale.LOG
     assert h.ticks == [1.0, 1.9950626988936724, 3.980275172516904, 7.9408985280210524,

@@ -1,11 +1,10 @@
 from datetime import timedelta
 from functools import lru_cache, wraps
-from typing import Sequence, Tuple
+from typing import Tuple
 
 import bootstrapped.bootstrap as bootstrap
 import bootstrapped.stats_functions as bs_stats
 import numpy as np
-import pandas as pd
 import scipy.stats
 
 from athenian.api.controllers.features.metric import T
@@ -48,22 +47,24 @@ class NumpyRandomChoiceCache:
 np.random.choice = NumpyRandomChoiceCache()
 
 
-def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, confidence=0.8,
+def mean_confidence_interval(data: np.ndarray, may_have_negative_values: bool, confidence=0.8,
                              ) -> Tuple[T, T, T]:
     """Calculate the mean value and the confidence interval."""
     assert len(data) > 0
-    ns = 1_000_000_000
+    assert isinstance(data, np.ndarray)
     max_conf_ratio = 100
-    dtype_is_timedelta = isinstance(data[0], (pd.Timedelta, timedelta))
-    if dtype_is_timedelta:
+    assert data.dtype != np.dtype(object)
+    try:
+        unit, _ = np.datetime_data(data.dtype)
+        assert unit == "s"
+    except TypeError:
+        dtype_is_timedelta = False
+        arr = data
+    else:
+        dtype_is_timedelta = True
         # we have to convert the dtype because some ops required by scipy are missing
         # thus the precision is 1 second; otherwise there are integer overflows
-        if isinstance(data[0], pd.Timedelta):
-            arr = np.asarray([d.to_timedelta64() // ns for d in data], dtype=np.int64)
-        else:
-            arr = np.asarray(data, dtype="timedelta64[ns]").astype(np.int64) // ns
-    else:
-        arr = np.asarray(data)
+        arr = data.astype(np.int64)
     exact_type = type(arr[0])
     if len(arr) == 1:
         # we don't know the stddev so whatever value to indicate poor confidence
@@ -99,30 +100,31 @@ def mean_confidence_interval(data: Sequence[T], may_have_negative_values: bool, 
                 conf_min = 0
     if dtype_is_timedelta:
         # convert the dtype back
-        m = pd.Timedelta(np.timedelta64(int(m * ns)))
-        conf_min = pd.Timedelta(np.timedelta64(int(conf_min * ns)))
-        conf_max = pd.Timedelta(np.timedelta64(int(conf_max * ns)))
-        if not isinstance(data[0], pd.Timedelta):
-            m = m.to_pytimedelta()
-            conf_min = conf_min.to_pytimedelta()
-            conf_max = conf_max.to_pytimedelta()
+        m = timedelta(seconds=int(m))
+        conf_min = timedelta(seconds=int(conf_min))
+        conf_max = timedelta(seconds=int(conf_max))
     else:
-        # ensure the original dtype (can have been switched to float under the hood)
-        dt = type(data[0])
-        m = dt(m)
-        conf_min = dt(conf_min)
-        conf_max = dt(conf_max)
+        def type_conv(x):
+            return data.dtype.type(x).item()
+
+        m = type_conv(m)
+        conf_min = type_conv(conf_min)
+        conf_max = type_conv(conf_max)
     return m, conf_min, conf_max
 
 
-def median_confidence_interval(data: Sequence[T], confidence=0.8) -> Tuple[T, T, T]:
+def median_confidence_interval(data: np.ndarray, confidence=0.8) -> Tuple[T, T, T]:
     """Calculate the median value and the confidence interval."""
     assert len(data) > 0
-    arr = np.asarray(data)
+    assert isinstance(data, np.ndarray)
+    assert data.dtype != np.dtype(object)
     # The following code is based on:
     # https://onlinecourses.science.psu.edu/stat414/node/316
-    arr = np.sort(arr)
+    arr = np.sort(data)
     low_count, up_count = scipy.stats.binom.interval(confidence, arr.shape[0], 0.5)
     low_count, up_count = int(low_count), int(up_count)
-    dt = type(data[0]) if type(data[0]) is not timedelta else lambda x: x
-    return dt(np.median(arr)), dt(arr[low_count]), dt(arr[up_count - 1])
+
+    def type_conv(x):
+        return data.dtype.type(x).item()
+
+    return type_conv(np.median(arr)), type_conv(arr[low_count]), type_conv(arr[up_count - 1])

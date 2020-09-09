@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Sequence, Type
 
+import numpy as np
+
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedMetricCalculator, Counter, CounterWithQuantiles, HistogramCalculator, \
@@ -281,8 +283,8 @@ class CycleTimeCalculator(MetricCalculator[timedelta]):
                     sumval += peek
         return sumval
 
-    def _cut_by_quantiles(self) -> Sequence[timedelta]:
-        return self.samples
+    def _cut_by_quantiles(self) -> np.ndarray:
+        return self._asarray()
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT)
@@ -446,8 +448,8 @@ class FlowRatioCalculator(MetricCalculator[float]):
         """Calculate the actual state update."""
         return None
 
-    def _cut_by_quantiles(self) -> Sequence[float]:
-        return self.samples
+    def _cut_by_quantiles(self) -> np.ndarray:
+        return self._asarray()
 
 
 @register_metric(PullRequestMetricID.PR_SIZE)

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import IntEnum
-from typing import Generic, Iterable, List, TypeVar
+from typing import Generic, List, TypeVar
 
 import numpy as np
 
@@ -25,7 +25,7 @@ class Histogram(Generic[T]):
     frequencies: List[int]
 
 
-def calculate_histogram(samples: Iterable[T], scale: Scale, bins: int) -> Histogram[T]:
+def calculate_histogram(samples: np.ndarray, scale: Scale, bins: int) -> Histogram[T]:
     """
     Calculate the histogram over the series of values.
 
@@ -34,12 +34,17 @@ def calculate_histogram(samples: Iterable[T], scale: Scale, bins: int) -> Histog
                   raise ValueError.
     :param bins: Number of bins. If 0, find the best number of bins.
     """
-    samples = np.asarray(samples)
+    assert isinstance(samples, np.ndarray)
     if len(samples) == 0:
         return Histogram(scale=scale, bins=0, ticks=[], frequencies=[])
-    is_timedelta = isinstance(samples[0], timedelta)
-    if is_timedelta:
-        samples = samples.astype("timedelta64[s]")
+    assert samples.dtype != np.dtype(object)
+    try:
+        unit, _ = np.datetime_data(samples.dtype)
+        assert unit == "s"
+    except TypeError:
+        is_timedelta = False
+    else:
+        is_timedelta = True
         # saturate <1min >30days
         min = timedelta(minutes=1)
         month = timedelta(days=30)
