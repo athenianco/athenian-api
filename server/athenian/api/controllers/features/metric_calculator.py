@@ -85,7 +85,7 @@ class MetricCalculator(Generic[T]):
     def _cut_by_quantiles(self) -> np.ndarray:
         """Cut from the left and the right of the distribution by quantiles."""
         samples = self._asarray()
-        if self._quantiles[0] == 0 and self._quantiles[1] == 1:
+        if len(samples) == 0 or self._quantiles[0] == 0 and self._quantiles[1] == 1:
             return samples
         cut_values = np.quantile(samples, self._quantiles)
         if self._quantiles[0] != 0:
