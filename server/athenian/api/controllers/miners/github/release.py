@@ -485,6 +485,8 @@ async def _match_releases_by_tag(repos: Iterable[str],
     releases = releases.loc[list(chain.from_iterable(matched))]
     releases.reset_index(inplace=True)
     releases[matched_by_column] = ReleaseMatch.tag.value
+    missing_names = releases[Release.name.key].isnull()
+    releases.loc[missing_names, Release.name.key] = releases.loc[missing_names, Release.tag.key]
     return releases
 
 
