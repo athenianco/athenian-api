@@ -72,7 +72,7 @@ async def test_pr_list_miner_match_metrics_all_count(
     metric = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_to]], [0, 1],
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), False,
-        release_match_setting_tag, mdb, pdb, None,
+        release_match_setting_tag, False, mdb, pdb, None,
     ))[0][0][0]
     assert len(prs) == metric.value
     if date_from.year == 2018:
@@ -226,7 +226,7 @@ async def test_pr_list_miner_filter_labels_pdb(mdb, pdb, release_match_setting_t
     await calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
-        False, release_match_setting_tag, mdb, pdb, None,
+        False, release_match_setting_tag, False, mdb, pdb, None,
     )
     await wait_deferred()
     prs = await filter_pull_requests(
@@ -253,7 +253,7 @@ async def test_fetch_pull_requests_smoke(mdb, pdb, release_match_setting_tag, ca
     await calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
-        False, release_match_setting_tag, mdb, pdb, None,
+        False, release_match_setting_tag, False, mdb, pdb, None,
     )
     await wait_deferred()
     prs1 = await filter_pull_requests(

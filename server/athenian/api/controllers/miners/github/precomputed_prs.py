@@ -17,7 +17,7 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
-from athenian.api.controllers.miners.filters import LabelFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, Participants, \
@@ -192,6 +192,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
                                               repos: Collection[str],
                                               participants: Participants,
                                               labels: LabelFilter,
+                                              jira: JIRAFilter,
                                               default_branches: Dict[str, str],
                                               exclude_inactive: bool,
                                               release_settings: Dict[str, ReleaseMatchSetting],
@@ -213,6 +214,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
         _build_participants_filters(participants, filters, selected, postgres)
     if labels:
         _build_labels_filters(GitHubDonePullRequestFacts, labels, filters, selected, postgres)
+    # FIXME(vmarkovtsev): add JIRA filtering
     if exclude_inactive:
         # timezones: date_from and date_to may be not exactly 00:00
         date_from_day = datetime.combine(

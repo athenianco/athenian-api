@@ -2446,6 +2446,9 @@ components:
         account:
           description: Session account ID.
           type: integer
+        fresh:
+          description: Force metrics calculation on the most up to date data.
+          type: boolean
       required:
       - account
       - date_from
@@ -4384,6 +4387,9 @@ components:
         account:
           description: Session account ID.
           type: integer
+        fresh:
+          description: Force histograms calculation on the most up to date data.
+          type: boolean
       required:
       - account
       - date_from

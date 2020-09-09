@@ -5,8 +5,8 @@ from enum import Enum
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Dict, Generator, Iterator, List, Optional, Sequence, Set, Tuple, \
-    Union
+from typing import Collection, Dict, Generator, Iterable, Iterator, List, Optional, Sequence, \
+    Set, Tuple, Union
 
 import aiomcache
 import databases
@@ -177,7 +177,7 @@ class PullRequestMiner:
                 participants.get(ParticipationKind.AUTHOR, []),
                 participants.get(ParticipationKind.MERGER, []),
                 release_settings, limit, mdb, pdb, cache, pr_blacklist, truncate),
-            cls._fetch_prs(
+            cls.fetch_prs(
                 time_from, time_to, repositories, participants, jira, limit, pr_blacklist, mdb),
         ]
         if not exclude_inactive:
@@ -195,7 +195,7 @@ class PullRequestMiner:
         released_prs, releases, matched_bys, dags = released
         if jira:
             extra_prs = pd.concat([released_prs, unreleased], copy=False)
-            extra_prs = await cls._filter_jira(extra_prs, jira, mdb)
+            extra_prs = await cls.filter_jira(extra_prs.index.values, jira, mdb)
             prs = pd.concat([prs, extra_prs], copy=False)
         else:
             prs = pd.concat([prs, released_prs, unreleased], copy=False)
@@ -500,15 +500,23 @@ class PullRequestMiner:
 
     @classmethod
     @sentry_span
-    async def _fetch_prs(cls,
-                         time_from: datetime,
-                         time_to: datetime,
-                         repositories: Set[str],
-                         participants: Participants,
-                         jira: JIRAFilter,
-                         limit: int,
-                         pr_blacklist: Optional[BinaryExpression],
-                         mdb: databases.Database) -> pd.DataFrame:
+    async def fetch_prs(cls,
+                        time_from: datetime,
+                        time_to: datetime,
+                        repositories: Set[str],
+                        participants: Participants,
+                        jira: JIRAFilter,
+                        limit: int,
+                        pr_blacklist: Optional[BinaryExpression],
+                        mdb: databases.Database,
+                        columns=PullRequest) -> pd.DataFrame:
+        """
+        Query pull requests from mdb that satisfy the given filters.
+
+        Note: we cannot filter by regular PR labels here due to the DB schema limitations,
+        so the caller is responsible for fetching PR labels and filtering by them afterward.
+        Besides, we cannot filter by participation roles different from AUTHOR and MERGER.
+        """
         postgres = mdb.url.dialect in ("postgres", "postgresql")
         filters = [
             sql.or_(PullRequest.closed_at.is_(None), PullRequest.closed_at >= time_from),
@@ -531,30 +539,37 @@ class PullRequestMiner:
                 PullRequest.merged_by_login.in_(participants[ParticipationKind.MERGER]),
             ))
         if not jira:
-            query = sql.select([PullRequest]).where(sql.and_(*filters))
+            sql_columns = [PullRequest] if columns is PullRequest else columns
+            query = sql.select(sql_columns).where(sql.and_(*filters))
         else:
-            query = await cls._generate_jira_prs_query(filters, jira, postgres, mdb)
+            query = await cls._generate_jira_prs_query(
+                filters, jira, postgres, mdb, columns=columns)
         if limit > 0:
             query = query.order_by(sql.desc(PullRequest.updated_at)).limit(limit)
-        return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
+        return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
 
     @classmethod
     @sentry_span
-    async def _filter_jira(cls,
-                           prs: pd.DataFrame,
-                           jira: JIRAFilter,
-                           mdb: databases.Database) -> pd.DataFrame:
+    async def filter_jira(cls,
+                          pr_node_ids: Iterable[str],
+                          jira: JIRAFilter,
+                          mdb: databases.Database,
+                          columns=PullRequest) -> pd.DataFrame:
+        """Filter PRs by JIRA properties."""
         assert jira
         postgres = mdb.url.dialect in ("postgres", "postgresql")
-        filters = [PullRequest.node_id.in_(prs.index.values)]
-        query = await cls._generate_jira_prs_query(filters, jira, postgres, mdb)
-        return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
+        filters = [PullRequest.node_id.in_(pr_node_ids)]
+        query = await cls._generate_jira_prs_query(filters, jira, postgres, mdb, columns=columns)
+        return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
 
     @staticmethod
     async def _generate_jira_prs_query(filters: list,
                                        jira: JIRAFilter,
                                        postgres: bool,
-                                       mdb: databases.Database) -> sql.Select:
+                                       mdb: databases.Database,
+                                       columns=PullRequest) -> sql.Select:
+        if columns is PullRequest:
+            columns = [PullRequest]
         _map = aliased(NodePullRequestJiraIssues, name="m")
         _issue = aliased(Issue, name="j")
         if jira.labels:
@@ -617,13 +632,13 @@ class PullRequestMiner:
         if jira.issue_types:
             filters.append(sql.func.lower(_issue.type).in_(jira.issue_types))
         if not jira.epics:
-            return sql.select([PullRequest]).select_from(sql.join(
+            return sql.select(columns).select_from(sql.join(
                 PullRequest, sql.join(_map, _issue, _map.jira_id == _issue.id),
                 PullRequest.node_id == _map.node_id,
             )).where(sql.and_(*filters))
         _issue_epic = aliased(Issue, name="e")
         filters.append(_issue_epic.key.in_(jira.epics))
-        return sql.select([PullRequest]).select_from(sql.join(
+        return sql.select(columns).select_from(sql.join(
             PullRequest, sql.join(
                 _map, sql.join(_issue, _issue_epic, _issue.epic_id == _issue_epic.id),
                 _map.jira_id == _issue.id),

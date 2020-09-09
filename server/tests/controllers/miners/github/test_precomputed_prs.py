@@ -84,7 +84,8 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
     n = len(released_ats) - len(released_ats) // 2 + \
         sum(1 for s in samples[-10:-5] if s.closed >= time_from)
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, names, {}, LabelFilter.empty(), default_branches, False, settings, pdb)
+        time_from, time_to, names, {}, LabelFilter.empty(), JIRAFilter.empty(), default_branches,
+        False, settings, pdb)
     assert len(loaded_prs) == n
     true_prs = {prs[i].pr[PullRequest.node_id.key]: samples[i] for _, i in released_ats[-n:]}
     for i, s in enumerate(samples[-10:-5]):
@@ -135,24 +136,24 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
     time_from = min(s.created for s in samples)
     time_to = max(s.max_timestamp() for s in samples)
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
+        time_from, time_to, ["one"], {}, LabelFilter.empty(), JIRAFilter.empty(), default_branches,
         False, settings, pdb)
     assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[::3]}
     loaded_prs = await load_precomputed_done_facts_filters(
         time_from, time_to, names, {ParticipationKind.AUTHOR: {"wow"},
                                     ParticipationKind.RELEASER: {"zzz"}},
-        LabelFilter.empty(), default_branches, False, settings, pdb)
+        LabelFilter.empty(), JIRAFilter.empty(), default_branches, False, settings, pdb)
     assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[1::2]}
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, names, {ParticipationKind.COMMIT_AUTHOR: {"yyy"}}, LabelFilter.empty(),
-        default_branches, False, settings, pdb)
+        time_from, time_to, names, {ParticipationKind.COMMIT_AUTHOR: {"yyy"}},
+        LabelFilter.empty(), JIRAFilter.empty(), default_branches, False, settings, pdb)
     assert len(loaded_prs) == len(prs)
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, names, {}, LabelFilter({"bug", "xxx"}, set()),
+        time_from, time_to, names, {}, LabelFilter({"bug", "xxx"}, set()), JIRAFilter.empty(),
         default_branches, False, settings, pdb)
     assert len(loaded_prs) == len(prs) / 2
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, names, {}, LabelFilter({"bug"}, {"bad"}),
+        time_from, time_to, names, {}, LabelFilter({"bug"}, {"bad"}), JIRAFilter.empty(),
         default_branches, False, settings, pdb)
     assert len(loaded_prs) == int(math.ceil(len(prs) / 4.0))
 
@@ -163,41 +164,42 @@ async def test_load_store_precomputed_done_match_by(pr_samples, default_branches
     time_from = samples[0].created - timedelta(days=365)
     time_to = samples[0].released + timedelta(days=1)
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, ["src-d/go-git"], {}, [], default_branches, False, settings, pdb)
+        time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(), JIRAFilter.empty(),
+        default_branches, False, settings, pdb)
     assert len(loaded_prs) == 1
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
     }
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(), default_branches,
-        False, settings, pdb)
+        time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(), JIRAFilter.empty(),
+        default_branches, False, settings, pdb)
     assert len(loaded_prs) == 1
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("nope", ".*", ReleaseMatch.tag_or_branch),
     }
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(), default_branches, False,
-        settings, pdb)
+        time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(), JIRAFilter.empty(),
+        default_branches, False, settings, pdb)
     assert len(loaded_prs) == 0
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag),
     }
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(), default_branches, False,
-        settings, pdb)
+        time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(), JIRAFilter.empty(),
+        default_branches, False, settings, pdb)
     assert len(loaded_prs) == 0
     prs[0].release[matched_by_column] = 1
     await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(), default_branches, False,
-        settings, pdb)
+        time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(), JIRAFilter.empty(),
+        default_branches, False, settings, pdb)
     assert len(loaded_prs) == 1
     settings = {
         "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", "xxx", ReleaseMatch.tag),
     }
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(), default_branches, False,
-        settings, pdb)
+        time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(), JIRAFilter.empty(),
+        default_branches, False, settings, pdb)
     assert len(loaded_prs) == 0
 
 
@@ -242,14 +244,14 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_
     time_from = samples[1].created + timedelta(days=1)
     time_to = samples[0].first_comment_on_first_review
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
+        time_from, time_to, ["one"], {}, LabelFilter.empty(), JIRAFilter.empty(), default_branches,
         True, settings, pdb)
     assert len(loaded_prs) == 1
     assert loaded_prs[prs[0].pr[PullRequest.node_id.key]] == samples[0]
     time_from = samples[1].created - timedelta(days=1)
     time_to = samples[1].created + timedelta(seconds=1)
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
+        time_from, time_to, ["one"], {}, LabelFilter.empty(), JIRAFilter.empty(), default_branches,
         True, settings, pdb)
     assert len(loaded_prs) == 1
     assert loaded_prs[prs[1].pr[PullRequest.node_id.key]] == samples[1]
@@ -532,7 +534,7 @@ async def test_load_old_merged_unreleased_prs_smoke(
     metrics_time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
     await calc_pull_request_facts_github(
         metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
-        JIRAFilter.empty(), False, release_match_setting_tag, mdb, pdb, cache,
+        JIRAFilter.empty(), False, release_match_setting_tag, False, mdb, pdb, cache,
     )
     await wait_deferred()
     unreleased_time_from = datetime(2018, 11, 1, tzinfo=timezone.utc)
@@ -574,7 +576,7 @@ async def test_load_old_merged_unreleased_prs_labels(mdb, pdb, release_match_set
     metrics_time_to = datetime(2019, 1, 1, tzinfo=timezone.utc)
     await calc_pull_request_facts_github(
         metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
-        JIRAFilter.empty(), False, release_match_setting_tag, mdb, pdb, cache,
+        JIRAFilter.empty(), False, release_match_setting_tag, False, mdb, pdb, cache,
     )
     await wait_deferred()
     unreleased_time_from = datetime(2018, 9, 19, tzinfo=timezone.utc)
