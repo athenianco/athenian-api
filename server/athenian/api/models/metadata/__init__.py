@@ -15,7 +15,7 @@ PREFIXES = {
 }
 
 
-__min_version__ = 14
+__min_version__ = 13
 __version__ = None
 
 

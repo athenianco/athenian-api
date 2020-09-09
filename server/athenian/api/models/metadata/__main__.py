@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from athenian.api import metadata, setup_context
-from athenian.api.models.metadata import dereference_schemas, github, jira
+from athenian.api.models.metadata import check_schema_version, dereference_schemas, github, jira
 from athenian.api.slogging import setup as setup_logging
 
 
@@ -16,7 +16,9 @@ def main() -> int:
     setup_logging(logging.INFO, not sys.stdout.isatty())
     log = logging.getLogger("%s.metadata" % metadata.__package__)
     setup_context(log)
-    engine = create_engine(sys.argv[1])
+    conn_str = sys.argv[1]
+    check_schema_version(conn_str, log)
+    engine = create_engine(conn_str)
     if engine.dialect.name == "sqlite":
         dereference_schemas()
     log.info("Checking the metadata schema...")
