@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
 
 import networkx as nx
@@ -8,6 +8,7 @@ from athenian.api.controllers.features.histogram import calculate_histogram, His
 from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
+from athenian.api.controllers.miners.types import DT
 
 
 class MetricCalculator(Generic[T]):
@@ -48,10 +49,9 @@ class MetricCalculator(Generic[T]):
                          with both ends greater than the maximum time.
         :return: Boolean indicating whether the calculated value exists.
         """
-        self._peek = self._analyze(facts, min_time, max_time, **kwargs)
-        exists = self._peek is not None
-        if exists:
-            self.samples.append(self._peek)
+        peek = self._peek = self._analyze(facts, min_time, max_time, **kwargs)
+        if exists := self._peek is not None:
+            self.samples.append(peek)
         return exists
 
     def reset(self):
@@ -78,20 +78,25 @@ class MetricCalculator(Generic[T]):
         """Calculate the actual state update."""
         raise NotImplementedError
 
-    def _value(self, samples: Sequence[T]) -> Metric[T]:
+    def _value(self, samples: np.ndarray) -> Metric[T]:
         """Calculate the actual current metric value."""
         raise NotImplementedError
 
-    def _cut_by_quantiles(self) -> Sequence[T]:
+    def _cut_by_quantiles(self) -> np.ndarray:
         """Cut from the left and the right of the distribution by quantiles."""
-        if not self.samples or (self._quantiles[0] == 0 and self._quantiles[1] == 1):
-            return self.samples
-        samples = np.asarray(self.samples)
+        samples = self._asarray()
+        if self._quantiles[0] == 0 and self._quantiles[1] == 1:
+            return samples
         cut_values = np.quantile(samples, self._quantiles)
         if self._quantiles[0] != 0:
             samples = np.delete(samples, np.where(samples < cut_values[0])[0])
         samples = np.delete(samples, np.where(samples > cut_values[1])[0])
         return samples
+
+    def _asarray(self) -> np.ndarray:
+        if self.samples and isinstance(self.samples[0], timedelta):
+            return np.asarray([s.total_seconds() for s in self.samples]).astype("timedelta64[s]")
+        return np.asarray(self.samples)
 
 
 class AverageMetricCalculator(MetricCalculator[T]):
@@ -99,14 +104,14 @@ class AverageMetricCalculator(MetricCalculator[T]):
 
     may_have_negative_values: bool
 
-    def _value(self, samples: Sequence[T]) -> Metric[T]:
+    def _value(self, samples: np.ndarray) -> Metric[T]:
         """Calculate the current metric value."""
         if len(samples) == 0:
             return Metric(False, None, None, None)
         assert self.may_have_negative_values is not None
         if not self.may_have_negative_values:
             zero = type(samples[0])(0)
-            assert all(s >= zero for s in samples), str(samples)
+            assert (samples >= zero).all(), str(samples)
         return Metric(True, *mean_confidence_interval(samples, self.may_have_negative_values))
 
     def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
@@ -118,7 +123,7 @@ class AverageMetricCalculator(MetricCalculator[T]):
 class MedianMetricCalculator(MetricCalculator[T]):
     """Median calculator."""
 
-    def _value(self, samples: Sequence[T]) -> Metric[T]:
+    def _value(self, samples: np.ndarray) -> Metric[T]:
         """Calculate the current metric value."""
         if len(samples) == 0:
             return Metric(False, None, None, None)
@@ -133,10 +138,10 @@ class MedianMetricCalculator(MetricCalculator[T]):
 class SumMetricCalculator(MetricCalculator[T]):
     """Sum calculator."""
 
-    def _value(self, samples: Sequence[T]) -> Metric[T]:
+    def _value(self, samples: np.ndarray) -> Metric[T]:
         """Calculate the current metric value."""
         exists = len(samples) > 0
-        return Metric(exists, sum(samples) if exists else None, None, None)
+        return Metric(exists, samples.sum() if exists else None, None, None)
 
     def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[T]:
@@ -148,9 +153,9 @@ class Counter(MetricCalculator[int]):
     """Count the number of PRs that were used to calculate the specified metric, \
     the quantiles are ignored."""
 
-    def _value(self, samples: Sequence[int]) -> Metric[int]:
+    def _value(self, samples: np.ndarray) -> Metric[int]:
         """Calculate the current metric value."""
-        return Metric(True, sum(samples) if len(samples) else 0, None, None)
+        return Metric(True, samples.sum() if len(samples) else 0, None, None)
 
     def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[int]:
@@ -162,7 +167,7 @@ class CounterWithQuantiles(MetricCalculator[int]):
     """Count the number of PRs that were used to calculate the specified metric, \
     the quantiles are respected."""
 
-    def _value(self, samples: Sequence[T]) -> Metric[int]:
+    def _value(self, samples: np.ndarray) -> Metric[int]:
         """Calculate the current metric value."""
         return Metric(True, len(samples), None, None)
 
@@ -181,7 +186,7 @@ class HistogramCalculator(MetricCalculator):
         if scale == Scale.LOG:
             shift_log = getattr(self, "_shift_log", None)  # type: Optional[Callable[[T], T]]
             if shift_log is not None:
-                samples = [shift_log(s) for s in self.samples]
+                samples = np.array([shift_log(s) for s in self.samples])
         return calculate_histogram(samples, scale, bins)
 
 
@@ -293,25 +298,26 @@ class BinnedMetricCalculator(Generic[T]):
         self.start_time_getter = start_time_getter
         self.finish_time_getter = finish_time_getter
 
-    def __call__(self, items: Iterable[Any]) -> List[List[Metric[T]]]:
+    def __call__(self, items: List[Any]) -> List[List[Metric[T]]]:
         """
         Calculate the binned metrics on a series of objects.
 
         For each time interval we collect the list of PRs that are relevant and measure \
         the specified metrics.
         """
+        assert isinstance(items, list)
         borders = self.time_intervals
         calcs_regular = self.calcs_regular
         calcs_full_span = self.calcs_full_span
         dummy_bins = [[] for _ in borders[:-1]]
         start_time_getter = self.start_time_getter
         # avoid multiple evaluations of work_began, it is really visible in the profile
-        starts = [(start_time_getter(item), i) for i, item in enumerate(items)]
-        if not hasattr(items, "__getitem__"):
-            items = list(items)
-        items = [items[i] for _, i in sorted(starts)]
-        regular_bins = self._bin_regulars(items) if calcs_regular else dummy_bins
-        full_span_bins = self._bin_full_spans(items) if calcs_full_span else dummy_bins
+        starts = np.array([start_time_getter(item) for item in items])
+        order = np.argsort(starts)
+        items = [items[i] for i in order]
+        starts = starts[order]
+        regular_bins = self._bin_regulars(items, starts) if calcs_regular else dummy_bins
+        full_span_bins = self._bin_full_spans(items, starts) if calcs_full_span else dummy_bins
         result = []
         for regular_bin, full_span_bin, time_from, time_to in zip(
                 regular_bins, full_span_bins, borders, borders[1:]):
@@ -326,13 +332,12 @@ class BinnedMetricCalculator(Generic[T]):
             calcs_full_span.reset()
         return result
 
-    def _bin_regulars(self, items: Iterable[Any]) -> List[List[Any]]:
+    def _bin_regulars(self, items: Iterable[Any], starts: Iterable[DT]) -> List[List[Any]]:
         borders = self.time_intervals
         bins = [[] for _ in borders[:-1]]
         pos = 0
-        start_time_getter = self.start_time_getter
-        for item in items:
-            while pos < len(borders) - 1 and start_time_getter(item) > borders[pos + 1]:
+        for item, start in zip(items, starts):
+            while pos < len(borders) - 1 and start > borders[pos + 1]:
                 pos += 1
             endpoint = item.max_timestamp()
             span = pos
@@ -341,14 +346,13 @@ class BinnedMetricCalculator(Generic[T]):
                 span += 1
         return bins
 
-    def _bin_full_spans(self, items: Iterable[Any]) -> List[List[Any]]:
+    def _bin_full_spans(self, items: Iterable[Any], starts: Iterable[DT]) -> List[List[Any]]:
         borders = self.time_intervals
         bins = [[] for _ in borders[:-1]]
         pos = 0
-        start_time_getter = self.start_time_getter
         finish_time_getter = self.finish_time_getter
-        for item in items:
-            while pos < len(borders) - 1 and start_time_getter(item) > borders[pos + 1]:
+        for item, start in zip(items, starts):
+            while pos < len(borders) - 1 and start > borders[pos + 1]:
                 pos += 1
             if (endpoint := finish_time_getter(item)) is None:
                 endpoint = borders[-1]

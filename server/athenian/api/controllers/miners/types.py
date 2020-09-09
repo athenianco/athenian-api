@@ -310,9 +310,14 @@ class PullRequestFacts:
 
     def max_timestamp(self) -> DT:
         """Find the maximum timestamp contained in the struct."""
-        return Fallback.max(*(v for v in vars(self).values()
-                              if isinstance(v, Fallback))).best
-        # do not use dataclasses.asdict() - very slow
+        if (released := self.released.best) is not None:
+            return released
+        if (closed := self.closed.best) is not None:
+            return closed
+        return max(t for t in (
+            self.created.best, self.first_commit.best, self.last_commit.best,
+            self.first_review_request.best, self.last_review.best, self.last_passed_checks.best,
+        ) if t is not None)
 
     def truncate(self, dt: Union[pd.Timestamp, datetime]) -> "PullRequestFacts":
         """Create a copy of the facts without timestamps bigger than or equal to `dt`."""
