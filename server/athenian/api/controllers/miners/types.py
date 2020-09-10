@@ -2,7 +2,7 @@ import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import auto, IntEnum
-from typing import Any, Dict, Generic, List, Mapping, Optional, Set, TypeVar, Union
+from typing import Any, Dict, List, Mapping, Optional, Set, TypeVar, Union
 
 import numpy as np
 import pandas as pd
@@ -195,158 +195,61 @@ class MinedPullRequest:
 T = TypeVar("T")
 
 
-class Fallback(Generic[T]):
-    """
-    A value with a "plan B".
-
-    The idea is to return the backup in `Fallback.best` if the primary value is absent (None).
-    We can check whether the primary value exists by `Fallback.value is None`.
-    """
-
-    def __init__(self, value: Optional[T], fallback: Union[None, T, "Fallback[T]"]):
-        """Initialize a new instance of `Fallback`."""
-        if value != value:  # NaN check
-            value = None
-        self.__value = value
-        self.__fallback = fallback
-
-    @property
-    def best(self) -> Optional[T]:
-        """The "best effort" value, either the primary or the backup one."""  # noqa: D401
-        if self.__value is not None:
-            return self.__value
-        if isinstance(self.__fallback, Fallback):
-            return self.__fallback.best
-        return self.__fallback
-
-    def __str__(self) -> str:
-        """str()."""
-        return "Fallback(%s, %s)" % (self.value, self.best)
-
-    def __repr__(self) -> str:
-        """repr()."""
-        return "Fallback(%r, %r)" % (self.value, self.best)
-
-    def __bool__(self) -> bool:
-        """Return the value indicating whether there is any value, either primary or backup."""
-        return self.best is not None
-
-    def __lt__(self, other: "Fallback[T]") -> bool:
-        """Implement <."""
-        if not self or not other:
-            raise ArithmeticError
-        return self.best < other.best
-
-    def __eq__(self, other: "Fallback[T]") -> bool:
-        """Implement ==."""
-        return self.best == other.best
-
-    def __le__(self, other: "Fallback[T]") -> bool:
-        """Implement <=."""
-        if not self or not other:
-            raise ArithmeticError
-        return self.best <= other.best
-
-    @property
-    def value(self) -> Optional[T]:
-        """The primary value."""  # noqa: D401
-        return self.__value
-
-    @classmethod
-    def max(cls, *args: "Fallback[T]") -> "Fallback[T]":
-        """Calculate the maximum of several Fallback.best-s."""
-        return cls.agg(max, *args)
-
-    @classmethod
-    def min(cls, *args: "Fallback[T]") -> "Fallback[T]":
-        """Calculate the minimum of several Fallback.best-s."""
-        return cls.agg(min, *args)
-
-    @classmethod
-    def agg(cls, func: callable, *args: "Fallback[T]") -> "Fallback[T]":
-        """Calculate an aggregation of several Fallback.best-s."""
-        try:
-            return cls(func(arg.best for arg in args if arg.best is not None), None)
-        except ValueError:
-            return cls(None, None)
-
-
-DT = Union[pd.Timestamp, datetime, None]
-
-
 @dataclasses.dataclass(frozen=True)
 class PullRequestFacts:
     """Various PR event timestamps and other properties."""
 
-    @property
-    def work_began(self) -> DT:                          # PR_B
-        """Return the earliest timestamp related to this PR."""
-        try:
-            # fast path
-            return min(self.created.best, self.first_commit.best)
-        except TypeError:
-            return Fallback.min(self.created, self.first_commit).best
-
-    @property
-    def done(self) -> bool:
-        """Decide whether the facts will never change for this PR."""
-        return self.released or self.force_push_dropped or (self.closed and not self.merged)
-
-    created: Fallback[DT]                                # PR_C
-    first_commit: Fallback[DT]                           # PR_CC
-    last_commit_before_first_review: Fallback[DT]        # PR_CFR
-    last_commit: Fallback[DT]                            # PR_LC
-    merged: Fallback[DT]                                 # PR_M
-    closed: Fallback[DT]                                 # PR_CL
-    first_comment_on_first_review: Fallback[DT]          # PR_W
-    first_review_request: Fallback[DT]                   # PR_S
-    approved: Fallback[DT]                               # PR_A
-    last_review: Fallback[DT]                            # PR_LR
-    first_passed_checks: Fallback[DT]                    # PR_VS
-    last_passed_checks: Fallback[DT]                     # PR_VF
-    released: Fallback[DT]                               # PR_R
+    created: pd.Timestamp
+    first_commit: Optional[pd.Timestamp]
+    work_began: pd.Timestamp
+    last_commit_before_first_review: Optional[pd.Timestamp]
+    last_commit: Optional[pd.Timestamp]
+    merged: Optional[pd.Timestamp]
+    closed: Optional[pd.Timestamp]
+    first_comment_on_first_review: Optional[pd.Timestamp]
+    first_review_request: Optional[pd.Timestamp]
+    first_review_request_exact: Optional[pd.Timestamp]
+    approved: Optional[pd.Timestamp]
+    last_review: Optional[pd.Timestamp]
+    released: Optional[pd.Timestamp]
+    done: bool
     size: int
     force_push_dropped: bool
 
-    def max_timestamp(self) -> DT:
+    def max_timestamp(self) -> pd.Timestamp:
         """Find the maximum timestamp contained in the struct."""
-        if (released := self.released.best) is not None:
-            return released
-        if (closed := self.closed.best) is not None:
-            return closed
-        return max(t for t in (
-            self.created.best, self.first_commit.best, self.last_commit.best,
-            self.first_review_request.best, self.last_review.best, self.last_passed_checks.best,
-        ) if t is not None)
+        if self.released is not None:
+            return self.released
+        if self.closed is not None:
+            return self.closed
+        return max(t for t in (self.created, self.first_commit, self.last_commit,
+                               self.first_review_request, self.last_review)
+                   if t is not None)
 
     def truncate(self, dt: Union[pd.Timestamp, datetime]) -> "PullRequestFacts":
         """Create a copy of the facts without timestamps bigger than or equal to `dt`."""
-        dikt = {}
-        changed = False
+        changed = []
         for k, v in vars(self).items():  # do not use dataclasses.asdict() - very slow
-            if not isinstance(v, Fallback):
-                dikt[k] = v
-                continue
-            if v:
-                if v.best < dt:
-                    if v.value is None or v.value < dt:
-                        dikt[k] = v
-                    else:
-                        dikt[k] = Fallback(None, v.best)
-                        changed = True
-                else:
-                    dikt[k] = Fallback(None, None)
-                    changed = True
-            else:
-                dikt[k] = v
+            if isinstance(v, pd.Timestamp) and v >= dt:
+                changed.append(k)
         if not changed:
             return self
+        dikt = vars(self).copy()
+        for k in changed:
+            dikt[k] = None
+        dikt["done"] = dikt["released"] or dikt["force_push_dropped"] or (
+            dikt["closed"] and not dikt["merged"])
         return PullRequestFacts(**dikt)
+
+    def validate(self) -> None:
+        """Ensure that there are no NaNs."""
+        for k, v in vars(self).items():  # do not use dataclasses.asdict() - very slow
+            assert v == v, k
 
     def __str__(self) -> str:
         """Format for human-readability."""
         return "{\n\t%s\n}" % ",\n\t".join(
-            "%s: %s" % (k, v.best if isinstance(v, Fallback) else v)
+            "%s: %s" % (k, v)
             for k, v in vars(self).items())  # do not use dataclasses.asdict() - very slow
 
     def __lt__(self, other: "PullRequestFacts") -> bool:
@@ -358,18 +261,18 @@ class PullRequestFacts:
         return hash(str(self))
 
 
-def dtmin(*args: Union[DT, float]) -> DT:
+def nonemin(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
     """Find the minimum of several dates handling NaNs gracefully."""
-    if all((arg != arg) for arg in args):
+    if all(arg is None for arg in args):
         return None
-    return min(arg for arg in args if arg == arg)
+    return min(arg for arg in args if arg)
 
 
-def dtmax(*args: Union[DT, float]) -> DT:
+def nonemax(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
     """Find the maximum of several dates handling NaNs gracefully."""
-    if all((arg != arg) for arg in args):
+    if all(arg is None for arg in args):
         return None
-    return max(arg for arg in args if arg == arg)
+    return max(arg for arg in args if arg)
 
 
 @dataclasses.dataclass(frozen=True)

@@ -1,17 +1,33 @@
 from datetime import timezone
-from functools import lru_cache
+from functools import lru_cache, wraps
 
 from pandas import Series, set_option
 from pandas.core import algorithms
 from pandas.core.arrays import DatetimeArray, datetimes
 from pandas.core.arrays.datetimelike import DatetimeLikeArrayMixin
+from pandas.core.base import IndexOpsMixin
 from pandas.core.dtypes import common
 from pandas.core.dtypes.dtypes import DatetimeTZDtype
+
+
+def nan_to_none_return(func):
+    """Decorate to replace returned NaN-s with None-s."""
+    @wraps(func)
+    def wrapped_nan_to_none_return(*args, **kwargs):
+        r = func(*args, **kwargs)
+        if r != r:
+            return None
+        return r
+
+    return wrapped_nan_to_none_return
 
 
 def patch_pandas():
     """Patch pandas internals to increase performance on small DataFrame-s."""
     set_option("mode.chained_assignment", "raise")
+    IndexOpsMixin.nonemin = nan_to_none_return(IndexOpsMixin.min)
+    IndexOpsMixin.nonemax = nan_to_none_return(IndexOpsMixin.max)
+
     common.pandas_dtype = lru_cache()(common.pandas_dtype)
     datetimes.pandas_dtype = common.pandas_dtype
     common.is_dtype_equal = lru_cache()(common.is_dtype_equal)

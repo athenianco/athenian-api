@@ -3,12 +3,12 @@ from typing import Any, Callable, Dict, Generic, Iterable, List, Optional, Seque
 
 import networkx as nx
 import numpy as np
+import pandas as pd
 
 from athenian.api.controllers.features.histogram import calculate_histogram, Histogram, Scale
 from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
-from athenian.api.controllers.miners.types import DT
 
 
 class MetricCalculator(Generic[T]):
@@ -50,6 +50,7 @@ class MetricCalculator(Generic[T]):
         :return: Boolean indicating whether the calculated value exists.
         """
         peek = self._peek = self._analyze(facts, min_time, max_time, **kwargs)
+        assert peek == peek
         if exists := self._peek is not None:
             self.samples.append(peek)
         return exists
@@ -332,7 +333,10 @@ class BinnedMetricCalculator(Generic[T]):
             calcs_full_span.reset()
         return result
 
-    def _bin_regulars(self, items: Iterable[Any], starts: Iterable[DT]) -> List[List[Any]]:
+    def _bin_regulars(self,
+                      items: Iterable[Any],
+                      starts: Iterable[pd.Timestamp],
+                      ) -> List[List[Any]]:
         borders = self.time_intervals
         bins = [[] for _ in borders[:-1]]
         pos = 0
@@ -346,7 +350,10 @@ class BinnedMetricCalculator(Generic[T]):
                 span += 1
         return bins
 
-    def _bin_full_spans(self, items: Iterable[Any], starts: Iterable[DT]) -> List[List[Any]]:
+    def _bin_full_spans(self,
+                        items: Iterable[Any],
+                        starts: Iterable[pd.Timestamp],
+                        ) -> List[List[Any]]:
         borders = self.time_intervals
         bins = [[] for _ in borders[:-1]]
         pos = 0

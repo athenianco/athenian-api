@@ -10,7 +10,7 @@ from athenian.api.controllers.features.metric_calculator import AverageMetricCal
     MedianMetricCalculator
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
-from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
+from athenian.api.controllers.miners.types import PullRequestFacts
 
 
 @pytest.fixture
@@ -112,15 +112,7 @@ def test_median_confidence_interval_timedelta(square_centered_samples):
 
 def test_median_confidence_interval_empty():
     with pytest.raises(AssertionError):
-        median_confidence_interval([])
-
-
-def ensure_dtype(pr, dtype):
-    if not isinstance(pr.created.value, dtype):
-        pr = PullRequestFacts(
-            **{k: Fallback(dtype(v.value), None) if isinstance(v, Fallback) else v
-               for k, v in vars(pr).items()})
-    return pr
+        median_confidence_interval(np.array([]))
 
 
 @pytest.mark.parametrize(
@@ -134,16 +126,16 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
     class LeadTimeCalculator(cls):
         may_have_negative_values = negative
 
-        def _analyze(self, times: PullRequestFacts, min_time: datetime, max_time: datetime,
+        def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                      ) -> timedelta:
-            return times.released.value - times.work_began
+            return facts.released - facts.work_began
 
     calc = LeadTimeCalculator(quantiles=(0, 0.99))
     assert not calc.value.exists
     assert calc.value.confidence_score() is None
     calc = LeadTimeCalculator(quantiles=(0, 1))
     for pr in pr_samples(100):
-        calc(ensure_dtype(pr, dtype), datetime.now(), datetime.now())
+        calc(pr, datetime.now(), datetime.now())
     m = calc.value
     assert m.exists
     assert isinstance(m.value, timedelta)

@@ -28,7 +28,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
-from athenian.api.controllers.miners.types import dtmax, dtmin, Fallback, MinedPullRequest, \
+from athenian.api.controllers.miners.types import MinedPullRequest, nonemax, nonemin, \
     Participants, ParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, PullRequest, \
@@ -348,7 +348,7 @@ class PullRequestMiner:
                 dags, release_settings, mdb, pdb, cache),
                 discover_unreleased_prs(
                     prs.take(np.where(~merged_mask)[0]),
-                    dtmax(releases[Release.published_at.key].max(), time_to),
+                    nonemax(releases[Release.published_at.key].nonemax(), time_to),
                     matched_bys, default_branches, release_settings, pdb)]
             df_facts, other_facts = await asyncio.gather(*subtasks, return_exceptions=True)
             for r in (df_facts, other_facts):
@@ -980,87 +980,94 @@ class PullRequestFactsMiner:
         May raise ImpossiblePullRequest if the PR has an "impossible" state like
         created after closed.
         """
-        created_at = Fallback(pr.pr[PullRequest.created_at.key], None)
-        merged_at = Fallback(pr.pr[PullRequest.merged_at.key], None)
-        closed_at = Fallback(pr.pr[PullRequest.closed_at.key], None)
-        if merged_at and not closed_at:
+        created = pr.pr[PullRequest.created_at.key]
+        if created != created:
+            raise ImpossiblePullRequest()
+        merged = pr.pr[PullRequest.merged_at.key]
+        if merged != merged:
+            merged = None
+        closed = pr.pr[PullRequest.closed_at.key]
+        if closed != closed:
+            closed = None
+        if merged and not closed:
             self.log.error("[DEV-508] PR %s (%s#%d) is merged at %s but not closed",
                            pr.pr[PullRequest.node_id.key],
                            pr.pr[PullRequest.repository_full_name.key],
                            pr.pr[PullRequest.number.key],
-                           merged_at.best)
-            closed_at = merged_at
+                           merged)
+            closed = merged
         # we don't need these indexes
         pr.comments.reset_index(inplace=True, drop=True)
         pr.reviews.reset_index(inplace=True, drop=True)
-        first_commit = Fallback(pr.commits[PullRequestCommit.authored_date.key].min(), None)
+        first_commit = pr.commits[PullRequestCommit.authored_date.key].nonemin()
         # yes, first_commit uses authored_date while last_commit uses committed_date
-        last_commit = Fallback(pr.commits[PullRequestCommit.committed_date.key].max(), None)
+        last_commit = pr.commits[PullRequestCommit.committed_date.key].nonemax()
+        work_began = nonemin(created, first_commit)
         # convert to "U" dtype to enable sorting in np.in1d
         authored_comments = pr.comments[PullRequestReviewComment.user_login.key].values.astype("U")
         external_comments_times = pr.comments[PullRequestComment.created_at.key].take(
             np.where((authored_comments != pr.pr[PullRequest.user_login.key]) &
                      np.in1d(authored_comments, self._bots, invert=True))[0])
-        first_comment = dtmin(
-            pr.review_comments[PullRequestReviewComment.created_at.key].min(),
-            pr.reviews[PullRequestReview.submitted_at.key].min(),
-            external_comments_times.min())
-        if closed_at and first_comment is not None and first_comment > closed_at.best:
+        first_comment = nonemin(
+            pr.review_comments[PullRequestReviewComment.created_at.key].nonemin(),
+            pr.reviews[PullRequestReview.submitted_at.key].nonemin(),
+            external_comments_times.nonemin())
+        if closed and first_comment and first_comment > closed:
             first_comment = None
-        first_comment_on_first_review = Fallback(first_comment, merged_at)
+        first_comment_on_first_review = first_comment or merged
         if first_comment_on_first_review:
             committed_dates = pr.commits[PullRequestCommit.committed_date.key]
-            last_commit_before_first_review = Fallback(
-                committed_dates.take(np.where(
-                    committed_dates <= first_comment_on_first_review.best)[0]).max(),
-                first_comment_on_first_review)
+            last_commit_before_first_review = committed_dates.take(np.where(
+                committed_dates <= first_comment_on_first_review)[0]).nonemax()
+            if not (last_commit_before_first_review_own := bool(last_commit_before_first_review)):
+                last_commit_before_first_review = first_comment_on_first_review
             # force pushes that were lost
-            first_commit = Fallback.min(first_commit, last_commit_before_first_review)
-            last_commit = Fallback.max(last_commit, first_commit)
-            first_review_request_backup = Fallback.min(
-                Fallback.max(created_at, last_commit_before_first_review),
+            first_commit = nonemin(first_commit, last_commit_before_first_review)
+            last_commit = nonemax(last_commit, first_commit)
+            first_review_request_backup = nonemin(
+                nonemax(created, last_commit_before_first_review),
                 first_comment_on_first_review)
         else:
-            last_commit_before_first_review = Fallback(None, None)
+            last_commit_before_first_review = None
+            last_commit_before_first_review_own = False
             first_review_request_backup = None
-        first_review_request = pr.review_requests[PullRequestReviewRequest.created_at.key].min()
-        if first_review_request_backup and first_review_request == first_review_request and \
-                first_review_request > first_comment_on_first_review.best:
+        first_review_request = first_review_request_exact = \
+            pr.review_requests[PullRequestReviewRequest.created_at.key].nonemin()
+        if first_review_request_backup and first_review_request and \
+                first_review_request > first_comment_on_first_review:
             # we cannot request a review after we received a review
-            first_review_request = Fallback(first_review_request_backup.best, None)
+            first_review_request = first_review_request_backup
         else:
-            first_review_request = Fallback(first_review_request, first_review_request_backup)
+            first_review_request = first_review_request or first_review_request_backup
         # ensure that the first review request is not earlier than the last commit before
         # the first review
-        if last_commit_before_first_review.value is not None and \
+        if last_commit_before_first_review_own and \
                 last_commit_before_first_review > first_review_request:
-            first_review_request = Fallback(
-                last_commit_before_first_review.value, first_review_request)
+            first_review_request = last_commit_before_first_review or first_review_request
         review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.key]
-        if closed_at:
+        if closed:
             not_review_comments = \
                 pr.reviews[PullRequestReview.state.key].values != ReviewResolution.COMMENTED.value
             # it is possible to approve/reject after closing the PR
             # you start the review, then somebody closes the PR, then you submit the review
             try:
                 last_review_at = pd.Timestamp(review_submitted_ats.values[
-                    (review_submitted_ats.values <= closed_at.best.to_numpy())
+                    (review_submitted_ats.values <= closed.to_numpy())
                     | not_review_comments].max(), tz=timezone.utc)
             except ValueError:
-                last_review_at = pd.NaT
-            if last_review_at == last_review_at:
-                # we don't want dtmin() here - what if there was no review at all?
-                last_review_at = min(last_review_at, closed_at.best)
-            last_review = Fallback(
-                last_review_at,
-                dtmin(external_comments_times.take(np.where(
-                    external_comments_times <= closed_at.best)[0]).max()))
+                last_review_at = None
+            if last_review_at:
+                # we don't want nonemin() here - what if there was no review at all?
+                last_review_at = min(last_review_at, closed)
+            last_review = last_review_at or nonemin(
+                external_comments_times.take(np.where(
+                    external_comments_times <= closed)[0]).nonemax())
         else:
-            last_review = Fallback(review_submitted_ats.max(),
-                                   dtmin(external_comments_times.max()))
-        if merged_at:
+            last_review = review_submitted_ats.nonemax() or \
+                nonemin(external_comments_times.nonemax())
+        if merged:
             reviews_before_merge = \
-                pr.reviews[PullRequestReview.submitted_at.key].values <= merged_at.best.to_numpy()
+                pr.reviews[PullRequestReview.submitted_at.key].values <= merged.to_numpy()
             if reviews_before_merge.all():
                 reviews_before_merge = pr.reviews
             else:
@@ -1098,22 +1105,23 @@ class PullRequestFactsMiner:
             ).any()
         if changes_requested:
             # merged with negative reviews
-            approved_at_value = None
+            approved = None
         else:
             if isinstance(grouped_reviews_states, str):
                 if grouped_reviews_states == ReviewResolution.APPROVED.value:
-                    approved_at_value = grouped_reviews[PullRequestReview.submitted_at.key]
+                    approved = grouped_reviews[PullRequestReview.submitted_at.key]
                 else:
-                    approved_at_value = pd.NaT
+                    approved = None
             else:
-                approved_at_value = grouped_reviews[PullRequestReview.submitted_at.key].take(
-                    np.where(grouped_reviews_states == ReviewResolution.APPROVED.value)[0]).max()
-            if approved_at_value == approved_at_value and closed_at:
+                approved = grouped_reviews[PullRequestReview.submitted_at.key].take(
+                    np.where(grouped_reviews_states == ReviewResolution.APPROVED.value)[0],
+                ).nonemax()
+            if approved and closed:
                 # similar to last_review
-                approved_at_value = min(approved_at_value, closed_at.best)
-        approved_at = Fallback(approved_at_value, None)
-        last_passed_checks = Fallback(None, None)  # FIXME(vmarkovtsev): no CI info
-        released_at = Fallback(pr.release[Release.published_at.key], None)
+                approved = min(approved, closed)
+        released = pr.release[Release.published_at.key]
+        if released != released:
+            released = None
         additions = pr.pr[PullRequest.additions.key]
         deletions = pr.pr[PullRequest.deletions.key]
         if additions is None or deletions is None:
@@ -1125,20 +1133,22 @@ class PullRequestFactsMiner:
             raise ImpossiblePullRequest()
         size = additions + deletions
         force_push_dropped = pr.release[matched_by_column] == ReleaseMatch.force_push_drop
+        done = bool(released or force_push_dropped or (closed and not merged))
         facts = PullRequestFacts(
-            created=created_at,
+            created=created,
             first_commit=first_commit,
+            work_began=work_began,
             last_commit_before_first_review=last_commit_before_first_review,
             last_commit=last_commit,
-            merged=merged_at,
+            merged=merged,
             first_comment_on_first_review=first_comment_on_first_review,
             first_review_request=first_review_request,
+            first_review_request_exact=first_review_request_exact,
             last_review=last_review,
-            approved=approved_at,
-            first_passed_checks=Fallback(None, None),  # FIXME(vmarkovtsev): no CI info
-            last_passed_checks=last_passed_checks,
-            released=released_at,
-            closed=closed_at,
+            approved=approved,
+            released=released,
+            closed=closed,
+            done=done,
             size=size,
             force_push_dropped=force_push_dropped,
         )
@@ -1147,20 +1157,21 @@ class PullRequestFactsMiner:
 
     def _validate(self, facts: PullRequestFacts, url: str) -> None:
         """Run sanity checks to ensure consistency."""
+        facts.validate()
         if not facts.closed:
             return
-        if facts.last_commit and facts.last_commit.best > facts.closed.best:
+        if facts.last_commit and facts.last_commit > facts.closed:
             self.log.error("%s is impossible: closed %s but last commit %s: delta %s",
-                           url, facts.closed.best, facts.last_commit.best,
-                           facts.closed.best - facts.last_commit.best)
+                           url, facts.closed, facts.last_commit,
+                           facts.closed - facts.last_commit)
             raise ImpossiblePullRequest()
-        if facts.created.best > facts.closed.best:
+        if facts.created > facts.closed:
             self.log.error("%s is impossible: closed %s but created %s: delta %s",
-                           url, facts.closed.best, facts.created.best,
-                           facts.closed.best - facts.created.best)
+                           url, facts.closed, facts.created,
+                           facts.closed - facts.created)
             raise ImpossiblePullRequest()
-        if facts.merged and facts.released and facts.merged.best > facts.released.best:
+        if facts.merged and facts.released and facts.merged > facts.released:
             self.log.error("%s is impossible: merged %s but released %s: delta %s",
-                           url, facts.merged.best, facts.released.best,
-                           facts.released.best - facts.merged.best)
+                           url, facts.merged, facts.released,
+                           facts.released - facts.merged)
             raise ImpossiblePullRequest()

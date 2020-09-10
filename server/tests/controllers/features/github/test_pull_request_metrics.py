@@ -22,39 +22,52 @@ from athenian.api.controllers.features.histogram import Scale
 from athenian.api.controllers.features.metric_calculator import MetricCalculator
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
-from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
+from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts, \
     GitHubOpenPullRequestFacts
 from athenian.api.models.web import Granularity, PullRequestMetricID
 from tests.conftest import has_memcached
-from tests.controllers.features.test_statistics import ensure_dtype
 
 
 def random_dropout(pr, prob):
     fields = sorted(PullRequestFacts.__dataclass_fields__)
-    killed = np.random.choice(fields, int(len(fields) * prob), replace=False)
-    kwargs = {f: getattr(pr, f) for f in fields}
-    for k in killed:
+    fields = [f for f in fields if isinstance(getattr(pr, f), pd.Timestamp)]
+    killed = np.random.choice(fields, int(len(fields) * prob), replace=False).tolist()
+    if "closed" in killed and "merged" not in killed:
+        killed.append("merged")
+    if "created" in killed:
         # "created" must always exist
-        if k != "created":
-            kwargs[k] = Fallback(None, None)
+        killed.remove("created")
+    if "work_began" in killed:
+        # dependent property
+        killed.remove("work_began")
+    if "first_review_request" in killed and "first_review_request_exact" not in killed:
+        killed.append("first_review_request_exact")
+    kwargs = pr.__dict__.copy()
+    for k in killed:
+        kwargs[k] = None
+    if "first_commit" in killed:
+        kwargs["work_began"] = kwargs["created"]
+    if "released" in killed or "closed" in killed:
+        kwargs["done"] = kwargs["released"] or pr.force_push_dropped or (
+            kwargs["closed"] and not kwargs["merged"])
     return PullRequestFacts(**kwargs)
 
 
-@pytest.mark.parametrize("cls, dtypes", itertools.product(
-    [WorkInProgressTimeCalculator, ReviewTimeCalculator, MergingTimeCalculator,
-     ReleaseTimeCalculator, LeadTimeCalculator, WaitFirstReviewTimeCalculator,
-     ], ((datetime, timedelta), (pd.Timestamp, pd.Timedelta))))
-def test_pull_request_metrics_timedelta_stability(pr_samples, cls, dtypes):  # noqa: F811
+@pytest.mark.parametrize("cls", [
+    WorkInProgressTimeCalculator, ReviewTimeCalculator, MergingTimeCalculator,
+    ReleaseTimeCalculator, LeadTimeCalculator, WaitFirstReviewTimeCalculator,
+])
+def test_pull_request_metrics_timedelta_stability(pr_samples, cls):  # noqa: F811
     calc = cls(quantiles=(0, 1))
     time_from = datetime.now(tz=timezone.utc) - timedelta(days=10000)
     time_to = datetime.now(tz=timezone.utc)
     for pr in pr_samples(1000):
-        pr = random_dropout(ensure_dtype(pr, dtypes[0]), 0.5)
+        pr = random_dropout(pr, 0.5)
         r = calc._analyze(pr, time_from, time_to)
-        assert (r is None) or ((isinstance(r, dtypes[1])) and r >= dtypes[1](0)), str(pr)
+        assert (r is None) or ((isinstance(r, pd.Timedelta)) and r >= pd.Timedelta(0)), str(pr)
 
 
 @pytest.mark.parametrize("cls, peak_attr",
@@ -70,14 +83,14 @@ def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa
     for pr in pr_samples(100):
         time_from = datetime.now(tz=timezone.utc) - timedelta(days=10000)
         for attr in peak_attr.split(","):
-            time_from = max(getattr(pr, attr).best, time_from)
+            time_from = max(getattr(pr, attr), time_from)
         time_from += timedelta(days=1)
         time_to = time_from + timedelta(days=7)
         assert calc._analyze(pr, time_from, time_to) is None
 
         time_from = datetime.now(tz=timezone.utc)
         for attr in peak_attr.split(","):
-            time_from = min(getattr(pr, attr).best, time_from)
+            time_from = min(getattr(pr, attr), time_from)
         time_from -= timedelta(days=7)
         time_to = time_from + timedelta(days=1)
         assert calc._analyze(pr, time_from, time_to) is None
@@ -97,7 +110,7 @@ def test_pull_request_metrics_float_binned(pr_samples, metric):  # noqa: F811
     if metric == PullRequestMetricID.PR_REJECTED:
         for i, s in enumerate(samples):
             data = vars(s)
-            data["merged"] = Fallback(None, None)
+            data["merged"] = None
             samples[i] = PullRequestFacts(**data)
     result = binned(samples)
     # the last interval is null and that's intended
@@ -114,7 +127,7 @@ def test_pull_request_opened_no(pr_samples):  # noqa: F811
     time_from = time_to - timedelta(days=180)
     n = 0
     for pr in pr_samples(100):
-        if pr.closed and pr.closed.best < time_to:
+        if pr.closed and pr.closed < time_to:
             n += 1
             calc(pr, time_from, time_to)
     assert n > 0
@@ -169,7 +182,7 @@ def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
     time_to = datetime.now(tz=timezone.utc)
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
-        if pr.closed and time_from <= pr.closed.best < time_to:
+        if pr.closed and time_from <= pr.closed < time_to:
             for dep in calc._calcs:
                 dep(pr, time_from, time_to)
             calc(pr, time_from, time_to)
@@ -186,7 +199,7 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
     time_to = datetime.now(tz=timezone.utc) - timedelta(days=180)
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
-        if pr.closed and pr.closed.best > time_to > pr.created.best >= time_from:
+        if pr.closed and pr.closed > time_to > pr.created >= time_from:
             for dep in calc._calcs:
                 dep(pr, time_from, time_to)
             calc(pr, time_from, time_to)
@@ -456,7 +469,7 @@ class QuantileTestingMetric(MetricCalculator):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[timedelta]:
         """Calculate the actual state update."""
-        return facts.released.best - facts.created.best
+        return facts.released - facts.created
 
     def _value(self, samples: Sequence[timedelta]) -> Tuple[timedelta, int]:
         """Calculate the actual current metric value."""

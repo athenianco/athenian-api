@@ -17,7 +17,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
 from athenian.api.controllers.miners.github.release import load_releases
-from athenian.api.controllers.miners.types import Fallback, MinedPullRequest, ParticipationKind, \
+from athenian.api.controllers.miners.types import MinedPullRequest, ParticipationKind, \
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 import athenian.api.db
@@ -339,13 +339,14 @@ def validate_pull_request_facts(prmeta: Dict[str, Any], prt: PullRequestFacts):
     assert prmeta[PullRequest.node_id.key]
     assert prmeta[PullRequest.repository_full_name.key] == "src-d/go-git"
     for k, v in vars(prt).items():
-        if not v or not isinstance(v, Fallback):
+        if not v or not isinstance(v, pd.Timestamp):
             continue
-        if k not in ("first_commit", "last_commit", "last_commit_before_first_review"):
+        if k not in ("first_commit", "last_commit", "last_commit_before_first_review",
+                     "work_began"):
             assert prt.created <= v, k
-        assert prt.work_began <= v.best, k
+        assert prt.work_began <= v, k
         if prt.closed and k != "released":
-            assert prt.closed >= v
+            assert prt.closed >= v, k
         if prt.released:
             assert prt.released >= v
     if prt.first_commit:
@@ -365,7 +366,12 @@ def validate_pull_request_facts(prmeta: Dict[str, Any], prt: PullRequestFacts):
     else:
         assert not prt.last_review
         assert not prt.last_commit_before_first_review
+    if prt.first_review_request_exact:
+        assert prt.first_review_request
     if prt.approved:
+        if prt.last_commit_before_first_review:
+            # force pushes can happen after the approval
+            assert prt.last_commit_before_first_review <= prt.approved
         assert prt.first_comment_on_first_review <= prt.approved
         assert prt.first_review_request <= prt.approved
         if prt.last_review:
