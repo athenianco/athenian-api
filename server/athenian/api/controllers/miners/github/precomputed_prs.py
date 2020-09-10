@@ -492,19 +492,22 @@ async def discover_unreleased_prs(prs: pd.DataFrame,
         return {}
     assert time_to.tzinfo is not None
     filters = []
+    ghmprf = GitHubMergedPullRequestFacts
     for repo in prs[PullRequest.repository_full_name.key].unique():
         if (release_match := _extract_release_match(
                 repo, matched_bys, default_branches, release_settings)) is None:
             # no new releases
             continue
-        filters.append(and_(GitHubMergedPullRequestFacts.repository_full_name == repo,
-                            GitHubMergedPullRequestFacts.release_match == release_match))
+        filters.append(and_(ghmprf.repository_full_name == repo,
+                            ghmprf.release_match == release_match))
+    default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
     with sentry_sdk.start_span(op="discover_unreleased_prs/fetch"):
         rows = await pdb.fetch_all(
-            select([GitHubMergedPullRequestFacts.pr_node_id,
-                    GitHubMergedPullRequestFacts.data])
-            .where(and_(GitHubMergedPullRequestFacts.pr_node_id.in_(prs.index),
-                        GitHubMergedPullRequestFacts.checked_until >= time_to,
+            select([ghmprf.pr_node_id,
+                    ghmprf.data])
+            .where(and_(ghmprf.pr_node_id.in_(prs.index),
+                        ghmprf.checked_until >= time_to,
+                        ghmprf.format_version == default_version,
                         or_(*filters))))
     return {r[0]: (pickle.loads(r[1]) if r[1] is not None else None) for r in rows}
 
