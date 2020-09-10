@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     MedianMetricCalculator
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
@@ -51,6 +52,14 @@ def test_mean_confidence_interval_timedelta_positive():
     assert timedelta(hours=20) < mean < timedelta(hours=21)
     assert timedelta(hours=17) < conf_min < timedelta(hours=18)
     assert timedelta(hours=23) < conf_max < timedelta(hours=24)
+
+
+def test_metric_zero_division():
+    m = Metric(value=np.int64(0),
+               confidence_min=np.int64(0),
+               confidence_max=np.int64(0),
+               exists=True)
+    assert m.confidence_score() == 100
 
 
 def test_mean_confidence_interval_timedelta_negative(square_centered_samples):
@@ -121,7 +130,7 @@ def ensure_dtype(pr, dtype):
          (AverageMetricCalculator, True),
          (MedianMetricCalculator, False)],
         [datetime, pd.Timestamp])))
-def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
+def test_metric_calculator(pr_samples, cls, negative, dtype):
     class LeadTimeCalculator(cls):
         may_have_negative_values = negative
 
@@ -129,6 +138,9 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
                      ) -> timedelta:
             return times.released.value - times.work_began
 
+    calc = LeadTimeCalculator(quantiles=(0, 0.99))
+    assert not calc.value.exists
+    assert calc.value.confidence_score() is None
     calc = LeadTimeCalculator(quantiles=(0, 1))
     for pr in pr_samples(100):
         calc(ensure_dtype(pr, dtype), datetime.now(), datetime.now())
@@ -146,9 +158,17 @@ def test_pull_request_metric_calculator(pr_samples, cls, negative, dtype):
     assert m.value is None
     assert m.confidence_min is None
     assert m.confidence_max is None
+    calc.reset()
+    calc.samples.append(0)
+    m = calc.value
+    assert m.exists
+    assert m.value == 0
+    assert m.confidence_min == 0
+    assert m.confidence_max == 0
+    assert m.confidence_score() == 100
 
 
-def test_pull_request_average_metric_calculator_zeros_nonnegative(pr_samples):
+def test_average_metric_calculator_zeros_nonnegative(pr_samples):
     calc = AverageMetricCalculator(quantiles=(0, 1))
     calc.may_have_negative_values = False
     calc.samples.extend(timedelta(0) for _ in range(3))

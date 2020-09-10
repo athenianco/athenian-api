@@ -29,7 +29,7 @@ from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts,
     GitHubOpenPullRequestFacts
 from athenian.api.models.web import Granularity, PullRequestMetricID
 from tests.conftest import has_memcached
-from tests.controllers.features.github.test_pull_request import ensure_dtype
+from tests.controllers.features.test_statistics import ensure_dtype
 
 
 def random_dropout(pr, prob):

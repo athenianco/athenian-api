@@ -2,7 +2,10 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Generic, Optional, TypeVar
 
+import numpy as np
+
 T = TypeVar("T", float, int, timedelta, type(None))
+np.seterr(divide="raise")
 
 
 @dataclass(frozen=True)
@@ -42,7 +45,7 @@ class Metric(_MetricStruct[T]):
         try:
             eps = min(100 * ((self.confidence_max - self.confidence_min) / self.value), 100)
             return 100 - int(eps)
-        except ZeroDivisionError:
+        except (ZeroDivisionError, FloatingPointError):
             if self.confidence_min == self.confidence_max == self.value:
                 return 100  # everything is zero so no worries
             return 0  # we really don't know the score in this case
