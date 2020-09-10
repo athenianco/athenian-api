@@ -40,7 +40,7 @@ class GitHubDonePullRequestFacts(Base, UpdatedMixin):
 
     pr_node_id = Column(CHAR(32), primary_key=True)
     release_match = Column(Text(), primary_key=True)
-    format_version = Column(Integer(), primary_key=True, default=5, server_default="5")
+    format_version = Column(Integer(), primary_key=True, default=6, server_default="6")
     repository_full_name = Column(RepositoryFullName, nullable=False)
     pr_created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     pr_done_at = Column(TIMESTAMP(timezone=True))
@@ -65,7 +65,7 @@ class GitHubOpenPullRequestFacts(Base, UpdatedMixin):
     __tablename__ = "github_open_pull_request_facts"
 
     pr_node_id = Column(CHAR(32), primary_key=True)
-    format_version = Column(Integer(), primary_key=True, default=2, server_default="2")
+    format_version = Column(Integer(), primary_key=True, default=3, server_default="3")
     repository_full_name = Column(RepositoryFullName, nullable=False)
     pr_created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     number = Column(Integer(), nullable=False)
@@ -88,7 +88,7 @@ class GitHubMergedPullRequestFacts(Base, UpdatedMixin):
 
     pr_node_id = Column(CHAR(32), primary_key=True)
     release_match = Column(Text(), primary_key=True)
-    format_version = Column(Integer(), primary_key=True, default=2, server_default="2")
+    format_version = Column(Integer(), primary_key=True, default=3, server_default="3")
     merged_at = Column(TIMESTAMP(timezone=True), nullable=False)
     repository_full_name = Column(RepositoryFullName, nullable=False)
     checked_until = Column(TIMESTAMP(timezone=True), nullable=False)

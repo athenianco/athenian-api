@@ -371,14 +371,14 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
         if facts is None:
             # ImpossiblePullRequest
             continue
-        assert pr.pr[PullRequest.created_at.key] == facts.created.best
+        assert pr.pr[PullRequest.created_at.key] == facts.created
         activity_days = set()
         if not facts.released:
             if not (facts.force_push_dropped or (facts.closed and not facts.merged)):
                 continue
-            done_at = facts.closed.best
+            done_at = facts.closed
         else:
-            done_at = facts.released.best
+            done_at = facts.released
             if not facts.closed:
                 log.error("[DEV-508] PR %s (%s#%d) is released but not closed:\n%s",
                           pr.pr[PullRequest.node_id.key],
@@ -386,9 +386,9 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
                           pr.pr[PullRequest.number.key],
                           facts)
                 continue
-            activity_days.add(facts.released.best.date())
-        activity_days.add(facts.created.best.date())
-        activity_days.add(facts.closed.best.date())
+            activity_days.add(facts.released.date())
+        activity_days.add(facts.created.date())
+        activity_days.add(facts.closed.date())
         repo = pr.pr[PullRequest.repository_full_name.key]
         if pr.release[matched_by_column] is not None:
             release_match = release_settings[prefix + repo]
@@ -426,7 +426,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,
             repository_full_name=repo,
-            pr_created_at=facts.created.best,
+            pr_created_at=facts.created,
             pr_done_at=done_at,
             number=pr.pr[PullRequest.number.key],
             release_url=pr.release[Release.url.key],

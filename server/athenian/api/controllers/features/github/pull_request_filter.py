@@ -90,7 +90,7 @@ class PullRequestListMiner:
             props.add(Property.REVIEWING)
         else:
             props.add(Property.WIP)
-        if facts.created.best > time_from:
+        if facts.created > time_from:
             props.add(Property.CREATED)
         if (pr.commits[PullRequestCommit.committed_date.key].values > np_time_from).any():
             props.add(Property.COMMIT_HAPPENED)
@@ -98,16 +98,15 @@ class PullRequestListMiner:
         if ((review_submitted_ats > np_time_from)
                 & (pr.reviews[PullRequestReview.user_login.key].values != author)).any():
             props.add(Property.REVIEW_HAPPENED)
-        if facts.first_review_request.value is not None and \
-                facts.first_review_request.value > time_from:
+        if facts.first_review_request_exact and facts.first_review_request_exact > time_from:
             props.add(Property.REVIEW_REQUEST_HAPPENED)
-        if facts.approved and facts.approved.best > time_from:
+        if facts.approved and facts.approved > time_from:
             props.add(Property.APPROVE_HAPPENED)
-        if facts.merged and facts.merged.best > time_from:
+        if facts.merged and facts.merged > time_from:
             props.add(Property.MERGE_HAPPENED)
-        if not facts.merged and facts.closed and facts.closed.best > time_from:
+        if not facts.merged and facts.closed and facts.closed > time_from:
             props.add(Property.REJECTION_HAPPENED)
-        if facts.released and facts.released.best > time_from:
+        if facts.released and facts.released > time_from:
             props.add(Property.RELEASE_HAPPENED)
         review_states = pr.reviews[PullRequestReview.state.key]
         if ((review_states.values == ReviewResolution.CHANGES_REQUESTED.value)
@@ -201,16 +200,16 @@ class PullRequestListMiner:
             files_changed=pr_today.pr[PullRequest.changed_files.key],
             created=pr_today.pr[PullRequest.created_at.key],
             updated=updated_at,
-            closed=facts_today.closed.best,
+            closed=facts_today.closed,
             comments=len(pr_today.comments) + delta_comments,
             commits=len(pr_today.commits),
-            review_requested=facts_today.first_review_request.value,
+            review_requested=facts_today.first_review_request_exact,
             first_review=first_review,
-            approved=facts_today.approved.best,
+            approved=facts_today.approved,
             review_comments=review_comments,
             reviews=reviews,
-            merged=facts_today.merged.best,
-            released=facts_today.released.best,
+            merged=facts_today.merged,
+            released=facts_today.released,
             release_url=pr_today.release[Release.url.key],
             properties=props_today,
             stage_timings=stage_timings,
@@ -530,15 +529,15 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
     if prs_df.empty:
         return []
     now = datetime.now(timezone.utc)
-    rel_time_from = prs_df[PullRequest.merged_at.key].min()
-    if rel_time_from == rel_time_from:
+    rel_time_from = prs_df[PullRequest.merged_at.key].nonemin()
+    if rel_time_from:
         releases, matched_bys = await load_releases(
             prs, branches, default_branches, rel_time_from, now, release_settings, mdb, pdb, cache)
         tasks = [
             load_commit_dags(releases, mdb, pdb, cache),
             discover_unreleased_prs(
-                prs_df, releases[Release.published_at.key].max(), matched_bys, default_branches,
-                release_settings, pdb),
+                prs_df, releases[Release.published_at.key].nonemax(), matched_bys,
+                default_branches, release_settings, pdb),
         ]
         dags, unreleased = await asyncio.gather(*tasks, return_exceptions=True)
         for r in (dags, unreleased):
@@ -565,7 +564,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
                 facts[node_id] = facts_miner(pr)
                 pdb_misses += 1
     miner = PullRequestListMiner(
-        prs, facts, set(Property), prs_df[PullRequest.created_at.key].min(), now)
+        prs, facts, set(Property), prs_df[PullRequest.created_at.key].nonemin(), now)
     prs = await list_with_yield(miner, "PullRequestListMiner.__iter__")
     set_pdb_hits(pdb, "filter_pull_requests/facts", len(prs) - pdb_misses)
     set_pdb_misses(pdb, "filter_pull_requests/facts", pdb_misses)

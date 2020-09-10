@@ -3,12 +3,13 @@ from random import randint
 import warnings
 
 import faker
+import pandas as pd
 import pytest
 
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.release import _empty_dag, _fetch_commit_history_edges
 from athenian.api.controllers.miners.github.release_accelerated import join_dags
-from athenian.api.controllers.miners.types import Fallback, PullRequestFacts
+from athenian.api.controllers.miners.types import nonemin, PullRequestFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
 
@@ -70,8 +71,6 @@ def pr_samples():
             first_review_request = fake.date_time_between(
                 start_date=last_commit_before_first_review, end_date=first_comment_on_first_review,
                 tzinfo=timezone.utc)
-            first_passed_checks = fake.date_time_between(
-                start_date=created_at, end_date=first_review_request, tzinfo=timezone.utc)
             approved_at = fake.date_time_between(
                 start_date=first_comment_on_first_review + timedelta(days=1),
                 end_date=first_comment_on_first_review + timedelta(days=30),
@@ -80,8 +79,6 @@ def pr_samples():
                 start_date=first_comment_on_first_review + timedelta(days=1),
                 end_date=approved_at,
                 tzinfo=timezone.utc)
-            last_passed_checks = fake.date_time_between(
-                last_commit, last_commit + timedelta(days=1), tzinfo=timezone.utc)
             merged_at = fake.date_time_between(
                 approved_at, approved_at + timedelta(days=2), tzinfo=timezone.utc)
             closed_at = merged_at
@@ -89,21 +86,22 @@ def pr_samples():
             released_at = fake.date_time_between(
                 merged_at, merged_at + timedelta(days=30), tzinfo=timezone.utc)
             return PullRequestFacts(
-                created=Fallback(created_at, None),
-                first_commit=Fallback(first_commit, created_at),
-                last_commit_before_first_review=Fallback(last_commit_before_first_review, None),
-                last_commit=Fallback(last_commit, None),
-                merged=Fallback(merged_at, None),
-                first_comment_on_first_review=Fallback(first_comment_on_first_review, None),
-                first_review_request=Fallback(first_review_request, None),
-                last_review=Fallback(last_review, None),
-                approved=Fallback(approved_at, None),
-                first_passed_checks=Fallback(first_passed_checks, None),
-                last_passed_checks=Fallback(last_passed_checks, None),
-                released=Fallback(released_at, None),
-                closed=Fallback(closed_at, None),
+                created=pd.Timestamp(created_at),
+                first_commit=pd.Timestamp(first_commit or created_at),
+                work_began=nonemin(first_commit, created_at),
+                last_commit_before_first_review=pd.Timestamp(last_commit_before_first_review),
+                last_commit=pd.Timestamp(last_commit),
+                merged=pd.Timestamp(merged_at),
+                first_comment_on_first_review=pd.Timestamp(first_comment_on_first_review),
+                first_review_request=pd.Timestamp(first_review_request),
+                first_review_request_exact=first_review_request,
+                last_review=pd.Timestamp(last_review),
+                approved=pd.Timestamp(approved_at),
+                released=pd.Timestamp(released_at),
+                closed=pd.Timestamp(closed_at),
                 size=randint(10, 1000),
                 force_push_dropped=False,
+                done=pd.Timestamp(released_at),
             )
 
         return [random_pr() for _ in range(n)]

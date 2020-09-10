@@ -29,7 +29,7 @@ from athenian.api.controllers.miners.github.release_accelerated import extract_f
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.github.users import mine_user_avatars
-from athenian.api.controllers.miners.types import dtmax, PullRequestFacts, ReleaseFacts
+from athenian.api.controllers.miners.types import nonemax, PullRequestFacts, ReleaseFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses, greatest, least
@@ -611,7 +611,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
         return pr_releases, {}
     tasks = [
         discover_unreleased_prs(
-            prs, dtmax(releases[Release.published_at.key].max(), time_to),
+            prs, nonemax(releases[Release.published_at.key].nonemax(), time_to),
             matched_bys, default_branches, release_settings, pdb),
         load_precomputed_pr_releases(
             prs.index, time_to, matched_bys, default_branches, release_settings, pdb, cache),

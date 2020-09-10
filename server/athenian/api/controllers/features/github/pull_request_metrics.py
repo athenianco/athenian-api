@@ -43,7 +43,7 @@ class PullRequestBinnedMetricCalculator(BinnedMetricCalculator[T]):
         super().__init__(metrics=metrics, time_intervals=time_intervals, quantiles=quantiles,
                          class_mapping=metric_calculators,
                          start_time_getter=lambda pr: pr.work_began,
-                         finish_time_getter=lambda pr: pr.released.best)
+                         finish_time_getter=lambda pr: pr.released)
 
 
 def register_metric(name: str):
@@ -72,19 +72,19 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
         if override_event_time is not None:
             wip_end = override_event_time
         elif facts.last_review:
-            wip_end = facts.first_review_request.best
+            wip_end = facts.first_review_request
         else:
             # review was probably requested but never happened
             if facts.last_commit:
-                wip_end = facts.last_commit.best
+                wip_end = facts.last_commit
             else:
                 # 0 commits in the PR, no reviews and review requests
                 # => review time = 0
                 # => merge time = 0 (you cannot merge an empty PR)
                 # => release time = 0
                 # This PR is 100% closed.
-                wip_end = facts.closed.best
-        if wip_end is not None and min_time <= wip_end < max_time:
+                wip_end = facts.closed
+        if wip_end and min_time <= wip_end < max_time:
             return wip_end - facts.work_began
         return None
 
@@ -117,16 +117,16 @@ class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
         if not facts.first_review_request:
             return None
         if override_event_time is not None and min_time <= override_event_time < max_time:
-            return override_event_time - facts.first_review_request.best
+            return override_event_time - facts.first_review_request
         # We cannot be sure that the approvals finished unless the PR is closed.
         if (facts.closed or allow_unclosed) and (
-                (facts.approved and min_time <= facts.approved.best < max_time)
+                (facts.approved and min_time <= facts.approved < max_time)
                 or  # noqa
-                (facts.last_review and min_time <= facts.last_review.best < max_time)):
+                (facts.last_review and min_time <= facts.last_review < max_time)):
             if facts.approved:
-                return facts.approved.best - facts.first_review_request.best
+                return facts.approved - facts.first_review_request
             elif facts.last_review:
-                return facts.last_review.best - facts.first_review_request.best
+                return facts.last_review - facts.first_review_request
             else:
                 return None
         return None
@@ -157,15 +157,15 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  override_event_time: Optional[datetime] = None) -> Optional[timedelta]:
         """Calculate the actual state update."""
-        closed = facts.closed.best if override_event_time is None else override_event_time
+        closed = facts.closed if override_event_time is None else override_event_time
         if closed is not None and min_time <= closed < max_time:
             # closed may mean either merged or not merged
             if facts.approved:
-                return closed - facts.approved.best
+                return closed - facts.approved
             elif facts.last_review:
-                return closed - facts.last_review.best
+                return closed - facts.last_review
             elif facts.last_commit:
-                return closed - facts.last_commit.best
+                return closed - facts.last_commit
         return None
 
 
@@ -194,9 +194,9 @@ class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  override_event_time: Optional[datetime] = None) -> Optional[timedelta]:
         """Calculate the actual state update."""
-        released = facts.released.best if override_event_time is None else override_event_time
+        released = facts.released if override_event_time is None else override_event_time
         if facts.merged and released is not None and min_time <= released < max_time:
-            return released - facts.merged.best
+            return released - facts.merged
         return None
 
 
@@ -225,8 +225,8 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[timedelta]:
         """Calculate the actual state update."""
-        if facts.released and min_time <= facts.released.best < max_time:
-            return facts.released.best - facts.work_began
+        if facts.released and min_time <= facts.released < max_time:
+            return facts.released - facts.work_began
         return None
 
 
@@ -312,18 +312,18 @@ class AllCounter(SumMetricCalculator[int]):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
-        pr_started = facts.created.best  # not `work_began`! It breaks granular measurements.
+        pr_started = facts.created  # not `work_began`! It breaks granular measurements.
         cut_before_released = (
-            pr_started < min_time and facts.released and facts.released.best < min_time
+            pr_started < min_time and facts.released and facts.released < min_time
         )
         cut_before_rejected = (
             pr_started < min_time and facts.closed and not facts.merged
-            and facts.closed.best < min_time
+            and facts.closed < min_time
         )
         cut_after = pr_started >= max_time
         # see also: ENG-673
         cut_old_unreleased = (
-            facts.merged and not facts.released and facts.merged.best < min_time
+            facts.merged and not facts.released and facts.merged < min_time
         )
         if not (cut_before_released or cut_before_rejected or cut_after or cut_old_unreleased):
             return 1
@@ -340,8 +340,8 @@ class WaitFirstReviewTimeCalculator(AverageMetricCalculator[timedelta]):
                  **kwargs) -> Optional[timedelta]:
         """Calculate the actual state update."""
         if facts.first_review_request and facts.first_comment_on_first_review and \
-                min_time <= facts.first_comment_on_first_review.best < max_time:
-            return facts.first_comment_on_first_review.best - facts.first_review_request.best
+                min_time <= facts.first_comment_on_first_review < max_time:
+            return facts.first_comment_on_first_review - facts.first_review_request
         return None
 
 
@@ -367,7 +367,7 @@ class OpenedCalculator(SumMetricCalculator[int]):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
-        if min_time <= facts.created.best < max_time:
+        if min_time <= facts.created < max_time:
             return 1
         return None
 
@@ -379,7 +379,7 @@ class MergedCalculator(SumMetricCalculator[int]):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
-        if facts.merged and min_time <= facts.merged.best < max_time:
+        if facts.merged and min_time <= facts.merged < max_time:
             return 1
         return None
 
@@ -391,7 +391,7 @@ class RejectedCalculator(SumMetricCalculator[int]):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
-        if facts.closed and not facts.merged and min_time <= facts.closed.best < max_time:
+        if facts.closed and not facts.merged and min_time <= facts.closed < max_time:
             return 1
         return None
 
@@ -403,7 +403,7 @@ class ClosedCalculator(SumMetricCalculator[int]):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
-        if facts.closed and min_time <= facts.closed.best < max_time:
+        if facts.closed and min_time <= facts.closed < max_time:
             return 1
         return None
 
@@ -415,7 +415,7 @@ class ReleasedCalculator(SumMetricCalculator[int]):
     def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[int]:
         """Calculate the actual state update."""
-        if facts.released and min_time <= facts.released.best < max_time:
+        if facts.released and min_time <= facts.released < max_time:
             return 1
         return None
 
