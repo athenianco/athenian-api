@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
-from typing import Dict, Generic, Optional, Sequence, Type
+from typing import Dict, Generic, Sequence, Type
+
+import numpy as np
 
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedMetricCalculator, \
-    MetricCalculator, \
-    MetricCalculatorEnsemble, SumMetricCalculator
-from athenian.api.controllers.miners.types import ReleaseFacts, T
+    BinnedMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
+from athenian.api.controllers.miners.github.released_pr import matched_by_column
+from athenian.api.controllers.miners.types import T
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.web import ReleaseMetricID
 
@@ -23,7 +24,7 @@ def register_metric(name: str):
     return register_with_name
 
 
-class ReleaseMetricCalculatorEnsemble(MetricCalculatorEnsemble[T]):
+class ReleaseMetricCalculatorEnsemble(MetricCalculatorEnsemble):
     """MetricCalculatorEnsemble adapted for pull requests."""
 
     def __init__(self, *metrics: str, quantiles: Sequence[float]):
@@ -31,7 +32,7 @@ class ReleaseMetricCalculatorEnsemble(MetricCalculatorEnsemble[T]):
         super().__init__(*metrics, quantiles=quantiles, class_mapping=metric_calculators)
 
 
-class ReleaseBinnedMetricCalculator(BinnedMetricCalculator[T]):
+class ReleaseBinnedMetricCalculator(BinnedMetricCalculator):
     """BinnedMetricCalculator adapted for pull requests."""
 
     def __init__(self,
@@ -52,77 +53,88 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
     _check() decides whether _extract() must be called and thus deals with Optional[T].
     """
 
-    def _analyze(self, facts: ReleaseFacts, min_time: datetime, max_time: datetime,
-                 **kwargs) -> Optional[T]:
-        if not self._check(facts, min_time, max_time):
-            return None
-        return self._extract(facts)
+    def _analyze(self, facts: np.ndarray, min_time: datetime, max_time: datetime,
+                 **kwargs) -> np.array:
+        result = np.full(len(facts), None, object)
+        indexes = np.where(self._check(facts, min_time, max_time))[0]
+        result[indexes] = self._extract(facts.take(indexes))
+        return result
 
-    def _check(self, facts: ReleaseFacts, min_time: datetime, max_time: datetime) -> bool:
-        return min_time <= facts.published < max_time
+    def _check(self, facts: np.ndarray, min_time: datetime, max_time: datetime) -> np.ndarray:
+        dtype = facts["published"].dtype
+        min_time = np.array(min_time, dtype=dtype)
+        max_time = np.array(max_time, dtype=dtype)
+        published = facts["published"].values
+        return (min_time <= published) & (published < max_time)
 
-    def _extract(self, facts: ReleaseFacts) -> T:
+    def _extract(self, facts: np.ndarray) -> np.ndarray:
         raise NotImplementedError
 
 
 class TagReleaseMetricCalculatorMixin(ReleaseMetricCalculatorMixin[T]):
     """Augment _check() to pass tag releases only."""
 
-    def _check(self, facts: ReleaseFacts, min_time: datetime, max_time: datetime) -> Optional[T]:
-        return super()._check(facts, min_time, max_time) and facts.matched_by == ReleaseMatch.tag
+    def _check(self, facts: np.ndarray, min_time: datetime, max_time: datetime) -> np.ndarray:
+        return super()._check(facts, min_time, max_time) & \
+            (facts[matched_by_column] == ReleaseMatch.tag)
 
 
 class BranchReleaseMetricCalculatorMixin(ReleaseMetricCalculatorMixin[T]):
     """Augment _check() to pass branch releases only."""
 
-    def _check(self, facts: ReleaseFacts, min_time: datetime, max_time: datetime) -> Optional[T]:
-        return super()._check(facts, min_time, max_time) and \
-            facts.matched_by == ReleaseMatch.branch
+    def _check(self, facts: np.ndarray, min_time: datetime, max_time: datetime) -> np.ndarray:
+        return super()._check(facts, min_time, max_time) & \
+            (facts[matched_by_column] == ReleaseMatch.branch)
 
 
 class ReleaseCounterMixin:
-    """Count the number of matched release."""
+    """Count the number of matched releases."""
 
     may_have_negative_values = False
+    dtype = int
 
-    def _extract(self, facts: ReleaseFacts) -> int:
-        return 1
+    def _extract(self, facts: np.ndarray) -> np.ndarray:
+        return np.full(len(facts), 1)
 
 
 class ReleasePRsMixin:
     """Extract the number of PRs belonging to the matched release."""
 
     may_have_negative_values = False
+    dtype = int
 
-    def _extract(self, facts: ReleaseFacts) -> int:
-        return len(facts.prs)
+    def _extract(self, facts: np.ndarray) -> np.ndarray:
+        return np.array([len(prs) for prs in facts["prs"].values])
 
 
 class ReleaseCommitsMixin:
     """Extract the number of commits belonging to the matched release."""
 
     may_have_negative_values = False
+    dtype = int
 
-    def _extract(self, facts: ReleaseFacts) -> int:
-        return facts.commits_count
+    def _extract(self, facts: np.ndarray) -> np.ndarray:
+        return facts["commits_count"].values
 
 
 class ReleaseLinesMixin:
     """Extract the sum of added + deleted lines in the commits belonging to the matched release."""
 
     may_have_negative_values = False
+    dtype = int
 
-    def _extract(self, facts: ReleaseFacts) -> int:
-        return facts.additions + facts.deletions
+    def _extract(self, facts: np.ndarray) -> np.ndarray:
+        return facts["additions"].values + facts["deletions"].values
 
 
 class ReleaseAgeMixin:
     """Extract the age of the matched release."""
 
     may_have_negative_values = False
+    dtype = "timedelta64[s]"
 
-    def _extract(self, facts: ReleaseFacts) -> timedelta:
-        return facts.age
+    def _extract(self, facts: np.ndarray) -> np.ndarray:
+        return facts["age"].values.astype(self.dtype).view(int)
 
 
 @register_metric(ReleaseMetricID.RELEASE_COUNT)
