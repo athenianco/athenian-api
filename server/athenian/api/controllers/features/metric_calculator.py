@@ -111,8 +111,9 @@ class AverageMetricCalculator(MetricCalculator[T]):
             return Metric(False, None, None, None)
         assert self.may_have_negative_values is not None
         if not self.may_have_negative_values:
-            zero = type(samples[0])(0)
-            assert (samples >= zero).all(), str(samples)
+            zero = samples.dtype.type(0)
+            negative = np.where(samples < zero)[0]
+            assert len(negative) == 0, samples[negative]
         return Metric(True, *mean_confidence_interval(samples, self.may_have_negative_values))
 
     def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
