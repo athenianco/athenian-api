@@ -1002,7 +1002,6 @@ class PullRequestFactsMiner:
         first_commit = pr.commits[PullRequestCommit.authored_date.key].nonemin()
         # yes, first_commit uses authored_date while last_commit uses committed_date
         last_commit = pr.commits[PullRequestCommit.committed_date.key].nonemax()
-        work_began = nonemin(created, first_commit)
         # convert to "U" dtype to enable sorting in np.in1d
         authored_comments = pr.comments[PullRequestReviewComment.user_login.key].values.astype("U")
         external_comments_times = pr.comments[PullRequestComment.created_at.key].take(
@@ -1134,6 +1133,7 @@ class PullRequestFactsMiner:
         size = additions + deletions
         force_push_dropped = pr.release[matched_by_column] == ReleaseMatch.force_push_drop
         done = bool(released or force_push_dropped or (closed and not merged))
+        work_began = nonemin(created, first_commit)
         facts = PullRequestFacts(
             created=created,
             first_commit=first_commit,
