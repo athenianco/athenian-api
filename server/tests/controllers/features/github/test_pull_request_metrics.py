@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import itertools
-from typing import Optional, Sequence, Tuple
+from typing import Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -15,11 +15,12 @@ from athenian.api.controllers.features.github.pull_request_metrics import AllCou
     LeadTimeCalculator, MergingCounter, MergingCounterWithQuantiles, MergingTimeCalculator, \
     OpenedCalculator, PullRequestBinnedMetricCalculator, \
     PullRequestMetricCalculatorEnsemble, register_metric, ReleaseCounter, \
-    ReleaseCounterWithQuantiles, ReleaseTimeCalculator, ReviewCounter, \
+    ReleaseCounterWithQuantiles, ReleasedCalculator, ReleaseTimeCalculator, ReviewCounter, \
     ReviewCounterWithQuantiles, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
     WorkInProgressCounter, WorkInProgressCounterWithQuantiles, WorkInProgressTimeCalculator
 from athenian.api.controllers.features.histogram import Scale
-from athenian.api.controllers.features.metric_calculator import MetricCalculator
+from athenian.api.controllers.features.metric_calculator import df_from_dataclasses, \
+    MetricCalculator
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import PullRequestFacts
@@ -45,6 +46,7 @@ def random_dropout(pr, prob):
         killed.remove("work_began")
     if "first_review_request" in killed and "first_review_request_exact" not in killed:
         killed.append("first_review_request_exact")
+        killed.append("last_review")
     kwargs = pr.__dict__.copy()
     for k in killed:
         kwargs[k] = None
@@ -62,12 +64,11 @@ def random_dropout(pr, prob):
 ])
 def test_pull_request_metrics_timedelta_stability(pr_samples, cls):  # noqa: F811
     calc = cls(quantiles=(0, 1))
-    time_from = datetime.now(tz=timezone.utc) - timedelta(days=10000)
-    time_to = datetime.now(tz=timezone.utc)
-    for pr in pr_samples(1000):
-        pr = random_dropout(pr, 0.5)
-        r = calc._analyze(pr, time_from, time_to)
-        assert (r is None) or ((isinstance(r, pd.Timedelta)) and r >= pd.Timedelta(0)), str(pr)
+    time_from = datetime.utcnow() - timedelta(days=10000)
+    time_to = datetime.utcnow()
+    prs = df_from_dataclasses(random_dropout(pr, 0.5) for pr in pr_samples(1000))
+    r = calc._analyze(prs, time_from, time_to)
+    assert (r[r != np.array(None)] >= 0).all()
 
 
 @pytest.mark.parametrize("cls, peak_attr",
@@ -81,19 +82,25 @@ def test_pull_request_metrics_timedelta_stability(pr_samples, cls):  # noqa: F81
 def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa: F811
     calc = cls(quantiles=(0, 1))
     for pr in pr_samples(100):
-        time_from = datetime.now(tz=timezone.utc) - timedelta(days=10000)
+        time_from = datetime.utcnow() - timedelta(days=10000)
         for attr in peak_attr.split(","):
-            time_from = max(getattr(pr, attr), time_from)
+            time_from = max(
+                getattr(pr, attr),
+                time_from.replace(tzinfo=timezone.utc),
+            ).replace(tzinfo=None)
         time_from += timedelta(days=1)
         time_to = time_from + timedelta(days=7)
-        assert calc._analyze(pr, time_from, time_to) is None
+        assert calc._analyze(df_from_dataclasses([pr]), time_from, time_to)[0] is None
 
-        time_from = datetime.now(tz=timezone.utc)
+        time_from = datetime.utcnow()
         for attr in peak_attr.split(","):
-            time_from = min(getattr(pr, attr), time_from)
+            time_from = min(
+                getattr(pr, attr),
+                time_from.replace(tzinfo=timezone.utc),
+            ).replace(tzinfo=None)
         time_from -= timedelta(days=7)
         time_to = time_from + timedelta(days=1)
-        assert calc._analyze(pr, time_from, time_to) is None
+        assert calc._analyze(df_from_dataclasses([pr]), time_from, time_to)[0] is None
 
 
 @pytest.mark.parametrize("metric", [PullRequestMetricID.PR_OPENED,
@@ -123,26 +130,26 @@ def test_pull_request_metrics_float_binned(pr_samples, metric):  # noqa: F811
 
 def test_pull_request_opened_no(pr_samples):  # noqa: F811
     calc = OpenedCalculator(quantiles=(0, 1))
-    time_to = datetime.now(tz=timezone.utc)
+    time_to = datetime.utcnow()
     time_from = time_to - timedelta(days=180)
-    n = 0
-    for pr in pr_samples(100):
-        if pr.closed and pr.closed < time_to:
-            n += 1
-            calc(pr, time_from, time_to)
-    assert n > 0
+    prs = df_from_dataclasses(pr for pr in pr_samples(100)
+                              if pr.closed and pr.closed < time_to.replace(tzinfo=timezone.utc))
+    calc(prs, time_from, time_to)
+    assert len(prs) > 0
     m = calc.value
     assert not m.exists
 
 
 def test_pull_request_closed_no(pr_samples):  # noqa: F811
-    calc = ClosedCalculator(quantiles=(0, 1))
-    time_from = datetime.now(tz=timezone.utc) - timedelta(days=365 * 3)
+    calc_closed = ClosedCalculator(quantiles=(0, 1))
+    calc_released = ReleasedCalculator(quantiles=(0, 1))
+    time_from = datetime.utcnow() - timedelta(days=365 * 3)
     time_to = time_from + timedelta(days=7)
-    for pr in pr_samples(100):
-        calc(pr, time_from, time_to)
-    m = calc.value
-    assert not m.exists
+    prs = df_from_dataclasses(pr_samples(100))
+    calc_closed(prs, time_from, time_to)
+    calc_released(prs, time_from, time_to)
+    assert not calc_closed.value.exists
+    assert not calc_released.value.exists
 
 
 def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
@@ -151,14 +158,14 @@ def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
                                quantiles=(0, 1))
     open_calc = OpenedCalculator(quantiles=(0, 1))
     closed_calc = ClosedCalculator(quantiles=(0, 1))
-    time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
-    time_to = datetime.now(tz=timezone.utc)
-    for pr in pr_samples(1000):
-        for dep in calc._calcs:
-            dep(pr, time_from, time_to)
-        calc(pr, time_from, time_to)
-        open_calc(pr, time_from, time_to)
-        closed_calc(pr, time_from, time_to)
+    time_from = datetime.utcnow() - timedelta(days=365)
+    time_to = datetime.utcnow()
+    prs = df_from_dataclasses(pr_samples(1000))
+    for dep in calc._calcs:
+        dep(prs, time_from, time_to)
+    calc(prs, time_from, time_to)
+    open_calc(prs, time_from, time_to)
+    closed_calc(prs, time_from, time_to)
     m = calc.value
     assert m.exists
     assert 0 < m.value < 1
@@ -179,13 +186,15 @@ def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
     calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
                                ClosedCalculator(quantiles=(0, 1)),
                                quantiles=(0, 1))
-    time_to = datetime.now(tz=timezone.utc)
+    time_to = datetime.utcnow()
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
-        if pr.closed and time_from <= pr.closed < time_to:
+        if pr.closed and time_from.replace(tzinfo=timezone.utc) <= pr.closed < \
+                time_to.replace(tzinfo=timezone.utc):
+            df = df_from_dataclasses([pr])
             for dep in calc._calcs:
-                dep(pr, time_from, time_to)
-            calc(pr, time_from, time_to)
+                dep(df, time_from, time_to)
+            calc(df, time_from, time_to)
             break
     m = calc.value
     assert m.exists
@@ -196,13 +205,15 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
     calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
                                ClosedCalculator(quantiles=(0, 1)),
                                quantiles=(0, 1))
-    time_to = datetime.now(tz=timezone.utc) - timedelta(days=180)
+    time_to = datetime.utcnow() - timedelta(days=180)
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
-        if pr.closed and pr.closed > time_to > pr.created >= time_from:
+        if pr.closed and pr.closed > time_to.replace(tzinfo=timezone.utc) > \
+                pr.created >= time_from.replace(tzinfo=timezone.utc):
+            df = df_from_dataclasses([pr])
             for dep in calc._calcs:
-                dep(pr, time_from, time_to)
-            calc(pr, time_from, time_to)
+                dep(df, time_from, time_to)
+            calc(df, time_from, time_to)
             break
     m = calc.value
     assert m.exists
@@ -221,29 +232,25 @@ def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
     calc = cls(*(dep1(*(dep2(quantiles=(0, 1)) for dep2 in dep1.deps),
                       quantiles=(0, 1)) for dep1 in cls.deps),
                quantiles=(0, 1))
-    nones = nonones = 0
-    for pr in pr_samples(1000):
-        time_to = datetime.now(tz=timezone.utc)
-        time_from = time_to - timedelta(days=10000)
-        for dep1 in calc._calcs:
-            for dep2 in dep1._calcs:
-                dep2(pr, time_from, time_to)
-            dep1(pr, time_from, time_to)
-        calc(pr, time_from, time_to)
-        delta = calc.peek
-        assert isinstance(delta, int)
-        if cls != AllCounter:
-            peek = calc._calcs[0].peek
-        else:
-            peek = calc.peek
-        if peek is not None:
-            assert delta == 1
-            nonones += 1
-        else:
-            assert delta == 0
-            nones += 1
+    prs = df_from_dataclasses(pr_samples(1000))
+    time_to = datetime.utcnow()
+    time_from = time_to - timedelta(days=10000)
+    for dep1 in calc._calcs:
+        for dep2 in dep1._calcs:
+            dep2(prs, time_from, time_to)
+        dep1(prs, time_from, time_to)
+    calc(prs, time_from, time_to)
+    delta = calc.peek
+    assert isinstance(delta, np.ndarray)
+    assert len(delta) == 1000
+    if cls != AllCounter:
+        peek = calc._calcs[0].peek
+    else:
+        peek = calc.peek
+    nonones = (peek != np.array(None)).sum()
+    nones = len(peek) - nonones
     if cls not in (WorkInProgressCounter, CycleCounter, AllCounter):
-        assert nones > 0
+        assert nones > 0, cls
     assert nonones > 0
 
 
@@ -254,20 +261,20 @@ def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
                           (ReleaseCounterWithQuantiles, ReleaseCounter),
                           (LeadCounterWithQuantiles, LeadCounter),
                           (CycleCounterWithQuantiles, CycleCounter)])
-def test_pull_request_metrics_counts(pr_samples, cls_q, cls):  # noqa: F811
+def test_pull_request_metrics_counts_q(pr_samples, cls_q, cls):  # noqa: F811
     calc_q = cls_q(*(dep1(*(dep2(quantiles=(0, 0.95)) for dep2 in dep1.deps),
                           quantiles=(0, 0.95)) for dep1 in cls_q.deps),
                    quantiles=(0, 0.95))
     calc = cls(*calc_q._calcs, quantiles=(0, 0.95))
-    for pr in pr_samples(1000):
-        time_to = datetime.now(tz=timezone.utc)
-        time_from = time_to - timedelta(days=10000)
-        for dep1 in calc._calcs:
-            for dep2 in dep1._calcs:
-                dep2(pr, time_from, time_to)
-            dep1(pr, time_from, time_to)
-        calc_q(pr, time_from, time_to)
-        calc(pr, time_from, time_to)
+    prs = df_from_dataclasses(pr_samples(1000))
+    time_to = datetime.utcnow()
+    time_from = time_to - timedelta(days=10000)
+    for dep1 in calc._calcs:
+        for dep2 in dep1._calcs:
+            dep2(prs, time_from, time_to)
+        dep1(prs, time_from, time_to)
+    calc_q(prs, time_from, time_to)
+    calc(prs, time_from, time_to)
     assert 0 < calc_q.value.value < calc.value.value
 
 
@@ -392,18 +399,18 @@ def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
                                      ReleaseTimeCalculator(quantiles=(0, 1)),
                                      quantiles=(0, 1))
     closed = ClosedCalculator(quantiles=(0, 1))
-    time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
-    time_to = datetime.now(tz=timezone.utc)
+    time_from = datetime.utcnow() - timedelta(days=365)
+    time_to = datetime.utcnow()
     for _ in range(2):
-        for pr in pr_samples(100):
-            ensemble(pr, time_from, time_to)
-            release_time(pr, time_from, time_to)
-            wip_count._calcs[0](pr, time_from, time_to)
-            wip_count(pr, time_from, time_to)
-            for c in cycle_time._calcs:
-                c(pr, time_from, time_to)
-            cycle_time(pr, time_from, time_to)
-            closed(pr, time_from, time_to)
+        prs = df_from_dataclasses(pr_samples(100))
+        ensemble(prs, time_from, time_to)
+        release_time(prs, time_from, time_to)
+        wip_count._calcs[0](prs, time_from, time_to)
+        wip_count(prs, time_from, time_to)
+        for c in cycle_time._calcs:
+            c(prs, time_from, time_to)
+        cycle_time(prs, time_from, time_to)
+        closed(prs, time_from, time_to)
         ensemble_metrics = ensemble.values()
         assert ensemble_metrics[PullRequestMetricID.PR_CYCLE_TIME] == cycle_time.value
         assert ensemble_metrics[PullRequestMetricID.PR_RELEASE_TIME] == release_time.value
@@ -415,10 +422,9 @@ def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
 
 def test_pull_request_metric_calculator_ensemble_empty(pr_samples):
     ensemble = PullRequestMetricCalculatorEnsemble(quantiles=(0, 1))
-    time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
-    time_to = datetime.now(tz=timezone.utc)
-    for pr in pr_samples(1):
-        ensemble(pr, time_from, time_to)
+    time_from = datetime.utcnow() - timedelta(days=365)
+    time_to = datetime.utcnow()
+    ensemble(df_from_dataclasses(pr_samples(1)), time_from, time_to)
     assert ensemble.values() == {}
 
 
@@ -457,7 +463,7 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
 
 def test_size_calculator_shift_log():
     calc = histogram_calculators[PullRequestMetricID.PR_SIZE](quantiles=(0, 1))
-    calc.samples = [0, 10, 0, 20, 150, 0]
+    calc._samples = np.array([0, 10, 0, 20, 150, 0])
     h = calc.histogram(Scale.LOG, 3)
     assert h.ticks[0] == 1
     for f in h.frequencies:
@@ -466,10 +472,12 @@ def test_size_calculator_shift_log():
 
 @register_metric("test")
 class QuantileTestingMetric(MetricCalculator):
-    def _analyze(self, facts: PullRequestFacts, min_time: datetime, max_time: datetime,
-                 **kwargs) -> Optional[timedelta]:
+    dtype = "timedelta64[s]"
+
+    def _analyze(self, facts: pd.DataFrame, min_time: datetime, max_time: datetime,
+                 **kwargs) -> np.ndarray:
         """Calculate the actual state update."""
-        return facts.released - facts.created
+        return (facts["released"] - facts["created"]).values
 
     def _value(self, samples: Sequence[timedelta]) -> Tuple[timedelta, int]:
         """Calculate the actual current metric value."""
@@ -477,20 +485,17 @@ class QuantileTestingMetric(MetricCalculator):
 
 
 def test_quantiles(pr_samples):
-    time_from = datetime.now(tz=timezone.utc) - timedelta(days=365)
-    time_to = datetime.now(tz=timezone.utc)
-    samples = pr_samples(200)
+    time_from = datetime.utcnow() - timedelta(days=365)
+    time_to = datetime.utcnow()
+    samples = df_from_dataclasses(pr_samples(200))
     ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0, 1))
-    for pr in samples:
-        ensemble(pr, time_from, time_to)
+    ensemble(samples, time_from, time_to)
     m1, c1 = ensemble.values()["test"]
     ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0, 0.9))
-    for pr in samples:
-        ensemble(pr, time_from, time_to)
+    ensemble(samples, time_from, time_to)
     m2, c2 = ensemble.values()["test"]
     ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0.1, 0.9))
-    for pr in samples:
-        ensemble(pr, time_from, time_to)
+    ensemble(samples, time_from, time_to)
     m3, c3 = ensemble.values()["test"]
     assert m1 > m2 > m3
     assert c1 > c2 > c3

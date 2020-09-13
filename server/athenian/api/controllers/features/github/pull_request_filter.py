@@ -18,6 +18,7 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import \
     MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
     WorkInProgressTimeCalculator
+from athenian.api.controllers.features.metric_calculator import df_from_dataclasses
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -145,14 +146,14 @@ class PullRequestListMiner:
         delta_comments = len(pr_today.review_comments) - review_comments
         reviews = external_reviews_mask.sum()
         stage_timings = {}
-        no_time_from = self._no_time_from
-        now = self._now
+        no_time_from = self._no_time_from.replace(tzinfo=None)
+        now = self._now.replace(tzinfo=None)
         for k, (calc, prop) in self._calcs.items():
             kwargs = {} if k != "review" else {"allow_unclosed": True}
             if prop in props_today:
                 kwargs["override_event_time"] = now - timedelta(seconds=1)  # < time_max
-            calc(facts_today, no_time_from, now, **kwargs)
-            stage_timings[k] = calc.peek
+            calc(df_from_dataclasses([facts_today]), no_time_from, now, **kwargs)
+            stage_timings[k] = calc.samples[0] if len(calc.samples) > 0 else None
         for p in range(Property.WIP, Property.DONE + 1):
             p = Property(p)
             if p in props_time_machine:

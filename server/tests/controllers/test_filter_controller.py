@@ -245,8 +245,8 @@ def with_only_master_branch(func):
 @pytest.mark.filter_pull_requests
 @pytest.mark.parametrize("prop", [k.name.lower() for k in Property])
 @with_only_master_branch
-async def test_filter_prs_single_prop(client, headers, mdb,
-                                      prop, app, filter_prs_single_prop_cache):
+async def test_filter_prs_single_prop(
+        client, headers, mdb, prop, app, filter_prs_single_prop_cache):
     app._cache = filter_prs_single_prop_cache
     body = {
         "date_from": "2015-10-13",
