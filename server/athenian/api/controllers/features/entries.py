@@ -181,8 +181,6 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
         release_settings, mdb, pdb, cache)
-    with open("/tmp/facts.pickle", "wb") as fout:
-        pickle.dump((mined_facts, time_intervals), fout)
     with sentry_sdk.start_span(op="PullRequestBinnedMetricCalculator.__call__",
                                description=str(len(mined_facts))):
         return [PullRequestBinnedMetricCalculator(metrics, ts, quantiles)(mined_facts)

@@ -1,10 +1,12 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
 
 import networkx as nx
 import numpy as np
 import pandas as pd
+from pandas._libs import tslib
 
+from athenian.api import typing_utils
 from athenian.api.controllers.features.histogram import calculate_histogram, Histogram, Scale
 from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
@@ -260,15 +262,46 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
 
 def df_from_dataclasses(items: Iterable[Any]) -> pd.DataFrame:
     """Combine several dataclasses to a Pandas DataFrame."""
-    # dataclasses.asdict() creates a new dict and is too slow
-    items = pd.DataFrame.from_records(i.__dict__ for i in items)
-    for c in items:
-        # this is needed to avoid the stupid numpy deprecation warnings
-        try:
-            items[c] = items[c].dt.tz_localize(None)
-        except AttributeError:
-            continue
-    return items
+    columns = {}
+    first_item = None
+    try:
+        for i, item in enumerate(items):
+            if i == 0:
+                first_item = item
+                for k in item.__dict__:
+                    columns[k] = [None] * len(items)
+            # dataclasses.asdict() creates a new dict and is too slow
+            for k, v in item.__dict__.items():
+                columns[k][i] = v
+    except TypeError:
+        # no __len__
+        for i, item in enumerate(items):
+            if i == 0:
+                first_item = item
+                for k in item.__dict__:
+                    columns[k] = []
+            for k, v in item.__dict__.items():
+                columns[k].append(v)
+    if first_item is None:
+        return pd.DataFrame()
+    column_types = {}
+    for k, v in type(first_item).__annotations__.items():
+        if typing_utils.is_optional(v):
+            v = v.__args__[0]
+        elif typing_utils.is_generic(v):
+            v = object
+        column_types[k] = v
+    for k, v in columns.items():
+        column_type = column_types[k]
+        if issubclass(column_type, datetime):
+            v = tslib.array_to_datetime(np.array(v, dtype=object), utc=True, errors="raise")[0]
+        elif issubclass(column_type, timedelta):
+            v = np.array(v, dtype="timedelta64[s]")
+        elif np.dtype(column_type) != np.dtype(object):
+            v = np.array(v, dtype=column_type)
+        columns[k] = v
+    df = pd.DataFrame.from_dict(columns)
+    return df
 
 
 class BinnedMetricCalculator:
