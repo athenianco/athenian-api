@@ -15,9 +15,8 @@ from athenian.api import COROUTINE_YIELD_EVERY_ITER, list_with_yield, metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
-from athenian.api.controllers.features.github.pull_request_metrics import \
-    MergingTimeCalculator, ReleaseTimeCalculator, ReviewTimeCalculator, \
-    WorkInProgressTimeCalculator
+from athenian.api.controllers.features.github.pull_request_metrics import MergingTimeCalculator, \
+    ReleaseTimeCalculator, ReviewTimeCalculator, WorkInProgressTimeCalculator
 from athenian.api.controllers.features.metric_calculator import df_from_dataclasses
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots

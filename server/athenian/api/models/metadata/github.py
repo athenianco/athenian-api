@@ -39,6 +39,7 @@ class UserMixin:
 
 class RepositoryMixin:
     repository_full_name = Column(Text, nullable=False)
+    repository_node_id = Column(Text, nullable=False)
 
 
 class ParentChildMixin:
