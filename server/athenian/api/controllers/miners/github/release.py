@@ -601,14 +601,22 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               mdb: databases.Database,
                               pdb: databases.Database,
                               cache: Optional[aiomcache.Client],
-                              ) -> Tuple[pd.DataFrame, Dict[str, PullRequestFacts]]:
-    """Match the merged pull requests to the nearest releases that include them."""
+                              ) -> Tuple[pd.DataFrame, Dict[str, PullRequestFacts], asyncio.Event]:
+    """
+    Match the merged pull requests to the nearest releases that include them.
+
+    :return: 1. pd.DataFrame with the mapped PRs. \
+             2. Precomputed facts about unreleased merged PRs. \
+             3. Synchronization for updating the pdb table with merged unreleased PRs.
+    """
     assert isinstance(time_to, datetime)
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
     pr_releases = new_released_prs_df()
+    unreleased_prs_event = asyncio.Event()
     if prs.empty:
-        return pr_releases, {}
+        unreleased_prs_event.set()
+        return pr_releases, {}, unreleased_prs_event
     tasks = [
         discover_unreleased_prs(
             prs, nonemax(releases[Release.published_at.key].nonemax(), time_to),
@@ -625,7 +633,8 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     pr_releases = precomputed_pr_releases
     merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
     if merged_prs.empty:
-        return pr_releases, unreleased_prs
+        unreleased_prs_event.set()
+        return pr_releases, unreleased_prs, unreleased_prs_event
     tasks = [
         _fetch_labels(merged_prs.index, mdb),
         _find_dead_merged_prs(merged_prs, dags, branches, mdb, pdb, cache),
@@ -646,10 +655,11 @@ async def map_prs_to_releases(prs: pd.DataFrame,
             missed_released_prs = pd.concat([missed_released_prs, dead_prs])
         else:
             missed_released_prs = dead_prs
-    await defer(update_unreleased_prs(merged_prs, missed_released_prs, time_to, labels,
-                                      matched_bys, default_branches, release_settings, pdb),
-                "update_unreleased_prs(%d, %d)" % (len(merged_prs), len(missed_released_prs)))
-    return pr_releases.append(missed_released_prs), unreleased_prs
+    await defer(update_unreleased_prs(
+        merged_prs, missed_released_prs, time_to, labels, matched_bys, default_branches,
+        release_settings, pdb, unreleased_prs_event),
+        "update_unreleased_prs(%d, %d)" % (len(merged_prs), len(missed_released_prs)))
+    return pr_releases.append(missed_released_prs), unreleased_prs, unreleased_prs_event
 
 
 async def _map_prs_to_releases(prs: pd.DataFrame,
