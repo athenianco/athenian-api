@@ -138,6 +138,7 @@ def main():
                     JIRAFilter.empty(),
                     False,
                     settings,
+                    True,
                     mdb,
                     pdb,
                     None,  # yes, disable the cache

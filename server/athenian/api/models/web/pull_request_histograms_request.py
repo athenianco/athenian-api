@@ -23,6 +23,7 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
         "exclude_inactive": bool,
         "quantiles": List[float],
         "account": int,
+        "fresh": bool,
     }
 
     attribute_map = {
@@ -36,6 +37,7 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
         "exclude_inactive": "exclude_inactive",
         "quantiles": "quantiles",
         "account": "account",
+        "fresh": "fresh",
     }
 
     def __init__(
@@ -50,6 +52,7 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
         exclude_inactive: Optional[bool] = None,
         quantiles: Optional[List[float]] = None,
         account: Optional[int] = None,
+        fresh: Optional[bool] = None,
     ):
         """PullRequestHistogramsRequest - a model defined in OpenAPI
 
@@ -63,6 +66,7 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
         :param exclude_inactive: The exclude_inactive of this PullRequestHistogramsRequest.
         :param quantiles: The quantiles of this PullRequestHistogramsRequest.
         :param account: The account of this PullRequestHistogramsRequest.
+        :param fresh: The fresh of this PullRequestHistogramsRequest.
         """
         self._for_ = for_
         self._metrics = metrics
@@ -74,6 +78,7 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
         self._exclude_inactive = exclude_inactive
         self._quantiles = quantiles
         self._account = account
+        self._fresh = fresh
 
     @property
     def for_(self) -> List[ForSet]:
@@ -215,3 +220,23 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
             return
         validate_quantiles(quantiles)
         self._quantiles = quantiles
+
+    @property
+    def fresh(self) -> bool:
+        """Gets the fresh of this PullRequestHistogramsRequest.
+
+        Force histograms calculation on the most up to date data.
+
+        :return: The fresh of this PullRequestHistogramsRequest.
+        """
+        return self._fresh
+
+    @fresh.setter
+    def fresh(self, fresh: bool):
+        """Sets the fresh of this PullRequestHistogramsRequest.
+
+        Force histograms calculation on the most up to date data.
+
+        :param fresh: The fresh of this PullRequestHistogramsRequest.
+        """
+        self._fresh = fresh

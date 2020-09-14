@@ -47,7 +47,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
             tasks.append(func(
                 metrics, Scale[filt.scale.upper()], filt.bins or 0, time_from, time_to,
                 filt.quantiles or (0, 1), repos, devs, labels, jira, filt.exclude_inactive,
-                release_settings, request.mdb, request.pdb, request.cache))
+                release_settings, filt.fresh, request.mdb, request.pdb, request.cache))
         if len(tasks) == 1:
             all_histograms = [await tasks[0]]  # type: List[Histogram]
         else:

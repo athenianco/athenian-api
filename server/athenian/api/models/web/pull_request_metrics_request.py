@@ -22,6 +22,7 @@ class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
         "quantiles": List[float],
         "account": int,
         "exclude_inactive": bool,
+        "fresh": bool,
     }
 
     attribute_map = {
@@ -34,6 +35,7 @@ class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
         "quantiles": "quantiles",
         "account": "account",
         "exclude_inactive": "exclude_inactive",
+        "fresh": "fresh",
     }
 
     def __init__(
@@ -47,6 +49,7 @@ class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
         quantiles: Optional[List[float]] = None,
         account: Optional[int] = None,
         exclude_inactive: Optional[bool] = None,
+        fresh: Optional[bool] = None,
     ):
         """PullRequestMetricsRequest - a model defined in OpenAPI
 
@@ -59,6 +62,7 @@ class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
         :param quantiles: The quantiles of this PullRequestMetricsRequest.
         :param account: The account of this PullRequestMetricsRequest.
         :param exclude_inactive: The exclude_inactive of this PullRequestMetricsRequest.
+        :param fresh: The fresh of this PullRequestMetricsRequest.
         """
         self._for_ = for_
         self._metrics = metrics
@@ -69,6 +73,7 @@ class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
         self._quantiles = quantiles
         self._account = account
         self._exclude_inactive = exclude_inactive
+        self._fresh = fresh
 
     @property
     def for_(self) -> List[ForSet]:
@@ -179,3 +184,23 @@ class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
         :param exclude_inactive: The exclude_inactive of this PullRequestMetricsRequest.
         """
         self._exclude_inactive = exclude_inactive
+
+    @property
+    def fresh(self) -> bool:
+        """Gets the fresh of this PullRequestMetricsRequest.
+
+        Force metrics calculation on the most up to date data.
+
+        :return: The fresh of this PullRequestMetricsRequest.
+        """
+        return self._fresh
+
+    @fresh.setter
+    def fresh(self, fresh: bool):
+        """Sets the fresh of this PullRequestMetricsRequest.
+
+        Force metrics calculation on the most up to date data.
+
+        :param fresh: The fresh of this PullRequestMetricsRequest.
+        """
+        self._fresh = fresh

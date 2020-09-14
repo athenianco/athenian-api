@@ -93,7 +93,8 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         for func, metrics in calcs.items():
             tasks.append(func(
                 metrics, time_intervals, filt.quantiles or (0, 1), repos, devs, labels, jira,
-                filt.exclude_inactive, release_settings, request.mdb, request.pdb, request.cache))
+                filt.exclude_inactive, release_settings, filt.fresh,
+                request.mdb, request.pdb, request.cache))
         if len(tasks) > 1:
             all_mvs = await asyncio.gather(*tasks, return_exceptions=True)
         else:

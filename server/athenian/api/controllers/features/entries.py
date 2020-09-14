@@ -38,8 +38,33 @@ from athenian.api.controllers.miners.types import Participants, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer, wait_deferred
-from athenian.api.models.metadata.github import PushCommit
+from athenian.api.models.metadata.github import PullRequest, PushCommit
 from athenian.api.tracing import sentry_span
+
+
+unfresh_mode_threshold = 20000
+
+
+async def _fetch_pull_request_facts_github(done_facts: Dict[str, PullRequestFacts],
+                                           time_from: datetime,
+                                           time_to: datetime,
+                                           repositories: Set[str],
+                                           participants: Participants,
+                                           labels: LabelFilter,
+                                           jira: JIRAFilter,
+                                           exclude_inactive: bool,
+                                           release_settings: Dict[str, ReleaseMatchSetting],
+                                           mdb: Database,
+                                           pdb: Database,
+                                           cache: Optional[aiomcache.Client],
+                                           ) -> List[PullRequestFacts]:
+    """
+    Load the missing facts about merged unreleased and open PRs from pdb instead of querying \
+    the most up to date information from mdb.
+
+    The major complexity here is to comply to all the filters.
+    """
+    raise NotImplementedError
 
 
 @sentry_span
@@ -47,7 +72,7 @@ from athenian.api.tracing import sentry_span
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, **_:  # noqa
+    key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, fresh, **_:  # noqa
     (
         time_from,
         time_to,
@@ -57,6 +82,7 @@ from athenian.api.tracing import sentry_span
         jira,
         exclude_inactive,
         release_settings,
+        fresh,
     ),
 )
 async def calc_pull_request_facts_github(time_from: datetime,
@@ -67,16 +93,22 @@ async def calc_pull_request_facts_github(time_from: datetime,
                                          jira: JIRAFilter,
                                          exclude_inactive: bool,
                                          release_settings: Dict[str, ReleaseMatchSetting],
+                                         fresh: bool,
                                          mdb: Database,
                                          pdb: Database,
                                          cache: Optional[aiomcache.Client],
                                          ) -> List[PullRequestFacts]:
-    """Calculate the pull request timestamps on GitHub."""
+    """
+    Calculate facts about pull request on GitHub.
+
+    :param fresh: If the number of done PRs for the time period and filters exceeds \
+                  `unfresh_mode_threshold`, force querying mdb instead of pdb only.
+    """
     assert isinstance(repositories, set)
     branches, default_branches = await extract_branches(repositories, mdb, cache)
     precomputed_tasks = [
         load_precomputed_done_facts_filters(
-            time_from, time_to, repositories, participants, labels,
+            time_from, time_to, repositories, participants, labels, jira,
             default_branches, exclude_inactive, release_settings, pdb),
     ]
     if exclude_inactive:
@@ -91,13 +123,31 @@ async def calc_pull_request_facts_github(time_from: datetime,
         precomputed_facts = blacklist = await precomputed_tasks[0]
     add_pdb_hits(pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
 
+    if len(precomputed_facts) > unfresh_mode_threshold and not fresh:
+        return await _fetch_pull_request_facts_github(
+            precomputed_facts, time_from, time_to, repositories, participants, labels, jira,
+            exclude_inactive, release_settings, mdb, pdb, cache)
+
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
     # are effectively discarded later in BinnedMetricCalculator
-    miner, unreleased_facts, matched_bys = await PullRequestMiner.mine(
-        date_from, date_to, time_from, time_to, repositories, participants, labels, jira,
-        branches, default_branches, exclude_inactive, release_settings,
-        mdb, pdb, cache, pr_blacklist=blacklist)
+    tasks = [
+        PullRequestMiner.mine(
+            date_from, date_to, time_from, time_to, repositories, participants, labels, jira,
+            branches, default_branches, exclude_inactive, release_settings,
+            mdb, pdb, cache, pr_blacklist=blacklist),
+    ]
+    if jira and precomputed_facts:
+        tasks.append(PullRequestMiner.filter_jira(
+            precomputed_facts, jira, mdb, columns=[PullRequest.node_id]))
+        mined, filtered = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in (mined, filtered):
+            if isinstance(r, Exception):
+                raise r from None
+        miner, unreleased_facts, matched_bys = mined
+        precomputed_facts = {k: precomputed_facts[k] for k in filtered.index.values}
+    else:
+        miner, unreleased_facts, matched_bys = await tasks[0]
     precomputed_unreleased_prs = miner.drop(unreleased_facts)
     add_pdb_hits(pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
     for node_id in precomputed_unreleased_prs.values:
@@ -172,6 +222,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 jira: JIRAFilter,
                                                 exclude_inactive: bool,
                                                 release_settings: Dict[str, ReleaseMatchSetting],
+                                                fresh: bool,
                                                 mdb: Database,
                                                 pdb: Database,
                                                 cache: Optional[aiomcache.Client],
@@ -180,7 +231,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
-        release_settings, mdb, pdb, cache)
+        release_settings, fresh, mdb, pdb, cache)
     with sentry_sdk.start_span(op="PullRequestBinnedMetricCalculator.__call__",
                                description=str(len(mined_facts))):
         return [PullRequestBinnedMetricCalculator(metrics, ts, quantiles)(mined_facts)
@@ -236,6 +287,7 @@ async def calc_pull_request_histogram_github(metrics: Sequence[str],
                                              jira: JIRAFilter,
                                              exclude_inactive: bool,
                                              release_settings: Dict[str, ReleaseMatchSetting],
+                                             fresh: bool,
                                              mdb: Database,
                                              pdb: Database,
                                              cache: Optional[aiomcache.Client],
@@ -243,7 +295,7 @@ async def calc_pull_request_histogram_github(metrics: Sequence[str],
     """Calculate the pull request histograms on GitHub."""
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
-        release_settings, mdb, pdb, cache)
+        release_settings, fresh, mdb, pdb, cache)
     ensemble = PullRequestHistogramCalculatorEnsemble(*metrics, quantiles=quantiles)
     ensemble(df_from_dataclasses(mined_facts),
              time_from.replace(tzinfo=None),
