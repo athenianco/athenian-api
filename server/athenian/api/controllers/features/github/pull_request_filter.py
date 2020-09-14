@@ -652,6 +652,8 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
     for k, v in unreleased.items():
         if k not in facts:
             facts[k] = v
+
+    filtered_prs = []
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__",
                                description=str(len(prs))):
         facts_miner = PullRequestFactsMiner(await bots(mdb))
@@ -659,11 +661,18 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
         for pr in prs:
             node_id = pr.pr[PullRequest.node_id.key]
             if node_id not in facts:
-                facts[node_id] = None, facts_miner(pr)
-                pdb_misses += 1
+                try:
+                    facts[node_id] = None, facts_miner(pr)
+                except ImpossiblePullRequest:
+                    continue
+                finally:
+                    pdb_misses += 1
+            filtered_prs.append(pr)
+
     facts = {k: v for k, (_, v) in facts.items()}
     miner = PullRequestListMiner(
-        prs, dfs, facts, set(), set(), datetime(1970, 1, 1, tzinfo=timezone.utc), now, False)
+        filtered_prs, dfs, facts, set(), set(),
+        datetime(1970, 1, 1, tzinfo=timezone.utc), now, False)
     prs = await list_with_yield(miner, "PullRequestListMiner.__iter__")
     set_pdb_hits(pdb, "filter_pull_requests/facts", len(prs) - pdb_misses)
     set_pdb_misses(pdb, "filter_pull_requests/facts", pdb_misses)
