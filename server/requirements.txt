@@ -6,7 +6,7 @@ asyncpg==0.21.0
 databases[postgresql,sqlite]==0.3.2
 xxhash==2.0.0
 # remember to change these versions in Dockerfile, too!
-numpy==1.19.1
+numpy==1.19.2
 scipy==1.5.2
 sentry-sdk[pure_eval]==0.17.3
 prometheus_client==0.8.0
