@@ -37,7 +37,7 @@ from athenian.api.controllers.miners.github.release import mine_releases
 from athenian.api.controllers.miners.types import Participants, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
-from athenian.api.defer import defer, wait_deferred
+from athenian.api.defer import defer
 from athenian.api.models.metadata.github import PullRequest, PushCommit
 from athenian.api.tracing import sentry_span
 
@@ -144,10 +144,10 @@ async def calc_pull_request_facts_github(time_from: datetime,
         for r in (mined, filtered):
             if isinstance(r, Exception):
                 raise r from None
-        miner, unreleased_facts, matched_bys = mined
+        miner, unreleased_facts, matched_bys, unreleased_prs_event = mined
         precomputed_facts = {k: precomputed_facts[k] for k in filtered.index.values}
     else:
-        miner, unreleased_facts, matched_bys = await tasks[0]
+        miner, unreleased_facts, matched_bys, unreleased_prs_event = await tasks[0]
     precomputed_unreleased_prs = miner.drop(unreleased_facts)
     add_pdb_hits(pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
     for node_id in precomputed_unreleased_prs.values:
@@ -188,10 +188,9 @@ async def calc_pull_request_facts_github(time_from: datetime,
         await defer(store_open_pull_request_facts(open_pr_facts, pdb),
                     "store_open_pull_request_facts(%d)" % len(open_pr_facts))
     if len(merged_unreleased_pr_facts) > 0:
-        if pdb.url.dialect == "sqlite":
-            await wait_deferred()  # wait for update_unreleased_prs
         await defer(store_merged_unreleased_pull_request_facts(
-            merged_unreleased_pr_facts, matched_bys, default_branches, release_settings, pdb),
+            merged_unreleased_pr_facts, matched_bys, default_branches, release_settings, pdb,
+            unreleased_prs_event),
             "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts))
     return mined_facts
 

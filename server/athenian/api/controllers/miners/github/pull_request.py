@@ -85,6 +85,19 @@ class PullRequestMiner:
                     level=0 if isinstance(df.index, pd.MultiIndex) else None)
         return removed
 
+    def _deserialize_mine_cache(buffer: bytes) -> Tuple[PRDataFrames,
+                                                        Dict[str, PullRequestFacts],
+                                                        Set[str],
+                                                        Participants,
+                                                        LabelFilter,
+                                                        JIRAFilter,
+                                                        Dict[str, ReleaseMatch],
+                                                        asyncio.Event]:
+        stuff = pickle.loads(buffer)
+        event = asyncio.Event()
+        event.set()
+        return (*stuff, event)
+
     @sentry_span
     def _postprocess_cached_prs(
             result: Tuple[PRDataFrames,
@@ -93,7 +106,8 @@ class PullRequestMiner:
                           Participants,
                           LabelFilter,
                           JIRAFilter,
-                          Dict[str, ReleaseMatch]],
+                          Dict[str, ReleaseMatch],
+                          asyncio.Event],
             date_to: date,
             repositories: Set[str],
             participants: Participants,
@@ -101,10 +115,15 @@ class PullRequestMiner:
             jira: JIRAFilter,
             pr_blacklist: Optional[Collection[str]],
             truncate: bool,
-            **_) -> Tuple[PRDataFrames, Dict[str, PullRequestFacts],
-                          Set[str], Participants, LabelFilter, JIRAFilter,
-                          Dict[str, ReleaseMatch]]:
-        dfs, _, cached_repositories, cached_participants, cached_labels, cached_jira, _ = result
+            **_) -> Tuple[PRDataFrames,
+                          Dict[str, PullRequestFacts],
+                          Set[str],
+                          Participants,
+                          LabelFilter,
+                          JIRAFilter,
+                          Dict[str, ReleaseMatch],
+                          asyncio.Event]:
+        dfs, _, cached_repositories, cached_participants, cached_labels, cached_jira, _, _ = result
         cls = PullRequestMiner
         if (repositories - cached_repositories or
                 not cls._check_participants_compatibility(cached_participants, participants) or
@@ -129,8 +148,8 @@ class PullRequestMiner:
     @sentry_span
     @cached(
         exptime=lambda cls, **_: cls.CACHE_TTL,
-        serialize=pickle.dumps,
-        deserialize=pickle.loads,
+        serialize=lambda r: pickle.dumps(r[:-1]),
+        deserialize=_deserialize_mine_cache,
         key=lambda date_from, date_to, exclude_inactive, release_settings, limit, pr_blacklist, truncate, **_: (  # noqa
             date_from.toordinal(), date_to.toordinal(), exclude_inactive, release_settings,
             limit, ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []), truncate,
@@ -160,7 +179,8 @@ class PullRequestMiner:
                                Participants,
                                LabelFilter,
                                JIRAFilter,
-                               Dict[str, ReleaseMatch]]:
+                               Dict[str, ReleaseMatch],
+                               asyncio.Event]:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
         assert isinstance(repositories, set)
@@ -219,7 +239,7 @@ class PullRequestMiner:
             for r in (mined, open_facts):
                 if isinstance(r, Exception):
                     raise r from None
-        dfs, unreleased_facts = mined
+        dfs, unreleased_facts, unreleased_prs_event = mined
 
         to_drop = cls._find_drop_by_participants(dfs, participants, None if truncate else time_to)
         to_drop |= cls._find_drop_by_labels(dfs, labels)
@@ -233,15 +253,24 @@ class PullRequestMiner:
                 facts[k] = v
         # we don't care about the precomputed facts, they are here for the reference
 
-        return dfs, facts, repositories, participants, labels, jira, matched_bys
+        return dfs, facts, repositories, participants, labels, jira, matched_bys, \
+            unreleased_prs_event
 
+    _deserialize_mine_cache = staticmethod(_deserialize_mine_cache)
     _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
+
+    def _deserialize_mine_by_ids_cache(
+            buffer: bytes) -> Tuple[PRDataFrames, Dict[str, PullRequestFacts], asyncio.Event]:
+        dfs, facts = pickle.loads(buffer)
+        event = asyncio.Event()
+        event.set()
+        return dfs, facts, event
 
     @classmethod
     @cached(
         exptime=lambda cls, **_: cls.CACHE_TTL,
-        serialize=pickle.dumps,
-        deserialize=pickle.loads,
+        serialize=lambda r: pickle.dumps(r[:-1]),
+        deserialize=_deserialize_mine_by_ids_cache,
         key=lambda prs, unreleased, releases, time_to, truncate=True, **_: (
             ",".join(prs.index), ",".join(unreleased),
             ",".join(releases[Release.id.key].values), time_to.timestamp(),
@@ -263,19 +292,22 @@ class PullRequestMiner:
                           pdb: databases.Database,
                           cache: Optional[aiomcache.Client],
                           truncate: bool = True,
-                          ) -> Tuple[PRDataFrames, Dict[str, PullRequestFacts]]:
+                          ) -> Tuple[PRDataFrames, Dict[str, PullRequestFacts], asyncio.Event]:
         """
         Fetch PR metadata for certain PRs.
 
         :param prs: pandas DataFrame with fetched PullRequest-s. Only the details about those PRs \
                     will be loaded from the DB.
         :param truncate: Do not load anything after `time_to`.
-        :return: List of mined DataFrame-s + mapping to pickle-d PullRequestFacts for unreleased \
-                 merged PR. Why so complex? Performance.
+        :return: 1. List of mined DataFrame-s. \
+                 2. mapping to pickle-d PullRequestFacts for unreleased merged PR. \
+                 3. Synchronization for updating the pdb table with merged unreleased PRs.
         """
         return await cls._mine_by_ids(
             prs, unreleased, time_to, releases, matched_bys, branches, default_branches, dags,
             release_settings, mdb, pdb, cache, truncate=truncate)
+
+    _deserialize_mine_by_ids_cache = staticmethod(_deserialize_mine_by_ids_cache)
 
     @classmethod
     @sentry_span
@@ -293,9 +325,10 @@ class PullRequestMiner:
                            pdb: databases.Database,
                            cache: Optional[aiomcache.Client],
                            truncate: bool = True,
-                           ) -> Tuple[PRDataFrames, Dict[str, PullRequestFacts]]:
+                           ) -> Tuple[PRDataFrames, Dict[str, PullRequestFacts], asyncio.Event]:
         node_ids = prs.index if len(prs) > 0 else set()
         facts = {}  # precomputed PullRequestFacts about merged unreleased PRs
+        unreleased_prs_event: asyncio.Event = None
 
         @sentry_span
         async def fetch_reviews():
@@ -340,7 +373,7 @@ class PullRequestMiner:
             if truncate:
                 merged_mask = prs[PullRequest.merged_at.key] <= time_to
             else:
-                merged_mask = ~prs[PullRequest.merged_at.key].isnull()
+                merged_mask = prs[PullRequest.merged_at.key].notnull()
             merged_mask &= ~prs.index.isin(unreleased)
             merged_prs = prs.take(np.where(merged_mask)[0])
             subtasks = [map_prs_to_releases(
@@ -355,7 +388,8 @@ class PullRequestMiner:
                 if isinstance(r, Exception):
                     raise r from None
             nonlocal facts
-            df, facts = df_facts
+            nonlocal unreleased_prs_event
+            df, facts, unreleased_prs_event = df_facts
             facts.update(other_facts)
             return df
 
@@ -428,7 +462,7 @@ class PullRequestMiner:
         for df in dfs:
             if isinstance(df, Exception):
                 raise df from None
-        return PRDataFrames(prs, *dfs), facts
+        return PRDataFrames(prs, *dfs), facts, unreleased_prs_event
 
     @classmethod
     @sentry_span
@@ -453,15 +487,10 @@ class PullRequestMiner:
                    truncate: bool = True,
                    ) -> Tuple["PullRequestMiner",
                               Dict[str, PullRequestFacts],
-                              Dict[str, ReleaseMatch]]:
+                              Dict[str, ReleaseMatch],
+                              asyncio.Event]:
         """
         Mine metadata about pull requests according to the numerous filters.
-
-        First returned item: a new `PullRequestMiner` with the PRs satisfying \
-                             to the specified filters.
-        Second returned item: the precomputed facts about unreleased pull requests. \
-                              This is an optimization which breaks the abstraction a bit.
-        The third returned item: the `matched_bys` - release matches for each repository.
 
         :param date_from: Fetch PRs created starting from this date, inclusive.
         :param date_to: Fetch PRs created ending with this date, inclusive.
@@ -483,12 +512,18 @@ class PullRequestMiner:
         :param cache: memcached client to cache the collected data.
         :param pr_blacklist: completely ignore the existence of these PR node IDs.
         :param truncate: activate the "time machine" and erase everything after `time_to`.
+        :return: 1. New `PullRequestMiner` with the PRs satisfying to the specified filters. \
+                 2. Precomputed facts about unreleased pull requests. \
+                    This is an optimization which breaks the abstraction a bit. \
+                 3. `matched_bys` - release matches for each repository. \
+                 4. Synchronization for updating the pdb table with merged unreleased PRs. \
+                    Another abstraction leakage that we have to deal with.
         """
         date_from_with_time = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
         date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
-        dfs, facts, _, _, _, _, matched_bys = await cls._mine(
+        dfs, facts, _, _, _, _, matched_bys, event = await cls._mine(
             date_from, date_to, repositories, participants, labels, jira, branches,
             default_branches, exclude_inactive, release_settings, limit, mdb, pdb, cache,
             pr_blacklist=pr_blacklist, truncate=truncate)
@@ -496,7 +531,7 @@ class PullRequestMiner:
         if truncate:
             for df in dfs:
                 cls._truncate_timestamps(df, time_to)
-        return cls(dfs), facts, matched_bys
+        return cls(dfs), facts, matched_bys, event
 
     @classmethod
     @sentry_span

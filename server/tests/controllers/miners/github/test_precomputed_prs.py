@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 from datetime import datetime, timedelta, timezone
 import math
@@ -449,7 +450,7 @@ async def test_discover_update_unreleased_prs_smoke(
     empty_rdf = new_released_prs_df()
     await update_unreleased_prs(
         prs, empty_rdf, datetime(2018, 11, 1, tzinfo=utc), {},
-        matched_bys, default_branches, release_match_setting_tag, pdb)
+        matched_bys, default_branches, release_match_setting_tag, pdb, asyncio.Event())
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], None, default_branches,
         datetime(2018, 11, 1, tzinfo=utc),
@@ -460,7 +461,7 @@ async def test_discover_update_unreleased_prs_smoke(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     await update_unreleased_prs(
         prs, empty_rdf, datetime(2018, 11, 20, tzinfo=utc), {},
-        matched_bys, default_branches, release_match_setting_tag, pdb)
+        matched_bys, default_branches, release_match_setting_tag, pdb, asyncio.Event())
     unreleased_prs = await discover_unreleased_prs(
         prs, datetime(2018, 11, 20, tzinfo=utc), matched_bys, default_branches,
         release_match_setting_tag, pdb)
@@ -509,13 +510,13 @@ async def test_discover_update_unreleased_prs_released(
         time_to,
         release_match_setting_tag,
         mdb, pdb, None)
-    released_prs, _ = await map_prs_to_releases(
+    released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, pd.DataFrame(), {}, time_to, dag,
         release_match_setting_tag, mdb, pdb, None)
     await wait_deferred()
     await update_unreleased_prs(
         prs, released_prs, time_to, {},
-        matched_bys, default_branches, release_match_setting_tag, pdb)
+        matched_bys, default_branches, release_match_setting_tag, pdb, asyncio.Event())
     unreleased_prs = await discover_unreleased_prs(
         prs, time_to, matched_bys, default_branches, release_match_setting_tag, pdb)
     assert len(unreleased_prs) == 1
@@ -556,7 +557,7 @@ async def test_load_old_merged_unreleased_prs_smoke(
         ["src-d/go-git"], None, None, metrics_time_from, unreleased_time_to,
         release_match_setting_tag, mdb, pdb, cache)
     await wait_deferred()
-    released_prs, _ = await map_prs_to_releases(
+    released_prs, _, _ = await map_prs_to_releases(
         unreleased_prs, releases, matched_bys, pd.DataFrame(), {},
         unreleased_time_to, dag, release_match_setting_tag, mdb, pdb, cache)
     await wait_deferred()
@@ -652,9 +653,10 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
     assert len(releases) == 2
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     empty_rdf = new_released_prs_df()
+    event = asyncio.Event()
     await update_unreleased_prs(
         prs, empty_rdf, datetime(2018, 11, 1, tzinfo=utc), {},
-        matched_bys, default_branches, release_match_setting_tag, pdb)
+        matched_bys, default_branches, release_match_setting_tag, pdb, event)
     samples = []
     for f in pr_samples(len(prs)):
         fields = f.__dict__
@@ -665,7 +667,8 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
     for i, pr in zip(index, prs):
         pr[PullRequest.node_id.key] = i
     await store_merged_unreleased_pull_request_facts(
-        list(zip(prs, samples)), matched_bys, default_branches, release_match_setting_tag, pdb)
+        list(zip(prs, samples)), matched_bys, default_branches, release_match_setting_tag, pdb,
+        event)
     true_dict = {pr[PullRequest.node_id.key]: s for pr, s in zip(prs, samples)}
     ghmprf = GitHubMergedPullRequestFacts
     rows = await pdb.fetch_all(select([ghmprf]))
@@ -691,10 +694,11 @@ async def test_store_merged_unreleased_pull_request_facts_assert(
     assert len(releases) == 2
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     empty_rdf = new_released_prs_df()
+    event = asyncio.Event()
     await update_unreleased_prs(
         prs, empty_rdf, datetime(2018, 11, 1, tzinfo=utc), {},
-        matched_bys, default_branches, release_match_setting_tag, pdb)
+        matched_bys, default_branches, release_match_setting_tag, pdb, event)
     with pytest.raises(AssertionError):
         await store_merged_unreleased_pull_request_facts(
             list(zip(prs, pr_samples(len(prs)))), matched_bys, default_branches,
-            release_match_setting_tag, pdb)
+            release_match_setting_tag, pdb, event)

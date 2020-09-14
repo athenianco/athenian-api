@@ -540,7 +540,8 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                                 matched_bys: Dict[str, ReleaseMatch],
                                 default_branches: Dict[str, str],
                                 release_settings: Dict[str, ReleaseMatchSetting],
-                                pdb: databases.Database) -> None:
+                                pdb: databases.Database,
+                                unreleased_prs_event: asyncio.Event) -> None:
     """
     Bump the last check timestamps for unreleased merged PRs.
 
@@ -584,6 +585,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                     labels={label: "" for label in labels.get(node_id, [])},
                 ).create_defaults().explode(with_primary_keys=True))
         if not values:
+            unreleased_prs_event.set()
             return
         if postgres:
             sql = postgres_insert(GitHubMergedPullRequestFacts)
@@ -595,14 +597,18 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                     GitHubMergedPullRequestFacts.labels.key:
                         GitHubMergedPullRequestFacts.labels + sql.excluded.labels,
                     GitHubMergedPullRequestFacts.updated_at.key: sql.excluded.updated_at,
+
                 },
             )
         else:
             # this is wrong but we just cannot update SQLite properly
             # nothing will break though
             sql = insert(GitHubMergedPullRequestFacts).prefix_with("OR REPLACE")
-    with sentry_sdk.start_span(op="update_unreleased_prs/execute"):
-        await pdb.execute_many(sql, values)
+    try:
+        with sentry_sdk.start_span(op="update_unreleased_prs/execute"):
+            await pdb.execute_many(sql, values)
+    finally:
+        unreleased_prs_event.set()
 
 
 @sentry_span
@@ -611,7 +617,8 @@ async def store_merged_unreleased_pull_request_facts(
         matched_bys: Dict[str, ReleaseMatch],
         default_branches: Dict[str, str],
         release_settings: Dict[str, ReleaseMatchSetting],
-        pdb: databases.Database) -> None:
+        pdb: databases.Database,
+        unreleased_prs_event: asyncio.Event) -> None:
     """
     Persist the facts about merged unreleased pull requests to the database.
 
@@ -641,6 +648,7 @@ async def store_merged_unreleased_pull_request_facts(
             merger="",
             labels={},
         ).create_defaults().explode(with_primary_keys=True))
+    await unreleased_prs_event.wait()
     if postgres:
         sql = postgres_insert(GitHubMergedPullRequestFacts)
         sql = sql.on_conflict_do_update(

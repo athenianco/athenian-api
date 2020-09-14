@@ -400,7 +400,7 @@ async def _filter_pull_requests(properties: Set[Property],
     for r in (pr_miner, facts):
         if isinstance(r, Exception):
             raise r from None
-    pr_miner, unreleased_facts, matched_bys = pr_miner
+    pr_miner, unreleased_facts, matched_bys, unreleased_prs_event = pr_miner
     # we want the released PR facts to overwrite the others
     facts, unreleased_facts = unreleased_facts, facts
     facts.update(unreleased_facts)
@@ -428,7 +428,7 @@ async def _filter_pull_requests(properties: Set[Property],
                 await wait_deferred()  # wait for update_unreleased_prs
             await defer(store_merged_unreleased_pull_request_facts(
                 missed_merged_unreleased_facts, matched_bys, default_branches,
-                release_settings, pdb),
+                release_settings, pdb, unreleased_prs_event),
                 "store_merged_unreleased_pull_request_facts(%d)" %
                 len(missed_merged_unreleased_facts))
 
@@ -548,7 +548,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
         releases, matched_bys, unreleased = dummy_releases_df(), {}, {}
         dags = await fetch_precomputed_commit_history_dags(
             prs_df[PullRequest.repository_full_name.key].unique(), pdb, cache)
-    dfs, _ = await PullRequestMiner.mine_by_ids(
+    dfs, _, _ = await PullRequestMiner.mine_by_ids(
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
         release_settings, mdb, pdb, cache)
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")

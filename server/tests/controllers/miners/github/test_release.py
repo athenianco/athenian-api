@@ -56,7 +56,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
         mdb, pdb, None)
     tag = "https://github.com/src-d/go-git/releases/tag/v4.12.0"
     for i in range(2):
-        released_prs, facts = await map_prs_to_releases(
+        released_prs, facts, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
             mdb, pdb, cache)
         await wait_deferred()
@@ -68,7 +68,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
         assert released_prs.iloc[0][Release.published_at.key] == \
             pd.Timestamp("2019-06-18 22:57:34+0000", tzinfo=timezone.utc)
         assert released_prs.iloc[0][Release.author.key] == "mcuadros"
-    released_prs, _ = await map_prs_to_releases(
+    released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         mdb, pdb, None)
     # the PR was merged and released in the past, we must detect that
@@ -86,7 +86,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
         mdb, pdb, None)
-    released_prs, _ = await map_prs_to_releases(
+    released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         mdb, pdb, None)
     await wait_deferred()
@@ -101,7 +101,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
         # https://github.com/encode/databases/issues/40
         await dummy_mdb.execute(CreateTable(PullRequestLabel.__table__).compile(
             dialect=dummy_mdb._backend._dialect).string)
-        released_prs, _ = await map_prs_to_releases(
+        released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
             dummy_mdb, pdb, None)
         assert len(released_prs) == 1
@@ -120,13 +120,13 @@ async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, p
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
         mdb, pdb, None)
     for i in range(2):
-        released_prs, _ = await map_prs_to_releases(
+        released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
             mdb, pdb, cache)
         assert len(cache.mem) == 2, i
         assert released_prs.empty
     prs = prs.iloc[:0]
-    released_prs, _ = await map_prs_to_releases(
+    released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         mdb, pdb, cache)
     assert len(cache.mem) == 2
@@ -139,7 +139,7 @@ async def test_map_prs_to_releases_precomputed_released(
     time_to = datetime(year=2019, month=8, day=2, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=2)
 
-    miner, _, _ = await PullRequestMiner.mine(
+    miner, _, _, _ = await PullRequestMiner.mine(
         time_from.date(),
         time_to.date(),
         time_from,
@@ -178,7 +178,7 @@ async def test_map_prs_to_releases_precomputed_released(
         await store_precomputed_done_facts(
             true_prs, times, default_branches, release_match_setting_tag, pdb)
 
-        released_prs, _ = await map_prs_to_releases(
+        released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag,
             release_match_setting_tag, dummy_mdb, pdb, None)
         assert len(released_prs) == len(prs)
@@ -391,7 +391,7 @@ async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
         mdb, pdb, None)
-    released_prs, _ = await map_prs_to_releases(
+    released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         mdb, pdb, None)
     assert set(released_prs[Release.url.key].unique()) == {
