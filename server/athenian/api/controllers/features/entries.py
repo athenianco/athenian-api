@@ -64,6 +64,10 @@ async def _fetch_pull_request_facts_github(done_facts: Dict[str, PullRequestFact
 
     The major complexity here is to comply to all the filters.
     """
+    """
+    PullRequestMiner.fetch_prs(
+        time_from, time_to, repositories, participants, jira, 0, None, mdb)
+    """
     raise NotImplementedError
 
 
@@ -108,7 +112,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
     branches, default_branches = await extract_branches(repositories, mdb, cache)
     precomputed_tasks = [
         load_precomputed_done_facts_filters(
-            time_from, time_to, repositories, participants, labels, jira,
+            time_from, time_to, repositories, participants, labels,
             default_branches, exclude_inactive, release_settings, pdb),
     ]
     if exclude_inactive:
