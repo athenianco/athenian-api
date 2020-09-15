@@ -22,10 +22,10 @@ from athenian.api.controllers.features.metric_calculator import df_from_dataclas
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
-    load_precomputed_done_facts_filters, load_precomputed_done_facts_reponums, \
-    store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
-    store_precomputed_done_facts
+from athenian.api.controllers.miners.github.precomputed_prs import \
+    load_merged_unreleased_pull_request_facts, load_precomputed_done_facts_filters, \
+    load_precomputed_done_facts_reponums, store_merged_unreleased_pull_request_facts, \
+    store_open_pull_request_facts, store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release import dummy_releases_df, \
@@ -536,9 +536,9 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
             prs, branches, default_branches, rel_time_from, now, release_settings, mdb, pdb, cache)
         tasks = [
             load_commit_dags(releases, mdb, pdb, cache),
-            discover_unreleased_prs(
-                prs_df, releases[Release.published_at.key].nonemax(), matched_bys,
-                default_branches, release_settings, pdb),
+            load_merged_unreleased_pull_request_facts(
+                prs_df, releases[Release.published_at.key].nonemax(), LabelFilter.empty(),
+                matched_bys, default_branches, release_settings, pdb),
         ]
         dags, unreleased = await asyncio.gather(*tasks, return_exceptions=True)
         for r in (dags, unreleased):

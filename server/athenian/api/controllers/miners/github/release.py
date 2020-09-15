@@ -21,10 +21,10 @@ from sqlalchemy.sql.elements import BinaryExpression, ClauseElement
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
 from athenian.api.cache import cached
-from athenian.api.controllers.miners.filters import JIRAFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.jira import generate_jira_prs_query
-from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
-    load_precomputed_pr_releases, update_unreleased_prs
+from athenian.api.controllers.miners.github.precomputed_prs import \
+    load_merged_unreleased_pull_request_facts, load_precomputed_pr_releases, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_accelerated import extract_first_parents, \
     extract_subdag, join_dags, mark_dag_access, mark_dag_parents, partition_dag, \
     searchsorted_inrange
@@ -620,9 +620,9 @@ async def map_prs_to_releases(prs: pd.DataFrame,
         unreleased_prs_event.set()
         return pr_releases, {}, unreleased_prs_event
     tasks = [
-        discover_unreleased_prs(
+        load_merged_unreleased_pull_request_facts(
             prs, nonemax(releases[Release.published_at.key].nonemax(), time_to),
-            matched_bys, default_branches, release_settings, pdb),
+            LabelFilter.empty(), matched_bys, default_branches, release_settings, pdb),
         load_precomputed_pr_releases(
             prs.index, time_to, matched_bys, default_branches, release_settings, pdb, cache),
     ]

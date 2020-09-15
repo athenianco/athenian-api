@@ -11,6 +11,7 @@ import tempfile
 import time
 from typing import Dict, List, Optional, Union
 
+from databases import Database
 try:
     import nest_asyncio
 except ImportError:
@@ -346,25 +347,43 @@ def precomputed_db() -> str:
 
 
 @pytest.fixture(scope="function")
-async def mdb(metadata_db, loop):
+async def mdb(metadata_db, loop, request):
     db = ParallelDatabase(metadata_db)
     await db.connect()
+
+    def shutdown():
+        loop.run_until_complete(db.disconnect())
+
+    request.addfinalizer(shutdown)
     return db
 
 
 @pytest.fixture(scope="function")
-async def sdb(state_db, loop):
+async def sdb(state_db, loop, request):
     db = ParallelDatabase(state_db)
     await db.connect()
+
+    def shutdown():
+        loop.run_until_complete(db.disconnect())
+
+    request.addfinalizer(shutdown)
     return db
 
 
 @pytest.fixture(scope="function")
-async def pdb(precomputed_db, loop):
-    db = ParallelDatabase(precomputed_db)
+async def pdb(precomputed_db, loop, request):
+    if precomputed_db.startswith("sqlite"):
+        db = Database(precomputed_db, force_rollback=True)
+    else:
+        db = ParallelDatabase(precomputed_db)
     db.metrics = {
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
     }
     await db.connect()
+
+    def shutdown():
+        loop.run_until_complete(db.disconnect())
+
+    request.addfinalizer(shutdown)
     return db

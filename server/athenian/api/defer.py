@@ -1,4 +1,4 @@
-from asyncio import Condition, ensure_future, shield
+from asyncio import Condition, ensure_future, Event, shield, wait
 from contextvars import ContextVar
 import logging
 from typing import Coroutine
@@ -70,3 +70,15 @@ def with_defer(func):
 
     wraps(wrapped_with_defer, func)
     return wrapped_with_defer
+
+
+class AllEvents:
+    """Wait for multiple asyncio Event-s to happen."""
+
+    def __init__(self, *events: Event):
+        """Register several events to wait."""
+        self.events = events
+
+    async def wait(self) -> None:
+        """Block until all the events happen."""
+        await wait([e.wait() for e in self.events])

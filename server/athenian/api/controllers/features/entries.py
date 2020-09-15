@@ -19,6 +19,8 @@ from athenian.api.controllers.features.github.pull_request_metrics import \
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
 from athenian.api.controllers.features.github.release_metrics import \
     metric_calculators as release_metric_calculators, ReleaseBinnedMetricCalculator
+from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
+    fetch_pull_request_facts_unfresh
 from athenian.api.controllers.features.histogram import Histogram, Scale
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import df_from_dataclasses
@@ -34,7 +36,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner
 from athenian.api.controllers.miners.github.release import mine_releases
-from athenian.api.controllers.miners.types import Participants, PullRequestFacts
+from athenian.api.controllers.miners.types import Participants, ParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
@@ -42,33 +44,7 @@ from athenian.api.models.metadata.github import PullRequest, PushCommit
 from athenian.api.tracing import sentry_span
 
 
-unfresh_mode_threshold = 20000
-
-
-async def _fetch_pull_request_facts_github(done_facts: Dict[str, PullRequestFacts],
-                                           time_from: datetime,
-                                           time_to: datetime,
-                                           repositories: Set[str],
-                                           participants: Participants,
-                                           labels: LabelFilter,
-                                           jira: JIRAFilter,
-                                           exclude_inactive: bool,
-                                           release_settings: Dict[str, ReleaseMatchSetting],
-                                           mdb: Database,
-                                           pdb: Database,
-                                           cache: Optional[aiomcache.Client],
-                                           ) -> List[PullRequestFacts]:
-    """
-    Load the missing facts about merged unreleased and open PRs from pdb instead of querying \
-    the most up to date information from mdb.
-
-    The major complexity here is to comply to all the filters.
-    """
-    """
-    PullRequestMiner.fetch_prs(
-        time_from, time_to, repositories, participants, jira, 0, None, mdb)
-    """
-    raise NotImplementedError
+unfresh_mode_threshold = 2000
 
 
 @sentry_span
@@ -127,10 +103,11 @@ async def calc_pull_request_facts_github(time_from: datetime,
         precomputed_facts = blacklist = await precomputed_tasks[0]
     add_pdb_hits(pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
 
-    if len(precomputed_facts) > unfresh_mode_threshold and not fresh:
-        return await _fetch_pull_request_facts_github(
+    if len(precomputed_facts) > unfresh_mode_threshold and not fresh and \
+            not (participants.keys() - {ParticipationKind.AUTHOR, ParticipationKind.MERGER}):
+        return await fetch_pull_request_facts_unfresh(
             precomputed_facts, time_from, time_to, repositories, participants, labels, jira,
-            exclude_inactive, release_settings, mdb, pdb, cache)
+            exclude_inactive, branches, default_branches, release_settings, mdb, pdb, cache)
 
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
