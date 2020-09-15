@@ -21,6 +21,8 @@ from sqlalchemy.sql.elements import BinaryExpression, ClauseElement
 from athenian.api import metadata
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
 from athenian.api.cache import cached
+from athenian.api.controllers.miners.filters import JIRAFilter
+from athenian.api.controllers.miners.github.jira import generate_jira_prs_query
 from athenian.api.controllers.miners.github.precomputed_prs import discover_unreleased_prs, \
     load_precomputed_pr_releases, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_accelerated import extract_first_parents, \
@@ -995,6 +997,7 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
                                  time_boundary: datetime,
                                  authors: Collection[str],
                                  mergers: Collection[str],
+                                 jira: JIRAFilter,
                                  limit: int,
                                  pr_blacklist: Optional[BinaryExpression],
                                  mdb: databases.Database,
@@ -1018,7 +1021,10 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
         filters.append(PullRequest.merged_by_login.in_any_values(mergers))
     if pr_blacklist is not None:
         filters.append(pr_blacklist)
-    query = select([PullRequest]).where(and_(*filters))
+    if not jira:
+        query = select([PullRequest]).where(and_(*filters))
+    else:
+        query = await generate_jira_prs_query(filters, jira, mdb)
     if limit > 0:
         query = query.order_by(desc(PullRequest.updated_at)).limit(limit)
     return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
@@ -1058,6 +1064,7 @@ async def map_releases_to_prs(repos: Collection[str],
                               time_to: datetime,
                               authors: Collection[str],
                               mergers: Collection[str],
+                              jira: JIRAFilter,
                               release_settings: Dict[str, ReleaseMatchSetting],
                               limit: int,
                               mdb: databases.Database,
@@ -1126,7 +1133,7 @@ async def map_releases_to_prs(repos: Collection[str],
                             PullRequest.merge_commit_sha.in_any_values(observed_commits),
                         ))
         prs = await _find_old_released_prs(
-            clauses, time_from, authors, mergers, limit, pr_blacklist, mdb)
+            clauses, time_from, authors, mergers, jira, limit, pr_blacklist, mdb)
         return prs, dags
 
     async def maybe_load_all_releases():

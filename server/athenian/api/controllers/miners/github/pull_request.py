@@ -2,7 +2,6 @@ import asyncio
 from dataclasses import dataclass, fields as dataclass_fields
 from datetime import date, datetime, timezone
 from enum import Enum
-from itertools import chain
 import logging
 import pickle
 from typing import Collection, Dict, Generator, Iterable, Iterator, List, Optional, Sequence, \
@@ -23,8 +22,9 @@ from athenian.api import metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.jira import generate_jira_prs_query
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    discover_unreleased_prs, load_inactive_merged_unreleased_prs, load_open_pull_request_facts
+    discover_inactive_merged_unreleased_prs, discover_unreleased_prs, load_open_pull_request_facts
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
@@ -196,14 +196,14 @@ class PullRequestMiner:
                 repositories, branches, default_branches, time_from, time_to,
                 participants.get(ParticipationKind.AUTHOR, []),
                 participants.get(ParticipationKind.MERGER, []),
-                release_settings, limit, mdb, pdb, cache, pr_blacklist, truncate),
+                jira, release_settings, limit, mdb, pdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
                 time_from, time_to, repositories, participants, jira, limit, pr_blacklist, mdb),
         ]
         if not exclude_inactive:
-            tasks.append(load_inactive_merged_unreleased_prs(
-                time_from, time_to, repositories, participants, labels, default_branches,
-                release_settings, mdb, pdb, cache))
+            tasks.append(cls._fetch_inactive_merged_unreleased_prs(
+                time_from, time_to, repositories, participants, labels, jira, default_branches,
+                release_settings, limit, mdb, pdb, cache))
         else:
             async def dummy_unreleased():
                 return pd.DataFrame()
@@ -213,12 +213,7 @@ class PullRequestMiner:
             if isinstance(r, Exception):
                 raise r from None
         released_prs, releases, matched_bys, dags = released
-        if jira:
-            extra_prs = pd.concat([released_prs, unreleased], copy=False)
-            extra_prs = await cls.filter_jira(extra_prs.index.values, jira, mdb)
-            prs = pd.concat([prs, extra_prs], copy=False)
-        else:
-            prs = pd.concat([prs, released_prs, unreleased], copy=False)
+        prs = pd.concat([prs, released_prs, unreleased], copy=False)
         prs = prs[~prs.index.duplicated()]
         if 0 < limit < len(prs):
             prs = prs.take(np.argpartition(
@@ -552,7 +547,6 @@ class PullRequestMiner:
         so the caller is responsible for fetching PR labels and filtering by them afterward.
         Besides, we cannot filter by participation roles different from AUTHOR and MERGER.
         """
-        postgres = mdb.url.dialect in ("postgres", "postgresql")
         filters = [
             sql.or_(PullRequest.closed_at.is_(None), PullRequest.closed_at >= time_from),
             PullRequest.created_at < time_to,
@@ -577,11 +571,37 @@ class PullRequestMiner:
             sql_columns = [PullRequest] if columns is PullRequest else columns
             query = sql.select(sql_columns).where(sql.and_(*filters))
         else:
-            query = await cls._generate_jira_prs_query(
-                filters, jira, postgres, mdb, columns=columns)
+            query = await generate_jira_prs_query(filters, jira, mdb, columns=columns)
         if limit > 0:
             query = query.order_by(sql.desc(PullRequest.updated_at)).limit(limit)
         return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
+
+    @classmethod
+    @sentry_span
+    async def _fetch_inactive_merged_unreleased_prs(
+            cls,
+            time_from: datetime,
+            time_to: datetime,
+            repos: Collection[str],
+            participants: Participants,
+            labels: LabelFilter,
+            jira: JIRAFilter,
+            default_branches: Dict[str, str],
+            release_settings: Dict[str, ReleaseMatchSetting],
+            limit: int,
+            mdb: databases.Database,
+            pdb: databases.Database,
+            cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+        node_ids = await discover_inactive_merged_unreleased_prs(
+            time_from, time_to, repos, participants, labels, default_branches, release_settings,
+            pdb, cache)
+        if limit > 0:
+            node_ids = node_ids[:limit]
+        if not jira:
+            return await read_sql_query(sql.select([PullRequest])
+                                        .where(PullRequest.node_id.in_(node_ids)),
+                                        mdb, PullRequest, index=PullRequest.node_id.key)
+        return await cls.filter_jira(node_ids, jira, mdb)
 
     @classmethod
     @sentry_span
@@ -592,93 +612,9 @@ class PullRequestMiner:
                           columns=PullRequest) -> pd.DataFrame:
         """Filter PRs by JIRA properties."""
         assert jira
-        postgres = mdb.url.dialect in ("postgres", "postgresql")
         filters = [PullRequest.node_id.in_(pr_node_ids)]
-        query = await cls._generate_jira_prs_query(filters, jira, postgres, mdb, columns=columns)
+        query = await generate_jira_prs_query(filters, jira, mdb, columns=columns)
         return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
-
-    @staticmethod
-    async def _generate_jira_prs_query(filters: list,
-                                       jira: JIRAFilter,
-                                       postgres: bool,
-                                       mdb: databases.Database,
-                                       columns=PullRequest) -> sql.Select:
-        if columns is PullRequest:
-            columns = [PullRequest]
-        _map = aliased(NodePullRequestJiraIssues, name="m")
-        _issue = aliased(Issue, name="j")
-        if jira.labels:
-            all_labels = set()
-            for label in chain(jira.labels.include, jira.labels.exclude):
-                for part in label.split(","):
-                    all_labels.add(part.strip())
-            rows = await mdb.fetch_all(sql.select([Component.id, Component.name]).where(sql.and_(
-                sql.func.lower(Component.name).in_(all_labels),
-                Component.acc_id == jira.account,
-            )))
-            components = {r[1].lower(): r[0] for r in rows}
-        if postgres:
-            if jira.labels.include:
-                singles, multiples = LabelFilter.split(jira.labels.include)
-                or_items = []
-                if singles:
-                    or_items.append(_issue.labels.overlap(singles))
-                or_items.extend(_issue.labels.contains(m) for m in multiples)
-                if components:
-                    if singles:
-                        cinc = [components[s] for s in singles if s in components]
-                        if cinc:
-                            or_items.append(_issue.components.overlap(cinc))
-                    if multiples:
-                        cinc = [[components[c] for c in g if c in components] for g in multiples]
-                        or_items.extend(_issue.components.contains(g) for g in cinc if g)
-                filters.append(sql.or_(*or_items))
-            if jira.labels.exclude:
-                filters.append(sql.not_(_issue.labels.overlap(jira.labels.exclude)))
-                if components:
-                    filters.append(sql.not_(_issue.components.overlap(
-                        [components[s] for s in jira.labels.exclude if s in components])))
-        else:
-            # neither 100% correct nor efficient, but enough for local development
-            if jira.labels.include:
-                or_items = []
-                singles, multiples = LabelFilter.split(jira.labels.include)
-                or_items.extend(_issue.labels.like("%%%s%%" % s) for s in singles)
-                or_items.extend(
-                    sql.and_(*(_issue.labels.like("%%%s%%" % s) for s in g)) for g in multiples)
-                if components:
-                    if singles:
-                        or_items.extend(
-                            _issue.components.like("%%%s%%" % components[s])
-                            for s in singles if s in components)
-                    if multiples:
-                        or_items.extend(
-                            sql.and_(*(_issue.components.like("%%%s%%" % components[s]) for s in g
-                                       if s in components))
-                            for g in multiples)
-                filters.append(sql.or_(*or_items))
-            if jira.labels.exclude:
-                filters.append(sql.not_(sql.or_(*(
-                    _issue.labels.like("%%%s%%" % s) for s in jira.labels.exclude))))
-                if components:
-                    filters.append(sql.not_(sql.or_(*(
-                        _issue.components.like("%%%s%%" % components[s])
-                        for s in jira.labels.exclude if s in components))))
-        if jira.issue_types:
-            filters.append(sql.func.lower(_issue.type).in_(jira.issue_types))
-        if not jira.epics:
-            return sql.select(columns).select_from(sql.join(
-                PullRequest, sql.join(_map, _issue, _map.jira_id == _issue.id),
-                PullRequest.node_id == _map.node_id,
-            )).where(sql.and_(*filters))
-        _issue_epic = aliased(Issue, name="e")
-        filters.append(_issue_epic.key.in_(jira.epics))
-        return sql.select(columns).select_from(sql.join(
-            PullRequest, sql.join(
-                _map, sql.join(_issue, _issue_epic, _issue.epic_id == _issue_epic.id),
-                _map.jira_id == _issue.id),
-            PullRequest.node_id == _map.node_id,
-        )).where(sql.and_(*filters))
 
     @staticmethod
     def _check_participants_compatibility(cached_participants: Participants,

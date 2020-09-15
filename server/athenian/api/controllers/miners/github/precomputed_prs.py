@@ -10,14 +10,13 @@ from dateutil.rrule import DAILY, rrule
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, insert, join, not_, or_, select, update
+from sqlalchemy import and_, desc, insert, join, not_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
-from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, Participants, \
@@ -192,7 +191,6 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
                                               repos: Collection[str],
                                               participants: Participants,
                                               labels: LabelFilter,
-                                              jira: JIRAFilter,
                                               default_branches: Dict[str, str],
                                               exclude_inactive: bool,
                                               release_settings: Dict[str, ReleaseMatchSetting],
@@ -201,7 +199,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
     """
     Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
 
-    Query version.
+    Query version. JIRA must be filtered separately.
     """
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     ghprt = GitHubDonePullRequestFacts
@@ -214,7 +212,6 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
         _build_participants_filters(participants, filters, selected, postgres)
     if labels:
         _build_labels_filters(GitHubDonePullRequestFacts, labels, filters, selected, postgres)
-    # FIXME(vmarkovtsev): add JIRA filtering
     if exclude_inactive:
         # timezones: date_from and date_to may be not exactly 00:00
         date_from_day = datetime.combine(
@@ -686,17 +683,16 @@ async def store_merged_unreleased_pull_request_facts(
     ),
     refresh_on_access=True,
 )
-async def load_inactive_merged_unreleased_prs(time_from: datetime,
-                                              time_to: datetime,
-                                              repos: Collection[str],
-                                              participants: Participants,
-                                              labels: LabelFilter,
-                                              default_branches: Dict[str, str],
-                                              release_settings: Dict[str, ReleaseMatchSetting],
-                                              mdb: databases.Database,
-                                              pdb: databases.Database,
-                                              cache: Optional[aiomcache.Client],
-                                              ) -> pd.DataFrame:
+async def discover_inactive_merged_unreleased_prs(time_from: datetime,
+                                                  time_to: datetime,
+                                                  repos: Collection[str],
+                                                  participants: Participants,
+                                                  labels: LabelFilter,
+                                                  default_branches: Dict[str, str],
+                                                  release_settings: Dict[str, ReleaseMatchSetting],
+                                                  pdb: databases.Database,
+                                                  cache: Optional[aiomcache.Client],
+                                                  ) -> List[str]:
     """Discover PRs which were merged before `time_from` and still not released."""
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     selected = [GitHubMergedPullRequestFacts.pr_node_id,
@@ -722,7 +718,10 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
         GitHubDonePullRequestFacts.pr_created_at < time_from,
     ), isouter=True)
     with sentry_sdk.start_span(op="load_inactive_merged_unreleased_prs/fetch"):
-        rows = await pdb.fetch_all(select(selected).select_from(body).where(and_(*filters)))
+        rows = await pdb.fetch_all(select(selected)
+                                   .select_from(body)
+                                   .where(and_(*filters))
+                                   .order_by(desc(GitHubMergedPullRequestFacts.merged_at)))
     prefix = PREFIXES["github"]
     ambiguous = {ReleaseMatch.tag.name: set(), ReleaseMatch.branch.name: set()}
     node_ids = []
@@ -737,10 +736,7 @@ async def load_inactive_merged_unreleased_prs(time_from: datetime,
             continue
         node_ids.append(row[0])
     add_pdb_hits(pdb, "inactive_merged_unreleased", len(node_ids))
-    return await read_sql_query(select([PullRequest])
-                                .where(PullRequest.node_id.in_(node_ids))
-                                .order_by(PullRequest.node_id),
-                                mdb, PullRequest, index=PullRequest.node_id.key)
+    return node_ids
 
 
 @sentry_span

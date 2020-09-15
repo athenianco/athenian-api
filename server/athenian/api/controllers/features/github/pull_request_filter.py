@@ -393,7 +393,7 @@ async def _filter_pull_requests(properties: Set[Property],
             default_branches, exclude_inactive, release_settings, mdb, pdb, cache,
             truncate=False, limit=limit),
         load_precomputed_done_facts_filters(
-            time_from, time_to, repos, participants, labels, jira, default_branches,
+            time_from, time_to, repos, participants, labels, default_branches,
             exclude_inactive, release_settings, pdb),
     )
     pr_miner, facts = await asyncio.gather(*tasks, return_exceptions=True)
