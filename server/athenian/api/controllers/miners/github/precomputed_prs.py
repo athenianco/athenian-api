@@ -154,17 +154,30 @@ def _build_labels_filters(model: Base,
                           postgres: bool) -> None:
     if postgres:
         if labels.include:
-            filters.append(model.labels.has_any(labels.include))
+            singles, multiples = LabelFilter.split(labels.include)
+            or_items = []
+            if singles:
+                or_items.append(model.labels.has_any(singles))
+            or_items.extend(model.labels.contains(m) for m in multiples)
+            filters.append(or_(*or_items))
         if labels.exclude:
             filters.append(not_(model.labels.has_any(labels.exclude)))
     else:
         selected.append(model.labels)
 
 
-def _labels_are_incompatible(filter: LabelFilter, labels: Iterable[str]) -> bool:
-    return ((filter.include and not filter.include.intersection(labels))
-            or
-            (filter.exclude and filter.exclude.intersection(labels)))
+def _labels_are_compatible(include_singles: Set[str],
+                           include_multiples: List[Set[str]],
+                           exclude: Set[str],
+                           labels: Iterable[str]) -> bool:
+    labels = set(labels)
+    return ((include_singles.intersection(labels)
+             or
+             any(m.issubset(labels) for m in include_multiples)
+             or
+             (not include_singles and not include_multiples))
+            and
+            (not exclude or not exclude.intersection(labels)))
 
 
 def _check_participants(row: Mapping, participants: Participants) -> bool:
@@ -230,6 +243,10 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
     prefix = PREFIXES["github"]
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
+    if labels and not postgres:
+        include_singles, include_multiples = LabelFilter.split(labels.include)
+        include_singles = set(include_singles)
+        include_multiples = [set(m) for m in include_multiples]
     for row in rows:
         dump = _check_release_match(
             row[1], row[2], release_settings, default_branches, prefix, result, ambiguous)
@@ -238,7 +255,8 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
         if not postgres:
             if len(participants) > 0 and not _check_participants(row, participants):
                 continue
-            if labels and _labels_are_incompatible(labels, row[ghprt.labels.key]):
+            if labels and not _labels_are_compatible(include_singles, include_multiples,
+                                                     labels.exclude, row[ghprt.labels.key]):
                 continue
             if exclude_inactive:
                 activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -474,13 +492,14 @@ def _flatten_set(s: set) -> Optional[Any]:
 
 
 @sentry_span
-async def discover_unreleased_prs(prs: pd.DataFrame,
-                                  time_to: datetime,
-                                  matched_bys: Dict[str, ReleaseMatch],
-                                  default_branches: Dict[str, str],
-                                  release_settings: Dict[str, ReleaseMatchSetting],
-                                  pdb: databases.Database,
-                                  ) -> Dict[str, Optional[PullRequestFacts]]:
+async def load_merged_unreleased_pull_request_facts(
+        prs: pd.DataFrame,
+        time_to: datetime,
+        labels: LabelFilter,
+        matched_bys: Dict[str, ReleaseMatch],
+        default_branches: Dict[str, str],
+        release_settings: Dict[str, ReleaseMatchSetting],
+        pdb: databases.Database) -> Dict[str, Optional[PullRequestFacts]]:
     """
     Load the mapping from PR node identifiers which we are sure are not released in one of \
     `releases` to the `pickle`-d facts.
@@ -492,6 +511,8 @@ async def discover_unreleased_prs(prs: pd.DataFrame,
     assert time_to.tzinfo is not None
     filters = []
     ghmprf = GitHubMergedPullRequestFacts
+    selected = [ghmprf.pr_node_id, ghmprf.data]
+    postgres = pdb.url.dialect in ("postgres", "postgresql")
     for repo in prs[PullRequest.repository_full_name.key].unique():
         if (release_match := _extract_release_match(
                 repo, matched_bys, default_branches, release_settings)) is None:
@@ -500,15 +521,24 @@ async def discover_unreleased_prs(prs: pd.DataFrame,
         filters.append(and_(ghmprf.repository_full_name == repo,
                             ghmprf.release_match == release_match))
     default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
-    with sentry_sdk.start_span(op="discover_unreleased_prs/fetch"):
-        rows = await pdb.fetch_all(
-            select([ghmprf.pr_node_id,
-                    ghmprf.data])
-            .where(and_(ghmprf.pr_node_id.in_(prs.index),
-                        ghmprf.checked_until >= time_to,
-                        ghmprf.format_version == default_version,
-                        or_(*filters))))
-    return {r[0]: (pickle.loads(r[1]) if r[1] is not None else None) for r in rows}
+    filters = [
+        ghmprf.pr_node_id.in_(prs.index),
+        ghmprf.checked_until >= time_to,
+        ghmprf.format_version == default_version,
+        or_(*filters),
+    ]
+    if labels:
+        _build_labels_filters(GitHubMergedPullRequestFacts, labels, filters, selected, postgres)
+    query = select(selected).where(and_(*filters))
+    with sentry_sdk.start_span(op="load_merged_unreleased_pr_facts/fetch"):
+        rows = await pdb.fetch_all(query)
+    if postgres or not labels:
+        return {r[0]: (pickle.loads(r[1]) if r[1] is not None else None) for r in rows}
+    include_singles, include_multiples = LabelFilter.split(labels.include)
+    include_singles = set(include_singles)
+    include_multiples = [set(m) for m in include_multiples]
+    return {r[0]: (pickle.loads(r[1]) if r[1] is not None else None) for r in rows
+            if _labels_are_compatible(include_singles, include_multiples, labels.exclude, r[2])}
 
 
 def _extract_release_match(repo: str,
@@ -550,8 +580,11 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
     assert time_to.tzinfo is not None
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     values = []
-    release_times = dict(zip(released_prs.index.values,
-                             released_prs[Release.published_at.key] - timedelta(minutes=1)))
+    if not released_prs.empty:
+        release_times = dict(zip(released_prs.index.values,
+                                 released_prs[Release.published_at.key] - timedelta(minutes=1)))
+    else:
+        release_times = {}
     with sentry_sdk.start_span(op="update_unreleased_prs/generate"):
         for repo, repo_prs in merged_prs.groupby(PullRequest.repository_full_name.key, sort=False):
             if (release_match := _extract_release_match(
@@ -692,7 +725,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   release_settings: Dict[str, ReleaseMatchSetting],
                                                   pdb: databases.Database,
                                                   cache: Optional[aiomcache.Client],
-                                                  ) -> List[str]:
+                                                  ) -> Tuple[List[str], List[str]]:
     """Discover PRs which were merged before `time_from` and still not released."""
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     selected = [GitHubMergedPullRequestFacts.pr_node_id,
@@ -725,18 +758,25 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
     prefix = PREFIXES["github"]
     ambiguous = {ReleaseMatch.tag.name: set(), ReleaseMatch.branch.name: set()}
     node_ids = []
+    repos = []
+    if labels and not postgres:
+        include_singles, include_multiples = LabelFilter.split(labels.include)
+        include_singles = set(include_singles)
+        include_multiples = [set(m) for m in include_multiples]
     for row in rows:
         dump = _check_release_match(
             row[1], row[2], release_settings, default_branches, prefix, "whatever", ambiguous)
         if dump is None:
             continue
         # we do not care about the exact release match
-        if labels and not postgres and _labels_are_incompatible(
-                labels, row[GitHubMergedPullRequestFacts.labels.key]):
+        if labels and not postgres and not _labels_are_compatible(
+                include_singles, include_multiples, labels.exclude,
+                row[GitHubMergedPullRequestFacts.labels.key]):
             continue
         node_ids.append(row[0])
+        repos.append(row[1])
     add_pdb_hits(pdb, "inactive_merged_unreleased", len(node_ids))
-    return node_ids
+    return node_ids, repos
 
 
 @sentry_span
@@ -769,6 +809,27 @@ async def load_open_pull_request_facts(prs: pd.DataFrame,
         node_id = row[0]
         if node_id in passed_node_ids:
             facts[node_id] = pickle.loads(row[2])
+    return facts
+
+
+@sentry_span
+async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
+                                               pdb: databases.Database,
+                                               ) -> Dict[str, PullRequestFacts]:
+    """
+    Fetch precomputed facts about the open PRs from the DataFrame.
+
+    We don't filter PRs by the last update here.
+    """
+    ghoprf = GitHubOpenPullRequestFacts
+    default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
+    rows = await pdb.fetch_all(
+        select([ghoprf.pr_node_id, ghoprf.data])
+        .where(and_(ghoprf.pr_node_id.in_(prs),
+                    ghoprf.format_version == default_version)))
+    if not rows:
+        return {}
+    facts = {row[0].rstrip(): pickle.loads(row[1]) for row in rows}
     return facts
 
 

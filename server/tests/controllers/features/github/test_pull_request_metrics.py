@@ -375,10 +375,10 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     args[7] = False
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     await wait_deferred()
-    assert metrics.value == 71
+    assert metrics.value == 70
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     await wait_deferred()
-    assert metrics.value == 71
+    assert metrics.value == 70
     args[7] = True
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     assert metrics.value == 71

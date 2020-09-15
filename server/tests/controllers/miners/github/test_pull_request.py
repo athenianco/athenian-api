@@ -12,7 +12,7 @@ import pytest
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    discover_unreleased_prs, store_merged_unreleased_pull_request_facts, \
+    load_merged_unreleased_pull_request_facts, store_merged_unreleased_pull_request_facts, \
     store_open_pull_request_facts
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
@@ -805,8 +805,9 @@ async def test_pr_miner_unreleased_facts(
     assert len(open_prs_and_facts) == 21
     assert len(merged_unreleased_prs_and_facts) == 11
     assert len(force_push_dropped) == 1
-    discovered = await discover_unreleased_prs(
-        miner._dfs.prs, time_to, matched_bys, default_branches, release_match_setting_tag, pdb)
+    discovered = await load_merged_unreleased_pull_request_facts(
+        miner._dfs.prs, time_to, LabelFilter.empty(), matched_bys, default_branches,
+        release_match_setting_tag, pdb)
     assert {pr[PullRequest.node_id.key] for pr, _ in merged_unreleased_prs_and_facts} == \
         set(discovered)
     await store_open_pull_request_facts(open_prs_and_facts, pdb)

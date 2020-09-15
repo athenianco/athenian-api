@@ -24,13 +24,15 @@ from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.jira import generate_jira_prs_query
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    discover_inactive_merged_unreleased_prs, discover_unreleased_prs, load_open_pull_request_facts
+    discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
+    load_open_pull_request_facts, update_unreleased_prs
 from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
     map_releases_to_prs
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import MinedPullRequest, nonemax, nonemin, \
     Participants, ParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.defer import AllEvents, defer
 from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, PullRequest, \
     PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
     PullRequestReviewComment, PullRequestReviewRequest, Release
@@ -198,7 +200,8 @@ class PullRequestMiner:
                 participants.get(ParticipationKind.MERGER, []),
                 jira, release_settings, limit, mdb, pdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
-                time_from, time_to, repositories, participants, jira, limit, pr_blacklist, mdb),
+                time_from, time_to, repositories, participants, jira, limit, exclude_inactive,
+                pr_blacklist, mdb),
         ]
         if not exclude_inactive:
             tasks.append(cls._fetch_inactive_merged_unreleased_prs(
@@ -219,8 +222,6 @@ class PullRequestMiner:
             prs = prs.take(np.argpartition(
                 prs[PullRequest.updated_at.key].values, len(prs) - limit)[len(prs) - limit:])
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
-        if truncate:
-            cls._truncate_timestamps(prs, time_to)
 
         tasks = [
             # bypass the useless inner caching by calling _mine_by_ids directly
@@ -324,6 +325,7 @@ class PullRequestMiner:
         node_ids = prs.index if len(prs) > 0 else set()
         facts = {}  # precomputed PullRequestFacts about merged unreleased PRs
         unreleased_prs_event: asyncio.Event = None
+        merged_unreleased_indexes = []
 
         @sentry_span
         async def fetch_reviews():
@@ -366,7 +368,9 @@ class PullRequestMiner:
         @sentry_span
         async def map_releases():
             if truncate:
-                merged_mask = prs[PullRequest.merged_at.key] <= time_to
+                merged_mask = (prs[PullRequest.merged_at.key] < time_to).values
+                nonlocal merged_unreleased_indexes
+                merged_unreleased_indexes = np.where(prs[PullRequest.merged_at.key] >= time_to)[0]
             else:
                 merged_mask = prs[PullRequest.merged_at.key].notnull()
             merged_mask &= ~prs.index.isin(unreleased)
@@ -374,10 +378,10 @@ class PullRequestMiner:
             subtasks = [map_prs_to_releases(
                 merged_prs, releases, matched_bys, branches, default_branches, time_to,
                 dags, release_settings, mdb, pdb, cache),
-                discover_unreleased_prs(
+                load_merged_unreleased_pull_request_facts(
                     prs.take(np.where(~merged_mask)[0]),
                     nonemax(releases[Release.published_at.key].nonemax(), time_to),
-                    matched_bys, default_branches, release_settings, pdb)]
+                    LabelFilter.empty(), matched_bys, default_branches, release_settings, pdb)]
             df_facts, other_facts = await asyncio.gather(*subtasks, return_exceptions=True)
             for r in (df_facts, other_facts):
                 if isinstance(r, Exception):
@@ -457,7 +461,28 @@ class PullRequestMiner:
         for df in dfs:
             if isinstance(df, Exception):
                 raise df from None
-        return PRDataFrames(prs, *dfs), facts, unreleased_prs_event
+        dfs = PRDataFrames(prs, *dfs)
+        if len(merged_unreleased_indexes):
+            # if we truncate and there are PRs merged after `time_to`
+            merged_unreleased_prs = prs.take(merged_unreleased_indexes)
+            label_matches = np.in1d(dfs.labels.index.get_level_values(0).values.astype("U"),
+                                    merged_unreleased_prs.index.values.astype("U"))
+            labels = {}
+            for k, v in zip(dfs.labels.index.values[label_matches],
+                            dfs.labels[PullRequestLabel.name.key].values[label_matches]):
+                try:
+                    labels[k].append(v)
+                except KeyError:
+                    labels[k] = [v]
+            other_unreleased_prs_event = asyncio.Event()
+            combined_unreleased_prs_event = AllEvents(
+                unreleased_prs_event, other_unreleased_prs_event)
+            unreleased_prs_event = combined_unreleased_prs_event
+            await defer(update_unreleased_prs(
+                merged_unreleased_prs, pd.DataFrame(), time_to, labels, matched_bys,
+                default_branches, release_settings, pdb, other_unreleased_prs_event),
+                "update_unreleased_prs/truncate(%d)" % len(merged_unreleased_indexes))
+        return dfs, facts, unreleased_prs_event
 
     @classmethod
     @sentry_span
@@ -523,9 +548,6 @@ class PullRequestMiner:
             default_branches, exclude_inactive, release_settings, limit, mdb, pdb, cache,
             pr_blacklist=pr_blacklist, truncate=truncate)
         cls._truncate_prs(dfs, time_from, time_to)
-        if truncate:
-            for df in dfs:
-                cls._truncate_timestamps(df, time_to)
         return cls(dfs), facts, matched_bys, event
 
     @classmethod
@@ -537,6 +559,7 @@ class PullRequestMiner:
                         participants: Participants,
                         jira: JIRAFilter,
                         limit: int,
+                        exclude_inactive: bool,
                         pr_blacklist: Optional[BinaryExpression],
                         mdb: databases.Database,
                         columns=PullRequest) -> pd.DataFrame:
@@ -553,6 +576,9 @@ class PullRequestMiner:
             PullRequest.hidden.is_(False),
             PullRequest.repository_full_name.in_(repositories),
         ]
+        if exclude_inactive:
+            # this does not provide 100% guarantee, we need to properly filter later
+            filters.append(PullRequest.updated_at >= time_from)
         if pr_blacklist is not None:
             filters.append(pr_blacklist)
         if len(participants) == 1:
@@ -592,7 +618,7 @@ class PullRequestMiner:
             mdb: databases.Database,
             pdb: databases.Database,
             cache: Optional[aiomcache.Client]) -> pd.DataFrame:
-        node_ids = await discover_inactive_merged_unreleased_prs(
+        node_ids, _ = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, participants, labels, default_branches, release_settings,
             pdb, cache)
         if limit > 0:
@@ -843,17 +869,6 @@ class PullRequestMiner:
             dfs.prs[PullRequest.created_at.key] >= time_to)[0])
         to_remove = unreleased.union(unrejected.union(uncreated))
         cls._drop(dfs, to_remove)
-
-    @staticmethod
-    def _truncate_timestamps(df: pd.DataFrame, upto: datetime):
-        """Set all the timestamps after `upto` to NaT to avoid "future leakages"."""
-        for col in df.select_dtypes(include=[object]):
-            try:
-                df.loc[df[col] > upto, col] = pd.NaT
-            except TypeError:
-                continue
-        for col in df.select_dtypes(include=["datetime"]):
-            df.loc[df[col] > upto, col] = pd.NaT
 
     def __len__(self) -> int:
         """Return the number of loaded pull requests."""
