@@ -637,7 +637,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                     GitHubMergedPullRequestFacts.labels.key:
                         GitHubMergedPullRequestFacts.labels + sql.excluded.labels,
                     GitHubMergedPullRequestFacts.updated_at.key: sql.excluded.updated_at,
-
+                    GitHubMergedPullRequestFacts.data.key: GitHubMergedPullRequestFacts.data,
                 },
             )
         else:
