@@ -26,7 +26,7 @@ def main():
         columns = model.__table__.columns
         compilers = {}
         print("COPY public.%s (%s) FROM stdin;" % (
-            model.__tablename__, ", ".join([c.name for c in columns])))
+            model.__table__.fullname, ", ".join([c.name for c in columns])))
         for obj in session.query(model):
             vals = []
             for col in columns:
