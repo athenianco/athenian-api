@@ -6,8 +6,8 @@ import pandas as pd
 
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedMetricCalculator, Counter, CounterWithQuantiles, HistogramCalculator, \
-    HistogramCalculatorEnsemble, MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
+    BinnedMetricCalculator, Counter, HistogramCalculator, HistogramCalculatorEnsemble, \
+    MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.models.web import PullRequestMetricID
 
 
@@ -107,7 +107,7 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_WIP_COUNT)
-class WorkInProgressCounter(Counter):
+class WorkInProgressCounter(WithoutQuantilesMixin, Counter):
     """Count the number of PRs that were used to calculate PR_WIP_TIME \
     disregarding the quantiles."""
 
@@ -115,7 +115,7 @@ class WorkInProgressCounter(Counter):
 
 
 @register_metric(PullRequestMetricID.PR_WIP_COUNT_Q)
-class WorkInProgressCounterWithQuantiles(CounterWithQuantiles):
+class WorkInProgressCounterWithQuantiles(Counter):
     """Count the number of PRs that were used to calculate PR_WIP_TIME respecting the quantiles."""
 
     deps = (WorkInProgressTimeCalculator,)
@@ -165,7 +165,7 @@ class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_REVIEW_COUNT)
-class ReviewCounter(Counter):
+class ReviewCounter(WithoutQuantilesMixin, Counter):
     """Count the number of PRs that were used to calculate PR_REVIEW_TIME disregarding \
     the quantiles."""
 
@@ -173,7 +173,7 @@ class ReviewCounter(Counter):
 
 
 @register_metric(PullRequestMetricID.PR_REVIEW_COUNT_Q)
-class ReviewCounterWithQuantiles(CounterWithQuantiles):
+class ReviewCounterWithQuantiles(Counter):
     """Count the number of PRs that were used to calculate PR_REVIEW_TIME respecting \
     the quantiles."""
 
@@ -234,7 +234,7 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_MERGING_COUNT)
-class MergingCounter(Counter):
+class MergingCounter(WithoutQuantilesMixin, Counter):
     """Count the number of PRs that were used to calculate PR_MERGING_TIME disregarding \
     the quantiles."""
 
@@ -242,7 +242,7 @@ class MergingCounter(Counter):
 
 
 @register_metric(PullRequestMetricID.PR_MERGING_COUNT_Q)
-class MergingCounterWithQuantiles(CounterWithQuantiles):
+class MergingCounterWithQuantiles(Counter):
     """Count the number of PRs that were used to calculate PR_MERGING_TIME respecting \
     the quantiles."""
 
@@ -280,7 +280,7 @@ class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_RELEASE_COUNT)
-class ReleaseCounter(Counter):
+class ReleaseCounter(WithoutQuantilesMixin, Counter):
     """Count the number of PRs that were used to calculate PR_RELEASE_TIME disregarding \
     the quantiles."""
 
@@ -288,7 +288,7 @@ class ReleaseCounter(Counter):
 
 
 @register_metric(PullRequestMetricID.PR_RELEASE_COUNT_Q)
-class ReleaseCounterWithQuantiles(CounterWithQuantiles):
+class ReleaseCounterWithQuantiles(Counter):
     """Count the number of PRs that were used to calculate PR_RELEASE_TIME respecting \
     the quantiles."""
 
@@ -319,7 +319,7 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_COUNT)
-class LeadCounter(Counter):
+class LeadCounter(WithoutQuantilesMixin, Counter):
     """Count the number of PRs that were used to calculate PR_LEAD_TIME disregarding \
     the quantiles."""
 
@@ -327,7 +327,7 @@ class LeadCounter(Counter):
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_COUNT_Q)
-class LeadCounterWithQuantiles(CounterWithQuantiles):
+class LeadCounterWithQuantiles(Counter):
     """Count the number of PRs that were used to calculate PR_LEAD_TIME respecting \
     the quantiles."""
 
@@ -335,7 +335,7 @@ class LeadCounterWithQuantiles(CounterWithQuantiles):
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_TIME)
-class CycleTimeCalculator(MetricCalculator[timedelta]):
+class CycleTimeCalculator(WithoutQuantilesMixin, MetricCalculator[timedelta]):
     """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, and PR_RELEASE_TIME."""
 
     deps = (WorkInProgressTimeCalculator,
@@ -373,12 +373,9 @@ class CycleTimeCalculator(MetricCalculator[timedelta]):
             sumval[add_mask] += peek[add_mask]
         return sumval
 
-    def _cut_by_quantiles(self) -> np.ndarray:
-        return self._samples
-
 
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT)
-class CycleCounter(Counter):
+class CycleCounter(WithoutQuantilesMixin, Counter):
     """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, \
     or PR_RELEASE_TIME disregarding the quantiles."""
 
@@ -386,7 +383,7 @@ class CycleCounter(Counter):
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_COUNT_Q)
-class CycleCounterWithQuantiles(CounterWithQuantiles):
+class CycleCounterWithQuantiles(Counter):
     """Count unique PRs that were used to calculate PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, \
     or PR_RELEASE_TIME respecting the quantiles."""
 
@@ -436,7 +433,7 @@ class WaitFirstReviewTimeCalculator(AverageMetricCalculator[timedelta]):
 
 
 @register_metric(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT)
-class WaitFirstReviewCounter(Counter):
+class WaitFirstReviewCounter(WithoutQuantilesMixin, Counter):
     """Count PRs that were used to calculate PR_WAIT_FIRST_REVIEW_TIME disregarding \
     the quantiles."""
 
@@ -444,7 +441,7 @@ class WaitFirstReviewCounter(Counter):
 
 
 @register_metric(PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT_Q)
-class WaitFirstReviewCounterWithQunatiles(CounterWithQuantiles):
+class WaitFirstReviewCounterWithQuantiles(Counter):
     """Count PRs that were used to calculate PR_WAIT_FIRST_REVIEW_TIME respecting the quantiles."""
 
     deps = (WaitFirstReviewTimeCalculator,)
@@ -540,7 +537,7 @@ class ReleasedCalculator(SumMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_FLOW_RATIO)
-class FlowRatioCalculator(MetricCalculator[float]):
+class FlowRatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
     """PR flow ratio - opened / closed - calculator."""
 
     deps = (OpenedCalculator, ClosedCalculator)
@@ -566,9 +563,6 @@ class FlowRatioCalculator(MetricCalculator[float]):
     def _analyze(self, facts: pd.DataFrame, min_time: datetime, max_time: datetime,
                  **kwargs) -> np.ndarray:
         return np.full(len(facts), None, object)
-
-    def _cut_by_quantiles(self) -> np.ndarray:
-        return self._samples
 
 
 @register_metric(PullRequestMetricID.PR_SIZE)

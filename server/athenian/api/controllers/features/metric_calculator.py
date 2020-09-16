@@ -150,22 +150,7 @@ class SumMetricCalculator(MetricCalculator[T]):
 
 
 class Counter(MetricCalculator[int]):
-    """Count the number of PRs that were used to calculate the specified metric, \
-    the quantiles are ignored."""
-
-    dtype = int
-
-    def _value(self, samples: np.ndarray) -> Metric[int]:
-        return Metric(True, samples.sum() if len(samples) else 0, None, None)
-
-    def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
-                 **kwargs) -> np.ndarray:
-        return self._calcs[0].peek != np.array(None)
-
-
-class CounterWithQuantiles(MetricCalculator[int]):
-    """Count the number of PRs that were used to calculate the specified metric, \
-    the quantiles are respected."""
+    """Count the number of PRs that were used to calculate the specified metric."""
 
     dtype = int
 
@@ -173,8 +158,15 @@ class CounterWithQuantiles(MetricCalculator[int]):
         return Metric(True, len(samples), None, None)
 
     def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
-                 **kwargs) -> Optional[T]:
+                 **kwargs) -> np.ndarray:
         return self._calcs[0].peek
+
+
+class WithoutQuantilesMixin:
+    """Ignore the quantiles."""
+
+    def _cut_by_quantiles(self) -> np.ndarray:
+        return self._samples
 
 
 class HistogramCalculator(MetricCalculator):

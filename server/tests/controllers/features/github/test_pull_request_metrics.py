@@ -514,3 +514,18 @@ def test_quantiles(pr_samples):
     m3, c3 = ensemble.values()["test"]
     assert m1 > m2 > m3
     assert c1 > c2 > c3
+
+
+def test_counter_quantiles(pr_samples):
+    time_from = datetime.utcnow() - timedelta(days=365)
+    time_to = datetime.utcnow()
+    samples = df_from_dataclasses(pr_samples(100))
+    c_base = WorkInProgressTimeCalculator(quantiles=[0.25, 0.75])
+    c_with = WorkInProgressCounterWithQuantiles(c_base, quantiles=[0.25, 0.75])
+    c_without = WorkInProgressCounter(c_base, quantiles=[0.25, 0.75])
+    c_base(samples, time_from, time_to)
+    c_with(samples, time_from, time_to)
+    c_without(samples, time_from, time_to)
+    v_with = c_with.value.value
+    v_without = c_without.value.value
+    assert v_without > v_with
