@@ -2,12 +2,14 @@ from collections import defaultdict
 import dataclasses
 from datetime import date, datetime, timedelta, timezone
 from itertools import chain
+import pickle
 from typing import Any, Dict
 
 import pandas as pd
 from pandas.core.dtypes.common import is_datetime64_any_dtype
 from pandas.testing import assert_frame_equal
 import pytest
+from sqlalchemy import update
 
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
@@ -24,6 +26,7 @@ import athenian.api.db
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.metadata.jira import Issue
+from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts
 from tests.conftest import has_memcached
 
 
@@ -805,6 +808,10 @@ async def test_pr_miner_unreleased_facts(
     assert len(open_prs_and_facts) == 21
     assert len(merged_unreleased_prs_and_facts) == 11
     assert len(force_push_dropped) == 1
+    await pdb.execute(update(GitHubMergedPullRequestFacts).values({
+        GitHubMergedPullRequestFacts.data: pickle.dumps("fake"),
+        GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
+    }))
     discovered = await load_merged_unreleased_pull_request_facts(
         miner._dfs.prs, time_to, LabelFilter.empty(), matched_bys, default_branches,
         release_match_setting_tag, pdb)

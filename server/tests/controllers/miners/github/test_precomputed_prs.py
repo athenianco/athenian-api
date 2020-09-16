@@ -8,7 +8,7 @@ import uuid
 
 import pandas as pd
 import pytest
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
@@ -465,6 +465,14 @@ async def test_discover_update_unreleased_prs_smoke(
     unreleased_prs = await load_merged_unreleased_pull_request_facts(
         prs, datetime(2018, 11, 20, tzinfo=utc), LabelFilter.empty(), matched_bys,
         default_branches, release_match_setting_tag, pdb)
+    assert len(unreleased_prs) == 0
+    await pdb.execute(update(GitHubMergedPullRequestFacts).values({
+        GitHubMergedPullRequestFacts.data: pickle.dumps("fake"),
+        GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
+    }))
+    unreleased_prs = await load_merged_unreleased_pull_request_facts(
+        prs, datetime(2018, 11, 20, tzinfo=utc), LabelFilter.empty(), matched_bys,
+        default_branches, release_match_setting_tag, pdb)
     assert set(prs.index) == set(unreleased_prs)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], None, default_branches,
@@ -517,6 +525,10 @@ async def test_discover_update_unreleased_prs_released(
     await update_unreleased_prs(
         prs, released_prs, time_to, {},
         matched_bys, default_branches, release_match_setting_tag, pdb, asyncio.Event())
+    await pdb.execute(update(GitHubMergedPullRequestFacts).values({
+        GitHubMergedPullRequestFacts.data: pickle.dumps("fake"),
+        GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
+    }))
     unreleased_prs = await load_merged_unreleased_pull_request_facts(
         prs, time_to, LabelFilter.empty(), matched_bys, default_branches,
         release_match_setting_tag, pdb)
