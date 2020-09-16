@@ -43,7 +43,7 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.db import add_pdb_metrics_context, measure_db_overhead_and_retry, \
     ParallelDatabase
-from athenian.api.defer import enable_defer, wait_deferred
+from athenian.api.defer import enable_defer, setup_defer, wait_deferred
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.metadata import __package__
@@ -215,6 +215,7 @@ class AthenianApp(connexion.AioHttpApp):
                          server_args={"client_max_size": 256 * 1024})
         self.api_cls = ExactServersAioHttpApi
         self._devenv = os.getenv("SENTRY_ENV", "development") == "development"
+        setup_defer(not self._devenv)
         invitation_controller.validate_env()
         self.app["auth"] = self._auth0 = auth0_cls(whitelist=[
             r"/v1/openapi.json$",
@@ -420,6 +421,8 @@ class AthenianApp(connexion.AioHttpApp):
     async def _raise_graceful_exit(self):
         await asyncio.sleep(0)
         self.log.info("Finished serving all the pending requests, now shutting down")
+        if not self._devenv:
+            await wait_deferred()
 
         def raise_graceful_exit():
             loop.remove_signal_handler(signal.SIGTERM)

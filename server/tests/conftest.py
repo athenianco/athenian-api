@@ -36,7 +36,7 @@ from sqlalchemy.orm import sessionmaker
 import uvloop
 
 from athenian.api import AthenianApp, check_collation, create_memcached, ParallelDatabase, \
-    patch_pandas, setup_cache_metrics
+    patch_pandas, setup_cache_metrics, setup_defer
 from athenian.api.auth import Auth0, User
 from athenian.api.controllers import invitation_controller
 from athenian.api.models import metadata
@@ -52,6 +52,7 @@ if os.getenv("NEST_ASYNCIO"):
 uvloop.install()
 np.seterr(all="raise")
 patch_pandas()
+setup_defer(False)
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".sqlite")
 pdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.precomputed.", suffix=".sqlite")

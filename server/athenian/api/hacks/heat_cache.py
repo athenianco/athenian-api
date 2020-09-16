@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
     enable_defer, ParallelDatabase, patch_pandas, ResponseError, setup_cache_metrics, \
-    setup_context, wait_deferred
+    setup_context, setup_defer, wait_deferred
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -52,6 +52,7 @@ def main():
     log = logging.getLogger("heater")
     args = _parse_args()
     setup_context(log)
+    setup_defer(False)
     sentry_sdk.add_breadcrumb(category="origin", message="heater", level="info")
     if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):
         return 1
