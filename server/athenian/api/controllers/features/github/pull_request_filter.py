@@ -553,7 +553,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
         release_settings, mdb, pdb, cache)
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
     for k, v in unreleased.items():
-        if v is not None and k not in facts:
+        if k not in facts:
             facts[k] = v
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__",
                                description=str(len(prs))):
