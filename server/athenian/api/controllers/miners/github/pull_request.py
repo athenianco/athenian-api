@@ -1046,26 +1046,25 @@ class PullRequestFactsMiner:
                 last_commit_before_first_review > first_review_request:
             first_review_request = last_commit_before_first_review or first_review_request
         review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.key]
+
         if closed:
-            not_review_comments = \
-                pr.reviews[PullRequestReview.state.key].values != ReviewResolution.COMMENTED.value
             # it is possible to approve/reject after closing the PR
             # you start the review, then somebody closes the PR, then you submit the review
             try:
-                last_review_at = pd.Timestamp(review_submitted_ats.values[
+                last_review = pd.Timestamp(review_submitted_ats.values[
                     (review_submitted_ats.values <= closed.to_numpy())
-                    | not_review_comments].max(), tz=timezone.utc)
+                ].max(), tz=timezone.utc)
             except ValueError:
-                last_review_at = None
-            if last_review_at:
-                # we don't want nonemin() here - what if there was no review at all?
-                last_review_at = min(last_review_at, closed)
-            last_review = last_review_at or nonemin(
+                last_review = None
+            last_review = nonemax(
+                last_review,
                 external_comments_times.take(np.where(
                     external_comments_times <= closed)[0]).nonemax())
         else:
             last_review = review_submitted_ats.nonemax() or \
                 nonemin(external_comments_times.nonemax())
+        if not first_review_request:
+            assert not last_review, pr.pr[PullRequest.node_id.key]
         if merged:
             reviews_before_merge = \
                 pr.reviews[PullRequestReview.submitted_at.key].values <= merged.to_numpy()

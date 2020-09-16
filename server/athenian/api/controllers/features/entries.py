@@ -44,7 +44,7 @@ from athenian.api.models.metadata.github import PullRequest, PushCommit
 from athenian.api.tracing import sentry_span
 
 
-unfresh_mode_threshold = 2000
+unfresh_mode_threshold = 1000
 
 
 @sentry_span
