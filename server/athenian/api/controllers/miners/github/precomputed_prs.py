@@ -533,11 +533,10 @@ async def load_merged_unreleased_pull_request_facts(
     query = select(selected).where(and_(*filters))
     with sentry_sdk.start_span(op="load_merged_unreleased_pr_facts/fetch"):
         rows = await pdb.fetch_all(query)
-    if postgres or not labels:
-        return {r[0]: (pickle.loads(r[1]) if r[1] is not None else None) for r in rows}
-    include_singles, include_multiples = LabelFilter.split(labels.include)
-    include_singles = set(include_singles)
-    include_multiples = [set(m) for m in include_multiples]
+    if labels:
+        include_singles, include_multiples = LabelFilter.split(labels.include)
+        include_singles = set(include_singles)
+        include_multiples = [set(m) for m in include_multiples]
     facts = {}
     for row in rows:
         node_id = row[ghmprf.pr_node_id.key]
@@ -545,9 +544,10 @@ async def load_merged_unreleased_pull_request_facts(
         if data is None:
             log.error("No precomputed facts for merged %s", node_id)
             continue
-        if _labels_are_compatible(include_singles, include_multiples, labels.exclude,
-                                  row[ghmprf.labels.key]):
-            facts[node_id] = pickle.loads(data)
+        if labels and not _labels_are_compatible(
+                include_singles, include_multiples, labels.exclude, row[ghmprf.labels.key]):
+            continue
+        facts[node_id] = pickle.loads(data)
     return facts
 
 
