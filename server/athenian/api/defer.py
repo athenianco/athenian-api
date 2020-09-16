@@ -9,13 +9,49 @@ from sentry_sdk.tracing import Transaction
 from athenian.api import metadata
 from athenian.api.typing_utils import wraps
 
-_defer_sync = ContextVar("defer_sync")
-_defer_counter = ContextVar("defer_counter")
+
+_defer_sync = None
+_defer_counter = None
 _log = logging.getLogger("%s.defer" % metadata.__package__)
+
+
+class GlobalVar:
+    """Mock the interface of ContextVar."""
+
+    def __init__(self, value):
+        """Assign an object at initialization time."""
+        self.value = value
+
+    def get(self):
+        """Return the encapsulated object."""
+        return self.value
+
+
+def setup_defer(global_scope: bool) -> None:
+    """
+    Initialize the deferred subsystem.
+
+    This function is a no-op if called multiple times.
+
+    :param global_scope: Indicates whether the deferred tasks must register in the global context \
+                         or in the current coroutine context.
+    """
+    global _defer_sync, _defer_counter
+    if _defer_sync is not None:
+        assert global_scope == isinstance(_defer_sync, GlobalVar)
+        return
+    if global_scope:
+        _defer_sync = GlobalVar(Condition())
+        _defer_counter = GlobalVar([0])
+    else:
+        _defer_sync = ContextVar("defer_sync")
+        _defer_counter = ContextVar("defer_counter")
 
 
 def enable_defer() -> None:
     """Allow deferred couroutines in the current context."""
+    if isinstance(_defer_sync, GlobalVar):
+        return
     _defer_sync.set(Condition())
     _defer_counter.set([0])
 
