@@ -396,7 +396,8 @@ class PullRequestMiner:
         async def fetch_labels():
             return await cls._read_filtered_models(
                 mdb, PullRequestLabel, node_ids, time_to,
-                columns=[PullRequestLabel.name, PullRequestLabel.description,
+                columns=[sql.func.lower(PullRequestLabel.name).label(PullRequestLabel.name.key),
+                         PullRequestLabel.description,
                          PullRequestLabel.color],
                 created_at=False)
 
@@ -436,7 +437,7 @@ class PullRequestMiner:
             for r in rows:
                 cmap.setdefault(r[0], {})[r[1]] = r[2].lower()
             df[Issue.labels.key] = (
-                df[Issue.labels.key].apply(lambda i: [s.lower() for s in i])
+                df[Issue.labels.key].apply(lambda i: [s.lower() for s in (i or [])])
                 +
                 df[[Issue.acc_id.key, Issue.components.key]]
                 .apply(lambda row: [cmap[row[Issue.acc_id.key]][c]
