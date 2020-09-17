@@ -1802,6 +1802,7 @@ components:
         * `pr-flow-ratio`: ratio of opened to closed PRs.
         * `pr-opened`: number of opened PRs.
         * `pr-reviewed`: number of PRs which received a review.
+        * `pr-not-reviewed`: number of PRs merged or closed but without any review.
         * `pr-merged`: number of merged PRs.
         * `pr-rejected`: number of rejected PRs.
         * `pr-closed`: number of closed PRs.
@@ -1833,6 +1834,7 @@ components:
       - pr-flow-ratio
       - pr-opened
       - pr-reviewed
+      - pr-not-reviewed
       - pr-merged
       - pr-rejected
       - pr-closed

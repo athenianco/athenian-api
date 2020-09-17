@@ -543,6 +543,25 @@ class ClosedCalculator(SumMetricCalculator[int]):
         return result
 
 
+@register_metric(PullRequestMetricID.PR_NOT_REVIEWED)
+class NotReviewedCalculator(SumMetricCalculator[int]):
+    """Number of non-reviewed PRs."""
+
+    deps = (ReviewedCalculator, ClosedCalculator)
+    dtype = int
+
+    def _analyze(self, facts: np.ndarray, min_time: datetime, max_time: datetime,
+                 **kwargs) -> np.ndarray:
+        dtype = facts["created"].dtype
+        min_time = np.array(min_time, dtype=dtype)
+        max_time = np.array(max_time, dtype=dtype)
+        not_reviewed = ~self._calcs[0].peek.astype(bool)
+        closed = self._calcs[1].peek.astype(bool)
+        result = np.full(len(facts), None, object)
+        result[closed & not_reviewed] = 1
+        return result
+
+
 @register_metric(PullRequestMetricID.PR_DONE)
 class ReleasedCalculator(SumMetricCalculator[int]):
     """Number of released PRs."""

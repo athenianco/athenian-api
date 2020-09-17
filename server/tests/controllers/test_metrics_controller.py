@@ -275,6 +275,7 @@ async def test_calc_metrics_prs_reposet(client, headers):
                                     PullRequestMetricID.PR_CYCLE_COUNT,
                                     PullRequestMetricID.PR_OPENED,
                                     PullRequestMetricID.PR_REVIEWED,
+                                    PullRequestMetricID.PR_NOT_REVIEWED,
                                     PullRequestMetricID.PR_CLOSED,
                                     PullRequestMetricID.PR_MERGED,
                                     PullRequestMetricID.PR_REJECTED,
