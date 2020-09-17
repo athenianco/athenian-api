@@ -45,8 +45,8 @@ class PRDataFrames:
     """Set of dataframes with all the PR data we can reach."""
 
     prs: pd.DataFrame
-    releases: pd.DataFrame
     commits: pd.DataFrame
+    releases: pd.DataFrame
     jiras: pd.DataFrame
     reviews: pd.DataFrame
     review_comments: pd.DataFrame
@@ -450,8 +450,8 @@ class PullRequestMiner:
         # the order is important: it provides the best performance
         # we launch coroutines from the heaviest to the lightest
         dfs = await asyncio.gather(
-            map_releases(),
             fetch_commits(),
+            map_releases(),
             fetch_jira(),
             fetch_reviews(),
             fetch_review_comments(),

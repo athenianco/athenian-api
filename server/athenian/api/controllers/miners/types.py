@@ -173,9 +173,10 @@ class MinedPullRequest:
         if published_at is not None and published_at >= dt:
             release = {k: None for k in release}
         jiras = self.jiras
-        jira_mask = jiras[Issue.created.key] < dt
-        if not jira_mask.all():
-            jiras = jiras.take(np.where(jira_mask)[0])
+        if not jiras.empty:
+            jira_indexes = np.where(jiras[Issue.created.key] < dt)[0]
+            if len(jira_indexes) < len(jiras):
+                jiras = jiras.take(jira_indexes)
         dfs = {}
         dt = np.datetime64(dt.replace(tzinfo=None))
         for name, col in (("commits", PullRequestCommit.committed_date),

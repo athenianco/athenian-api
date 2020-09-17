@@ -252,21 +252,15 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
         return {k: v.histogram(scale, bins) for k, v in self._metrics.items()}
 
 
-def df_from_dataclasses(items: Iterable[Any]) -> pd.DataFrame:
+def df_from_dataclasses(items: Iterable[Any], length: Optional[int] = None) -> pd.DataFrame:
     """Combine several dataclasses to a Pandas DataFrame."""
     columns = {}
     first_item = None
     try:
-        for i, item in enumerate(items):
-            if i == 0:
-                first_item = item
-                for k in item.__dict__:
-                    columns[k] = [None] * len(items)
-            # dataclasses.asdict() creates a new dict and is too slow
-            for k, v in item.__dict__.items():
-                columns[k][i] = v
+        if length is None:
+            length = len(items)
     except TypeError:
-        # no __len__
+        # slower branch without pre-allocation
         for i, item in enumerate(items):
             if i == 0:
                 first_item = item
@@ -274,6 +268,15 @@ def df_from_dataclasses(items: Iterable[Any]) -> pd.DataFrame:
                     columns[k] = []
             for k, v in item.__dict__.items():
                 columns[k].append(v)
+    else:
+        for i, item in enumerate(items):
+            if i == 0:
+                first_item = item
+                for k in item.__dict__:
+                    columns[k] = [None] * length
+            # dataclasses.asdict() creates a new dict and is too slow
+            for k, v in item.__dict__.items():
+                columns[k][i] = v
     if first_item is None:
         return pd.DataFrame()
     column_types = {}

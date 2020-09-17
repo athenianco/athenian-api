@@ -45,6 +45,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
 
     The major complexity here is to comply to all the filters.
     """
+    add_pdb_hits(pdb, "fresh", 1)
     blacklist = PullRequest.node_id.notin_(done_facts)
     tasks = [
         # map_releases_to_prs is not required because such PRs are already released, by definition

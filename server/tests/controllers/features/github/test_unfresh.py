@@ -18,8 +18,8 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
     )
     await wait_deferred()
     assert len(facts_fresh) == 230
-    orig_threshold = entries.unfresh_mode_threshold
-    entries.unfresh_mode_threshold = 1
+    orig_threshold = entries.unfresh_prs_threshold
+    entries.unfresh_prs_threshold = 1
     try:
         facts_unfresh = await calc_pull_request_facts_github(
             time_from, time_to,
@@ -30,7 +30,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
             assert fresh == unfresh, i
     finally:
-        entries.unfresh_mode_threshold = orig_threshold
+        entries.unfresh_prs_threshold = orig_threshold
 
 
 @with_defer
@@ -46,8 +46,8 @@ async def test_fetch_pull_request_facts_unfresh_labels(
     )
     await wait_deferred()
     assert len(facts_fresh) == 6
-    orig_threshold = entries.unfresh_mode_threshold
-    entries.unfresh_mode_threshold = 1
+    orig_threshold = entries.unfresh_prs_threshold
+    entries.unfresh_prs_threshold = 1
     try:
         facts_unfresh = await calc_pull_request_facts_github(
             time_from, time_to,
@@ -58,7 +58,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
             assert fresh == unfresh, i
     finally:
-        entries.unfresh_mode_threshold = orig_threshold
+        entries.unfresh_prs_threshold = orig_threshold
 
 
 @with_defer
@@ -74,8 +74,8 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     )
     await wait_deferred()
     assert len(facts_fresh) == 36
-    orig_threshold = entries.unfresh_mode_threshold
-    entries.unfresh_mode_threshold = 1
+    orig_threshold = entries.unfresh_prs_threshold
+    entries.unfresh_prs_threshold = 1
     try:
         facts_unfresh = await calc_pull_request_facts_github(
             time_from, time_to,
@@ -86,4 +86,4 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
             assert fresh == unfresh, i
     finally:
-        entries.unfresh_mode_threshold = orig_threshold
+        entries.unfresh_prs_threshold = orig_threshold

@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
-from typing import Callable, Dict, Generator, List, Optional, Set, Tuple
+from typing import Callable, Dict, Generator, List, Optional, Sequence, Set, Tuple
 
 import aiomcache
 import databases
@@ -59,10 +59,10 @@ class PullRequestListMiner:
         self._facts = facts
         self._properties = properties
         self._calcs = {
-            "wip": (WorkInProgressTimeCalculator(quantiles=(0, 1)), Property.WIP),
-            "review": (ReviewTimeCalculator(quantiles=(0, 1)), Property.REVIEWING),
-            "merge": (MergingTimeCalculator(quantiles=(0, 1)), Property.MERGING),
-            "release": (ReleaseTimeCalculator(quantiles=(0, 1)), Property.RELEASING),
+            "wip": WorkInProgressTimeCalculator(quantiles=(0, 1)),
+            "review": ReviewTimeCalculator(quantiles=(0, 1)),
+            "merge": MergingTimeCalculator(quantiles=(0, 1)),
+            "release": ReleaseTimeCalculator(quantiles=(0, 1)),
         }
         self._no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
         assert isinstance(time_from, datetime)
@@ -118,6 +118,7 @@ class PullRequestListMiner:
     def _compile(self,
                  pr: MinedPullRequest,
                  facts: PullRequestFacts,
+                 stage_timings: Dict[str, timedelta],
                  ) -> Optional[PullRequestListItem]:
         """
         Match the PR to the required participants and properties and produce PullRequestListItem.
@@ -145,15 +146,6 @@ class PullRequestListMiner:
         ).sum()
         delta_comments = len(pr_today.review_comments) - review_comments
         reviews = external_reviews_mask.sum()
-        stage_timings = {}
-        no_time_from = self._no_time_from.replace(tzinfo=None)
-        now = self._now.replace(tzinfo=None)
-        for k, (calc, prop) in self._calcs.items():
-            kwargs = {} if k != "review" else {"allow_unclosed": True}
-            if prop in props_today:
-                kwargs["override_event_time"] = now - timedelta(seconds=1)  # < time_max
-            calc(df_from_dataclasses([facts_today]), no_time_from, now, **kwargs)
-            stage_timings[k] = calc.samples[0] if len(calc.samples) > 0 else None
         for p in range(Property.WIP, Property.DONE + 1):
             p = Property(p)
             if p in props_time_machine:
@@ -219,12 +211,54 @@ class PullRequestListMiner:
             jira=jira,
         )
 
+    @sentry_span
+    def _calc_stage_timings(self) -> Dict[str, Sequence[int]]:
+        facts = self._facts
+        if len(facts) == 0:
+            return {k: [] for k in self._calcs}
+        node_id_key = PullRequest.node_id.key
+        df_facts = df_from_dataclasses((facts[pr.pr[node_id_key]] for pr in self._prs),
+                                       length=len(self._prs))
+        merged_mask, approved_mask, frr_mask = (
+            (v := df_facts[c].values) == v
+            for c in ("merged", "approved", "first_review_request"))
+
+        stage_indexes = {}
+        other = ~df_facts["done"].values
+        stage_indexes["release"] = np.where(merged_mask & other)[0]
+        other &= ~merged_mask
+        stage_indexes["merge"] = np.where(approved_mask & other)[0]
+        other &= ~approved_mask
+        stage_indexes["review"] = np.where(frr_mask & other)[0]
+        other &= ~frr_mask
+        stage_indexes["wip"] = np.where(other)[0]
+
+        no_time_from = self._no_time_from.replace(tzinfo=None)
+        now = self._now.replace(tzinfo=None)
+        stage_timings = {}
+        for k, calc in self._calcs.items():
+            kwargs = {
+                "override_event_time": now - timedelta(seconds=1),  # < time_max
+                "override_event_indexes": stage_indexes[k],
+            }
+            if k == "review":
+                kwargs["allow_unclosed"] = True
+            calc(df_facts, no_time_from, now, **kwargs)
+            stage_timings[k] = calc.peek
+        return stage_timings
+
     def __iter__(self) -> Generator[PullRequestListItem, None, None]:
         """Iterate over individual pull requests."""
+        stage_timings = self._calc_stage_timings()
         facts = self._facts
         node_id_key = PullRequest.node_id.key
-        for pr in self._prs:
-            item = self._compile(pr, facts[pr.pr[node_id_key]])
+        for i, pr in enumerate(self._prs):
+            pr_stage_timings = {}
+            for k in self._calcs:
+                seconds = stage_timings[k][i]
+                if seconds is not None:
+                    pr_stage_timings[k] = timedelta(seconds=seconds)
+            item = self._compile(pr, facts[pr.pr[node_id_key]], pr_stage_timings)
             if item is not None:
                 yield item
 
