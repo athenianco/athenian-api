@@ -536,8 +536,9 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
             prs, branches, default_branches, rel_time_from, now, release_settings, mdb, pdb, cache)
         tasks = [
             load_commit_dags(releases, mdb, pdb, cache),
+            # not nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
             load_merged_unreleased_pull_request_facts(
-                prs_df, releases[Release.published_at.key].nonemax(), LabelFilter.empty(),
+                prs_df, releases[Release.published_at.key].max(), LabelFilter.empty(),
                 matched_bys, default_branches, release_settings, pdb),
         ]
         dags, unreleased = await asyncio.gather(*tasks, return_exceptions=True)
