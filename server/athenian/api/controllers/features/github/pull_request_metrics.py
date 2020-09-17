@@ -518,7 +518,7 @@ class ClosedCalculator(SumMetricCalculator[int]):
         return result
 
 
-@register_metric(PullRequestMetricID.PR_RELEASED)
+@register_metric(PullRequestMetricID.PR_DONE)
 class ReleasedCalculator(SumMetricCalculator[int]):
     """Number of released PRs."""
 
@@ -527,12 +527,19 @@ class ReleasedCalculator(SumMetricCalculator[int]):
     def _analyze(self, facts: pd.DataFrame, min_time: datetime, max_time: datetime,
                  **kwargs) -> np.ndarray:
         released_indexes = np.where(facts["released"].notnull())[0]
-        released = facts["released"].take(released_indexes)
+        released = facts["released"].take(released_indexes).values
         dtype = facts["created"].dtype
         min_time = np.array(min_time, dtype=dtype)
         max_time = np.array(max_time, dtype=dtype)
         result = np.full(len(facts), None, object)
         result[released_indexes[(min_time <= released) & (released < max_time)]] = 1
+
+        rejected_indexes = np.where(
+            facts["closed"].notnull().values
+            &
+            (facts["merged"].isnull().values | facts["force_push_dropped"]))[0]
+        rejected = facts["closed"].take(rejected_indexes)
+        result[rejected_indexes[(min_time <= rejected) & (rejected < max_time)]] = 1
         return result
 
 

@@ -1804,7 +1804,7 @@ components:
         * `pr-merged`: number of merged PRs.
         * `pr-rejected`: number of rejected PRs.
         * `pr-closed`: number of closed PRs.
-        * `pr-released`: number of released PRs.
+        * `pr-done`: number of released, closed unmerged, and force push dropped PRs.
         * `pr-size`: average size of PRs (added + deleted lines) which are active on the time interval after applying the quantiles.
       enum:
       - pr-wip-time
@@ -1834,7 +1834,7 @@ components:
       - pr-merged
       - pr-rejected
       - pr-closed
-      - pr-released
+      - pr-done
       - pr-size
       example: pr-lead-time
       type: string
