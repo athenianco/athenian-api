@@ -34,6 +34,7 @@ def test_pr_list_miner_iter(benchmark):
         miner = pickle.load(fin)
 
     def list_prs():
+        print("list", flush=True)
         return list(miner)
 
     benchmark(list_prs)

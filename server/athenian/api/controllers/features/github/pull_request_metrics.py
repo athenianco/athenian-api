@@ -66,32 +66,37 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
     may_have_negative_values = False
     dtype = "timedelta64[s]"
 
-    def _analyze(self, facts: pd.DataFrame, min_time: datetime, max_time: datetime,
-                 override_event_time: Optional[datetime] = None) -> np.ndarray:
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_time: datetime,
+                 max_time: datetime,
+                 override_event_time: Optional[datetime] = None,
+                 override_event_indexes: Optional[np.ndarray] = None,
+                 ) -> np.ndarray:
         result = np.full(len(facts), None, object)
+        wip_end = result.copy()
+        no_last_review = facts["last_review"].isnull()
+        has_last_review = ~no_last_review
+        wip_end[has_last_review] = facts["first_review_request"].take(
+            np.where(has_last_review)[0])
+
+        # review was probably requested but never happened
+        no_last_commit = facts["last_commit"].isnull()
+        has_last_commit = ~no_last_commit & no_last_review
+        wip_end[has_last_commit] = facts["last_commit"].take(np.where(has_last_commit)[0])
+
+        # 0 commits in the PR, no reviews and review requests
+        # => review time = 0
+        # => merge time = 0 (you cannot merge an empty PR)
+        # => release time = 0
+        # This PR is 100% closed.
+        remaining = np.where(wip_end == np.array(None))[0]
+        closed = facts["closed"].take(remaining)
+        wip_end[remaining] = closed
+        wip_end[remaining[closed != closed]] = None  # deal with NaNs
+
         if override_event_time is not None:
-            wip_end = np.full(len(facts), override_event_time)
-        else:
-            wip_end = result.copy()
-            no_last_review = facts["last_review"].isnull()
-            has_last_review = ~no_last_review
-            wip_end[has_last_review] = facts["first_review_request"].take(
-                np.where(has_last_review)[0])
-
-            # review was probably requested but never happened
-            no_last_commit = facts["last_commit"].isnull()
-            has_last_commit = ~no_last_commit & no_last_review
-            wip_end[has_last_commit] = facts["last_commit"].take(np.where(has_last_commit)[0])
-
-            # 0 commits in the PR, no reviews and review requests
-            # => review time = 0
-            # => merge time = 0 (you cannot merge an empty PR)
-            # => release time = 0
-            # This PR is 100% closed.
-            remaining = np.where(wip_end == np.array(None))[0]
-            closed = facts["closed"].take(remaining)
-            wip_end[remaining] = closed
-            wip_end[remaining[closed != closed]] = None  # deal with NaNs
+            wip_end[override_event_indexes] = override_event_time
 
         wip_end_indexes = np.where(wip_end != np.array(None))[0]
         dtype = facts["created"].dtype
@@ -128,25 +133,31 @@ class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
     may_have_negative_values = False
     dtype = "timedelta64[s]"
 
-    def _analyze(self, facts: pd.DataFrame, min_time: datetime, max_time: datetime,
-                 allow_unclosed=False, override_event_time: Optional[datetime] = None,
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_time: datetime,
+                 max_time: datetime,
+                 allow_unclosed=False,
+                 override_event_time: Optional[datetime] = None,
+                 override_event_indexes: Optional[np.ndarray] = None,
                  ) -> np.ndarray:
         result = np.full(len(facts), None, object)
         has_first_review_request = facts["first_review_request"].notnull()
-        if override_event_time is not None:
-            review_end = np.full(len(facts), override_event_time)
+        review_end = result.copy()
+        # we cannot be sure that the approvals finished unless the PR is closed.
+        if allow_unclosed:
+            closed_mask = has_first_review_request
         else:
-            review_end = result.copy()
-            # we cannot be sure that the approvals finished unless the PR is closed.
-            if allow_unclosed:
-                closed_mask = has_first_review_request
-            else:
-                closed_mask = facts["closed"].notnull() & has_first_review_request
-            not_approved_mask = facts["approved"].isnull()
-            approved_mask = ~not_approved_mask & closed_mask
-            last_review_mask = not_approved_mask & facts["last_review"].notnull() & closed_mask
-            review_end[approved_mask] = facts["approved"].take(np.where(approved_mask)[0])
-            review_end[last_review_mask] = facts["last_review"].take(np.where(last_review_mask)[0])
+            closed_mask = facts["closed"].notnull() & has_first_review_request
+        not_approved_mask = facts["approved"].isnull()
+        approved_mask = ~not_approved_mask & closed_mask
+        last_review_mask = not_approved_mask & facts["last_review"].notnull() & closed_mask
+        review_end[approved_mask] = facts["approved"].take(np.where(approved_mask)[0])
+        review_end[last_review_mask] = facts["last_review"].take(np.where(last_review_mask)[0])
+
+        if override_event_time is not None:
+            review_end[override_event_indexes] = override_event_time
+
         review_not_none = review_end != np.array(None)
         review_in_range = np.full(len(result), False)
         dtype = facts["created"].dtype
@@ -187,24 +198,30 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
     may_have_negative_values = False
     dtype = "timedelta64[s]"
 
-    def _analyze(self, facts: pd.DataFrame, min_time: datetime, max_time: datetime,
-                 override_event_time: Optional[datetime] = None) -> np.ndarray:
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_time: datetime,
+                 max_time: datetime,
+                 override_event_time: Optional[datetime] = None,
+                 override_event_indexes: Optional[np.ndarray] = None,
+                 ) -> np.ndarray:
         result = np.full(len(facts), None, object)
+        merge_end = result.copy()
+        closed_indexes = np.where(facts["closed"].notnull())[0]
+        closed = facts["closed"].take(closed_indexes).values
+        dtype = facts["created"].dtype
+        min_time = np.array(min_time, dtype=dtype)
+        max_time = np.array(max_time, dtype=dtype)
+        closed_in_range = (min_time <= closed) & (closed < max_time)
+        closed_indexes = closed_indexes[closed_in_range]
+        merge_end[closed_indexes] = closed[closed_in_range]
+        closed_mask = np.full(len(facts), False)
+        closed_mask[closed_indexes] = True
+
         if override_event_time is not None:
-            merge_end = np.full(len(facts), override_event_time)
-            closed_mask = np.full_like(merge_end, True)
-        else:
-            merge_end = result.copy()
-            closed_indexes = np.where(facts["closed"].notnull())[0]
-            closed = facts["closed"].take(closed_indexes).values
-            dtype = facts["created"].dtype
-            min_time = np.array(min_time, dtype=dtype)
-            max_time = np.array(max_time, dtype=dtype)
-            closed_in_range = (min_time <= closed) & (closed < max_time)
-            closed_indexes = closed_indexes[closed_in_range]
-            merge_end[closed_indexes] = closed[closed_in_range]
-            closed_mask = np.full(len(facts), False)
-            closed_mask[closed_indexes] = True
+            merge_end[override_event_indexes] = override_event_time
+            closed_mask[override_event_indexes] = True
+
         dtype = facts["created"].dtype
         not_approved_mask = facts["approved"].isnull()
         approved_mask = ~not_approved_mask & closed_mask
@@ -256,21 +273,27 @@ class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
     may_have_negative_values = False
     dtype = "timedelta64[s]"
 
-    def _analyze(self, facts: pd.DataFrame, min_time: datetime, max_time: datetime,
-                 override_event_time: Optional[datetime] = None) -> np.ndarray:
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_time: datetime,
+                 max_time: datetime,
+                 override_event_time: Optional[datetime] = None,
+                 override_event_indexes: Optional[np.ndarray] = None,
+                 ) -> np.ndarray:
         result = np.full(len(facts), None, object)
+        release_end = result.copy()
+        released_indexes = np.where(facts["released"].notnull())[0]
+        released = facts["released"].take(released_indexes)
+        released_in_range = (min_time <= released) & (released < max_time)
+        released_indexes = released_indexes[released_in_range]
+        release_end[released_indexes] = released.take(np.where(released_in_range)[0])
+        released_mask = np.full(len(facts), False)
+        released_mask[released_indexes] = True
+
         if override_event_time is not None:
-            release_end = np.full(len(facts), override_event_time)
-            released_mask = np.full_like(release_end, True)
-        else:
-            release_end = result.copy()
-            released_indexes = np.where(facts["released"].notnull())[0]
-            released = facts["released"].take(released_indexes)
-            released_in_range = (min_time <= released) & (released < max_time)
-            released_indexes = released_indexes[released_in_range]
-            release_end[released_indexes] = released.take(np.where(released_in_range)[0])
-            released_mask = np.full(len(facts), False)
-            released_mask[released_indexes] = True
+            release_end[override_event_indexes] = override_event_time
+            released_mask[override_event_indexes] = True
+
         result_mask = facts["merged"].notnull() & released_mask
         merged = facts["merged"].take(np.where(result_mask)[0]).values
         release_end = release_end[result_mask].astype(merged.dtype)
@@ -394,7 +417,6 @@ class CycleCounterWithQuantiles(Counter):
 class AllCounter(SumMetricCalculator[int]):
     """Count all the PRs that are active in the given time interval."""
 
-    requires_full_span = True
     dtype = int
 
     def _analyze(self, facts: pd.DataFrame, min_time: datetime, max_time: datetime,

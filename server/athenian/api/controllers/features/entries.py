@@ -44,7 +44,8 @@ from athenian.api.models.metadata.github import PullRequest, PushCommit
 from athenian.api.tracing import sentry_span
 
 
-unfresh_mode_threshold = 1000
+unfresh_prs_threshold = 1000
+unfresh_participants_threshold = 50
 
 
 @sentry_span
@@ -103,12 +104,16 @@ async def calc_pull_request_facts_github(time_from: datetime,
         precomputed_facts = blacklist = await precomputed_tasks[0]
     add_pdb_hits(pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
 
-    if len(precomputed_facts) > unfresh_mode_threshold and not fresh and \
+    if (len(precomputed_facts) > unfresh_prs_threshold
+        or
+        len(participants.get(ParticipationKind.AUTHOR, [])) > unfresh_participants_threshold) and \
+            not fresh and \
             not (participants.keys() - {ParticipationKind.AUTHOR, ParticipationKind.MERGER}):
         return await fetch_pull_request_facts_unfresh(
             precomputed_facts, time_from, time_to, repositories, participants, labels, jira,
             exclude_inactive, branches, default_branches, release_settings, mdb, pdb, cache)
 
+    add_pdb_misses(pdb, "fresh", 1)
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
     # are effectively discarded later in BinnedMetricCalculator
