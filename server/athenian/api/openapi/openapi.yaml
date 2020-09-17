@@ -1801,6 +1801,7 @@ components:
         * `pr-wait-first-review-count-q`: number of PRs used to calculate `pr-wait-first-review after applying the quantiles.
         * `pr-flow-ratio`: ratio of opened to closed PRs.
         * `pr-opened`: number of opened PRs.
+        * `pr-reviewed`: number of PRs which received a review.
         * `pr-merged`: number of merged PRs.
         * `pr-rejected`: number of rejected PRs.
         * `pr-closed`: number of closed PRs.
@@ -1831,6 +1832,7 @@ components:
       - pr-wait-first-review-count-q
       - pr-flow-ratio
       - pr-opened
+      - pr-reviewed
       - pr-merged
       - pr-rejected
       - pr-closed

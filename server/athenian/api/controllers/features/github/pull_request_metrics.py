@@ -10,7 +10,6 @@ from athenian.api.controllers.features.metric_calculator import AverageMetricCal
     MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.models.web import PullRequestMetricID
 
-
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[HistogramCalculator]] = {}
 
@@ -461,6 +460,32 @@ class OpenedCalculator(SumMetricCalculator[int]):
         max_time = np.array(max_time, dtype=dtype)
         result = np.full(len(facts), None, object)
         result[(min_time <= created) & (created < max_time)] = 1
+        return result
+
+
+@register_metric(PullRequestMetricID.PR_REVIEWED)
+class ReviewedCalculator(SumMetricCalculator[int]):
+    """Number of reviewed PRs."""
+
+    dtype = int
+
+    def _analyze(self, facts: np.ndarray, min_time: datetime, max_time: datetime,
+                 **kwargs) -> np.ndarray:
+        dtype = facts["created"].dtype
+        min_time = np.array(min_time, dtype=dtype)
+        max_time = np.array(max_time, dtype=dtype)
+        review_timestamps = np.concatenate(facts["reviews"])
+        reviews_in_range = (min_time <= review_timestamps) & (review_timestamps < max_time)
+        # we cannot sum `reviews_in_range` because there can be several reviews for the same PR
+        review_offsets = np.zeros(len(facts) + 1, dtype=int)
+        np.cumsum(facts["reviews"].apply(len).values, out=review_offsets[1:])
+        # np.searchsorted aliases several reviews of the same PR to the right border of a
+        # `review_offsets` interval
+        # np.unique collapses duplicate indexes
+        reviewed_indexes = np.unique(np.searchsorted(
+            review_offsets, np.where(reviews_in_range)[0], side="right") - 1)
+        result = np.full(len(facts), None, object)
+        result[reviewed_indexes] = 1
         return result
 
 

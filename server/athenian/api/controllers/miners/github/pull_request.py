@@ -1150,6 +1150,7 @@ class PullRequestFactsMiner:
             released=released,
             closed=closed,
             done=done,
+            reviews=np.sort(reviews_before_merge[PullRequestReview.submitted_at.key].values),
             size=size,
             force_push_dropped=force_push_dropped,
         )

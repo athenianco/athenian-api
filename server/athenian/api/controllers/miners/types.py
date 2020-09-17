@@ -213,6 +213,7 @@ class PullRequestFacts:
     last_review: Optional[pd.Timestamp]
     released: Optional[pd.Timestamp]
     done: bool
+    reviews: np.ndarray
     size: int
     force_push_dropped: bool
 
@@ -244,7 +245,10 @@ class PullRequestFacts:
     def validate(self) -> None:
         """Ensure that there are no NaNs."""
         for k, v in vars(self).items():  # do not use dataclasses.asdict() - very slow
-            assert v == v, k
+            if isinstance(v, np.ndarray):
+                assert (v == v).all(), k
+            else:
+                assert v == v, k
 
     def __str__(self) -> str:
         """Format for human-readability."""
