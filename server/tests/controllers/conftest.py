@@ -3,6 +3,7 @@ from random import randint
 import warnings
 
 import faker
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -85,6 +86,10 @@ def pr_samples():
             last_review = fake.date_time_between(approved_at, closed_at, tzinfo=timezone.utc)
             released_at = fake.date_time_between(
                 merged_at, merged_at + timedelta(days=30), tzinfo=timezone.utc)
+            reviews = [
+                fake.date_time_between(created_at, last_review, tzinfo=timezone.utc)
+                for _ in range(randint(0, 3))
+            ]
             return PullRequestFacts(
                 created=pd.Timestamp(created_at),
                 first_commit=pd.Timestamp(first_commit or created_at),
@@ -96,6 +101,7 @@ def pr_samples():
                 first_review_request=pd.Timestamp(first_review_request),
                 first_review_request_exact=first_review_request,
                 last_review=pd.Timestamp(last_review),
+                reviews=np.array(reviews),
                 approved=pd.Timestamp(approved_at),
                 released=pd.Timestamp(released_at),
                 closed=pd.Timestamp(closed_at),
