@@ -250,6 +250,28 @@ class PullRequestFacts:
             else:
                 assert v == v, k
 
+    def __eq__(self, other) -> bool:
+        """Compare this object to another."""
+        if self is other:
+            return True
+
+        if self.__class__ is not other.__class__:
+            raise NotImplementedError(
+                f"Cannot compare {self.__class__} and {other.__class__}")
+
+        for k, v in vars(self).items():
+            v_other = getattr(other, k)
+            if v is v_other:
+                continue
+
+            if isinstance(v, np.ndarray) and isinstance(v_other, np.ndarray):
+                if not np.array_equal(v, v_other):
+                    return False
+            elif v != v_other:
+                return False
+
+        return True
+
     def __str__(self) -> str:
         """Format for human-readability."""
         return "{\n\t%s\n}" % ",\n\t".join(
