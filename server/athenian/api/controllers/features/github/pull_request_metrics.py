@@ -10,7 +10,6 @@ from athenian.api.controllers.features.metric_calculator import AverageMetricCal
     MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.models.web import PullRequestMetricID
 
-
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[HistogramCalculator]] = {}
 
@@ -486,6 +485,32 @@ class OpenedCalculator(SumMetricCalculator[int]):
         return result
 
 
+@register_metric(PullRequestMetricID.PR_REVIEWED)
+class ReviewedCalculator(SumMetricCalculator[int]):
+    """Number of reviewed PRs."""
+
+    dtype = int
+
+    def _analyze(self, facts: np.ndarray, min_time: datetime, max_time: datetime,
+                 **kwargs) -> np.ndarray:
+        dtype = facts["created"].dtype
+        min_time = np.array(min_time, dtype=dtype)
+        max_time = np.array(max_time, dtype=dtype)
+        review_timestamps = np.concatenate(facts["reviews"])
+        reviews_in_range = (min_time <= review_timestamps) & (review_timestamps < max_time)
+        # we cannot sum `reviews_in_range` because there can be several reviews for the same PR
+        review_offsets = np.zeros(len(facts) + 1, dtype=int)
+        np.cumsum(facts["reviews"].apply(len).values, out=review_offsets[1:])
+        # np.searchsorted aliases several reviews of the same PR to the right border of a
+        # `review_offsets` interval
+        # np.unique collapses duplicate indexes
+        reviewed_indexes = np.unique(np.searchsorted(
+            review_offsets, np.where(reviews_in_range)[0], side="right") - 1)
+        result = np.full(len(facts), None, object)
+        result[reviewed_indexes] = 1
+        return result
+
+
 @register_metric(PullRequestMetricID.PR_MERGED)
 class MergedCalculator(SumMetricCalculator[int]):
     """Number of merged PRs."""
@@ -540,7 +565,26 @@ class ClosedCalculator(SumMetricCalculator[int]):
         return result
 
 
-@register_metric(PullRequestMetricID.PR_RELEASED)
+@register_metric(PullRequestMetricID.PR_NOT_REVIEWED)
+class NotReviewedCalculator(SumMetricCalculator[int]):
+    """Number of non-reviewed PRs."""
+
+    deps = (ReviewedCalculator, ClosedCalculator)
+    dtype = int
+
+    def _analyze(self, facts: np.ndarray, min_time: datetime, max_time: datetime,
+                 **kwargs) -> np.ndarray:
+        dtype = facts["created"].dtype
+        min_time = np.array(min_time, dtype=dtype)
+        max_time = np.array(max_time, dtype=dtype)
+        not_reviewed = ~self._calcs[0].peek.astype(bool)
+        closed = self._calcs[1].peek.astype(bool)
+        result = np.full(len(facts), None, object)
+        result[closed & not_reviewed] = 1
+        return result
+
+
+@register_metric(PullRequestMetricID.PR_DONE)
 class ReleasedCalculator(SumMetricCalculator[int]):
     """Number of released PRs."""
 
@@ -549,12 +593,19 @@ class ReleasedCalculator(SumMetricCalculator[int]):
     def _analyze(self, facts: pd.DataFrame, min_time: datetime, max_time: datetime,
                  **kwargs) -> np.ndarray:
         released_indexes = np.where(facts["released"].notnull())[0]
-        released = facts["released"].take(released_indexes)
+        released = facts["released"].take(released_indexes).values
         dtype = facts["created"].dtype
         min_time = np.array(min_time, dtype=dtype)
         max_time = np.array(max_time, dtype=dtype)
         result = np.full(len(facts), None, object)
         result[released_indexes[(min_time <= released) & (released < max_time)]] = 1
+
+        rejected_indexes = np.where(
+            facts["closed"].notnull().values
+            &
+            (facts["merged"].isnull().values | facts["force_push_dropped"]))[0]
+        rejected = facts["closed"].take(rejected_indexes)
+        result[rejected_indexes[(min_time <= rejected) & (rejected < max_time)]] = 1
         return result
 
 

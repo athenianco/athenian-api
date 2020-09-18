@@ -1801,10 +1801,12 @@ components:
         * `pr-wait-first-review-count-q`: number of PRs used to calculate `pr-wait-first-review after applying the quantiles.
         * `pr-flow-ratio`: ratio of opened to closed PRs.
         * `pr-opened`: number of opened PRs.
+        * `pr-reviewed`: number of PRs which received a review.
+        * `pr-not-reviewed`: number of PRs merged or closed but without any review.
         * `pr-merged`: number of merged PRs.
         * `pr-rejected`: number of rejected PRs.
         * `pr-closed`: number of closed PRs.
-        * `pr-released`: number of released PRs.
+        * `pr-done`: number of released, closed unmerged, and force push dropped PRs.
         * `pr-size`: average size of PRs (added + deleted lines) which are active on the time interval after applying the quantiles.
       enum:
       - pr-wip-time
@@ -1831,10 +1833,12 @@ components:
       - pr-wait-first-review-count-q
       - pr-flow-ratio
       - pr-opened
+      - pr-reviewed
+      - pr-not-reviewed
       - pr-merged
       - pr-rejected
       - pr-closed
-      - pr-released
+      - pr-done
       - pr-size
       example: pr-lead-time
       type: string

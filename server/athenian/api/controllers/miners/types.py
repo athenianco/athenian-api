@@ -214,6 +214,7 @@ class PullRequestFacts:
     last_review: Optional[pd.Timestamp]
     released: Optional[pd.Timestamp]
     done: bool
+    reviews: np.ndarray
     size: int
     force_push_dropped: bool
 
@@ -245,7 +246,32 @@ class PullRequestFacts:
     def validate(self) -> None:
         """Ensure that there are no NaNs."""
         for k, v in vars(self).items():  # do not use dataclasses.asdict() - very slow
-            assert v == v, k
+            if isinstance(v, np.ndarray):
+                assert (v == v).all(), k
+            else:
+                assert v == v, k
+
+    def __eq__(self, other) -> bool:
+        """Compare this object to another."""
+        if self is other:
+            return True
+
+        if self.__class__ is not other.__class__:
+            raise NotImplementedError(
+                f"Cannot compare {self.__class__} and {other.__class__}")
+
+        for k, v in vars(self).items():
+            v_other = getattr(other, k)
+            if v is v_other:
+                continue
+
+            if isinstance(v, np.ndarray) and isinstance(v_other, np.ndarray):
+                if not np.array_equal(v, v_other):
+                    return False
+            elif v != v_other:
+                return False
+
+        return True
 
     def __str__(self) -> str:
         """Format for human-readability."""

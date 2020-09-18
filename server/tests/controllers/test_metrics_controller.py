@@ -9,8 +9,7 @@ import pytest
 from athenian.api import FriendlyJson
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRequestMetrics, \
     CalculatedReleaseMetric, CodeBypassingPRsMeasurement, DeveloperMetricID, PullRequestMetricID, \
-    PullRequestWith, \
-    ReleaseMetricID
+    PullRequestWith, ReleaseMetricID
 
 
 @pytest.mark.parametrize(
@@ -275,10 +274,12 @@ async def test_calc_metrics_prs_reposet(client, headers):
                                     PullRequestMetricID.PR_LEAD_COUNT,
                                     PullRequestMetricID.PR_CYCLE_COUNT,
                                     PullRequestMetricID.PR_OPENED,
+                                    PullRequestMetricID.PR_REVIEWED,
+                                    PullRequestMetricID.PR_NOT_REVIEWED,
                                     PullRequestMetricID.PR_CLOSED,
                                     PullRequestMetricID.PR_MERGED,
                                     PullRequestMetricID.PR_REJECTED,
-                                    PullRequestMetricID.PR_RELEASED,
+                                    PullRequestMetricID.PR_DONE,
                                     ])
 async def test_calc_metrics_prs_counts_sums(client, headers, metric):
     body = {
