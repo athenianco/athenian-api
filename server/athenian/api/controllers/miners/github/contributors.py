@@ -1,6 +1,7 @@
 import asyncio
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
+from itertools import chain
 import marshal
 from typing import Any, Collection, Dict, List, Optional
 
@@ -10,8 +11,12 @@ import sentry_sdk
 from sqlalchemy import and_, func, or_, select
 
 from athenian.api.cache import cached
-from athenian.api.models.metadata.github import (PullRequest, PullRequestComment,
-                                                 PullRequestReview, PushCommit, Release, User)
+from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.release import load_releases
+from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
+    PullRequestComment, PullRequestReview, Release, User
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.tracing import sentry_span
 
 
@@ -19,18 +24,20 @@ from athenian.api.tracing import sentry_span
 async def mine_contributors(repos: Collection[str],
                             time_from: Optional[datetime],
                             time_to: Optional[datetime],
-                            db: databases.Database,
+                            with_stats: bool,
+                            user_roles: List[str],
+                            release_settings: Dict[str, ReleaseMatchSetting],
+                            mdb: databases.Database,
+                            pdb: databases.Database,
                             cache: Optional[aiomcache.Client],
-                            with_stats: Optional[bool] = True,
-                            as_roles: List[str] = None) -> List[Dict[str, Any]]:
+                            ) -> List[Dict[str, Any]]:
     """Discover developers who made any important action in the given repositories and \
     in the given time frame."""
     time_from = time_from or datetime(1970, 1, 1, tzinfo=timezone.utc)
     now = datetime.now(timezone.utc) + timedelta(days=1)
     time_to = time_to or datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-    as_roles = as_roles or []
-
-    return await _mine_contributors(repos, time_from, time_to, with_stats, as_roles, db, cache)
+    return await _mine_contributors(
+        repos, time_from, time_to, with_stats, user_roles, release_settings, mdb, pdb, cache)
 
 
 @sentry_span
@@ -38,16 +45,19 @@ async def mine_contributors(repos: Collection[str],
     exptime=5 * 60,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
-    key=lambda repos, time_from, time_to, with_stats, as_roles, **_: (
+    key=lambda repos, time_from, time_to, with_stats, user_roles, release_settings, **_: (
         ",".join(sorted(repos)), time_from.timestamp(), time_to.timestamp(), with_stats,
-        sorted(as_roles)),
+        sorted(user_roles), release_settings,
+    ),
 )
 async def _mine_contributors(repos: Collection[str],
                              time_from: datetime,
                              time_to: datetime,
                              with_stats: bool,
-                             as_roles: List[str],
-                             db: databases.Database,
+                             user_roles: List[str],
+                             release_settings: Dict[str, ReleaseMatchSetting],
+                             mdb: databases.Database,
+                             pdb: databases.Database,
                              cache: Optional[aiomcache.Client]) -> List[Dict[str, Any]]:
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
@@ -60,95 +70,142 @@ async def _mine_contributors(repos: Collection[str],
                  PullRequest.closed_at.is_(None)),
             PullRequest.closed_at.between(time_from, time_to)),
     )
+    tasks = [
+        extract_branches(repos, mdb, cache),
+        mdb.fetch_all(select([NodeRepository.node_id])
+                      .where(NodeRepository.name_with_owner.in_(repos))),
+    ]
+    branches, repo_rows = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (branches, repo_rows):
+        if isinstance(r, Exception):
+            raise r from None
+    branches, default_branches = branches
+    repo_nodes = [r[0] for r in repo_rows]
 
     @sentry_span
     async def fetch_author():
-        # TODO(vmarkovtsev): load released PRs from the pdb
-        return await db.fetch_all(
-            select([PullRequest.user_login, func.count(PullRequest.user_login)])
-            .where(common_prs_where)
-            .group_by(PullRequest.user_login))
+        ghdprf = GitHubDonePullRequestFacts
+        format_version = ghdprf.__table__.columns[ghdprf.format_version.key].default.arg
+        tasks = [
+            pdb.fetch_all(select([ghdprf.author, ghdprf.pr_node_id])
+                          .where(and_(ghdprf.format_version == format_version,
+                                      ghdprf.repository_full_name.in_(repos),
+                                      ghdprf.pr_done_at.between(time_from, time_to)))
+                          .distinct()),
+            mdb.fetch_all(select([PullRequest.user_login, PullRequest.node_id])
+                          .where(common_prs_where)),
+        ]
+        released, main = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in (released, main):
+            if isinstance(r, Exception):
+                raise r from None
+        return {
+            "author": Counter(user for user, _ in set(chain(
+                ((r[0], r[1]) for r in released),
+                ((r[0], r[1]) for r in main)))
+            ).items(),
+        }
 
     @sentry_span
     async def fetch_reviewer():
-        return await db.fetch_all(
-            select([PullRequestReview.user_login, func.count(PullRequestReview.user_login)])
-            .where(and_(PullRequestReview.repository_full_name.in_(repos),
-                        PullRequestReview.submitted_at.between(time_from, time_to)))
-            .group_by(PullRequestReview.user_login))
+        return {
+            "reviewer": await mdb.fetch_all(
+                select([PullRequestReview.user_login, func.count(PullRequestReview.user_login)])
+                .where(and_(PullRequestReview.repository_full_name.in_(repos),
+                            PullRequestReview.submitted_at.between(time_from, time_to)))
+                .group_by(PullRequestReview.user_login)),
+        }
 
     @sentry_span
-    async def fetch_commit_author():
-        return await db.fetch_all(
-            select([PushCommit.author_login, func.count(PushCommit.author_login)])
-            .where(and_(PushCommit.repository_full_name.in_(repos),
-                        PushCommit.committed_date.between(time_from, time_to)))
-            .group_by(PushCommit.author_login))
-
-    @sentry_span
-    async def fetch_commit_committer():
-        return await db.fetch_all(
-            select([PushCommit.committer_login, func.count(PushCommit.committer_login)])
-            .where(and_(PushCommit.repository_full_name.in_(repos),
-                        PushCommit.committed_date.between(time_from, time_to)))
-            .group_by(PushCommit.committer_login))
+    async def fetch_commit_user():
+        tasks = [
+            mdb.fetch_all(
+                select([NodeCommit.author_user, func.count(NodeCommit.author_user)])
+                .where(and_(NodeCommit.repository.in_(repo_nodes),
+                            NodeCommit.committed_date.between(time_from, time_to),
+                            NodeCommit.author_user.isnot(None)))
+                .group_by(NodeCommit.author_user)),
+            mdb.fetch_all(
+                select([NodeCommit.committer_user, func.count(NodeCommit.committer_user)])
+                .where(and_(NodeCommit.repository.in_(repo_nodes),
+                            NodeCommit.committed_date.between(time_from, time_to),
+                            NodeCommit.committer_user.isnot(None)))
+                .group_by(NodeCommit.committer_user)),
+        ]
+        authors, committers = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in (authors, committers):
+            if isinstance(r, Exception):
+                raise r from None
+        user_ids = set(r[0] for r in authors).union(r[0] for r in committers)
+        logins = await mdb.fetch_all(select([User.node_id, User.login])
+                                     .where(User.node_id.in_(user_ids)))
+        logins = {r[0]: r[1] for r in logins}
+        return {
+            "commit_committer": [(logins[r[0]], r[1]) for r in committers],
+            "commit_author": [(logins[r[0]], r[1]) for r in authors],
+        }
 
     @sentry_span
     async def fetch_commenter():
-        return await db.fetch_all(
-            select([PullRequestComment.user_login, func.count(PullRequestComment.user_login)])
-            .where(and_(PullRequestComment.repository_full_name.in_(repos),
-                        PullRequestComment.created_at.between(time_from, time_to),
-                        ))
-            .group_by(PullRequestComment.user_login))
+        return {
+            "commenter": await mdb.fetch_all(
+                select([PullRequestComment.user_login, func.count(PullRequestComment.user_login)])
+                .where(and_(PullRequestComment.repository_full_name.in_(repos),
+                            PullRequestComment.created_at.between(time_from, time_to),
+                            ))
+                .group_by(PullRequestComment.user_login)),
+        }
 
     @sentry_span
     async def fetch_merger():
-        return await db.fetch_all(
-            select([PullRequest.merged_by_login, func.count(PullRequest.merged_by_login)])
-            .where(common_prs_where)
-            .group_by(PullRequest.merged_by_login))
+        return {
+            "merger": await mdb.fetch_all(
+                select([PullRequest.merged_by_login, func.count(PullRequest.merged_by_login)])
+                .where(common_prs_where)
+                .group_by(PullRequest.merged_by_login)),
+        }
 
     @sentry_span
     async def fetch_releaser():
-        return await db.fetch_all(
-            select([Release.author, func.count(Release.author)])
-            .where(and_(Release.repository_full_name.in_(repos),
-                        Release.published_at.between(time_from, time_to)))
-            .group_by(Release.author))
+        releases, _ = await load_releases(repos, branches, default_branches, time_from, time_to,
+                                          release_settings, mdb, pdb, cache)
+        counts = releases[Release.author.key].value_counts()
+        return {
+            "releaser": zip(counts.index.values, counts.values),
+        }
 
     fetchers_mapping = {
         "author": fetch_author,
         "reviewer": fetch_reviewer,
-        "commit_author": fetch_commit_author,
-        "commit_committer": fetch_commit_committer,
+        "commit_committer": fetch_commit_user,
+        "commit_author": fetch_commit_user,
         "commenter": fetch_commenter,
         "merger": fetch_merger,
         "releaser": fetch_releaser,
     }
 
-    as_roles = as_roles or fetchers_mapping.keys()
-    tasks = {k: v() for k, v in fetchers_mapping.items() if k in as_roles}
-    data = await asyncio.gather(*tasks.values(), return_exceptions=True)
+    user_roles = user_roles or fetchers_mapping.keys()
+    tasks = set(fetchers_mapping[role] for role in user_roles)
+    data = await asyncio.gather(*(t() for t in tasks), return_exceptions=True)
     stats = defaultdict(dict)
-    for r, key in zip(data, tasks.keys()):
-        if isinstance(r, Exception):
-            raise r from None
-
-        for row in r:
-            stats[row[0]][key] = row[1]
+    for dikt in data:
+        if isinstance(dikt, Exception):
+            raise dikt from None
+        for key, rows in dikt.items():
+            for row in rows:
+                stats[row[0]][key] = row[1]
 
     stats.pop(None, None)
 
     cols = [User.login, User.email, User.avatar_url, User.name]
     with sentry_sdk.start_span(op="SELECT FROM github_users_v2_compat"):
-        user_details = await db.fetch_all(select(cols).where(User.login.in_(stats.keys())))
+        user_details = await mdb.fetch_all(select(cols).where(User.login.in_(stats.keys())))
 
     contribs = []
     for ud in user_details:
         c = dict(ud)
         c["stats"] = stats[c[User.login.key]]
-        if as_roles and sum(c["stats"].get(role, 0) for role in as_roles) == 0:
+        if user_roles and sum(c["stats"].get(role, 0) for role in user_roles) == 0:
             continue
 
         if "author" in c["stats"]:

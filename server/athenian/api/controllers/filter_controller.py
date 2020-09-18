@@ -62,10 +62,13 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    repos = await _common_filter_preprocess(filt, request)
+    repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
+    release_settings = \
+        await Settings.from_request(request, filt.account).list_release_matches(repos)
+    repos = [r.split("/", 1)[1] for r in repos]
     users = await mine_contributors(
-        repos, filt.date_from, filt.date_to, request.mdb, request.cache,
-        as_roles=filt.as_)
+        repos, filt.date_from, filt.date_to, True, filt.as_, release_settings,
+        request.mdb, request.pdb, request.cache)
     model = [
         DeveloperSummary(
             login=f"{PREFIXES['github']}{u['login']}", avatar=u["avatar_url"],

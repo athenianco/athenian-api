@@ -20,7 +20,9 @@ from athenian.api.controllers.features.entries import calc_pull_request_facts_gi
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import Bots
+from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.contributors import mine_contributors
+from athenian.api.controllers.miners.github.release import load_releases
 from athenian.api.controllers.settings import Settings
 import athenian.api.db
 from athenian.api.models.metadata import dereference_schemas, PREFIXES
@@ -144,6 +146,11 @@ def main():
                     pdb,
                     None,  # yes, disable the cache
                 )
+                # extract ALL the releases
+                branches, default_branches = await extract_branches(repos, mdb, None)
+                await load_releases(repos, branches, default_branches,
+                                    datetime(1970, 1, 1, tzinfo=timezone.utc), time_to,
+                                    settings, mdb, pdb, None)
             except Exception as e:
                 log.warning("reposet %d: %s: %s", reposet.id, type(e).__name__, e)
                 sentry_sdk.capture_exception(e)
@@ -177,14 +184,18 @@ async def create_bots_team(account: int,
                            repos: Collection[str],
                            all_bots: Set[str],
                            sdb: ParallelDatabase,
-                           mdb: ParallelDatabase) -> None:
+                           mdb: ParallelDatabase,
+                           pdb: ParallelDatabase) -> None:
     """Create a new team for the specified accoutn which contains all the involved bots."""
     teams = await sdb.fetch_all(select([Team.id]).where(Team.name == Team.BOTS))
     if teams:
         return
+    release_settings = await Settings(
+        account=account, user_id=None, native_user_id=None,
+        sdb=sdb, mdb=mdb, cache=None, slack=None,
+    ).list_release_matches(repos)
     contributors = await mine_contributors(
-        repos, datetime.now(timezone.utc) - timedelta(days=365 * 5), datetime.now(timezone.utc),
-        mdb, None, with_stats=False)
+        repos, None, None, False, [], release_settings, mdb, pdb, None)
     bots = {u[User.login.key] for u in contributors}.intersection(all_bots)
     if bots:
         bots = [PREFIXES["github"] + login for login in bots]

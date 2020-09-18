@@ -115,12 +115,12 @@ def _build_participants_filters(participants: Participants,
                                 filters: list,
                                 selected: list,
                                 postgres: bool) -> None:
-    ghprt = GitHubDonePullRequestFacts
+    ghdprf = GitHubDonePullRequestFacts
     if postgres:
         developer_filters_single = []
-        for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
-                        (ghprt.merger, ParticipationKind.MERGER),
-                        (ghprt.releaser, ParticipationKind.RELEASER)):
+        for col, pk in ((ghdprf.author, ParticipationKind.AUTHOR),
+                        (ghdprf.merger, ParticipationKind.MERGER),
+                        (ghdprf.releaser, ParticipationKind.RELEASER)):
             col_parts = participants.get(pk)
             if not col_parts:
                 continue
@@ -129,10 +129,10 @@ def _build_participants_filters(participants: Participants,
         for f in developer_filters_single[1:]:
             f.right = developer_filters_single[0].right
         developer_filters_multiple = []
-        for col, pk in ((ghprt.commenters, ParticipationKind.COMMENTER),
-                        (ghprt.reviewers, ParticipationKind.REVIEWER),
-                        (ghprt.commit_authors, ParticipationKind.COMMIT_AUTHOR),
-                        (ghprt.commit_committers, ParticipationKind.COMMIT_COMMITTER)):
+        for col, pk in ((ghdprf.commenters, ParticipationKind.COMMENTER),
+                        (ghdprf.reviewers, ParticipationKind.REVIEWER),
+                        (ghdprf.commit_authors, ParticipationKind.COMMIT_AUTHOR),
+                        (ghdprf.commit_committers, ParticipationKind.COMMIT_COMMITTER)):
             col_parts = participants.get(pk)
             if not col_parts:
                 continue
@@ -143,8 +143,8 @@ def _build_participants_filters(participants: Participants,
         filters.append(or_(*developer_filters_single, *developer_filters_multiple))
     else:
         selected.extend([
-            ghprt.author, ghprt.merger, ghprt.releaser, ghprt.reviewers, ghprt.commenters,
-            ghprt.commit_authors, ghprt.commit_committers])
+            ghdprf.author, ghdprf.merger, ghdprf.releaser, ghdprf.reviewers, ghdprf.commenters,
+            ghdprf.commit_authors, ghdprf.commit_committers])
 
 
 def _build_labels_filters(model: Base,
