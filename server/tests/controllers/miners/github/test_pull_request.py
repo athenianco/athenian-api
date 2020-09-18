@@ -342,7 +342,7 @@ def validate_pull_request_facts(prmeta: Dict[str, Any], prt: PullRequestFacts):
     assert prmeta[PullRequest.node_id.key]
     assert prmeta[PullRequest.repository_full_name.key] == "src-d/go-git"
     for k, v in vars(prt).items():
-        if not v or not isinstance(v, pd.Timestamp):
+        if not isinstance(v, pd.Timestamp) or not v:
             continue
         if k not in ("first_commit", "last_commit", "last_commit_before_first_review",
                      "work_began"):
@@ -352,6 +352,9 @@ def validate_pull_request_facts(prmeta: Dict[str, Any], prt: PullRequestFacts):
             assert prt.closed >= v, k
         if prt.released:
             assert prt.released >= v
+    for t in prt.reviews:
+        assert t >= prt.created.to_datetime64(), "review before creation"
+        assert t <= prt.last_review.to_datetime64(), "review after last review"
     if prt.first_commit:
         assert prt.last_commit >= prt.first_commit
     else:
