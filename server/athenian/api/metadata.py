@@ -1,3 +1,3 @@
 __package__ = "athenian.api"
-__version__ = "0.5.2"
+__version__ = "0.5.3"
 __description__ = "Athenian Owl API"
