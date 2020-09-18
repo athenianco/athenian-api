@@ -279,6 +279,8 @@ class NodeCommit(Base):
     sha = synonym(oid)
     repository = Column(Text, nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True))
+    committer_user = Column(Text)
+    author_user = Column(Text)
 
 
 NodeCommit.sha.key = "oid"
