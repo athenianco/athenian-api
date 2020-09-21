@@ -44,6 +44,9 @@ from athenian.api.models.precomputed.models import GitHubCommitHistory, \
 from athenian.api.tracing import sentry_span
 
 
+tag_by_branch_probe_lookaround = timedelta(weeks=4)
+
+
 @sentry_span
 async def load_releases(repos: Iterable[str],
                         branches: pd.DataFrame,
@@ -71,7 +74,11 @@ async def load_releases(repos: Iterable[str],
     if repos_count == 0:
         return dummy_releases_df(), {}
     tasks = [
-        _fetch_precomputed_releases(match_groups, time_from, time_to, pdb, index=index),
+        _fetch_precomputed_releases(
+            match_groups,
+            time_from - tag_by_branch_probe_lookaround,
+            time_to + tag_by_branch_probe_lookaround,
+            pdb, index=index),
         _fetch_precomputed_release_match_spans(match_groups, pdb),
     ]
     releases, spans = await asyncio.gather(*tasks, return_exceptions=True)
@@ -81,6 +88,8 @@ async def load_releases(repos: Iterable[str],
     applied_matches = releases[[Release.repository_full_name.key, matched_by_column]].groupby(
         Release.repository_full_name.key, sort=False,
     )[matched_by_column].nth(0).to_dict()
+    releases = releases.take(np.where(
+        releases[Release.published_at.key].between(time_from, time_to))[0])
     settings = settings.copy()
     prefix = PREFIXES["github"]
     for k, v in applied_matches.items():
@@ -217,9 +226,6 @@ def dummy_releases_df() -> pd.DataFrame:
     """Create an empty releases DataFrame."""
     return pd.DataFrame(
         columns=[c.name for c in Release.__table__.columns] + [matched_by_column])
-
-
-tag_by_branch_probe_lookaround = timedelta(weeks=4)
 
 
 @sentry_span
