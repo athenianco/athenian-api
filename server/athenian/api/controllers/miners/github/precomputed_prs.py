@@ -542,7 +542,11 @@ async def load_merged_unreleased_pull_request_facts(
         node_id = row[ghmprf.pr_node_id.key]
         data = row[ghmprf.data.key]
         if data is None:
-            log.error("No precomputed facts for merged %s", node_id)
+            # There are two known cases:
+            # 1. When we load all PRs without a blacklist (/filter/pull_requests) so some merged PR
+            #    is matched to releases but exists in `github_done_pull_request_facts`.
+            # 2. "Impossible" PRs that are merged.
+            log.warning("No precomputed facts for merged %s", node_id)
             continue
         if labels and not _labels_are_compatible(
                 include_singles, include_multiples, labels.exclude, row[ghmprf.labels.key]):
