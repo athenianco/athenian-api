@@ -137,9 +137,11 @@ class PullRequestListMiner:
                 facts_time_machine,
                 {k: (pr_node_id in v) for k, v in hard_events_time_machine.items()},
                 self._time_from)
-            if (self._stages and not self._stages.intersection(stages_time_machine)) or \
-                    (self._events and not self._events.intersection(events_time_machine)):
-                return None
+            if self._stages or self._events:
+                stages_pass = self._stages and self._stages.intersection(stages_time_machine)
+                events_pass = self._events and self._events.intersection(events_time_machine)
+                if not (stages_pass or events_pass):
+                    return None
         else:
             events_time_machine = stages_time_machine = None
         events_now, stages_now = self._collect_events_and_stages(

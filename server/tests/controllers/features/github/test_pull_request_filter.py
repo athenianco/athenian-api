@@ -338,3 +338,15 @@ async def test_pr_list_miner_filter_open_precomputed(mdb, pdb, release_match_set
     assert {pr.number for pr in prs1} == {pr.number for pr in prs2}
     assert {tuple(sorted(pr.stage_timings)) for pr in prs1} == \
            {tuple(sorted(pr.stage_timings)) for pr in prs2}
+
+
+@with_defer
+async def test_pr_list_miner_filter_stages_events_aggregation(mdb, pdb, release_match_setting_tag):
+    time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    args = [{PullRequestEvent.REVIEWED},
+            {PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING},
+            time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+            False, release_match_setting_tag, 0, mdb, pdb, None]
+    prs = await filter_pull_requests(*args)
+    assert len(prs) == 132
