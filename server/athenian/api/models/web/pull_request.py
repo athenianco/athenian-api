@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_issue import JIRAIssue
+from athenian.api.models.web.pull_request_event import PullRequestEvent
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_property import PullRequestProperty
@@ -39,6 +40,10 @@ class PullRequest(Model):
         "release_url": str,
         "stage_timings": StageTimings,
         "properties": List[str],
+        "events_time_machine": Optional[List[str]],
+        "stages_time_machine": Optional[List[str]],
+        "events_now": List[str],
+        "stages_now": str,
         "participants": List[PullRequestParticipant],
         "labels": Optional[List[PullRequestLabel]],
         "jira": Optional[List[JIRAIssue]],
@@ -66,6 +71,10 @@ class PullRequest(Model):
         "release_url": "release_url",
         "stage_timings": "stage_timings",
         "properties": "properties",
+        "events_time_machine": "events_time_machine",
+        "stages_time_machine": "stages_time_machine",
+        "events_now": "events_now",
+        "stages_now": "stages_now",
         "participants": "participants",
         "labels": "labels",
         "jira": "jira",
@@ -94,6 +103,10 @@ class PullRequest(Model):
         release_url: Optional[str] = None,
         stage_timings: Optional[StageTimings] = None,
         properties: Optional[List[str]] = None,
+        events_time_machine: Optional[List[str]] = None,
+        stages_time_machine: Optional[List[str]] = None,
+        events_now: Optional[List[str]] = None,
+        stages_now: Optional[List[str]] = None,
         participants: Optional[List[PullRequestParticipant]] = None,
         labels: Optional[List[PullRequestLabel]] = None,
         jira: Optional[List[JIRAIssue]] = None,
@@ -120,6 +133,10 @@ class PullRequest(Model):
         :param release_url: The release URL of this PullRequest.
         :param stage_timings: The stage timings of this PullRequest.
         :param properties: The properties of this PullRequest.
+        :param events_time_machine: The events_time_machine of this PullRequest.
+        :param stages_time_machine: The stages_time_machine of this PullRequest.
+        :param events_now: The events_now of this PullRequest.
+        :param stages_now: The stages_now of this PullRequest.
         :param participants: The participants of this PullRequest.
         :param labels: The labels of this PullRequest.
         :param jira: The jira of this PullRequest.
@@ -145,6 +162,10 @@ class PullRequest(Model):
         self._release_url = release_url
         self._stage_timings = stage_timings
         self._properties = properties
+        self._events_time_machine = events_time_machine
+        self._stages_time_machine = stages_time_machine
+        self._events_now = events_now
+        self._stages_now = stages_now
         self._participants = participants
         self._labels = labels
         self._jira = jira
@@ -612,6 +633,90 @@ class PullRequest(Model):
                 raise ValueError("Invalid properties: %s" % properties)
 
         self._properties = properties
+
+    @property
+    def events_time_machine(self) -> Optional[List[str]]:
+        """
+        Gets events_time_machine of this PullRequest.
+
+        List of PR events which happened until `date_to`. `date_from` does not matter.
+
+        :return: The events_time_machine of this PullRequest.
+        """
+        return self._events_time_machine
+
+    @events_time_machine.setter
+    def events_time_machine(self, events_time_machine: Optional[List[str]]):
+        """
+        Sets events_time_machine of this PullRequest.
+
+        List of PR events which happened until `date_to`. `date_from` does not matter.
+
+        :param events_time_machine: The events_time_machine of this PullRequest.
+        """
+        for prop in events_time_machine:
+            if prop not in PullRequestEvent:
+                raise ValueError("Invalid `events_time_machine`: %s" % events_time_machine)
+
+        self._events_time_machine = events_time_machine
+
+    @property
+    def stages_time_machine(self) -> Optional[List[str]]:
+        """Gets the stages_time_machine of this PullRequest.
+
+        :return: The stages_time_machine of this PullRequest.
+        """
+        return self._stages_time_machine
+
+    @stages_time_machine.setter
+    def stages_time_machine(self, stages_time_machine: Optional[List[str]]):
+        """Sets the stages_time_machine of this PullRequest.
+
+        :param stages_time_machine: The stages_time_machine of this PullRequest.
+        """
+        self._stages_time_machine = stages_time_machine
+
+    @property
+    def events_now(self) -> List[str]:
+        """
+        Gets events_now of this PullRequest.
+
+        List of PR events that ever happened.
+
+        :return: The events_now of this PullRequest.
+        """
+        return self._events_now
+
+    @events_now.setter
+    def events_now(self, events_now: List[str]):
+        """
+        Sets events_now of this PullRequest.
+
+        List of PR events that ever happened.
+
+        :param events_now: The events_now of this PullRequest.
+        """
+        for prop in events_now:
+            if prop not in PullRequestEvent:
+                raise ValueError("Invalid `events_now`: %s" % events_now)
+
+        self._events_now = events_now
+
+    @property
+    def stages_now(self) -> List[str]:
+        """Gets the stages_now of this PullRequest.
+
+        :return: The stages_now of this PullRequest.
+        """
+        return self._stages_now
+
+    @stages_now.setter
+    def stages_now(self, stages_now: List[str]):
+        """Sets the stages_now of this PullRequest.
+
+        :param stages_now: The stages_now of this PullRequest.
+        """
+        self._stages_now = stages_now
 
     @property
     def participants(self) -> List[PullRequestParticipant]:

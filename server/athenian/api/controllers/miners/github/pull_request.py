@@ -61,7 +61,7 @@ class PRDataFrames:
 
 class PullRequestMiner:
     """Load all the information related to Pull Requests from the metadata DB. Iterate over it \
-    by individual PR objects."""
+    to access individual PR objects."""
 
     CACHE_TTL = 5 * 60
     log = logging.getLogger("%s.PullRequestMiner" % metadata.__package__)
@@ -69,6 +69,11 @@ class PullRequestMiner:
     def __init__(self, dfs: PRDataFrames):
         """Initialize a new instance of `PullRequestMiner`."""
         self._dfs = dfs
+
+    @property
+    def dfs(self) -> PRDataFrames:
+        """Return the bound dataframes with PR information."""
+        return self._dfs
 
     def drop(self, node_ids: Collection[str]) -> pd.Index:
         """

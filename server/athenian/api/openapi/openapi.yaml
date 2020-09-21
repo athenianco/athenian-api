@@ -2865,6 +2865,16 @@ components:
           items:
             $ref: '#/components/schemas/PullRequestProperty'
           type: array
+        events:
+          description: Allowed PR events that happened between `date_from` and `date_to`.
+          items:
+            $ref: '#/components/schemas/PullRequestEvent'
+          type: array
+        stages:
+          description: Allowed PR stages that are defined at `date_to`.
+          items:
+            $ref: '#/components/schemas/PullRequestStage'
+          type: array
         with:
           $ref: '#/components/schemas/PullRequestWith'
         labels_include:
@@ -2896,7 +2906,6 @@ components:
       - date_to
       - exclude_inactive
       - in
-      - properties
       type: object
     PullRequestProperty:
       description: |-
@@ -2933,6 +2942,48 @@ components:
       - done
       - force_push_dropped
       example: wip
+      type: string
+    PullRequestEvent:
+      description: |-
+        PR's modelled lifecycle events.
+        * `created`: The PR was opened.
+        * `committed`: Somebody pushed a commit to the PR.
+        * `review_requested`: Somebody requested a PR review.
+        * `reviewed`: Somebody reviewed the PR (either approved, requested changes, or commented).
+        * `approved`: Somebody approved the PR. Note that if there were negative reviews from other participants, an approval does *not* trigger this event.
+        * `changes_requested`: Somebody submitted a negative PR review.
+        * `merged`: Somebody merged the PR.
+        * `released`: The PR was released.
+        * `rejected`: Somebody closed the PR without merging.
+      enum:
+      - created
+      - committed
+      - review_requested
+      - reviewed
+      - approved
+      - changes_requested
+      - merged
+      - released
+      - rejected
+      example: created
+      type: string
+    PullRequestStage:
+      description: |-
+        PR's modelled lifecycle stages.
+        * `wip`: The PR is a work-in-progress: no reviews, no review requests, not closed.
+        * `reviewing`: The PR is going through a review process.
+        * `merging`: The PR was approved and is waiting for merge.
+        * `releasing`: The PR was merged but is not released yet.
+        * `force_push_dropped`: The PR was closed but the Git commit history was rewritten and the PR's commits no longer exist.
+        * `done`: The PR was either closed without merging or released or force push dropped.
+      enum:
+      - wip
+      - reviewing
+      - merging
+      - releasing
+      - force_push_dropped
+      - done
+      example: created
       type: string
     PullRequestSet:
       additionalProperties: false
@@ -3112,11 +3163,26 @@ components:
         stage_timings:
           $ref: '#/components/schemas/StageTimings'
         properties:
-          description: List of the PR properties triggered in the given time window.
+          description: DEPRECATED. List of the PR properties triggered in the given time window.
             There may be extra properties that were not originally requested.
           items:
             $ref: '#/components/schemas/PullRequestProperty'
           type: array
+        events_time_machine:
+          description: List of PR events which happened until `date_to`.
+            `date_from` does not matter.
+          items:
+            $ref: '#/components/schemas/PullRequestEvent'
+          type: array
+        stage_time_machine:
+          $ref: '#/components/schemas/PullRequestStage'
+        events_now:
+          description: List of PR events that ever happened.
+          items:
+            $ref: '#/components/schemas/PullRequestEvent'
+          type: array
+        stage_now:
+          $ref: '#/components/schemas/PullRequestStage'
         participants:
           description: List of developers related to this PR.
           items:
@@ -3140,6 +3206,8 @@ components:
       - number
       - participants
       - properties
+      - events_now
+      - stage_now
       - repository
       - size_added
       - size_removed

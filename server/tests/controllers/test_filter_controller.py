@@ -281,7 +281,7 @@ async def test_filter_prs_all_properties(client, headers, mdb):
     del body["properties"]
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    assert response.status == 400
+    assert response.status == 200
 
 
 @pytest.mark.filter_pull_requests

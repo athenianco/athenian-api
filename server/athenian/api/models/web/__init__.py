@@ -61,6 +61,7 @@ from athenian.api.models.web.no_source_data_error import NoSourceDataError
 from athenian.api.models.web.patch_token_request import PatchTokenRequest
 from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.models.web.pull_request import PullRequest
+from athenian.api.models.web.pull_request_event import PullRequestEvent
 from athenian.api.models.web.pull_request_histograms_request import PullRequestHistogramsRequest
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
@@ -69,6 +70,7 @@ from athenian.api.models.web.pull_request_numbers import PullRequestNumbers
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.pull_request_set import PullRequestSet
+from athenian.api.models.web.pull_request_stage import PullRequestStage
 from athenian.api.models.web.pull_request_with import PullRequestWith
 from athenian.api.models.web.quantiles import validate_quantiles
 from athenian.api.models.web.release_match_request import ReleaseMatchRequest
