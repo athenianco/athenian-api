@@ -24,7 +24,8 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.jira import generate_jira_prs_query
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_merged_unreleased_pull_request_facts, load_precomputed_pr_releases, update_unreleased_prs
+    load_merged_unreleased_pull_request_facts, load_precomputed_pr_releases, \
+    update_unreleased_prs
 from athenian.api.controllers.miners.github.precomputed_releases import \
     load_precomputed_release_facts, store_precomputed_release_facts
 from athenian.api.controllers.miners.github.release_accelerated import extract_first_parents, \
@@ -41,10 +42,10 @@ from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepository, PullRequest, \
     PullRequestLabel, PushCommit, Release
-from athenian.api.models.precomputed.models import GitHubCommitHistory, \
-    GitHubRelease as PrecomputedRelease, GitHubReleaseMatchTimespan, GitHubRepository
+from athenian.api.models.precomputed.models import GitHubCommitHistory
+from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease
+from athenian.api.models.precomputed.models import GitHubReleaseMatchTimespan, GitHubRepository
 from athenian.api.tracing import sentry_span
-
 
 tag_by_branch_probe_lookaround = timedelta(weeks=4)
 
@@ -419,6 +420,7 @@ async def _store_precomputed_releases(releases: pd.DataFrame,
     prefix = PREFIXES["github"]
     columns = [Release.id.key,
                Release.repository_full_name.key,
+               Release.repository_node_id.key,
                Release.author.key,
                Release.name.key,
                Release.tag.key,
@@ -543,6 +545,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
             Release.name.key: commits[PushCommit.sha.key],
             Release.published_at.key: commits[PushCommit.committed_date.key],
             Release.repository_full_name.key: repo,
+            Release.repository_node_id.key: commits[PushCommit.repository_node_id.key],
             Release.sha.key: commits[PushCommit.sha.key],
             Release.tag.key: None,
             Release.url.key: commits[PushCommit.url.key],
