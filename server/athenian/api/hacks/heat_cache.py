@@ -22,7 +22,7 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.contributors import mine_contributors
-from athenian.api.controllers.miners.github.release import load_releases
+from athenian.api.controllers.miners.github.release import load_releases, mine_releases
 from athenian.api.controllers.settings import Settings
 import athenian.api.db
 from athenian.api.models.metadata import dereference_schemas, PREFIXES
@@ -68,6 +68,7 @@ def main():
                                datetime.min.time(),
                                tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=365 * 2)
+    no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
     return_code = 0
 
     async def async_run():
@@ -130,8 +131,10 @@ def main():
                     log.warning("bots %d: %s: %s", reposet.owner_id, type(e).__name__, e)
                     sentry_sdk.capture_exception(e)
                     return_code = 1
-            log.info("Heating reposet %d of account %d", reposet.id, reposet.owner_id)
+            log.info("Heating reposet %d of account %d (%d repos)",
+                     reposet.id, reposet.owner_id, len(repos))
             try:
+                log.info("Extracting PR facts")
                 await calc_pull_request_facts_github(
                     time_from,
                     time_to,
@@ -146,11 +149,14 @@ def main():
                     pdb,
                     None,  # yes, disable the cache
                 )
-                # extract ALL the releases
+                log.info("Extracting all the releases")
                 branches, default_branches = await extract_branches(repos, mdb, None)
                 await load_releases(repos, branches, default_branches,
-                                    datetime(1970, 1, 1, tzinfo=timezone.utc), time_to,
+                                    no_time_from, time_to,
                                     settings, mdb, pdb, None)
+                log.info("Mining all the releases")
+                await mine_releases(repos, branches, default_branches,
+                                    no_time_from, time_to, settings, mdb, pdb, None)
             except Exception as e:
                 log.warning("reposet %d: %s: %s", reposet.id, type(e).__name__, e)
                 sentry_sdk.capture_exception(e)
