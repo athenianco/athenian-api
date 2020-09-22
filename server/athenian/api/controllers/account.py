@@ -61,13 +61,14 @@ async def get_account_repositories(account: int,
                                    sdb_conn: DatabaseLike,
                                    with_prefix=True) -> List[str]:
     """Fetch all the repositories belonging to the account."""
-    repos = await sdb_conn.fetch_val(select([RepositorySet.items]).where(and_(
+    repos = await sdb_conn.fetch_one(select([RepositorySet.items]).where(and_(
         RepositorySet.owner_id == account,
         RepositorySet.name == RepositorySet.ALL,
     )))
     if repos is None:
         raise ResponseError(NoSourceDataError(
             detail="The installation of account %d has not finished yet." % account))
+    repos = repos[0]
     if not with_prefix:
         repos = [r.split("/", 1)[1] for r in repos]
     return repos
