@@ -222,7 +222,7 @@ class PullRequestListMiner:
     @sentry_span
     def _calc_stage_timings(self) -> Dict[str, Sequence[int]]:
         facts = self._facts
-        if len(facts) == 0:
+        if len(facts) == 0 or len(self._prs) == 0:
             return {k: [] for k in self._calcs}
         node_id_key = PullRequest.node_id.key
         df_facts = df_from_dataclasses((facts[pr.pr[node_id_key]] for pr in self._prs),

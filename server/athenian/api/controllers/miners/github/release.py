@@ -1415,7 +1415,7 @@ async def mine_releases(repos: Iterable[str],
             try:
                 missing = ssis[unique_owners[ssis] != series]
             except Exception as e:
-                log = logging.getLogger("mine_releases")
+                log = logging.getLogger("%s.mine_releases" % metadata.__package__)
                 log.warning("%s", ssis)
                 log.warning("%s", unique_owners)
                 log.warning("%s", series)
