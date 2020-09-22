@@ -1016,7 +1016,7 @@ async def test_mine_releases_full_span(mdb, pdb, release_match_setting_tag):
     releases, avatars, matched_bys = await mine_releases(
         ["src-d/go-git"], None, {}, time_from, time_to, release_match_setting_tag, mdb, pdb, None)
     assert len(releases) == 53
-    assert len(avatars) == 114
+    assert len(avatars) == 124
     assert matched_bys == {"github.com/src-d/go-git": ReleaseMatch.tag}
     for details, facts in releases:
         assert details[Release.name.key]
@@ -1032,6 +1032,32 @@ async def test_mine_releases_full_span(mdb, pdb, release_match_setting_tag):
             "2017-02-01 09:51:10+0000", tz="UTC")
         assert time_from < facts.published < time_to
         assert facts.matched_by == ReleaseMatch.tag
+
+
+@with_defer
+async def test_mine_releases_precomputed(
+        mdb, pdb, release_match_setting_tag, release_match_setting_branch,
+        branches, default_branches):
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
+    await mine_releases(
+        ["src-d/go-git"], None, {}, time_from, time_to, release_match_setting_tag, mdb, pdb, None)
+    await wait_deferred()
+    releases, avatars, _ = await mine_releases(
+        ["src-d/go-git"], None, {}, time_from, time_to, release_match_setting_tag, mdb, pdb, None)
+    assert len(releases) == 53
+    assert len(avatars) == 124
+    releases, avatars, _ = await mine_releases(
+        ["src-d/go-git"], branches, default_branches, time_from, time_to,
+        release_match_setting_branch, mdb, pdb, None)
+    assert len(releases) == 772
+    assert len(avatars) == 131
+    await wait_deferred()
+    releases, avatars, _ = await mine_releases(
+        ["src-d/go-git"], branches, default_branches, time_from, time_to,
+        release_match_setting_branch, mdb, pdb, None)
+    assert len(releases) == 772
+    assert len(avatars) == 131
 
 
 @pytest.mark.parametrize("settings_index", [0, 1])
