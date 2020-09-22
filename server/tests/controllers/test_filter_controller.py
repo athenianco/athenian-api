@@ -949,7 +949,7 @@ async def test_filter_releases_by_tag(client, headers):
     assert response.status == 200, response_text
     releases = FilteredReleases.from_dict(json.loads(response_text))
     releases.include.users = set(releases.include.users)
-    assert len(releases.include.users) == 71
+    assert len(releases.include.users) == 78
     assert "github.com/mcuadros" in releases.include.users
     assert len(releases.data) == 21
     pr_numbers = set()

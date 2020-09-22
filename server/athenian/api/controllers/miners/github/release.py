@@ -25,6 +25,8 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.jira import generate_jira_prs_query
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_merged_unreleased_pull_request_facts, load_precomputed_pr_releases, update_unreleased_prs
+from athenian.api.controllers.miners.github.precomputed_releases import \
+    load_precomputed_release_facts, store_precomputed_release_facts
 from athenian.api.controllers.miners.github.release_accelerated import extract_first_parents, \
     extract_subdag, join_dags, mark_dag_access, mark_dag_parents, partition_dag, \
     searchsorted_inrange
@@ -1172,7 +1174,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                                           mdb: databases.Database,
                                           pdb: databases.Database,
                                           cache: Optional[aiomcache.Client],
-                                          ) -> Tuple[Dict[str, str],
+                                          ) -> Tuple[Dict[str, ReleaseMatch],
                                                      pd.DataFrame,
                                                      pd.DataFrame,
                                                      Dict[str, ReleaseMatchSetting]]:
@@ -1342,98 +1344,133 @@ async def mine_releases(repos: Iterable[str],
         repos, branches, default_branches, time_from, time_to, settings, mdb, pdb, cache)
     tasks = [
         load_commit_dags(releases, mdb, pdb, cache),
+        load_precomputed_release_facts(releases, default_branches, settings, pdb),
         _fetch_repository_first_commit_dates(repos, mdb, pdb, cache),
     ]
     with sentry_sdk.start_span(op="mine_releases/commits"):
-        dags, first_commit_dates = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (dags, first_commit_dates):
+        dags, precomputed_facts, first_commit_dates = await asyncio.gather(
+            *tasks, return_exceptions=True)
+    for r in (dags, precomputed_facts, first_commit_dates):
         if isinstance(r, Exception):
             raise r from None
+
+    has_precomputed_facts = releases[Release.id.key].isin(precomputed_facts).values
+    result = [
+        ({Release.name.key: my_name or my_tag,
+          Release.repository_full_name.key: prefix + repo,
+          Release.url.key: my_url,
+          Release.published_at.key: my_published_at,
+          Release.author.key: my_author},
+         precomputed_facts[my_id])
+        for my_id, my_name, my_tag, repo, my_url, my_published_at, my_author in zip(
+            releases[Release.id.key].values[has_precomputed_facts],
+            releases[Release.name.key].values[has_precomputed_facts],
+            releases[Release.tag.key].values[has_precomputed_facts],
+            releases[Release.repository_full_name.key].values[has_precomputed_facts],
+            releases[Release.url.key].values[has_precomputed_facts],
+            releases[Release.published_at.key].values[has_precomputed_facts],
+            releases[Release.author.key].values[has_precomputed_facts],
+        )
+    ]
+
+    releases = releases.take(np.where(~has_precomputed_facts)[0])
+    commits_authors = prs_authors = []
+    commits_authors_nz = prs_authors_nz = slice(0)
+    release_authors = releases[Release.author.key].values
+    release_authors = prefix + release_authors[release_authors.nonzero()[0]]
+    mentioned_authors = (
+        [f.prs[PullRequest.user_login.key].values for f in precomputed_facts.values()] +
+        [f.commit_authors for f in precomputed_facts.values()]
+    )
+    if mentioned_authors:
+        mentioned_authors = np.concatenate(mentioned_authors)
+        mentioned_authors = np.unique(mentioned_authors[mentioned_authors.nonzero()[0]])
+
     repo_releases_analyzed = {}
-    all_hashes = []
-    for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
-        if (repo_releases[Release.published_at.key] < time_from).all():
-            continue
-        hashes, vertexes, edges = dags[repo]
-        release_hashes = repo_releases[Release.sha.key].values
-        release_timestamps = repo_releases[Release.published_at.key].values
-        parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_timestamps)
-        ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
-        unmatched = np.where(ownership == len(release_hashes))[0]
-        if len(unmatched) > 0:
-            hashes = np.delete(hashes, unmatched)
-            ownership = np.delete(ownership, unmatched)
-        order = np.argsort(ownership)
-        sorted_hashes = hashes[order]
-        sorted_ownership = ownership[order]
-        unique_owners, unique_owned_counts = np.unique(sorted_ownership, return_counts=True)
-        grouped_owned_hashes = np.split(sorted_hashes, np.cumsum(unique_owned_counts)[:-1])
-        # fill the gaps for releases with 0 owned commits
-        series = np.arange(len(repo_releases))
-        ssis = np.searchsorted(unique_owners, series)
-        missing = ssis[unique_owners[ssis] != series]
-        if len(missing):
-            empty = np.array([], dtype="U40")
-            for i in missing:
-                grouped_owned_hashes.insert(i, empty)
-        assert len(grouped_owned_hashes) == len(repo_releases)
-        all_hashes.append(hashes)
-        repo_releases_analyzed[repo] = repo_releases, grouped_owned_hashes, parents
-    commits_df_columns = [
-        PushCommit.sha,
-        PushCommit.additions,
-        PushCommit.deletions,
-        PushCommit.author_login,
-        PushCommit.node_id,
-    ]
-    with sentry_sdk.start_span(op="fetch_commits"):
-        commits_df = await read_sql_query(
-            select(commits_df_columns)
-            .where(PushCommit.sha.in_(np.concatenate(all_hashes) if all_hashes else []))
-            .order_by(PushCommit.sha),
-            mdb, commits_df_columns, index=PushCommit.sha.key)
-    commits_index = commits_df.index.values.astype("U40")
-    commit_ids = commits_df[PushCommit.node_id.key].values
-    commits_additions = commits_df[PushCommit.additions.key].values
-    commits_deletions = commits_df[PushCommit.deletions.key].values
-    commits_authors = commits_df[PushCommit.author_login.key].values
-    prs_columns = [
-        PullRequest.merge_commit_id,
-        PullRequest.number,
-        PullRequest.title,
-        PullRequest.additions,
-        PullRequest.deletions,
-        PullRequest.user_login,
-    ]
-    with sentry_sdk.start_span(op="fetch_pull_requests"):
-        prs_df = await read_sql_query(
-            select(prs_columns)
-            .where(PullRequest.merge_commit_id.in_(commit_ids))
-            .order_by(PullRequest.merge_commit_id),
-            mdb, prs_columns)
-    prs_commit_ids = prs_df[PullRequest.merge_commit_id.key].values.astype("U")
-    prs_authors = prs_df[PullRequest.user_login.key]
-    not_null_mask = ~prs_authors.isnull()
-    prs_authors = prs_authors.values
-    mentioned_authors = set(prs_authors[not_null_mask])
-    prs_authors[not_null_mask] = prefix + prs_authors[not_null_mask]
-    del not_null_mask
-    prs_numbers = prs_df[PullRequest.number.key].values
-    prs_titles = prs_df[PullRequest.title.key].values
-    prs_additions = prs_df[PullRequest.additions.key].values
-    prs_deletions = prs_df[PullRequest.deletions.key].values
+    if not releases.empty:
+        all_hashes = []
+        for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
+            if (repo_releases[Release.published_at.key] < time_from).all():
+                continue
+            hashes, vertexes, edges = dags[repo]
+            release_hashes = repo_releases[Release.sha.key].values
+            release_timestamps = repo_releases[Release.published_at.key].values
+            parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_timestamps)
+            ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
+            unmatched = np.where(ownership == len(release_hashes))[0]
+            if len(unmatched) > 0:
+                hashes = np.delete(hashes, unmatched)
+                ownership = np.delete(ownership, unmatched)
+            order = np.argsort(ownership)
+            sorted_hashes = hashes[order]
+            sorted_ownership = ownership[order]
+            unique_owners, unique_owned_counts = np.unique(sorted_ownership, return_counts=True)
+            grouped_owned_hashes = np.split(sorted_hashes, np.cumsum(unique_owned_counts)[:-1])
+            # fill the gaps for releases with 0 owned commits
+            series = np.arange(len(repo_releases))
+            ssis = np.searchsorted(unique_owners, series)
+            missing = ssis[unique_owners[ssis] != series]
+            if len(missing):
+                empty = np.array([], dtype="U40")
+                for i in missing:
+                    grouped_owned_hashes.insert(i, empty)
+            assert len(grouped_owned_hashes) == len(repo_releases)
+            all_hashes.append(hashes)
+            repo_releases_analyzed[repo] = repo_releases, grouped_owned_hashes, parents
+        commits_df_columns = [
+            PushCommit.sha,
+            PushCommit.additions,
+            PushCommit.deletions,
+            PushCommit.author_login,
+            PushCommit.node_id,
+        ]
+        with sentry_sdk.start_span(op="fetch_commits"):
+            commits_df = await read_sql_query(
+                select(commits_df_columns)
+                .where(PushCommit.sha.in_(np.concatenate(all_hashes) if all_hashes else []))
+                .order_by(PushCommit.sha),
+                mdb, commits_df_columns, index=PushCommit.sha.key)
+        commits_index = commits_df.index.values.astype("U40")
+        commit_ids = commits_df[PushCommit.node_id.key].values
+        commits_additions = commits_df[PushCommit.additions.key].values
+        commits_deletions = commits_df[PushCommit.deletions.key].values
+        commits_authors = commits_df[PushCommit.author_login.key].values
+        commits_authors_nz = commits_authors.nonzero()[0]
+        commits_authors[commits_authors_nz] = prefix + commits_authors[commits_authors_nz]
+        prs_columns = [
+            PullRequest.merge_commit_id,
+            PullRequest.number,
+            PullRequest.title,
+            PullRequest.additions,
+            PullRequest.deletions,
+            PullRequest.user_login,
+        ]
+        with sentry_sdk.start_span(op="fetch_pull_requests"):
+            prs_df = await read_sql_query(
+                select(prs_columns)
+                .where(PullRequest.merge_commit_id.in_(commit_ids))
+                .order_by(PullRequest.merge_commit_id),
+                mdb, prs_columns)
+        prs_commit_ids = prs_df[PullRequest.merge_commit_id.key].values.astype("U")
+        prs_authors = prs_df[PullRequest.user_login.key].values
+        prs_authors_nz = prs_authors.nonzero()[0]
+        prs_authors[prs_authors_nz] = prefix + prs_authors[prs_authors_nz]
+        prs_numbers = prs_df[PullRequest.number.key].values
+        prs_titles = prs_df[PullRequest.title.key].values
+        prs_additions = prs_df[PullRequest.additions.key].values
+        prs_deletions = prs_df[PullRequest.deletions.key].values
 
     @sentry_span
     async def main_flow():
         data = []
         for repo, (repo_releases, owned_hashes, parents) in repo_releases_analyzed.items():
-            published_ats = repo_releases[Release.published_at.key]
-            for i, (my_name, my_tag, my_url, my_author, my_published_at, my_matched_by) in \
-                    enumerate(zip(repo_releases[Release.name.key].values,
+            for i, (my_id, my_name, my_tag, my_url, my_author, my_published_at, my_matched_by) in \
+                    enumerate(zip(repo_releases[Release.id.key].values,
+                                  repo_releases[Release.name.key].values,
                                   repo_releases[Release.tag.key].values,
                                   repo_releases[Release.url.key].values,
                                   repo_releases[Release.author.key].values,
-                                  published_ats,
+                                  repo_releases[Release.published_at.key],  # no values
                                   repo_releases[matched_by_column].values)):
                 if my_published_at < time_from:
                     continue
@@ -1442,36 +1479,38 @@ async def mine_releases(repos: Iterable[str],
                 found_indexes = found_indexes[commits_index[found_indexes] == owned_hashes[i]]
                 my_additions = commits_additions[found_indexes].sum()
                 my_deletions = commits_deletions[found_indexes].sum()
-                my_authors = commits_authors[found_indexes]
+                my_commit_authors = commits_authors[found_indexes]
                 my_commit_ids = commit_ids[found_indexes]
                 if len(prs_commit_ids):
                     my_prs_indexes = searchsorted_inrange(prs_commit_ids, my_commit_ids)
                     if len(my_prs_indexes):
-                        my_prs_indexes = my_prs_indexes[
-                            prs_commit_ids[my_prs_indexes] == my_commit_ids]
+                        my_prs_indexes = \
+                            my_prs_indexes[prs_commit_ids[my_prs_indexes] == my_commit_ids]
                 else:
                     my_prs_indexes = np.array([], dtype=int)
+                my_prs_authors = prs_authors[my_prs_indexes]
+                mentioned_authors.update(my_prs_authors[my_prs_authors.nonzero()[0]])
                 my_prs = pd.DataFrame(dict(zip(
                     [c.key for c in prs_columns[1:]],
                     [prs_numbers[my_prs_indexes],
                      prs_titles[my_prs_indexes],
                      prs_additions[my_prs_indexes],
                      prs_deletions[my_prs_indexes],
-                     prs_authors[my_prs_indexes]])))
-                my_authors = prefix + my_authors[my_authors.nonzero()[0]]
+                     my_prs_authors])))
+                my_commit_authors = my_commit_authors[my_commit_authors.nonzero()[0]]
+                mentioned_authors.update(my_commit_authors)
                 parent = parents[i]
                 if parent < len(repo_releases):
                     my_age = my_published_at - repo_releases[Release.published_at.key]._ixs(parent)
                 else:
                     my_age = my_published_at - first_commit_dates[repo]
                 if my_author is not None:
-                    mentioned_authors.add(my_author)
                     my_author = prefix + my_author
-                mentioned_authors.update(my_authors)
-                data.append(({Release.name.key: my_name or my_tag,
+                    mentioned_authors.add(my_author)
+                data.append(({Release.id.key: my_id,
+                              Release.name.key: my_name or my_tag,
                               Release.repository_full_name.key: prefix + repo,
                               Release.url.key: my_url,
-                              Release.published_at.key: my_published_at,
                               Release.author.key: my_author},
                              ReleaseFacts(published=my_published_at,
                                           matched_by=ReleaseMatch(my_matched_by),
@@ -1480,12 +1519,16 @@ async def mine_releases(repos: Iterable[str],
                                           deletions=my_deletions,
                                           commits_count=len(found_indexes),
                                           prs=my_prs,
-                                          commit_authors=my_authors.tolist())))
+                                          commit_authors=my_commit_authors.tolist())))
             await asyncio.sleep(0)
         return data
 
-    all_authors = np.concatenate([commits_authors, releases[Release.author.key].values])
-    all_authors = np.unique(all_authors[all_authors.nonzero()[0]])
+    all_authors = np.concatenate([release_authors,
+                                  commits_authors[commits_authors_nz],
+                                  prs_authors[prs_authors_nz],
+                                  mentioned_authors])
+    all_authors = [p[1] for p in np.char.split(np.unique(all_authors).astype("U"), "/", 1)]
+    mentioned_authors = set(mentioned_authors)
     tasks = [
         main_flow(),
         mine_user_avatars(all_authors, mdb, cache, prefix=prefix),
@@ -1495,5 +1538,8 @@ async def mine_releases(repos: Iterable[str],
     for r in avatars, mined_releases:
         if isinstance(r, Exception):
             raise r from None
+    await defer(store_precomputed_release_facts(mined_releases, default_branches, settings, pdb),
+                "store_precomputed_release_facts(%d)" % len(mined_releases))
     avatars = [p for p in avatars if p[0] in mentioned_authors]
-    return mined_releases, avatars, {r: v.match for r, v in settings.items()}
+    result.extend(mined_releases)
+    return result, avatars, {r: v.match for r, v in settings.items()}

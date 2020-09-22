@@ -143,6 +143,19 @@ class GitHubRelease(Base):
     commit_id = Column(Text, nullable=False)
 
 
+class GitHubReleaseFacts(Base):
+    """Mined facts about repository releases."""
+
+    __tablename__ = "github_release_facts"
+
+    id = Column(Text, primary_key=True)
+    release_match = Column(Text(), primary_key=True)
+    format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
+    repository_full_name = Column(RepositoryFullName, nullable=False)
+    published_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    data = Column(LargeBinary(), nullable=False)
+
+
 class GitHubReleaseMatchTimespan(Base):
     """For which dates we matched releases."""
 
