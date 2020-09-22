@@ -592,6 +592,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
     :param time_to: Until when we checked releases for the specified PRs.
     """
     assert time_to.tzinfo is not None
+    time_to = min(time_to, datetime.now(timezone.utc))
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     values = []
     if not released_prs.empty:

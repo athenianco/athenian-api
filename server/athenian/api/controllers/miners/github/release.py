@@ -141,14 +141,14 @@ async def load_releases(repos: Iterable[str],
                 raise r from None
         missings = pd.concat(missings, copy=False)
 
-        async def store_precomputed():
+        async def store_precomputed_releases():
             # we must execute these in sequence to stay consistent
             # the transaction is not necessary
             await _store_precomputed_releases(missings, default_branches, settings, pdb)
             await _store_precomputed_release_match_spans(match_groups, time_from, time_to, pdb)
 
-        await defer(store_precomputed(),
-                    "store_precomputed(%d, %d)" % (len(missings), repos_count))
+        await defer(store_precomputed_releases(),
+                    "store_precomputed_releases(%d, %d)" % (len(missings), repos_count))
 
         releases = pd.concat([releases, missings], copy=False)
         releases.sort_values(Release.published_at.key,
@@ -372,6 +372,7 @@ async def _store_precomputed_release_match_spans(
         time_to: datetime,
         pdb: databases.Database) -> None:
     inserted = []
+    time_to = min(time_to, datetime.now(timezone.utc))
     for rm, pair in match_groups.items():
         if rm == ReleaseMatch.tag:
             prefix = "tag|"
