@@ -5,7 +5,6 @@ from sqlalchemy.dialects import postgresql, sqlite
 
 from athenian.api.models import create_base
 
-
 Base = create_base()
 
 
@@ -134,6 +133,7 @@ class GitHubRelease(Base):
     id = Column(Text, primary_key=True)
     release_match = Column(Text(), primary_key=True)
     repository_full_name = Column(RepositoryFullName, nullable=False)
+    repository_node_id = Column(Text, nullable=False)
     author = Column(Text)
     name = Column(Text, nullable=False)
     published_at = Column(TIMESTAMP(timezone=True), nullable=False)
