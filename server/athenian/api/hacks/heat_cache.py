@@ -126,7 +126,7 @@ def main():
                 log.info("Considering account %d as brand new, creating the Bots team",
                          reposet.owner_id)
                 try:
-                    await create_bots_team(reposet.owner_id, repos, bots, sdb, mdb)
+                    await create_bots_team(reposet.owner_id, repos, bots, sdb, mdb, pdb)
                 except Exception as e:
                     log.warning("bots %d: %s: %s", reposet.owner_id, type(e).__name__, e)
                     sentry_sdk.capture_exception(e)

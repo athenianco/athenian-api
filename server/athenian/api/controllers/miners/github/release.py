@@ -1355,6 +1355,7 @@ async def mine_releases(repos: Iterable[str],
             raise r from None
 
     has_precomputed_facts = releases[Release.id.key].isin(precomputed_facts).values
+    add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
     result = [
         ({Release.name.key: my_name or my_tag,
           Release.repository_full_name.key: prefix + repo,
@@ -1374,6 +1375,7 @@ async def mine_releases(repos: Iterable[str],
     ]
 
     releases = releases.take(np.where(~has_precomputed_facts)[0])
+    add_pdb_misses(pdb, "release_facts", len(releases))
     commits_authors = prs_authors = []
     commits_authors_nz = prs_authors_nz = slice(0)
     release_authors = releases[Release.author.key].values
@@ -1409,7 +1411,14 @@ async def mine_releases(repos: Iterable[str],
             # fill the gaps for releases with 0 owned commits
             series = np.arange(len(repo_releases))
             ssis = np.searchsorted(unique_owners, series)
-            missing = ssis[unique_owners[ssis] != series]
+            try:
+                missing = ssis[unique_owners[ssis] != series]
+            except Exception as e:
+                log = logging.getLogger("mine_releases")
+                log.warning("%s", ssis)
+                log.warning("%s", unique_owners)
+                log.warning("%s", series)
+                raise e from None
             if len(missing):
                 empty = np.array([], dtype="U40")
                 for i in missing:
