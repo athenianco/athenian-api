@@ -133,8 +133,8 @@ async def mine_contributors(repos: Collection[str],
                                      .where(User.node_id.in_(user_ids)))
         logins = {r[0]: r[1] for r in logins}
         return {
-            "commit_committer": [(logins[r[0]], r[1]) for r in committers],
-            "commit_author": [(logins[r[0]], r[1]) for r in authors],
+            "commit_committer": [(logins[r[0]], r[1]) for r in committers if r[0] in logins],
+            "commit_author": [(logins[r[0]], r[1]) for r in authors if r[0] in logins],
         }
 
     @sentry_span
