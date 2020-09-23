@@ -479,7 +479,7 @@ async def test_calc_pull_request_facts_github_jira(
 def test_size_calculator_shift_log():
     calc = histogram_calculators[PullRequestMetricID.PR_SIZE](quantiles=(0, 1))
     calc._samples = np.array([0, 10, 0, 20, 150, 0])
-    h = calc.histogram(Scale.LOG, 3)
+    h = calc.histogram(Scale.LOG, 3, None)
     assert h.ticks[0] == 1
     for f in h.frequencies:
         assert f == f

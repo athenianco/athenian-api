@@ -13,7 +13,6 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request_metrics import \
-    histogram_calculators as pr_histogram_calculators, \
     metric_calculators as pr_metric_calculators, \
     PullRequestBinnedMetricCalculator, PullRequestHistogramCalculatorEnsemble
 import athenian.api.controllers.features.github.pull_request_metrics  # noqa
@@ -21,7 +20,7 @@ from athenian.api.controllers.features.github.release_metrics import \
     metric_calculators as release_metric_calculators, ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     fetch_pull_request_facts_unfresh
-from athenian.api.controllers.features.histogram import Histogram, Scale
+from athenian.api.controllers.features.histogram import Histogram, HistogramParameters
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import df_from_dataclasses
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -247,11 +246,9 @@ async def calc_code_metrics(prop: FilterCommitsProperty,
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda metrics, scale, bins, time_from, time_to, quantiles, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
+    key=lambda defs, time_from, time_to, quantiles, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
     (
-        ",".join(sorted(metrics)),
-        scale.value,
-        bins,
+        ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
         time_from, time_to,
         ",".join(str(q) for q in quantiles),
         ",".join(sorted(repositories)),
@@ -260,9 +257,7 @@ async def calc_code_metrics(prop: FilterCommitsProperty,
         release_settings,
     ),
 )
-async def calc_pull_request_histogram_github(metrics: Sequence[str],
-                                             scale: Scale,
-                                             bins: int,
+async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, List[str]],
                                              time_from: datetime,
                                              time_to: datetime,
                                              quantiles: Sequence[float],
@@ -276,17 +271,21 @@ async def calc_pull_request_histogram_github(metrics: Sequence[str],
                                              mdb: Database,
                                              pdb: Database,
                                              cache: Optional[aiomcache.Client],
-                                             ) -> List[Histogram]:
+                                             ) -> Dict[str, Histogram]:
     """Calculate the pull request histograms on GitHub."""
+    try:
+        ensembles = [PullRequestHistogramCalculatorEnsemble(*metrics, quantiles=quantiles)
+                     for metrics in defs.values()]
+    except KeyError as e:
+        raise ValueError(str(e)) from None
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
         release_settings, fresh, mdb, pdb, cache)
-    ensemble = PullRequestHistogramCalculatorEnsemble(*metrics, quantiles=quantiles)
-    ensemble(df_from_dataclasses(mined_facts),
-             time_from.replace(tzinfo=None),
-             time_to.replace(tzinfo=None))
-    histograms = ensemble.histograms(scale, bins)
-    histograms = [histograms[m] for m in metrics]
+    df_facts = df_from_dataclasses(mined_facts)
+    histograms = {}
+    for ensemble, params in zip(ensembles, defs):
+        ensemble(df_facts, time_from.replace(tzinfo=None), time_to.replace(tzinfo=None))
+        histograms.update(ensemble.histograms(params.scale, params.bins, params.ticks))
     return histograms
 
 
@@ -316,7 +315,7 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
 METRIC_ENTRIES = {
     "github": {
         "prs_linear": {k: calc_pull_request_metrics_line_github for k in pr_metric_calculators},
-        "prs_histogram": {k: calc_pull_request_histogram_github for k in pr_histogram_calculators},
+        "prs_histogram": calc_pull_request_histogram_github,
         "code": calc_code_metrics,
         "developers": calc_developer_metrics,
         "releases_linear": {k: calc_release_metrics_line_github for k in release_metric_calculators},  # noqa

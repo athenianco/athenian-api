@@ -44,10 +44,12 @@ from athenian.api.models.web.generic_error import BadRequestError, DatabaseConfl
     ForbiddenError, GenericError, NotFoundError, ServerNotImplementedError
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.granularity import Granularity
+from athenian.api.models.web.histogram_definition import HistogramDefinition
 from athenian.api.models.web.histogram_scale import HistogramScale
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
 from athenian.api.models.web.installation_progress import InstallationProgress
+from athenian.api.models.web.interquartile import Interquartile
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.invitation_check_result import InvitationCheckResult
 from athenian.api.models.web.invitation_link import InvitationLink

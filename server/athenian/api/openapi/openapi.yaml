@@ -3163,14 +3163,14 @@ components:
         stage_timings:
           $ref: '#/components/schemas/StageTimings'
         properties:
-          description: DEPRECATED. List of the PR properties triggered in the given time window.
-            There may be extra properties that were not originally requested.
+          description: DEPRECATED. List of the PR properties triggered in the given
+            time window. There may be extra properties that were not originally requested.
           items:
             $ref: '#/components/schemas/PullRequestProperty'
           type: array
         events_time_machine:
-          description: List of PR events which happened until `date_to`.
-            `date_from` does not matter.
+          description: List of PR events which happened until `date_to`. `date_from`
+            does not matter.
           items:
             $ref: '#/components/schemas/PullRequestEvent'
           type: array
@@ -3202,15 +3202,15 @@ components:
       - comments
       - commits
       - created
+      - events_now
       - files_changed
       - number
       - participants
       - properties
-      - events_now
-      - stage_now
       - repository
       - size_added
       - size_removed
+      - stage_now
       - stage_timings
       - title
       - updated
@@ -4429,15 +4429,21 @@ components:
           items:
             $ref: '#/components/schemas/ForSet'
           type: array
+        histograms:
+          description: Histogram parameters for each wanted topic.
+          items:
+            $ref: '#/components/schemas/HistogramDefinition'
+          type: array
         metrics:
-          description: List of desired histogram topics.
+          description: DEPRECATED List of desired histogram topics.
           items:
             $ref: '#/components/schemas/PullRequestMetricID'
           type: array
         scale:
+          # DEPRECATED
           $ref: '#/components/schemas/HistogramScale'
         bins:
-          description: Number of bars in the histogram. 0 or null means automatic.
+          description: DEPRECATED Number of bars in the histogram. 0 or null means automatic.
           minimum: 0
           type: integer
         date_from:
@@ -4468,11 +4474,49 @@ components:
       - date_to
       - exclude_inactive
       - for
-      - metrics
-      - scale
+      type: object
+    HistogramDefinition:
+      additionalProperties: false
+      description: 'Histogram parameters: topic, bins.'
+      example:
+        metric: pr-size
+        ticks:
+        - 1
+        - 10
+        - 50
+        - 100
+        - 500
+      properties:
+        metric:
+          $ref: '#/components/schemas/PullRequestMetricID'
+        scale:
+          description: Histogram's X axis scale.
+          $ref: '#/components/schemas/HistogramScale'
+          nullable: true
+        bins:
+          description: Number of bars in the histogram. 0 or null means automatic.
+          minimum: 0
+          nullable: true
+          type: integer
+        ticks:
+          description: |-
+            Alternatively to `bins` and `scale`, set the X axis bar borders manually.
+            Only one of two may be specified. The ticks are automatically prepended
+            the distribution minimum and appended the distribution maximum.
+          items:
+# {% if False %}
+            allOf:
+# {% else %}{{ "\n" }}            oneOf:{% endif %}
+            - type: number
+            - $ref: '#/components/schemas/TimeDuration'
+          minItems: 1
+          nullable: true
+          type: array
+      required:
+      - metric
       type: object
     HistogramScale:
-      description: X axis scale.
+      description: 'X axis scale: linear or logarithmic.'
       enum:
       - linear
       - log
@@ -4486,6 +4530,31 @@ components:
     CalculatedPullRequestHistogram:
       additionalProperties: false
       description: Calculated histogram definition.
+      example:
+        for:
+          repositories:
+          - github.com/athenianco/athenian-webapp
+          - github.com/athenianco/athenian-api
+        metric: pr-size
+        scale: linear
+        ticks:
+        - 0
+        - 1
+        - 10
+        - 50
+        - 100
+        - 500
+        - 10000
+        frequencies:
+        - 0
+        - 38
+        - 28
+        - 13
+        - 12
+        - 8
+        interquartile:
+          left: 3
+          right: 76
       properties:
         for:
           $ref: '#/components/schemas/ForSet'
@@ -4509,16 +4578,43 @@ components:
             minimum: 0
             type: integer
           type: array
+        interquartile:
+          $ref: '#/components/schemas/Interquartile'
       required:
       - for
       - frequencies
+      - interquartile
       - metric
       - scale
       - ticks
       type: object
+    Interquartile:
+      additionalProperties: false
+      description: Middle 50% range.
+      example:
+        left: 3
+        right: 76
+      properties:
+        left:
+# {% if False %}
+          allOf:
+# {% else %}{{ "\n" }}          oneOf:{% endif %}
+          - type: number
+          - $ref: '#/components/schemas/TimeDuration'
+        right:
+# {% if False %}
+          allOf:
+# {% else %}{{ "\n" }}          oneOf:{% endif %}
+          - type: number
+          - $ref: '#/components/schemas/TimeDuration'
+      required:
+      - left
+      - right
+      type: object
     FoundJIRAStuff:
       additionalProperties: false
-      description: 'Response from `/filter/jira`: found JIRA epics, labels, and issue types.'
+      description: 'Response from `/filter/jira`: found JIRA epics, labels, and issue
+        types.'
       example:
         epics:
         - id: DEV-158
@@ -4571,8 +4667,8 @@ components:
           type: array
       required:
       - epics
-      - labels
       - issue_types
+      - labels
       type: object
     JIRAEpic:
       additionalProperties: false

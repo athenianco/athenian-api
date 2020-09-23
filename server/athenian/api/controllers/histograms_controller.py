@@ -1,15 +1,14 @@
 import asyncio
 from collections import defaultdict
-from typing import List
 
 from aiohttp import web
 
 from athenian.api import ResponseError
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
-from athenian.api.controllers.features.histogram import Histogram, Scale
+from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import compile_repos_and_devs_prs
 from athenian.api.controllers.settings import Settings
-from athenian.api.models.web import HistogramScale, InvalidRequestError
+from athenian.api.models.web import InvalidRequestError
 from athenian.api.models.web.calculated_pull_request_histogram import \
     CalculatedPullRequestHistogram
 from athenian.api.models.web.pull_request_histograms_request import PullRequestHistogramsRequest
@@ -31,43 +30,38 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     result = []
 
     async def calculate_for_set_histograms(service, repos, devs, labels, jira, for_set):
-        calcs = defaultdict(list)
         # for each filter, we find the functions to calculate the histograms
-        entries = METRIC_ENTRIES[service]["prs_histogram"]
-        for m in filt.metrics:
-            try:
-                calcs[entries[m]].append(m)
-            except KeyError:
-                raise ResponseError(InvalidRequestError(
-                    "Metric is not supported.", detail=m,
-                )) from None
-        # for each topic, we find the function to calculate the histogram and call it
-        tasks = []
-        for func, metrics in calcs.items():
-            tasks.append(func(
-                metrics, Scale[filt.scale.upper()], filt.bins or 0, time_from, time_to,
-                filt.quantiles or (0, 1), repos, devs, labels, jira, filt.exclude_inactive,
-                release_settings, filt.fresh, request.mdb, request.pdb, request.cache))
-        if len(tasks) == 1:
-            all_histograms = [await tasks[0]]  # type: List[Histogram]
-        else:
-            all_histograms = await asyncio.gather(*tasks, return_exceptions=True)  # type: List[Histogram]  # noqa
-        for metrics, histograms in zip(calcs.values(), all_histograms):
-            if isinstance(histograms, Exception):
-                if isinstance(histograms, ValueError) and filt.scale == HistogramScale.LOG:
-                    raise ResponseError(InvalidRequestError(
-                        "Logarithmic histogram scale is incompatible with non-positive samples.",
-                        detail=str(histograms),
-                    )) from None
-                raise histograms from None
-            for metric, histogram in zip(metrics, histograms):
-                result.append(CalculatedPullRequestHistogram(
-                    for_=for_set,
-                    metric=metric,
-                    scale=histogram.scale.name.lower(),
-                    ticks=histogram.ticks,
-                    frequencies=histogram.frequencies,
-                ))
+        calc_func = METRIC_ENTRIES[service]["prs_histogram"]
+        defs = defaultdict(list)
+        for h in (filt.histograms or []):
+            defs[HistogramParameters(
+                scale=Scale[h.scale.upper()] if h.scale is not None else None,
+                bins=h.bins,
+                ticks=tuple(h.ticks) if h.ticks is not None else None,
+            )].append(h.metric)
+        # FIXME(vmarkovtsev): this is deprecated and should be removed
+        for m in (filt.metrics or []):
+            defs[HistogramParameters(
+                scale=Scale[filt.scale.upper()] if filt.scale is not None else Scale.LINEAR,
+                bins=filt.bins or 0,
+                ticks=None,
+            )].append(m)
+        try:
+            histograms = await calc_func(
+                defs, time_from, time_to, filt.quantiles or (0, 1), repos, devs, labels, jira,
+                filt.exclude_inactive, release_settings, filt.fresh, request.mdb, request.pdb,
+                request.cache)
+        except ValueError as e:
+            raise ResponseError(InvalidRequestError(str(e))) from None
+        for metric, histogram in sorted(histograms.items()):
+            result.append(CalculatedPullRequestHistogram(
+                for_=for_set,
+                metric=metric,
+                scale=histogram.scale.name.lower(),
+                ticks=histogram.ticks,
+                frequencies=histogram.frequencies,
+                interquartile=histogram.interquartile,
+            ))
 
     tasks = []
     for service, (repos, devs, labels, jira, for_set) in filters:
