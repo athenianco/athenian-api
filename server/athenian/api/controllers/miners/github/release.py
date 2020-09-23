@@ -1412,14 +1412,16 @@ async def mine_releases(repos: Iterable[str],
             # fill the gaps for releases with 0 owned commits
             series = np.arange(len(repo_releases))
             ssis = np.searchsorted(unique_owners, series)
+            sentry_sdk.add_breadcrumb(
+                category="debug", message="ssis %s" % ssis, level="warning")
+            sentry_sdk.add_breadcrumb(
+                category="debug", message="unique_owners %s" % unique_owners, level="warning")
+            sentry_sdk.add_breadcrumb(
+                category="debug", message="series %s" % series, level="warning")
             try:
                 missing = ssis[unique_owners[ssis] != series]
-            except Exception as e:
-                log = logging.getLogger("%s.mine_releases" % metadata.__package__)
-                log.warning("%s", ssis)
-                log.warning("%s", unique_owners)
-                log.warning("%s", series)
-                raise e from None
+            except IndexError as e:
+                raise IndexError("%s %s %s" % (ssis, unique_owners, series)) from e
             if len(missing):
                 empty = np.array([], dtype="U40")
                 for i in missing:

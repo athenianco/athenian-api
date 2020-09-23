@@ -439,6 +439,8 @@ def setup_context(log: logging.Logger) -> None:
     """Log general info about the running process and configure Sentry."""
     log.info("%s", sys.argv)
     log.info("Version: %s", metadata.__version__)
+    log.info("Local time: %s", datetime.now())
+    log.info("UTC time: %s", datetime.now(timezone.utc))
     commit = getattr(metadata, "__commit__", None)
     if commit:
         log.info("Commit: %s", commit)
