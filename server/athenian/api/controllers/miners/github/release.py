@@ -1358,20 +1358,20 @@ async def mine_releases(repos: Iterable[str],
 
     has_precomputed_facts = releases[Release.id.key].isin(precomputed_facts).values
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
+    has_precomputed_facts &= releases[Release.published_at.key].between(time_from, time_to)
     result = [
-        ({Release.name.key: my_name or my_tag,
+        ({Release.id.key: my_id,
+          Release.name.key: my_name or my_tag,
           Release.repository_full_name.key: prefix + repo,
           Release.url.key: my_url,
-          Release.published_at.key: my_published_at,
           Release.author.key: my_author},
          precomputed_facts[my_id])
-        for my_id, my_name, my_tag, repo, my_url, my_published_at, my_author in zip(
+        for my_id, my_name, my_tag, repo, my_url, my_author in zip(
             releases[Release.id.key].values[has_precomputed_facts],
             releases[Release.name.key].values[has_precomputed_facts],
             releases[Release.tag.key].values[has_precomputed_facts],
             releases[Release.repository_full_name.key].values[has_precomputed_facts],
             releases[Release.url.key].values[has_precomputed_facts],
-            releases[Release.published_at.key].values[has_precomputed_facts],
             releases[Release.author.key].values[has_precomputed_facts],
         )
     ]
@@ -1383,8 +1383,10 @@ async def mine_releases(repos: Iterable[str],
     release_authors = releases[Release.author.key].values
     release_authors = prefix + release_authors[release_authors.nonzero()[0]]
     mentioned_authors = (
-        [f.prs[PullRequest.user_login.key].values for f in precomputed_facts.values()] +
-        [f.commit_authors for f in precomputed_facts.values()]
+        [f.prs[PullRequest.user_login.key].values for f in precomputed_facts.values()
+         if time_from <= f.published < time_to] +
+        [f.commit_authors for f in precomputed_facts.values()
+         if time_from <= f.published < time_to]
     )
     if mentioned_authors:
         mentioned_authors = np.concatenate(mentioned_authors)
