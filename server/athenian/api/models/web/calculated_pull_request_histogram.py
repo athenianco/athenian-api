@@ -3,6 +3,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.histogram_scale import HistogramScale
+from athenian.api.models.web.interquartile import Interquartile
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 
 
@@ -15,6 +16,7 @@ class CalculatedPullRequestHistogram(Model):
         "scale": str,
         "ticks": List[object],
         "frequencies": List[int],
+        "interquartile": Interquartile,
     }
 
     attribute_map = {
@@ -23,6 +25,7 @@ class CalculatedPullRequestHistogram(Model):
         "scale": "scale",
         "ticks": "ticks",
         "frequencies": "frequencies",
+        "interquartile": "interquartile",
     }
 
     def __init__(
@@ -32,6 +35,7 @@ class CalculatedPullRequestHistogram(Model):
         scale: Optional[str] = None,
         ticks: Optional[List[float]] = None,
         frequencies: Optional[List[int]] = None,
+        interquartile: Optional[Interquartile] = None,
     ):
         """CalculatedPullRequestHistogram - a model defined in OpenAPI
 
@@ -40,12 +44,14 @@ class CalculatedPullRequestHistogram(Model):
         :param scale: The scale of this CalculatedPullRequestHistogram.
         :param ticks: The ticks of this CalculatedPullRequestHistogram.
         :param frequencies: The frequencies of this CalculatedPullRequestHistogram.
+        :param interquartile: The interquartile of this CalculatedPullRequestHistogram.
         """
         self._for_ = for_
         self._metric = metric
         self._scale = scale
         self._ticks = ticks
         self._frequencies = frequencies
+        self._interquartile = interquartile
 
     @property
     def for_(self) -> ForSet:
@@ -155,3 +161,22 @@ class CalculatedPullRequestHistogram(Model):
             raise ValueError("Invalid value for `frequencies`, must not be `None`")
 
         self._frequencies = frequencies
+
+    @property
+    def interquartile(self) -> Interquartile:
+        """Gets the interquartile of this CalculatedPullRequestHistogram.
+
+        :return: The interquartile of this CalculatedPullRequestHistogram.
+        """
+        return self._interquartile
+
+    @interquartile.setter
+    def interquartile(self, interquartile: Interquartile):
+        """Sets the interquartile of this CalculatedPullRequestHistogram.
+
+        :param interquartile: The interquartile of this CalculatedPullRequestHistogram.
+        """
+        if interquartile is None:
+            raise ValueError("Invalid value for `interquartile`, must not be `None`")
+
+        self._interquartile = interquartile

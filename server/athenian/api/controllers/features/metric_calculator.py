@@ -173,14 +173,18 @@ class WithoutQuantilesMixin:
 class HistogramCalculator(MetricCalculator):
     """Pull request histogram calculator, base abstract class."""
 
-    def histogram(self, scale: Scale, bins: int) -> Histogram[T]:
+    def histogram(self,
+                  scale: Optional[Scale],
+                  bins: Optional[int],
+                  ticks: Optional[list],
+                  ) -> Histogram[T]:
         """Calculate the histogram over the current distribution."""
         samples = self._cut_by_quantiles()
         if scale == Scale.LOG:
             shift_log = getattr(self, "_shift_log", None)  # type: Optional[Callable[[T], T]]
             if shift_log is not None:
                 samples = np.array([shift_log(s) for s in self.samples])
-        return calculate_histogram(samples, scale, bins)
+        return calculate_histogram(samples, scale, bins, ticks)
 
 
 class MetricCalculatorEnsemble:
@@ -248,9 +252,13 @@ class MetricCalculatorEnsemble:
 class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
     """Like MetricCalculatorEnsemble, but for histograms."""
 
-    def histograms(self, scale: Scale, bins: int) -> Dict[str, Histogram]:
+    def histograms(self,
+                   scale: Optional[Scale],
+                   bins: Optional[int],
+                   ticks: Optional[list],
+                   ) -> Dict[str, Histogram]:
         """Calculate the current histograms."""
-        return {k: v.histogram(scale, bins) for k, v in self._metrics.items()}
+        return {k: v.histogram(scale, bins, ticks) for k, v in self._metrics.items()}
 
 
 @sentry_span
