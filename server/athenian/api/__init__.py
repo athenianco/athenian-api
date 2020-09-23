@@ -212,7 +212,7 @@ class AthenianApp(connexion.AioHttpApp):
         options = {"swagger_ui": ui}
         specification_dir = str(Path(__file__).parent / "openapi")
         super().__init__(__package__, specification_dir=specification_dir, options=options,
-                         server_args={"client_max_size": 256 * 1024})
+                         server_args={"client_max_size": 2 * 1024**2})
         self.api_cls = ExactServersAioHttpApi
         self._devenv = os.getenv("SENTRY_ENV", "development") == "development"
         setup_defer(not self._devenv)
