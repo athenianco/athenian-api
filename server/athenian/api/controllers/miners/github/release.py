@@ -1341,6 +1341,7 @@ async def mine_releases(repos: Iterable[str],
     """Collect details about each release published between `time_from` and `time_to` and \
     calculate various statistics."""
     prefix = PREFIXES["github"]
+    log = logging.getLogger("%s.mine_releases" % metadata.__package__)
     _, releases, _, settings = await _find_releases_for_matching_prs(
         repos, branches, default_branches, time_from, time_to, settings, mdb, pdb, cache)
     tasks = [
@@ -1410,19 +1411,10 @@ async def mine_releases(repos: Iterable[str],
             unique_owners, unique_owned_counts = np.unique(sorted_ownership, return_counts=True)
             grouped_owned_hashes = np.split(sorted_hashes, np.cumsum(unique_owned_counts)[:-1])
             # fill the gaps for releases with 0 owned commits
-            series = np.arange(len(repo_releases))
-            ssis = np.searchsorted(unique_owners, series)
-            sentry_sdk.add_breadcrumb(
-                category="debug", message="ssis %s" % ssis, level="warning")
-            sentry_sdk.add_breadcrumb(
-                category="debug", message="unique_owners %s" % unique_owners, level="warning")
-            sentry_sdk.add_breadcrumb(
-                category="debug", message="series %s" % series, level="warning")
-            try:
-                missing = ssis[unique_owners[ssis] != series]
-            except IndexError as e:
-                raise IndexError("%s %s %s" % (ssis, unique_owners, series)) from e
-            if len(missing):
+            if len(missing := np.setdiff1d(np.arange(len(repo_releases)), unique_owners,
+                                           assume_unique=True)):
+                log.warning("%s has releases with 0 commits:\n%s",
+                            repo, repo_releases.take(missing))
                 empty = np.array([], dtype="U40")
                 for i in missing:
                     grouped_owned_hashes.insert(i, empty)
