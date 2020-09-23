@@ -1440,6 +1440,18 @@ async def mine_releases(repos: Iterable[str],
         commit_ids = commits_df[PushCommit.node_id.key].values
         commits_additions = commits_df[PushCommit.additions.key].values
         commits_deletions = commits_df[PushCommit.deletions.key].values
+        add_nans = commits_additions != commits_additions
+        del_nans = commits_deletions != commits_deletions
+        if (nans := (add_nans & del_nans)).any():
+            log.error("null commit additions/deletions for %s", commit_ids[nans])
+            commits_additions[nans] = 0
+            commits_deletions[nans] = 0
+        if (add_nans & ~nans).any():
+            log.error("null commit additions for %s", commit_ids[add_nans])
+            commits_additions[add_nans] = 0
+        if (del_nans & ~nans).any():
+            log.error("null commit deletions for %s", commit_ids[del_nans])
+            commits_deletions[del_nans] = 0
         commits_authors = commits_df[PushCommit.author_login.key].values
         commits_authors_nz = commits_authors.nonzero()[0]
         commits_authors[commits_authors_nz] = prefix + commits_authors[commits_authors_nz]

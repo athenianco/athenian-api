@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-import logging
 from typing import Any, Callable, Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Type
 
 import networkx as nx
@@ -7,7 +6,7 @@ import numpy as np
 import pandas as pd
 from pandas._libs import tslib
 
-from athenian.api import metadata, typing_utils
+from athenian.api import typing_utils
 from athenian.api.controllers.features.histogram import calculate_histogram, Histogram, Scale
 from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
@@ -257,7 +256,6 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
 @sentry_span
 def df_from_dataclasses(items: Iterable[Any], length: Optional[int] = None) -> pd.DataFrame:
     """Combine several dataclasses to a Pandas DataFrame."""
-    log = logging.getLogger("%s.df_from_dataclasses" % metadata.__package__)
     columns = {}
     first_item = None
     try:
@@ -297,14 +295,7 @@ def df_from_dataclasses(items: Iterable[Any], length: Optional[int] = None) -> p
         elif issubclass(column_type, timedelta):
             v = np.array(v, dtype="timedelta64[s]")
         elif np.dtype(column_type) != np.dtype(object):
-            try:
-                v = np.array(v, dtype=column_type)
-            except ValueError as e:
-                log.error("%s: %s (%s %s)", type(e).__name__, e, k, v)
-                for i, item in enumerate(v):
-                    if item != item:
-                        v[i] = 0
-                v = np.array(v, dtype=column_type)
+            v = np.array(v, dtype=column_type)
         columns[k] = v
     df = pd.DataFrame.from_dict(columns)
     return df
