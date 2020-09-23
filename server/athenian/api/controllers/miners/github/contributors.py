@@ -21,6 +21,17 @@ from athenian.api.tracing import sentry_span
 
 
 @sentry_span
+@cached(
+    exptime=5 * 60,
+    serialize=marshal.dumps,
+    deserialize=marshal.loads,
+    key=lambda repos, time_from, time_to, with_stats, user_roles, release_settings, **_: (
+        ",".join(sorted(repos)),
+        time_from.timestamp() if time_from is not None else "null",
+        time_to.timestamp() if time_to is not None else "null",
+        with_stats, sorted(user_roles), release_settings,
+    ),
+)
 async def mine_contributors(repos: Collection[str],
                             time_from: Optional[datetime],
                             time_to: Optional[datetime],
@@ -29,38 +40,15 @@ async def mine_contributors(repos: Collection[str],
                             release_settings: Dict[str, ReleaseMatchSetting],
                             mdb: databases.Database,
                             pdb: databases.Database,
-                            cache: Optional[aiomcache.Client],
-                            ) -> List[Dict[str, Any]]:
+                            cache: Optional[aiomcache.Client]) -> List[Dict[str, Any]]:
     """Discover developers who made any important action in the given repositories and \
     in the given time frame."""
-    time_from = time_from or datetime(1970, 1, 1, tzinfo=timezone.utc)
-    now = datetime.now(timezone.utc) + timedelta(days=1)
-    time_to = time_to or datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-    return await _mine_contributors(
-        repos, time_from, time_to, with_stats, user_roles, release_settings, mdb, pdb, cache)
-
-
-@sentry_span
-@cached(
-    exptime=5 * 60,
-    serialize=marshal.dumps,
-    deserialize=marshal.loads,
-    key=lambda repos, time_from, time_to, with_stats, user_roles, release_settings, **_: (
-        ",".join(sorted(repos)), time_from.timestamp(), time_to.timestamp(), with_stats,
-        sorted(user_roles), release_settings,
-    ),
-)
-async def _mine_contributors(repos: Collection[str],
-                             time_from: datetime,
-                             time_to: datetime,
-                             with_stats: bool,
-                             user_roles: List[str],
-                             release_settings: Dict[str, ReleaseMatchSetting],
-                             mdb: databases.Database,
-                             pdb: databases.Database,
-                             cache: Optional[aiomcache.Client]) -> List[Dict[str, Any]]:
-    assert isinstance(time_from, datetime)
-    assert isinstance(time_to, datetime)
+    assert (time_from is None) == (time_to is None)
+    if has_times := (time_from is not None):
+        assert isinstance(time_from, datetime)
+        assert time_from.tzinfo is not None
+        assert isinstance(time_to, datetime)
+        assert time_to.tzinfo is not None
 
     common_prs_where = and_(
         PullRequest.repository_full_name.in_(repos),
@@ -68,7 +56,7 @@ async def _mine_contributors(repos: Collection[str],
         or_(PullRequest.created_at.between(time_from, time_to),
             and_(PullRequest.created_at < time_to,
                  PullRequest.closed_at.is_(None)),
-            PullRequest.closed_at.between(time_from, time_to)),
+            PullRequest.closed_at.between(time_from, time_to)) if has_times else True,
     )
     tasks = [
         extract_branches(repos, mdb, cache),
@@ -90,7 +78,8 @@ async def _mine_contributors(repos: Collection[str],
             pdb.fetch_all(select([ghdprf.author, ghdprf.pr_node_id])
                           .where(and_(ghdprf.format_version == format_version,
                                       ghdprf.repository_full_name.in_(repos),
-                                      ghdprf.pr_done_at.between(time_from, time_to)))
+                                      ghdprf.pr_done_at.between(time_from, time_to)
+                                      if has_times else True))
                           .distinct()),
             mdb.fetch_all(select([PullRequest.user_login, PullRequest.node_id])
                           .where(common_prs_where)),
@@ -112,7 +101,8 @@ async def _mine_contributors(repos: Collection[str],
             "reviewer": await mdb.fetch_all(
                 select([PullRequestReview.user_login, func.count(PullRequestReview.user_login)])
                 .where(and_(PullRequestReview.repository_full_name.in_(repos),
-                            PullRequestReview.submitted_at.between(time_from, time_to)))
+                            PullRequestReview.submitted_at.between(time_from, time_to)
+                            if has_times else True))
                 .group_by(PullRequestReview.user_login)),
         }
 
@@ -122,13 +112,15 @@ async def _mine_contributors(repos: Collection[str],
             mdb.fetch_all(
                 select([NodeCommit.author_user, func.count(NodeCommit.author_user)])
                 .where(and_(NodeCommit.repository.in_(repo_nodes),
-                            NodeCommit.committed_date.between(time_from, time_to),
+                            NodeCommit.committed_date.between(time_from, time_to)
+                            if has_times else True,
                             NodeCommit.author_user.isnot(None)))
                 .group_by(NodeCommit.author_user)),
             mdb.fetch_all(
                 select([NodeCommit.committer_user, func.count(NodeCommit.committer_user)])
                 .where(and_(NodeCommit.repository.in_(repo_nodes),
-                            NodeCommit.committed_date.between(time_from, time_to),
+                            NodeCommit.committed_date.between(time_from, time_to)
+                            if has_times else True,
                             NodeCommit.committer_user.isnot(None)))
                 .group_by(NodeCommit.committer_user)),
         ]
@@ -151,7 +143,8 @@ async def _mine_contributors(repos: Collection[str],
             "commenter": await mdb.fetch_all(
                 select([PullRequestComment.user_login, func.count(PullRequestComment.user_login)])
                 .where(and_(PullRequestComment.repository_full_name.in_(repos),
-                            PullRequestComment.created_at.between(time_from, time_to),
+                            PullRequestComment.created_at.between(time_from, time_to)
+                            if has_times else True,
                             ))
                 .group_by(PullRequestComment.user_login)),
         }
@@ -167,7 +160,13 @@ async def _mine_contributors(repos: Collection[str],
 
     @sentry_span
     async def fetch_releaser():
-        releases, _ = await load_releases(repos, branches, default_branches, time_from, time_to,
+        if has_times:
+            rt_from, rt_to = time_from, time_to
+        else:
+            rt_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc) + timedelta(days=1)
+            rt_to = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+        releases, _ = await load_releases(repos, branches, default_branches, rt_from, rt_to,
                                           release_settings, mdb, pdb, cache)
         counts = releases[Release.author.key].value_counts()
         return {
