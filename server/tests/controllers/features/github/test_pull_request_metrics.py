@@ -291,9 +291,9 @@ async def test_calc_pull_request_metrics_line_github_cache(
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
     args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1],
-            {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), False,
+            [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, False, mdb, pdb, cache)
-    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     await wait_deferred()
     assert await calc_pull_request_metrics_line_github.reset_cache(*args)
     if with_mine_cache_wipe:
@@ -302,7 +302,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
             JIRAFilter.empty(), branches, default_branches,
             False, release_match_setting_tag, 0, mdb, pdb, cache,
             pr_blacklist=None, truncate=True)
-    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     assert metrics1.exists and metrics2.exists
     assert metrics1.value == metrics2.value
     assert metrics1.confidence_score() == metrics2.confidence_score()
@@ -315,7 +315,7 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=10, day=1, tzinfo=timezone.utc)
     args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1],
-            {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), False,
+            [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, False, mdb, pdb, cache]
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
     release_match_setting_tag = {
@@ -334,21 +334,21 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
     time_to = datetime(year=2016, month=12, day=15, tzinfo=timezone.utc)
     metric1 = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]], [0, 1],
-        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), False,
+        [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
         release_match_setting_tag, False, mdb, pdb, None,
-    ))[0][0][0].value
+    ))[0][0][0][0].value
     metric2 = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]], [0, 1],
-        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), False,
+        [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
         release_match_setting_tag, False, mdb, pdb, None,
-    ))[0][0][0].value
+    ))[0][0][0][0].value
     metric1_ext, metric2_ext = (m[0].value for m in (
         await calc_pull_request_metrics_line_github(
             [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]], [0, 1],
-            {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), False,
+            [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, False, mdb, pdb, None,
         )
-    )[0])
+    )[0][0])
     assert metric1 == metric1_ext
     assert metric2 == metric2_ext
 
@@ -359,13 +359,13 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
     args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 1],
-            {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+            [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, False, mdb, pdb, cache]
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     await wait_deferred()
     assert metrics.value == 7
     args[7] = True
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     await wait_deferred()
     assert metrics.value == 6
     date_from = datetime(year=2017, month=5, day=23, tzinfo=timezone.utc)
@@ -373,14 +373,14 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     args[0] = [PullRequestMetricID.PR_RELEASE_COUNT]
     args[1] = [[date_from, date_to]]
     args[7] = False
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     await wait_deferred()
     assert metrics.value == 70
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     await wait_deferred()
     assert metrics.value == 70
     args[7] = True
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     assert metrics.value == 71
 
 
@@ -440,7 +440,7 @@ async def test_calc_pull_request_facts_github_open_precomputed(
     open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
     assert len(open_facts) == 21
     facts2 = await calc_pull_request_facts_github(*args)
-    assert set(facts1) == set(facts2)
+    assert set(facts1["src-d/go-git"]) == set(facts2["src-d/go-git"])
 
 
 @with_defer
@@ -458,7 +458,7 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
         assert row[GitHubMergedPullRequestFacts.data.key] is not None, \
             row[GitHubMergedPullRequestFacts.pr_node_id.key]
     facts2 = await calc_pull_request_facts_github(*args)
-    assert set(facts1) == set(facts2)
+    assert set(facts1["src-d/go-git"]) == set(facts2["src-d/go-git"])
 
 
 @with_defer
@@ -468,11 +468,11 @@ async def test_calc_pull_request_facts_github_jira(
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = [time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, False, mdb, pdb, None]
-    facts = await calc_pull_request_facts_github(*args)
+    facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
     await wait_deferred()
     assert sum(1 for f in facts if f.released) == 233
     args[5] = JIRAFilter(1, LabelFilter({"performance", "task"}, set()), set(), set())
-    facts = await calc_pull_request_facts_github(*args)
+    facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
     assert sum(1 for f in facts if f.released) == 16
 
 

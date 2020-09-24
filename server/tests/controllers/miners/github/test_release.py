@@ -157,7 +157,7 @@ async def test_map_prs_to_releases_precomputed_released(
     )
     times_miner = PullRequestFactsMiner(await bots(mdb))
     true_prs = [pr for pr in miner if pr.release[Release.published_at.key] is not None]
-    times = [times_miner(pr) for pr in true_prs]
+    times = [(pr.pr[PullRequest.repository_full_name.key], times_miner(pr)) for pr in true_prs]
     prs = pd.DataFrame([pr.pr for pr in true_prs]).set_index(PullRequest.node_id.key)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,

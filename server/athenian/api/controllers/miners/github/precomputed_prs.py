@@ -208,11 +208,12 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
                                               exclude_inactive: bool,
                                               release_settings: Dict[str, ReleaseMatchSetting],
                                               pdb: databases.Database,
-                                              ) -> Dict[str, PullRequestFacts]:
+                                              ) -> Dict[str, Tuple[str, PullRequestFacts]]:
     """
     Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
 
     Query version. JIRA must be filtered separately.
+    :return: Map PR node ID -> repository name & facts.
     """
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     ghprt = GitHubDonePullRequestFacts
@@ -248,8 +249,9 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
         include_singles = set(include_singles)
         include_multiples = [set(m) for m in include_multiples]
     for row in rows:
+        repo, rm = row[ghprt.repository_full_name.key], row[ghprt.release_match.key]
         dump = _check_release_match(
-            row[1], row[2], release_settings, default_branches, prefix, result, ambiguous)
+            repo, rm, release_settings, default_branches, prefix, result, ambiguous)
         if dump is None:
             continue
         if not postgres:
@@ -263,7 +265,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
                                  for d in row[ghprt.activity_days.key]}
                 if not activity_days.intersection(date_range):
                     continue
-        dump[row[0]] = pickle.loads(row[3])
+        dump[row[ghprt.pr_node_id.key]] = repo, pickle.loads(row[ghprt.data.key])
     result.update(ambiguous[ReleaseMatch.tag.name])
     for node_id, facts in ambiguous[ReleaseMatch.branch.name].items():
         if node_id not in result:
@@ -276,7 +278,7 @@ async def load_precomputed_done_facts_reponums(prs: Dict[str, Set[int]],
                                                default_branches: Dict[str, str],
                                                release_settings: Dict[str, ReleaseMatchSetting],
                                                pdb: databases.Database,
-                                               ) -> Dict[str, PullRequestFacts]:
+                                               ) -> Dict[str, Tuple[str, PullRequestFacts]]:
     """
     Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
 
@@ -298,11 +300,13 @@ async def load_precomputed_done_facts_reponums(prs: Dict[str, Set[int]],
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     for row in rows:
+        repo = row[ghprt.repository_full_name.key]
         dump = _check_release_match(
-            row[1], row[2], release_settings, default_branches, prefix, result, ambiguous)
+            repo, row[ghprt.release_match.key], release_settings, default_branches, prefix,
+            result, ambiguous)
         if dump is None:
             continue
-        dump[row[0]] = pickle.loads(row[3])
+        dump[row[ghprt.pr_node_id.key]] = repo, pickle.loads(row[ghprt.data.key])
     result.update(ambiguous[ReleaseMatch.tag.name])
     for node_id, facts in ambiguous[ReleaseMatch.branch.name].items():
         if node_id not in result:
@@ -374,7 +378,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
 
 @sentry_span
 async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
-                                       pr_facts: Iterable[Optional[PullRequestFacts]],
+                                       pr_facts: Iterable[Optional[Tuple[Any, PullRequestFacts]]],
                                        default_branches: Dict[str, str],
                                        release_settings: Dict[str, ReleaseMatchSetting],
                                        pdb: databases.Database,
@@ -384,7 +388,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
     inserted = []
     prefix = PREFIXES["github"]
     sqlite = pdb.url.dialect == "sqlite"
-    for pr, facts in zip(prs, pr_facts):
+    for pr, (_, facts) in zip(prs, pr_facts):
         if facts is None:
             # ImpossiblePullRequest
             continue
@@ -499,7 +503,7 @@ async def load_merged_unreleased_pull_request_facts(
         matched_bys: Dict[str, ReleaseMatch],
         default_branches: Dict[str, str],
         release_settings: Dict[str, ReleaseMatchSetting],
-        pdb: databases.Database) -> Dict[str, PullRequestFacts]:
+        pdb: databases.Database) -> Dict[str, Tuple[str, PullRequestFacts]]:
     """
     Load the mapping from PR node identifiers which we are sure are not released in one of \
     `releases` to the `pickle`-d facts.
@@ -512,7 +516,7 @@ async def load_merged_unreleased_pull_request_facts(
     log = logging.getLogger("%s.load_merged_unreleased_pull_request_facts" % metadata.__package__)
     filters = []
     ghmprf = GitHubMergedPullRequestFacts
-    selected = [ghmprf.pr_node_id, ghmprf.data]
+    selected = [ghmprf.pr_node_id, ghmprf.repository_full_name, ghmprf.data]
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     for repo in prs[PullRequest.repository_full_name.key].unique():
         if (release_match := _extract_release_match(
@@ -551,7 +555,7 @@ async def load_merged_unreleased_pull_request_facts(
         if labels and not _labels_are_compatible(
                 include_singles, include_multiples, labels.exclude, row[ghmprf.labels.key]):
             continue
-        facts[node_id] = pickle.loads(data)
+        facts[node_id] = row[ghmprf.repository_full_name.key], pickle.loads(data)
     return facts
 
 
@@ -796,7 +800,8 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
 
 @sentry_span
 async def load_open_pull_request_facts(prs: pd.DataFrame,
-                                       pdb: databases.Database) -> Dict[str, PullRequestFacts]:
+                                       pdb: databases.Database,
+                                       ) -> Dict[str, Tuple[str, PullRequestFacts]]:
     """
     Fetch precomputed facts about the open PRs from the DataFrame.
 
@@ -807,7 +812,7 @@ async def load_open_pull_request_facts(prs: pd.DataFrame,
     ghoprf = GitHubOpenPullRequestFacts
     default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
     rows = await pdb.fetch_all(
-        select([ghoprf.pr_node_id, ghoprf.pr_updated_at, ghoprf.data])
+        select([ghoprf.pr_node_id, ghoprf.pr_updated_at, ghoprf.repository_full_name, ghoprf.data])
         .where(and_(ghoprf.pr_node_id.in_(node_ids),
                     ghoprf.format_version == default_version)))
     if not rows:
@@ -821,16 +826,18 @@ async def load_open_pull_request_facts(prs: pd.DataFrame,
     passed_node_ids = set(updated_ats.index.take(np.where(passed_mask)[0]))
     facts = {}
     for row in rows:
-        node_id = row[0]
+        node_id = row[ghoprf.pr_node_id.key]
         if node_id in passed_node_ids:
-            facts[node_id] = pickle.loads(row[2])
+            facts[node_id] = (
+                row[ghoprf.repository_full_name.key], pickle.loads(row[ghoprf.data.key]),
+            )
     return facts
 
 
 @sentry_span
 async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
                                                pdb: databases.Database,
-                                               ) -> Dict[str, PullRequestFacts]:
+                                               ) -> Dict[str, Tuple[str, PullRequestFacts]]:
     """
     Fetch precomputed facts about the open PRs from the DataFrame.
 
@@ -839,12 +846,14 @@ async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
     ghoprf = GitHubOpenPullRequestFacts
     default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
     rows = await pdb.fetch_all(
-        select([ghoprf.pr_node_id, ghoprf.data])
+        select([ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data])
         .where(and_(ghoprf.pr_node_id.in_(prs),
                     ghoprf.format_version == default_version)))
     if not rows:
         return {}
-    facts = {row[0].rstrip(): pickle.loads(row[1]) for row in rows}
+    facts = {row[ghoprf.pr_node_id.key].rstrip(): (
+        row[ghoprf.repository_full_name.key], pickle.loads(row[ghoprf.data.key]),
+    ) for row in rows}
     return facts
 
 

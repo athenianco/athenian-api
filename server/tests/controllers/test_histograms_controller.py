@@ -222,3 +222,38 @@ async def test_calc_histogram_prs_ticks(client, headers):
         {"for": {"repositories": ["github.com/src-d/go-git"]}, "metric": "pr-release-time",
          "scale": "linear", "ticks": ["60s", "10000s", "100000s", "2592000s"],
          "frequencies": [31, 26, 327], "interquartile": ["346338s", "2592000s"]}]
+
+
+async def test_calc_histogram_prs_groups(client, headers):
+    body = {
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "repogroups": [[0], [0]],
+            },
+        ],
+        "histograms": [{
+            "metric": PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME,
+            "scale": "log",
+        }],
+        "date_from": "2017-10-13",
+        "date_to": "2018-01-23",
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = FriendlyJson.loads(body)
+    assert len([CalculatedPullRequestHistogram.from_dict(item) for item in body]) == 2
+    for h in body:
+        assert h == {
+            "for": {"repositories": ["{1}"]},
+            "metric": "pr-wait-first-review-time",
+            "scale": "log",
+            "ticks": ["60s", "184s", "569s", "1752s", "5398s", "16624s", "51201s",
+                      "157688s", "485648s"], "frequencies": [6, 5, 8, 5, 4, 14, 10, 2],
+            "interquartile": ["790s", "45167s"],
+        }

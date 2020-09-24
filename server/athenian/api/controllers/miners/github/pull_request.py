@@ -93,7 +93,7 @@ class PullRequestMiner:
         return removed
 
     def _deserialize_mine_cache(buffer: bytes) -> Tuple[PRDataFrames,
-                                                        Dict[str, PullRequestFacts],
+                                                        Dict[str, Tuple[str, PullRequestFacts]],
                                                         Set[str],
                                                         Participants,
                                                         LabelFilter,
@@ -108,7 +108,7 @@ class PullRequestMiner:
     @sentry_span
     def _postprocess_cached_prs(
             result: Tuple[PRDataFrames,
-                          Dict[str, PullRequestFacts],
+                          Dict[str, Tuple[str, PullRequestFacts]],
                           Set[str],
                           Participants,
                           LabelFilter,
@@ -123,7 +123,7 @@ class PullRequestMiner:
             pr_blacklist: Optional[Collection[str]],
             truncate: bool,
             **_) -> Tuple[PRDataFrames,
-                          Dict[str, PullRequestFacts],
+                          Dict[str, Tuple[str, PullRequestFacts]],
                           Set[str],
                           Participants,
                           LabelFilter,
@@ -162,6 +162,7 @@ class PullRequestMiner:
             limit, ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []), truncate,
         ),
         postprocess=_postprocess_cached_prs,
+        version=2,
     )
     async def _mine(cls,
                     date_from: date,
@@ -181,7 +182,7 @@ class PullRequestMiner:
                     pr_blacklist: Optional[Collection[str]],
                     truncate: bool,
                     ) -> Tuple[PRDataFrames,
-                               Dict[str, PullRequestFacts],
+                               Dict[str, Tuple[str, PullRequestFacts]],
                                Set[str],
                                Participants,
                                LabelFilter,
@@ -261,7 +262,9 @@ class PullRequestMiner:
     _postprocess_cached_prs = staticmethod(_postprocess_cached_prs)
 
     def _deserialize_mine_by_ids_cache(
-            buffer: bytes) -> Tuple[PRDataFrames, Dict[str, PullRequestFacts], asyncio.Event]:
+            buffer: bytes) -> Tuple[PRDataFrames,
+                                    Dict[str, Tuple[str, PullRequestFacts]],
+                                    asyncio.Event]:
         dfs, facts = pickle.loads(buffer)
         event = asyncio.Event()
         event.set()
@@ -293,7 +296,9 @@ class PullRequestMiner:
                           pdb: databases.Database,
                           cache: Optional[aiomcache.Client],
                           truncate: bool = True,
-                          ) -> Tuple[PRDataFrames, Dict[str, PullRequestFacts], asyncio.Event]:
+                          ) -> Tuple[PRDataFrames,
+                                     Dict[str, Tuple[str, PullRequestFacts]],
+                                     asyncio.Event]:
         """
         Fetch PR metadata for certain PRs.
 
@@ -326,7 +331,9 @@ class PullRequestMiner:
                            pdb: databases.Database,
                            cache: Optional[aiomcache.Client],
                            truncate: bool = True,
-                           ) -> Tuple[PRDataFrames, Dict[str, PullRequestFacts], asyncio.Event]:
+                           ) -> Tuple[PRDataFrames,
+                                      Dict[str, Tuple[str, PullRequestFacts]],
+                                      asyncio.Event]:
         node_ids = prs.index if len(prs) > 0 else set()
         facts = {}  # precomputed PullRequestFacts about merged unreleased PRs
         unreleased_prs_event: asyncio.Event = None
@@ -512,7 +519,7 @@ class PullRequestMiner:
                    pr_blacklist: Optional[Collection[str]] = None,
                    truncate: bool = True,
                    ) -> Tuple["PullRequestMiner",
-                              Dict[str, PullRequestFacts],
+                              Dict[str, Tuple[str, PullRequestFacts]],
                               Dict[str, ReleaseMatch],
                               asyncio.Event]:
         """

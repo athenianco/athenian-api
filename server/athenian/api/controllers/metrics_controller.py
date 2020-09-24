@@ -1,9 +1,8 @@
 import asyncio
-from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from itertools import chain
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from aiohttp import web
 import databases.core
@@ -29,9 +28,9 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
 
-#               service                 developers            originals
-FilterPRs = Tuple[str, Tuple[Set[str], Participants, Set[str], ForSet]]
-#                          repositories           labels_include
+#               service                       developers                           originals
+FilterPRs = Tuple[str, Tuple[List[Set[str]], Participants, LabelFilter, JIRAFilter, ForSet]]
+#                             repositories
 
 #                service               developers
 FilterDevs = Tuple[str, Tuple[Set[str], List[str], ForSetDevelopers]]
@@ -81,52 +80,38 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
 
     @sentry_span
     async def calculate_for_set_metrics(service, repos, devs, labels, jira, for_set):
-        calcs = defaultdict(list)
-        # for each filter, we find the functions to measure the metrics
-        entries = METRIC_ENTRIES[service]["prs_linear"]
-        for m in filt.metrics:
-            calcs[entries[m]].append(m)
-        if len(calcs) == 0:
-            return
-        tasks = []
-        # for each metric, we find the function to calculate and call it
-        for func, metrics in calcs.items():
-            tasks.append(func(
-                metrics, time_intervals, filt.quantiles or (0, 1), repos, devs, labels, jira,
-                filt.exclude_inactive, release_settings, filt.fresh,
-                request.mdb, request.pdb, request.cache))
-        if len(tasks) > 1:
-            all_mvs = await asyncio.gather(*tasks, return_exceptions=True)
-        else:
-            all_mvs = [await tasks[0]]
-        gresults = []
-        for metrics, mvs in zip(calcs.values(), all_mvs):
-            if isinstance(mvs, Exception):
-                raise mvs from None
+        group_mvs = await METRIC_ENTRIES[service]["prs_linear"](
+            filt.metrics, time_intervals, filt.quantiles or (0, 1),
+            repos, devs, labels, jira,
+            filt.exclude_inactive, release_settings, filt.fresh,
+            request.mdb, request.pdb, request.cache)
+        assert len(group_mvs) == len(repos)
+        for group, mvs in enumerate(group_mvs):
             assert len(mvs) == len(time_intervals)
+            gresults = []
             for mv, ts in zip(mvs, time_intervals):
                 assert len(mv) == len(ts) - 1
                 mr = {}
                 gresults.append(mr)
-                for i, m in enumerate(metrics):
+                for i, m in enumerate(filt.metrics):
                     mr[m] = [r[i] for r in mv]
-        for granularity, results, ts in zip(filt.granularities, gresults, time_intervals):
-            cm = CalculatedPullRequestMetricsItem(
-                for_=for_set,
-                granularity=granularity,
-                values=[CalculatedLinearMetricValues(
-                    date=(d - tzoffset).date(),
-                    values=[results[m][i].value for m in met.metrics],
-                    confidence_mins=[results[m][i].confidence_min for m in met.metrics],
-                    confidence_maxs=[results[m][i].confidence_max for m in met.metrics],
-                    confidence_scores=[results[m][i].confidence_score() for m in met.metrics],
-                ) for i, d in enumerate(ts[:-1])])
-            for v in cm.values:
-                if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                    v.confidence_mins = None
-                    v.confidence_maxs = None
-                    v.confidence_scores = None
-            met.calculated.append(cm)
+            for granularity, results, ts in zip(filt.granularities, gresults, time_intervals):
+                cm = CalculatedPullRequestMetricsItem(
+                    for_=for_set.select_repogroup(group),
+                    granularity=granularity,
+                    values=[CalculatedLinearMetricValues(
+                        date=(d - tzoffset).date(),
+                        values=[results[m][i].value for m in met.metrics],
+                        confidence_mins=[results[m][i].confidence_min for m in met.metrics],
+                        confidence_maxs=[results[m][i].confidence_max for m in met.metrics],
+                        confidence_scores=[results[m][i].confidence_score() for m in met.metrics],
+                    ) for i, d in enumerate(ts[:-1])])
+                for v in cm.values:
+                    if sum(1 for c in v.confidence_scores if c is not None) == 0:
+                        v.confidence_mins = None
+                        v.confidence_maxs = None
+                        v.confidence_scores = None
+                met.calculated.append(cm)
 
     tasks = []
     for service, (repos, devs, labels, jira, for_set) in filters:
@@ -173,7 +158,7 @@ def _split_to_time_intervals(date_from: date,
 async def compile_repos_and_devs_prs(for_sets: List[ForSet],
                                      request: AthenianWebRequest,
                                      account: int,
-                                     ) -> (List[FilterPRs], Set[str]):
+                                     ) -> Tuple[List[FilterPRs], Set[str]]:
     """
     Build the list of filters for a given list of ForSet-s.
 
@@ -192,6 +177,11 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
         for i, for_set in enumerate(for_sets):
             repos, service = await _extract_repos(
                 request, account, for_set.repositories, i, all_repos, checkers, sdb_conn)
+            if for_set.repogroups is not None:
+                repogroups = [set(chain.from_iterable(repos[i] for i in group))
+                              for group in for_set.repogroups]
+            else:
+                repogroups = [set(chain.from_iterable(repos))]
             prefix = PREFIXES[service]
             devs = {}
             for k, v in (for_set.with_ or {}).items():
@@ -211,7 +201,7 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
                     for_set.jira, await get_jira_installation(account, request.sdb, request.cache))
             except ResponseError:
                 jira = JIRAFilter.empty()
-            filters.append((service, (repos, devs, labels, jira, for_set)))
+            filters.append((service, (repogroups, devs, labels, jira, for_set)))
     return filters, all_repos
 
 
@@ -237,6 +227,7 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
         for i, for_set in enumerate(for_sets):
             repos, service = await _extract_repos(
                 request, account, for_set.repositories, i, all_repos, checkers, sdb_conn)
+            repos = set(chain.from_iterable(repos))
             prefix = PREFIXES[service]
             devs = []
             for dev in (for_set.developers or []):
@@ -262,43 +253,44 @@ async def _extract_repos(request: AthenianWebRequest,
                          for_set_index: int,
                          all_repos: Set[str],
                          checkers: Dict[str, AccessChecker],
-                         sdb: databases.core.Connection) -> Tuple[Set[str], str]:
+                         sdb: databases.core.Connection) -> Tuple[Sequence[Set[str]], str]:
     user = request.uid
-    repos = set()
     service = None
-    for repo in chain.from_iterable(await asyncio.gather(
-            *[resolve_reposet(r, ".for[%d].repositories[%d]" % (for_set_index, j), user, account,
-                              sdb, request.cache)
-              for j, r in enumerate(for_set)])):
-        for key, prefix in PREFIXES.items():
-            if repo.startswith(prefix):
-                if service is None:
-                    service = key
-                elif service != key:
-                    raise ResponseError(InvalidRequestError(
-                        detail='mixed providers are not allowed in the same "for" element',
-                        pointer=".for[%d].repositories" % for_set_index,
-                    ))
-                repos.add(repo[len(prefix):])
-                all_repos.add(repo)
+    resolved = await asyncio.gather(*[
+        resolve_reposet(r, ".for[%d].repositories[%d]" % (
+            for_set_index, j), user, account, sdb, request.cache)
+        for j, r in enumerate(for_set)
+    ], return_exceptions=True)
+    for repos in resolved:
+        if isinstance(repos, Exception):
+            raise repos from None
+        for i, repo in enumerate(repos):
+            for key, prefix in PREFIXES.items():
+                if repo.startswith(prefix):
+                    if service is None:
+                        service = key
+                    elif service != key:
+                        raise ResponseError(InvalidRequestError(
+                            detail='mixed providers are not allowed in the same "for" element',
+                            pointer=".for[%d].repositories" % for_set_index,
+                        ))
+                    repos[i] = repo[len(prefix):]
+                    all_repos.add(repo)
     if service is None:
         raise ResponseError(InvalidRequestError(
             detail='the provider of a "for" element is unsupported or the set is empty',
             pointer=".for[%d].repositories" % for_set_index,
         ))
-    checker = checkers.get(service)
-    if checker is None:
+    if (checker := checkers.get(service)) is None:
         checker = await access_classes[service](account, sdb, request.mdb, request.cache).load()
         checkers[service] = checker
-    denied = await checker.check(repos)
-    if denied:
+    if denied := await checker.check(set(chain.from_iterable(resolved))):
         raise ResponseError(InvalidRequestError(
-            detail="the following repositories are access denied for %s: %s" %
-                   (service, denied),
+            detail="the following repositories are access denied for %s: %s" % (service, denied),
             pointer=".for[%d].repositories" % for_set_index,
             status=HTTPStatus.FORBIDDEN,
         ))
-    return repos, service
+    return resolved, service
 
 
 async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -382,7 +374,7 @@ async def _compile_repos_releases(request: AthenianWebRequest,
         for i, for_set in enumerate(for_sets):
             repos, service = await _extract_repos(
                 request, account, for_set, i, all_repos, checkers, sdb_conn)
-            filters.append((service, (repos, for_set)))
+            filters.append((service, (set(chain.from_iterable(repos)), for_set)))
     return filters, all_repos
 
 
@@ -402,36 +394,18 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
 
     @sentry_span
     async def calculate_for_set_metrics(service, repos, for_set):
-        calcs = defaultdict(list)
-        # for each filter, we find the functions to measure the metrics
-        entries = METRIC_ENTRIES[service]["releases_linear"]
-        for m in filt.metrics:
-            calcs[entries[m]].append(m)
-        if len(calcs) == 0:
-            return
-        tasks = []
-        # for each metric, we find the function to calculate and call it
-        for func, metrics in calcs.items():
-            tasks.append(func(
-                metrics, time_intervals, filt.quantiles or (0, 1), repos, release_settings,
-                request.mdb, request.pdb, request.cache))
-        if len(tasks) > 1:
-            all_mvs = await asyncio.gather(*tasks, return_exceptions=True)
-        else:
-            all_mvs = [await tasks[0]]
+        mvs, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
+            filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, release_settings,
+            request.mdb, request.pdb, request.cache)
+        release_matches = {k: v.name for k, v in release_matches.items()}
+        assert len(mvs) == len(time_intervals)
         gresults = []
-        for metrics, mvs in zip(calcs.values(), all_mvs):
-            if isinstance(mvs, Exception):
-                raise mvs from None
-            mvs, release_matches = mvs
-            release_matches = {k: v.name for k, v in release_matches.items()}
-            assert len(mvs) == len(time_intervals)
-            for mv, ts in zip(mvs, time_intervals):
-                assert len(mv) == len(ts) - 1
-                mr = {}
-                gresults.append((mr, release_matches))
-                for i, m in enumerate(metrics):
-                    mr[m] = [r[i] for r in mv]
+        for mv, ts in zip(mvs, time_intervals):
+            assert len(mv) == len(ts) - 1
+            mr = {}
+            gresults.append((mr, release_matches))
+            for i, m in enumerate(filt.metrics):
+                mr[m] = [r[i] for r in mv]
         for granularity, (results, release_matches), ts in zip(
                 filt.granularities, gresults, time_intervals):
             cm = CalculatedReleaseMetric(

@@ -612,7 +612,9 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               mdb: databases.Database,
                               pdb: databases.Database,
                               cache: Optional[aiomcache.Client],
-                              ) -> Tuple[pd.DataFrame, Dict[str, PullRequestFacts], asyncio.Event]:
+                              ) -> Tuple[pd.DataFrame,
+                                         Dict[str, Tuple[str, PullRequestFacts]],
+                                         asyncio.Event]:
     """
     Match the merged pull requests to the nearest releases that include them.
 

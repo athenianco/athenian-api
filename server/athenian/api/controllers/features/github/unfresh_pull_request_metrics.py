@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Set
 
@@ -38,7 +39,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
                                            mdb: databases.Database,
                                            pdb: databases.Database,
                                            cache: Optional[aiomcache.Client],
-                                           ) -> List[PullRequestFacts]:
+                                           ) -> Dict[str, List[PullRequestFacts]]:
     """
     Load the missing facts about merged unreleased and open PRs from pdb instead of querying \
     the most up to date information from mdb.
@@ -101,7 +102,10 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
     add_pdb_hits(pdb, "precomputed_merged_unreleased_facts", len(merged_facts))
     # ensure the priority order
     facts = {**open_facts, **merged_facts, **done_facts}
-    return list(facts.values())
+    by_repo = defaultdict(list)
+    for repo, f in facts.values():
+        by_repo[repo].append(f)
+    return by_repo
 
 
 @sentry_span

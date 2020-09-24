@@ -341,6 +341,7 @@ class BinnedMetricCalculator:
         self.start_time_getter = start_time_getter
         self.finish_time_getter = finish_time_getter
 
+    @sentry_span
     def __call__(self, items: Iterable[Any]) -> List[List[Metric]]:
         """Calculate the binned metrics on a series of objects."""
         items = df_from_dataclasses(items)
