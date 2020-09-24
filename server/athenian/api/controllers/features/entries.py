@@ -271,7 +271,7 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
                                              mdb: Database,
                                              pdb: Database,
                                              cache: Optional[aiomcache.Client],
-                                             ) -> Dict[str, Histogram]:
+                                             ) -> List[Tuple[str, Histogram]]:
     """Calculate the pull request histograms on GitHub."""
     try:
         ensembles = [PullRequestHistogramCalculatorEnsemble(*metrics, quantiles=quantiles)
@@ -282,10 +282,10 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
         time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
         release_settings, fresh, mdb, pdb, cache)
     df_facts = df_from_dataclasses(mined_facts)
-    histograms = {}
+    histograms = []
     for ensemble, params in zip(ensembles, defs):
         ensemble(df_facts, time_from.replace(tzinfo=None), time_to.replace(tzinfo=None))
-        histograms.update(ensemble.histograms(params.scale, params.bins, params.ticks))
+        histograms.extend(ensemble.histograms(params.scale, params.bins, params.ticks).items())
     return histograms
 
 

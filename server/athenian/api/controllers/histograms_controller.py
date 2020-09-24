@@ -53,7 +53,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 request.cache)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(str(e))) from None
-        for metric, histogram in sorted(histograms.items()):
+        for metric, histogram in sorted(histograms):
             result.append(CalculatedPullRequestHistogram(
                 for_=for_set,
                 metric=metric,
