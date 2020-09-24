@@ -31,7 +31,6 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
 
     async def calculate_for_set_histograms(service, repos, devs, labels, jira, for_set):
         # for each filter, we find the functions to calculate the histograms
-        calc_func = METRIC_ENTRIES[service]["prs_histogram"]
         defs = defaultdict(list)
         for h in (filt.histograms or []):
             defs[HistogramParameters(
@@ -47,21 +46,23 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 ticks=None,
             )].append(m)
         try:
-            histograms = await calc_func(
+            group_histograms = await METRIC_ENTRIES[service]["prs_histogram"](
                 defs, time_from, time_to, filt.quantiles or (0, 1), repos, devs, labels, jira,
                 filt.exclude_inactive, release_settings, filt.fresh, request.mdb, request.pdb,
                 request.cache)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(str(e))) from None
-        for metric, histogram in sorted(histograms):
-            result.append(CalculatedPullRequestHistogram(
-                for_=for_set,
-                metric=metric,
-                scale=histogram.scale.name.lower(),
-                ticks=histogram.ticks,
-                frequencies=histogram.frequencies,
-                interquartile=histogram.interquartile,
-            ))
+        assert len(group_histograms) == len(repos)
+        for group, histograms in enumerate(group_histograms):
+            for metric, histogram in sorted(histograms):
+                result.append(CalculatedPullRequestHistogram(
+                    for_=for_set.select_repogroup(group),
+                    metric=metric,
+                    scale=histogram.scale.name.lower(),
+                    ticks=histogram.ticks,
+                    frequencies=histogram.frequencies,
+                    interquartile=histogram.interquartile,
+                ))
 
     tasks = []
     for service, (repos, devs, labels, jira, for_set) in filters:

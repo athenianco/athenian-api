@@ -448,7 +448,7 @@ async def test_calc_metrics_prs_labels_include(client, headers):
     assert cm.calculated[0].values[0].values[0] == 6
 
 
-async def test_calc_metrics_quantiles(client, headers):
+async def test_calc_metrics_prs_quantiles(client, headers):
     body = {
         "date_from": "2018-06-01",
         "date_to": "2018-11-18",
@@ -510,6 +510,60 @@ async def test_calc_metrics_prs_jira(client, headers):
     cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
     assert len(cm.calculated[0].values) > 0
     assert cm.calculated[0].values[0].values[0] == "478544s"
+
+
+async def test_calc_metrics_prs_groups_smoke(client, headers):
+    """Two repository groups."""
+    body = {
+        "for": [
+            {
+                "with": {"author": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
+                "repositories": ["{1}", "github.com/src-d/go-git"],
+                "repogroups": [[0], [0]],
+            },
+        ],
+        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
+        "date_from": "2017-10-13",
+        "date_to": "2018-01-23",
+        "granularities": ["all"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
+    assert len(cm.calculated) == 2
+    assert cm.calculated[0] == cm.calculated[1]
+    assert cm.calculated[0].values[0].values[0] == "3667053s"
+    assert cm.calculated[0].for_.repositories == ["{1}"]
+
+
+@pytest.mark.parametrize("repogroups", [[[0, 0]], [[0, -1]], [[0, 1]]])
+async def test_calc_metrics_prs_groups_nasty(client, headers, repogroups):
+    """Two repository groups."""
+    body = {
+        "for": [
+            {
+                "with": {"author": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
+                "repositories": ["{1}"],
+                "repogroups": repogroups,
+            },
+        ],
+        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
+        "date_from": "2017-10-13",
+        "date_to": "2018-01-23",
+        "granularities": ["all"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 400, "Response body is : " + body
 
 
 async def test_code_bypassing_prs_smoke(client, headers):

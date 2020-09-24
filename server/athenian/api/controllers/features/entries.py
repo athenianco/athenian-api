@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from itertools import chain
 import pickle
 from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -13,11 +14,9 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request_metrics import \
-    metric_calculators as pr_metric_calculators, \
     PullRequestBinnedMetricCalculator, PullRequestHistogramCalculatorEnsemble
-import athenian.api.controllers.features.github.pull_request_metrics  # noqa
 from athenian.api.controllers.features.github.release_metrics import \
-    metric_calculators as release_metric_calculators, ReleaseBinnedMetricCalculator
+    ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     fetch_pull_request_facts_unfresh
 from athenian.api.controllers.features.histogram import Histogram, HistogramParameters
@@ -64,6 +63,7 @@ unfresh_participants_threshold = 50
         release_settings,
         fresh,
     ),
+    version=2,
 )
 async def calc_pull_request_facts_github(time_from: datetime,
                                          time_to: datetime,
@@ -77,12 +77,13 @@ async def calc_pull_request_facts_github(time_from: datetime,
                                          mdb: Database,
                                          pdb: Database,
                                          cache: Optional[aiomcache.Client],
-                                         ) -> List[PullRequestFacts]:
+                                         ) -> Dict[str, List[PullRequestFacts]]:
     """
     Calculate facts about pull request on GitHub.
 
     :param fresh: If the number of done PRs for the time period and filters exceeds \
                   `unfresh_mode_threshold`, force querying mdb instead of pdb only.
+    :return: Map repository name -> list of PR facts.
     """
     assert isinstance(repositories, set)
     branches, default_branches = await extract_branches(repositories, mdb, cache)
@@ -139,7 +140,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
         precomputed_facts[node_id] = unreleased_facts[node_id]
     facts_miner = PullRequestFactsMiner(await bots(mdb))
     mined_prs = []
-    mined_facts = list(precomputed_facts.values())
+    mined_facts = []
     open_pr_facts = []
     merged_unreleased_pr_facts = []
     done_count = 0
@@ -153,7 +154,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
             except ImpossiblePullRequest:
                 continue
             mined_prs.append(pr)
-            mined_facts.append(facts)
+            mined_facts.append((pr.pr[PullRequest.repository_full_name.key], facts))
             if facts.done:
                 done_count += 1
             elif not facts.closed:
@@ -166,9 +167,10 @@ async def calc_pull_request_facts_github(time_from: datetime,
     add_pdb_misses(pdb, "facts", len(miner))
     if done_count > 0:
         # we don't care if exclude_inactive is True or False here
-        await defer(store_precomputed_done_facts(mined_prs, mined_facts[len(precomputed_facts):],
-                                                 default_branches, release_settings, pdb),
-                    "store_precomputed_done_facts(%d/%d)" % (done_count, len(miner)))
+        # also, we dump all the `mined_facts`, the called function will figure out who's released
+        await defer(store_precomputed_done_facts(
+            mined_prs, mined_facts, default_branches, release_settings, pdb),
+            "store_precomputed_done_facts(%d/%d)" % (done_count, len(miner)))
     if len(open_pr_facts) > 0:
         await defer(store_open_pull_request_facts(open_pr_facts, pdb),
                     "store_open_pull_request_facts(%d)" % len(open_pr_facts))
@@ -177,7 +179,13 @@ async def calc_pull_request_facts_github(time_from: datetime,
             merged_unreleased_pr_facts, matched_bys, default_branches, release_settings, pdb,
             unreleased_prs_event),
             "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts))
-    return mined_facts
+    by_repo = {}
+    for repo, f in chain(precomputed_facts.values(), mined_facts):
+        try:
+            by_repo[repo].append(f)
+        except KeyError:
+            by_repo[repo] = [f]
+    return by_repo
 
 
 @sentry_span
@@ -190,7 +198,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
         ",".join(sorted(metrics)),
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
         ",".join(str(q) for q in quantiles),
-        ",".join(sorted(repositories)),
+        ",".join(str(sorted(r)) for r in repositories),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
         labels,
         exclude_inactive,
@@ -200,7 +208,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
 async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
                                                 quantiles: Sequence[float],
-                                                repositories: Set[str],
+                                                repositories: Sequence[Collection[str]],
                                                 participants: Participants,
                                                 labels: LabelFilter,
                                                 jira: JIRAFilter,
@@ -210,16 +218,23 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 mdb: Database,
                                                 pdb: Database,
                                                 cache: Optional[aiomcache.Client],
-                                                ) -> List[List[List[Metric]]]:
+                                                ) -> List[List[List[List[Metric]]]]:
     """Calculate pull request metrics on GitHub."""
+    assert isinstance(repositories, (tuple, list))
+    all_repositories = set(chain.from_iterable(repositories))
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
-        time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
+        time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
         release_settings, fresh, mdb, pdb, cache)
+    group_metrics = []
     with sentry_sdk.start_span(op="PullRequestBinnedMetricCalculator.__call__",
-                               description=str(len(mined_facts))):
-        return [PullRequestBinnedMetricCalculator(metrics, ts, quantiles)(mined_facts)
-                for ts in time_intervals]
+                               description=str(sum(len(f) for f in mined_facts.values()))):
+        for group in repositories:
+            group_facts = list(chain.from_iterable(mined_facts.get(repo, []) for repo in group))
+            group_metrics.append(
+                [PullRequestBinnedMetricCalculator(metrics, ts, quantiles)(group_facts)
+                 for ts in time_intervals])
+    return group_metrics
 
 
 @sentry_span
@@ -251,7 +266,7 @@ async def calc_code_metrics(prop: FilterCommitsProperty,
         ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
         time_from, time_to,
         ",".join(str(q) for q in quantiles),
-        ",".join(sorted(repositories)),
+        ",".join(str(sorted(r)) for r in repositories),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
         exclude_inactive,
         release_settings,
@@ -261,7 +276,7 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
                                              time_from: datetime,
                                              time_to: datetime,
                                              quantiles: Sequence[float],
-                                             repositories: Set[str],
+                                             repositories: List[Collection[str]],
                                              participants: Participants,
                                              labels: LabelFilter,
                                              jira: JIRAFilter,
@@ -271,22 +286,27 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
                                              mdb: Database,
                                              pdb: Database,
                                              cache: Optional[aiomcache.Client],
-                                             ) -> List[Tuple[str, Histogram]]:
+                                             ) -> List[List[Tuple[str, Histogram]]]:
     """Calculate the pull request histograms on GitHub."""
+    all_repositories = set(chain.from_iterable(repositories))
     try:
         ensembles = [PullRequestHistogramCalculatorEnsemble(*metrics, quantiles=quantiles)
                      for metrics in defs.values()]
     except KeyError as e:
         raise ValueError(str(e)) from None
     mined_facts = await calc_pull_request_facts_github(
-        time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
+        time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
         release_settings, fresh, mdb, pdb, cache)
-    df_facts = df_from_dataclasses(mined_facts)
-    histograms = []
-    for ensemble, params in zip(ensembles, defs):
-        ensemble(df_facts, time_from.replace(tzinfo=None), time_to.replace(tzinfo=None))
-        histograms.extend(ensemble.histograms(params.scale, params.bins, params.ticks).items())
-    return histograms
+    group_histograms = []
+    for group in repositories:
+        df_facts = df_from_dataclasses(list(chain.from_iterable(
+            mined_facts.get(repo, []) for repo in group)))
+        histograms = []
+        for ensemble, params in zip(ensembles, defs):
+            ensemble(df_facts, time_from.replace(tzinfo=None), time_to.replace(tzinfo=None))
+            histograms.extend(ensemble.histograms(params.scale, params.bins, params.ticks).items())
+        group_histograms.append(histograms)
+    return group_histograms
 
 
 async def calc_release_metrics_line_github(metrics: Sequence[str],
@@ -314,10 +334,10 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
 
 METRIC_ENTRIES = {
     "github": {
-        "prs_linear": {k: calc_pull_request_metrics_line_github for k in pr_metric_calculators},
+        "prs_linear": calc_pull_request_metrics_line_github,
         "prs_histogram": calc_pull_request_histogram_github,
         "code": calc_code_metrics,
         "developers": calc_developer_metrics,
-        "releases_linear": {k: calc_release_metrics_line_github for k in release_metric_calculators},  # noqa
+        "releases_linear": calc_release_metrics_line_github,  # noqa
     },
 }

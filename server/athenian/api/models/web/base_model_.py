@@ -82,6 +82,10 @@ class Model(metaclass=Slots):
 
         return result
 
+    def copy(self) -> "Model":
+        """Clone the object."""
+        return type(self)(**{p: getattr(self, p) for p in self.openapi_types})
+
     def to_str(self) -> str:
         """Returns the string representation of the model."""
         return pprint.pformat(self.to_dict())

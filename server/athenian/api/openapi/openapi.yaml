@@ -2331,6 +2331,17 @@ components:
       properties:
         repositories:
           $ref: '#/components/schemas/RepositorySet'
+        repogroups:
+          description: Lists of indexes in `repositories` that define independent groups
+            that must be processed individually. The groups may have intersections.
+          items:
+            items:
+              minimum: 0
+              minItems: 1
+              type: integer
+            type: array
+          minItems: 1
+          type: array
         with:
           $ref: '#/components/schemas/PullRequestWith'
         labels_include:

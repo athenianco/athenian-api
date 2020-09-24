@@ -10,6 +10,7 @@ class ForSet(Model):
 
     openapi_types = {
         "repositories": List[str],
+        "repogroups": Optional[List[List[int]]],
         "with_": Optional[PullRequestWith],
         "labels_include": Optional[List[str]],
         "labels_exclude": Optional[List[str]],
@@ -18,6 +19,7 @@ class ForSet(Model):
 
     attribute_map = {
         "repositories": "repositories",
+        "repogroups": "repogroups",
         "with_": "with",
         "labels_include": "labels_include",
         "labels_exclude": "labels_exclude",
@@ -27,6 +29,7 @@ class ForSet(Model):
     def __init__(
         self,
         repositories: Optional[List[str]] = None,
+        repogroups: Optional[List[List[int]]] = None,
         with_: Optional[PullRequestWith] = None,
         labels_include: Optional[List[str]] = None,
         labels_exclude: Optional[List[str]] = None,
@@ -35,12 +38,14 @@ class ForSet(Model):
         """ForSet - a model defined in OpenAPI
 
         :param repositories: The repositories of this ForSet.
+        :param repogroups: The repogroups of this ForSet.
         :param with_: The with of this ForSet.
         :param labels_include: The labels_include of this ForSet.
         :param labels_exclude: The labels_exclude of this ForSet.
         :param jira: The jira of this ForSet.
         """
         self._repositories = repositories
+        self._repogroups = repogroups
         self._with_ = with_
         self._labels_include = labels_include
         self._labels_exclude = labels_exclude
@@ -62,8 +67,48 @@ class ForSet(Model):
         """
         if repositories is None:
             raise ValueError("Invalid value for `repositories`, must not be `None`")
+        if self._repogroups is not None:
+            for i, group in enumerate(self._repogroups):
+                for j, v in enumerate(group):
+                    if v >= len(repositories):
+                        raise ValueError(
+                            "`repogroups[%d][%d]` = %s must be less than the number of "
+                            "repositories (%d)" % (i, j, v, len(repositories)))
 
         self._repositories = repositories
+
+    @property
+    def repogroups(self) -> Optional[List[List[int]]]:
+        """Gets the repogroups of this ForSet.
+
+        :return: The repogroups of this ForSet.
+        """
+        return self._repogroups
+
+    @repogroups.setter
+    def repogroups(self, repogroups: Optional[List[List[int]]]):
+        """Sets the repogroups of this ForSet.
+
+        :param repogroups: The repogroups of this ForSet.
+        """
+        if repogroups is not None:
+            if len(repogroups) == 0:
+                raise ValueError("`repogroups` must contain at least one list")
+            for i, group in enumerate(repogroups):
+                if len(group) == 0:
+                    raise ValueError("`repogroups[%d]` must contain at least one element" % i)
+                for j, v in enumerate(group):
+                    if v < 0:
+                        raise ValueError(
+                            "`repogroups[%d][%d]` = %s must not be negative" % (i, j, v))
+                    if self._repositories is not None and v >= len(self._repositories):
+                        raise ValueError(
+                            "`repogroups[%d][%d]` = %s must be less than the number of "
+                            "repositories (%d)" % (i, j, v, len(self._repositories)))
+                if len(set(group)) < len(group):
+                    raise ValueError("`repogroups[%d]` has duplicate items" % i)
+
+        self._repogroups = repogroups
 
     @property
     def with_(self) -> PullRequestWith:
@@ -132,3 +177,16 @@ class ForSet(Model):
         :param jira: The jira of this ForSet.
         """
         self._jira = jira
+
+    def select_repogroup(self, index: int) -> "ForSet":
+        """Change `repositories` to point at the specified group and clear `repogroups`."""
+        fs = self.copy()
+        if self.repogroups is None:
+            if index > 0:
+                raise IndexError("%d is out of range (no repogroups)" % index)
+            return fs
+        if index >= len(self.repogroups):
+            raise IndexError("%d is out of range (max is %d)" % (index, len(self.repogroups)))
+        fs.repogroups = None
+        fs.repositories = [self.repositories[i] for i in self.repogroups[index]]
+        return fs

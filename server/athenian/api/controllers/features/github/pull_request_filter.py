@@ -501,6 +501,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     facts, unreleased_facts = unreleased_facts, facts
     facts.update(unreleased_facts)
     del unreleased_facts
+    facts = {k: v for k, (_, v) in facts.items()}
 
     prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
 
@@ -546,7 +547,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                     continue
                 if pr_facts.released or pr_facts.closed and not pr_facts.merged:
                     missed_done_facts_counter += 1
-                    missed_done_facts.append((pr, pr_facts))
+                    missed_done_facts.append((pr, (None, pr_facts)))
                     if (len(missed_done_facts) + 1) % 100 == 0:
                         await store_missed_done_facts()
                 elif not pr_facts.closed:
@@ -659,8 +660,9 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
         for pr in prs:
             node_id = pr.pr[PullRequest.node_id.key]
             if node_id not in facts:
-                facts[node_id] = facts_miner(pr)
+                facts[node_id] = None, facts_miner(pr)
                 pdb_misses += 1
+    facts = {k: v for k, (_, v) in facts.items()}
     miner = PullRequestListMiner(
         prs, dfs, facts, set(), set(), datetime(1970, 1, 1, tzinfo=timezone.utc), now, False)
     prs = await list_with_yield(miner, "PullRequestListMiner.__iter__")

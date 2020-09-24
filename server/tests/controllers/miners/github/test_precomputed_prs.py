@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 from datetime import datetime, timedelta, timezone
+from itertools import repeat
 import math
 import pickle
 from typing import Sequence
@@ -76,9 +77,13 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
         labels=pd.DataFrame.from_records(([["bug"]], [["feature"]])[i % 2], columns=["name"]),
         jiras=pd.DataFrame(),
     ) for i, s in enumerate(samples)]
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, [(names[i % len(names)], s) for i, s in enumerate(samples)], default_branches,
+        settings, pdb)
     # we should not crash on repeat
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, [(names[i % len(names)], s) for i, s in enumerate(samples)], default_branches,
+        settings, pdb)
     released_ats = sorted((t.released, i) for i, t in enumerate(samples[:-10]))
     time_from = released_ats[len(released_ats) // 2][0]
     time_to = released_ats[-1][0]
@@ -94,8 +99,9 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
             true_prs[prs[-10 + i].pr[PullRequest.node_id.key]] = s
     diff_keys = set(loaded_prs) - set(true_prs)
     assert not diff_keys
-    for k, load_value in loaded_prs.items():
+    for k, (r, load_value) in loaded_prs.items():
         assert load_value == true_prs[k], k
+        assert r in names
 
 
 async def test_load_store_precomputed_done_filters(pr_samples, pdb):
@@ -133,7 +139,9 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
                                           [["feature"], ["bad"]])[i % 4], columns=["name"]),
         jiras=pd.DataFrame(),
     ) for i, s in enumerate(samples)]
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, [(names[i % len(names)], s) for i, s in enumerate(samples)], default_branches,
+        settings, pdb)
     time_from = min(s.created for s in samples)
     time_to = max(s.max_timestamp() for s in samples)
     loaded_prs = await load_precomputed_done_facts_filters(
@@ -161,7 +169,8 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
 
 async def test_load_store_precomputed_done_match_by(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, zip(repeat("src-d/go-git"), samples), default_branches, settings, pdb)
     time_from = samples[0].created - timedelta(days=365)
     time_to = samples[0].released + timedelta(days=1)
     loaded_prs = await load_precomputed_done_facts_filters(
@@ -190,7 +199,8 @@ async def test_load_store_precomputed_done_match_by(pr_samples, default_branches
         default_branches, False, settings, pdb)
     assert len(loaded_prs) == 0
     prs[0].release[matched_by_column] = 1
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, zip(repeat("src-d/go-git"), samples), default_branches, settings, pdb)
     loaded_prs = await load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, pdb)
@@ -241,21 +251,22 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_
         labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
         jiras=pd.DataFrame(),
     ) for s in samples]
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, zip(repeat("one"), samples), default_branches, settings, pdb)
     time_from = samples[1].created + timedelta(days=1)
     time_to = samples[0].first_comment_on_first_review
     loaded_prs = await load_precomputed_done_facts_filters(
         time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
         True, settings, pdb)
     assert len(loaded_prs) == 1
-    assert loaded_prs[prs[0].pr[PullRequest.node_id.key]] == samples[0]
+    assert loaded_prs[prs[0].pr[PullRequest.node_id.key]] == ("one", samples[0])
     time_from = samples[1].created - timedelta(days=1)
     time_to = samples[1].created + timedelta(seconds=1)
     loaded_prs = await load_precomputed_done_facts_filters(
         time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
         True, settings, pdb)
     assert len(loaded_prs) == 1
-    assert loaded_prs[prs[1].pr[PullRequest.node_id.key]] == samples[1]
+    assert loaded_prs[prs[1].pr[PullRequest.node_id.key]] == ("one", samples[1])
 
 
 async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
@@ -290,12 +301,14 @@ async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
         labels=pd.DataFrame.from_records(([["bug"]], [["feature"]])[i % 2], columns=["name"]),
         jiras=pd.DataFrame(),
     ) for i, s in enumerate(samples)]
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, [(names[i % len(names)], s) for i, s in enumerate(samples)], default_branches,
+        settings, pdb)
     query1 = {"one": {pr.pr[PullRequest.number.key] for pr in prs
                       if pr.pr[PullRequest.repository_full_name.key] == "one"}}
     assert len(query1["one"]) == 4
     new_prs = await load_precomputed_done_facts_reponums(query1, default_branches, settings, pdb)
-    assert new_prs == {pr.pr[PullRequest.node_id.key]: s
+    assert new_prs == {pr.pr[PullRequest.node_id.key]: ("one", s)
                        for pr, s in zip(prs, samples)
                        if pr.pr[PullRequest.repository_full_name.key] == "one"}
     query2 = {"one": set()}
@@ -348,7 +361,8 @@ async def test_store_precomputed_done_facts_empty(pdb):
 
 async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, zip(repeat("src-d/go-git"), samples), default_branches, settings, pdb)
     time_from = samples[0].created
     time_to = samples[0].released
     loaded_prs = await load_precomputed_done_candidates(
@@ -365,7 +379,8 @@ async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branch
 @with_defer
 async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, pdb, cache):
     samples, prs, settings = _gen_one_pr(pr_samples)
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, zip(repeat("src-d/go-git"), samples), default_branches, settings, pdb)
     for i in range(2):
         released_prs = await load_precomputed_pr_releases(
             [pr.pr[PullRequest.node_id.key] for pr in prs],
@@ -384,7 +399,8 @@ async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, 
 
 async def test_load_precomputed_pr_releases_time_to(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, zip(repeat("src-d/go-git"), samples), default_branches, settings, pdb)
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
         min(s.released for s in samples),
@@ -395,7 +411,8 @@ async def test_load_precomputed_pr_releases_time_to(pr_samples, default_branches
 
 async def test_load_precomputed_pr_releases_release_mismatch(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, zip(repeat("src-d/go-git"), samples), default_branches, settings, pdb)
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
         max(s.released for s in samples) + timedelta(days=1),
@@ -413,7 +430,8 @@ async def test_load_precomputed_pr_releases_release_mismatch(pr_samples, default
 async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
     prs[0].release[matched_by_column] = ReleaseMatch.tag
-    await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, zip(repeat("src-d/go-git"), samples), default_branches, settings, pdb)
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
         max(s.released for s in samples) + timedelta(days=1),
@@ -647,9 +665,11 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
         labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
         jiras=pd.DataFrame(),
     )]
-    await store_precomputed_done_facts(prs, [None], default_branches, settings, pdb)
+    await store_precomputed_done_facts(
+        prs, [("src-d/go-git", None)], default_branches, settings, pdb)
     with pytest.raises(AssertionError):
-        await store_precomputed_done_facts(prs, samples, default_branches, settings, pdb)
+        await store_precomputed_done_facts(
+            prs, zip(repeat("one"), samples), default_branches, settings, pdb)
 
 
 @with_defer
