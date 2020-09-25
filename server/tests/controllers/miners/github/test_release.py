@@ -1072,6 +1072,30 @@ async def test_mine_releases_precomputed_time_range(mdb, pdb, release_match_sett
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], None, {}, time_from, time_to, release_match_setting_tag, mdb, pdb, None)
+    for _, f in releases:
+        assert time_from <= f.published < time_to
+        assert len(f.prs) > 0
+        assert f.commits_count > 0
+    assert len(releases) == 22
+    assert len(avatars) == 93
+
+
+@with_defer
+async def test_mine_releases_precomputed_update(mdb, pdb, release_match_setting_tag):
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2018, month=11, day=1, tzinfo=timezone.utc)
+    releases, avatars, _ = await mine_releases(
+        ["src-d/go-git"], None, {}, time_from, time_to, release_match_setting_tag, mdb, pdb, None)
+    await wait_deferred()
+
+    time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
+    releases, avatars, _ = await mine_releases(
+        ["src-d/go-git"], None, {}, time_from, time_to, release_match_setting_tag, mdb, pdb, None)
+    for _, f in releases:
+        assert time_from <= f.published < time_to
+        assert len(f.prs) > 0
+        assert f.commits_count > 0
     assert len(releases) == 22
     assert len(avatars) == 93
 
