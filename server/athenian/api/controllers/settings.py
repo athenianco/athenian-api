@@ -93,7 +93,11 @@ class Settings:
 
     async def list_release_matches(self, repos: Optional[Collection[str]] = None,
                                    ) -> Dict[str, ReleaseMatchSetting]:
-        """List the current release matching settings for all related repositories."""
+        """
+        List the current release matching settings for all related repositories.
+
+        Repository names must be prefixed!
+        """
         async with self._sdb.connection() as conn:
             if self._user_id is not None:
                 await get_user_account_status(self._user_id, self._account, conn, self._cache)

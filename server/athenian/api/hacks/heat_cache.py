@@ -14,16 +14,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from tqdm import tqdm
 
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
-    enable_defer, ParallelDatabase, patch_pandas, ResponseError, setup_cache_metrics, \
-    setup_context, setup_defer, wait_deferred
+    create_slack, enable_defer, ParallelDatabase, patch_pandas, ResponseError, \
+    setup_cache_metrics, setup_context, setup_defer, wait_deferred
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.contributors import mine_contributors
-from athenian.api.controllers.miners.github.release import load_releases, mine_releases
-from athenian.api.controllers.settings import Settings
+from athenian.api.controllers.miners.github.release import mine_releases
+from athenian.api.controllers.settings import ReleaseMatch, Settings
 import athenian.api.db
 from athenian.api.models.metadata import dereference_schemas, PREFIXES
 from athenian.api.models.metadata.github import PullRequestLabel, User
@@ -58,6 +58,7 @@ def main():
     sentry_sdk.add_breadcrumb(category="origin", message="heater", level="info")
     if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):
         return 1
+    slack = create_slack(log)
     engine = create_engine(args.state_db)
     session = sessionmaker(bind=engine)()  # type: Session
     reposets = session.query(RepositorySet).all()  # type: List[RepositorySet]
@@ -121,21 +122,23 @@ def main():
                 log.warning("Skipped account %d / reposet %d because the progress is not 100%%",
                             reposet.owner_id, reposet.id)
                 continue
-            repos = {r.split("/", 1)[1] for r in reposet.items}
             if not reposet.precomputed:
                 log.info("Considering account %d as brand new, creating the Bots team",
                          reposet.owner_id)
                 try:
-                    await create_bots_team(reposet.owner_id, repos, bots, sdb, mdb, pdb)
+                    ntbots = await create_bots_team(
+                        reposet.owner_id, reposet.items, bots, sdb, mdb, pdb)
                 except Exception as e:
                     log.warning("bots %d: %s: %s", reposet.owner_id, type(e).__name__, e)
                     sentry_sdk.capture_exception(e)
                     return_code = 1
+                    ntbots = 0
+            repos = {r.split("/", 1)[1] for r in reposet.items}
             log.info("Heating reposet %d of account %d (%d repos)",
                      reposet.id, reposet.owner_id, len(repos))
             try:
                 log.info("Extracting PR facts")
-                await calc_pull_request_facts_github(
+                facts = await calc_pull_request_facts_github(
                     time_from,
                     time_to,
                     repos,
@@ -149,14 +152,36 @@ def main():
                     pdb,
                     None,  # yes, disable the cache
                 )
-                log.info("Extracting all the releases")
-                branches, default_branches = await extract_branches(repos, mdb, None)
-                await load_releases(repos, branches, default_branches,
-                                    no_time_from, time_to,
-                                    settings, mdb, pdb, None)
+                if not reposet.precomputed and slack is not None:
+                    prs = sum(len(rf) for rf in facts.values())
+                    prs_done = sum(sum(1 for f in rf if f.done) for rf in facts.values())
+                    prs_merged = sum(sum(1 for f in rf if not f.done and f.merged is not None)
+                                     for rf in facts.values())
+                    prs_open = sum(sum(1 for f in rf if f.closed is None) for rf in facts.values())
+                del facts  # free some memory
                 log.info("Mining all the releases")
-                await mine_releases(repos, branches, default_branches,
-                                    no_time_from, time_to, settings, mdb, pdb, None)
+                branches, default_branches = await extract_branches(repos, mdb, None)
+                releases, _, _ = await mine_releases(
+                    repos, branches, default_branches, no_time_from, time_to,
+                    settings, mdb, pdb, None)
+                if not reposet.precomputed and slack is not None:
+                    releases_by_tag = sum(
+                        1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
+                    releases_by_branch = sum(
+                        1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
+                    await slack.post("precomputed_account.jinja2",
+                                     account=reposet.owner_id,
+                                     prs=prs,
+                                     prs_done=prs_done,
+                                     prs_merged=prs_merged,
+                                     prs_open=prs_open,
+                                     releases=len(releases),
+                                     releases_by_tag=releases_by_tag,
+                                     releases_by_branch=releases_by_branch,
+                                     branches=len(branches),
+                                     repositories=len(repos),
+                                     bots_team_name=Team.BOTS,
+                                     bots=ntbots)
             except Exception as e:
                 log.warning("reposet %d: %s: %s", reposet.id, type(e).__name__, e)
                 sentry_sdk.capture_exception(e)
@@ -191,23 +216,26 @@ async def create_bots_team(account: int,
                            all_bots: Set[str],
                            sdb: ParallelDatabase,
                            mdb: ParallelDatabase,
-                           pdb: ParallelDatabase) -> None:
+                           pdb: ParallelDatabase) -> int:
     """Create a new team for the specified accoutn which contains all the involved bots."""
-    teams = await sdb.fetch_all(select([Team.id]).where(Team.name == Team.BOTS))
-    if teams:
-        return
+    team = await sdb.fetch_one(select([Team.id, Team.members_count])
+                               .where(Team.name == Team.BOTS))
+    if team is not None:
+        return team[Team.members_count.key]
     release_settings = await Settings(
         account=account, user_id=None, native_user_id=None,
         sdb=sdb, mdb=mdb, cache=None, slack=None,
     ).list_release_matches(repos)
     contributors = await mine_contributors(
-        repos, None, None, False, [], release_settings, mdb, pdb, None)
+        {r.split("/", 1)[1] for r in repos}, None, None, False, [],
+        release_settings, mdb, pdb, None)
     bots = {u[User.login.key] for u in contributors}.intersection(all_bots)
     if bots:
         bots = [PREFIXES["github"] + login for login in bots]
         await sdb.execute(insert(Team).values(
             Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
             .create_defaults().explode()))
+    return len(bots)
 
 
 async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelDatabase) -> int:
