@@ -20,7 +20,10 @@ depends_on = None
 def upgrade():
     bind = op.get_bind()
     session = Session(bind=bind)
-    session.execute("DELETE FROM github_merged_pull_requests;")
+    if bind.dialect.name == "postgresql":
+        session.execute("TRUNCATE github_merged_pull_requests;")
+    else:
+        session.execute("DELETE FROM github_merged_pull_requests;")
     session.commit()
     if bind.dialect.name != "sqlite":
         op.add_column("github_merged_pull_requests",
