@@ -1,6 +1,7 @@
 import logging
 import runpy
 import sys
+import traceback
 
 import sentry_sdk
 
@@ -16,6 +17,7 @@ def main() -> int:
         runpy.run_module(sys.argv[0], run_name="__main__", alter_sys=True)
     except BaseException as e:
         sentry_sdk.capture_exception(e)
+        traceback.print_exc()
         return 1
     finally:
         sys.argv = original_argv
