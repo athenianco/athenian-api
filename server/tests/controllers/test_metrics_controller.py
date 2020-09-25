@@ -1,6 +1,5 @@
 from collections import defaultdict
 from datetime import date, timedelta
-import itertools
 import json
 
 import pandas as pd
@@ -13,46 +12,80 @@ from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRe
 
 
 @pytest.mark.parametrize(
-    "metric, cached",
-    itertools.chain(zip(PullRequestMetricID, itertools.repeat(False)),
-                    [(PullRequestMetricID.PR_WIP_TIME, True)]))
-async def test_calc_metrics_prs_smoke(client, metric, headers, cached, app, client_cache):
+    "metric, count",
+    [(PullRequestMetricID.PR_WIP_TIME, 51),
+     (PullRequestMetricID.PR_WIP_PENDING_COUNT, 0),
+     (PullRequestMetricID.PR_WIP_COUNT, 224),
+     (PullRequestMetricID.PR_WIP_COUNT_Q, 224),
+     (PullRequestMetricID.PR_REVIEW_TIME, 46),
+     (PullRequestMetricID.PR_REVIEW_PENDING_COUNT, 0),
+     (PullRequestMetricID.PR_REVIEW_COUNT, 224),
+     (PullRequestMetricID.PR_REVIEW_COUNT_Q, 224),
+     (PullRequestMetricID.PR_MERGING_TIME, 51),
+     (PullRequestMetricID.PR_MERGING_PENDING_COUNT, 0),
+     (PullRequestMetricID.PR_MERGING_COUNT, 224),
+     (PullRequestMetricID.PR_MERGING_COUNT_Q, 224),
+     (PullRequestMetricID.PR_RELEASE_TIME, 17),
+     (PullRequestMetricID.PR_RELEASE_PENDING_COUNT, 224),
+     (PullRequestMetricID.PR_RELEASE_COUNT, 224),
+     (PullRequestMetricID.PR_RELEASE_COUNT_Q, 224),
+     (PullRequestMetricID.PR_LEAD_TIME, 17),
+     (PullRequestMetricID.PR_LEAD_COUNT, 224),
+     (PullRequestMetricID.PR_LEAD_COUNT_Q, 224),
+     (PullRequestMetricID.PR_CYCLE_TIME, 70),
+     (PullRequestMetricID.PR_CYCLE_COUNT, 224),
+     (PullRequestMetricID.PR_CYCLE_COUNT_Q, 224),
+     (PullRequestMetricID.PR_ALL_COUNT, 106),
+     (PullRequestMetricID.PR_FLOW_RATIO, 59),
+     (PullRequestMetricID.PR_OPENED, 51),
+     (PullRequestMetricID.PR_REVIEWED, 45),
+     (PullRequestMetricID.PR_NOT_REVIEWED, 19),
+     (PullRequestMetricID.PR_MERGED, 50),
+     (PullRequestMetricID.PR_REJECTED, 3),
+     (PullRequestMetricID.PR_CLOSED, 51),
+     (PullRequestMetricID.PR_DONE, 23),
+     (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME, 51),
+     (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT, 224),
+     (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT_Q, 224),
+     (PullRequestMetricID.PR_SIZE, 106)],
+)
+async def test_calc_metrics_prs_smoke(client, metric, count, headers, app, client_cache):
     """Trivial test to prove that at least something is working."""
-    if cached:
-        app._cache = client_cache
-    repeats = 1 if not cached else 2
-    for _ in range(repeats):
-        body = {
-            "for": [
-                {
-                    "with": {
-                        "author": ["github.com/vmarkovtsev", "github.com/mcuadros"],
-                    },
-                    "repositories": [
-                        "github.com/src-d/go-git",
-                    ],
+
+    app._cache = client_cache
+    req_body = {
+        "for": [
+            {
+                "with": {
+                    "author": ["github.com/vmarkovtsev", "github.com/mcuadros"],
                 },
-            ],
-            "metrics": [metric],
-            "date_from": "2015-10-13",
-            "date_to": "2020-01-23",
-            "granularities": ["week"],
-            "exclude_inactive": False,
-            "account": 1,
-        }
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+            },
+        ],
+        "metrics": [metric],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularities": ["week"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+
+    for _ in range(2):
         response = await client.request(
-            method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+            method="POST", path="/v1/metrics/prs", headers=headers, json=req_body,
         )
         body = (await response.read()).decode("utf-8")
         assert response.status == 200, "Response body is : " + body
         cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
         assert len(cm.calculated) == 1
         assert len(cm.calculated[0].values) > 0
-        nonzero = 0
+        s = 0
         for val in cm.calculated[0].values:
             assert len(val.values) == 1
-            nonzero += val.values[0] is not None
-        assert nonzero > 0
+            s += val.values[0] is not None
+        assert s == count
 
 
 async def test_calc_metrics_prs_all_time(client, headers):
@@ -267,24 +300,26 @@ async def test_calc_metrics_prs_reposet(client, headers):
     assert cm.calculated[0].for_.repositories == ["{1}"]
 
 
-@pytest.mark.parametrize("metric", [PullRequestMetricID.PR_WIP_COUNT,
-                                    PullRequestMetricID.PR_REVIEW_COUNT,
-                                    PullRequestMetricID.PR_MERGING_COUNT,
-                                    PullRequestMetricID.PR_RELEASE_COUNT,
-                                    PullRequestMetricID.PR_LEAD_COUNT,
-                                    PullRequestMetricID.PR_CYCLE_COUNT,
-                                    PullRequestMetricID.PR_OPENED,
-                                    PullRequestMetricID.PR_REVIEWED,
-                                    PullRequestMetricID.PR_NOT_REVIEWED,
-                                    PullRequestMetricID.PR_CLOSED,
-                                    PullRequestMetricID.PR_MERGED,
-                                    PullRequestMetricID.PR_REJECTED,
-                                    PullRequestMetricID.PR_DONE,
-                                    PullRequestMetricID.PR_WIP_PENDING_COUNT,
-                                    PullRequestMetricID.PR_REVIEW_PENDING_COUNT,
-                                    PullRequestMetricID.PR_MERGING_PENDING_COUNT,
-                                    PullRequestMetricID.PR_RELEASE_PENDING_COUNT])
-async def test_calc_metrics_prs_counts_sums(client, headers, metric):
+@pytest.mark.parametrize("metric, count", [
+    (PullRequestMetricID.PR_WIP_COUNT, 595),
+    (PullRequestMetricID.PR_REVIEW_COUNT, 434),
+    (PullRequestMetricID.PR_MERGING_COUNT, 588),
+    (PullRequestMetricID.PR_RELEASE_COUNT, 378),
+    (PullRequestMetricID.PR_LEAD_COUNT, 378),
+    (PullRequestMetricID.PR_CYCLE_COUNT, 918),
+    (PullRequestMetricID.PR_OPENED, 595),
+    (PullRequestMetricID.PR_REVIEWED, 375),
+    (PullRequestMetricID.PR_NOT_REVIEWED, 273),
+    (PullRequestMetricID.PR_CLOSED, 588),
+    (PullRequestMetricID.PR_MERGED, 537),
+    (PullRequestMetricID.PR_REJECTED, 51),
+    (PullRequestMetricID.PR_DONE, 467),
+    (PullRequestMetricID.PR_WIP_PENDING_COUNT, 0),
+    (PullRequestMetricID.PR_REVIEW_PENDING_COUNT, 312),
+    (PullRequestMetricID.PR_MERGING_PENDING_COUNT, 52),
+    (PullRequestMetricID.PR_RELEASE_PENDING_COUNT, 6292),
+])
+async def test_calc_metrics_prs_counts_sums(client, headers, metric, count):
     body = {
         "for": [
             {
@@ -303,7 +338,7 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric):
     response = await client.request(
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
-    assert response.status == 200
+    assert response.status == 200, response.text()
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
     s = 0
     for item in body["calculated"][0]["values"]:
@@ -313,7 +348,7 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric):
         val = item["values"][0]
         if val is not None:
             s += val
-    assert s > 0
+    assert s == count
 
 
 async def test_calc_metrics_prs_index_error(client, headers):
