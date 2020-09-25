@@ -1214,11 +1214,13 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
     # and 1.0.0 in September 2018, we must load 1.0.0, otherwise the PR for 1.0.0 release
     # will be matched to 1.1.0 in August 2020 and will have a HUGE release time
 
-    # we are golden if we match by branch, just one older merge preceeding `time_from` is fine
-    # so split repos and take two different logic paths
+    # we are golden if we match by branch, one older merge preceding `time_from` should be fine
+    # unless there are several release branches; we hope for the best then
+    # so we split repos and take two different logic paths
 
-    # let's try to find the releases not older than 5 weeks before `time_from`
+    # find branch releases not older than 5 weeks before `time_from`
     branch_lookbehind_time_from = time_from - timedelta(days=5 * 7)
+    # find tag releases not older than 2 years before `time_from`
     tag_lookbehind_time_from = time_from - timedelta(days=2 * 365)
     tasks = [
         load_releases(repos_matched_by_branch, branches, default_branches,
@@ -1349,9 +1351,13 @@ async def mine_releases(repos: Iterable[str],
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
     _, releases, _, settings = await _find_releases_for_matching_prs(
         repos, branches, default_branches, time_from, time_to, settings, mdb, pdb, cache)
+    # there are no releases after `time_to`, guaranteed
+    # we don't want to fetch precomputed facts about ALL releases
+    time_range_releases = releases.take(
+        np.where(releases[Release.published_at.key] >= time_from)[0])
     tasks = [
         load_commit_dags(releases, mdb, pdb, cache),
-        load_precomputed_release_facts(releases, default_branches, settings, pdb),
+        load_precomputed_release_facts(time_range_releases, default_branches, settings, pdb),
         _fetch_repository_first_commit_dates(repos, mdb, pdb, cache),
     ]
     with sentry_sdk.start_span(op="mine_releases/commits"):
@@ -1361,9 +1367,8 @@ async def mine_releases(repos: Iterable[str],
         if isinstance(r, Exception):
             raise r from None
 
-    has_precomputed_facts = releases[Release.id.key].isin(precomputed_facts).values
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
-    has_precomputed_facts &= releases[Release.published_at.key].between(time_from, time_to)
+    has_precomputed_facts = time_range_releases[Release.id.key].isin(precomputed_facts).values
     result = [
         ({Release.id.key: my_id,
           Release.name.key: my_name or my_tag,
@@ -1372,17 +1377,17 @@ async def mine_releases(repos: Iterable[str],
           Release.author.key: my_author},
          precomputed_facts[my_id])
         for my_id, my_name, my_tag, repo, my_url, my_author in zip(
-            releases[Release.id.key].values[has_precomputed_facts],
-            releases[Release.name.key].values[has_precomputed_facts],
-            releases[Release.tag.key].values[has_precomputed_facts],
-            releases[Release.repository_full_name.key].values[has_precomputed_facts],
-            releases[Release.url.key].values[has_precomputed_facts],
-            releases[Release.author.key].values[has_precomputed_facts],
+            time_range_releases[Release.id.key].values[has_precomputed_facts],
+            time_range_releases[Release.name.key].values[has_precomputed_facts],
+            time_range_releases[Release.tag.key].values[has_precomputed_facts],
+            time_range_releases[Release.repository_full_name.key].values[has_precomputed_facts],
+            time_range_releases[Release.url.key].values[has_precomputed_facts],
+            time_range_releases[Release.author.key].values[has_precomputed_facts],
         )
     ]
 
-    releases = releases.take(np.where(~has_precomputed_facts)[0])
-    add_pdb_misses(pdb, "release_facts", len(releases))
+    missed_releases_count = len(time_range_releases) - len(precomputed_facts)
+    add_pdb_misses(pdb, "release_facts", missed_releases_count)
     commits_authors = prs_authors = []
     commits_authors_nz = prs_authors_nz = slice(0)
     release_authors = releases[Release.author.key].values
@@ -1398,7 +1403,9 @@ async def mine_releases(repos: Iterable[str],
         mentioned_authors = np.unique(mentioned_authors[mentioned_authors.nonzero()[0]])
 
     repo_releases_analyzed = {}
-    if not releases.empty:
+    if missed_releases_count > 0:
+        # yeah, we have to fetch all the data about all the releases, unfortunately
+        # TODO(vmarkovtsev): traverse DAGs and leave only relevant releases from the past
         all_hashes = []
         for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
             if (repo_releases[Release.published_at.key] < time_from).all():
@@ -1498,9 +1505,8 @@ async def mine_releases(repos: Iterable[str],
                                   repo_releases[Release.published_at.key],  # no values
                                   repo_releases[matched_by_column].values,
                                   repo_releases[Release.commit_id.key].values)):
-                if my_published_at < time_from:
+                if my_published_at < time_from or my_id in precomputed_facts:
                     continue
-                # it is now guaranteed that all releases are older than `time_to`
                 dupe = computed_release_info_by_commit.get(my_commit)
                 if dupe is None:
                     found_indexes = searchsorted_inrange(commits_index, owned_hashes[i])
