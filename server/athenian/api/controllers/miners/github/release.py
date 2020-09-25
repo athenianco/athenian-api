@@ -1367,10 +1367,12 @@ async def mine_releases(repos: Iterable[str],
         if isinstance(r, Exception):
             raise r from None
 
+    # uncomment this to compute releases from scratch
+    # precomputed_facts = {}
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
     has_precomputed_facts = time_range_releases[Release.id.key].isin(precomputed_facts).values
-    missing_repos = \
-        time_range_releases[Release.repository_full_name.key].take(~has_precomputed_facts).unique()
+    missing_repos = time_range_releases[Release.repository_full_name.key].take(
+        np.where(~has_precomputed_facts)[0]).unique()
     releases = \
         releases.take(np.where(releases[Release.repository_full_name.key].isin(missing_repos))[0])
     result = [
