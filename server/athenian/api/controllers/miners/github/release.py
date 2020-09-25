@@ -1369,6 +1369,10 @@ async def mine_releases(repos: Iterable[str],
 
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
     has_precomputed_facts = time_range_releases[Release.id.key].isin(precomputed_facts).values
+    missing_repos = \
+        time_range_releases[Release.repository_full_name.key].take(~has_precomputed_facts).unique()
+    releases = \
+        releases.take(np.where(releases[Release.repository_full_name.key].isin(missing_repos))[0])
     result = [
         ({Release.id.key: my_id,
           Release.name.key: my_name or my_tag,
@@ -1390,7 +1394,7 @@ async def mine_releases(repos: Iterable[str],
     add_pdb_misses(pdb, "release_facts", missed_releases_count)
     commits_authors = prs_authors = []
     commits_authors_nz = prs_authors_nz = slice(0)
-    release_authors = releases[Release.author.key].values
+    release_authors = time_range_releases[Release.author.key].values
     release_authors = prefix + release_authors[release_authors.nonzero()[0]]
     mentioned_authors = (
         [f.prs[PullRequest.user_login.key].values for f in precomputed_facts.values()
