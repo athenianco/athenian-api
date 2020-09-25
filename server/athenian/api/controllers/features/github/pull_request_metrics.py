@@ -654,3 +654,64 @@ class SizeCalculator(AverageMetricCalculator[int]):
         sizes = facts["size"].values.astype(object)
         sizes[self._calcs[0].peek == np.array(None)] = None
         return sizes
+
+
+class StagePendingDependencyCalculator(WithoutQuantilesMixin, SumMetricCalculator[int]):
+
+    dtype = int
+
+    def _analyze(self, facts: np.ndarray, min_time: datetime, max_time: datetime,
+                 **kwargs) -> np.ndarray:
+        merged_mask, approved_mask, frr_mask = (
+            (v := facts[c].values) == v
+            for c in ("merged", "approved", "first_review_request"))
+
+        stage_indexes = {}
+        other = ~facts["done"].values
+        stage_indexes["release"] = np.where(merged_mask & other)[0]
+        other &= ~merged_mask
+        stage_indexes["merge"] = np.where(approved_mask & other)[0]
+        other &= ~approved_mask
+        stage_indexes["review"] = np.where(frr_mask & other)[0]
+        other &= ~frr_mask
+        stage_indexes["wip"] = np.where(other)[0]
+        self._stage_indexes = stage_indexes
+
+        return np.array([], dtype=object)
+
+
+class BaseStagePendingCounter(WithoutQuantilesMixin, SumMetricCalculator[int]):
+
+    dtype = int
+    stage_name = None
+    deps = (StagePendingDependencyCalculator,)
+
+    def _analyze(self, facts: np.ndarray, min_time: datetime, max_time: datetime,
+                 **kwargs) -> np.ndarray:
+        result = np.full(len(facts), None, object)
+        result[self._calcs[0]._stage_indexes[self.stage_name]] = 1
+        return result
+
+
+@register_metric(PullRequestMetricID.PR_WIP_PENDING_COUNT)
+class WorkInProgressPendingCounter(BaseStagePendingCounter):
+
+    stage_name = "wip"
+
+
+@register_metric(PullRequestMetricID.PR_REVIEW_PENDING_COUNT)
+class ReviewPendingCounter(BaseStagePendingCounter):
+
+    stage_name = "review"
+
+
+@register_metric(PullRequestMetricID.PR_MERGING_PENDING_COUNT)
+class MergingPendingCounter(BaseStagePendingCounter):
+
+    stage_name = "merge"
+
+
+@register_metric(PullRequestMetricID.PR_RELEASE_PENDING_COUNT)
+class ReleasePendingCounter(BaseStagePendingCounter):
+
+    stage_name = "release"
