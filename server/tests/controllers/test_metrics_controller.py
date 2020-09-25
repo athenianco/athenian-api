@@ -280,7 +280,10 @@ async def test_calc_metrics_prs_reposet(client, headers):
                                     PullRequestMetricID.PR_MERGED,
                                     PullRequestMetricID.PR_REJECTED,
                                     PullRequestMetricID.PR_DONE,
-                                    ])
+                                    PullRequestMetricID.PR_WIP_PENDING_COUNT,
+                                    PullRequestMetricID.PR_REVIEW_PENDING_COUNT,
+                                    PullRequestMetricID.PR_MERGING_PENDING_COUNT,
+                                    PullRequestMetricID.PR_RELEASE_PENDING_COUNT])
 async def test_calc_metrics_prs_counts_sums(client, headers, metric):
     body = {
         "for": [
