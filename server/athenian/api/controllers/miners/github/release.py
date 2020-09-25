@@ -1487,49 +1487,65 @@ async def mine_releases(repos: Iterable[str],
     async def main_flow():
         data = []
         for repo, (repo_releases, owned_hashes, parents) in repo_releases_analyzed.items():
-            for i, (my_id, my_name, my_tag, my_url, my_author, my_published_at, my_matched_by) in \
+            computed_release_info_by_commit = {}
+            for i, (my_id, my_name, my_tag, my_url, my_author, my_published_at,
+                    my_matched_by, my_commit) in \
                     enumerate(zip(repo_releases[Release.id.key].values,
                                   repo_releases[Release.name.key].values,
                                   repo_releases[Release.tag.key].values,
                                   repo_releases[Release.url.key].values,
                                   repo_releases[Release.author.key].values,
                                   repo_releases[Release.published_at.key],  # no values
-                                  repo_releases[matched_by_column].values)):
+                                  repo_releases[matched_by_column].values,
+                                  repo_releases[Release.commit_id.key].values)):
                 if my_published_at < time_from:
                     continue
-                # it is guaranteed that all releases are older than `time_to`
-                found_indexes = searchsorted_inrange(commits_index, owned_hashes[i])
-                found_indexes = found_indexes[commits_index[found_indexes] == owned_hashes[i]]
-                my_additions = commits_additions[found_indexes].sum()
-                my_deletions = commits_deletions[found_indexes].sum()
-                my_commit_authors = commits_authors[found_indexes]
-                my_commit_ids = commit_ids[found_indexes]
-                if len(prs_commit_ids):
-                    my_prs_indexes = searchsorted_inrange(prs_commit_ids, my_commit_ids)
-                    if len(my_prs_indexes):
-                        my_prs_indexes = \
-                            my_prs_indexes[prs_commit_ids[my_prs_indexes] == my_commit_ids]
-                else:
-                    my_prs_indexes = np.array([], dtype=int)
-                my_prs_authors = prs_authors[my_prs_indexes]
-                mentioned_authors.update(my_prs_authors[my_prs_authors.nonzero()[0]])
-                my_prs = pd.DataFrame(dict(zip(
-                    [c.key for c in prs_columns[1:]],
-                    [prs_numbers[my_prs_indexes],
-                     prs_titles[my_prs_indexes],
-                     prs_additions[my_prs_indexes],
-                     prs_deletions[my_prs_indexes],
-                     my_prs_authors])))
-                my_commit_authors = my_commit_authors[my_commit_authors.nonzero()[0]]
-                mentioned_authors.update(my_commit_authors)
-                parent = parents[i]
-                if parent < len(repo_releases):
-                    my_age = my_published_at - repo_releases[Release.published_at.key]._ixs(parent)
-                else:
-                    my_age = my_published_at - first_commit_dates[repo]
-                if my_author is not None:
-                    my_author = prefix + my_author
-                    mentioned_authors.add(my_author)
+                # it is now guaranteed that all releases are older than `time_to`
+                dupe = computed_release_info_by_commit.get(my_commit)
+                if dupe is None:
+                    found_indexes = searchsorted_inrange(commits_index, owned_hashes[i])
+                    found_indexes = found_indexes[commits_index[found_indexes] == owned_hashes[i]]
+                    commits_count = len(found_indexes)
+                    my_additions = commits_additions[found_indexes].sum()
+                    my_deletions = commits_deletions[found_indexes].sum()
+                    my_commit_authors = commits_authors[found_indexes]
+                    my_commit_ids = commit_ids[found_indexes]
+                    if len(prs_commit_ids):
+                        my_prs_indexes = searchsorted_inrange(prs_commit_ids, my_commit_ids)
+                        if len(my_prs_indexes):
+                            my_prs_indexes = \
+                                my_prs_indexes[prs_commit_ids[my_prs_indexes] == my_commit_ids]
+                    else:
+                        my_prs_indexes = np.array([], dtype=int)
+                    my_prs_authors = prs_authors[my_prs_indexes]
+                    mentioned_authors.update(my_prs_authors[my_prs_authors.nonzero()[0]])
+                    my_prs = pd.DataFrame(dict(zip(
+                        [c.key for c in prs_columns[1:]],
+                        [prs_numbers[my_prs_indexes],
+                         prs_titles[my_prs_indexes],
+                         prs_additions[my_prs_indexes],
+                         prs_deletions[my_prs_indexes],
+                         my_prs_authors])))
+                    my_commit_authors = my_commit_authors[my_commit_authors.nonzero()[0]].tolist()
+                    mentioned_authors.update(my_commit_authors)
+                    parent = parents[i]
+                    if parent < len(repo_releases):
+                        my_age = \
+                            my_published_at - repo_releases[Release.published_at.key]._ixs(parent)
+                    else:
+                        my_age = my_published_at - first_commit_dates[repo]
+                    if my_author is not None:
+                        my_author = prefix + my_author
+                        mentioned_authors.add(my_author)
+                    computed_release_info_by_commit[my_commit] = (
+                        my_age, my_additions, my_deletions, commits_count, my_prs,
+                        my_commit_authors,
+                    )
+                else:  # dupe
+                    (
+                        my_age, my_additions, my_deletions, commits_count, my_prs,
+                        my_commit_authors,
+                    ) = dupe
                 data.append(({Release.id.key: my_id,
                               Release.name.key: my_name or my_tag,
                               Release.repository_full_name.key: prefix + repo,
@@ -1540,9 +1556,9 @@ async def mine_releases(repos: Iterable[str],
                                           age=my_age,
                                           additions=my_additions,
                                           deletions=my_deletions,
-                                          commits_count=len(found_indexes),
+                                          commits_count=commits_count,
                                           prs=my_prs,
-                                          commit_authors=my_commit_authors.tolist())))
+                                          commit_authors=my_commit_authors)))
             await asyncio.sleep(0)
         return data
 
