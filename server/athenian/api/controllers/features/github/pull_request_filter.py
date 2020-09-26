@@ -278,7 +278,7 @@ class PullRequestListMiner:
                                rsuffix="_pr")
         index = reviews.index.values
         submitted_at = reviews[prr_sak].values
-        closed_at = reviews[PullRequest.closed_at.key].values
+        closed_at = reviews[PullRequest.closed_at.key].values.astype(submitted_at.dtype)
         not_closed_mask = closed_at != closed_at
         closed_at[not_closed_mask] = submitted_at[not_closed_mask]
         mask = (
