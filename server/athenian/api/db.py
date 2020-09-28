@@ -1,15 +1,11 @@
 import asyncio
-import base64
 from contextvars import ContextVar
 import logging
-import lzma
-import math
 import os
 import pickle
 import sys
 import time
 from typing import Callable, List, Mapping, Tuple, Union
-import uuid
 
 import aiohttp.web
 import asyncpg
@@ -20,6 +16,7 @@ from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.functions import ReturnTypeFromArgs
 
 from athenian.api import metadata
+from athenian.api.slogging import log_multipart
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 from athenian.api.typing_utils import wraps
 
@@ -185,14 +182,8 @@ async def _asyncpg_execute(self, query: str, args, limit, timeout, return_status
         if len(description) > MAX_SENTRY_STRING_LENGTH:
             transaction = sentry_sdk.Hub.current.scope.transaction
             if transaction is not None and transaction.sampled:
-                data = base64.b64encode(lzma.compress(pickle.dumps((query, args)))).decode()
-                query_id = str(uuid.uuid4())
+                query_id = log_multipart(_sql_log, pickle.dumps((query, args)))
                 description = "%s\n%s..." % (query_id, query[:1000])
-                chunk_size = 99000
-                chunks = int(math.ceil(len(data) / 99000))
-                for i in range(chunks):
-                    _sql_log.info("%d / %d %s %s", i + 1, chunks, query_id,
-                                  data[chunk_size * i: chunk_size * (i + 1)])
     with sentry_sdk.start_span(op="sql", description=description) as span:
         result = await self._execute_original(query, args, limit, timeout, return_status)
         try:

@@ -11,6 +11,7 @@ import objgraph
 import prometheus_client
 import pympler.muppy
 import pympler.summary
+import sentry_sdk
 
 from athenian.api.metadata import __package__, __version__
 import athenian.api.models.metadata as metadata
@@ -49,6 +50,9 @@ def _after_response(request: web.Request,
         for k, v in pdb_context.items():
             s = sorted("%s %d" % p for p in v.get().items())
             response.headers.add("X-Performance-Precomputed-%s" % k.capitalize(), ", ".join(s))
+        with sentry_sdk.configure_scope() as scope:
+            for k, v in response.headers.items():
+                scope.set_extra(k, v)
     request.app["state_db_latency"] \
         .labels(__package__, __version__, request.path) \
         .observe(sdb_elapsed)
@@ -93,8 +97,7 @@ async def instrument(request: web.Request, handler) -> web.Response:
     for v in chain(request.app["cache_context"].values(), request.app["pdb_context"].values()):
         v.set(defaultdict(int))
     try:
-        response = await handler(request)  # type: web.Response
-        return response
+        return (response := await handler(request))  # type: web.Response
     finally:
         if request.method != "OPTIONS":
             try:

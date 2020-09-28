@@ -20,7 +20,8 @@ from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
 from asyncpg import ConnectionDoesNotExistError, InterfaceError
-import connexion
+from connexion.apis import aiohttp_api
+import connexion.lifecycle
 from connexion.spec import OpenAPISpecification
 import databases
 import jinja2
@@ -54,7 +55,7 @@ from athenian.api.models.metadata import check_schema_version as check_mdb_schem
 from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
-from athenian.api.slogging import add_logging_args, trailing_dot_exceptions
+from athenian.api.slogging import add_logging_args, log_multipart, trailing_dot_exceptions
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
 trailing_dot_exceptions.update((
@@ -143,8 +144,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-class ExactServersAioHttpApi(connexion.AioHttpApi):
-    """Hacked connexion internals to provide the server description from the original spec."""
+class AthenianAioHttpApi(connexion.AioHttpApi):
+    """
+    Hack connexion internals to solve our problems.
+
+    - Provide the server description from the original spec.
+    - Log big request bodies so that we don't fear truncation in Sentry.
+    """
 
     def _spec_for_prefix(self, request) -> OpenAPISpecification:
         spec = super()._spec_for_prefix(request)
@@ -157,6 +163,20 @@ class ExactServersAioHttpApi(connexion.AioHttpApi):
         else:
             self.base_path = self.specification.base_path
         self._api_name = connexion.AioHttpApi.normalize_string(self.base_path)
+
+    async def get_request(self, req: aiohttp.web.Request) -> connexion.lifecycle.ConnexionRequest:
+        """Override the parent's method to ensure that we can access the full request body in \
+        Sentry."""
+        api_req = await super().get_request(req)
+
+        transaction = sentry_sdk.Hub.current.scope.transaction
+        if transaction is not None and transaction.sampled:
+            body = req._read_bytes
+            if body is not None and len(body) > 0:  # MAX_SENTRY_STRING_LENGTH:
+                body_id = log_multipart(aiohttp_api.logger, body)
+                req._read_bytes = ('"%s"' % body_id).encode()
+
+        return api_req
 
 
 class ShuttingDownError(GenericError):
@@ -213,7 +233,7 @@ class AthenianApp(connexion.AioHttpApp):
         specification_dir = str(Path(__file__).parent / "openapi")
         super().__init__(__package__, specification_dir=specification_dir, options=options,
                          server_args={"client_max_size": 256 * 1024})
-        self.api_cls = ExactServersAioHttpApi
+        self.api_cls = AthenianAioHttpApi
         self._devenv = os.getenv("SENTRY_ENV", "development") == "development"
         setup_defer(not self._devenv)
         invitation_controller.validate_env()
@@ -355,9 +375,6 @@ class AthenianApp(connexion.AioHttpApp):
         except (AttributeError, TypeError):
             # static files
             pass
-        with sentry_sdk.configure_scope() as scope:
-            for k, v in response.headers.items():
-                scope.set_extra(k, v)
         return response
 
     @aiohttp.web.middleware
@@ -481,10 +498,8 @@ def setup_context(log: logging.Logger) -> None:
                 return None
         return event
 
-    if sentry_env != "development":
-        traces_sample_rate = float(os.getenv("SENTRY_SAMPLING_RATE", "0.2"))
-    else:
-        traces_sample_rate = 0
+    traces_sample_rate = float(os.getenv(
+        "SENTRY_SAMPLING_RATE", "0.2" if sentry_env != "development" else "0"))
     if traces_sample_rate > 0:
         log.info("Sentry tracing is ON: sampling rate %.2f", traces_sample_rate)
     sentry_log = logging.getLogger("sentry_sdk.errors")
