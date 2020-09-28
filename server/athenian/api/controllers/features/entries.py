@@ -228,7 +228,8 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
         release_settings, fresh, mdb, pdb, cache)
     group_metrics = []
     with sentry_sdk.start_span(op="PullRequestBinnedMetricCalculator.__call__",
-                               description=str(sum(len(f) for f in mined_facts.values()))):
+                               description="%d * %d" % (sum(len(f) for f in mined_facts.values()),
+                                                        len(repositories))):
         for group in repositories:
             group_facts = list(chain.from_iterable(mined_facts.get(repo, []) for repo in group))
             group_metrics.append(

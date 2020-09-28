@@ -16,18 +16,22 @@ You can setup everything using:
 """
 
 import argparse
+import base64
 import codecs
 import datetime
 import functools
 import io
 import json
 import logging
+import lzma
+import math
 import os
 import re
 import sys
 import threading
 import traceback
 from typing import Callable, Tuple, Union
+import uuid
 
 import numpy as np
 from numpy.core.arrayprint import _default_array_repr
@@ -281,3 +285,19 @@ def add_logging_args(parser: argparse.ArgumentParser, patch: bool = True,
     if patch and not hasattr(parser, "_original_parse_args"):
         parser._original_parse_args = parser.parse_args
         parser.parse_args = _patched_parse_args
+
+
+def log_multipart(log: logging.Logger, data: bytes) -> str:
+    """
+    Log something big enough to be compressed and split in pieces.
+
+    :return: Log record ID that we can later search for.
+    """
+    data = base64.b64encode(lzma.compress(data)).decode()
+    record_id = str(uuid.uuid4())
+    chunk_size = 99000  # Google's limit on overall record size is 10k, we leave 1k for the rest
+    chunks = int(math.ceil(len(data) / chunk_size))
+    for i in range(chunks):
+        log.info("%d / %d %s %s", i + 1, chunks, record_id,
+                 data[chunk_size * i: chunk_size * (i + 1)])
+    return record_id
