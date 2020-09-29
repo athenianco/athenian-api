@@ -76,6 +76,7 @@ class InstallationRepo(Base):
     repo_id = Column(Text, primary_key=True)
     repo_full_name = Column(Text, nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    exists = Column(Boolean, nullable=False, quote=True, name="exists")
 
 
 class FetchProgress(Base, UpdatedMixin):
