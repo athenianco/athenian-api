@@ -9,7 +9,7 @@ import logging
 from typing import Collection, List, Set
 
 import sentry_sdk
-from sqlalchemy import create_engine, insert, select, update
+from sqlalchemy import and_, create_engine, insert, select, update
 from sqlalchemy.orm import Session, sessionmaker
 from tqdm import tqdm
 
@@ -219,7 +219,8 @@ async def create_bots_team(account: int,
                            pdb: ParallelDatabase) -> int:
     """Create a new team for the specified accoutn which contains all the involved bots."""
     team = await sdb.fetch_one(select([Team.id, Team.members_count])
-                               .where(Team.name == Team.BOTS))
+                               .where(and_(Team.name == Team.BOTS,
+                                           Team.owner_id == account)))
     if team is not None:
         return team[Team.members_count.key]
     release_settings = await Settings(
