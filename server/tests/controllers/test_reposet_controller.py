@@ -219,7 +219,7 @@ async def test_list_repository_sets_installation(client, sdb, headers):
     assert len(items) == 1
     assert items[0]["id"] == 4
     assert items[0]["name"] == "all"
-    assert items[0]["items_count"] == 19
+    assert items[0]["items_count"] == 2
     assert items[0]["created"] != ""
     assert items[0]["updated"] != ""
 

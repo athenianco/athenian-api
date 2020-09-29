@@ -213,7 +213,8 @@ async def _load_account_reposets(account: int,
                         with_primary_keys=True)
                     await sdb_conn.execute(insert(AccountGitHubInstallation).values(values))
             repos = await mdb_conn.fetch_all(select([InstallationRepo.repo_full_name])
-                                             .where(InstallationRepo.install_id.in_(iids))
+                                             .where(and_(InstallationRepo.install_id.in_(iids),
+                                                         InstallationRepo.exists))
                                              .order_by(InstallationRepo.repo_full_name))
             prefix = PREFIXES["github"]
             repos = [(prefix + r[0]) for r in repos]
