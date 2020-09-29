@@ -15,8 +15,10 @@ from athenian.api import COROUTINE_YIELD_EVERY_ITER, list_with_yield, metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
-from athenian.api.controllers.features.github.pull_request_metrics import MergingTimeCalculator, \
-    ReleaseTimeCalculator, ReviewTimeCalculator, WorkInProgressTimeCalculator
+from athenian.api.controllers.features.github.pull_request_metrics import MergingPendingCounter, \
+    MergingTimeCalculator, ReleasePendingCounter, ReleaseTimeCalculator, ReviewPendingCounter, \
+    ReviewTimeCalculator, StagePendingDependencyCalculator, WorkInProgressPendingCounter, \
+    WorkInProgressTimeCalculator
 from athenian.api.controllers.features.metric_calculator import df_from_dataclasses
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
@@ -63,11 +65,28 @@ class PullRequestListMiner:
         self._facts = facts
         self._events = events
         self._stages = stages
+        self._pending_counter_dep = StagePendingDependencyCalculator(quantiles=(0, 1))
         self._calcs = {
-            "wip": WorkInProgressTimeCalculator(quantiles=(0, 1)),
-            "review": ReviewTimeCalculator(quantiles=(0, 1)),
-            "merge": MergingTimeCalculator(quantiles=(0, 1)),
-            "release": ReleaseTimeCalculator(quantiles=(0, 1)),
+            "wip": {
+                "time": WorkInProgressTimeCalculator(quantiles=(0, 1)),
+                "pending_count": WorkInProgressPendingCounter(
+                    self._pending_counter_dep, quantiles=(0, 1)),
+            },
+            "review": {
+                "time": ReviewTimeCalculator(quantiles=(0, 1)),
+                "pending_count": ReviewPendingCounter(
+                    self._pending_counter_dep, quantiles=(0, 1)),
+            },
+            "merge": {
+                "time": MergingTimeCalculator(quantiles=(0, 1)),
+                "pending_count": MergingPendingCounter(
+                    self._pending_counter_dep, quantiles=(0, 1)),
+            },
+            "release": {
+                "time": ReleaseTimeCalculator(quantiles=(0, 1)),
+                "pending_count": ReleasePendingCounter(
+                    self._pending_counter_dep, quantiles=(0, 1)),
+            },
         }
         self._no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
         assert isinstance(time_from, datetime)
@@ -219,39 +238,30 @@ class PullRequestListMiner:
         )
 
     @sentry_span
-    def _calc_stage_timings(self) -> Dict[str, Sequence[int]]:
+    def _calc_stage_details(self) -> Dict[str, Sequence[int]]:
         facts = self._facts
         if len(facts) == 0 or len(self._prs) == 0:
             return {k: [] for k in self._calcs}
         node_id_key = PullRequest.node_id.key
         df_facts = df_from_dataclasses((facts[pr.pr[node_id_key]] for pr in self._prs),
                                        length=len(self._prs))
-        merged_mask, approved_mask, frr_mask = (
-            (v := df_facts[c].values) == v
-            for c in ("merged", "approved", "first_review_request"))
-
-        stage_indexes = {}
-        other = ~df_facts["done"].values
-        stage_indexes["release"] = np.where(merged_mask & other)[0]
-        other &= ~merged_mask
-        stage_indexes["merge"] = np.where(approved_mask & other)[0]
-        other &= ~approved_mask
-        stage_indexes["review"] = np.where(frr_mask & other)[0]
-        other &= ~frr_mask
-        stage_indexes["wip"] = np.where(other)[0]
 
         no_time_from = self._no_time_from.replace(tzinfo=None)
         now = self._now.replace(tzinfo=None)
         stage_timings = {}
-        for k, calc in self._calcs.items():
+        self._pending_counter_dep(df_facts, no_time_from, now)
+        for k, calcs in self._calcs.items():
+            time_calc, pending_counter = calcs["time"], calcs["pending_count"]
+            pending_counter(df_facts, no_time_from, now)
+
             kwargs = {
                 "override_event_time": now - timedelta(seconds=1),  # < time_max
-                "override_event_indexes": stage_indexes[k],
+                "override_event_indexes": np.nonzero(pending_counter.peek)[0],
             }
             if k == "review":
                 kwargs["allow_unclosed"] = True
-            calc(df_facts, no_time_from, now, **kwargs)
-            stage_timings[k] = calc.peek
+            time_calc(df_facts, no_time_from, now, **kwargs)
+            stage_timings[k] = time_calc.peek
         return stage_timings
 
     @sentry_span
@@ -305,7 +315,7 @@ class PullRequestListMiner:
 
     def __iter__(self) -> Generator[PullRequestListItem, None, None]:
         """Iterate over individual pull requests."""
-        stage_timings = self._calc_stage_timings()
+        stage_timings = self._calc_stage_details()
         hard_events_time_machine, hard_events_now = self._calc_hard_events()
         facts = self._facts
         node_id_key = PullRequest.node_id.key

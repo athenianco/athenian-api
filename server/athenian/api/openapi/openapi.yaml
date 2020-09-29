@@ -1808,6 +1808,10 @@ components:
         * `pr-closed`: number of closed PRs.
         * `pr-done`: number of released, closed unmerged, and force push dropped PRs.
         * `pr-size`: average size of PRs (added + deleted lines) which are active on the time interval after applying the quantiles.
+        * `pr-wip-pending-count`: number of PRs currently in Work In Progress stage.
+        * `pr-review-pending-count`: number of PRs currently in Review stage.
+        * `pr-merging-pending-count`: number of PRs currently in Merge stage.
+        * `pr-release-pending-count`: number of PRs currently in Release stage.
       enum:
       - pr-wip-time
       - pr-wip-count
@@ -1840,6 +1844,10 @@ components:
       - pr-closed
       - pr-done
       - pr-size
+      - pr-wip-pending-count
+      - pr-review-pending-count
+      - pr-merging-pending-count
+      - pr-release-pending-count
       example: pr-lead-time
       type: string
     DeveloperID:
