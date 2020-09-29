@@ -314,7 +314,6 @@ class Branch(Base,
              ):
     __tablename__ = "github_branches_compat"
 
-    repo_id = Column(Text, primary_key=True)
     branch_id = Column(Text, primary_key=True)
     branch_name = Column(Text, nullable=False)
     is_default = Column(Boolean, nullable=False)
