@@ -640,7 +640,7 @@ class FlowRatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
 
 @register_metric(PullRequestMetricID.PR_SIZE)
 class SizeCalculator(AverageMetricCalculator[int]):
-    """Average PR size.."""
+    """Average PR size."""
 
     may_have_negative_values = False
     deps = (AllCounter,)
@@ -657,6 +657,7 @@ class SizeCalculator(AverageMetricCalculator[int]):
 
 
 class StagePendingDependencyCalculator(WithoutQuantilesMixin, SumMetricCalculator[int]):
+    """Common dependency for stage-pending counters."""
 
     dtype = int
 
@@ -681,6 +682,7 @@ class StagePendingDependencyCalculator(WithoutQuantilesMixin, SumMetricCalculato
 
 
 class BaseStagePendingCounter(WithoutQuantilesMixin, SumMetricCalculator[int]):
+    """Base stage-pending counter."""
 
     dtype = int
     stage_name = None
@@ -695,23 +697,27 @@ class BaseStagePendingCounter(WithoutQuantilesMixin, SumMetricCalculator[int]):
 
 @register_metric(PullRequestMetricID.PR_WIP_PENDING_COUNT)
 class WorkInProgressPendingCounter(BaseStagePendingCounter):
+    """Number of PRs curently in wip stage."""
 
     stage_name = "wip"
 
 
 @register_metric(PullRequestMetricID.PR_REVIEW_PENDING_COUNT)
 class ReviewPendingCounter(BaseStagePendingCounter):
+    """Number of PRs curently in review stage."""
 
     stage_name = "review"
 
 
 @register_metric(PullRequestMetricID.PR_MERGING_PENDING_COUNT)
 class MergingPendingCounter(BaseStagePendingCounter):
+    """Number of PRs curently in merge stage."""
 
     stage_name = "merge"
 
 
 @register_metric(PullRequestMetricID.PR_RELEASE_PENDING_COUNT)
 class ReleasePendingCounter(BaseStagePendingCounter):
+    """Number of PRs curently in release stage."""
 
     stage_name = "release"
