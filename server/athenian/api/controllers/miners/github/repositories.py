@@ -60,9 +60,10 @@ async def mine_repositories(repos: Collection[str],
                         )))
 
     @sentry_span
-    async def fetch_push_commits():
+    async def fetch_commits():
         return await db.fetch_all(
-            select([NodeRepository.name_with_owner.label(PushCommit.repository_full_name.key)])
+            select([distinct(NodeRepository.name_with_owner)
+                    .label(PushCommit.repository_full_name.key)])
             .select_from(join(NodeCommit, NodeRepository,
                               NodeCommit.repository == NodeRepository.id))
             .where(and_(NodeRepository.name_with_owner.in_(repos),
@@ -86,7 +87,7 @@ async def mine_repositories(repos: Collection[str],
                         )))
 
     repos = set(r[0] for r in chain.from_iterable(await asyncio.gather(
-        fetch_prs(), fetch_comments(), fetch_push_commits(), fetch_reviews(), fetch_releases())))
+        fetch_prs(), fetch_comments(), fetch_commits(), fetch_reviews(), fetch_releases())))
     with sentry_sdk.start_span(op="SELECT FROM github_repositories_v2_compat"):
         repos = await db.fetch_all(select([Repository.full_name])
                                    .where(and_(Repository.archived.is_(False),
