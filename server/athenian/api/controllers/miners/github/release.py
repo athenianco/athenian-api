@@ -111,15 +111,18 @@ async def load_releases(repos: Iterable[str],
         except KeyError:
             missing_all.append(repo)
             continue
+        assert rt_from <= rt_to
         if time_from < rt_from and time_to > rt_to and \
                 settings[prefix + repo].match == ReleaseMatch.tag_or_branch:
             # we don't want different release strategies applied to both ends
             missing_all.append(repo)
             continue
-        if time_from < rt_from:
+        if time_from < rt_from <= time_to:
             missing_low.append((rt_from, repo))
-        if time_to > rt_to:
+        if time_from <= rt_to < time_to:
             missing_high.append((rt_to, repo))
+        if rt_from > time_to or rt_to < time_from:
+            missing_all.append(repo)
     tasks = []
     if missing_high:
         missing_high.sort()
@@ -1180,15 +1183,20 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                                           mdb: databases.Database,
                                           pdb: databases.Database,
                                           cache: Optional[aiomcache.Client],
+                                          releases_in_time_range: Optional[pd.DataFrame] = None,
                                           ) -> Tuple[Dict[str, ReleaseMatch],
                                                      pd.DataFrame,
                                                      pd.DataFrame,
                                                      Dict[str, ReleaseMatchSetting]]:
-    # we have to load releases in two separate batches: before and after time_from
-    # that's because the release strategy can change depending on the time range
-    # see ENG-710 and ENG-725
-    releases_in_time_range, matched_bys = await load_releases(
-        repos, branches, default_branches, time_from, time_to, release_settings, mdb, pdb, cache)
+    if releases_in_time_range is None:
+        # we have to load releases in two separate batches: before and after time_from
+        # that's because the release strategy can change depending on the time range
+        # see ENG-710 and ENG-725
+        releases_in_time_range, matched_bys = await load_releases(
+            repos, branches, default_branches, time_from, time_to,
+            release_settings, mdb, pdb, cache)
+    else:
+        matched_bys = {}
     # these matching rules must be applied in the past to stay consistent
     prefix = PREFIXES["github"]
     consistent_release_settings = {}
@@ -1196,7 +1204,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
     repos_matched_by_branch = []
     for repo in repos:
         setting = release_settings[prefix + repo]
-        match = ReleaseMatch(matched_bys.get(repo, setting.match))
+        match = ReleaseMatch(matched_bys.setdefault(repo, setting.match))
         consistent_release_settings[prefix + repo] = ReleaseMatchSetting(
             tags=setting.tags,
             branches=setting.branches,
@@ -1349,32 +1357,28 @@ async def mine_releases(repos: Iterable[str],
     calculate various statistics."""
     prefix = PREFIXES["github"]
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
-    _, releases, _, settings = await _find_releases_for_matching_prs(
+    releases_in_time_range, matched_bys = await load_releases(
         repos, branches, default_branches, time_from, time_to, settings, mdb, pdb, cache)
-    # there are no releases after `time_to`, guaranteed
-    # we don't want to fetch precomputed facts about ALL releases
-    time_range_releases = releases.take(
-        np.where(releases[Release.published_at.key] >= time_from)[0])
-    tasks = [
-        load_commit_dags(releases, mdb, pdb, cache),
-        load_precomputed_release_facts(time_range_releases, default_branches, settings, pdb),
-        _fetch_repository_first_commit_dates(repos, mdb, pdb, cache),
-    ]
-    with sentry_sdk.start_span(op="mine_releases/commits"):
-        dags, precomputed_facts, first_commit_dates = await asyncio.gather(
-            *tasks, return_exceptions=True)
-    for r in (dags, precomputed_facts, first_commit_dates):
-        if isinstance(r, Exception):
-            raise r from None
-
+    # resolve ambiguous release match settings
+    for repo in repos:
+        setting = settings[prefix + repo]
+        match = ReleaseMatch(matched_bys.get(repo, setting.match))
+        settings[prefix + repo] = ReleaseMatchSetting(
+            tags=setting.tags,
+            branches=setting.branches,
+            match=match,
+        )
+    precomputed_facts = await load_precomputed_release_facts(
+        releases_in_time_range, default_branches, settings, pdb)
     # uncomment this to compute releases from scratch
     # precomputed_facts = {}
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
-    has_precomputed_facts = time_range_releases[Release.id.key].isin(precomputed_facts).values
-    missing_repos = time_range_releases[Release.repository_full_name.key].take(
+    has_precomputed_facts = releases_in_time_range[Release.id.key].isin(precomputed_facts).values
+    missing_repos = releases_in_time_range[Release.repository_full_name.key].take(
         np.where(~has_precomputed_facts)[0]).unique()
-    releases = \
-        releases.take(np.where(releases[Release.repository_full_name.key].isin(missing_repos))[0])
+    missed_releases_count = len(releases_in_time_range) - len(precomputed_facts)
+    add_pdb_misses(pdb, "release_facts", missed_releases_count)
+
     result = [
         ({Release.id.key: my_id,
           Release.name.key: my_name or my_tag,
@@ -1383,20 +1387,17 @@ async def mine_releases(repos: Iterable[str],
           Release.author.key: my_author},
          precomputed_facts[my_id])
         for my_id, my_name, my_tag, repo, my_url, my_author in zip(
-            time_range_releases[Release.id.key].values[has_precomputed_facts],
-            time_range_releases[Release.name.key].values[has_precomputed_facts],
-            time_range_releases[Release.tag.key].values[has_precomputed_facts],
-            time_range_releases[Release.repository_full_name.key].values[has_precomputed_facts],
-            time_range_releases[Release.url.key].values[has_precomputed_facts],
-            time_range_releases[Release.author.key].values[has_precomputed_facts],
+            releases_in_time_range[Release.id.key].values[has_precomputed_facts],
+            releases_in_time_range[Release.name.key].values[has_precomputed_facts],
+            releases_in_time_range[Release.tag.key].values[has_precomputed_facts],
+            releases_in_time_range[Release.repository_full_name.key].values[has_precomputed_facts],
+            releases_in_time_range[Release.url.key].values[has_precomputed_facts],
+            releases_in_time_range[Release.author.key].values[has_precomputed_facts],
         )
     ]
-
-    missed_releases_count = len(time_range_releases) - len(precomputed_facts)
-    add_pdb_misses(pdb, "release_facts", missed_releases_count)
     commits_authors = prs_authors = []
     commits_authors_nz = prs_authors_nz = slice(0)
-    release_authors = time_range_releases[Release.author.key].values
+    release_authors = releases_in_time_range[Release.author.key].values
     release_authors = prefix + release_authors[release_authors.nonzero()[0]]
     mentioned_authors = (
         [f.prs[PullRequest.user_login.key].values for f in precomputed_facts.values()
@@ -1407,9 +1408,23 @@ async def mine_releases(repos: Iterable[str],
     if mentioned_authors:
         mentioned_authors = np.concatenate(mentioned_authors)
         mentioned_authors = np.unique(mentioned_authors[mentioned_authors.nonzero()[0]])
-
     repo_releases_analyzed = {}
+
     if missed_releases_count > 0:
+        _, releases, _, _ = await _find_releases_for_matching_prs(
+            missing_repos, branches, default_branches, time_from, time_to, settings, mdb, pdb,
+            cache, releases_in_time_range=releases_in_time_range)
+        tasks = [
+            load_commit_dags(releases, mdb, pdb, cache),
+            _fetch_repository_first_commit_dates(missing_repos, mdb, pdb, cache),
+        ]
+        with sentry_sdk.start_span(op="mine_releases/commits"):
+            dags, first_commit_dates = await asyncio.gather(
+                *tasks, return_exceptions=True)
+        for r in (dags, first_commit_dates):
+            if isinstance(r, Exception):
+                raise r from None
+
         # yeah, we have to fetch all the data about all the releases, unfortunately
         # TODO(vmarkovtsev): traverse DAGs and leave only relevant releases from the past
         all_hashes = []

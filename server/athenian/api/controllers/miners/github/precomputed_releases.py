@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from athenian.api.controllers.miners.types import ReleaseFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
+from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.precomputed.models import GitHubReleaseFacts
 from athenian.api.tracing import sentry_span
@@ -28,8 +29,9 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
     :return: Mapping Release.id -> facts.
     """
     reverse_settings = defaultdict(list)
-    for repo, setting in settings.items():
-        repo = repo.split("/", 1)[1]
+    prefix = PREFIXES["github"]
+    for repo in releases[Release.repository_full_name.key].unique():
+        setting = settings[prefix + repo]
         if setting.match == ReleaseMatch.tag:
             value = setting.tags
         elif setting.match == ReleaseMatch.branch:
