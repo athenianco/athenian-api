@@ -65,27 +65,27 @@ class PullRequestListMiner:
         self._facts = facts
         self._events = events
         self._stages = stages
-        self._pending_counter_calc_dep = StagePendingDependencyCalculator(quantiles=(0, 1))
+        self._pending_counter_dep = StagePendingDependencyCalculator(quantiles=(0, 1))
         self._calcs = {
             "wip": {
                 "time": WorkInProgressTimeCalculator(quantiles=(0, 1)),
                 "pending_count": WorkInProgressPendingCounter(
-                    self._pending_counter_calc_dep, quantiles=(0, 1)),
+                    self._pending_counter_dep, quantiles=(0, 1)),
             },
             "review": {
                 "time": ReviewTimeCalculator(quantiles=(0, 1)),
                 "pending_count": ReviewPendingCounter(
-                    self._pending_counter_calc_dep, quantiles=(0, 1)),
+                    self._pending_counter_dep, quantiles=(0, 1)),
             },
             "merge": {
                 "time": MergingTimeCalculator(quantiles=(0, 1)),
                 "pending_count": MergingPendingCounter(
-                    self._pending_counter_calc_dep, quantiles=(0, 1)),
+                    self._pending_counter_dep, quantiles=(0, 1)),
             },
             "release": {
                 "time": ReleaseTimeCalculator(quantiles=(0, 1)),
                 "pending_count": ReleasePendingCounter(
-                    self._pending_counter_calc_dep, quantiles=(0, 1)),
+                    self._pending_counter_dep, quantiles=(0, 1)),
             },
         }
         self._no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
@@ -249,7 +249,7 @@ class PullRequestListMiner:
         no_time_from = self._no_time_from.replace(tzinfo=None)
         now = self._now.replace(tzinfo=None)
         stage_timings = {}
-        self._pending_counter_calc_dep(df_facts, no_time_from, now)
+        self._pending_counter_dep(df_facts, no_time_from, now)
         for k, calcs in self._calcs.items():
             time_calc, pending_counter = calcs["time"], calcs["pending_count"]
             pending_counter(df_facts, no_time_from, now)

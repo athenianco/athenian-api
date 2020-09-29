@@ -659,7 +659,7 @@ class SizeCalculator(AverageMetricCalculator[int]):
 class StagePendingDependencyCalculator(WithoutQuantilesMixin, SumMetricCalculator[int]):
     """Common dependency for stage-pending counters."""
 
-    dtype = int
+    dtype = object
 
     def _analyze(self, facts: np.ndarray, min_time: datetime, max_time: datetime,
                  **kwargs) -> np.ndarray:
@@ -676,9 +676,8 @@ class StagePendingDependencyCalculator(WithoutQuantilesMixin, SumMetricCalculato
         stage_indexes["review"] = np.where(frr_mask & other)[0]
         other &= ~frr_mask
         stage_indexes["wip"] = np.where(other)[0]
-        self._stage_indexes = stage_indexes
 
-        return np.array([], dtype=object)
+        return np.array([stage_indexes], dtype=object)
 
 
 class BaseStagePendingCounter(WithoutQuantilesMixin, SumMetricCalculator[int]):
@@ -691,7 +690,7 @@ class BaseStagePendingCounter(WithoutQuantilesMixin, SumMetricCalculator[int]):
     def _analyze(self, facts: np.ndarray, min_time: datetime, max_time: datetime,
                  **kwargs) -> np.ndarray:
         result = np.full(len(facts), None, object)
-        result[self._calcs[0]._stage_indexes[self.stage_name]] = 1
+        result[self._calcs[0].peek[0][self.stage_name]] = 1
         return result
 
 
