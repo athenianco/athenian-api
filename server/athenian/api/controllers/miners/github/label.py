@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import pickle
 from typing import List, Optional, Set
 
-import aiomcache
+import aiomemcached
 from sqlalchemy import func, select
 
 from athenian.api.cache import cached
@@ -28,7 +28,7 @@ class LabelDetails(Label):
 )
 async def mine_labels(repos: Set[str],
                       mdb: DatabaseLike,
-                      cache: Optional[aiomcache.Client],
+                      cache: Optional[aiomemcached.Client],
                       ) -> List[LabelDetails]:
     """Collect PR labels and count the number of PRs where they were used."""
     rows = await mdb.fetch_all(

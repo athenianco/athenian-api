@@ -58,7 +58,7 @@ Finally, run `python3 -m athenian.api.models.web` to regenerate `server/athenian
 
 Change the type of the request to `athenian.api.request.AthenianWebRequest` to enjoy better IDE hints.
 You've got `request.*db` (mdb, sdb, pdb) to access the databases. `request.cache` is an optional
-(can be `None`) `aiomcache.Client`.
+(can be `None`) `aiomemcached.Client`.
 
 Tips:
 

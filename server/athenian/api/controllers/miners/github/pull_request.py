@@ -7,7 +7,7 @@ import pickle
 from typing import Collection, Dict, Generator, Iterable, Iterator, List, Optional, Sequence, \
     Set, Tuple, Union
 
-import aiomcache
+import aiomemcached
 import databases
 import numpy as np
 import pandas as pd
@@ -178,7 +178,7 @@ class PullRequestMiner:
                     limit: int,
                     mdb: databases.Database,
                     pdb: databases.Database,
-                    cache: Optional[aiomcache.Client],
+                    cache: Optional[aiomemcached.Client],
                     pr_blacklist: Optional[Collection[str]],
                     truncate: bool,
                     ) -> Tuple[PRDataFrames,
@@ -294,7 +294,7 @@ class PullRequestMiner:
                           release_settings: Dict[str, ReleaseMatchSetting],
                           mdb: databases.Database,
                           pdb: databases.Database,
-                          cache: Optional[aiomcache.Client],
+                          cache: Optional[aiomemcached.Client],
                           truncate: bool = True,
                           ) -> Tuple[PRDataFrames,
                                      Dict[str, Tuple[str, PullRequestFacts]],
@@ -329,7 +329,7 @@ class PullRequestMiner:
                            release_settings: Dict[str, ReleaseMatchSetting],
                            mdb: databases.Database,
                            pdb: databases.Database,
-                           cache: Optional[aiomcache.Client],
+                           cache: Optional[aiomemcached.Client],
                            truncate: bool = True,
                            ) -> Tuple[PRDataFrames,
                                       Dict[str, Tuple[str, PullRequestFacts]],
@@ -514,7 +514,7 @@ class PullRequestMiner:
                    release_settings: Dict[str, ReleaseMatchSetting],
                    mdb: databases.Database,
                    pdb: databases.Database,
-                   cache: Optional[aiomcache.Client],
+                   cache: Optional[aiomemcached.Client],
                    limit: int = 0,
                    pr_blacklist: Optional[Collection[str]] = None,
                    truncate: bool = True,
@@ -630,7 +630,7 @@ class PullRequestMiner:
             limit: int,
             mdb: databases.Database,
             pdb: databases.Database,
-            cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+            cache: Optional[aiomemcached.Client]) -> pd.DataFrame:
         node_ids, _ = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, participants, labels, default_branches, release_settings,
             pdb, cache)

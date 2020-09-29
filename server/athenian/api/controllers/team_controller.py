@@ -3,7 +3,7 @@ from sqlite3 import IntegrityError, OperationalError
 from typing import Dict, Iterable, List, Mapping, Optional, Union
 
 from aiohttp import web
-import aiomcache
+import aiomemcached
 from asyncpg import UniqueViolationError
 import databases
 from sqlalchemy import delete, insert, select, update
@@ -153,7 +153,7 @@ def _check_members(members: List[str]) -> List[str]:
 
 async def _get_all_members(teams: Iterable[Mapping],
                            db: databases.Database,
-                           cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
+                           cache: Optional[aiomemcached.Client]) -> Dict[str, Contributor]:
     prefix = PREFIXES["github"]
     all_members = set(chain.from_iterable([t[Team.members.key] for t in teams]))
     all_members = {m.split("/", 1)[1] for m in all_members if m.startswith(prefix)}

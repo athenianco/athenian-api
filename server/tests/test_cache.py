@@ -3,7 +3,7 @@ import marshal
 import pickle
 from typing import Optional
 
-import aiomcache
+import aiomemcached
 import pytest
 
 from athenian.api.cache import cached, gen_cache_key
@@ -20,7 +20,7 @@ from tests.conftest import has_memcached
 def test_gen_cache_key_formats(fmt, args):
     key = gen_cache_key(fmt, *args)
     assert key
-    aiomcache.Client._validate_key(aiomcache.Client, key)
+    aiomemcached.Client._validate_key(aiomemcached.Client, key)
     for _ in range(100):
         # check that there is no randomness
         assert key == gen_cache_key(fmt, *args)
@@ -40,7 +40,7 @@ def test_gen_cache_key_distinct():
     deserialize=marshal.loads,
     key=lambda number, **_: (number,),
 )
-async def add_one(eval_notify: callable, number: int, cache: Optional[aiomcache.Client]) -> int:
+async def add_one(eval_notify: callable, number: int, cache: Optional[aiomemcached.Client]) -> int:
     eval_notify()
     return number + 1
 

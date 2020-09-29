@@ -125,7 +125,8 @@ def client_cache(loop, app):
 
 @pytest.fixture(scope="function")
 def memcached(loop, xapp, request):
-    client = create_memcached(override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
+    client, _ = create_memcached(
+        override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
     trash = []
     set = client.set
 
@@ -151,11 +152,12 @@ def memcached(loop, xapp, request):
 
 
 def check_memcached():
-    client = create_memcached(override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
+    client, vf = create_memcached(
+        override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
 
     async def probe():
         try:
-            await client.get(b"0")
+            await vf
             return True
         except ConnectionRefusedError:
             return False

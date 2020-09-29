@@ -4,7 +4,7 @@ from functools import lru_cache
 import re
 from typing import Collection, Dict, List, Optional, Set
 
-import aiomcache
+import aiomemcached
 import databases
 import slack
 from sqlalchemy import and_, delete, insert, select
@@ -65,7 +65,7 @@ class Settings:
                  native_user_id: Optional[str],
                  sdb: databases.Database,
                  mdb: databases.Database,
-                 cache: Optional[aiomcache.Client],
+                 cache: Optional[aiomemcached.Client],
                  slack: Optional[slack.WebClient]):
         """Initialize a new instance of Settings class."""
         self._account = account

@@ -1,7 +1,7 @@
 from typing import Optional
 
 from aiohttp import web
-import aiomcache
+import aiomemcached
 import databases
 
 from athenian.api.models.web.user import User
@@ -28,7 +28,7 @@ class AthenianWebRequest(web.Request):
     mdb: databases.Database
     sdb: databases.Database
     pdb: databases.Database
-    cache: Optional[aiomcache.Client]  # can be None
+    cache: Optional[aiomemcached.Client]  # can be None
     user: lambda: User
     uid: str
     native_uid: Optional[str]  # None means a single tenant

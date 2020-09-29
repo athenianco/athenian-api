@@ -5,7 +5,7 @@ from itertools import chain
 import marshal
 from typing import Any, Collection, Dict, List, Optional
 
-import aiomcache
+import aiomemcached
 import databases
 import sentry_sdk
 from sqlalchemy import and_, func, or_, select
@@ -40,7 +40,7 @@ async def mine_contributors(repos: Collection[str],
                             release_settings: Dict[str, ReleaseMatchSetting],
                             mdb: databases.Database,
                             pdb: databases.Database,
-                            cache: Optional[aiomcache.Client]) -> List[Dict[str, Any]]:
+                            cache: Optional[aiomemcached.Client]) -> List[Dict[str, Any]]:
     """Discover developers who made any important action in the given repositories and \
     in the given time frame."""
     assert (time_from is None) == (time_to is None)

@@ -2,7 +2,7 @@ import logging
 import pickle
 from typing import Dict, Iterable, Optional, Tuple
 
-import aiomcache
+import aiomemcached
 import pandas as pd
 from sqlalchemy import and_, select
 
@@ -23,7 +23,7 @@ from athenian.api.typing_utils import DatabaseLike
 )
 async def extract_branches(repos: Iterable[str],
                            db: DatabaseLike,
-                           cache: Optional[aiomcache.Client],
+                           cache: Optional[aiomemcached.Client],
                            ) -> Tuple[pd.DataFrame, Dict[str, str]]:
     """Fetch branches in the given repositories and extract the default branch names."""
     branches = await read_sql_query(

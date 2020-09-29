@@ -6,7 +6,7 @@ from enum import Enum
 import pickle
 from typing import Collection, Dict, List, Optional, Sequence, Set, Union
 
-import aiomcache
+import aiomemcached
 import databases
 import pandas as pd
 from sqlalchemy import and_, distinct, func, join, or_, select
@@ -67,7 +67,7 @@ async def _set_commits(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                        time_from: datetime,
                        time_to: datetime,
                        conn: databases.core.Connection,
-                       cache: Optional[aiomcache.Client]) -> None:
+                       cache: Optional[aiomemcached.Client]) -> None:
     commits = await _fetch_developer_commits(devs, repos, time_from, time_to, conn, cache)
     commits_by_dev = commits.groupby(PushCommit.author_login.key, sort=False)
     if DeveloperTopic.commits_pushed in topics:
@@ -92,7 +92,7 @@ async def _set_prs_created(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
                            time_from: datetime,
                            time_to: datetime,
                            conn: databases.core.Connection,
-                           cache: Optional[aiomcache.Client]) -> None:
+                           cache: Optional[aiomemcached.Client]) -> None:
     prs = await _fetch_developer_created_prs(devs, repos, labels, time_from, time_to, conn, cache)
     topic = DeveloperTopic.prs_created.name
     for dev, n in prs["created_count"].items():
@@ -109,7 +109,7 @@ async def _set_prs_reviewed(stats_by_dev: Dict[str, Dict[str, Union[int, float]]
                             time_from: datetime,
                             time_to: datetime,
                             conn: databases.core.Connection,
-                            cache: Optional[aiomcache.Client]) -> None:
+                            cache: Optional[aiomemcached.Client]) -> None:
     prs = await _fetch_developer_reviewed_prs(devs, repos, labels, time_from, time_to, conn, cache)
     topic = DeveloperTopic.prs_reviewed.name
     for dev, n in prs["reviewed_count"].items():
@@ -126,7 +126,7 @@ async def _set_prs_merged(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                           time_from: datetime,
                           time_to: datetime,
                           conn: databases.core.Connection,
-                          cache: Optional[aiomcache.Client]) -> None:
+                          cache: Optional[aiomemcached.Client]) -> None:
     prs = await _fetch_developer_merged_prs(devs, repos, labels, time_from, time_to, conn, cache)
     topic = DeveloperTopic.prs_merged.name
     for dev, n in prs["merged_count"].items():
@@ -143,7 +143,7 @@ async def _set_releases(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                         time_from: datetime,
                         time_to: datetime,
                         conn: databases.core.Connection,
-                        cache: Optional[aiomcache.Client]) -> None:
+                        cache: Optional[aiomemcached.Client]) -> None:
     prs = await _fetch_developer_releases(devs, repos, time_from, time_to, conn, cache)
     topic = DeveloperTopic.releases.name
     for dev, n in prs["released_count"].items():
@@ -160,7 +160,7 @@ async def _set_reviews(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
                        time_from: datetime,
                        time_to: datetime,
                        conn: databases.core.Connection,
-                       cache: Optional[aiomcache.Client]) -> None:
+                       cache: Optional[aiomemcached.Client]) -> None:
     reviews = await _fetch_developer_reviews(devs, repos, labels, time_from, time_to, conn, cache)
     if reviews.empty:
         return
@@ -206,7 +206,7 @@ async def _set_pr_comments(stats_by_dev: Dict[str, Dict[str, Union[int, float]]]
                            time_from: datetime,
                            time_to: datetime,
                            conn: databases.core.Connection,
-                           cache: Optional[aiomcache.Client]) -> None:
+                           cache: Optional[aiomemcached.Client]) -> None:
     if DeveloperTopic.review_pr_comments in topics or DeveloperTopic.pr_comments in topics:
         review_comments = await _fetch_developer_review_comments(
             devs, repos, labels, time_from, time_to, conn, cache)
@@ -251,7 +251,7 @@ async def calc_developer_metrics(devs: Sequence[str],
                                  time_from: datetime,
                                  time_to: datetime,
                                  db: databases.Database,
-                                 cache: Optional[aiomcache.Client],
+                                 cache: Optional[aiomemcached.Client],
                                  ) -> List[DeveloperStats]:
     """Calculate various statistics about developer activities.
 
@@ -288,7 +288,7 @@ async def _fetch_developer_commits(devs: Sequence[str],
                                    time_from: datetime,
                                    time_to: datetime,
                                    db: databases.core.Connection,
-                                   cache: Optional[aiomcache.Client],
+                                   cache: Optional[aiomemcached.Client],
                                    ) -> pd.DataFrame:
     columns = [PushCommit.additions, PushCommit.deletions, PushCommit.author_login]
     return await read_sql_query(
@@ -315,7 +315,7 @@ async def _fetch_developer_created_prs(devs: Sequence[str],
                                        time_from: datetime,
                                        time_to: datetime,
                                        db: databases.core.Connection,
-                                       cache: Optional[aiomcache.Client],
+                                       cache: Optional[aiomemcached.Client],
                                        ) -> pd.DataFrame:
     query = select([PullRequest.user_login, func.count(PullRequest.created_at)])
     if labels:
@@ -364,7 +364,7 @@ async def _fetch_developer_merged_prs(devs: Sequence[str],
                                       time_from: datetime,
                                       time_to: datetime,
                                       db: databases.core.Connection,
-                                      cache: Optional[aiomcache.Client],
+                                      cache: Optional[aiomemcached.Client],
                                       ) -> pd.DataFrame:
     query = select([PullRequest.merged_by_login, func.count(PullRequest.merged_at)])
     if labels:
@@ -410,7 +410,7 @@ async def _fetch_developer_releases(devs: Sequence[str],
                                     time_from: datetime,
                                     time_to: datetime,
                                     db: databases.core.Connection,
-                                    cache: Optional[aiomcache.Client],
+                                    cache: Optional[aiomemcached.Client],
                                     ) -> pd.DataFrame:
     df = await read_sql_query(
         select([Release.author, func.count(Release.published_at)]).where(and_(
@@ -438,7 +438,7 @@ async def _fetch_developer_reviewed_prs(devs: Sequence[str],
                                         time_from: datetime,
                                         time_to: datetime,
                                         db: databases.core.Connection,
-                                        cache: Optional[aiomcache.Client],
+                                        cache: Optional[aiomemcached.Client],
                                         ) -> pd.DataFrame:
     query = select([PullRequestReview.user_login,
                     func.count(distinct(PullRequestReview.pull_request_node_id))])
@@ -488,7 +488,7 @@ async def _fetch_developer_reviews(devs: Sequence[str],
                                    time_from: datetime,
                                    time_to: datetime,
                                    db: databases.core.Connection,
-                                   cache: Optional[aiomcache.Client],
+                                   cache: Optional[aiomemcached.Client],
                                    ) -> pd.DataFrame:
     query = select([PullRequestReview.user_login, PullRequestReview.state,
                     func.count(PullRequestReview.submitted_at)])
@@ -538,7 +538,7 @@ async def _fetch_developer_review_comments(devs: Sequence[str],
                                            time_from: datetime,
                                            time_to: datetime,
                                            db: databases.core.Connection,
-                                           cache: Optional[aiomcache.Client],
+                                           cache: Optional[aiomemcached.Client],
                                            ) -> pd.DataFrame:
     query = select([PullRequestReviewComment.user_login,
                     func.count(PullRequestReviewComment.created_at)])
@@ -588,7 +588,7 @@ async def _fetch_developer_regular_pr_comments(devs: Sequence[str],
                                                time_from: datetime,
                                                time_to: datetime,
                                                db: databases.core.Connection,
-                                               cache: Optional[aiomcache.Client],
+                                               cache: Optional[aiomemcached.Client],
                                                ) -> pd.DataFrame:
     query = select([PullRequestComment.user_login, func.count(PullRequestComment.created_at)])
     if labels:

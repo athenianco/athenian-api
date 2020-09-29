@@ -12,13 +12,13 @@ import signal
 import socket
 import sys
 import threading
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import aiohttp.web
 from aiohttp.web_exceptions import HTTPFound
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
-import aiomcache
+import aiomemcached
 from asyncpg import ConnectionDoesNotExistError, InterfaceError
 from connexion.apis import aiohttp_api
 import connexion.lifecycle
@@ -213,7 +213,7 @@ class AthenianApp(connexion.AioHttpApp):
                  pdb_options: Optional[dict] = None,
                  auth0_cls: Callable[[], Auth0] = Auth0,
                  kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
-                 cache: Optional[aiomcache.Client] = None):
+                 cache: Optional[aiomemcached.Client] = None):
         """
         Initialize the underlying connexion -> aiohttp application.
 
@@ -536,14 +536,22 @@ def setup_context(log: logging.Logger) -> None:
     numpy.set_printoptions(threshold=10, edgeitems=1)
 
 
-def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Client]:
+def create_memcached(addr: str, log: logging.Logger,
+                     ) -> Tuple[Optional[aiomemcached.Client], asyncio.Future]:
     """Create the memcached client, if possible."""
     if not addr:
-        return None
-    host, port = addr.split(":")
-    port = int(port)
-    log.info("memcached: %s", addr)
-    return aiomcache.Client(host, port)
+        return None, None
+    scheme = "memcached://"
+    if not addr.startswith(scheme):
+        addr = scheme + addr
+    client = aiomemcached.Client(addr)
+
+    async def print_version():
+        version = (await client.version()).decode()
+        log.info("memcached: %s at %s", version, addr[len(scheme):])
+
+    vf = asyncio.ensure_future(print_version())
+    return client, vf
 
 
 def create_auth0_factory(single_tenant: bool, force_user: str) -> Callable[[], Auth0]:
@@ -655,7 +663,7 @@ def main() -> Optional[AthenianApp]:
     if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):
         return None
     patch_pandas()
-    cache = create_memcached(args.memcached, log)
+    cache, _ = create_memcached(args.memcached, log)
     auth0_cls = create_auth0_factory(args.single_tenant, args.force_user)
     kms_cls = None if args.no_google_kms else AthenianKMS
     app = AthenianApp(

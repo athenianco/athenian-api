@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
-import aiomcache
+import aiomemcached
 from connexion.decorators.security import get_authorization_info
 from connexion.exceptions import AuthenticationProblem, OAuthProblem, Unauthorized
 from connexion.lifecycle import ConnexionRequest
@@ -44,8 +44,8 @@ class Auth0:
 
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
                  client_secret=AUTH0_CLIENT_SECRET, whitelist: Sequence[str] = tuple(),
-                 default_user=DEFAULT_USER, cache: Optional[aiomcache.Client] = None, lazy=False,
-                 single_tenant: bool = False, force_user: str = ""):
+                 default_user=DEFAULT_USER, cache: Optional[aiomemcached.Client] = None,
+                 lazy=False, single_tenant: bool = False, force_user: str = ""):
         """
         Create a new Auth0 middleware.
 

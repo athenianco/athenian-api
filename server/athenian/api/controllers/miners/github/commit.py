@@ -4,7 +4,7 @@ import logging
 import pickle
 from typing import Collection, List, Optional
 
-import aiomcache
+import aiomemcached
 import numpy as np
 import sentry_sdk
 from sqlalchemy import and_, outerjoin, select
@@ -43,7 +43,7 @@ async def extract_commits(prop: FilterCommitsProperty,
                           with_author: Optional[Collection[str]],
                           with_committer: Optional[Collection[str]],
                           db: DatabaseLike,
-                          cache: Optional[aiomcache.Client],
+                          cache: Optional[aiomemcached.Client],
                           columns: Optional[List[InstrumentedAttribute]] = None,
                           ):
     """Fetch commits that satisfy the given filters."""

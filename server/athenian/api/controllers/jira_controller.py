@@ -8,7 +8,7 @@ from operator import itemgetter
 from typing import Optional
 
 from aiohttp import web
-import aiomcache
+import aiomemcached
 import sentry_sdk
 from sqlalchemy import and_, or_, select
 
@@ -35,7 +35,7 @@ from athenian.api.typing_utils import DatabaseLike
 )
 async def get_jira_installation(account: int,
                                 sdb: DatabaseLike,
-                                cache: Optional[aiomcache.Client]) -> int:
+                                cache: Optional[aiomemcached.Client]) -> int:
     """Retrieve the JIRA installation ID belonging to the account or raise an exception."""
     jira_id = await sdb.fetch_val(select([AccountJiraInstallation.id])
                                   .where(AccountJiraInstallation.account_id == account))

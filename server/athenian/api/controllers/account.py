@@ -1,7 +1,7 @@
 import struct
 from typing import List, Optional, Tuple
 
-import aiomcache
+import aiomemcached
 from sqlalchemy import and_, select
 
 from athenian.api.cache import cached, max_exptime
@@ -22,7 +22,7 @@ from athenian.api.typing_utils import DatabaseLike
 )
 async def get_github_installation_ids(account: int,
                                       sdb_conn: DatabaseLike,
-                                      cache: Optional[aiomcache.Client],
+                                      cache: Optional[aiomemcached.Client],
                                       ) -> Tuple[int, ...]:
     """Fetch the Athenian metadata installation ID for the given account ID."""
     iids = await sdb_conn.fetch_all(select([AccountGitHubInstallation.id])
@@ -45,7 +45,7 @@ async def get_github_installation_ids(account: int,
 async def get_user_account_status(user: str,
                                   account: int,
                                   sdb_conn: DatabaseLike,
-                                  cache: Optional[aiomcache.Client],
+                                  cache: Optional[aiomemcached.Client],
                                   ) -> bool:
     """Return the value indicating whether the given user is an admin of the given account."""
     status = await sdb_conn.fetch_val(

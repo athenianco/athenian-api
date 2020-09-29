@@ -6,7 +6,7 @@ import operator
 from typing import List, Optional, Set, Union
 
 from aiohttp import web
-import aiomcache
+import aiomemcached
 import databases
 from dateutil.parser import parse as parse_datetime
 import pandas as pd
@@ -352,7 +352,7 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
 @sentry_span
 async def _build_github_prs_response(prs: List[PullRequestListItem],
                                      mdb: databases.Database,
-                                     cache: Optional[aiomcache.Client]) -> web.Response:
+                                     cache: Optional[aiomemcached.Client]) -> web.Response:
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
     avatars = await mine_user_avatars(users, mdb, cache)

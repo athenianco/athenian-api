@@ -4,7 +4,7 @@ from itertools import chain
 import pickle
 from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
 
-import aiomcache
+import aiomemcached
 from databases import Database
 import sentry_sdk
 
@@ -76,7 +76,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
                                          fresh: bool,
                                          mdb: Database,
                                          pdb: Database,
-                                         cache: Optional[aiomcache.Client],
+                                         cache: Optional[aiomemcached.Client],
                                          ) -> Dict[str, List[PullRequestFacts]]:
     """
     Calculate facts about pull request on GitHub.
@@ -217,7 +217,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 fresh: bool,
                                                 mdb: Database,
                                                 pdb: Database,
-                                                cache: Optional[aiomcache.Client],
+                                                cache: Optional[aiomemcached.Client],
                                                 ) -> List[List[List[List[Metric]]]]:
     """Calculate pull request metrics on GitHub."""
     assert isinstance(repositories, (tuple, list))
@@ -245,7 +245,7 @@ async def calc_code_metrics(prop: FilterCommitsProperty,
                             with_author: Optional[Collection[str]],
                             with_committer: Optional[Collection[str]],
                             db: Database,
-                            cache: Optional[aiomcache.Client],
+                            cache: Optional[aiomemcached.Client],
                             ) -> List[CodeStats]:
     """Filter code pushed on GitHub according to the specified criteria."""
     time_from, time_to = time_intervals[0], time_intervals[-1]
@@ -286,7 +286,7 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
                                              fresh: bool,
                                              mdb: Database,
                                              pdb: Database,
-                                             cache: Optional[aiomcache.Client],
+                                             cache: Optional[aiomemcached.Client],
                                              ) -> List[List[Tuple[str, Histogram]]]:
     """Calculate the pull request histograms on GitHub."""
     all_repositories = set(chain.from_iterable(repositories))
@@ -317,7 +317,7 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            release_settings: Dict[str, ReleaseMatchSetting],
                                            mdb: Database,
                                            pdb: Database,
-                                           cache: Optional[aiomcache.Client],
+                                           cache: Optional[aiomemcached.Client],
                                            ) -> Tuple[List[List[List[Metric]]],
                                                       Dict[str, ReleaseMatch]]:
     """Calculate the release metrics on GitHub."""

@@ -2,7 +2,7 @@ import marshal
 import pickle
 from typing import Any, Collection, Iterable, List, Mapping, Optional, Tuple
 
-import aiomcache
+import aiomemcached
 import databases
 from sqlalchemy import select
 
@@ -20,7 +20,7 @@ from athenian.api.tracing import sentry_span
 )
 async def mine_users(logins: Collection[str],
                      db: databases.Database,
-                     cache: Optional[aiomcache.Client]) -> List[Mapping[str, Any]]:
+                     cache: Optional[aiomemcached.Client]) -> List[Mapping[str, Any]]:
     """Fetch details about each GitHub user in the given list of `logins`."""
     return [dict(u) for u in await db.fetch_all(select([User]).where(User.login.in_(logins)))]
 
@@ -34,7 +34,7 @@ async def mine_users(logins: Collection[str],
 )
 async def mine_user_avatars(logins: Iterable[str],
                             db: databases.Database,
-                            cache: Optional[aiomcache.Client],
+                            cache: Optional[aiomemcached.Client],
                             prefix="",
                             ) -> List[Tuple[str, str]]:
     """Fetch the user profile picture URL for each login."""

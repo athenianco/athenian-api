@@ -4,7 +4,7 @@ from itertools import chain
 import marshal
 from typing import Collection, List, Optional
 
-import aiomcache
+import aiomemcached
 import databases
 import sentry_sdk
 from sqlalchemy import and_, distinct, join, or_, select
@@ -29,7 +29,7 @@ async def mine_repositories(repos: Collection[str],
                             time_to: datetime,
                             exclude_inactive: bool,
                             db: databases.Database,
-                            cache: Optional[aiomcache.Client],
+                            cache: Optional[aiomemcached.Client],
                             ) -> List[str]:
     """Discover repositories from the given set which were updated in the given time frame."""
     assert isinstance(time_from, datetime)

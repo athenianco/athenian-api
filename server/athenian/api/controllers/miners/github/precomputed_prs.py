@@ -4,7 +4,7 @@ import logging
 import pickle
 from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
-import aiomcache
+import aiomemcached
 import databases
 from dateutil.rrule import DAILY, rrule
 import numpy as np
@@ -330,7 +330,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
                                        default_branches: Dict[str, str],
                                        release_settings: Dict[str, ReleaseMatchSetting],
                                        pdb: databases.Database,
-                                       cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+                                       cache: Optional[aiomemcached.Client]) -> pd.DataFrame:
     """
     Load the releases mentioned in the specified PRs.
 
@@ -743,7 +743,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   default_branches: Dict[str, str],
                                                   release_settings: Dict[str, ReleaseMatchSetting],
                                                   pdb: databases.Database,
-                                                  cache: Optional[aiomcache.Client],
+                                                  cache: Optional[aiomemcached.Client],
                                                   ) -> Tuple[List[str], List[str]]:
     """Discover PRs which were merged before `time_from` and still not released."""
     postgres = pdb.url.dialect in ("postgres", "postgresql")

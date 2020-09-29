@@ -23,7 +23,7 @@ async def main():
     slogging.setup("INFO", False)
     setup_defer(True)
     if False:
-        cache = create_memcached("0.0.0.0:7001", logging.getLogger())
+        cache, _ = create_memcached("0.0.0.0:7001", logging.getLogger())
         setup_cache_metrics(cache, {}, None)
         for v in cache.metrics["context"].values():
             v.set(defaultdict(int))

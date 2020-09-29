@@ -8,7 +8,7 @@ import time
 from typing import Any, Callable, Coroutine, Mapping, Optional, Tuple, Union
 
 from aiohttp import web
-import aiomcache
+import aiomemcached
 from prometheus_client import CollectorRegistry, Counter, Histogram
 from prometheus_client.utils import INF
 from xxhash import xxh64_hexdigest
@@ -38,7 +38,7 @@ def cached(exptime: Union[int, Callable[..., int]],
            serialize: Callable[[Any], bytes],
            deserialize: Callable[[bytes], Any],
            key: Callable[..., Optional[Tuple]],
-           cache: Optional[Callable[..., Optional[aiomcache.Client]]] = None,
+           cache: Optional[Callable[..., Optional[aiomemcached.Client]]] = None,
            refresh_on_access=False,
            postprocess: Optional[Callable[..., Any]] = None,
            version: int = 1,
@@ -68,7 +68,7 @@ def cached(exptime: Union[int, Callable[..., int]],
             log.warning("%s will stay cached for max_exptime but will not refresh on access, "
                         "consider setting refresh_on_access=True", func.__name__)
         if cache is None:
-            def discover_cache(**kwargs) -> Optional[aiomcache.Client]:
+            def discover_cache(**kwargs) -> Optional[aiomemcached.Client]:
                 try:
                     return kwargs["cache"]
                 except KeyError:
@@ -101,8 +101,8 @@ def cached(exptime: Union[int, Callable[..., int]],
                 cache_key = _gen_cache_key(args_dict)
                 if cache_key is not None:
                     try:
-                        buffer = await client.get(cache_key)
-                    except (aiomcache.exceptions.ClientException, IncompleteReadError) as e:
+                        buffer, _ = await client.get(cache_key)
+                    except (aiomemcached.exceptions.ClientException, IncompleteReadError) as e:
                         log.exception("Failed to fetch cached %s/%s: %s: %s",
                                       full_name, cache_key.decode(), type(e).__name__, e)
                         buffer = None
@@ -153,7 +153,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                     async def set_cache_item():
                         try:
                             await client.set(cache_key, payload, exptime=t)
-                        except aiomcache.exceptions.ClientException:
+                        except aiomemcached.exceptions.ClientException:
                             log.exception("Failed to put %d bytes in memcached for %s/%s",
                                           len(payload), full_name, cache_key.decode())
                         else:
@@ -181,7 +181,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                 full_name + "|" + str(version) + "|" + "|".join(str(p) for p in props))
             try:
                 return await client.delete(cache_key)
-            except aiomcache.exceptions.ClientException:
+            except aiomemcached.exceptions.ClientException:
                 log.exception("Failed to delete %s/%s in memcached", full_name, cache_key.decode())
 
         def cache_key(*args, **kwargs) -> bytes:
@@ -195,7 +195,7 @@ def cached(exptime: Union[int, Callable[..., int]],
     return wrapper_cached
 
 
-def setup_cache_metrics(cache: Optional[aiomcache.Client],
+def setup_cache_metrics(cache: Optional[aiomemcached.Client],
                         app: Union[web.Application, Mapping],
                         registry: Optional[CollectorRegistry]) -> None:
     """Initialize the Prometheus metrics for tracking the cache interoperability."""

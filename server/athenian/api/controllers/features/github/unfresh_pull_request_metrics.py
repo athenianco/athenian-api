@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Set
 
-import aiomcache
+import aiomemcached
 import databases
 import numpy as np
 import pandas as pd
@@ -38,7 +38,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
                                            release_settings: Dict[str, ReleaseMatchSetting],
                                            mdb: databases.Database,
                                            pdb: databases.Database,
-                                           cache: Optional[aiomcache.Client],
+                                           cache: Optional[aiomemcached.Client],
                                            ) -> Dict[str, List[PullRequestFacts]]:
     """
     Load the missing facts about merged unreleased and open PRs from pdb instead of querying \
@@ -128,7 +128,8 @@ async def _fetch_inactive_merged_unreleased_prs(time_from: datetime,
                                                 release_settings: Dict[str, ReleaseMatchSetting],
                                                 mdb: databases.Database,
                                                 pdb: databases.Database,
-                                                cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+                                                cache: Optional[aiomemcached.Client],
+                                                ) -> pd.DataFrame:
     node_ids, repos = await discover_inactive_merged_unreleased_prs(
         time_from, time_to, repos, participants, labels, default_branches, release_settings,
         pdb, cache)

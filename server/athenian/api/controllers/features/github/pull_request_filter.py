@@ -4,7 +4,7 @@ import logging
 import pickle
 from typing import Callable, Dict, Generator, List, Optional, Sequence, Set, Tuple
 
-import aiomcache
+import aiomemcached
 import databases
 import numpy as np
 import pandas as pd
@@ -345,7 +345,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
                                limit: int,
                                mdb: databases.Database,
                                pdb: databases.Database,
-                               cache: Optional[aiomcache.Client],
+                               cache: Optional[aiomemcached.Client],
                                ) -> List[PullRequestListItem]:
     """Filter GitHub pull requests according to the specified criteria.
 
@@ -483,7 +483,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                                 limit: int,
                                 mdb: databases.Database,
                                 pdb: databases.Database,
-                                cache: Optional[aiomcache.Client],
+                                cache: Optional[aiomemcached.Client],
                                 ) -> Tuple[List[PullRequestListItem], LabelFilter, JIRAFilter]:
     assert isinstance(events, set)
     assert isinstance(stages, set)
@@ -612,7 +612,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
                               release_settings: Dict[str, ReleaseMatchSetting],
                               mdb: databases.Database,
                               pdb: databases.Database,
-                              cache: Optional[aiomcache.Client],
+                              cache: Optional[aiomemcached.Client],
                               ) -> List[PullRequestListItem]:
     """
     List GitHub pull requests by repository and numbers.

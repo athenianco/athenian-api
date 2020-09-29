@@ -1,6 +1,6 @@
 from typing import Optional, Set
 
-import aiomcache
+import aiomemcached
 
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.typing_utils import DatabaseLike
@@ -16,7 +16,7 @@ class AccessChecker:
                  account: int,
                  sdb_conn: DatabaseLike,
                  mdb_conn: DatabaseLike,
-                 cache: Optional[aiomcache.Client],
+                 cache: Optional[aiomemcached.Client],
                  cache_ttl=CACHE_TTL):
         """
         Initialize a new instance of AccessChecker.

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import logging
 from typing import List, Optional, Set, Tuple
 
-import aiomcache
+import aiomemcached
 from databases.core import Connection
 import pandas as pd
 from sqlalchemy import and_, create_engine, extract, func, insert, or_, select, update
@@ -304,7 +304,7 @@ async def _get_outdated_aggregation_prs(
 async def _fetch_prs_data(
         account: int, prs_collection: PullRequestsCollection,
         sdb: ParallelDatabase, mdb: ParallelDatabase, pdb: ParallelDatabase,
-        cache: Optional[aiomcache.Client] = None,
+        cache: Optional[aiomemcached.Client] = None,
 ) -> Tuple[List[PullRequestListItem], ReleaseMatchSetting]:
     # TODO: fetch_pull_requests and Settings require passing `databases.Database`
     sdb_ = ParallelDatabase(sdb._connection._database._database_url._url)
@@ -490,7 +490,7 @@ async def _get_db_conns(
         sdb_conn_uri: str, mdb_conn_uri: str, pdb_conn_uri: str, adb_conn_uri: str,
         cache_conn: Optional[str] = None,
 ) -> Tuple[ParallelDatabase, ParallelDatabase, ParallelDatabase, ParallelDatabase,
-           aiomcache.Client]:
+           aiomemcached.Client]:
     sdb_conn, mdb_conn, pdb_conn, adb_conn = (
         ParallelDatabase(sdb_conn_uri),
         ParallelDatabase(mdb_conn_uri),
@@ -502,7 +502,7 @@ async def _get_db_conns(
 
     async with sdb_conn.connection() as sdb, mdb_conn.connection() as mdb, \
             pdb_conn.connection() as pdb, adb_conn.connection() as adb:
-        cache = create_memcached(cache_conn, log) if cache_conn else None
+        cache, _ = create_memcached(cache_conn, log) if cache_conn else None
         pdb.metrics = {
             "hits": ContextVar("pdb_hits", default=defaultdict(int)),
             "misses": ContextVar("pdb_misses", default=defaultdict(int)),

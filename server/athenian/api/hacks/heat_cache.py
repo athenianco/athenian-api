@@ -74,7 +74,7 @@ def main():
 
     async def async_run():
         enable_defer()
-        cache = create_memcached(args.memcached, log)
+        cache, _ = create_memcached(args.memcached, log)
         setup_cache_metrics(cache, {}, None)
         for v in cache.metrics["context"].values():
             v.set(defaultdict(int))

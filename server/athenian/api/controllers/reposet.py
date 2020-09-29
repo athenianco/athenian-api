@@ -4,7 +4,7 @@ import logging
 from sqlite3 import IntegrityError, OperationalError
 from typing import List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
-import aiomcache
+import aiomemcached
 from asyncpg import UniqueViolationError
 import databases.core
 import slack
@@ -30,7 +30,7 @@ async def resolve_reposet(repo: str,
                           uid: str,
                           account: int,
                           db: Union[databases.core.Connection, databases.Database],
-                          cache: Optional[aiomcache.Client],
+                          cache: Optional[aiomemcached.Client],
                           ) -> List[str]:
     """
     Dereference the repository sets.
@@ -66,7 +66,7 @@ async def fetch_reposet(
     columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
     uid: str,
     sdb: DatabaseLike,
-    cache: Optional[aiomcache.Client],
+    cache: Optional[aiomemcached.Client],
 ) -> Tuple[RepositorySet, bool]:
     """
     Retrieve a repository set by ID and check the access for the given user.
@@ -96,7 +96,7 @@ async def resolve_repos(repositories: List[str],
                         native_uid: str,
                         sdb_conn: Union[databases.core.Connection, databases.Database],
                         mdb_conn: Union[databases.core.Connection, databases.Database],
-                        cache: Optional[aiomcache.Client],
+                        cache: Optional[aiomemcached.Client],
                         slack: Optional[slack.WebClient],
                         strip_prefix=True,
                         ) -> Set[str]:
@@ -134,7 +134,7 @@ async def load_account_reposets(account: int,
                                 fields: list,
                                 sdb_conn: DatabaseLike,
                                 mdb_conn: DatabaseLike,
-                                cache: Optional[aiomcache.Client],
+                                cache: Optional[aiomemcached.Client],
                                 slack: Optional[slack.WebClient],
                                 ) -> List[Mapping]:
     """
@@ -167,7 +167,7 @@ async def _load_account_reposets(account: int,
                                  fields: list,
                                  sdb_conn: databases.core.Connection,
                                  mdb_conn: databases.core.Connection,
-                                 cache: Optional[aiomcache.Client],
+                                 cache: Optional[aiomemcached.Client],
                                  slack: Optional[slack.WebClient],
                                  ) -> List[Mapping]:
     assert isinstance(sdb_conn, databases.core.Connection)

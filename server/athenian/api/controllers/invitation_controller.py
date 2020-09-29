@@ -12,7 +12,7 @@ import struct
 from typing import List, Optional, Tuple
 
 from aiohttp import web
-import aiomcache
+import aiomemcached
 import aiosqlite.core
 from asyncpg import IntegrityConstraintViolationError
 import databases.core
@@ -277,7 +277,7 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
 async def get_installation_event_ids(account: int,
                                      sdb_conn: databases.core.Connection,
                                      mdb_conn: databases.core.Connection,
-                                     cache: Optional[aiomcache.Client],
+                                     cache: Optional[aiomemcached.Client],
                                      ) -> List[Tuple[int, str]]:
     """Load the app installation and delivery IDs for the given account."""
     installation_ids = await get_github_installation_ids(account, sdb_conn, cache)
@@ -302,7 +302,7 @@ async def get_installation_event_ids(account: int,
 )
 async def get_installation_owner(installation_id: int,
                                  mdb_conn: databases.core.Connection,
-                                 cache: Optional[aiomcache.Client],
+                                 cache: Optional[aiomemcached.Client],
                                  ) -> str:
     """Load the native user ID who installed the app."""
     user_login = await mdb_conn.fetch_val(
@@ -320,7 +320,7 @@ async def get_installation_owner(installation_id: int,
 async def fetch_github_installation_progress(account: int,
                                              sdb: DatabaseLike,
                                              mdb: databases.Database,
-                                             cache: Optional[aiomcache.Client],
+                                             cache: Optional[aiomemcached.Client],
                                              ) -> InstallationProgress:
     """Load the GitHub installation progress for the specified account."""
     log = logging.getLogger("%s.fetch_github_installation_progress" % metadata.__package__)
@@ -395,7 +395,7 @@ async def _append_precomputed_progress(model: InstallationProgress,
                                        native_uid: str,
                                        sdb: DatabaseLike,
                                        mdb: databases.Database,
-                                       cache: Optional[aiomcache.Client],
+                                       cache: Optional[aiomemcached.Client],
                                        slack: Optional[slack.WebClient]) -> None:
     reposets = await load_account_reposets(
         account, native_uid,
@@ -430,7 +430,7 @@ async def _notify_precomputed_failure(slack: Optional[slack.WebClient],
                                       account: int,
                                       model: InstallationProgress,
                                       created: datetime,
-                                      cache: Optional[aiomcache.Client]) -> None:
+                                      cache: Optional[aiomemcached.Client]) -> None:
     await slack.post(
         "precomputed_failure.jinja2", uid=uid, account=account, model=model, created=created)
 

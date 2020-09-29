@@ -7,7 +7,7 @@ import pickle
 import re
 from typing import Any, Collection, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-import aiomcache
+import aiomemcached
 import asyncpg
 import databases
 import lz4.frame
@@ -59,7 +59,7 @@ async def load_releases(repos: Iterable[str],
                         settings: Dict[str, ReleaseMatchSetting],
                         mdb: databases.Database,
                         pdb: databases.Database,
-                        cache: Optional[aiomcache.Client],
+                        cache: Optional[aiomemcached.Client],
                         index: Optional[Union[str, Sequence[str]]] = None,
                         ) -> Tuple[pd.DataFrame, Dict[str, ReleaseMatch]]:
     """
@@ -186,7 +186,7 @@ async def _load_releases(repos: Iterable[str],
                          settings: Dict[str, ReleaseMatchSetting],
                          mdb: databases.Database,
                          pdb: databases.Database,
-                         cache: Optional[aiomcache.Client],
+                         cache: Optional[aiomemcached.Client],
                          index: Optional[Union[str, Sequence[str]]] = None,
                          ) -> pd.DataFrame:
     repos_by_tag = []
@@ -240,7 +240,7 @@ async def _match_releases_by_tag_or_branch(repos: Iterable[str],
                                            settings: Dict[str, ReleaseMatchSetting],
                                            mdb: databases.Database,
                                            pdb: databases.Database,
-                                           cache: Optional[aiomcache.Client],
+                                           cache: Optional[aiomemcached.Client],
                                            ) -> pd.DataFrame:
     with sentry_sdk.start_span(op="fetch_tags_probe"):
         releases = await read_sql_query(
@@ -512,7 +512,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
                                     settings: Dict[str, ReleaseMatchSetting],
                                     mdb: databases.Database,
                                     pdb: databases.Database,
-                                    cache: Optional[aiomcache.Client],
+                                    cache: Optional[aiomemcached.Client],
                                     ) -> pd.DataFrame:
     branches = branches.take(np.where(branches[Branch.repository_full_name.key].isin(repos))[0])
     branches_matched = _match_branches_by_release_settings(branches, default_branches, settings)
@@ -594,7 +594,7 @@ async def _fetch_commits(commit_shas: Sequence[str],
                          time_from: datetime,
                          time_to: datetime,
                          db: databases.Database,
-                         cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+                         cache: Optional[aiomemcached.Client]) -> pd.DataFrame:
     return await read_sql_query(
         select([PushCommit])
         .where(and_(PushCommit.sha.in_(commit_shas),
@@ -614,7 +614,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               release_settings: Dict[str, ReleaseMatchSetting],
                               mdb: databases.Database,
                               pdb: databases.Database,
-                              cache: Optional[aiomcache.Client],
+                              cache: Optional[aiomemcached.Client],
                               ) -> Tuple[pd.DataFrame,
                                          Dict[str, Tuple[str, PullRequestFacts]],
                                          asyncio.Event]:
@@ -735,7 +735,7 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
                                 branches: pd.DataFrame,
                                 mdb: databases.Database,
                                 pdb: databases.Database,
-                                cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+                                cache: Optional[aiomemcached.Client]) -> pd.DataFrame:
     if branches.empty:
         return new_released_prs_df()
     prs = prs.take(np.where(
@@ -788,7 +788,7 @@ async def _fetch_labels(node_ids: Iterable[str], mdb: databases.Database) -> Dic
 async def fetch_precomputed_commit_history_dags(
         repos: Iterable[str],
         pdb: databases.Database,
-        cache: Optional[aiomcache.Client],
+        cache: Optional[aiomemcached.Client],
 ) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """Load commit DAGs from the pdb."""
     ghrc = GitHubCommitHistory
@@ -813,7 +813,7 @@ def _empty_dag() -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 async def load_commit_dags(releases: pd.DataFrame,
                            mdb: databases.Database,
                            pdb: databases.Database,
-                           cache: Optional[aiomcache.Client],
+                           cache: Optional[aiomemcached.Client],
                            ) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """Produce the commit history DAGs which should contain the specified releases."""
     pdags = await fetch_precomputed_commit_history_dags(
@@ -841,7 +841,7 @@ async def _fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarra
                                     prune: bool,
                                     mdb: databases.Database,
                                     pdb: databases.Database,
-                                    cache: Optional[aiomcache.Client],
+                                    cache: Optional[aiomemcached.Client],
                                     ) -> Dict[str, Tuple[np.ndarray, np.array, np.array]]:
     missed_counter = 0
     repo_heads = {}
@@ -1083,7 +1083,7 @@ async def map_releases_to_prs(repos: Collection[str],
                               limit: int,
                               mdb: databases.Database,
                               pdb: databases.Database,
-                              cache: Optional[aiomcache.Client],
+                              cache: Optional[aiomemcached.Client],
                               pr_blacklist: Optional[BinaryExpression] = None,
                               truncate: bool = True,
                               ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, ReleaseMatch],
@@ -1179,7 +1179,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                                           release_settings: Dict[str, ReleaseMatchSetting],
                                           mdb: databases.Database,
                                           pdb: databases.Database,
-                                          cache: Optional[aiomcache.Client],
+                                          cache: Optional[aiomemcached.Client],
                                           ) -> Tuple[Dict[str, ReleaseMatch],
                                                      pd.DataFrame,
                                                      pd.DataFrame,
@@ -1280,7 +1280,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
 async def _fetch_repository_first_commit_dates(repos: Iterable[str],
                                                mdb: databases.Database,
                                                pdb: databases.Database,
-                                               cache: Optional[aiomcache.Client],
+                                               cache: Optional[aiomemcached.Client],
                                                ) -> Dict[str, datetime]:
     rows = await pdb.fetch_all(
         select([GitHubRepository.repository_full_name,
@@ -1341,7 +1341,7 @@ async def mine_releases(repos: Iterable[str],
                         settings: Dict[str, ReleaseMatchSetting],
                         mdb: databases.Database,
                         pdb: databases.Database,
-                        cache: Optional[aiomcache.Client],
+                        cache: Optional[aiomemcached.Client],
                         ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
                                    List[Tuple[str, str]],
                                    Dict[str, ReleaseMatch]]:
