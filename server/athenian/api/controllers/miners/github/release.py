@@ -94,17 +94,28 @@ async def load_releases(repos: Iterable[str],
     releases = releases.take(np.where(
         releases[Release.published_at.key].between(time_from, time_to))[0])
     settings = settings.copy()
-    prefix = PREFIXES["github"]
-    for k, v in applied_matches.items():
-        s = settings[prefix + k]
-        if s.match == ReleaseMatch.tag_or_branch and v == ReleaseMatch.tag:
-            settings[prefix + k] = ReleaseMatchSetting(
-                tags=s.tags, branches=s.branches, match=ReleaseMatch.tag)
+    for full_repo, setting in settings.items():
+        repo = full_repo.split("/", 1)[1]
+        try:
+            match = applied_matches[repo]
+        except KeyError:
+            # there can be repositories with 0 releases in the range but which are precomputed
+            if setting.match == ReleaseMatch.tag_or_branch:
+                match = ReleaseMatch.branch
+            else:
+                match = setting.match
+            applied_matches[repo] = match
         else:
-            applied_matches[k] = ReleaseMatch(v)
+            if setting.match == ReleaseMatch.tag_or_branch and match == ReleaseMatch.tag:
+                settings[full_repo] = ReleaseMatchSetting(
+                    tags=setting.tags, branches=setting.branches, match=ReleaseMatch.tag)
+            else:
+                applied_matches[repo] = ReleaseMatch(match)
+    prefix = PREFIXES["github"]
     missing_high = []
     missing_low = []
     missing_all = []
+    hits = 0
     for repo in repos:
         try:
             rt_from, rt_to = spans[repo][applied_matches[repo]]
@@ -117,27 +128,37 @@ async def load_releases(repos: Iterable[str],
             # we don't want different release strategies applied to both ends
             missing_all.append(repo)
             continue
+        missed = False
         if time_from < rt_from <= time_to:
             missing_low.append((rt_from, repo))
+            missed = True
         if time_from <= rt_to < time_to:
             missing_high.append((rt_to, repo))
+            missed = True
         if rt_from > time_to or rt_to < time_from:
             missing_all.append(repo)
+            missed = True
+        if not missed:
+            hits += 1
+    add_pdb_hits(pdb, "releases", hits)
     tasks = []
     if missing_high:
         missing_high.sort()
         tasks.append(_load_releases(
             [r for _, r in missing_high], branches, default_branches, missing_high[0][0], time_to,
             settings, mdb, pdb, cache, index=index))
+        add_pdb_misses(pdb, "releases/high", len(missing_high))
     if missing_low:
         missing_low.sort()
         tasks.append(_load_releases(
             [r for _, r in missing_low], branches, default_branches, time_from, missing_low[-1][0],
             settings, mdb, pdb, cache, index=index))
+        add_pdb_misses(pdb, "releases/low", len(missing_low))
     if missing_all:
         tasks.append(_load_releases(
             missing_all, branches, default_branches, time_from, time_to,
             settings, mdb, pdb, cache, index=index))
+        add_pdb_misses(pdb, "releases/all", len(missing_all))
     if tasks:
         missings = await asyncio.gather(*tasks, return_exceptions=True)
         for r in missings:
@@ -1452,8 +1473,6 @@ async def mine_releases(repos: Iterable[str],
             if isinstance(r, Exception):
                 raise r from None
 
-        # yeah, we have to fetch all the data about all the releases, unfortunately
-        # TODO(vmarkovtsev): traverse DAGs and leave only relevant releases from the past
         all_hashes = []
         for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
             if (repo_releases[Release.published_at.key] < time_from).all():
@@ -1463,10 +1482,11 @@ async def mine_releases(repos: Iterable[str],
             release_timestamps = repo_releases[Release.published_at.key].values
             parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_timestamps)
             ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
-            unmatched = np.where(ownership == len(release_hashes))[0]
-            if len(unmatched) > 0:
-                hashes = np.delete(hashes, unmatched)
-                ownership = np.delete(ownership, unmatched)
+            precomputed = np.where(repo_releases[Release.id.key].isin(precomputed_facts).values)[0]
+            if len(removed := np.where((ownership == len(release_hashes)) |
+                                       np.in1d(ownership, precomputed))[0]) > 0:
+                hashes = np.delete(hashes, removed)
+                ownership = np.delete(ownership, removed)
             order = np.argsort(ownership)
             sorted_hashes = hashes[order]
             sorted_ownership = ownership[order]
@@ -1475,8 +1495,9 @@ async def mine_releases(repos: Iterable[str],
             # fill the gaps for releases with 0 owned commits
             if len(missing := np.setdiff1d(np.arange(len(repo_releases)), unique_owners,
                                            assume_unique=True)):
-                log.warning("%s has releases with 0 commits:\n%s",
-                            repo, repo_releases.take(missing))
+                if len(no_commits := np.setdiff1d(missing, precomputed, assume_unique=True)):
+                    log.warning("%s has releases with 0 commits:\n%s",
+                                repo, repo_releases.take(no_commits))
                 empty = np.array([], dtype="U40")
                 for i in missing:
                     grouped_owned_hashes.insert(i, empty)
@@ -1490,7 +1511,7 @@ async def mine_releases(repos: Iterable[str],
             PushCommit.author_login,
             PushCommit.node_id,
         ]
-        with sentry_sdk.start_span(op="fetch_commits"):
+        with sentry_sdk.start_span(op="mine_releases/fetch_commits"):
             commits_df = await read_sql_query(
                 select(commits_df_columns)
                 .where(PushCommit.sha.in_(np.concatenate(all_hashes) if all_hashes else []))
@@ -1523,7 +1544,7 @@ async def mine_releases(repos: Iterable[str],
             PullRequest.deletions,
             PullRequest.user_login,
         ]
-        with sentry_sdk.start_span(op="fetch_pull_requests"):
+        with sentry_sdk.start_span(op="mine_releases/fetch_pull_requests"):
             prs_df = await read_sql_query(
                 select(prs_columns)
                 .where(PullRequest.merge_commit_id.in_(commit_ids))
