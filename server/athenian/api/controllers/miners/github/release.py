@@ -1072,7 +1072,6 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
     return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
 
 
-@sentry_span
 def _extract_released_commits(releases: pd.DataFrame,
                               dag: Tuple[np.ndarray, np.ndarray, np.ndarray],
                               time_boundary: datetime,
@@ -1385,6 +1384,7 @@ async def mine_releases(repos: Iterable[str],
     releases_in_time_range, matched_bys = await load_releases(
         repos, branches, default_branches, time_from, time_to, settings, mdb, pdb, cache)
     # resolve ambiguous release match settings
+    settings = settings.copy()
     for repo in repos:
         setting = settings[prefix + repo]
         match = ReleaseMatch(matched_bys.get(repo, setting.match))
@@ -1393,6 +1393,8 @@ async def mine_releases(repos: Iterable[str],
             branches=setting.branches,
             match=match,
         )
+    if releases_in_time_range.empty:
+        return [], [], {r: v.match for r, v in settings.items()}
     precomputed_facts = await load_precomputed_release_facts(
         releases_in_time_range, default_branches, settings, pdb)
     # uncomment this to compute releases from scratch
