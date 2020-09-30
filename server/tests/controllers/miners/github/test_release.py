@@ -1047,7 +1047,7 @@ async def test_mine_releases_full_span(mdb, pdb, release_match_setting_tag):
 
 
 @with_defer
-async def test_mine_releases_precomputed(
+async def test_mine_releases_precomputed_smoke(
         mdb, pdb, release_match_setting_tag, release_match_setting_branch,
         branches, default_branches):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
@@ -1059,6 +1059,9 @@ async def test_mine_releases_precomputed(
         ["src-d/go-git"], None, {}, time_from, time_to, release_match_setting_tag, mdb, pdb, None)
     assert len(releases) == 53
     assert len(avatars) == 124
+    releases, avatars, _ = await mine_releases(
+        ["src-d/go-git"], None, {}, time_to, time_to, release_match_setting_tag, mdb, pdb, None)
+    assert len(releases) == 0
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
         release_match_setting_branch, mdb, pdb, None)
