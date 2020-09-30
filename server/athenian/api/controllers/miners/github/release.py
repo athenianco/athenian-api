@@ -94,17 +94,28 @@ async def load_releases(repos: Iterable[str],
     releases = releases.take(np.where(
         releases[Release.published_at.key].between(time_from, time_to))[0])
     settings = settings.copy()
-    prefix = PREFIXES["github"]
-    for k, v in applied_matches.items():
-        s = settings[prefix + k]
-        if s.match == ReleaseMatch.tag_or_branch and v == ReleaseMatch.tag:
-            settings[prefix + k] = ReleaseMatchSetting(
-                tags=s.tags, branches=s.branches, match=ReleaseMatch.tag)
+    for full_repo, setting in settings.items():
+        repo = full_repo.split("/", 1)[1]
+        try:
+            match = applied_matches[repo]
+        except KeyError:
+            # there can be repositories with 0 releases in the range but which are precomputed
+            if setting.match == ReleaseMatch.tag_or_branch:
+                match = ReleaseMatch.branch
+            else:
+                match = setting.match
+            applied_matches[repo] = match
         else:
-            applied_matches[k] = ReleaseMatch(v)
+            if setting.match == ReleaseMatch.tag_or_branch and match == ReleaseMatch.tag:
+                settings[full_repo] = ReleaseMatchSetting(
+                    tags=setting.tags, branches=setting.branches, match=ReleaseMatch.tag)
+            else:
+                applied_matches[repo] = ReleaseMatch(match)
+    prefix = PREFIXES["github"]
     missing_high = []
     missing_low = []
     missing_all = []
+    hits = 0
     for repo in repos:
         try:
             rt_from, rt_to = spans[repo][applied_matches[repo]]
@@ -117,27 +128,37 @@ async def load_releases(repos: Iterable[str],
             # we don't want different release strategies applied to both ends
             missing_all.append(repo)
             continue
+        missed = False
         if time_from < rt_from <= time_to:
             missing_low.append((rt_from, repo))
+            missed = True
         if time_from <= rt_to < time_to:
             missing_high.append((rt_to, repo))
+            missed = True
         if rt_from > time_to or rt_to < time_from:
             missing_all.append(repo)
+            missed = True
+        if not missed:
+            hits += 1
+    add_pdb_hits(pdb, "releases", hits)
     tasks = []
     if missing_high:
         missing_high.sort()
         tasks.append(_load_releases(
             [r for _, r in missing_high], branches, default_branches, missing_high[0][0], time_to,
             settings, mdb, pdb, cache, index=index))
+        add_pdb_misses(pdb, "releases/high", len(missing_high))
     if missing_low:
         missing_low.sort()
         tasks.append(_load_releases(
             [r for _, r in missing_low], branches, default_branches, time_from, missing_low[-1][0],
             settings, mdb, pdb, cache, index=index))
+        add_pdb_misses(pdb, "releases/low", len(missing_low))
     if missing_all:
         tasks.append(_load_releases(
             missing_all, branches, default_branches, time_from, time_to,
             settings, mdb, pdb, cache, index=index))
+        add_pdb_misses(pdb, "releases/all", len(missing_all))
     if tasks:
         missings = await asyncio.gather(*tasks, return_exceptions=True)
         for r in missings:
