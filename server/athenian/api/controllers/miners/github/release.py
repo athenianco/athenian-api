@@ -1452,8 +1452,6 @@ async def mine_releases(repos: Iterable[str],
             if isinstance(r, Exception):
                 raise r from None
 
-        # yeah, we have to fetch all the data about all the releases, unfortunately
-        # TODO(vmarkovtsev): traverse DAGs and leave only relevant releases from the past
         all_hashes = []
         for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
             if (repo_releases[Release.published_at.key] < time_from).all():
@@ -1463,10 +1461,11 @@ async def mine_releases(repos: Iterable[str],
             release_timestamps = repo_releases[Release.published_at.key].values
             parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_timestamps)
             ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
-            unmatched = np.where(ownership == len(release_hashes))[0]
-            if len(unmatched) > 0:
-                hashes = np.delete(hashes, unmatched)
-                ownership = np.delete(ownership, unmatched)
+            precomputed = np.where(repo_releases[Release.id.key].isin(precomputed_facts).values)[0]
+            if len(removed := np.where((ownership == len(release_hashes)) |
+                                       np.in1d(ownership, precomputed))[0]) > 0:
+                hashes = np.delete(hashes, removed)
+                ownership = np.delete(ownership, removed)
             order = np.argsort(ownership)
             sorted_hashes = hashes[order]
             sorted_ownership = ownership[order]
@@ -1475,8 +1474,9 @@ async def mine_releases(repos: Iterable[str],
             # fill the gaps for releases with 0 owned commits
             if len(missing := np.setdiff1d(np.arange(len(repo_releases)), unique_owners,
                                            assume_unique=True)):
-                log.warning("%s has releases with 0 commits:\n%s",
-                            repo, repo_releases.take(missing))
+                if len(no_commits := np.setdiff1d(missing, precomputed, assume_unique=True)):
+                    log.warning("%s has releases with 0 commits:\n%s",
+                                repo, repo_releases.take(no_commits))
                 empty = np.array([], dtype="U40")
                 for i in missing:
                     grouped_owned_hashes.insert(i, empty)
@@ -1490,7 +1490,7 @@ async def mine_releases(repos: Iterable[str],
             PushCommit.author_login,
             PushCommit.node_id,
         ]
-        with sentry_sdk.start_span(op="fetch_commits"):
+        with sentry_sdk.start_span(op="mine_releases/fetch_commits"):
             commits_df = await read_sql_query(
                 select(commits_df_columns)
                 .where(PushCommit.sha.in_(np.concatenate(all_hashes) if all_hashes else []))
@@ -1523,7 +1523,7 @@ async def mine_releases(repos: Iterable[str],
             PullRequest.deletions,
             PullRequest.user_login,
         ]
-        with sentry_sdk.start_span(op="fetch_pull_requests"):
+        with sentry_sdk.start_span(op="mine_releases/fetch_pull_requests"):
             prs_df = await read_sql_query(
                 select(prs_columns)
                 .where(PullRequest.merge_commit_id.in_(commit_ids))
