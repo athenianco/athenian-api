@@ -1459,6 +1459,9 @@ async def mine_releases(repos: Iterable[str],
     repo_releases_analyzed = {}
 
     if missed_releases_count > 0:
+        releases_in_time_range = releases_in_time_range.take(np.where(
+            releases_in_time_range[Release.repository_full_name.key].isin(missing_repos).values,
+        )[0])
         _, releases, _, _ = await _find_releases_for_matching_prs(
             missing_repos, branches, default_branches, time_from, time_to, settings, mdb, pdb,
             cache, releases_in_time_range=releases_in_time_range)
@@ -1491,7 +1494,10 @@ async def mine_releases(repos: Iterable[str],
             sorted_hashes = hashes[order]
             sorted_ownership = ownership[order]
             unique_owners, unique_owned_counts = np.unique(sorted_ownership, return_counts=True)
-            grouped_owned_hashes = np.split(sorted_hashes, np.cumsum(unique_owned_counts)[:-1])
+            if len(unique_owned_counts) == 0:
+                grouped_owned_hashes = []
+            else:
+                grouped_owned_hashes = np.split(sorted_hashes, np.cumsum(unique_owned_counts)[:-1])
             # fill the gaps for releases with 0 owned commits
             if len(missing := np.setdiff1d(np.arange(len(repo_releases)), unique_owners,
                                            assume_unique=True)):
