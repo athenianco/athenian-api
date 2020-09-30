@@ -319,7 +319,7 @@ class Branch(Base,
     is_default = Column(Boolean, nullable=False)
     commit_id = Column(Text, nullable=False)
     commit_sha = Column(Text, nullable=False)
-    commit_date = Column(TIMESTAMP(timezone=True), nullable=False)
+    commit_date = "commit_date"
 
 
 class PullRequestLabel(Base,

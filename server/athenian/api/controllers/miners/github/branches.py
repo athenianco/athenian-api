@@ -3,6 +3,7 @@ import pickle
 from typing import Dict, Iterable, Optional, Tuple
 
 import aiomcache
+import numpy as np
 import pandas as pd
 from sqlalchemy import and_, select
 
@@ -32,10 +33,10 @@ async def extract_branches(repos: Iterable[str],
     log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
     default_branches = {}
     for repo, repo_branches in branches.groupby(Branch.repository_full_name.key, sort=False):
-        try:
-            default_branch = \
-                repo_branches[Branch.branch_name.key][repo_branches[Branch.is_default.key]].iloc[0]
-        except (IndexError, ValueError):
+        default_indexes = np.where(repo_branches[Branch.is_default.key].values)[0]
+        if len(default_indexes) > 0:
+            default_branch = repo_branches[Branch.branch_name.key]._ixs(default_indexes[0])
+        else:
             log.error('failed to find the default branch for "%s": only have %s',
                       repo, repo_branches[[Branch.branch_name.key, Branch.is_default.key]])
             default_branch = "master"

@@ -525,8 +525,22 @@ async def _match_releases_by_branch(repos: Iterable[str],
     if mismatched_repos:
         branches = branches.take(np.where(
             ~branches[Branch.repository_full_name.key].isin(mismatched_repos))[0])
-    dags = await fetch_precomputed_commit_history_dags(branches_matched, pdb, cache)
-    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date.key,
+    commit_ids = branches[Branch.commit_id.key].values
+    tasks = [
+        mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
+                      .where(NodeCommit.id.in_(commit_ids))),
+        fetch_precomputed_commit_history_dags(branches_matched, pdb, cache),
+    ]
+    commit_dates, dags = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (commit_dates, dags):
+        if isinstance(r, Exception):
+            raise r from None
+    commit_dates = {r[0]: r[1] for r in commit_dates}
+    if mdb.url.dialect == "sqlite":
+        commit_dates = {k: v.replace(tzinfo=timezone.utc) for k, v in commit_dates.items()}
+    now = datetime.now(timezone.utc)
+    branches[Branch.commit_date] = [commit_dates.get(commit_id, now) for commit_id in commit_ids]
+    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
             Branch.repository_full_name.key)
     dags = await _fetch_repository_commits(dags, branches, cols, False, mdb, pdb, cache)
     first_shas = [extract_first_parents(*dags[repo], branches[Branch.commit_sha.key].values)
@@ -636,15 +650,19 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     if prs.empty:
         unreleased_prs_event.set()
         return pr_releases, {}, unreleased_prs_event
+    branch_commit_ids = branches[Branch.commit_id.key].values
     tasks = [
+        mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
+                      .where(NodeCommit.id.in_(branch_commit_ids))),
         load_merged_unreleased_pull_request_facts(
             prs, nonemax(releases[Release.published_at.key].nonemax(), time_to),
             LabelFilter.empty(), matched_bys, default_branches, release_settings, pdb),
         load_precomputed_pr_releases(
             prs.index, time_to, matched_bys, default_branches, release_settings, pdb, cache),
     ]
-    unreleased_prs, precomputed_pr_releases = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (unreleased_prs, precomputed_pr_releases):
+    branch_commit_dates, unreleased_prs, precomputed_pr_releases = await asyncio.gather(
+        *tasks, return_exceptions=True)
+    for r in (branch_commit_dates, unreleased_prs, precomputed_pr_releases):
         if isinstance(r, Exception):
             raise r from None
     add_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
@@ -654,6 +672,13 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     if merged_prs.empty:
         unreleased_prs_event.set()
         return pr_releases, unreleased_prs, unreleased_prs_event
+    branch_commit_dates = {r[0]: r[1] for r in branch_commit_dates}
+    if mdb.url.dialect == "sqlite":
+        branch_commit_dates = {k: v.replace(tzinfo=timezone.utc)
+                               for k, v in branch_commit_dates.items()}
+    now = datetime.now(timezone.utc)
+    branches[Branch.commit_date] = [branch_commit_dates.get(commit_id, now)
+                                    for commit_id in branch_commit_ids]
     tasks = [
         _fetch_labels(merged_prs.index, mdb),
         _find_dead_merged_prs(merged_prs, dags, branches, mdb, pdb, cache),
@@ -752,7 +777,7 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
     rfnkey = PullRequest.repository_full_name.key
     mchkey = PullRequest.merge_commit_sha.key
     dead_prs = []
-    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date.key,
+    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
             Branch.repository_full_name.key)
     dags = await _fetch_repository_commits(dags, branches, cols, True, mdb, pdb, cache)
     for repo, repo_prs in prs[[mchkey, rfnkey]].groupby(rfnkey, sort=False):
