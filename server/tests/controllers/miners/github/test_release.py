@@ -30,8 +30,8 @@ from athenian.api.controllers.miners.github.release_accelerated import extract_s
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestLabel, \
-    Release
+from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, \
+    PullRequestLabel, Release
 from athenian.api.models.precomputed.models import GitHubCommitHistory
 from tests.controllers.conftest import fetch_dag
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
@@ -99,8 +99,9 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
     await dummy_mdb.connect()
     try:
         # https://github.com/encode/databases/issues/40
-        await dummy_mdb.execute(CreateTable(PullRequestLabel.__table__).compile(
-            dialect=dummy_mdb._backend._dialect).string)
+        for table in (PullRequestLabel, NodeCommit):
+            await dummy_mdb.execute(CreateTable(table.__table__).compile(
+                dialect=dummy_mdb._backend._dialect).string)
         released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
             dummy_mdb, pdb, None)
@@ -168,8 +169,9 @@ async def test_map_prs_to_releases_precomputed_released(
     await dummy_mdb.connect()
     try:
         # https://github.com/encode/databases/issues/40
-        await dummy_mdb.execute(CreateTable(PullRequestLabel.__table__).compile(
-            dialect=dummy_mdb._backend._dialect).string)
+        for table in (PullRequestLabel, NodeCommit):
+            await dummy_mdb.execute(CreateTable(table.__table__).compile(
+                dialect=dummy_mdb._backend._dialect).string)
         with pytest.raises(Exception):
             await map_prs_to_releases(
                 prs, releases, matched_bys, branches, default_branches, time_to, dag,
@@ -781,7 +783,15 @@ async def test__fetch_repository_commits_many(mdb, pdb):
 @with_defer
 async def test__fetch_repository_commits_full(mdb, pdb, dag, cache):
     branches, _ = await extract_branches(dag, mdb, None)
-    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date.key,
+    commit_ids = branches[Branch.commit_id.key].values
+    commit_dates = await mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
+                                       .where(NodeCommit.id.in_(commit_ids)))
+    commit_dates = {r[0]: r[1] for r in commit_dates}
+    if mdb.url.dialect == "sqlite":
+        commit_dates = {k: v.replace(tzinfo=timezone.utc) for k, v in commit_dates.items()}
+    now = datetime.now(timezone.utc)
+    branches[Branch.commit_date] = [commit_dates.get(commit_id, now) for commit_id in commit_ids]
+    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
             Branch.repository_full_name.key)
     commits = await _fetch_repository_commits(dag, branches, cols, False, mdb, pdb, cache)
     await wait_deferred()
@@ -805,6 +815,7 @@ async def test__find_dead_merged_prs_smoke(mdb, pdb, dag):
         mdb, PullRequest, index=PullRequest.node_id.key)
     branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
     branches = branches.iloc[:1]
+    branches[Branch.commit_date] = [datetime.now(timezone.utc)]
     dead_prs = await _find_dead_merged_prs(prs, dag, branches, mdb, pdb, None)
     assert len(dead_prs) == 159
     assert dead_prs[Release.published_at.key].isnull().all()
@@ -822,6 +833,7 @@ async def test__find_dead_merged_prs_no_branches(mdb, pdb, dag):
     branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
     branches = branches.iloc[:1]
     branches[Branch.repository_full_name.key] = "xxx"
+    branches[Branch.commit_date] = [datetime.now(timezone.utc)]
     dags = dag.copy()
     dags["xxx"] = _empty_dag()
     dead_prs = await _find_dead_merged_prs(prs, dags, branches, mdb, pdb, None)

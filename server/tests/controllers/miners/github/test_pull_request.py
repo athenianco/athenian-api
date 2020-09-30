@@ -24,7 +24,7 @@ from athenian.api.controllers.miners.types import MinedPullRequest, Participatio
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 import athenian.api.db
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.models.metadata.github import PullRequest
+from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts
 from tests.conftest import has_memcached
@@ -642,19 +642,22 @@ async def test_pr_miner_unreleased_pdb(mdb, pdb, release_match_setting_tag):
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     miner_incomplete, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
-        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), pd.DataFrame(), {}, False,
+        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
         release_match_setting_tag, mdb, pdb, None)
     time_from_lookback = time_from - timedelta(days=60)
     await wait_deferred()
     # populate pdb
     await PullRequestMiner.mine(
         time_from_lookback.date(), time_to.date(), time_from_lookback, time_to,
-        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), pd.DataFrame(), {}, False,
+        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
         release_match_setting_tag, mdb, pdb, None)
     await wait_deferred()
     miner_complete, facts, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
-        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), pd.DataFrame(), {}, False,
+        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
         release_match_setting_tag, mdb, pdb, None)
     assert isinstance(facts, dict)
     assert len(facts) == 0
@@ -663,7 +666,8 @@ async def test_pr_miner_unreleased_pdb(mdb, pdb, release_match_setting_tag):
     assert len(miner_complete._dfs.prs) == 19 + 42
     miner_active, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
-        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), pd.DataFrame(), {}, True,
+        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, True,
         release_match_setting_tag, mdb, pdb, None)
     assert len(miner_active._dfs.prs) <= 19
 
@@ -675,53 +679,62 @@ async def test_pr_miner_labels_torture(mdb, pdb, release_match_setting_tag, cach
     miner, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
-        pd.DataFrame(), {}, False, release_match_setting_tag, mdb, pdb, None)
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
+        release_match_setting_tag, mdb, pdb, None)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.key] for pr in prs} == {887, 921, 958, 947, 950, 949}
     miner, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
-        pd.DataFrame(), {}, False, release_match_setting_tag, mdb, pdb, cache)
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
+        release_match_setting_tag, mdb, pdb, cache)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.key] for pr in prs} == {887, 921, 958, 947, 950, 949}
     miner, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "plumbing"}, set()), JIRAFilter.empty(),
-        pd.DataFrame(), {}, False, release_match_setting_tag, mdb, pdb, cache)
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
+        release_match_setting_tag, mdb, pdb, cache)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.key] for pr in prs} == {921, 940, 946, 950, 958}
     await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
-        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), pd.DataFrame(), {}, False,
+        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
         release_match_setting_tag, mdb, pdb, cache)
     miner, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "plumbing"}, set()), JIRAFilter.empty(),
-        pd.DataFrame(), {}, False, release_match_setting_tag, None, None, cache)
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
+        release_match_setting_tag, None, None, cache)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.key] for pr in prs} == {921, 940, 946, 950, 958}
     miner, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug"}, set()), JIRAFilter.empty(),
-        pd.DataFrame(), {}, False, release_match_setting_tag, None, None, cache)
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
+        release_match_setting_tag, None, None, cache)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.key] for pr in prs} == {921, 950, 958}
     miner, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "plumbing"}, {"plumbing"}), JIRAFilter.empty(),
-        pd.DataFrame(), {}, False, release_match_setting_tag, None, None, cache)
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
+        release_match_setting_tag, None, None, cache)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.key] for pr in prs} == {921}
     miner, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "plumbing"}, {"plumbing"}), JIRAFilter.empty(),
-        pd.DataFrame(), {}, False, release_match_setting_tag, mdb, pdb, None)
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
+        release_match_setting_tag, mdb, pdb, None)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.key] for pr in prs} == {921}
     miner, _, _, event = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug"}, {"plumbing"}), JIRAFilter.empty(),
-        pd.DataFrame(), {}, False, release_match_setting_tag, None, None, cache)
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
+        release_match_setting_tag, None, None, cache)
     assert event.is_set()
     prs = list(miner)
     assert {pr.pr[PullRequest.number.key] for pr in prs} == {921}
@@ -735,13 +748,15 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, release_match_setting_tag):
     # populate pdb
     await PullRequestMiner.mine(
         time_from_lookback.date(), time_to.date(), time_from_lookback, time_to,
-        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(), pd.DataFrame(), {}, False,
+        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
         release_match_setting_tag, mdb, pdb, None)
     await wait_deferred()
     miner_complete, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug"}, set()), JIRAFilter.empty(),
-        pd.DataFrame(), {}, False, release_match_setting_tag, mdb, pdb, None,
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
+        release_match_setting_tag, mdb, pdb, None,
         pr_blacklist=["MDExOlB1bGxSZXF1ZXN0MjA5MjA0MDQz",
                       "MDExOlB1bGxSZXF1ZXN0MjE2MTA0NzY1",
                       "MDExOlB1bGxSZXF1ZXN0MjEzODQ1NDUx"])
@@ -750,7 +765,8 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, release_match_setting_tag):
     miner_complete, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug"}, {"ssh"}), JIRAFilter.empty(),
-        pd.DataFrame(), {}, False, release_match_setting_tag, mdb, pdb, None,
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
+        release_match_setting_tag, mdb, pdb, None,
         pr_blacklist=["MDExOlB1bGxSZXF1ZXN0MjA5MjA0MDQz",
                       "MDExOlB1bGxSZXF1ZXN0MjE2MTA0NzY1",
                       "MDExOlB1bGxSZXF1ZXN0MjEzODQ1NDUx"])
@@ -759,7 +775,8 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, release_match_setting_tag):
     miner_complete, _, _, _ = await PullRequestMiner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug"}, set()), JIRAFilter.empty(),
-        pd.DataFrame(), {}, True, release_match_setting_tag, mdb, pdb, None)
+        pd.DataFrame(columns=[Branch.commit_id.key]), {}, True,
+        release_match_setting_tag, mdb, pdb, None)
     assert len(miner_complete._dfs.prs) == 0
 
 

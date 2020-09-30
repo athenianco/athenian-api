@@ -26,7 +26,7 @@ from athenian.api.controllers.miners.types import MinedPullRequest, Participatio
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, Release
+from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestCommit, Release
 from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts
 
 
@@ -537,7 +537,7 @@ async def test_discover_update_unreleased_prs_released(
         release_match_setting_tag,
         mdb, pdb, None)
     released_prs, _, _ = await map_prs_to_releases(
-        prs, releases, matched_bys, pd.DataFrame(), {}, time_to, dag,
+        prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {}, time_to, dag,
         release_match_setting_tag, mdb, pdb, None)
     await wait_deferred()
     await update_unreleased_prs(
@@ -595,7 +595,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
         release_match_setting_tag, mdb, pdb, cache)
     await wait_deferred()
     released_prs, _, _ = await map_prs_to_releases(
-        unreleased_prs, releases, matched_bys, pd.DataFrame(), {},
+        unreleased_prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {},
         unreleased_time_to, dag, release_match_setting_tag, mdb, pdb, cache)
     await wait_deferred()
     assert released_prs.empty
