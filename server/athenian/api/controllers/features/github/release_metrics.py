@@ -2,12 +2,14 @@ from datetime import datetime, timedelta
 from typing import Dict, Generic, Sequence, Type
 
 import numpy as np
+import pandas as pd
 
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import T
 from athenian.api.controllers.settings import ReleaseMatch
+from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.web import ReleaseMetricID
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
@@ -67,7 +69,7 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
         published = facts["published"].values
         return (min_time <= published) & (published < max_time)
 
-    def _extract(self, facts: np.ndarray) -> np.ndarray:
+    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         raise NotImplementedError
 
 
@@ -93,7 +95,7 @@ class ReleaseCounterMixin:
     may_have_negative_values = False
     dtype = int
 
-    def _extract(self, facts: np.ndarray) -> np.ndarray:
+    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return np.full(len(facts), 1)
 
 
@@ -103,8 +105,8 @@ class ReleasePRsMixin:
     may_have_negative_values = False
     dtype = int
 
-    def _extract(self, facts: np.ndarray) -> np.ndarray:
-        return np.array([len(prs) for prs in facts["prs"].values])
+    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
+        return np.array([len(prs[PullRequest.number.key]) for prs in facts["prs"].values])
 
 
 class ReleaseCommitsMixin:
@@ -113,7 +115,7 @@ class ReleaseCommitsMixin:
     may_have_negative_values = False
     dtype = int
 
-    def _extract(self, facts: np.ndarray) -> np.ndarray:
+    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return facts["commits_count"].values
 
 
@@ -123,7 +125,7 @@ class ReleaseLinesMixin:
     may_have_negative_values = False
     dtype = int
 
-    def _extract(self, facts: np.ndarray) -> np.ndarray:
+    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return facts["additions"].values + facts["deletions"].values
 
 
@@ -133,7 +135,7 @@ class ReleaseAgeMixin:
     may_have_negative_values = False
     dtype = "timedelta64[s]"
 
-    def _extract(self, facts: np.ndarray) -> np.ndarray:
+    def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return facts["age"].values.astype(self.dtype).view(int)
 
 

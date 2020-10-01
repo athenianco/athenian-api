@@ -300,7 +300,7 @@ class ReleaseFacts:
     additions: int
     deletions: int
     commits_count: int
-    prs: pd.DataFrame
+    prs: Dict[str, np.ndarray]
     commit_authors: List[str]
 
     def max_timestamp(self) -> datetime:

@@ -1456,7 +1456,7 @@ async def mine_releases(repos: Iterable[str],
     release_authors = releases_in_time_range[Release.author.key].values
     release_authors = prefix + release_authors[release_authors.nonzero()[0]]
     mentioned_authors = (
-        [f.prs[PullRequest.user_login.key].values for f in precomputed_facts.values()
+        [f.prs[PullRequest.user_login.key] for f in precomputed_facts.values()
          if time_from <= f.published < time_to] +
         [f.commit_authors for f in precomputed_facts.values()
          if time_from <= f.published < time_to]
@@ -1608,13 +1608,13 @@ async def mine_releases(repos: Iterable[str],
                         my_prs_indexes = np.array([], dtype=int)
                     my_prs_authors = prs_authors[my_prs_indexes]
                     mentioned_authors.update(my_prs_authors[my_prs_authors.nonzero()[0]])
-                    my_prs = pd.DataFrame(dict(zip(
+                    my_prs = dict(zip(
                         [c.key for c in prs_columns[1:]],
                         [prs_numbers[my_prs_indexes],
                          prs_titles[my_prs_indexes],
                          prs_additions[my_prs_indexes],
                          prs_deletions[my_prs_indexes],
-                         my_prs_authors])))
+                         my_prs_authors]))
                     my_commit_authors = my_commit_authors[my_commit_authors.nonzero()[0]].tolist()
                     mentioned_authors.update(my_commit_authors)
                     parent = parents[i]

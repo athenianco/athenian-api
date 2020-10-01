@@ -150,7 +150,7 @@ class GitHubReleaseFacts(Base):
 
     id = Column(Text, primary_key=True)
     release_match = Column(Text(), primary_key=True)
-    format_version = Column(Integer(), primary_key=True, default=1, server_default="1")
+    format_version = Column(Integer(), primary_key=True, default=2, server_default="2")
     repository_full_name = Column(RepositoryFullName, nullable=False)
     published_at = Column(TIMESTAMP(timezone=True), nullable=False)
     data = Column(LargeBinary(), nullable=False)
