@@ -1169,7 +1169,7 @@ async def map_releases_to_prs(repos: Collection[str],
 
     tasks = [
         _find_releases_for_matching_prs(repos, branches, default_branches, time_from, time_to,
-                                        release_settings, mdb, pdb, cache),
+                                        not truncate, release_settings, mdb, pdb, cache),
         fetch_precomputed_commit_history_dags(repos, pdb, cache),
     ]
     matching_releases, pdags = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1178,52 +1178,25 @@ async def map_releases_to_prs(repos: Collection[str],
             raise r from None
     matched_bys, releases, releases_in_time_range, release_settings = matching_releases
 
-    def concat_releases(releases_new: pd.DataFrame,
-                        releases_today: pd.DataFrame,
-                        ) -> pd.DataFrame:
-        releases_concat = releases_today.append(releases_new)
-        releases_concat.reset_index(drop=True, inplace=True)
-        return releases_concat
-
-    async def main_flow():
-        # ensure that our DAGs contain all the mentioned releases
-        rpak = Release.published_at.key
-        rrfnk = Release.repository_full_name.key
-        cols = (Release.sha.key, Release.commit_id.key, rpak, rrfnk)
-        dags = await _fetch_repository_commits(pdags, releases, cols, False, mdb, pdb, cache)
-        clauses = []
-        # find the released commit hashes by two DAG traversals
-        with sentry_sdk.start_span(op="_generate_released_prs_clause"):
-            for repo, repo_releases in releases.groupby(rrfnk, sort=False):
-                if (repo_releases[rpak] >= time_from).any():
-                    observed_commits = _extract_released_commits(
-                        repo_releases, dags[repo], time_from)
-                    if len(observed_commits):
-                        clauses.append(and_(
-                            PullRequest.repository_full_name == repo,
-                            PullRequest.merge_commit_sha.in_any_values(observed_commits),
-                        ))
-        prs = await _find_old_released_prs(
-            clauses, time_from, authors, mergers, jira, limit, pr_blacklist, mdb)
-        return prs, dags
-
-    async def maybe_load_all_releases():
-        if truncate:
-            return releases_in_time_range
-        today = datetime.combine((datetime.now(timezone.utc) + timedelta(days=1)).date(),
-                                 datetime.min.time(), tzinfo=timezone.utc)
-        if today > time_to:
-            releases_today, _ = await load_releases(
-                repos, branches, default_branches, time_to, today, release_settings,
-                mdb, pdb, cache)
-            return concat_releases(releases_in_time_range, releases_today)
-        return releases_in_time_range
-
-    results = await asyncio.gather(main_flow(), maybe_load_all_releases(), return_exceptions=True)
-    for r in results:
-        if isinstance(r, Exception):
-            raise r from None
-    (prs, dags), releases_in_time_range = results
+    # ensure that our DAGs contain all the mentioned releases
+    rpak = Release.published_at.key
+    rrfnk = Release.repository_full_name.key
+    cols = (Release.sha.key, Release.commit_id.key, rpak, rrfnk)
+    dags = await _fetch_repository_commits(pdags, releases, cols, False, mdb, pdb, cache)
+    clauses = []
+    # find the released commit hashes by two DAG traversals
+    with sentry_sdk.start_span(op="_generate_released_prs_clause"):
+        for repo, repo_releases in releases.groupby(rrfnk, sort=False):
+            if (repo_releases[rpak] >= time_from).any():
+                observed_commits = _extract_released_commits(
+                    repo_releases, dags[repo], time_from)
+                if len(observed_commits):
+                    clauses.append(and_(
+                        PullRequest.repository_full_name == repo,
+                        PullRequest.merge_commit_sha.in_any_values(observed_commits),
+                    ))
+    prs = await _find_old_released_prs(
+        clauses, time_from, authors, mergers, jira, limit, pr_blacklist, mdb)
     return prs, releases_in_time_range, matched_bys, dags
 
 
@@ -1233,6 +1206,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                                           default_branches: Dict[str, str],
                                           time_from: datetime,
                                           time_to: datetime,
+                                          until_today: bool,
                                           release_settings: Dict[str, ReleaseMatchSetting],
                                           mdb: databases.Database,
                                           pdb: databases.Database,
@@ -1242,6 +1216,15 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                                                      pd.DataFrame,
                                                      pd.DataFrame,
                                                      Dict[str, ReleaseMatchSetting]]:
+    """
+    Load releases with sufficient history depth.
+
+    1. Load releases between `time_from` and `time_to`, record the effective release matches.
+    2. Use those matches to load enough releases before `time_from` to ensure we don't get \
+       "release leakages" in the commit DAG. Ideally, we should use the DAGs, but we take risks \
+       and just set a long enough lookbehind time interval.
+    3. Optionally, use those matches to load all the releases after `time_to`.
+    """
     if releases_in_time_range is None:
         # we have to load releases in two separate batches: before and after time_from
         # that's because the release strategy can change depending on the time range
@@ -1268,6 +1251,21 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
             repos_matched_by_tag.append(repo)
         elif match == ReleaseMatch.branch:
             repos_matched_by_branch.append(repo)
+
+    async def dummy_load_releases_until_today() -> Tuple[pd.DataFrame, Any]:
+        return dummy_releases_df(), None
+
+    until_today_task = None
+    if until_today:
+        today = datetime.combine((datetime.now(timezone.utc) + timedelta(days=1)).date(),
+                                 datetime.min.time(), tzinfo=timezone.utc)
+        if today > time_to:
+            until_today_task = load_releases(
+                repos, branches, default_branches, time_to, today, consistent_release_settings,
+                mdb, pdb, cache)
+    if until_today_task is None:
+        until_today_task = dummy_load_releases_until_today()
+
     # there are two groups of repos now: matched by tag and by branch
     # we have to fetch *all* the tags from the past because:
     # some repos fork a new branch for each release and make a unique release commit
@@ -1285,6 +1283,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
     # find tag releases not older than 2 years before `time_from`
     tag_lookbehind_time_from = time_from - timedelta(days=2 * 365)
     tasks = [
+        until_today_task,
         load_releases(repos_matched_by_branch, branches, default_branches,
                       branch_lookbehind_time_from, time_from, consistent_release_settings,
                       mdb, pdb, cache),
@@ -1293,11 +1292,12 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                       mdb, pdb, cache),
         _fetch_repository_first_commit_dates(repos_matched_by_branch, mdb, pdb, cache),
     ]
-    releases_old_branches, releases_old_tags, repo_births = await asyncio.gather(
+    releases_today, releases_old_branches, releases_old_tags, repo_births = await asyncio.gather(
         *tasks, return_exceptions=True)
-    for r in (repo_births, releases_old_branches, releases_old_tags):
+    for r in (releases_today, releases_old_branches, releases_old_tags, repo_births):
         if isinstance(r, Exception):
             raise r from None
+    releases_today = releases_today[0]
     releases_old_branches = releases_old_branches[0]
     releases_old_tags = releases_old_tags[0]
     hard_repos = set(repos_matched_by_branch) - \
@@ -1324,10 +1324,14 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                 del extra_releases
                 branch_lookbehind_time_from -= deeper_step
                 deeper_step *= 2
-    releases = pd.concat([releases_in_time_range, releases_old_branches, releases_old_tags],
+    releases = pd.concat([releases_today, releases_in_time_range,
+                          releases_old_branches, releases_old_tags],
                          ignore_index=True, copy=False)
     releases.sort_values(Release.published_at.key,
                          inplace=True, ascending=False, ignore_index=True)
+    if not releases_today.empty:
+        releases_in_time_range = pd.concat([releases_today, releases_in_time_range],
+                                           ignore_index=True, copy=False)
     return matched_bys, releases, releases_in_time_range, consistent_release_settings
 
 
@@ -1471,8 +1475,8 @@ async def mine_releases(repos: Iterable[str],
             releases_in_time_range[Release.repository_full_name.key].isin(missing_repos).values,
         )[0])
         _, releases, _, _ = await _find_releases_for_matching_prs(
-            missing_repos, branches, default_branches, time_from, time_to, settings, mdb, pdb,
-            cache, releases_in_time_range=releases_in_time_range)
+            missing_repos, branches, default_branches, time_from, time_to, False,
+            settings, mdb, pdb, cache, releases_in_time_range=releases_in_time_range)
         tasks = [
             load_commit_dags(releases, mdb, pdb, cache),
             _fetch_repository_first_commit_dates(missing_repos, mdb, pdb, cache),
