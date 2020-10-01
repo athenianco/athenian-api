@@ -1393,7 +1393,6 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
     deserialize=pickle.loads,
     key=lambda repos, time_from, time_to, settings, **_: (
         ",".join(sorted(repos)), time_from, time_to, settings),
-    version=2,
 )
 async def mine_releases(repos: Iterable[str],
                         branches: pd.DataFrame,

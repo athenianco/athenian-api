@@ -1,6 +1,7 @@
 import pickle
 
 from aiohttp.web_runner import GracefulExit
+import lz4.frame
 import pytest
 
 from athenian.api import Auth0
@@ -35,7 +36,7 @@ async def test_cache_userinfo(cache, loop):
     }
     user = User.from_auth0(**profile)
     await cache.set(gen_cache_key("athenian.api.auth.Auth0._get_user_info_cached|1|whatever"),
-                    pickle.dumps(user))
+                    lz4.frame.compress(pickle.dumps(user)))
     user = await auth0._get_user_info("whatever")
     assert user.name == "Eiso Kant"
     assert user.login == "eiso"

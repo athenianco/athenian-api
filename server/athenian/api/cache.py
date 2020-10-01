@@ -9,6 +9,7 @@ from typing import Any, Callable, Coroutine, Mapping, Optional, Tuple, Union
 
 from aiohttp import web
 import aiomcache
+import lz4.frame
 from prometheus_client import CollectorRegistry, Counter, Histogram
 from prometheus_client.utils import INF
 from xxhash import xxh64_hexdigest
@@ -28,7 +29,7 @@ class CancelCache(Exception):
 
 def gen_cache_key(fmt: str, *args) -> bytes:
     """Compose a memcached-friendly cache key from a printf-like."""
-    full_key = (fmt % args).encode()
+    full_key = (fmt % args).encode() + b"_lz4"  # FIXME(vmarkovtsev): remove _lz4 once we migrate
     first_half = xxh64_hexdigest(full_key[:len(full_key) // 2])
     second_half = xxh64_hexdigest(full_key[len(full_key) // 2:])
     return (first_half + second_half).encode()
@@ -110,7 +111,7 @@ def cached(exptime: Union[int, Callable[..., int]],
                     buffer = None
                 if buffer is not None:
                     try:
-                        result = deserialize(buffer)
+                        result = deserialize(lz4.frame.decompress(buffer))
                     except Exception as e:
                         log.error("Failed to deserialize cached %s/%s: %s: %s",
                                   full_name, cache_key.decode(), type(e).__name__, e)
@@ -145,7 +146,9 @@ def cached(exptime: Union[int, Callable[..., int]],
             if cache_key is not None:
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
                 try:
-                    payload = serialize(result)
+                    payload = lz4.frame.compress(serialize(result),
+                                                 block_size=lz4.frame.BLOCKSIZE_MAX1MB,
+                                                 compression_level=6)
                 except Exception as e:
                     log.error("Failed to serialize %s/%s: %s: %s",
                               full_name, cache_key.decode(), type(e).__name__, e)

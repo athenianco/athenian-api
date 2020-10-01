@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import logging
 import os
 from pathlib import Path
+import random
 import shutil
 import tempfile
 import time
@@ -388,3 +389,18 @@ async def pdb(precomputed_db, loop, request):
 
     request.addfinalizer(shutdown)
     return db
+
+
+def pytest_addoption(parser):
+    parser.addoption("--limit", action="store", default=-1, type=float,
+                     help="Max number of tests to run.")
+
+
+def pytest_collection_modifyitems(session, config, items):
+    limit = config.getoption("--limit")
+    if limit >= 0:
+        random.seed()
+        if limit < 1:
+            limit = len(items) * limit
+        limit = int(limit)
+        items[:] = random.sample(items, limit)
