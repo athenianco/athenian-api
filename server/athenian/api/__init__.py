@@ -169,10 +169,9 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
         Sentry."""
         api_req = await super().get_request(req)
 
-        transaction = sentry_sdk.Hub.current.scope.transaction
-        if transaction is not None and transaction.sampled:
+        if sentry_sdk.Hub.current.scope.transaction is not None:
             body = req._read_bytes
-            if body is not None and len(body) > 0:  # MAX_SENTRY_STRING_LENGTH:
+            if body is not None and len(body) > MAX_SENTRY_STRING_LENGTH:
                 body_id = log_multipart(aiohttp_api.logger, body)
                 req._read_bytes = ('"%s"' % body_id).encode()
 
