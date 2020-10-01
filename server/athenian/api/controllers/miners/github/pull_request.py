@@ -162,7 +162,6 @@ class PullRequestMiner:
             limit, ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []), truncate,
         ),
         postprocess=_postprocess_cached_prs,
-        version=2,
     )
     async def _mine(cls,
                     date_from: date,
@@ -280,7 +279,6 @@ class PullRequestMiner:
             ",".join(releases[Release.id.key].values), time_to.timestamp(),
             truncate,
         ),
-        version=2,
     )
     async def mine_by_ids(cls,
                           prs: pd.DataFrame,
