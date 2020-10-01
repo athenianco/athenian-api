@@ -1040,7 +1040,7 @@ async def test_mine_releases_full_span(mdb, pdb, release_match_setting_tag):
         assert facts.additions > 0
         assert facts.deletions > 0
         assert facts.commits_count > 0
-        assert not facts.prs.empty or facts.published <= pd.Timestamp(
+        assert len(facts.prs[PullRequest.number.key]) or facts.published <= pd.Timestamp(
             "2017-02-01 09:51:10+0000", tz="UTC")
         assert time_from < facts.published < time_to
         assert facts.matched_by == ReleaseMatch.tag

@@ -3,13 +3,13 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import operator
-from typing import List, Optional, Set, Union
+from typing import Dict, List, Optional, Set, Union
 
 from aiohttp import web
 import aiomcache
 import databases
 from dateutil.parser import parse as parse_datetime
-import pandas as pd
+import numpy as np
 
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
@@ -290,7 +290,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     return model_response(model)
 
 
-def _extract_release_prs(prs: pd.DataFrame) -> List[ReleasedPullRequest]:
+def _extract_release_prs(prs: Dict[str, np.ndarray]) -> List[ReleasedPullRequest]:
     return [
         ReleasedPullRequest(
             number=number,
@@ -300,11 +300,11 @@ def _extract_release_prs(prs: pd.DataFrame) -> List[ReleasedPullRequest]:
             author=author,
         )
         for number, title, adds, dels, author in zip(
-            prs[PullRequest.number.key].values,
-            prs[PullRequest.title.key].values,
-            prs[PullRequest.additions.key].values,
-            prs[PullRequest.deletions.key].values,
-            prs[PullRequest.user_login.key].values,
+            prs[PullRequest.number.key],
+            prs[PullRequest.title.key],
+            prs[PullRequest.additions.key],
+            prs[PullRequest.deletions.key],
+            prs[PullRequest.user_login.key],
         )
     ]
 
