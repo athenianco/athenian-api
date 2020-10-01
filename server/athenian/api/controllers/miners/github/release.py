@@ -48,6 +48,7 @@ from athenian.api.models.precomputed.models import GitHubReleaseMatchTimespan, G
 from athenian.api.tracing import sentry_span
 
 tag_by_branch_probe_lookaround = timedelta(weeks=4)
+unfresh_releases_threshold = 50
 
 
 @sentry_span
@@ -73,8 +74,10 @@ async def load_releases(repos: Iterable[str],
     assert isinstance(pdb, databases.Database)
     assert time_from <= time_to
 
+    log = logging.getLogger("%s.load_releases" % metadata.__package__)
     match_groups, repos_count = _group_repos_by_release_match(repos, default_branches, settings)
     if repos_count == 0:
+        log.warning("No repositories")
         return dummy_releases_df(), {}
     tasks = [
         _fetch_precomputed_releases(
@@ -93,6 +96,12 @@ async def load_releases(repos: Iterable[str],
     )[matched_by_column].nth(0).to_dict()
     releases = releases.take(np.where(
         releases[Release.published_at.key].between(time_from, time_to))[0])
+    if repos_count > unfresh_releases_threshold and \
+            time_to > (max_time_to := datetime.now(timezone.utc).replace(minute=0, second=0)):
+        log.warning("Activated the unfresh mode for a set of %d repositories", repos_count)
+        adjusted_time_to = max_time_to
+    else:
+        adjusted_time_to = time_to
     settings = settings.copy()
     for full_repo, setting in settings.items():
         repo = full_repo.split("/", 1)[1]
@@ -123,19 +132,19 @@ async def load_releases(repos: Iterable[str],
             missing_all.append(repo)
             continue
         assert rt_from <= rt_to
-        if time_from < rt_from and time_to > rt_to and \
+        if time_from < rt_from and adjusted_time_to > rt_to and \
                 settings[prefix + repo].match == ReleaseMatch.tag_or_branch:
             # we don't want different release strategies applied to both ends
             missing_all.append(repo)
             continue
         missed = False
-        if time_from < rt_from <= time_to:
+        if time_from < rt_from <= adjusted_time_to:
             missing_low.append((rt_from, repo))
             missed = True
-        if time_from <= rt_to < time_to:
+        if time_from <= rt_to < adjusted_time_to:
             missing_high.append((rt_to, repo))
             missed = True
-        if rt_from > time_to or rt_to < time_from:
+        if rt_from > adjusted_time_to or rt_to < time_from:
             missing_all.append(repo)
             missed = True
         if not missed:
