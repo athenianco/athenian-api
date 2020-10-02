@@ -82,7 +82,15 @@ def calculate_histogram(samples: np.ndarray,
                              samples[samples <= 0])
         samples = np.log(samples)
     if ticks is not None:
-        bins = np.concatenate([[samples.min()], ticks, [samples.max()]])
+        min_bin, max_bin = samples.min(), samples.max()
+        bins = []
+        if min_bin < ticks[0]:
+            bins.append([min_bin])
+        bins.append(ticks)
+        if max_bin > ticks[-1]:
+            bins.append([max_bin])
+
+        bins = np.concatenate(bins)
     elif not bins:
         # find the best number of bins
         # "auto" uses Sturges which is worse than Doane
