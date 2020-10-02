@@ -10,7 +10,7 @@ from athenian.api.controllers.metrics_controller import compile_repos_and_devs_p
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.web import InvalidRequestError
 from athenian.api.models.web.calculated_pull_request_histogram import \
-    CalculatedPullRequestHistogram
+    CalculatedPullRequestHistogram, Interquartile
 from athenian.api.models.web.pull_request_histograms_request import PullRequestHistogramsRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response
@@ -61,7 +61,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                     scale=histogram.scale.name.lower(),
                     ticks=histogram.ticks,
                     frequencies=histogram.frequencies,
-                    interquartile=histogram.interquartile,
+                    interquartile=Interquartile(*histogram.interquartile),
                 ))
 
     tasks = []

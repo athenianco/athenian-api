@@ -3,7 +3,8 @@ import itertools
 import pytest
 
 from athenian.api import FriendlyJson
-from athenian.api.models.web import CalculatedPullRequestHistogram, PullRequestMetricID
+from athenian.api.models.web import CalculatedPullRequestHistogram, Interquartile, \
+    PullRequestMetricID
 
 
 @pytest.mark.parametrize(
@@ -14,21 +15,21 @@ from athenian.api.models.web import CalculatedPullRequestHistogram, PullRequestM
                            "17799s", "36261s", "73870s", "150489s", "306576s", "624554s",
                            "1272338s", "2591999s"],
                           [4, 4, 10, 18, 15, 22, 20, 20, 17, 27, 34, 53, 63, 73, 298],
-                          ["87510s", "2592000s"]),
+                          {"left": "87510s", "right": "2592000s"}),
                          (["1368s", "1874s", "2567s", "3516s", "4815s", "6594s", "9030s",
                            "12366s", "16936s", "23193s", "31762s", "43497s", "59568s", "81577s",
                            "111717s", "152993s", "209519s", "286929s", "392940s", "538119s",
                            "736935s", "1009208s", "1382077s", "1892708s", "2591999s"],
                           [1, 0, 1, 1, 1, 2, 0, 1, 1, 2, 5, 0, 3, 4, 2, 7, 13, 16, 8, 22, 28, 17,
                            33, 216],
-                          ["801217s", "2592000s"])]),
+                          {"left": "801217s", "right": "2592000s"})]),
                     [(PullRequestMetricID.PR_WIP_TIME,
                       True,
                       (["60s", "128s", "275s", "590s", "1266s", "2714s", "5818s", "12470s",
                         "26730s", "57293s", "122803s", "263218s", "564186s", "1209285s",
                         "2591999s"],
                        [174, 65, 69, 42, 37, 35, 42, 27, 41, 40, 34, 28, 20, 24],
-                       ["120s", "38479s"]))]))
+                       {"left": "120s", "right": "38479s"}))]))
 async def test_calc_histogram_prs_smoke(
         client, headers, metric, cached, app, client_cache, result):
     if cached:
@@ -59,7 +60,11 @@ async def test_calc_histogram_prs_smoke(
         body = (await response.read()).decode("utf-8")
         assert response.status == 200, "Response body is : " + body
         body = FriendlyJson.loads(body)
-        [CalculatedPullRequestHistogram.from_dict(item) for item in body]
+        for item in body:
+            item = item.copy()
+            item["interquartile"] = Interquartile(**item["interquartile"])
+            CalculatedPullRequestHistogram.from_dict(item)
+
         assert body == [{
             "for": {"repositories": ["github.com/src-d/go-git"],
                     "with": {"author": None, "reviewer": None, "commit_author": None,
@@ -193,7 +198,7 @@ async def test_calc_histogram_prs_size(client, headers):
                      "ticks": [0.0, 1109.9, 2219.8, 3329.7000000000003, 4439.6, 5549.5,
                                6659.400000000001, 7769.300000000001, 8879.2, 9989.1, 11099.0],
                      "frequencies": [465, 17, 2, 2, 1, 0, 1, 0, 0, 1],
-                     "interquartile": [18.0, 188.0]}]
+                     "interquartile": {"left": 18.0, "right": 188.0}}]
 
 
 async def test_calc_histogram_prs_ticks(client, headers):
@@ -221,7 +226,7 @@ async def test_calc_histogram_prs_ticks(client, headers):
     assert body == [
         {"for": {"repositories": ["github.com/src-d/go-git"]}, "metric": "pr-release-time",
          "scale": "linear", "ticks": ["60s", "10000s", "100000s", "2592000s"],
-         "frequencies": [31, 26, 327], "interquartile": ["346338s", "2592000s"]}]
+         "frequencies": [31, 26, 327], "interquartile": {"left": "346338s", "right": "2592000s"}}]
 
 
 async def test_calc_histogram_prs_groups(client, headers):
@@ -247,7 +252,13 @@ async def test_calc_histogram_prs_groups(client, headers):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     body = FriendlyJson.loads(body)
-    assert len([CalculatedPullRequestHistogram.from_dict(item) for item in body]) == 2
+    cprh = []
+    for item in body:
+        item = item.copy()
+        item["interquartile"] = Interquartile(**item["interquartile"])
+        cprh.append(CalculatedPullRequestHistogram.from_dict(item))
+
+    assert len(cprh) == 2
     for h in body:
         assert h == {
             "for": {"repositories": ["{1}"]},
@@ -255,5 +266,5 @@ async def test_calc_histogram_prs_groups(client, headers):
             "scale": "log",
             "ticks": ["60s", "184s", "569s", "1752s", "5398s", "16624s", "51201s",
                       "157688s", "485648s"], "frequencies": [6, 5, 8, 5, 4, 14, 10, 2],
-            "interquartile": ["790s", "45167s"],
+            "interquartile": {"left": "790s", "right": "45167s"},
         }
