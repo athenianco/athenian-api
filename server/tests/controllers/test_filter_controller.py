@@ -246,6 +246,7 @@ def with_only_master_branch(func):
 @pytest.mark.parametrize("prop", [k.name.lower() for k in Property])
 @with_only_master_branch
 async def test_filter_prs_single_prop(
+        # do not remove "mdb", it is required by the decorators
         client, headers, mdb, prop, app, filter_prs_single_prop_cache):
     app._cache = filter_prs_single_prop_cache
     body = {

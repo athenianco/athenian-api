@@ -58,6 +58,26 @@ def random_dropout(pr, prob):
     return PullRequestFacts(**kwargs)
 
 
+def dt64arr(dt: datetime) -> np.ndarray:
+    return np.array([dt], dtype="datetime64[ns]")
+
+
+@pytest.mark.parametrize("cls", [
+    WorkInProgressTimeCalculator, ReviewTimeCalculator, MergingTimeCalculator,
+    ReleaseTimeCalculator, LeadTimeCalculator, WaitFirstReviewTimeCalculator,
+])
+def test_pull_request_metrics_2d(pr_samples, cls):  # noqa: F811
+    calc = cls(quantiles=(0, 1))
+    time_froms = np.array([datetime.utcnow() - timedelta(days=i * 200) for i in range(1, 3)],
+                          dtype="datetime64[ns]")
+    time_tos = np.array([datetime.utcnow(), datetime.utcnow() - timedelta(days=100)],
+                        dtype="datetime64[ns]")
+    prs = df_from_dataclasses(random_dropout(pr, 0.5) for pr in pr_samples(1000))
+    r = calc._analyze(prs, time_froms, time_tos)
+    assert (r[0, r[0] != np.array(None)] >= 0).any()
+    assert (r[1, r[1] != np.array(None)] >= 0).any()
+
+
 @pytest.mark.parametrize("cls", [
     WorkInProgressTimeCalculator, ReviewTimeCalculator, MergingTimeCalculator,
     ReleaseTimeCalculator, LeadTimeCalculator, WaitFirstReviewTimeCalculator,
@@ -67,8 +87,19 @@ def test_pull_request_metrics_timedelta_stability(pr_samples, cls):  # noqa: F81
     time_from = datetime.utcnow() - timedelta(days=10000)
     time_to = datetime.utcnow()
     prs = df_from_dataclasses(random_dropout(pr, 0.5) for pr in pr_samples(1000))
-    r = calc._analyze(prs, time_from, time_to)
+    r = calc._analyze(prs, dt64arr(time_from), dt64arr(time_to))
     assert (r[r != np.array(None)] >= 0).all()
+
+
+def test_pull_request_metrics_empty_input(pr_samples):
+    calc = WorkInProgressTimeCalculator(quantiles=(0, 1))
+    df = df_from_dataclasses(pr_samples(1)).iloc[:0]
+    time_to = datetime.utcnow()
+    time_from = time_to - timedelta(days=180)
+    calc(df, dt64arr(time_from), dt64arr(time_to), [np.arange(len(df))])
+    assert len(calc.values) == 1
+    assert len(calc.values[0]) == 1
+    assert not calc.values[0][0].exists
 
 
 @pytest.mark.parametrize("cls, peak_attr",
@@ -90,7 +121,9 @@ def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa
             ).replace(tzinfo=None)
         time_from += timedelta(days=1)
         time_to = time_from + timedelta(days=7)
-        assert calc._analyze(df_from_dataclasses([pr]), time_from, time_to)[0] is None
+        assert calc._analyze(df_from_dataclasses([pr]),
+                             dt64arr(time_from),
+                             dt64arr(time_to)) == np.array([None])
 
         time_from = datetime.utcnow()
         for attr in peak_attr.split(","):
@@ -100,7 +133,9 @@ def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa
             ).replace(tzinfo=None)
         time_from -= timedelta(days=7)
         time_to = time_from + timedelta(days=1)
-        assert calc._analyze(df_from_dataclasses([pr]), time_from, time_to)[0] is None
+        assert calc._analyze(df_from_dataclasses([pr]),
+                             dt64arr(time_from),
+                             dt64arr(time_to)) == np.array([None])
 
 
 @pytest.mark.parametrize("metric", [PullRequestMetricID.PR_OPENED,
@@ -110,18 +145,18 @@ def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa
 def test_pull_request_metrics_float_binned(pr_samples, metric):  # noqa: F811
     time_from = (datetime.now(tz=timezone.utc) - timedelta(days=365 * 3 // 2)).date()
     time_to = (datetime.now(tz=timezone.utc) - timedelta(days=365 // 2)).date()
-    time_intervals = [datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc)
-                      for i in Granularity.split("month", time_from, time_to)]
-    binned = PullRequestBinnedMetricCalculator([metric], time_intervals, quantiles=(0, 1))
+    time_intervals = [[datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc)
+                       for i in Granularity.split("month", time_from, time_to)]]
+    binned = PullRequestBinnedMetricCalculator([metric], quantiles=(0, 1))
     samples = pr_samples(1000)
     if metric == PullRequestMetricID.PR_REJECTED:
         for i, s in enumerate(samples):
             data = vars(s)
             data["merged"] = None
             samples[i] = PullRequestFacts(**data)
-    result = binned(samples)
+    result = binned({"x": samples}, time_intervals, [["x"]])
     # the last interval is null and that's intended
-    for i, m in enumerate(result[:-1]):
+    for i, m in enumerate(result[0][0][:-1]):
         assert m[0].exists, str(i)
         assert m[0].value > 1, str(i)
         assert m[0].confidence_min is None, str(i)
@@ -134,9 +169,9 @@ def test_pull_request_opened_no(pr_samples):  # noqa: F811
     time_from = time_to - timedelta(days=180)
     prs = df_from_dataclasses(pr for pr in pr_samples(100)
                               if pr.closed and pr.closed < time_to.replace(tzinfo=timezone.utc))
-    calc(prs, time_from, time_to)
+    calc(prs, dt64arr(time_from), dt64arr(time_to), [np.arange(len(prs))])
     assert len(prs) > 0
-    m = calc.value
+    m = calc.values[0][0]
     assert not m.exists
 
 
@@ -146,10 +181,11 @@ def test_pull_request_closed_no(pr_samples):  # noqa: F811
     time_from = datetime.utcnow() - timedelta(days=365 * 3)
     time_to = time_from + timedelta(days=7)
     prs = df_from_dataclasses(pr_samples(100))
-    calc_closed(prs, time_from, time_to)
-    calc_released(prs, time_from, time_to)
-    assert not calc_closed.value.exists
-    assert not calc_released.value.exists
+    args = prs, dt64arr(time_from), dt64arr(time_to), [np.arange(len(prs))]
+    calc_closed(*args)
+    calc_released(*args)
+    assert not calc_closed.values[0][0].exists
+    assert not calc_released.values[0][0].exists
 
 
 def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
@@ -161,25 +197,25 @@ def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
     time_from = datetime.utcnow() - timedelta(days=365)
     time_to = datetime.utcnow()
     prs = df_from_dataclasses(pr_samples(1000))
+    args = prs, dt64arr(time_from), dt64arr(time_to), [np.arange(len(prs))]
     for dep in calc._calcs:
-        dep(prs, time_from, time_to)
-    calc(prs, time_from, time_to)
-    open_calc(prs, time_from, time_to)
-    closed_calc(prs, time_from, time_to)
-    m = calc.value
+        dep(*args)
+    calc(*args)
+    open_calc(*args)
+    closed_calc(*args)
+    m = calc.values[0][0]
     assert m.exists
     assert 0 < m.value < 1
     assert m.confidence_min is None
     assert m.confidence_max is None
-    assert m.value == (open_calc.value.value + 1) / (closed_calc.value.value + 1)
+    assert m.value == (open_calc.values[0][0].value + 1) / (closed_calc.values[0][0].value + 1)
 
 
-def test_pull_request_flow_ratio_zeros():
+def test_pull_request_flow_ratio_zeros(pr_samples):
     calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
                                ClosedCalculator(quantiles=(0, 1)),
                                quantiles=(0, 1))
-    m = calc.value
-    assert not m.exists
+    assert len(calc.values) == 0
 
 
 def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
@@ -192,11 +228,12 @@ def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
         if pr.closed and time_from.replace(tzinfo=timezone.utc) <= pr.closed < \
                 time_to.replace(tzinfo=timezone.utc):
             df = df_from_dataclasses([pr])
+            args = df, dt64arr(time_from), dt64arr(time_to), [np.arange(len(df))]
             for dep in calc._calcs:
-                dep(df, time_from, time_to)
-            calc(df, time_from, time_to)
+                dep(*args)
+            calc(*args)
             break
-    m = calc.value
+    m = calc.values[0][0]
     assert m.exists
     assert m.value == 0.5
 
@@ -210,12 +247,12 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
     for pr in pr_samples(100):
         if pr.closed and pr.closed > time_to.replace(tzinfo=timezone.utc) > \
                 pr.created >= time_from.replace(tzinfo=timezone.utc):
-            df = df_from_dataclasses([pr])
+            args = df_from_dataclasses([pr]), dt64arr(time_from), dt64arr(time_to), [np.arange(1)]
             for dep in calc._calcs:
-                dep(df, time_from, time_to)
-            calc(df, time_from, time_to)
+                dep(*args)
+            calc(*args)
             break
-    m = calc.value
+    m = calc.values[0][0]
     assert m.exists
     assert m.value == 2
 
@@ -227,31 +264,35 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
                           ReleaseCounter,
                           LeadCounter,
                           CycleCounter,
-                          AllCounter])
-def test_pull_request_metrics_counts(pr_samples, cls):  # noqa: F811
+                          AllCounter,
+                          ])
+def test_pull_request_metrics_counts_nq(pr_samples, cls):  # noqa: F811
     calc = cls(*(dep1(*(dep2(quantiles=(0, 1)) for dep2 in dep1.deps),
                       quantiles=(0, 1)) for dep1 in cls.deps),
                quantiles=(0, 1))
     prs = df_from_dataclasses(pr_samples(1000))
-    time_to = datetime.utcnow()
-    time_from = time_to - timedelta(days=10000)
+    time_tos = np.full(2, datetime.utcnow(), "datetime64[ns]")
+    time_froms = time_tos - np.timedelta64(timedelta(days=10000))
+    args = prs, time_froms, time_tos, [np.arange(len(prs))]
     for dep1 in calc._calcs:
         for dep2 in dep1._calcs:
-            dep2(prs, time_from, time_to)
-        dep1(prs, time_from, time_to)
-    calc(prs, time_from, time_to)
+            dep2(*args)
+        dep1(*args)
+    calc(*args)
     delta = calc.peek
     assert isinstance(delta, np.ndarray)
-    assert len(delta) == 1000
+    assert delta.shape == (2, 1000)
+    assert (delta[0] == delta[1]).all()
     if cls != AllCounter:
         peek = calc._calcs[0].peek
     else:
         peek = calc.peek
+    assert (peek[0] == peek[1]).all()
     nonones = (peek != np.array(None)).sum()
-    nones = len(peek) - nonones
+    nones = (peek.shape[0] * peek.shape[1]) - nonones
     if cls not in (WorkInProgressCounter, CycleCounter, AllCounter):
         assert nones > 0, cls
-    assert nonones > 0
+    assert nonones > 0, cls
 
 
 @pytest.mark.parametrize("cls_q, cls",
@@ -269,13 +310,14 @@ def test_pull_request_metrics_counts_q(pr_samples, cls_q, cls):  # noqa: F811
     prs = df_from_dataclasses(pr_samples(1000))
     time_to = datetime.utcnow()
     time_from = time_to - timedelta(days=10000)
+    args = prs, dt64arr(time_from), dt64arr(time_to), [np.arange(len(prs))]
     for dep1 in calc._calcs:
         for dep2 in dep1._calcs:
-            dep2(prs, time_from, time_to)
-        dep1(prs, time_from, time_to)
-    calc_q(prs, time_from, time_to)
-    calc(prs, time_from, time_to)
-    assert 0 < calc_q.value.value < calc.value.value
+            dep2(*args)
+        dep1(*args)
+    calc_q(*args)
+    calc(*args)
+    assert 0 < calc_q.values[0][0].value < calc.values[0][0].value
 
 
 @pytest.mark.parametrize("with_memcached, with_mine_cache_wipe",
@@ -317,12 +359,12 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
     args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1],
             [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, False, mdb, pdb, cache]
-    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     release_match_setting_tag = {
         "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
     }
     args[-5] = release_match_setting_tag
-    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     assert metrics1 != metrics2
 
 
@@ -337,11 +379,13 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
         [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
         release_match_setting_tag, False, mdb, pdb, None,
     ))[0][0][0][0].value
+    await wait_deferred()
     metric2 = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]], [0, 1],
         [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
         release_match_setting_tag, False, mdb, pdb, None,
     ))[0][0][0][0].value
+    await wait_deferred()
     metric1_ext, metric2_ext = (m[0].value for m in (
         await calc_pull_request_metrics_line_github(
             [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]], [0, 1],
@@ -403,28 +447,28 @@ def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
     time_to = datetime.utcnow()
     for _ in range(2):
         prs = df_from_dataclasses(pr_samples(100))
-        ensemble(prs, time_from, time_to)
-        release_time(prs, time_from, time_to)
-        wip_count._calcs[0](prs, time_from, time_to)
-        wip_count(prs, time_from, time_to)
+        args = prs, dt64arr(time_from), dt64arr(time_to), [np.arange(len(prs))]
+        ensemble(*args)
+        release_time(*args)
+        wip_count._calcs[0](*args)
+        wip_count(*args)
         for c in cycle_time._calcs:
-            c(prs, time_from, time_to)
-        cycle_time(prs, time_from, time_to)
-        closed(prs, time_from, time_to)
+            c(*args)
+        cycle_time(*args)
+        closed(*args)
         ensemble_metrics = ensemble.values()
-        assert ensemble_metrics[PullRequestMetricID.PR_CYCLE_TIME] == cycle_time.value
-        assert ensemble_metrics[PullRequestMetricID.PR_RELEASE_TIME] == release_time.value
-        assert ensemble_metrics[PullRequestMetricID.PR_WIP_COUNT] == wip_count.value
-        assert ensemble_metrics[PullRequestMetricID.PR_CLOSED] == closed.value
-        for c in (ensemble, release_time, wip_count, cycle_time, closed):
-            c.reset()
+        assert ensemble_metrics[PullRequestMetricID.PR_CYCLE_TIME] == cycle_time.values
+        assert ensemble_metrics[PullRequestMetricID.PR_RELEASE_TIME] == release_time.values
+        assert ensemble_metrics[PullRequestMetricID.PR_WIP_COUNT] == wip_count.values
+        assert ensemble_metrics[PullRequestMetricID.PR_CLOSED] == closed.values
 
 
 def test_pull_request_metric_calculator_ensemble_empty(pr_samples):
     ensemble = PullRequestMetricCalculatorEnsemble(quantiles=(0, 1))
     time_from = datetime.utcnow() - timedelta(days=365)
     time_to = datetime.utcnow()
-    ensemble(df_from_dataclasses(pr_samples(1)), time_from, time_to)
+    ensemble(df_from_dataclasses(pr_samples(1)), dt64arr(time_from), dt64arr(time_to),
+             [np.arange(1)])
     assert ensemble.values() == {}
 
 
@@ -478,8 +522,8 @@ async def test_calc_pull_request_facts_github_jira(
 
 def test_size_calculator_shift_log():
     calc = histogram_calculators[PullRequestMetricID.PR_SIZE](quantiles=(0, 1))
-    calc._samples = np.array([0, 10, 0, 20, 150, 0])
-    h = calc.histogram(Scale.LOG, 3, None)
+    calc._samples = [[np.array([0, 10, 0, 20, 150, 0])]]
+    h = calc.histogram(Scale.LOG, 3, None)[0][0]
     assert h.ticks[0] == 1
     for f in h.frequencies:
         assert f == f
@@ -489,10 +533,14 @@ def test_size_calculator_shift_log():
 class QuantileTestingMetric(MetricCalculator):
     dtype = "timedelta64[s]"
 
-    def _analyze(self, facts: pd.DataFrame, min_time: datetime, max_time: datetime,
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         """Calculate the actual state update."""
-        return (facts["released"] - facts["created"]).values
+        return np.repeat((facts["released"] - facts["created"]).values[None, :],
+                         len(min_times), axis=0)
 
     def _value(self, samples: Sequence[timedelta]) -> Tuple[timedelta, int]:
         """Calculate the actual current metric value."""
@@ -504,14 +552,14 @@ def test_quantiles(pr_samples):
     time_to = datetime.utcnow()
     samples = df_from_dataclasses(pr_samples(200))
     ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0, 1))
-    ensemble(samples, time_from, time_to)
-    m1, c1 = ensemble.values()["test"]
+    ensemble(samples, dt64arr(time_from), dt64arr(time_to), [np.arange(len(samples))])
+    m1, c1 = ensemble.values()["test"][0][0]
     ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0, 0.9))
-    ensemble(samples, time_from, time_to)
-    m2, c2 = ensemble.values()["test"]
+    ensemble(samples, dt64arr(time_from), dt64arr(time_to), [np.arange(len(samples))])
+    m2, c2 = ensemble.values()["test"][0][0]
     ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0.1, 0.9))
-    ensemble(samples, time_from, time_to)
-    m3, c3 = ensemble.values()["test"]
+    ensemble(samples, dt64arr(time_from), dt64arr(time_to), [np.arange(len(samples))])
+    m3, c3 = ensemble.values()["test"][0][0]
     assert m1 > m2 > m3
     assert c1 > c2 > c3
 
@@ -523,9 +571,9 @@ def test_counter_quantiles(pr_samples):
     c_base = WorkInProgressTimeCalculator(quantiles=[0.25, 0.75])
     c_with = WorkInProgressCounterWithQuantiles(c_base, quantiles=[0.25, 0.75])
     c_without = WorkInProgressCounter(c_base, quantiles=[0.25, 0.75])
-    c_base(samples, time_from, time_to)
-    c_with(samples, time_from, time_to)
-    c_without(samples, time_from, time_to)
-    v_with = c_with.value.value
-    v_without = c_without.value.value
+    c_base(samples, dt64arr(time_from), dt64arr(time_to), [np.arange(len(samples))])
+    c_with(samples, dt64arr(time_from), dt64arr(time_to), [np.arange(len(samples))])
+    c_without(samples, dt64arr(time_from), dt64arr(time_to), [np.arange(len(samples))])
+    v_with = c_with.values[0][0].value
+    v_without = c_without.values[0][0].value
     assert v_without > v_with

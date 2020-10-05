@@ -12,6 +12,10 @@ from athenian.api.controllers.features.statistics import mean_confidence_interva
     median_confidence_interval
 
 
+def dt64arr(dt: datetime) -> np.ndarray:
+    return np.array([dt], dtype="datetime64[ns]")
+
+
 @pytest.fixture
 def square_centered_samples():
     data = (10 - np.arange(0, 21, dtype=int)) ** 2
@@ -126,16 +130,19 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
         may_have_negative_values = negative
         dtype = "timedelta64[s]"
 
-        def _analyze(self, facts: np.ndarray, min_time: datetime, max_time: datetime,
+        def _analyze(self, facts: np.ndarray, min_times: np.ndarray, max_time: np.ndarray,
                      ) -> np.ndarray:
-            return (facts["released"] - facts["work_began"]).values
+            return np.repeat((facts["released"] - facts["work_began"]).values[None, :],
+                             len(min_times), axis=0)
 
     calc = LeadTimeCalculator(quantiles=(0, 0.99))
-    assert not calc.value.exists
-    assert calc.value.confidence_score() is None
+    assert len(calc.values) == 0 and isinstance(calc.values, list)
     calc = LeadTimeCalculator(quantiles=(0, 1))
-    calc(df_from_dataclasses(pr_samples(100)), datetime.utcnow(), datetime.utcnow())
-    m = calc.value
+    calc(df_from_dataclasses(pr_samples(100)),
+         dt64arr(datetime.utcnow()),
+         dt64arr(datetime.utcnow()),
+         [np.arange(100)])
+    m = calc.values[0][0]
     assert m.exists
     assert isinstance(m.value, timedelta)
     assert isinstance(m.confidence_min, timedelta)
@@ -144,14 +151,10 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
     assert timedelta(0) < m.value < timedelta(days=365 * 3 + 32)
     assert m.confidence_min < m.value < m.confidence_max
     calc.reset()
-    m = calc.value
-    assert not m.exists
-    assert m.value is None
-    assert m.confidence_min is None
-    assert m.confidence_max is None
+    assert len(calc.values) == 0
     calc.reset()
-    calc._samples = np.array([0], dtype=LeadTimeCalculator.dtype)
-    m = calc.value
+    calc._samples = [[np.array([0], dtype=LeadTimeCalculator.dtype)]]
+    m = calc.values[0][0]
     assert m.exists
     assert m.value == timedelta(0)
     assert m.confidence_min == timedelta(0)
@@ -162,8 +165,8 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
 def test_average_metric_calculator_zeros_nonnegative():
     calc = AverageMetricCalculator(quantiles=(0, 1))
     calc.may_have_negative_values = False
-    calc._samples = np.full(3, timedelta(0), "timedelta64[s]")
-    m = calc.value
+    calc._samples = [[np.full(3, timedelta(0), "timedelta64[s]")]]
+    m = calc.values[0][0]
     assert m.exists
     assert m.value == timedelta(0)
 
