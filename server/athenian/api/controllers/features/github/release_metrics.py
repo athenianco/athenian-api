@@ -1,11 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Dict, Generic, Sequence, Type
 
 import numpy as np
 import pandas as pd
 
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
+    BinnedMetricsCalculator, MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import T
 from athenian.api.controllers.settings import ReleaseMatch
@@ -34,18 +34,10 @@ class ReleaseMetricCalculatorEnsemble(MetricCalculatorEnsemble):
         super().__init__(*metrics, quantiles=quantiles, class_mapping=metric_calculators)
 
 
-class ReleaseBinnedMetricCalculator(BinnedMetricCalculator):
+class ReleaseBinnedMetricCalculator(BinnedMetricsCalculator):
     """BinnedMetricCalculator adapted for pull requests."""
 
-    def __init__(self,
-                 metrics: Sequence[str],
-                 time_intervals: Sequence[datetime],
-                 quantiles: Sequence[float]):
-        """Initialize a new instance of ReleaseBinnedMetricCalculator class."""
-        super().__init__(metrics=metrics, time_intervals=time_intervals, quantiles=quantiles,
-                         class_mapping=metric_calculators,
-                         start_time_getter=lambda r: r.published,
-                         finish_time_getter=lambda r: r.published)
+    ensemble_class = ReleaseMetricCalculatorEnsemble
 
 
 class ReleaseMetricCalculatorMixin(Generic[T]):
@@ -55,19 +47,23 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
     _check() decides whether _extract() must be called and thus deals with Optional[T].
     """
 
-    def _analyze(self, facts: np.ndarray, min_time: datetime, max_time: datetime,
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
                  **kwargs) -> np.array:
-        result = np.full(len(facts), None, object)
-        indexes = np.where(self._check(facts, min_time, max_time))[0]
-        result[indexes] = self._extract(facts.take(indexes))
+        result = np.full((len(min_times), len(facts)), None, object)
+        checked_mask = np.atleast_2d(self._check(facts, min_times, max_times))
+        extracted = np.repeat(self._extract(facts)[None, :], len(min_times), axis=0)
+        result[checked_mask] = extracted[checked_mask]
         return result
 
-    def _check(self, facts: np.ndarray, min_time: datetime, max_time: datetime) -> np.ndarray:
-        dtype = facts["published"].dtype
-        min_time = np.array(min_time, dtype=dtype)
-        max_time = np.array(max_time, dtype=dtype)
+    def _check(self,
+               facts: pd.DataFrame,
+               min_times: np.ndarray,
+               max_times: np.ndarray) -> np.ndarray:
         published = facts["published"].values
-        return (min_time <= published) & (published < max_time)
+        return (min_times[:, None] <= published) & (published < max_times[:, None])
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         raise NotImplementedError
@@ -76,17 +72,23 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
 class TagReleaseMetricCalculatorMixin(ReleaseMetricCalculatorMixin[T]):
     """Augment _check() to pass tag releases only."""
 
-    def _check(self, facts: np.ndarray, min_time: datetime, max_time: datetime) -> np.ndarray:
-        return super()._check(facts, min_time, max_time) & \
-            (facts[matched_by_column] == ReleaseMatch.tag)
+    def _check(self,
+               facts: pd.DataFrame,
+               min_times: np.ndarray,
+               max_times: np.ndarray) -> np.ndarray:
+        return super()._check(facts, min_times, max_times) & \
+            (facts[matched_by_column].values == ReleaseMatch.tag)
 
 
 class BranchReleaseMetricCalculatorMixin(ReleaseMetricCalculatorMixin[T]):
     """Augment _check() to pass branch releases only."""
 
-    def _check(self, facts: np.ndarray, min_time: datetime, max_time: datetime) -> np.ndarray:
-        return super()._check(facts, min_time, max_time) & \
-            (facts[matched_by_column] == ReleaseMatch.branch)
+    def _check(self,
+               facts: pd.DataFrame,
+               min_times: np.ndarray,
+               max_times: np.ndarray) -> np.ndarray:
+        return super()._check(facts, min_times, max_times) & \
+            (facts[matched_by_column].values == ReleaseMatch.branch)
 
 
 class ReleaseCounterMixin:

@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 from datetime import datetime
 from itertools import chain
 import pickle
@@ -14,14 +15,13 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request_metrics import \
-    PullRequestBinnedMetricCalculator, PullRequestHistogramCalculatorEnsemble
+    PullRequestBinnedHistogramCalculator, PullRequestBinnedMetricCalculator
 from athenian.api.controllers.features.github.release_metrics import \
     ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     fetch_pull_request_facts_unfresh
 from athenian.api.controllers.features.histogram import Histogram, HistogramParameters
 from athenian.api.controllers.features.metric import Metric
-from athenian.api.controllers.features.metric_calculator import df_from_dataclasses
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -38,7 +38,7 @@ from athenian.api.controllers.miners.types import Participants, ParticipationKin
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import PullRequest, PushCommit
+from athenian.api.models.metadata.github import PullRequest, PushCommit, Release
 from athenian.api.tracing import sentry_span
 
 
@@ -219,25 +219,19 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 pdb: Database,
                                                 cache: Optional[aiomcache.Client],
                                                 ) -> List[List[List[List[Metric]]]]:
-    """Calculate pull request metrics on GitHub."""
+    """
+    Calculate pull request metrics on GitHub.
+
+    :return: granularities x groups x time intervals x metrics.
+    """
     assert isinstance(repositories, (tuple, list))
     all_repositories = set(chain.from_iterable(repositories))
+    calc = PullRequestBinnedMetricCalculator(metrics, quantiles)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
         release_settings, fresh, mdb, pdb, cache)
-    group_metrics = []
-    with sentry_sdk.start_span(op="PullRequestBinnedMetricCalculator.__call__",
-                               description="%d * %d * %d" % (
-                                   sum(len(f) for f in mined_facts.values()),
-                                   len(repositories),
-                                   len(time_intervals))):
-        for group in repositories:
-            group_facts = list(chain.from_iterable(mined_facts.get(repo, []) for repo in group))
-            group_metrics.append(
-                [PullRequestBinnedMetricCalculator(metrics, ts, quantiles)(group_facts)
-                 for ts in time_intervals])
-    return group_metrics
+    return calc(mined_facts, time_intervals, repositories)
 
 
 @sentry_span
@@ -279,7 +273,7 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
                                              time_from: datetime,
                                              time_to: datetime,
                                              quantiles: Sequence[float],
-                                             repositories: List[Collection[str]],
+                                             repositories: Sequence[Collection[str]],
                                              participants: Participants,
                                              labels: LabelFilter,
                                              jira: JIRAFilter,
@@ -293,46 +287,44 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
     """Calculate the pull request histograms on GitHub."""
     all_repositories = set(chain.from_iterable(repositories))
     try:
-        ensembles = [PullRequestHistogramCalculatorEnsemble(*metrics, quantiles=quantiles)
-                     for metrics in defs.values()]
+        calc = PullRequestBinnedHistogramCalculator(defs.values(), quantiles)
     except KeyError as e:
-        raise ValueError(str(e)) from None
+        raise ValueError("Unsupported metric: %s" % e)
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
         release_settings, fresh, mdb, pdb, cache)
-    group_histograms = []
-    for group in repositories:
-        df_facts = df_from_dataclasses(list(chain.from_iterable(
-            mined_facts.get(repo, []) for repo in group)))
-        histograms = []
-        for ensemble, params in zip(ensembles, defs):
-            ensemble(df_facts, time_from.replace(tzinfo=None), time_to.replace(tzinfo=None))
-            histograms.extend(ensemble.histograms(params.scale, params.bins, params.ticks).items())
-        group_histograms.append(histograms)
-    return group_histograms
+    hists = calc(mined_facts, [[time_from, time_to]], repositories, [k.__dict__ for k in defs])
+    result = [[] for _ in repositories]
+    for defs_hists, metrics in zip(hists, defs.values()):
+        for group_result, group_hists in zip(result, defs_hists[0]):
+            for hist, m in zip(group_hists[0], metrics):
+                group_result.append((m, hist))
+    return result
 
 
 async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            time_intervals: Sequence[Sequence[datetime]],
                                            quantiles: Sequence[float],
-                                           repositories: Set[str],
+                                           repositories: Sequence[Collection[str]],
                                            release_settings: Dict[str, ReleaseMatchSetting],
                                            mdb: Database,
                                            pdb: Database,
                                            cache: Optional[aiomcache.Client],
-                                           ) -> Tuple[List[List[List[Metric]]],
+                                           ) -> Tuple[List[List[List[List[Metric]]]],
                                                       Dict[str, ReleaseMatch]]:
     """Calculate the release metrics on GitHub."""
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
-    branches, default_branches = await extract_branches(repositories, mdb, cache)
+    all_repositories = set(chain.from_iterable(repositories))
+    calc = ReleaseBinnedMetricCalculator(metrics, quantiles)
+    branches, default_branches = await extract_branches(all_repositories, mdb, cache)
     releases, _, matched_bys = await mine_releases(
-        repositories, branches, default_branches, time_from, time_to, release_settings,
+        all_repositories, branches, default_branches, time_from, time_to, release_settings,
         mdb, pdb, cache)
-    mined_facts = [f for _, f in releases]
-    with sentry_sdk.start_span(op="ReleaseBinnedMetricCalculator.__call__",
-                               description="%d * %d" % (len(mined_facts), len(time_intervals))):
-        return [ReleaseBinnedMetricCalculator(metrics, ts, quantiles)(mined_facts)
-                for ts in time_intervals], matched_bys
+    mined_facts = defaultdict(list)
+    for i, f in releases:
+        mined_facts[i[Release.repository_full_name.key].split("/", 1)[1]].append(f)
+    values = calc(mined_facts, time_intervals, repositories)
+    return values, matched_bys
 
 
 METRIC_ENTRIES = {

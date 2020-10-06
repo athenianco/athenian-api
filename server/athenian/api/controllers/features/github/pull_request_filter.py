@@ -15,10 +15,12 @@ from athenian.api import COROUTINE_YIELD_EVERY_ITER, list_with_yield, metadata
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
-from athenian.api.controllers.features.github.pull_request_metrics import MergingPendingCounter, \
+from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
+    MergingPendingCounter, \
     MergingTimeCalculator, ReleasePendingCounter, ReleaseTimeCalculator, ReviewPendingCounter, \
     ReviewTimeCalculator, StagePendingDependencyCalculator, WorkInProgressPendingCounter, \
     WorkInProgressTimeCalculator
+from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import df_from_dataclasses
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
@@ -36,7 +38,7 @@ from athenian.api.controllers.miners.types import Label, MinedPullRequest, Parti
     PullRequestStage
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import set_pdb_hits, set_pdb_misses
-from athenian.api.defer import defer, wait_deferred
+from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, PullRequestLabel, \
     PullRequestReview, PullRequestReviewComment, Release
@@ -49,6 +51,21 @@ class PullRequestListMiner:
 
     _prefix = PREFIXES["github"]
     log = logging.getLogger("%s.PullRequestListMiner" % metadata.__version__)
+
+    class DummyAllCounter(AllCounter):
+        """Fool StagePendingDependencyCalculator so that it does not exclude any PRs."""
+
+        dtype = int
+
+        def _analyze(self,
+                     facts: pd.DataFrame,
+                     min_times: np.ndarray,
+                     max_times: np.ndarray,
+                     **kwargs) -> np.ndarray:
+            return np.full((len(min_times), len(facts)), 1)
+
+        def _value(self, samples: np.ndarray) -> Metric[int]:
+            raise AssertionError("This method should never be called.")
 
     def __init__(self,
                  prs: List[MinedPullRequest],
@@ -65,27 +82,29 @@ class PullRequestListMiner:
         self._facts = facts
         self._events = events
         self._stages = stages
-        self._pending_counter_dep = StagePendingDependencyCalculator(quantiles=(0, 1))
+        all_counter = self.DummyAllCounter(quantiles=(0, 1))
+        pending_counter = StagePendingDependencyCalculator(all_counter, quantiles=(0, 1))
+        self._counter_deps = [all_counter, pending_counter]
         self._calcs = {
             "wip": {
                 "time": WorkInProgressTimeCalculator(quantiles=(0, 1)),
                 "pending_count": WorkInProgressPendingCounter(
-                    self._pending_counter_dep, quantiles=(0, 1)),
+                    pending_counter, quantiles=(0, 1)),
             },
             "review": {
                 "time": ReviewTimeCalculator(quantiles=(0, 1)),
                 "pending_count": ReviewPendingCounter(
-                    self._pending_counter_dep, quantiles=(0, 1)),
+                    pending_counter, quantiles=(0, 1)),
             },
             "merge": {
                 "time": MergingTimeCalculator(quantiles=(0, 1)),
                 "pending_count": MergingPendingCounter(
-                    self._pending_counter_dep, quantiles=(0, 1)),
+                    pending_counter, quantiles=(0, 1)),
             },
             "release": {
                 "time": ReleaseTimeCalculator(quantiles=(0, 1)),
                 "pending_count": ReleasePendingCounter(
-                    self._pending_counter_dep, quantiles=(0, 1)),
+                    pending_counter, quantiles=(0, 1)),
             },
         }
         self._no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
@@ -245,23 +264,25 @@ class PullRequestListMiner:
         node_id_key = PullRequest.node_id.key
         df_facts = df_from_dataclasses((facts[pr.pr[node_id_key]] for pr in self._prs),
                                        length=len(self._prs))
-
-        no_time_from = self._no_time_from.replace(tzinfo=None)
-        now = self._now.replace(tzinfo=None)
+        dtype = df_facts["created"].dtype
+        no_time_from = np.array([self._no_time_from.replace(tzinfo=None)], dtype=dtype)
+        now = np.array([self._now.replace(tzinfo=None)], dtype=dtype)
         stage_timings = {}
-        self._pending_counter_dep(df_facts, no_time_from, now)
+        empty_group = [np.array([], dtype=int)]  # makes `samples` empty, we don't need them
+        for dep in self._counter_deps:
+            dep(df_facts, no_time_from, now, empty_group)
         for k, calcs in self._calcs.items():
             time_calc, pending_counter = calcs["time"], calcs["pending_count"]
-            pending_counter(df_facts, no_time_from, now)
+            pending_counter(df_facts, no_time_from, now, empty_group)
 
             kwargs = {
-                "override_event_time": now - timedelta(seconds=1),  # < time_max
-                "override_event_indexes": np.nonzero(pending_counter.peek)[0],
+                "override_event_time": now - np.timedelta64(timedelta(seconds=1)),  # < time_max
+                "override_event_indexes": np.nonzero(pending_counter.peek[0])[0],
             }
             if k == "review":
                 kwargs["allow_unclosed"] = True
-            time_calc(df_facts, no_time_from, now, **kwargs)
-            stage_timings[k] = time_calc.peek
+            time_calc(df_facts, no_time_from, now, empty_group, **kwargs)
+            stage_timings[k] = time_calc.peek[0]
         return stage_timings
 
     @sentry_span
@@ -521,22 +542,26 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
         missed_merged_unreleased_facts = []
 
         async def store_missed_done_facts():
+            nonlocal missed_done_facts
             await defer(store_precomputed_done_facts(
                 *zip(*missed_done_facts), default_branches, release_settings, pdb),
                 "store_precomputed_done_facts(%d)" % len(missed_done_facts))
+            missed_done_facts = []
 
         async def store_missed_open_facts():
+            nonlocal missed_open_facts
             await defer(store_open_pull_request_facts(missed_open_facts, pdb),
                         "store_open_pull_request_facts(%d)" % len(missed_open_facts))
+            missed_open_facts = []
 
         async def store_missed_merged_unreleased_facts():
-            if pdb.url.dialect == "sqlite":
-                await wait_deferred()  # wait for update_unreleased_prs
+            nonlocal missed_merged_unreleased_facts
             await defer(store_merged_unreleased_pull_request_facts(
                 missed_merged_unreleased_facts, matched_bys, default_branches,
                 release_settings, pdb, unreleased_prs_event),
                 "store_merged_unreleased_pull_request_facts(%d)" %
                 len(missed_merged_unreleased_facts))
+            missed_merged_unreleased_facts = []
 
         fact_evals = 0
         hit_facts_counter = 0

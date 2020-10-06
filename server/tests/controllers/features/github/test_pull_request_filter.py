@@ -11,7 +11,8 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.types import ParticipationKind, PullRequestEvent, \
     PullRequestStage
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts, \
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
+    GitHubMergedPullRequestFacts, \
     GitHubOpenPullRequestFacts
 from athenian.api.models.web import PullRequestMetricID
 
@@ -334,6 +335,14 @@ async def test_pr_list_miner_filter_open_precomputed(mdb, pdb, release_match_set
     assert len(prs1) == 21
     open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
     assert len(open_facts) == 21
+
+    # the following is offtopic but saves the precious execution time
+    done_facts = await pdb.fetch_all(select([GitHubDonePullRequestFacts]))
+    assert len(done_facts) == 292
+    merged_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
+    assert len(merged_facts) == 245
+    # offtopic ends
+
     prs2 = await filter_pull_requests(*args)
     assert {pr.number for pr in prs1} == {pr.number for pr in prs2}
     assert {tuple(sorted(pr.stage_timings)) for pr in prs1} == \
