@@ -403,4 +403,6 @@ def pytest_collection_modifyitems(session, config, items):
         if limit < 1:
             limit = len(items) * limit
         limit = int(limit)
-        items[:] = random.sample(items, limit)
+        indexes = list(range(len(items)))
+        indexes = sorted(random.sample(indexes, limit))
+        items[:] = [items[i] for i in indexes]

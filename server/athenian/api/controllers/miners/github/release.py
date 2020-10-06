@@ -77,7 +77,7 @@ async def load_releases(repos: Iterable[str],
     log = logging.getLogger("%s.load_releases" % metadata.__package__)
     match_groups, repos_count = _group_repos_by_release_match(repos, default_branches, settings)
     if repos_count == 0:
-        log.warning("No repositories")
+        log.warning("no repositories")
         return dummy_releases_df(), {}
     tasks = [
         _fetch_precomputed_releases(

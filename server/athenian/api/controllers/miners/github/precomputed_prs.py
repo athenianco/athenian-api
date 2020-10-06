@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
@@ -10,7 +11,7 @@ from dateutil.rrule import DAILY, rrule
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, insert, join, not_, or_, select, update
+from sqlalchemy import and_, desc, insert, join, not_, or_, select, union_all, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
 
@@ -514,27 +515,37 @@ async def load_merged_unreleased_pull_request_facts(
         return {}
     assert time_to.tzinfo is not None
     log = logging.getLogger("%s.load_merged_unreleased_pull_request_facts" % metadata.__package__)
-    filters = []
     ghmprf = GitHubMergedPullRequestFacts
-    selected = [ghmprf.pr_node_id, ghmprf.repository_full_name, ghmprf.data]
     postgres = pdb.url.dialect in ("postgres", "postgresql")
+    selected = [ghmprf.pr_node_id, ghmprf.repository_full_name, ghmprf.data]
+    default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
+    common_filters = [
+        ghmprf.checked_until >= time_to,
+        ghmprf.format_version == default_version,
+    ]
+    if labels:
+        _build_labels_filters(ghmprf, labels, common_filters, selected, postgres)
+    repos_by_match = defaultdict(list)
     for repo in prs[PullRequest.repository_full_name.key].unique():
         if (release_match := _extract_release_match(
                 repo, matched_bys, default_branches, release_settings)) is None:
             # no new releases
             continue
-        filters.append(and_(ghmprf.repository_full_name == repo,
-                            ghmprf.release_match == release_match))
-    default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
-    filters = [
-        ghmprf.pr_node_id.in_(prs.index),
-        ghmprf.checked_until >= time_to,
-        ghmprf.format_version == default_version,
-        or_(*filters),
-    ]
-    if labels:
-        _build_labels_filters(ghmprf, labels, filters, selected, postgres)
-    query = select(selected).where(and_(*filters))
+        repos_by_match[release_match].append(repo)
+    queries = []
+    pr_repos = prs[PullRequest.repository_full_name.key].values.astype("U")
+    pr_ids = prs.index.values
+    for release_match, repos in repos_by_match.items():
+        filters = [
+            ghmprf.pr_node_id.in_(pr_ids[np.in1d(pr_repos, np.array(repos, dtype="U"))]),
+            ghmprf.repository_full_name.in_(repos),
+            ghmprf.release_match == release_match,
+            *common_filters,
+        ]
+        queries.append(select(selected).where(and_(*filters)))
+    if not queries:
+        return {}
+    query = union_all(*queries)
     with sentry_sdk.start_span(op="load_merged_unreleased_pr_facts/fetch"):
         rows = await pdb.fetch_all(query)
     if labels:
