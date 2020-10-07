@@ -334,8 +334,7 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
                         body.account, sdb_conn, mdb_conn, request.cache)
                     await checker.load()
                 repo = repo[len(prefix):]
-                denied = await checker.check({repo})
-                if denied:
+                if await checker.check({repo}):
                     raise ResponseError(ForbiddenError(
                         detail="Account %d is access denied to repo %s" % (body.account, repo)))
                 repos_by_service.setdefault(service, []).append(repo)
