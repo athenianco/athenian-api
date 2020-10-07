@@ -663,10 +663,21 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
     now = datetime.now(timezone.utc)
     rel_time_from = prs_df[PullRequest.merged_at.key].nonemin()
     if rel_time_from:
+        milestone_prs = prs_df[[PullRequest.merge_commit_sha.key,
+                                PullRequest.merge_commit_id.key,
+                                PullRequest.merged_at.key,
+                                PullRequest.repository_full_name.key]]
+        milestone_prs.columns = [
+            Release.sha.key, Release.commit_id.key, Release.published_at.key,
+            Release.repository_full_name.key,
+        ]
+        milestone_releases = dummy_releases_df().append(milestone_prs.reset_index(drop=True))
+        milestone_releases = milestone_releases.take(np.where(
+            milestone_releases[Release.sha.key].notnull())[0])
         releases, matched_bys = await load_releases(
             prs, branches, default_branches, rel_time_from, now, release_settings, mdb, pdb, cache)
         tasks = [
-            load_commit_dags(releases, mdb, pdb, cache),
+            load_commit_dags(releases.append(milestone_releases), mdb, pdb, cache),
             # not nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
             load_merged_unreleased_pull_request_facts(
                 prs_df, releases[Release.published_at.key].max(), LabelFilter.empty(),
