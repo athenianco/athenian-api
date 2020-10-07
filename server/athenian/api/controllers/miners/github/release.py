@@ -828,7 +828,7 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
 @sentry_span
 async def _fetch_labels(node_ids: Iterable[str], mdb: databases.Database) -> Dict[str, List[str]]:
     rows = await mdb.fetch_all(
-        select([PullRequestLabel.pull_request_node_id, PullRequestLabel.name])
+        select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
         .where(PullRequestLabel.pull_request_node_id.in_(node_ids)))
     labels = {}
     for row in rows:

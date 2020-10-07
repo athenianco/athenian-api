@@ -476,11 +476,13 @@ class PullRequestMiner:
         if len(merged_unreleased_indexes):
             # if we truncate and there are PRs merged after `time_to`
             merged_unreleased_prs = prs.take(merged_unreleased_indexes)
-            label_matches = np.in1d(dfs.labels.index.get_level_values(0).values.astype("U"),
-                                    merged_unreleased_prs.index.values.astype("U"))
+            label_matches = np.nonzero(np.in1d(
+                dfs.labels.index.get_level_values(0).values.astype("U"),
+                merged_unreleased_prs.index.values.astype("U")))[0]
             labels = {}
-            for k, v in zip(dfs.labels.index.values[label_matches],
-                            dfs.labels[PullRequestLabel.name.key].values[label_matches]):
+            for k, v in zip(
+                    dfs.labels.index.values[label_matches],
+                    dfs.labels[PullRequestLabel.name.key].take(label_matches).str.lower().values):
                 try:
                     labels[k].append(v)
                 except KeyError:
