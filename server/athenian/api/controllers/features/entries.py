@@ -226,7 +226,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
     """
     assert isinstance(repositories, (tuple, list))
     all_repositories = set(chain.from_iterable(repositories))
-    calc = PullRequestBinnedMetricCalculator(metrics, quantiles)
+    calc = PullRequestBinnedMetricCalculator(metrics, quantiles, exclude_inactive=exclude_inactive)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,

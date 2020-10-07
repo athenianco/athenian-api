@@ -203,6 +203,7 @@ class PullRequestFacts:
     released: Optional[pd.Timestamp]
     done: bool
     reviews: np.ndarray
+    activity_days: np.ndarray
     size: int
     force_push_dropped: bool
 

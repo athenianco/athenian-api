@@ -20,9 +20,11 @@ histogram_calculators: Dict[str, Type[HistogramCalculator]] = {}
 class PullRequestMetricCalculatorEnsemble(MetricCalculatorEnsemble):
     """MetricCalculatorEnsemble adapted for pull requests."""
 
-    def __init__(self, *metrics: str, quantiles: Sequence[float]):
+    def __init__(self, *metrics: str, quantiles: Sequence[float], exclude_inactive: bool = False):
         """Initialize a new instance of PullRequestMetricCalculatorEnsemble class."""
         super().__init__(*metrics, quantiles=quantiles, class_mapping=metric_calculators)
+        for calc in self._calcs:
+            calc.exclude_inactive = exclude_inactive
 
 
 class PullRequestHistogramCalculatorEnsemble(HistogramCalculatorEnsemble):
@@ -442,6 +444,7 @@ class AllCounter(SumMetricCalculator[int]):
     """Count all the PRs that are active in the given time interval."""
 
     dtype = int
+    exclude_inactive = False
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -453,13 +456,33 @@ class AllCounter(SumMetricCalculator[int]):
         released_in_range_mask = released >= min_times[:, None]
         closed = facts["closed"].values
         closed_in_range_mask = (closed >= min_times[:, None]) | (closed != closed)
-        # include inactive merged
-        merged_unreleased_mask = \
-            (facts["merged"].values < min_times[:, None]) & (released != released)
+        if not self.exclude_inactive:
+            merged_unreleased_mask = \
+                (facts["merged"].values < min_times[:, None]) & (released != released)
+        else:
+            merged_unreleased_mask = np.array([False])
+            # we should intersect each PR's activity days with [min_times, max_times).
+            # the following is similar to ReviewedCalculator
+            activity_mask = np.full((len(min_times), len(facts)), False)
+            activity_days = np.concatenate(facts["activity_days"])
+            activities_in_range = (
+                (min_times[:, None] <= activity_days)
+                &
+                (activity_days < max_times[:, None])
+            )
+            activity_offsets = np.zeros(len(facts) + 1, dtype=int)
+            np.cumsum(facts["activity_days"].apply(len).values, out=activity_offsets[1:])
+            for activity_mask_dim, activities_in_range_dim in \
+                    zip(activity_mask, activities_in_range):
+                activity_indexes = np.unique(np.searchsorted(
+                    activity_offsets, np.where(activities_in_range_dim)[0], side="right") - 1)
+                activity_mask_dim[activity_indexes] = 1
 
         in_range_mask = created_in_range_mask & (
             released_in_range_mask | closed_in_range_mask | merged_unreleased_mask
         )
+        if self.exclude_inactive:
+            in_range_mask &= activity_mask
         result = np.full((len(min_times), len(facts)), None, object)
         result[in_range_mask] = 1
         return result
