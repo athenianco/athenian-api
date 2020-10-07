@@ -142,7 +142,8 @@ async def load_releases(repos: Iterable[str],
             missing_low.append((rt_from, repo))
             missed = True
         if time_from <= rt_to < adjusted_time_to:
-            missing_high.append((rt_to, repo))
+            # DEV-990: ensure some gap to avoid failing when mdb lags
+            missing_high.append((rt_to - timedelta(hours=1), repo))
             missed = True
         if rt_from > adjusted_time_to or rt_to < time_from:
             missing_all.append(repo)
