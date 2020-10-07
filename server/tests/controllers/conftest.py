@@ -86,10 +86,13 @@ def pr_samples():
             last_review = fake.date_time_between(approved_at, closed_at, tzinfo=timezone.utc)
             released_at = fake.date_time_between(
                 merged_at, merged_at + timedelta(days=30), tzinfo=timezone.utc)
-            reviews = [
-                fake.date_time_between(created_at, last_review, tzinfo=timezone.utc)
-                for _ in range(randint(0, 3))
-            ]
+            reviews = np.array([
+                fake.date_time_between(created_at, last_review) for _ in range(randint(0, 3))
+            ], dtype="datetime64[ns]")
+            activity_days = np.unique(np.array([dt.replace(tzinfo=None) for dt in [
+                created_at, closed_at, released_at, first_review_request, first_commit,
+                last_commit_before_first_review, last_commit,
+            ]] + reviews.tolist(), dtype="datetime64[D]").astype("datetime64[ns]"))
             return PullRequestFacts(
                 created=pd.Timestamp(created_at),
                 first_commit=pd.Timestamp(first_commit or created_at),
@@ -102,6 +105,7 @@ def pr_samples():
                 first_review_request_exact=first_review_request,
                 last_review=pd.Timestamp(last_review),
                 reviews=np.array(reviews),
+                activity_days=activity_days,
                 approved=pd.Timestamp(approved_at),
                 released=pd.Timestamp(released_at),
                 closed=pd.Timestamp(closed_at),

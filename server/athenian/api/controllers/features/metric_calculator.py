@@ -367,7 +367,8 @@ class BinnedEnsemblesCalculator(Generic[M]):
 
     def __init__(self,
                  metrics: Iterable[Sequence[str]],
-                 quantiles: Sequence[float]):
+                 quantiles: Sequence[float],
+                 **kwargs):
         """
         Initialize a new instance of `BinnedMetricCalculator`.
 
@@ -376,7 +377,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
         :param quantiles: Pair of quantiles, common for each metric.
         """
         self.ensembles = [
-            self.ensemble_class(*metrics, quantiles=quantiles) for metrics in metrics
+            self.ensemble_class(*metrics, quantiles=quantiles, **kwargs) for metrics in metrics
         ]
         self.metrics = metrics
 
@@ -462,14 +463,15 @@ class BinnedMetricsCalculator(BinnedEnsemblesCalculator[Metric]):
 
     def __init__(self,
                  metrics: Sequence[str],
-                 quantiles: Sequence[float]):
+                 quantiles: Sequence[float],
+                 **kwargs):
         """
         Initialize a new instance of `BinnedMetricsCalculator`.
 
         :param metrics: Sequence of metric names to calculate in each bin.
         :param quantiles: Pair of quantiles, common for each metric.
         """
-        super().__init__([metrics], quantiles)
+        super().__init__([metrics], quantiles, **kwargs)
 
     def __call__(self,
                  items: Dict[str, Iterable[Any]],
