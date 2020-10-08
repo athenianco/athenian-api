@@ -137,6 +137,19 @@ def main():
             log.info("Heating reposet %d of account %d (%d repos)",
                      reposet.id, reposet.owner_id, len(repos))
             try:
+                log.info("Mining all the releases")
+                branches, default_branches = await extract_branches(repos, mdb, None)
+                releases, _, _ = await mine_releases(
+                    repos, branches, default_branches, no_time_from, time_to,
+                    settings, mdb, pdb, None, force_fresh=True)
+                branches_count = len(branches)
+                del branches
+                releases_by_tag = sum(
+                    1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
+                releases_by_branch = sum(
+                    1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
+                releases_count = len(releases)
+                del releases
                 log.info("Extracting PR facts")
                 facts = await calc_pull_request_facts_github(
                     time_from,
@@ -159,26 +172,17 @@ def main():
                                      for rf in facts.values())
                     prs_open = sum(sum(1 for f in rf if f.closed is None) for rf in facts.values())
                 del facts  # free some memory
-                log.info("Mining all the releases")
-                branches, default_branches = await extract_branches(repos, mdb, None)
-                releases, _, _ = await mine_releases(
-                    repos, branches, default_branches, no_time_from, time_to,
-                    settings, mdb, pdb, None)
                 if not reposet.precomputed and slack is not None:
-                    releases_by_tag = sum(
-                        1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
-                    releases_by_branch = sum(
-                        1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
                     await slack.post("precomputed_account.jinja2",
                                      account=reposet.owner_id,
                                      prs=prs,
                                      prs_done=prs_done,
                                      prs_merged=prs_merged,
                                      prs_open=prs_open,
-                                     releases=len(releases),
+                                     releases=releases_count,
                                      releases_by_tag=releases_by_tag,
                                      releases_by_branch=releases_by_branch,
-                                     branches=len(branches),
+                                     branches=branches_count,
                                      repositories=len(repos),
                                      bots_team_name=Team.BOTS,
                                      bots=ntbots)
@@ -251,7 +255,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     if not unique_prs:
         return 0
     log.info("Querying labels in %d PRs", len(unique_prs))
-    for batch in range(0, len(unique_prs), 1000):
+    for batch in range(0, len(unique_prs), 5000):
         tasks.append(mdb.fetch_all(
             select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
             .where(PullRequestLabel.pull_request_node_id.in_(unique_prs[batch:batch + 1000]))))
@@ -277,8 +281,8 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     if not tasks:
         return 0
     log.info("Updating %d records", len(tasks))
-    for batch in range(0, len(tasks), 100):
-        errors = await asyncio.gather(*tasks[batch:batch + 100], return_exceptions=True)
+    for batch in range(0, len(tasks), 1000):
+        errors = await asyncio.gather(*tasks[batch:batch + 1000], return_exceptions=True)
         for err in errors:
             if isinstance(err, Exception):
                 sentry_sdk.capture_exception(err)
