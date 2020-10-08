@@ -460,7 +460,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             reviewers={k: "" for k in participants[ParticipationKind.REVIEWER]},
             commit_authors={k: "" for k in participants[ParticipationKind.COMMIT_AUTHOR]},
             commit_committers={k: "" for k in participants[ParticipationKind.COMMIT_COMMITTER]},
-            labels={label: "" for label in pr.labels[PullRequestLabel.name.key].str.lower()},
+            labels={label: "" for label in pr.labels[PullRequestLabel.name.key].values},
             activity_days=activity_days,
             data=pickle.dumps(facts),
         ).create_defaults().explode(with_primary_keys=True))
