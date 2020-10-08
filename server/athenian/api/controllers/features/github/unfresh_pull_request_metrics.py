@@ -54,7 +54,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
             repositories, branches, default_branches, time_from, time_to, release_settings,
             mdb, pdb, cache),
         PullRequestMiner.fetch_prs(
-            time_from, time_to, repositories, participants, jira, 0, exclude_inactive,
+            time_from, time_to, repositories, participants, labels, jira, 0, exclude_inactive,
             blacklist, mdb, columns=[
                 PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
             ]),
@@ -92,10 +92,11 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
     tasks = [
         load_open_pull_request_facts_unfresh(open_prs, pdb),
         load_merged_unreleased_pull_request_facts(
-            merged_prs, time_to, labels, releases[1], default_branches, release_settings, pdb),
+            merged_prs, time_to, LabelFilter.empty(), releases[1],
+            default_branches, release_settings, pdb),
     ]
     open_facts, merged_facts = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (open_facts, merged_facts, labels):
+    for r in (open_facts, merged_facts):
         if isinstance(r, Exception):
             raise r from None
     add_pdb_hits(pdb, "precomputed_open_facts", len(open_facts))
