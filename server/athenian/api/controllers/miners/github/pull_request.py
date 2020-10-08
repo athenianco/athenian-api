@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass, fields as dataclass_fields
 from datetime import date, datetime, timezone
 from enum import Enum
+from itertools import chain
 import logging
 import pickle
 from typing import Collection, Dict, Generator, Iterable, Iterator, List, Optional, Sequence, \
@@ -205,8 +206,8 @@ class PullRequestMiner:
                 participants.get(ParticipationKind.MERGER, []),
                 jira, release_settings, limit, mdb, pdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
-                time_from, time_to, repositories, participants, jira, limit, exclude_inactive,
-                pr_blacklist, mdb),
+                time_from, time_to, repositories, participants, labels, jira, limit,
+                exclude_inactive, pr_blacklist, mdb),
         ]
         if not exclude_inactive:
             tasks.append(cls._fetch_inactive_merged_unreleased_prs(
@@ -569,6 +570,7 @@ class PullRequestMiner:
                         time_to: datetime,
                         repositories: Set[str],
                         participants: Participants,
+                        labels: LabelFilter,
                         jira: JIRAFilter,
                         limit: int,
                         exclude_inactive: bool,
@@ -605,14 +607,51 @@ class PullRequestMiner:
                 PullRequest.user_login.in_(participants[ParticipationKind.AUTHOR]),
                 PullRequest.merged_by_login.in_(participants[ParticipationKind.MERGER]),
             ))
+        selected_columns = [PullRequest] if columns is PullRequest else columns
         if not jira:
-            sql_columns = [PullRequest] if columns is PullRequest else columns
-            query = sql.select(sql_columns).where(sql.and_(*filters))
+            query = sql.select(selected_columns).where(sql.and_(*filters))
         else:
-            query = await generate_jira_prs_query(filters, jira, mdb, columns=columns)
+            query = await generate_jira_prs_query(filters, jira, mdb, columns=selected_columns)
+        if (embedded_labels_query := labels and labels.include and not labels.exclude and
+                mdb.url.dialect in ("postgres", "postgresql")):
+            singles, multiples = LabelFilter.split(labels.include)
+            if multiples:
+                in_items = set(singles + list(chain.from_iterable(multiples)))
+                # we cannot be sure about multiples, but we do know that any PRs without any
+                # mentioned label are not suitable
+                embedded_labels_query = False
+            else:
+                in_items = singles
+            pr_node_id = sql.column("m.node_id", is_literal=True)
+            query = sql.select([sql.column("m.*", is_literal=True)])\
+                .distinct(pr_node_id) \
+                .select_from(sql.join(
+                    query.alias("m"), PullRequestLabel,
+                    pr_node_id == PullRequestLabel.pull_request_node_id)) \
+                .where(sql.func.lower(PullRequestLabel.name).in_(in_items))
         if limit > 0:
-            query = query.order_by(sql.desc(PullRequest.updated_at)).limit(limit)
-        return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
+            query = query.order_by(sql.desc(PullRequest.updated_at))
+            if not labels:
+                query = query.limit(limit)
+        prs = await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
+        if not labels or embedded_labels_query:
+            return prs
+        lcols = [
+            PullRequestLabel.pull_request_node_id,
+            sql.func.lower(PullRequestLabel.name).label(PullRequestLabel.name.key),
+            PullRequestLabel.description,
+            PullRequestLabel.color,
+        ]
+        df_labels = await read_sql_query(
+            sql.select(lcols).where(PullRequestLabel.pull_request_node_id.in_(prs.index)),
+            mdb, lcols, index=PullRequestLabel.pull_request_node_id.key)
+        left = cls._find_left_by_labels(
+            df_labels.index, df_labels[PullRequestLabel.name.key].values, labels)
+        left_indexes = np.where(prs.index.isin(left))[0]
+        if limit > 0:
+            left_indexes = left_indexes[:limit]
+        prs = prs.take(left_indexes)
+        return prs
 
     @classmethod
     @sentry_span
