@@ -1186,16 +1186,18 @@ class PullRequestFactsMiner:
         force_push_dropped = pr.release[matched_by_column] == ReleaseMatch.force_push_drop
         done = bool(released or force_push_dropped or (closed and not merged))
         work_began = nonemin(created, first_commit)
-        reviews = np.sort(reviews_before_merge[PullRequestReview.submitted_at.key].values)
+        ts_dtype = "datetime64[ns]"
+        reviews = np.sort(reviews_before_merge[PullRequestReview.submitted_at.key].values) \
+            .astype(ts_dtype)
         activity_days = np.concatenate([
-            np.array([created, closed, released], dtype=reviews.dtype),
+            np.array([created, closed, released], dtype=ts_dtype),
             pr.commits[PullRequestCommit.committed_date.key].values,
             pr.review_requests[PullRequestReviewRequest.created_at.key].values,
             pr.reviews[PullRequestReview.created_at.key].values,
             pr.comments[PullRequestComment.created_at.key].values,
         ]).astype("datetime64[D]")
         activity_days = \
-            np.unique(activity_days[activity_days == activity_days]).astype(reviews.dtype)
+            np.unique(activity_days[activity_days == activity_days]).astype(ts_dtype)
         facts = PullRequestFacts(
             created=created,
             first_commit=first_commit,
