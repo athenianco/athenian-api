@@ -451,8 +451,9 @@ class PullRequestMiner:
                 df[Issue.labels.key].apply(lambda i: [s.lower() for s in (i or [])])
                 +
                 df[[Issue.acc_id.key, Issue.components.key]]
-                .apply(lambda row: [cmap[row[Issue.acc_id.key]][c]
-                                    for c in row[Issue.components.key]],
+                .apply(lambda row: ([cmap[row[Issue.acc_id.key]][c]
+                                    for c in row[Issue.components.key]]
+                                    if row[Issue.components.key] is not None else []),
                        axis=1)
             )
             df.drop([Issue.acc_id.key, Issue.components.key], inplace=True, axis=1)
