@@ -9,7 +9,7 @@ import logging
 from typing import Collection, List, Set
 
 import sentry_sdk
-from sqlalchemy import and_, create_engine, insert, select, update
+from sqlalchemy import and_, create_engine, func, insert, select, update
 from sqlalchemy.orm import Session, sessionmaker
 from tqdm import tqdm
 
@@ -253,7 +253,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     log.info("Querying labels in %d PRs", len(unique_prs))
     for batch in range(0, len(unique_prs), 1000):
         tasks.append(mdb.fetch_all(
-            select([PullRequestLabel.pull_request_node_id, PullRequestLabel.name])
+            select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
             .where(PullRequestLabel.pull_request_node_id.in_(unique_prs[batch:batch + 1000]))))
     task_results = await asyncio.gather(*tasks, return_exceptions=True)
     for r in task_results:

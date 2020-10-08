@@ -480,9 +480,8 @@ class PullRequestMiner:
                 dfs.labels.index.get_level_values(0).values.astype("U"),
                 merged_unreleased_prs.index.values.astype("U")))[0]
             labels = {}
-            for k, v in zip(
-                    dfs.labels.index.values[label_matches],
-                    dfs.labels[PullRequestLabel.name.key].take(label_matches).str.lower().values):
+            for k, v in zip(dfs.labels.index.values[label_matches],
+                            dfs.labels[PullRequestLabel.name.key].take(label_matches).values):
                 try:
                     labels[k].append(v)
                 except KeyError:
@@ -752,7 +751,7 @@ class PullRequestMiner:
         if not labels:
             return pd.Index([])
         df_labels_index = dfs.labels.index.get_level_values(0)
-        df_labels_names = dfs.labels[PullRequestLabel.name.key].str.lower().values
+        df_labels_names = dfs.labels[PullRequestLabel.name.key].values
         left = cls._find_left_by_labels(df_labels_index, df_labels_names, labels)
         return dfs.prs.index.difference(left)
 
