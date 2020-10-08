@@ -60,6 +60,7 @@ from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
+from athenian.api.models.web.paginate_pull_requests_request import PaginatePullRequestsRequest
 from athenian.api.models.web.patch_token_request import PatchTokenRequest
 from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.models.web.pull_request import PullRequest
@@ -69,6 +70,7 @@ from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.models.web.pull_request_numbers import PullRequestNumbers
+from athenian.api.models.web.pull_request_pagination_plan import PullRequestPaginationPlan
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
 from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.pull_request_set import PullRequestSet

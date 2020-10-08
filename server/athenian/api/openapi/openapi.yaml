@@ -242,7 +242,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -281,7 +281,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -359,7 +359,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -398,7 +398,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -406,6 +406,12 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: Current user is not allowed to access the specified account
             or reposets.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
       - apiKeyAuth: []
@@ -437,7 +443,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -477,7 +483,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -517,7 +523,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -558,7 +564,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -815,7 +821,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -857,7 +863,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -899,7 +905,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -947,7 +953,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -971,6 +977,51 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.metrics_controller
+      x-codegen-request-body-name: body
+  /paginate/pull_requests:
+    post:
+      operationId: paginate_prs
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaginatePullRequestsRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PullRequestPaginationPlan'
+          description: Identifier of the created repository set.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to access the specified account
+            or reposets.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
+      security:
+      - bearerAuth: []
+      summary: Compute the balanced pagination plan for `/filter/pull_requests`.
+      tags:
+      - pagination
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.pagination_controller
       x-codegen-request-body-name: body
   /reposet/create:
     post:
@@ -1304,7 +1355,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         409:
           content:
             application/json:
@@ -1433,7 +1484,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InvalidRequestError'
-          description: The request was invalid.
+          description: The request is invalid.
         403:
           content:
             application/json:
@@ -2340,12 +2391,12 @@ components:
         repositories:
           $ref: '#/components/schemas/RepositorySet'
         repogroups:
-          description: Lists of indexes in `repositories` that define independent groups
-            that must be processed individually. The groups may have intersections.
+          description: Lists of indexes in `repositories` that define independent
+            groups that must be processed individually. The groups may have intersections.
           items:
             items:
-              minimum: 0
               minItems: 1
+              minimum: 0
               type: integer
             type: array
           minItems: 1
@@ -2913,6 +2964,16 @@ components:
           type: boolean
         jira:
           $ref: '#/components/schemas/JIRAFilter'
+        updated_from:
+          description: 'Paginate the response: the returned PRs are updated no older
+            than this timestamp, including the beginning.'
+          format: date
+          type: string
+        updated_to:
+          description: 'Paginate the response: the returned PRs are updated no later
+            than this timestamp, not including the ending.'
+          format: date
+          type: string
         limit:
           description: Maximum number of pull requests to return. The list is sorted
             by the last update timestamp. `null` means no limit.
@@ -4462,7 +4523,8 @@ components:
           # DEPRECATED
           $ref: '#/components/schemas/HistogramScale'
         bins:
-          description: DEPRECATED Number of bars in the histogram. 0 or null means automatic.
+          description: DEPRECATED Number of bars in the histogram. 0 or null means
+            automatic.
           minimum: 0
           type: integer
         date_from:
@@ -4934,4 +4996,37 @@ components:
       - matches
       - metrics
       - values
+      type: object
+    PaginatePullRequestsRequest:
+      additionalProperties: false
+      description: Request of `/paginate/pull_requests`. According to the target batch
+        size, compute the optimal PR updated timestamp ranges.
+      properties:
+        batch:
+          description: Target batch size. The returned ranges do not guarantee the
+            exact match.
+          type: integer
+        request:
+          description: Same body to be sent to `/filter/pull_requests`. Inner pagination
+            is ignored.
+          $ref: '#/components/schemas/FilterPullRequestsRequest'
+      required:
+      - batch
+      - request
+      type: object
+    PullRequestPaginationPlan:
+      additionalProperties: false
+      description: Response of `/paginate/pull_requests`. Computed split of the PR
+        updated timestamp range.
+      example:
+        updated:
+        - 2020-10-01
+        - 2020-10-07
+        - 2020-10-08
+      properties:
+        updated:
+          items:
+            format: date
+            type: string
+          type: array
       type: object
