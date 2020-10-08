@@ -464,7 +464,7 @@ class AllCounter(SumMetricCalculator[int]):
             # we should intersect each PR's activity days with [min_times, max_times).
             # the following is similar to ReviewedCalculator
             activity_mask = np.full((len(min_times), len(facts)), False)
-            activity_days = np.concatenate(facts["activity_days"])
+            activity_days = np.concatenate(facts["activity_days"]).astype(facts["created"].dtype)
             activities_in_range = (
                 (min_times[:, None] <= activity_days)
                 &
@@ -558,7 +558,7 @@ class ReviewedCalculator(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
-        review_timestamps = np.concatenate(facts["reviews"])
+        review_timestamps = np.concatenate(facts["reviews"]).astype(facts["created"].dtype)
         reviews_in_range = \
             (min_times[:, None] <= review_timestamps) & (review_timestamps < max_times[:, None])
         # we cannot sum `reviews_in_range` because there can be several reviews for the same PR
