@@ -62,6 +62,7 @@ async def load_releases(repos: Iterable[str],
                         pdb: databases.Database,
                         cache: Optional[aiomcache.Client],
                         index: Optional[Union[str, Sequence[str]]] = None,
+                        force_fresh: bool = False,
                         ) -> Tuple[pd.DataFrame, Dict[str, ReleaseMatch]]:
     """
     Fetch releases from the metadata DB according to the match settings.
@@ -96,8 +97,11 @@ async def load_releases(repos: Iterable[str],
     )[matched_by_column].nth(0).to_dict()
     releases = releases.take(np.where(
         releases[Release.published_at.key].between(time_from, time_to))[0])
-    if repos_count > unfresh_releases_threshold and \
-            time_to > (max_time_to := datetime.now(timezone.utc).replace(minute=0, second=0)):
+    if force_fresh:
+        max_time_to = datetime.now(timezone.utc) + timedelta(days=1)
+    else:
+        max_time_to = datetime.now(timezone.utc).replace(minute=0, second=0) - timedelta(hours=1)
+    if repos_count > unfresh_releases_threshold and time_to > max_time_to:
         log.warning("Activated the unfresh mode for a set of %d repositories", repos_count)
         adjusted_time_to = max_time_to
     else:
@@ -1408,6 +1412,7 @@ async def mine_releases(repos: Iterable[str],
                         mdb: databases.Database,
                         pdb: databases.Database,
                         cache: Optional[aiomcache.Client],
+                        force_fresh: bool = False,
                         ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
                                    List[Tuple[str, str]],
                                    Dict[str, ReleaseMatch]]:
@@ -1416,7 +1421,8 @@ async def mine_releases(repos: Iterable[str],
     prefix = PREFIXES["github"]
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
     releases_in_time_range, matched_bys = await load_releases(
-        repos, branches, default_branches, time_from, time_to, settings, mdb, pdb, cache)
+        repos, branches, default_branches, time_from, time_to, settings, mdb, pdb, cache,
+        force_fresh=force_fresh)
     # resolve ambiguous release match settings
     settings = settings.copy()
     for repo in repos:
