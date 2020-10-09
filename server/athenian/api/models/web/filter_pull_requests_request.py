@@ -27,6 +27,8 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         "labels_exclude": List[str],
         "exclude_inactive": bool,
         "jira": JIRAFilter,
+        "updated_from": Optional[date],
+        "updated_to": Optional[date],
         "limit": int,
     }
 
@@ -44,6 +46,8 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         "labels_exclude": "labels_exclude",
         "exclude_inactive": "exclude_inactive",
         "jira": "jira",
+        "updated_from": "updated_from",
+        "updated_to": "updated_to",
         "limit": "limit",
     }
 
@@ -62,6 +66,8 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         labels_exclude: Optional[List[str]] = None,
         exclude_inactive: Optional[bool] = None,
         jira: Optional[JIRAFilter] = None,
+        updated_from: Optional[date] = None,
+        updated_to: Optional[date] = None,
         limit: Optional[int] = None,
     ):
         """FilterPullRequestsRequest - a model defined in OpenAPI
@@ -79,6 +85,8 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         :param labels_exclude: The labels_exclude of this FilterPullRequestsRequest.
         :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
         :param jira: The jira of this FilterPullRequestsRequest.
+        :param updated_from: The updated_from of this FilterPullRequestsRequest.
+        :param updated_to: The updated_to of this FilterPullRequestsRequest.
         :param limit: The limit of this FilterPullRequestsRequest.
         """
         self._account = account
@@ -94,6 +102,8 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         self._labels_exclude = labels_exclude
         self._exclude_inactive = exclude_inactive
         self._jira = jira
+        self._updated_from = updated_from
+        self._updated_to = updated_to
         self._limit = limit
 
     @property
@@ -270,6 +280,38 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         :param jira: The jira of this FilterPullRequestsRequest.
         """
         self._jira = jira
+
+    @property
+    def updated_from(self) -> date:
+        """Gets the updated_from of this Model.
+
+        :return: The updated_from of this Model.
+        """
+        return self._updated_from
+
+    @updated_from.setter
+    def updated_from(self, updated_from: date) -> None:
+        """Sets the updated_from of this Model.
+
+        :param updated_from: The updated_from of this Model.
+        """
+        self._updated_from = updated_from
+
+    @property
+    def updated_to(self) -> date:
+        """Gets the updated_to of this Model.
+
+        :return: The updated_to of this Model.
+        """
+        return self._updated_to
+
+    @updated_to.setter
+    def updated_to(self, updated_to: date) -> None:
+        """Sets the updated_to of this Model.
+
+        :param updated_to: The updated_to of this Model.
+        """
+        self._updated_to = updated_to
 
     @property
     def limit(self) -> int:
