@@ -12,7 +12,7 @@ from athenian.api.models.state.models import Base
 def test_migrations():
     with tempfile.TemporaryDirectory() as tmpdir:
         cs = "sqlite:///%s/sdb.sqlite" % tmpdir
-        env = {**os.environ, "PYTHONPATH": os.getcwd()}
+        env = {**os.environ, "PYTHONPATH": os.getcwd(), "ATHENIAN_INVITATION_KEY": "whatever"}
         try:
             subprocess.run([sys.executable, "-m", "athenian.api.models.state", cs],
                            capture_output=True, check=True, cwd=tmpdir, env=env)

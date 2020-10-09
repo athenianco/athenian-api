@@ -9,6 +9,7 @@ import sqlalchemy.orm
 from sqlalchemy.sql.type_api import Variant
 
 from athenian.api.controllers import invitation_controller
+from athenian.api.controllers.invitation_controller import _generate_account_secret
 from athenian.api.models.metadata import __min_version__
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest, PushCommit, \
     SchemaMigration
@@ -92,10 +93,14 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
 
 
 def fill_state_session(session: sqlalchemy.orm.Session):
-    session.add(Account())
-    session.add(Account())
-    session.add(Account())
-    session.add(Account(id=invitation_controller.admin_backdoor))
+    salt, secret = _generate_account_secret(1)
+    session.add(Account(secret_salt=salt, secret=secret))
+    salt, secret = _generate_account_secret(2)
+    session.add(Account(secret_salt=salt, secret=secret))
+    salt, secret = _generate_account_secret(3)
+    session.add(Account(secret_salt=salt, secret=secret))
+    salt, secret = _generate_account_secret(invitation_controller.admin_backdoor)
+    session.add(Account(id=invitation_controller.admin_backdoor, secret_salt=salt, secret=secret))
     session.flush()
     session.add(AccountGitHubInstallation(id=6366825, account_id=1))
     session.add(UserAccount(

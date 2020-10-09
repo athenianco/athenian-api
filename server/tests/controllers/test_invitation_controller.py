@@ -236,8 +236,16 @@ async def test_accept_invitation_admin(client, headers, sdb, no_default_user):
             "accounts": {"1": True, "2": False, "4": True},
         },
     }
-    num_accounts_after = len(await sdb.fetch_all(select([Account])))
+    accounts = await sdb.fetch_all(select([Account]))
+    num_accounts_after = len(accounts)
     assert num_accounts_after == num_accounts_before + 1
+    for row in accounts:
+        if row[Account.id.key] == 4:
+            assert row[Account.secret_salt.key] not in (None, 0)
+            secret = row[Account.secret.key]
+            assert isinstance(secret, str)
+            assert len(secret) == 8
+            assert secret != Account.missing_secret
 
 
 async def test_accept_invitation_admin_cooldown(client, headers, sdb, no_default_user):
