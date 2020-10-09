@@ -586,13 +586,14 @@ class PullRequestMiner:
         Besides, we cannot filter by participation roles different from AUTHOR and MERGER.
         """
         filters = [
-            sql.or_(PullRequest.closed_at.is_(None), PullRequest.closed_at >= time_from),
+            sql.func.coalesce(PullRequest.closed_at >= time_from, sql.true()),
             PullRequest.created_at < time_to,
             PullRequest.hidden.is_(False),
             PullRequest.repository_full_name.in_(repositories),
         ]
         if exclude_inactive:
-            # this does not provide 100% guarantee, we need to properly filter later
+            # this does not provide 100% guarantee because it can be after time_to,
+            # we need to properly filter later
             filters.append(PullRequest.updated_at >= time_from)
         if pr_blacklist is not None:
             filters.append(pr_blacklist)
