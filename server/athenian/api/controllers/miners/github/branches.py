@@ -65,3 +65,8 @@ async def extract_branches(repos: Iterable[str],
                     "repository %s has 0 branches", full_name)
                 default_branches[full_name] = "master"
     return branches, default_branches
+
+
+def dummy_branches_df() -> pd.DataFrame:
+    """Create an empty dataframe with Branch columns."""
+    return pd.DataFrame(columns=[c.name for c in Branch.__table__.columns])

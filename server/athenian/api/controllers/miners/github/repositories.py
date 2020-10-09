@@ -11,7 +11,7 @@ from sqlalchemy import and_, distinct, join, or_, select
 
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import dummy_branches_df, extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs
 from athenian.api.controllers.miners.github.release import load_releases
@@ -116,16 +116,17 @@ async def mine_repositories(repos: Collection[str],
 
     @sentry_span
     async def fetch_releases():
-        branches, default_branches = await extract_branches(repos, mdb, cache)
-        releases, _ = await load_releases(repos, branches, default_branches, time_from, time_to,
-                                          release_settings, mdb, pdb, cache)
+        # we don't care about branch releases at all because they will bubble up in
+        # fetch_commits()
+        releases, _ = await load_releases(repos, dummy_branches_df(), {r: "!" for r in repos},
+                                          time_from, time_to, release_settings, mdb, pdb, cache)
         return [(r,) for r in releases[Release.repository_full_name.key].unique()]
 
     tasks = [
         fetch_commits(),
-        fetch_releases(),
         fetch_comments(),
         fetch_reviews(),
+        fetch_releases(),
         fetch_released_prs(),
         fetch_merged_prs(),
         fetch_open_prs(),
