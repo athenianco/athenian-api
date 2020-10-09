@@ -92,9 +92,13 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    repos = await _common_filter_preprocess(filt, request)
+    repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
+    release_settings = \
+        await Settings.from_request(request, filt.account).list_release_matches(repos)
+    repos = [r.split("/", 1)[1] for r in repos]
     repos = await mine_repositories(
-        repos, filt.date_from, filt.date_to, filt.exclude_inactive, request.mdb, request.cache)
+        repos, filt.date_from, filt.date_to, filt.exclude_inactive, release_settings,
+        request.mdb, request.pdb, request.cache)
     return web.json_response(repos)
 
 

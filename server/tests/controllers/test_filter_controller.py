@@ -11,7 +11,10 @@ import pytest
 from sqlalchemy import delete, insert, select
 
 from athenian.api import setup_cache_metrics
+from athenian.api.controllers.features.entries import calc_pull_request_facts_github
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.types import Property
+from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch
 from athenian.api.models.web import CommitsList, PullRequestSet
 from athenian.api.models.web.filtered_label import FilteredLabel
@@ -37,7 +40,14 @@ async def test_filter_repositories_no_repos(client, headers):
 
 
 @pytest.mark.filter_repositories
-async def test_filter_repositories_smoke(client, headers):
+@with_defer
+async def test_filter_repositories_smoke(client, headers, mdb, pdb, release_match_setting_tag):
+    time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
+    time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
+    args = (time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+            False, release_match_setting_tag, False, mdb, pdb, None)
+    await calc_pull_request_facts_github(*args)
+    await wait_deferred()
     body = {
         "date_from": "2017-09-16",
         "date_to": "2017-09-17",
@@ -57,7 +67,15 @@ async def test_filter_repositories_smoke(client, headers):
 
 
 @pytest.mark.filter_repositories
-async def test_filter_repositories_exclude_inactive(client, headers):
+@with_defer
+async def test_filter_repositories_exclude_inactive(
+        client, headers, mdb, pdb, release_match_setting_tag):
+    time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
+    time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
+    args = (time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+            False, release_match_setting_tag, False, mdb, pdb, None)
+    await calc_pull_request_facts_github(*args)
+    await wait_deferred()
     body = {
         "date_from": "2017-09-16",
         "date_to": "2017-09-17",
