@@ -342,8 +342,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
         assert await PullRequestMiner._mine.reset_cache(
             None, date_from, date_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
             JIRAFilter.empty(), branches, default_branches,
-            False, release_match_setting_tag, 0, mdb, pdb, cache,
-            pr_blacklist=None, truncate=True)
+            False, release_match_setting_tag, None, None, 0, None, True, mdb, pdb, cache)
     metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     assert metrics1.exists and metrics2.exists
     assert metrics1.value == metrics2.value

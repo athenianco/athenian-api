@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import json
 from operator import itemgetter
-from typing import Collection, Dict, Set
+from typing import Collection, Dict, Optional, Set
 
 from aiohttp import ClientResponse
 import dateutil
@@ -287,6 +287,8 @@ async def test_filter_prs_all_properties(client, headers, mdb):
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-04-23",
+        "updated_from": "2015-10-13",
+        "updated_to": "2020-05-01",
         "timezone": 60,
         "account": 1,
         "in": [],
@@ -296,7 +298,7 @@ async def test_filter_prs_all_properties(client, headers, mdb):
     time_to = datetime(year=2020, month=4, day=23, tzinfo=timezone.utc)
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, set(PullRequestProperty), {}, time_to)
+    await validate_prs_response(response, set(PullRequestProperty), {}, time_to, 682)
     del body["properties"]
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
@@ -305,7 +307,7 @@ async def test_filter_prs_all_properties(client, headers, mdb):
 
 @pytest.mark.filter_pull_requests
 @with_only_master_branch
-async def test_filter_prs_shot(client, headers, mdb):
+async def test_filter_prs_shot_limit(client, headers, mdb):
     body = {
         "date_from": "2016-10-13",
         "date_to": "2018-01-23",
@@ -325,6 +327,31 @@ async def test_filter_prs_shot(client, headers, mdb):
     n = await validate_prs_response(response, {PullRequestProperty.MERGE_HAPPENED},
                                     {"author": ["github.com/mcuadros"]}, time_to)
     assert n == 69  # it is 75 without the limit
+
+
+@pytest.mark.filter_pull_requests
+@with_only_master_branch
+async def test_filter_prs_shot_updated(client, headers, mdb):
+    body = {
+        "date_from": "2016-10-13",
+        "date_to": "2018-01-23",
+        "timezone": 60,
+        "account": 1,
+        "in": [],
+        "properties": [PullRequestProperty.MERGE_HAPPENED],
+        "with": {
+            "author": ["github.com/mcuadros"],
+        },
+        "updated_from": "2017-01-01",
+        "updated_to": "2018-01-24",
+        "exclude_inactive": False,
+    }
+    time_to = datetime(year=2018, month=1, day=24, tzinfo=timezone.utc)
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    n = await validate_prs_response(response, {PullRequestProperty.MERGE_HAPPENED},
+                                    {"author": ["github.com/mcuadros"]}, time_to)
+    assert n == 52  # it is 75 without the constraints
 
 
 @pytest.mark.filter_pull_requests
@@ -468,7 +495,8 @@ will_never_be_released_go_git_pr_numbers = {
 async def validate_prs_response(response: ClientResponse,
                                 props: Set[str],
                                 parts: Dict[str, Collection[str]],
-                                time_to: datetime) -> int:
+                                time_to: datetime,
+                                count: Optional[int] = None) -> int:
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     obj = json.loads(text)
@@ -481,6 +509,8 @@ async def validate_prs_response(response: ClientResponse,
         total_review_requests = total_reviews = total_force_push_dropped = 0
     tdz = timedelta(0)
     timings = defaultdict(lambda: tdz)
+    if count is not None:
+        assert len(prs.data) == count
     for pr in prs.data:
         assert pr.title
         assert pr.repository == "github.com/src-d/go-git", str(pr)
@@ -698,10 +728,14 @@ async def validate_prs_response(response: ClientResponse,
 
 
 @pytest.mark.filter_pull_requests
-@pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403), (1, "2015-10-13", 200),
-                          (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
-async def test_filter_prs_nasty_input(client, headers, account, date_to, code):
+@pytest.mark.parametrize("account, date_to, updated_from, code",
+                         [(3, "2020-01-23", None, 403),
+                          (10, "2020-01-23", None, 403),
+                          (1, "2015-10-13", None, 200),
+                          (1, "2010-01-11", None, 400),
+                          (1, "2020-01-32", None, 400),
+                          (1, "2015-10-13", "2015-10-15", 400)])
+async def test_filter_prs_nasty_input(client, headers, account, date_to, updated_from, code):
     body = {
         "date_from": "2015-10-13",
         "date_to": date_to,
@@ -710,6 +744,8 @@ async def test_filter_prs_nasty_input(client, headers, account, date_to, code):
         "properties": [],
         "exclude_inactive": False,
     }
+    if updated_from is not None:
+        body["updated_from"] = updated_from
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     assert response.status == code

@@ -158,8 +158,10 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=lambda r: pickle.dumps(r[:-1]),
         deserialize=_deserialize_mine_cache,
-        key=lambda date_from, date_to, exclude_inactive, release_settings, limit, pr_blacklist, truncate, **_: (  # noqa
+        key=lambda date_from, date_to, exclude_inactive, release_settings, updated_min, updated_max, limit, pr_blacklist, truncate, **_: (  # noqa
             date_from.toordinal(), date_to.toordinal(), exclude_inactive, release_settings,
+            updated_min.timestamp() if updated_min is not None else None,
+            updated_max.timestamp() if updated_max is not None else None,
             limit, ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []), truncate,
         ),
         postprocess=_postprocess_cached_prs,
@@ -175,12 +177,14 @@ class PullRequestMiner:
                     default_branches: Dict[str, str],
                     exclude_inactive: bool,
                     release_settings: Dict[str, ReleaseMatchSetting],
+                    updated_min: Optional[datetime],
+                    updated_max: Optional[datetime],
                     limit: int,
+                    pr_blacklist: Optional[Collection[str]],
+                    truncate: bool,
                     mdb: databases.Database,
                     pdb: databases.Database,
                     cache: Optional[aiomcache.Client],
-                    pr_blacklist: Optional[Collection[str]],
-                    truncate: bool,
                     ) -> Tuple[PRDataFrames,
                                Dict[str, Tuple[str, PullRequestFacts]],
                                Set[str],
@@ -192,6 +196,7 @@ class PullRequestMiner:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
         assert isinstance(repositories, set)
+        assert (updated_min is None) == (updated_max is None)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
         if pr_blacklist is not None:
             if len(pr_blacklist) > 0:
@@ -204,12 +209,16 @@ class PullRequestMiner:
                 repositories, branches, default_branches, time_from, time_to,
                 participants.get(ParticipationKind.AUTHOR, []),
                 participants.get(ParticipationKind.MERGER, []),
-                jira, release_settings, limit, mdb, pdb, cache, pr_blacklist, truncate),
+                jira, release_settings, updated_min, updated_max, limit,
+                mdb, pdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
                 time_from, time_to, repositories, participants, labels, jira, limit,
-                exclude_inactive, pr_blacklist, mdb),
+                exclude_inactive, pr_blacklist, mdb,
+                updated_min=updated_min, updated_max=updated_max),
         ]
-        if not exclude_inactive:
+        # the following is a very rough approximation regarding updated_min/max:
+        # we load all of none of the inactive merged PRs
+        if not exclude_inactive and (updated_min is None or updated_min <= time_from):
             tasks.append(cls._fetch_inactive_merged_unreleased_prs(
                 time_from, time_to, repositories, participants, labels, jira, default_branches,
                 release_settings, limit, mdb, pdb, cache))
@@ -516,6 +525,8 @@ class PullRequestMiner:
                    mdb: databases.Database,
                    pdb: databases.Database,
                    cache: Optional[aiomcache.Client],
+                   updated_min: Optional[datetime] = None,
+                   updated_max: Optional[datetime] = None,
                    limit: int = 0,
                    pr_blacklist: Optional[Collection[str]] = None,
                    truncate: bool = True,
@@ -539,6 +550,8 @@ class PullRequestMiner:
         :param default_branches: Mapping from repository names to their default branch names.
         :param exclude_inactive: Ors must have at least one event in the given time frame.
         :param release_settings: Release match settings of the account.
+        :param updated_min: PRs must have the last update timestamp not older than it.
+        :param updated_max: PRs must have the last update timestamp not newer than or equal to it.
         :param limit: Maximum number of PRs to return. The list is sorted by the last update \
                       timestamp. 0 means no limit.
         :param mdb: Metadata db instance.
@@ -559,8 +572,8 @@ class PullRequestMiner:
         assert time_to <= date_to_with_time
         dfs, facts, _, _, _, _, matched_bys, event = await cls._mine(
             date_from, date_to, repositories, participants, labels, jira, branches,
-            default_branches, exclude_inactive, release_settings, limit, mdb, pdb, cache,
-            pr_blacklist=pr_blacklist, truncate=truncate)
+            default_branches, exclude_inactive, release_settings, updated_min, updated_max,
+            limit, pr_blacklist, truncate, mdb, pdb, cache)
         cls._truncate_prs(dfs, time_from, time_to)
         return cls(dfs), facts, matched_bys, event
 
@@ -577,7 +590,10 @@ class PullRequestMiner:
                         exclude_inactive: bool,
                         pr_blacklist: Optional[BinaryExpression],
                         mdb: databases.Database,
-                        columns=PullRequest) -> pd.DataFrame:
+                        columns=PullRequest,
+                        updated_min: Optional[datetime] = None,
+                        updated_max: Optional[datetime] = None,
+                        ) -> pd.DataFrame:
         """
         Query pull requests from mdb that satisfy the given filters.
 
@@ -585,16 +601,19 @@ class PullRequestMiner:
         so the caller is responsible for fetching PR labels and filtering by them afterward.
         Besides, we cannot filter by participation roles different from AUTHOR and MERGER.
         """
+        assert (updated_min is None) == (updated_max is None)
         filters = [
             sql.func.coalesce(PullRequest.closed_at >= time_from, sql.true()),
             PullRequest.created_at < time_to,
             PullRequest.hidden.is_(False),
             PullRequest.repository_full_name.in_(repositories),
         ]
-        if exclude_inactive:
+        if exclude_inactive and updated_min is None:
             # this does not provide 100% guarantee because it can be after time_to,
             # we need to properly filter later
             filters.append(PullRequest.updated_at >= time_from)
+        if updated_min is not None:
+            filters.append(PullRequest.updated_at.between(updated_min, updated_max))
         if pr_blacklist is not None:
             filters.append(pr_blacklist)
         if len(participants) == 1:

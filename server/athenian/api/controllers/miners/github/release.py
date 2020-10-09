@@ -1075,6 +1075,8 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
                                  authors: Collection[str],
                                  mergers: Collection[str],
                                  jira: JIRAFilter,
+                                 updated_min: Optional[datetime],
+                                 updated_max: Optional[datetime],
                                  limit: int,
                                  pr_blacklist: Optional[BinaryExpression],
                                  mdb: databases.Database,
@@ -1087,6 +1089,8 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
         PullRequest.hidden.is_(False),
         or_(*repo_clauses),
     ]
+    if updated_min is not None:
+        filters.append(PullRequest.updated_at.between(updated_min, updated_max))
     if len(authors) and len(mergers):
         filters.append(or_(
             PullRequest.user_login.in_any_values(authors),
@@ -1142,6 +1146,8 @@ async def map_releases_to_prs(repos: Collection[str],
                               mergers: Collection[str],
                               jira: JIRAFilter,
                               release_settings: Dict[str, ReleaseMatchSetting],
+                              updated_min: Optional[datetime],
+                              updated_max: Optional[datetime],
                               limit: int,
                               mdb: databases.Database,
                               pdb: databases.Database,
@@ -1171,6 +1177,7 @@ async def map_releases_to_prs(repos: Collection[str],
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
     assert isinstance(pr_blacklist, (BinaryExpression, type(None)))
+    assert (updated_min is None) == (updated_max is None)
 
     tasks = [
         _find_releases_for_matching_prs(repos, branches, default_branches, time_from, time_to,
@@ -1201,7 +1208,8 @@ async def map_releases_to_prs(repos: Collection[str],
                         PullRequest.merge_commit_sha.in_any_values(observed_commits),
                     ))
     prs = await _find_old_released_prs(
-        clauses, time_from, authors, mergers, jira, limit, pr_blacklist, mdb)
+        clauses, time_from, authors, mergers, jira, updated_min, updated_max, limit,
+        pr_blacklist, mdb)
     return prs, releases_in_time_range, matched_bys, dags
 
 

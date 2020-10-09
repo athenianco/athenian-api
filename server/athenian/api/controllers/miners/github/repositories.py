@@ -122,8 +122,8 @@ async def mine_repositories(repos: Collection[str],
 
     tasks = [
         fetch_commits_comments_reviews(),
-        fetch_releases(),
         fetch_active_prs(),
+        fetch_releases(),
     ]
     if not exclude_inactive:
         tasks = [fetch_inactive_open_prs(), fetch_inactive_merged_prs()] + tasks
