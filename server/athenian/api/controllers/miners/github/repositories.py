@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime
 from itertools import chain
 import marshal
-from typing import Collection, List, Optional
+from typing import Collection, Dict, List, Optional
 
 import aiomcache
 import databases
@@ -10,9 +10,17 @@ import sentry_sdk
 from sqlalchemy import and_, distinct, join, or_, select
 
 from athenian.api.cache import cached
+from athenian.api.controllers.miners.filters import LabelFilter
+from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.precomputed_prs import \
+    discover_inactive_merged_unreleased_prs
+from athenian.api.controllers.miners.github.release import load_releases
+from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
     PullRequestComment, PullRequestReview, PushCommit, Release, Repository
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
+    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
 from athenian.api.tracing import sentry_span
 
 
@@ -28,7 +36,9 @@ async def mine_repositories(repos: Collection[str],
                             time_from: datetime,
                             time_to: datetime,
                             exclude_inactive: bool,
-                            db: databases.Database,
+                            release_settings: Dict[str, ReleaseMatchSetting],
+                            mdb: databases.Database,
+                            pdb: databases.Database,
                             cache: Optional[aiomcache.Client],
                             ) -> List[str]:
     """Discover repositories from the given set which were updated in the given time frame."""
@@ -36,24 +46,50 @@ async def mine_repositories(repos: Collection[str],
     assert isinstance(time_to, datetime)
 
     @sentry_span
-    async def fetch_prs():
-        conditions = [
-            PullRequest.updated_at.between(time_from, time_to),
-            PullRequest.created_at.between(time_from, time_to),
-            PullRequest.closed_at.between(time_from, time_to),
-        ]
-        if not exclude_inactive:
-            conditions.append(and_(PullRequest.created_at < time_to,
-                                   PullRequest.closed_at.is_(None)))
-        return await db.fetch_all(
+    async def fetch_released_prs():
+        return await pdb.fetch_all(
+            select([distinct(GitHubDonePullRequestFacts.repository_full_name)])
+            .where(and_(GitHubDonePullRequestFacts.repository_full_name.in_(repos),
+                        or_(GitHubDonePullRequestFacts.pr_done_at.between(time_from, time_to),
+                            GitHubDonePullRequestFacts.pr_created_at.between(time_from, time_to),
+                            ))))
+
+    @sentry_span
+    async def fetch_merged_prs():
+        return await pdb.fetch_all(
+            select([distinct(GitHubMergedPullRequestFacts.repository_full_name)])
+            .where(and_(GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
+                        GitHubMergedPullRequestFacts.merged_at.between(time_from, time_to))))
+
+    @sentry_span
+    async def fetch_open_prs():
+        return await pdb.fetch_all(
+            select([distinct(GitHubOpenPullRequestFacts.repository_full_name)])
+            .where(and_(GitHubOpenPullRequestFacts.repository_full_name.in_(repos),
+                        or_(GitHubOpenPullRequestFacts.pr_updated_at.between(time_from, time_to),
+                            GitHubOpenPullRequestFacts.pr_created_at.between(time_from, time_to),
+                            ))))
+
+    @sentry_span
+    async def fetch_inactive_open_prs():
+        return await mdb.fetch_all(
             select([distinct(PullRequest.repository_full_name)])
             .where(and_(PullRequest.repository_full_name.in_(repos),
                         PullRequest.hidden.is_(False),
-                        or_(*conditions))))
+                        PullRequest.created_at < time_from,
+                        PullRequest.closed_at.is_(None))))
+
+    @sentry_span
+    async def fetch_inactive_merged_prs():
+        _, default_branches = await extract_branches(repos, mdb, cache)
+        _, inactive_repos = await discover_inactive_merged_unreleased_prs(
+            time_from, time_to, repos, {}, LabelFilter.empty(), default_branches,
+            release_settings, pdb, cache)
+        return [(r,) for r in set(inactive_repos)]
 
     @sentry_span
     async def fetch_comments():
-        return await db.fetch_all(
+        return await mdb.fetch_all(
             select([distinct(PullRequestComment.repository_full_name)])
             .where(and_(PullRequestComment.repository_full_name.in_(repos),
                         PullRequestComment.created_at.between(time_from, time_to),
@@ -61,7 +97,7 @@ async def mine_repositories(repos: Collection[str],
 
     @sentry_span
     async def fetch_commits():
-        return await db.fetch_all(
+        return await mdb.fetch_all(
             select([distinct(NodeRepository.name_with_owner)
                     .label(PushCommit.repository_full_name.key)])
             .select_from(join(NodeCommit, NodeRepository,
@@ -72,7 +108,7 @@ async def mine_repositories(repos: Collection[str],
 
     @sentry_span
     async def fetch_reviews():
-        return await db.fetch_all(
+        return await mdb.fetch_all(
             select([distinct(PullRequestReview.repository_full_name)])
             .where(and_(PullRequestReview.repository_full_name.in_(repos),
                         PullRequestReview.submitted_at.between(time_from, time_to),
@@ -80,20 +116,34 @@ async def mine_repositories(repos: Collection[str],
 
     @sentry_span
     async def fetch_releases():
-        return await db.fetch_all(
-            select([distinct(Release.repository_full_name)])
-            .where(and_(Release.repository_full_name.in_(repos),
-                        Release.published_at.between(time_from, time_to),
-                        )))
+        branches, default_branches = await extract_branches(repos, mdb, cache)
+        releases, _ = await load_releases(repos, branches, default_branches, time_from, time_to,
+                                          release_settings, mdb, pdb, cache)
+        return [(r,) for r in releases[Release.repository_full_name.key].unique()]
 
-    repos = set(r[0] for r in chain.from_iterable(await asyncio.gather(
-        fetch_prs(), fetch_comments(), fetch_commits(), fetch_reviews(), fetch_releases())))
+    tasks = [
+        fetch_commits(),
+        fetch_releases(),
+        fetch_comments(),
+        fetch_reviews(),
+        fetch_released_prs(),
+        fetch_merged_prs(),
+        fetch_open_prs(),
+    ]
+    if not exclude_inactive:
+        tasks = [fetch_inactive_open_prs(), fetch_inactive_merged_prs()] + tasks
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in results:
+        if isinstance(r, Exception):
+            raise r from None
+    repos = set(r[0] for r in chain.from_iterable(results))
     with sentry_sdk.start_span(op="SELECT FROM github_repositories_v2_compat"):
-        repos = await db.fetch_all(select([Repository.full_name])
-                                   .where(and_(Repository.archived.is_(False),
-                                               Repository.disabled.is_(False),
-                                               Repository.full_name.in_(repos)))
-                                   .order_by(Repository.full_name))
+        repos = await mdb.fetch_all(select([Repository.full_name])
+                                    .where(and_(Repository.archived.is_(False),
+                                                Repository.disabled.is_(False),
+                                                Repository.full_name.in_(repos)))
+                                    .order_by(Repository.full_name))
     prefix = PREFIXES["github"]
     repos = [prefix + r[0] for r in repos]
     return repos
