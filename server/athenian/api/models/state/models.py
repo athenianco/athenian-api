@@ -96,10 +96,11 @@ class Account(create_time_mixin(created_at=True), Base):
 
     __tablename__ = "accounts"
     __table_args__ = {"sqlite_autoincrement": True}
+    missing_secret = "0" * 8
 
     id = Column(Integer(), primary_key=True)
-    secret_salt = Column(Integer())
-    secret = Column(String(8))
+    secret_salt = Column(Integer(), nullable=False)
+    secret = Column(String(8), nullable=False)
 
 
 class Team(create_time_mixin(created_at=True, updated_at=True),

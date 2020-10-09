@@ -224,7 +224,16 @@ async def _create_new_account_fast(
 
     Should be used for PostgreSQL.
     """
-    return await conn.execute(insert(Account).values(Account().create_defaults().explode()))
+    async with conn.transaction():
+        account_id = await conn.execute(
+            insert(Account).values(Account(secret_salt=0, secret=Account.missing_secret)
+                                   .create_defaults().explode()))
+        salt, secret = _generate_account_secret(account_id)
+        await conn.execute(update(Account).where(Account.id == account_id).values({
+            Account.secret_salt: salt,
+            Account.secret: secret,
+        }))
+        return account_id
 
 
 async def _create_new_account_slow(
@@ -234,11 +243,18 @@ async def _create_new_account_slow(
     SQLite does not allow resetting the primary key sequence, so we have to increment the ID
     by hand.
     """
-    acc = Account().create_defaults()
-    max_id = (await conn.fetch_one(select([func.max(Account.id)])
-                                   .where(Account.id < admin_backdoor)))[0] or 0
-    acc.id = max_id + 1
-    return await conn.execute(insert(Account).values(acc.explode(with_primary_keys=True)))
+    acc = Account(secret_salt=0, secret=Account.missing_secret).create_defaults()
+    async with conn.transaction():
+        max_id = (await conn.fetch_one(select([func.max(Account.id)])
+                                       .where(Account.id < admin_backdoor)))[0] or 0
+        acc.id = max_id + 1
+        acc_id = await conn.execute(insert(Account).values(acc.explode(with_primary_keys=True)))
+        salt, secret = _generate_account_secret(acc_id)
+        await conn.execute(update(Account).where(Account.id == acc_id).values({
+            Account.secret_salt: salt,
+            Account.secret: secret,
+        }))
+        return acc_id
 
 
 async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -446,17 +462,18 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
         return model_response(model)
 
 
+def _generate_account_secret(account_id: int) -> Tuple[int, str]:
+    salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
+    secret = encode_slug(account_id, salt)
+    return salt, secret
+
+
 async def gen_jira_link(request: AthenianWebRequest, id: int) -> web.Response:
     """Generate JIRA integration installation link."""
+    account_id = id
     async with request.sdb.connection() as sdb_conn:
-        await _check_admin_access(request.uid, id, sdb_conn)
-        secret = await sdb_conn.fetch_val(select([Account.secret]).where(Account.id == id))
-        if secret is None:
-            salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
-            secret = encode_slug(id, salt)
-            await sdb_conn.execute(update(Account).where(Account.id == id).values({
-                Account.secret_salt: salt,
-                Account.secret: secret,
-            }))
+        await _check_admin_access(request.uid, account_id, sdb_conn)
+        secret = await sdb_conn.fetch_val(select([Account.secret]).where(Account.id == account_id))
+        assert secret not in (None, Account.missing_secret)
         model = InvitationLink(url=jira_url_template % secret)
         return model_response(model)

@@ -32,7 +32,8 @@ def main(conn_str: str, force_new: bool = False) -> None:
     salt = randint(0, (1 << 16) - 1)
     admin_backdoor = invitation_controller.admin_backdoor
     if not session.query(Account).filter(Account.id == admin_backdoor).all():
-        session.add(Account(id=invitation_controller.admin_backdoor))
+        session.add(Account(id=invitation_controller.admin_backdoor,
+                            secret_salt=0, secret=Account.missing_secret))
         session.commit()
         max_id = session.query(func.max(Account.id)).filter(Account.id < admin_backdoor).first()
         if max_id is None or max_id[0] is None:

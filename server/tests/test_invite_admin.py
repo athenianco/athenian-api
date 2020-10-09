@@ -1,3 +1,5 @@
+import os
+
 import databases
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -12,6 +14,7 @@ from tests.sample_db_data import fill_state_session
 async def test_reset_sequence(state_db):
     engine = create_engine(state_db)
     Base.metadata.drop_all(engine)
+    os.putenv("ATHENIAN_INVITATION_KEY", "whatever")
     migrate("state", url=state_db, exec=False)
     session = sessionmaker(bind=engine)()
     try:

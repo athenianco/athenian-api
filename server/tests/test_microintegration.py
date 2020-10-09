@@ -12,6 +12,7 @@ def test_integration_micro(metadata_db, aiohttp_unused_port):
     state_db = "sqlite:///%s" % state_db_path
     if state_db_path.exists():
         state_db_path.unlink()
+    os.putenv("ATHENIAN_INVITATION_KEY", "secret")
     migrate("state", state_db, exec=False)
     precomputed_db_path = db_dir / "pdb.sqlite"
     precomputed_db = "sqlite:///%s" % precomputed_db_path
