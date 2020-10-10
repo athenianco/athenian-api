@@ -83,31 +83,26 @@ async def mine_repositories(repos: Collection[str],
         return [(r,) for r in set(inactive_repos)]
 
     @sentry_span
-    async def fetch_comments():
-        return await mdb.fetch_all(
-            select([distinct(PullRequestComment.repository_full_name)])
+    async def fetch_commits_comments_reviews():
+        query_comments = \
+            select([distinct(PullRequestComment.repository_full_name)]) \
             .where(and_(PullRequestComment.repository_full_name.in_(repos),
                         PullRequestComment.created_at.between(time_from, time_to),
-                        )))
-
-    @sentry_span
-    async def fetch_commits():
-        return await mdb.fetch_all(
+                        ))
+        query_commits = \
             select([distinct(NodeRepository.name_with_owner)
-                    .label(PushCommit.repository_full_name.key)])
+                   .label(PushCommit.repository_full_name.key)]) \
             .select_from(join(NodeCommit, NodeRepository,
-                              NodeCommit.repository == NodeRepository.id))
+                              NodeCommit.repository == NodeRepository.id)) \
             .where(and_(NodeRepository.name_with_owner.in_(repos),
                         NodeCommit.committed_date.between(time_from, time_to),
-                        )))
-
-    @sentry_span
-    async def fetch_reviews():
-        return await mdb.fetch_all(
-            select([distinct(PullRequestReview.repository_full_name)])
+                        ))
+        query_reviews = \
+            select([distinct(PullRequestReview.repository_full_name)]) \
             .where(and_(PullRequestReview.repository_full_name.in_(repos),
                         PullRequestReview.submitted_at.between(time_from, time_to),
-                        )))
+                        ))
+        return await mdb.fetch_all(union(query_comments, query_commits, query_reviews))
 
     @sentry_span
     async def fetch_releases():
@@ -118,9 +113,7 @@ async def mine_repositories(repos: Collection[str],
         return [(r,) for r in releases[Release.repository_full_name.key].unique()]
 
     tasks = [
-        fetch_commits(),
-        fetch_comments(),
-        fetch_reviews(),
+        fetch_commits_comments_reviews(),
         fetch_releases(),
         fetch_active_prs(),
     ]
