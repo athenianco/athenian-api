@@ -7,7 +7,7 @@ from typing import Collection, Dict, List, Optional
 import aiomcache
 import databases
 import sentry_sdk
-from sqlalchemy import and_, distinct, join, or_, select
+from sqlalchemy import and_, distinct, join, or_, select, union
 
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
@@ -46,29 +46,24 @@ async def mine_repositories(repos: Collection[str],
     assert isinstance(time_to, datetime)
 
     @sentry_span
-    async def fetch_released_prs():
-        return await pdb.fetch_all(
-            select([distinct(GitHubDonePullRequestFacts.repository_full_name)])
+    async def fetch_active_prs():
+        query_released = \
+            select([distinct(GitHubDonePullRequestFacts.repository_full_name)]) \
             .where(and_(GitHubDonePullRequestFacts.repository_full_name.in_(repos),
                         or_(GitHubDonePullRequestFacts.pr_done_at.between(time_from, time_to),
                             GitHubDonePullRequestFacts.pr_created_at.between(time_from, time_to),
-                            ))))
-
-    @sentry_span
-    async def fetch_merged_prs():
-        return await pdb.fetch_all(
-            select([distinct(GitHubMergedPullRequestFacts.repository_full_name)])
+                            )))
+        query_merged = \
+            select([distinct(GitHubMergedPullRequestFacts.repository_full_name)]) \
             .where(and_(GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
-                        GitHubMergedPullRequestFacts.merged_at.between(time_from, time_to))))
-
-    @sentry_span
-    async def fetch_open_prs():
-        return await pdb.fetch_all(
-            select([distinct(GitHubOpenPullRequestFacts.repository_full_name)])
+                        GitHubMergedPullRequestFacts.merged_at.between(time_from, time_to)))
+        query_open = \
+            select([distinct(GitHubOpenPullRequestFacts.repository_full_name)]) \
             .where(and_(GitHubOpenPullRequestFacts.repository_full_name.in_(repos),
                         or_(GitHubOpenPullRequestFacts.pr_updated_at.between(time_from, time_to),
                             GitHubOpenPullRequestFacts.pr_created_at.between(time_from, time_to),
-                            ))))
+                            )))
+        return await pdb.fetch_all(union(query_released, query_merged, query_open))
 
     @sentry_span
     async def fetch_inactive_open_prs():
@@ -127,9 +122,7 @@ async def mine_repositories(repos: Collection[str],
         fetch_comments(),
         fetch_reviews(),
         fetch_releases(),
-        fetch_released_prs(),
-        fetch_merged_prs(),
-        fetch_open_prs(),
+        fetch_active_prs(),
     ]
     if not exclude_inactive:
         tasks = [fetch_inactive_open_prs(), fetch_inactive_merged_prs()] + tasks
