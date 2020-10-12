@@ -11,16 +11,15 @@ from sqlalchemy import and_, distinct, join, or_, select, union
 
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
-from athenian.api.controllers.miners.github.branches import dummy_branches_df, extract_branches
+from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs
-from athenian.api.controllers.miners.github.release import load_releases
-from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
-    PullRequestComment, PullRequestReview, PushCommit, Release, Repository
+    PullRequestComment, PullRequestReview, PushCommit, Repository
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
-    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
+    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, GitHubRelease
 from athenian.api.tracing import sentry_span
 
 
@@ -44,6 +43,7 @@ async def mine_repositories(repos: Collection[str],
     """Discover repositories from the given set which were updated in the given time frame."""
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
+    prefix = PREFIXES["github"]
 
     @sentry_span
     async def fetch_active_prs():
@@ -108,9 +108,17 @@ async def mine_repositories(repos: Collection[str],
     async def fetch_releases():
         # we don't care about branch releases at all because they will bubble up in
         # fetch_commits()
-        releases, _ = await load_releases(repos, dummy_branches_df(), {r: "!" for r in repos},
-                                          time_from, time_to, release_settings, mdb, pdb, cache)
-        return [(r,) for r in releases[Release.repository_full_name.key].unique()]
+        match_groups = {}
+        for repo in repos:
+            rms = release_settings[prefix + repo]
+            if rms.match in (ReleaseMatch.tag, ReleaseMatch.tag_or_branch):
+                match_groups.setdefault(rms.tags, []).append(repo)
+        or_items = or_(*(and_(GitHubRelease.release_match == "tag|" + m,
+                              GitHubRelease.repository_full_name.in_(r))
+                         for m, r in match_groups.items()))
+        return await pdb.fetch_all(
+            select([distinct(GitHubRelease.repository_full_name)])
+            .where(and_(or_items, GitHubRelease.published_at.between(time_from, time_to))))
 
     tasks = [
         fetch_commits_comments_reviews(),
@@ -131,6 +139,5 @@ async def mine_repositories(repos: Collection[str],
                                                 Repository.disabled.is_(False),
                                                 Repository.full_name.in_(repos)))
                                     .order_by(Repository.full_name))
-    prefix = PREFIXES["github"]
     repos = [prefix + r[0] for r in repos]
     return repos
