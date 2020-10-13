@@ -60,10 +60,13 @@ async def extract_branches(repos: Iterable[str],
             """ % ", ".join("'%s'" % n for n in existing_zero_branch_repos)
             rows = await db.fetch_all(sql)
             refs = {r["parent_id"]: r["numrefs"] for r in rows}
+            reported_repos = set()
             for node_id, full_name in existing_zero_branch_repos.items():
-                (log.warning if refs.get(node_id, 0) == 0 else log.error)(
-                    "repository %s has 0 branches", full_name)
-                default_branches[full_name] = "master"
+                if full_name not in reported_repos:
+                    (log.warning if refs.get(node_id, 0) == 0 else log.error)(
+                        "repository %s has 0 branches", full_name)
+                    default_branches[full_name] = "master"
+                    reported_repos.add(full_name)
     return branches, default_branches
 
 

@@ -23,11 +23,12 @@ from athenian.api.controllers.miners.github.label import mine_labels
 from athenian.api.controllers.miners.github.release import mine_releases
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
-from athenian.api.controllers.miners.types import ParticipationKind, Property, PullRequestEvent, \
+from athenian.api.controllers.miners.types import Participants, ParticipationKind, Property, \
+    PullRequestEvent, \
     PullRequestListItem, \
     PullRequestStage
 from athenian.api.controllers.reposet import resolve_repos
-from athenian.api.controllers.settings import Settings
+from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PushCommit, Release
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
@@ -125,13 +126,12 @@ async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
         request.sdb, request.mdb, request.cache, request.app["slack"], strip_prefix=strip_prefix)
 
 
-async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
-    """List pull requests that satisfy the query."""
-    try:
-        filt = FilterPullRequestsRequest.from_dict(body)
-    except ValueError as e:
-        # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
+                                        request: AthenianWebRequest,
+                                        ) -> Tuple[Set[str], Set[str], Set[str], Participants,
+                                                   LabelFilter, JIRAFilter,
+                                                   Dict[str, ReleaseMatchSetting]]:
+    """Infer all the required PR filters from the request."""
     repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
     if not filt.properties:
         events = set(getattr(PullRequestEvent, e.upper()) for e in (filt.events or []))
@@ -157,6 +157,18 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
             filt.jira, await get_jira_installation(filt.account, request.sdb, request.cache))
     except ResponseError:
         jira = JIRAFilter.empty()
+    return repos, events, stages, participants, labels, jira, settings
+
+
+async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
+    """List pull requests that satisfy the query."""
+    try:
+        filt = FilterPullRequestsRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+    repos, events, stages, participants, labels, jira, settings = \
+        await resolve_filter_prs_parameters(filt, request)
     updated_min, updated_max = _bake_updated_min_max(filt)
     prs = await filter_pull_requests(
         events, stages, filt.date_from, filt.date_to, repos, participants, labels, jira,
