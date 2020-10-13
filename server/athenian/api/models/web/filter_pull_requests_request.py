@@ -282,7 +282,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         self._jira = jira
 
     @property
-    def updated_from(self) -> date:
+    def updated_from(self) -> Optional[date]:
         """Gets the updated_from of this Model.
 
         :return: The updated_from of this Model.
@@ -298,7 +298,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         self._updated_from = updated_from
 
     @property
-    def updated_to(self) -> date:
+    def updated_to(self) -> Optional[date]:
         """Gets the updated_to of this Model.
 
         :return: The updated_to of this Model.

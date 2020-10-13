@@ -363,6 +363,8 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
                                jira: JIRAFilter,
                                exclude_inactive: bool,
                                release_settings: Dict[str, ReleaseMatchSetting],
+                               updated_min: Optional[datetime],
+                               updated_max: Optional[datetime],
                                limit: int,
                                mdb: databases.Database,
                                pdb: databases.Database,
@@ -378,7 +380,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
     """
     prs, _, _ = await _filter_pull_requests(
         events, stages, time_from, time_to, repos, participants, labels, jira, exclude_inactive,
-        release_settings, limit, mdb, pdb, cache)
+        release_settings, updated_min, updated_max, limit, mdb, pdb, cache)
     return prs
 
 
@@ -479,7 +481,7 @@ def _filter_by_jira_issue_types(prs: List[PullRequestListItem],
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, events, stages, participants, exclude_inactive, release_settings, **_: (  # noqa
+    key=lambda time_from, time_to, repos, events, stages, participants, exclude_inactive, release_settings, updated_min, updated_max, limit, **_: (  # noqa
         time_from.timestamp(),
         time_to.timestamp(),
         ",".join(sorted(repos)),
@@ -487,6 +489,9 @@ def _filter_by_jira_issue_types(prs: List[PullRequestListItem],
         ",".join(s.name.lower() for s in sorted(stages)),
         sorted((k.name.lower(), sorted(v)) for k, v in participants.items()),
         exclude_inactive,
+        updated_min.timestamp() if updated_min is not None else None,
+        updated_max.timestamp() if updated_max is not None else None,
+        limit,
         release_settings,
     ),
     postprocess=_postprocess_filtered_prs,
@@ -501,6 +506,8 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                                 jira: JIRAFilter,
                                 exclude_inactive: bool,
                                 release_settings: Dict[str, ReleaseMatchSetting],
+                                updated_min: Optional[datetime],
+                                updated_max: Optional[datetime],
                                 limit: int,
                                 mdb: databases.Database,
                                 pdb: databases.Database,
@@ -509,15 +516,18 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     assert isinstance(events, set)
     assert isinstance(stages, set)
     assert isinstance(repos, set)
+    assert (updated_min is None) == (updated_max is None)
     log = logging.getLogger("%s.filter_pull_requests" % metadata.__package__)
     # required to efficiently use the cache with timezones
     date_from, date_to = coarsen_time_interval(time_from, time_to)
+    if updated_min is not None:
+        coarsen_time_interval(updated_min, updated_max)
     branches, default_branches = await extract_branches(repos, mdb, cache)
     tasks = (
         PullRequestMiner.mine(
             date_from, date_to, time_from, time_to, repos, participants, labels, jira, branches,
             default_branches, exclude_inactive, release_settings, mdb, pdb, cache,
-            truncate=False, limit=limit),
+            truncate=False, updated_min=updated_min, updated_max=updated_max, limit=limit),
         load_precomputed_done_facts_filters(
             time_from, time_to, repos, participants, labels, default_branches,
             exclude_inactive, release_settings, pdb),

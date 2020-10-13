@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import operator
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from aiohttp import web
 import aiomcache
@@ -131,7 +131,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         filt = FilterPullRequestsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
     repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
     if not filt.properties:
         events = set(getattr(PullRequestEvent, e.upper()) for e in (filt.events or []))
@@ -157,10 +157,25 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
             filt.jira, await get_jira_installation(filt.account, request.sdb, request.cache))
     except ResponseError:
         jira = JIRAFilter.empty()
+    updated_min, updated_max = _bake_updated_min_max(filt)
     prs = await filter_pull_requests(
         events, stages, filt.date_from, filt.date_to, repos, participants, labels, jira,
-        filt.exclude_inactive, settings, filt.limit or 0, request.mdb, request.pdb, request.cache)
+        filt.exclude_inactive, settings, updated_min, updated_max, filt.limit or 0,
+        request.mdb, request.pdb, request.cache)
     return await _build_github_prs_response(prs, request.mdb, request.cache)
+
+
+def _bake_updated_min_max(filt: FilterPullRequestsRequest) -> Tuple[datetime, datetime]:
+    if (filt.updated_from is None) != (filt.updated_to is None):
+        raise ResponseError(InvalidRequestError(
+            ".updated_from",
+            "`updated_from` and `updated_to` must be both either specified or not"))
+    if filt.updated_from is not None:
+        updated_min = datetime.combine(filt.updated_from, datetime.min.time(), tzinfo=timezone.utc)
+        updated_max = datetime.combine(filt.updated_to, datetime.min.time(), tzinfo=timezone.utc)
+    else:
+        updated_min = updated_max = None
+    return updated_min, updated_max
 
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
