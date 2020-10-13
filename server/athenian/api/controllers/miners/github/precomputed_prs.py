@@ -13,6 +13,7 @@ import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, desc, insert, join, not_, or_, select, union_all, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
@@ -211,17 +212,66 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
                                               pdb: databases.Database,
                                               ) -> Dict[str, Tuple[str, PullRequestFacts]]:
     """
-    Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
+    Fetch precomputed done PR facts.
+
+    :return: map from node IDs to repo name and facts.
+    """
+    result = await _load_precomputed_done_filters(
+        GitHubDonePullRequestFacts.data, time_from, time_to, repos, participants, labels,
+        default_branches, exclude_inactive, release_settings, pdb)
+    for node_id, (repo, data) in result.items():
+        result[node_id] = repo, pickle.loads(data)
+    return result
+
+
+@sentry_span
+async def load_precomputed_done_timestamp_filters(time_from: datetime,
+                                                  time_to: datetime,
+                                                  repos: Collection[str],
+                                                  participants: Participants,
+                                                  labels: LabelFilter,
+                                                  default_branches: Dict[str, str],
+                                                  exclude_inactive: bool,
+                                                  release_settings: Dict[str, ReleaseMatchSetting],
+                                                  pdb: databases.Database,
+                                                  ) -> Dict[str, datetime]:
+    """Fetch precomputed done PR "pr_done_at" timestamps."""
+    result = await _load_precomputed_done_filters(
+        GitHubDonePullRequestFacts.pr_done_at, time_from, time_to, repos, participants, labels,
+        default_branches, exclude_inactive, release_settings, pdb)
+    sqlite = pdb.url.dialect == "sqlite"
+    for node_id, (_, dt) in result.items():
+        if sqlite:
+            dt = dt.replace(tzinfo=timezone.utc)
+        result[node_id] = dt
+    return result
+
+
+@sentry_span
+async def _load_precomputed_done_filters(column: InstrumentedAttribute,
+                                         time_from: datetime,
+                                         time_to: datetime,
+                                         repos: Collection[str],
+                                         participants: Participants,
+                                         labels: LabelFilter,
+                                         default_branches: Dict[str, str],
+                                         exclude_inactive: bool,
+                                         release_settings: Dict[str, ReleaseMatchSetting],
+                                         pdb: databases.Database,
+                                         ) -> Dict[str, Tuple[str, Any]]:
+    """
+    Load some data belonging to released or rejected PRs from the precomputed DB.
 
     Query version. JIRA must be filtered separately.
-    :return: Map PR node ID -> repository name & facts.
+    :return: Map PR node ID -> repository name & specified column value.
     """
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     ghprt = GitHubDonePullRequestFacts
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match,
-                ghprt.data]
+                column]
+    # FIXME(vmarkovtsev): rewrite the releases matching to cluster by value and exec on the server
     filters = _create_common_filters(time_from, time_to, repos)
     if len(participants) > 0:
         _build_participants_filters(participants, filters, selected, postgres)
@@ -240,7 +290,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
         else:
             selected.append(ghprt.activity_days)
             date_range = set(date_range)
-    with sentry_sdk.start_span(op="load_precomputed_done_facts_filters/fetch"):
+    with sentry_sdk.start_span(op="_load_precomputed_done_filters/fetch"):
         rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
     result = {}
@@ -266,11 +316,11 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
                                  for d in row[ghprt.activity_days.key]}
                 if not activity_days.intersection(date_range):
                     continue
-        dump[row[ghprt.pr_node_id.key]] = repo, pickle.loads(row[ghprt.data.key])
+        dump[row[ghprt.pr_node_id.key]] = repo, row[column.key]
     result.update(ambiguous[ReleaseMatch.tag.name])
-    for node_id, facts in ambiguous[ReleaseMatch.branch.name].items():
+    for node_id, smth in ambiguous[ReleaseMatch.branch.name].items():
         if node_id not in result:
-            result[node_id] = facts
+            result[node_id] = smth
     return result
 
 

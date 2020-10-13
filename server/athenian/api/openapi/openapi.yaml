@@ -5005,6 +5005,7 @@ components:
         batch:
           description: Target batch size. The returned ranges do not guarantee the
             exact match.
+          minimum: 1
           type: integer
         request:
           description: Same body to be sent to `/filter/pull_requests`. Inner pagination

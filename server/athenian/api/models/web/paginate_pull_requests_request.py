@@ -45,6 +45,8 @@ class PaginatePullRequestsRequest(Model):
         """
         if batch is None:
             raise ValueError("Invalid value for `batch`, must not be `None`")
+        if batch < 1:
+            raise ValueError("`batch` must be greater than zero")
 
         self._batch = batch
 
