@@ -3,20 +3,26 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+from itertools import chain
 import pickle
-from typing import Collection, Dict, List, Optional, Sequence, Set, Union
+from typing import Collection, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import aiomcache
 import databases
+import numpy as np
 import pandas as pd
 from sqlalchemy import and_, distinct, func, join, or_, select
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.pull_request import ReviewResolution
+from athenian.api.controllers.miners.github.release import load_releases
+from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestLabel, PullRequestReview, PullRequestReviewComment, PushCommit, Release
+    PullRequestLabel, PullRequestReview, PullRequestReviewComment, PushCommit, Release, \
+    Repository, User
 from athenian.api.tracing import sentry_span
 
 
@@ -57,176 +63,235 @@ class DeveloperStats:
     review_pr_comments: int = 0
 
 
+#                          repo             dev     metric
+StatsByRepoByDev = Dict[Optional[str], Dict[str, Dict[str, int]]]
+
+
+def _set_stats(topic: DeveloperTopic, stats: pd.Series, repogroups: bool,
+               stats_by_repo_by_dev: StatsByRepoByDev):
+    topic = topic.name
+    if not repogroups:
+        output = stats_by_repo_by_dev[None]
+        for dev, n in zip(stats.index.values, stats.values):
+            output[dev][topic] = n
+    else:
+        for (repo, dev), n in zip(stats.index.values, stats.values):
+            stats_by_repo_by_dev[repo][dev][topic] = n
+
+
 @sentry_span
-async def _set_commits(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
+async def _set_commits(stats_by_repo_by_dev: StatsByRepoByDev,
                        topics: Set[str],
-                       devs: Sequence[str],
-                       repos: Collection[str],
-                       labels: LabelFilter,
-                       jira: JIRAFilter,
                        time_from: datetime,
                        time_to: datetime,
-                       conn: databases.core.Connection,
+                       dev_ids: Dict[str, str],
+                       repo_ids: Dict[str, str],
+                       repogroups: bool,
+                       labels: LabelFilter,
+                       jira: JIRAFilter,
+                       release_settings: Dict[str, ReleaseMatchSetting],
+                       mdb: databases.Database,
+                       pdb: databases.Database,
                        cache: Optional[aiomcache.Client]) -> None:
-    commits = await _fetch_developer_commits(devs, repos, time_from, time_to, conn, cache)
-    commits_by_dev = commits.groupby(PushCommit.author_login.key, sort=False)
+    commits = await _fetch_developer_commits(
+        dev_ids.values(), repo_ids.values(), repogroups, time_from, time_to, mdb, cache)
     if DeveloperTopic.commits_pushed in topics:
         topic = DeveloperTopic.commits_pushed.name
-        for dev, dev_commits in commits_by_dev.count()[PushCommit.additions.key].items():
-            stats_by_dev[dev][topic] = dev_commits
+        if not repogroups:
+            output = stats_by_repo_by_dev[None]
+            for dev, count in zip(commits.index.values, commits["count"].values):
+                output[dev][topic] = count
+        else:
+            for (repo, dev), count in zip(commits.index.values, commits["count"].values):
+                stats_by_repo_by_dev[repo][dev][topic] = count
     if DeveloperTopic.lines_changed in topics:
-        ads = commits_by_dev.sum()
-        lines_by_dev = ads[PushCommit.additions.key] + ads[PushCommit.deletions.key]
         topic = DeveloperTopic.lines_changed.name
-        for dev, dev_lines in lines_by_dev.items():
-            stats_by_dev[dev][topic] = dev_lines
+        if not repogroups:
+            output = stats_by_repo_by_dev[None]
+            for dev, lines in zip(commits.index.values, commits["lines"].values):
+                output[dev][topic] = lines
+        else:
+            for (repo, dev), lines in zip(commits.index.values, commits["lines"].values):
+                stats_by_repo_by_dev[repo][dev][topic] = lines
 
 
 @sentry_span
-async def _set_prs_created(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
+async def _set_prs_created(stats_by_repo_by_dev: StatsByRepoByDev,
                            topics: Set[str],
-                           devs: Sequence[str],
-                           repos: Collection[str],
-                           labels: LabelFilter,
-                           jira: JIRAFilter,
                            time_from: datetime,
                            time_to: datetime,
-                           conn: databases.core.Connection,
+                           dev_ids: Dict[str, str],
+                           repo_ids: Dict[str, str],
+                           repogroups: bool,
+                           labels: LabelFilter,
+                           jira: JIRAFilter,
+                           release_settings: Dict[str, ReleaseMatchSetting],
+                           mdb: databases.Database,
+                           pdb: databases.Database,
                            cache: Optional[aiomcache.Client]) -> None:
-    prs = await _fetch_developer_created_prs(devs, repos, labels, time_from, time_to, conn, cache)
-    topic = DeveloperTopic.prs_created.name
-    for dev, n in prs["created_count"].items():
-        stats_by_dev[dev][topic] = n
+    prs = await _fetch_developer_created_prs(
+        dev_ids.values(), repo_ids.values(), repogroups, labels, time_from, time_to, mdb, cache)
+    _set_stats(DeveloperTopic.prs_created, prs["count"], repogroups, stats_by_repo_by_dev)
 
 
 @sentry_span
-async def _set_prs_reviewed(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
+async def _set_prs_reviewed(stats_by_repo_by_dev: StatsByRepoByDev,
                             topics: Set[str],
-                            devs: Sequence[str],
-                            repos: Collection[str],
-                            labels: LabelFilter,
-                            jira: JIRAFilter,
                             time_from: datetime,
                             time_to: datetime,
-                            conn: databases.core.Connection,
+                            dev_ids: Dict[str, str],
+                            repo_ids: Dict[str, str],
+                            repogroups: bool,
+                            labels: LabelFilter,
+                            jira: JIRAFilter,
+                            release_settings: Dict[str, ReleaseMatchSetting],
+                            mdb: databases.Database,
+                            pdb: databases.Database,
                             cache: Optional[aiomcache.Client]) -> None:
-    prs = await _fetch_developer_reviewed_prs(devs, repos, labels, time_from, time_to, conn, cache)
-    topic = DeveloperTopic.prs_reviewed.name
-    for dev, n in prs["reviewed_count"].items():
-        stats_by_dev[dev][topic] = n
+    prs = await _fetch_developer_reviewed_prs(
+        dev_ids.values(), repo_ids.values(), repogroups, labels, time_from, time_to, mdb, cache)
+    _set_stats(DeveloperTopic.prs_reviewed, prs["count"], repogroups, stats_by_repo_by_dev)
 
 
 @sentry_span
-async def _set_prs_merged(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
+async def _set_prs_merged(stats_by_repo_by_dev: StatsByRepoByDev,
                           topics: Set[str],
-                          devs: Sequence[str],
-                          repos: Collection[str],
-                          labels: LabelFilter,
-                          jira: JIRAFilter,
                           time_from: datetime,
                           time_to: datetime,
-                          conn: databases.core.Connection,
+                          dev_ids: Dict[str, str],
+                          repo_ids: Dict[str, str],
+                          repogroups: bool,
+                          labels: LabelFilter,
+                          jira: JIRAFilter,
+                          release_settings: Dict[str, ReleaseMatchSetting],
+                          mdb: databases.Database,
+                          pdb: databases.Database,
                           cache: Optional[aiomcache.Client]) -> None:
-    prs = await _fetch_developer_merged_prs(devs, repos, labels, time_from, time_to, conn, cache)
-    topic = DeveloperTopic.prs_merged.name
-    for dev, n in prs["merged_count"].items():
-        stats_by_dev[dev][topic] = n
+    prs = await _fetch_developer_merged_prs(
+        dev_ids.values(), repo_ids.values(), repogroups, labels, time_from, time_to, mdb, cache)
+    _set_stats(DeveloperTopic.prs_merged, prs["count"], repogroups, stats_by_repo_by_dev)
 
 
 @sentry_span
-async def _set_releases(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
+async def _set_releases(stats_by_repo_by_dev: StatsByRepoByDev,
                         topics: Set[str],
-                        devs: Sequence[str],
-                        repos: Collection[str],
-                        labels: LabelFilter,
-                        jira: JIRAFilter,
                         time_from: datetime,
                         time_to: datetime,
-                        conn: databases.core.Connection,
+                        dev_ids: Dict[str, str],
+                        repo_ids: Dict[str, str],
+                        repogroups: bool,
+                        labels: LabelFilter,
+                        jira: JIRAFilter,
+                        release_settings: Dict[str, ReleaseMatchSetting],
+                        mdb: databases.Database,
+                        pdb: databases.Database,
                         cache: Optional[aiomcache.Client]) -> None:
-    prs = await _fetch_developer_releases(devs, repos, time_from, time_to, conn, cache)
+    branches, default_branches = await extract_branches(repo_ids, mdb, cache)
+    releases, _ = await load_releases(repo_ids, branches, default_branches, time_from, time_to,
+                                      release_settings, mdb, pdb, cache)
     topic = DeveloperTopic.releases.name
-    for dev, n in prs["released_count"].items():
-        stats_by_dev[dev][topic] = n
+    included_releases = np.nonzero(np.in1d(releases[Release.author.key].values, list(dev_ids)))[0]
+    if not repogroups:
+        stats = releases[Release.author.key].take(included_releases).value_counts()
+        output = stats_by_repo_by_dev[None]
+        for author, count in zip(stats.index.values, stats.values):
+            output[dev_ids[author]][topic] = count
+    else:
+        stats = releases[[Release.repository_node_id.key, Release.author.key]] \
+            .take(included_releases).value_counts()
+        for (repo_id, author), count in zip(stats.index.values, stats.values):
+            stats_by_repo_by_dev[repo_id][dev_ids[author]][topic] = count
 
 
 @sentry_span
-async def _set_reviews(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
+async def _set_reviews(stats_by_repo_by_dev: StatsByRepoByDev,
                        topics: Set[str],
-                       devs: Sequence[str],
-                       repos: Collection[str],
-                       labels: LabelFilter,
-                       jira: JIRAFilter,
                        time_from: datetime,
                        time_to: datetime,
-                       conn: databases.core.Connection,
+                       dev_ids: Dict[str, str],
+                       repo_ids: Dict[str, str],
+                       repogroups: bool,
+                       labels: LabelFilter,
+                       jira: JIRAFilter,
+                       release_settings: Dict[str, ReleaseMatchSetting],
+                       mdb: databases.Database,
+                       pdb: databases.Database,
                        cache: Optional[aiomcache.Client]) -> None:
-    reviews = await _fetch_developer_reviews(devs, repos, labels, time_from, time_to, conn, cache)
+    reviews = await _fetch_developer_reviews(
+        dev_ids.values(), repo_ids.values(), repogroups, labels, time_from, time_to, mdb, cache)
     if reviews.empty:
         return
     if DeveloperTopic.reviews in topics:
         topic = DeveloperTopic.reviews.name
-        for dev, n in (reviews
-                       .groupby(level=0, sort=False)
-                       .sum()["reviews_count"]).items():
-            stats_by_dev[dev][topic] = n
-    if DeveloperTopic.review_approvals in topics:
-        topic = DeveloperTopic.review_approvals.name
+        if not repogroups:
+            output = stats_by_repo_by_dev[None]
+            for dev, n in reviews.groupby(level=0, sort=False).sum()["count"].items():
+                output[dev][topic] = n
+        else:
+            for (repo, dev), n in reviews.groupby(level=[0, 1], sort=False).sum()["count"].items():
+                stats_by_repo_by_dev[repo][dev][topic] = n
+
+    def set_stats_by_state(topic: DeveloperTopic, rr: ReviewResolution):
+        topic = topic.name
         try:
-            for dev, n in reviews.xs(ReviewResolution.APPROVED.value,
-                                     level=PullRequestReview.state.key)["reviews_count"].items():
-                stats_by_dev[dev][topic] = n
+            if not repogroups:
+                output = stats_by_repo_by_dev[None]
+                for dev, n in reviews.xs(
+                        rr.value, level=PullRequestReview.state.key)["count"].items():
+                    output[dev][topic] = n
+            else:
+                for (repo, dev), n in reviews.xs(
+                        rr.value, level=PullRequestReview.state.key)["count"].items():
+                    stats_by_repo_by_dev[repo][dev][topic] = n
         except KeyError:
             pass
-    if DeveloperTopic.review_neutrals in topics:
-        topic = DeveloperTopic.review_neutrals.name
-        try:
-            for dev, n in reviews.xs(ReviewResolution.COMMENTED.value,
-                                     level=PullRequestReview.state.key)["reviews_count"].items():
-                stats_by_dev[dev][topic] = n
-        except KeyError:
-            pass
-    if DeveloperTopic.review_rejections in topics:
-        topic = DeveloperTopic.review_rejections.name
-        try:
-            for dev, n in reviews.xs(ReviewResolution.CHANGES_REQUESTED.value,
-                                     level=PullRequestReview.state.key)["reviews_count"].items():
-                stats_by_dev[dev][topic] = n
-        except KeyError:
-            pass
+
+    for topic, rr in ((DeveloperTopic.review_approvals, ReviewResolution.APPROVED),
+                      (DeveloperTopic.review_neutrals, ReviewResolution.COMMENTED),
+                      (DeveloperTopic.review_rejections, ReviewResolution.CHANGES_REQUESTED)):
+        if topic in topics:
+            set_stats_by_state(topic, rr)
 
 
 @sentry_span
-async def _set_pr_comments(stats_by_dev: Dict[str, Dict[str, Union[int, float]]],
+async def _set_pr_comments(stats_by_repo_by_dev: StatsByRepoByDev,
                            topics: Set[str],
-                           devs: Sequence[str],
-                           repos: Collection[str],
-                           labels: LabelFilter,
-                           jira: JIRAFilter,
                            time_from: datetime,
                            time_to: datetime,
-                           conn: databases.core.Connection,
+                           dev_ids: Dict[str, str],
+                           repo_ids: Dict[str, str],
+                           repogroups: bool,
+                           labels: LabelFilter,
+                           jira: JIRAFilter,
+                           release_settings: Dict[str, ReleaseMatchSetting],
+                           mdb: databases.Database,
+                           pdb: databases.Database,
                            cache: Optional[aiomcache.Client]) -> None:
     if DeveloperTopic.review_pr_comments in topics or DeveloperTopic.pr_comments in topics:
         review_comments = await _fetch_developer_review_comments(
-            devs, repos, labels, time_from, time_to, conn, cache)
+            dev_ids.values(), repo_ids.values(), repogroups,
+            labels, time_from, time_to, mdb, cache)
         if DeveloperTopic.review_pr_comments in topics:
-            topic = DeveloperTopic.review_pr_comments.name
-            for dev, n in review_comments["comments_count"].items():
-                stats_by_dev[dev][topic] = n
+            _set_stats(DeveloperTopic.review_pr_comments, review_comments["count"],
+                       repogroups, stats_by_repo_by_dev)
     if DeveloperTopic.regular_pr_comments in topics or DeveloperTopic.pr_comments in topics:
         regular_pr_comments = await _fetch_developer_regular_pr_comments(
-            devs, repos, labels, time_from, time_to, conn, cache)
+            dev_ids.values(), repo_ids.values(), repogroups,
+            labels, time_from, time_to, mdb, cache)
         if DeveloperTopic.regular_pr_comments in topics:
-            topic = DeveloperTopic.regular_pr_comments.name
-            for dev, n in regular_pr_comments["comments_count"].items():
-                stats_by_dev[dev][topic] = n
+            _set_stats(DeveloperTopic.regular_pr_comments, regular_pr_comments["count"],
+                       repogroups, stats_by_repo_by_dev)
     if DeveloperTopic.pr_comments in topics:
-        topic = DeveloperTopic.pr_comments.name
-        for dev, n in (review_comments["comments_count"] +
-                       regular_pr_comments["comments_count"]).items():
-            if n == n:  # can be NaN
-                stats_by_dev[dev][topic] = n
+        review_index = review_comments["count"].index
+        regular_index = regular_pr_comments["count"].index
+        joint_index = review_index.union(regular_index)
+        joint = pd.Series(data=[0] * len(joint_index), index=joint_index)
+        joint[review_index.difference(regular_index)] = review_comments["count"]
+        joint[regular_index.difference(review_index)] = regular_pr_comments["count"]
+        common_index = review_index.intersection(regular_index)
+        joint[common_index] = \
+            review_comments["count"][common_index] + regular_pr_comments["count"][common_index]
+        _set_stats(DeveloperTopic.pr_comments, joint, repogroups, stats_by_repo_by_dev)
 
 
 processors = [
@@ -244,15 +309,17 @@ processors = [
 
 @sentry_span
 async def calc_developer_metrics(devs: Sequence[str],
-                                 repos: Collection[str],
+                                 repos: Sequence[Collection[str]],
+                                 time_from: datetime,
+                                 time_to: datetime,
                                  topics: Set[DeveloperTopic],
                                  labels: LabelFilter,
                                  jira: JIRAFilter,
-                                 time_from: datetime,
-                                 time_to: datetime,
-                                 db: databases.Database,
+                                 release_settings: Dict[str, ReleaseMatchSetting],
+                                 mdb: databases.Database,
+                                 pdb: databases.Database,
                                  cache: Optional[aiomcache.Client],
-                                 ) -> List[DeveloperStats]:
+                                 ) -> List[List[DeveloperStats]]:
     """Calculate various statistics about developer activities.
 
     :return: List with calculated stats, the order matches `devs`.
@@ -260,17 +327,66 @@ async def calc_developer_metrics(devs: Sequence[str],
     zerotd = timedelta(0)
     assert isinstance(time_from, datetime) and time_from.tzinfo.utcoffset(time_from) == zerotd
     assert isinstance(time_to, datetime) and time_to.tzinfo.utcoffset(time_to) == zerotd
-    stats_by_dev = defaultdict(dict)
+    dev_ids_map, reverse_dev_ids_map, repo_ids_map = await _fetch_node_ids(devs, repos, mdb)
+    stats_by_repo_by_dev = defaultdict(lambda: defaultdict(dict))
     tasks = []
     for key, setter in processors:
         if key.intersection(topics):
-            tasks.append(setter(
-                stats_by_dev, topics, devs, repos, labels, jira, time_from, time_to, db, cache))
+            tasks.append(setter(stats_by_repo_by_dev, topics, time_from, time_to,
+                                dev_ids_map, repo_ids_map, len(repos) > 1,
+                                labels, jira, release_settings, mdb, pdb, cache))
     errors = await asyncio.gather(*tasks, return_exceptions=True)
     for err in errors:
         if isinstance(err, Exception):
             raise err from None
-    return [DeveloperStats(**stats_by_dev[dev]) for dev in devs]
+    return _convert_stats(stats_by_repo_by_dev, devs, repos, repo_ids_map, reverse_dev_ids_map)
+
+
+@sentry_span
+async def _fetch_node_ids(devs: Collection[str],
+                          repos: Sequence[Collection[str]],
+                          mdb: databases.Database,
+                          ) -> Tuple[Dict[str, str], Dict[str, int], Dict[str, str]]:
+    all_repos = set(chain.from_iterable(repos))
+    tasks = [
+        mdb.fetch_all(select([Repository.node_id, Repository.full_name])
+                      .where(Repository.full_name.in_(all_repos))),
+        mdb.fetch_all(select([User.node_id, User.login])
+                      .where(User.login.in_(devs))),
+    ]
+    repo_ids, dev_ids = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (repo_ids, dev_ids):
+        if isinstance(r, Exception):
+            raise r from None
+    repo_ids_map = {r[1]: r[0] for r in repo_ids}
+    dev_ids_map = {r[1]: r[0] for r in dev_ids}
+    reverse_dev_ids_map = {dev_ids_map[dev]: i for i, dev in enumerate(devs) if dev in dev_ids_map}
+    return dev_ids_map, reverse_dev_ids_map, repo_ids_map
+
+
+@sentry_span
+def _convert_stats(stats_by_repo_by_dev: StatsByRepoByDev,
+                   devs: Sequence[str],
+                   repos: Sequence[Collection[str]],
+                   repo_ids_map: Dict[str, str],
+                   reverse_dev_ids_map: Dict[str, int],
+                   ) -> List[List[DeveloperStats]]:
+    if len(repos) > 1:
+        result = []
+        for group in repos:
+            agg_stats_by_dev = [defaultdict(int) for _ in devs]
+            for repo in group:
+                for dev_id, stats in stats_by_repo_by_dev[repo_ids_map[repo]].items():
+                    dev_index = reverse_dev_ids_map[dev_id]
+                    for k, v in stats.items():
+                        agg_stats_by_dev[dev_index][k] += v
+            result.append([DeveloperStats(**stats) for stats in agg_stats_by_dev])
+    else:
+        stats_by_dev = [{}] * len(devs)
+        for dev_id, stats in stats_by_repo_by_dev[None].items():
+            stats_by_dev[reverse_dev_ids_map[dev_id]] = stats
+        result = [[DeveloperStats(**stats) for stats in stats_by_dev]]
+    return result
 
 
 CACHE_EXPIRATION_TIME = 5 * 60  # 5 min
@@ -280,44 +396,61 @@ CACHE_EXPIRATION_TIME = 5 * 60  # 5 min
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, **_: (
-        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal()),
+    key=lambda devs, repos, repogroups, time_from, time_to, **_: (
+        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
+        repogroups,
+    ),
 )
-async def _fetch_developer_commits(devs: Sequence[str],
-                                   repos: Collection[str],
+async def _fetch_developer_commits(devs: Iterable[str],
+                                   repos: Iterable[str],
+                                   repogroups: bool,
                                    time_from: datetime,
                                    time_to: datetime,
-                                   db: databases.core.Connection,
+                                   mdb: databases.Database,
                                    cache: Optional[aiomcache.Client],
                                    ) -> pd.DataFrame:
-    columns = [PushCommit.additions, PushCommit.deletions, PushCommit.author_login]
-    return await read_sql_query(
-        select(columns).where(and_(
-            PushCommit.committed_date.between(time_from, time_to),
-            PushCommit.author_login.in_(devs),
-            PushCommit.repository_full_name.in_(repos),
-        )),
-        db, columns)
+    columns = [func.sum(PushCommit.additions + PushCommit.deletions).label("lines"),
+               func.count(PushCommit.node_id).label("count"),
+               PushCommit.author_user]
+    group_by = [PushCommit.author_user]
+    if repogroups:
+        columns.insert(0, PushCommit.repository_node_id)
+        group_by.insert(0, PushCommit.repository_node_id)
+    query = select(columns).where(and_(
+        PushCommit.committed_date.between(time_from, time_to),
+        PushCommit.author_user.in_(devs),
+        PushCommit.repository_node_id.in_(repos),
+    )).group_by(*group_by)
+    df = await read_sql_query(
+        query, mdb, [c.key for c in columns], index=[c.key for c in group_by])
+    df.fillna(0, inplace=True, downcast="infer")
+    return df
 
 
 @cached(
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, labels, time_from, time_to, **_: (
+    key=lambda devs, repos, repogroups, labels, time_from, time_to, **_: (
         ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
-        labels,
+        labels, repogroups,
     ),
 )
-async def _fetch_developer_created_prs(devs: Sequence[str],
-                                       repos: Collection[str],
+async def _fetch_developer_created_prs(devs: Iterable[str],
+                                       repos: Iterable[str],
+                                       repogroups: bool,
                                        labels: LabelFilter,
                                        time_from: datetime,
                                        time_to: datetime,
-                                       db: databases.core.Connection,
+                                       mdb: databases.Database,
                                        cache: Optional[aiomcache.Client],
                                        ) -> pd.DataFrame:
-    query = select([PullRequest.user_login, func.count(PullRequest.created_at)])
+    selected = [PullRequest.user_node_id, func.count(PullRequest.node_id).label("count")]
+    group_by = [PullRequest.user_node_id]
+    if repogroups:
+        selected.insert(0, PullRequest.repository_node_id)
+        group_by.insert(0, PullRequest.repository_node_id)
+    query = select(selected)
     if labels:
         query = (
             query.select_from(join(
@@ -326,8 +459,8 @@ async def _fetch_developer_created_prs(devs: Sequence[str],
                 isouter=not labels.include,
             )).where(and_(
                 PullRequest.created_at.between(time_from, time_to),
-                PullRequest.user_login.in_(devs),
-                PullRequest.repository_full_name.in_(repos),
+                PullRequest.user_node_id.in_(devs),
+                PullRequest.repository_node_id.in_(repos),
                 func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
                 or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
                     PullRequestLabel.name.is_(None)) if labels.exclude else True,
@@ -337,14 +470,12 @@ async def _fetch_developer_created_prs(devs: Sequence[str],
         query = (
             query.where(and_(
                 PullRequest.created_at.between(time_from, time_to),
-                PullRequest.user_login.in_(devs),
-                PullRequest.repository_full_name.in_(repos),
+                PullRequest.user_node_id.in_(devs),
+                PullRequest.repository_node_id.in_(repos),
             ))
         )
     df = await read_sql_query(
-        query.group_by(PullRequest.user_login),
-        db, [PullRequest.user_login.key, "created_count"],
-        index=PullRequest.user_login.key)
+        query.group_by(*group_by), mdb, [c.key for c in selected], index=[c.key for c in group_by])
     df.fillna(0, inplace=True, downcast="infer")
     return df
 
@@ -353,20 +484,26 @@ async def _fetch_developer_created_prs(devs: Sequence[str],
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, labels, **_: (
+    key=lambda devs, repos, repogroups, time_from, time_to, labels, **_: (
         ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
-        labels,
+        labels, repogroups,
     ),
 )
-async def _fetch_developer_merged_prs(devs: Sequence[str],
-                                      repos: Collection[str],
+async def _fetch_developer_merged_prs(devs: Iterable[str],
+                                      repos: Iterable[str],
+                                      repogroups: bool,
                                       labels: LabelFilter,
                                       time_from: datetime,
                                       time_to: datetime,
-                                      db: databases.core.Connection,
+                                      mdb: databases.Database,
                                       cache: Optional[aiomcache.Client],
                                       ) -> pd.DataFrame:
-    query = select([PullRequest.merged_by_login, func.count(PullRequest.merged_at)])
+    selected = [PullRequest.merged_by, func.count(PullRequest.merged_at).label("count")]
+    group_by = [PullRequest.merged_by]
+    if repogroups:
+        selected.insert(0, PullRequest.repository_node_id)
+        group_by.insert(0, PullRequest.repository_node_id)
+    query = select(selected)
     if labels:
         query = (
             query.select_from(join(
@@ -375,8 +512,8 @@ async def _fetch_developer_merged_prs(devs: Sequence[str],
                 isouter=not labels.include,
             )).where(and_(
                 PullRequest.merged_at.between(time_from, time_to),
-                PullRequest.merged_by_login.in_(devs),
-                PullRequest.repository_full_name.in_(repos),
+                PullRequest.merged_by.in_(devs),
+                PullRequest.repository_node_id.in_(repos),
                 func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
                 or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
                     PullRequestLabel.name.is_(None)) if labels.exclude else True,
@@ -386,14 +523,12 @@ async def _fetch_developer_merged_prs(devs: Sequence[str],
         query = (
             query.where(and_(
                 PullRequest.merged_at.between(time_from, time_to),
-                PullRequest.merged_by_login.in_(devs),
-                PullRequest.repository_full_name.in_(repos),
+                PullRequest.merged_by.in_(devs),
+                PullRequest.repository_node_id.in_(repos),
             ))
         )
     df = await read_sql_query(
-        query.group_by(PullRequest.merged_by_login),
-        db, [PullRequest.merged_by_login.key, "merged_count"],
-        index=PullRequest.merged_by_login.key)
+        query.group_by(*group_by), mdb, [c.key for c in selected], index=[c.key for c in group_by])
     df.fillna(0, inplace=True, downcast="infer")
     return df
 
@@ -402,46 +537,27 @@ async def _fetch_developer_merged_prs(devs: Sequence[str],
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, **_: (
-        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal()),
-)
-async def _fetch_developer_releases(devs: Sequence[str],
-                                    repos: Collection[str],
-                                    time_from: datetime,
-                                    time_to: datetime,
-                                    db: databases.core.Connection,
-                                    cache: Optional[aiomcache.Client],
-                                    ) -> pd.DataFrame:
-    df = await read_sql_query(
-        select([Release.author, func.count(Release.published_at)]).where(and_(
-            Release.published_at.between(time_from, time_to),
-            Release.author.in_(devs),
-            Release.repository_full_name.in_(repos),
-        )).group_by(Release.author),
-        db, [Release.author.key, "released_count"], index=Release.author.key)
-    df.fillna(0, inplace=True, downcast="infer")
-    return df
-
-
-@cached(
-    exptime=CACHE_EXPIRATION_TIME,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, labels, **_: (
+    key=lambda devs, repos, repogroups, time_from, time_to, labels, **_: (
         ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
-        labels,
+        labels, repogroups,
     ),
 )
-async def _fetch_developer_reviewed_prs(devs: Sequence[str],
-                                        repos: Collection[str],
+async def _fetch_developer_reviewed_prs(devs: Iterable[str],
+                                        repos: Iterable[str],
+                                        repogroups: bool,
                                         labels: LabelFilter,
                                         time_from: datetime,
                                         time_to: datetime,
-                                        db: databases.core.Connection,
+                                        db: databases.Database,
                                         cache: Optional[aiomcache.Client],
                                         ) -> pd.DataFrame:
-    query = select([PullRequestReview.user_login,
-                    func.count(distinct(PullRequestReview.pull_request_node_id))])
+    selected = [PullRequestReview.user_node_id,
+                func.count(distinct(PullRequestReview.pull_request_node_id)).label("count")]
+    group_by = [PullRequestReview.user_node_id]
+    if repogroups:
+        selected.insert(0, PullRequestReview.repository_node_id)
+        group_by.insert(0, PullRequestReview.repository_node_id)
+    query = select(selected)
     if labels:
         query = (
             query.select_from(join(
@@ -450,8 +566,8 @@ async def _fetch_developer_reviewed_prs(devs: Sequence[str],
                 isouter=not labels.include,
             )).where(and_(
                 PullRequestReview.submitted_at.between(time_from, time_to),
-                PullRequestReview.user_login.in_(devs),
-                PullRequestReview.repository_full_name.in_(repos),
+                PullRequestReview.user_node_id.in_(devs),
+                PullRequestReview.repository_node_id.in_(repos),
                 func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
                 or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
                     PullRequestLabel.name.is_(None)) if labels.exclude else True,
@@ -461,14 +577,12 @@ async def _fetch_developer_reviewed_prs(devs: Sequence[str],
         query = (
             query.where(and_(
                 PullRequestReview.submitted_at.between(time_from, time_to),
-                PullRequestReview.user_login.in_(devs),
-                PullRequestReview.repository_full_name.in_(repos),
+                PullRequestReview.user_node_id.in_(devs),
+                PullRequestReview.repository_node_id.in_(repos),
             ))
         )
     df = await read_sql_query(
-        query.group_by(PullRequestReview.user_login),
-        db, [PullRequestReview.user_login.key, "reviewed_count"],
-        index=PullRequestReview.user_login.key)
+        query.group_by(*group_by), db, [c.key for c in selected], index=[c.key for c in group_by])
     df.fillna(0, inplace=True, downcast="infer")
     return df
 
@@ -477,21 +591,27 @@ async def _fetch_developer_reviewed_prs(devs: Sequence[str],
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, labels, **_: (
+    key=lambda devs, repos, repogroups, time_from, time_to, labels, **_: (
         ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
-        labels,
+        labels, repogroups,
     ),
 )
-async def _fetch_developer_reviews(devs: Sequence[str],
-                                   repos: Collection[str],
+async def _fetch_developer_reviews(devs: Iterable[str],
+                                   repos: Iterable[str],
+                                   repogroups: bool,
                                    labels: LabelFilter,
                                    time_from: datetime,
                                    time_to: datetime,
-                                   db: databases.core.Connection,
+                                   db: databases.Database,
                                    cache: Optional[aiomcache.Client],
                                    ) -> pd.DataFrame:
-    query = select([PullRequestReview.user_login, PullRequestReview.state,
-                    func.count(PullRequestReview.submitted_at)])
+    selected = [PullRequestReview.user_node_id, PullRequestReview.state,
+                func.count(PullRequestReview.node_id).label("count")]
+    group_by = [PullRequestReview.user_node_id, PullRequestReview.state]
+    if repogroups:
+        selected.insert(0, PullRequestReview.repository_node_id)
+        group_by.insert(0, PullRequestReview.repository_node_id)
+    query = select(selected)
     if labels:
         query = (
             query.select_from(join(
@@ -500,8 +620,8 @@ async def _fetch_developer_reviews(devs: Sequence[str],
                 isouter=not labels.include,
             )).where(and_(
                 PullRequestReview.submitted_at.between(time_from, time_to),
-                PullRequestReview.user_login.in_(devs),
-                PullRequestReview.repository_full_name.in_(repos),
+                PullRequestReview.user_node_id.in_(devs),
+                PullRequestReview.repository_node_id.in_(repos),
                 func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
                 or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
                     PullRequestLabel.name.is_(None)) if labels.exclude else True,
@@ -511,14 +631,12 @@ async def _fetch_developer_reviews(devs: Sequence[str],
         query = (
             query.where(and_(
                 PullRequestReview.submitted_at.between(time_from, time_to),
-                PullRequestReview.user_login.in_(devs),
-                PullRequestReview.repository_full_name.in_(repos),
+                PullRequestReview.user_node_id.in_(devs),
+                PullRequestReview.repository_node_id.in_(repos),
             ))
         )
     df = await read_sql_query(
-        query.group_by(PullRequestReview.user_login, PullRequestReview.state),
-        db, [PullRequestReview.user_login.key, PullRequestReview.state.key, "reviews_count"],
-        index=[PullRequestReview.user_login.key, PullRequestReview.state.key])
+        query.group_by(*group_by), db, [c.key for c in selected], index=[c.key for c in group_by])
     df.fillna(0, inplace=True, downcast="infer")
     return df
 
@@ -527,21 +645,27 @@ async def _fetch_developer_reviews(devs: Sequence[str],
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, labels, **_: (
+    key=lambda devs, repos, repogroups, time_from, time_to, labels, **_: (
         ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
-        labels,
+        labels, repogroups,
     ),
 )
-async def _fetch_developer_review_comments(devs: Sequence[str],
-                                           repos: Collection[str],
+async def _fetch_developer_review_comments(devs: Iterable[str],
+                                           repos: Iterable[str],
+                                           repogroups: bool,
                                            labels: LabelFilter,
                                            time_from: datetime,
                                            time_to: datetime,
-                                           db: databases.core.Connection,
+                                           db: databases.Database,
                                            cache: Optional[aiomcache.Client],
                                            ) -> pd.DataFrame:
-    query = select([PullRequestReviewComment.user_login,
-                    func.count(PullRequestReviewComment.created_at)])
+    selected = [PullRequestReviewComment.user_node_id,
+                func.count(PullRequestReviewComment.node_id).label("count")]
+    group_by = [PullRequestReviewComment.user_node_id]
+    if repogroups:
+        selected.insert(0, PullRequestReviewComment.repository_node_id)
+        group_by.insert(0, PullRequestReviewComment.repository_node_id)
+    query = select(selected)
     if labels:
         query = (
             query.select_from(join(
@@ -550,8 +674,8 @@ async def _fetch_developer_review_comments(devs: Sequence[str],
                 isouter=not labels.include,
             )).where(and_(
                 PullRequestReviewComment.created_at.between(time_from, time_to),
-                PullRequestReviewComment.user_login.in_(devs),
-                PullRequestReviewComment.repository_full_name.in_(repos),
+                PullRequestReviewComment.user_node_id.in_(devs),
+                PullRequestReviewComment.repository_node_id.in_(repos),
                 func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
                 or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
                     PullRequestLabel.name.is_(None)) if labels.exclude else True,
@@ -561,14 +685,12 @@ async def _fetch_developer_review_comments(devs: Sequence[str],
         query = (
             query.where(and_(
                 PullRequestReviewComment.created_at.between(time_from, time_to),
-                PullRequestReviewComment.user_login.in_(devs),
-                PullRequestReviewComment.repository_full_name.in_(repos),
+                PullRequestReviewComment.user_node_id.in_(devs),
+                PullRequestReviewComment.repository_node_id.in_(repos),
             ))
         )
     df = await read_sql_query(
-        query.group_by(PullRequestReviewComment.user_login),
-        db, [PullRequestReviewComment.user_login.key, "comments_count"],
-        index=PullRequestReviewComment.user_login.key)
+        query.group_by(*group_by), db, [c.key for c in selected], index=[c.key for c in group_by])
     df.fillna(0, inplace=True, downcast="infer")
     return df
 
@@ -577,20 +699,27 @@ async def _fetch_developer_review_comments(devs: Sequence[str],
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda devs, repos, time_from, time_to, labels, **_: (
+    key=lambda devs, repos, repogroups, time_from, time_to, labels, **_: (
         ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
-        labels,
+        labels, repogroups,
     ),
 )
-async def _fetch_developer_regular_pr_comments(devs: Sequence[str],
-                                               repos: Collection[str],
+async def _fetch_developer_regular_pr_comments(devs: Iterable[str],
+                                               repos: Iterable[str],
+                                               repogroups: bool,
                                                labels: LabelFilter,
                                                time_from: datetime,
                                                time_to: datetime,
-                                               db: databases.core.Connection,
+                                               db: databases.Database,
                                                cache: Optional[aiomcache.Client],
                                                ) -> pd.DataFrame:
-    query = select([PullRequestComment.user_login, func.count(PullRequestComment.created_at)])
+    selected = [PullRequestComment.user_node_id,
+                func.count(PullRequestComment.user_node_id).label("count")]
+    group_by = [PullRequestComment.user_node_id]
+    if repogroups:
+        selected.insert(0, PullRequestComment.repository_node_id)
+        group_by.insert(0, PullRequestComment.repository_node_id)
+    query = select(selected)
     if labels:
         query = (
             query.select_from(join(
@@ -599,8 +728,8 @@ async def _fetch_developer_regular_pr_comments(devs: Sequence[str],
                 isouter=not labels.include,
             )).where(and_(
                 PullRequestComment.created_at.between(time_from, time_to),
-                PullRequestComment.user_login.in_(devs),
-                PullRequestComment.repository_full_name.in_(repos),
+                PullRequestComment.user_node_id.in_(devs),
+                PullRequestComment.repository_node_id.in_(repos),
                 func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
                 or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
                     PullRequestLabel.name.is_(None)) if labels.exclude else True,
@@ -610,13 +739,11 @@ async def _fetch_developer_regular_pr_comments(devs: Sequence[str],
         query = (
             query.where(and_(
                 PullRequestComment.created_at.between(time_from, time_to),
-                PullRequestComment.user_login.in_(devs),
-                PullRequestComment.repository_full_name.in_(repos),
+                PullRequestComment.user_node_id.in_(devs),
+                PullRequestComment.repository_node_id.in_(repos),
             ))
         )
     df = await read_sql_query(
-        query.group_by(PullRequestComment.user_login),
-        db, [PullRequestComment.user_login.key, "comments_count"],
-        index=PullRequestComment.user_login.key)
+        query.group_by(*group_by), db, [c.key for c in selected], index=[c.key for c in group_by])
     df.fillna(0, inplace=True, downcast="infer")
     return df

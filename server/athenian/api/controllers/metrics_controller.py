@@ -33,9 +33,9 @@ from athenian.api.tracing import sentry_span
 FilterPRs = Tuple[str, Tuple[List[Set[str]], Participants, LabelFilter, JIRAFilter, ForSet]]
 #                             repositories
 
-#                service               developers
-FilterDevs = Tuple[str, Tuple[Set[str], List[str], ForSetDevelopers]]
-#                           repositories               originals
+#                service                     developers
+FilterDevs = Tuple[str, Tuple[List[Set[str]], List[str], ForSetDevelopers]]
+#                              repositories                  originals
 
 
 async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -222,10 +222,14 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
         for i, for_set in enumerate(for_sets):
             repos, service = await _extract_repos(
                 request, account, for_set.repositories, i, all_repos, checkers, sdb_conn)
-            repos = set(chain.from_iterable(repos))
+            if for_set.repogroups is not None:
+                repogroups = [set(chain.from_iterable(repos[i] for i in group))
+                              for group in for_set.repogroups]
+            else:
+                repogroups = [set(chain.from_iterable(repos))]
             prefix = PREFIXES[service]
             devs = []
-            for dev in (for_set.developers or []):
+            for dev in for_set.developers:
                 if not dev.startswith(prefix):
                     raise ResponseError(InvalidRequestError(
                         detail='providers in "developers" and "repositories" do not match',
@@ -238,7 +242,7 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
                     for_set.jira, await get_jira_installation(account, request.sdb, request.cache))
             except ResponseError:
                 jira = JIRAFilter.empty()
-            filters.append((service, (repos, devs, labels, jira, for_set)))
+            filters.append((service, (repogroups, devs, labels, jira, for_set)))
     return filters, all_repos
 
 
@@ -324,13 +328,14 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    # FIXME(vmarkovtsev): developer metrics + release settings???
-    filters, _ = await _compile_repos_and_devs_devs(filt.for_, request, filt.account)
+    filters, all_repos = await _compile_repos_and_devs_devs(filt.for_, request, filt.account)
     if filt.date_to < filt.date_from:
-        return ResponseError(InvalidRequestError(
+        raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
             pointer=".date_from",
-        )).response
+        ))
+    release_settings = \
+        await Settings.from_request(request, filt.account).list_release_matches(all_repos)
 
     met = CalculatedDeveloperMetrics()
     met.date_from = filt.date_from
@@ -344,16 +349,18 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     for_sets = []
     for service, (repos, devs, labels, jira, for_set) in filters:
         tasks.append(METRIC_ENTRIES[service]["developers"](
-            devs, repos, topics, labels, jira, time_from, time_to, request.mdb, request.cache))
+            devs, repos, time_from, time_to, topics, labels, jira, release_settings,
+            request.mdb, request.pdb, request.cache))
         for_sets.append(for_set)
     all_stats = await asyncio.gather(*tasks, return_exceptions=True)
     for stats, for_set in zip(all_stats, for_sets):
         if isinstance(stats, Exception):
             raise stats from None
-        met.calculated.append(CalculatedDeveloperMetricsItem(
-            for_=for_set,
-            values=[[getattr(s, DeveloperTopic(t).name) for t in filt.metrics] for s in stats],
-        ))
+        for i, group in enumerate(stats):
+            met.calculated.append(CalculatedDeveloperMetricsItem(
+                for_=for_set.select_repogroup(i),
+                values=[[getattr(s, DeveloperTopic(t).name) for t in filt.metrics] for s in group],
+            ))
     return model_response(met)
 
 

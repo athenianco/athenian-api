@@ -96,7 +96,7 @@ matrix:
       install: *_install
       script:
         - set -e
-        - pytest --limit 0.62 --log-level=info --cov-report=xml --cov=athenian.api tests/controllers/test_filter_controller.py tests/controllers/test_metrics_controller.py tests/controllers/test_histograms_controller.py tests/controllers/test_pagination_controller.py
+        - pytest --limit 0.66 --log-level=info --cov-report=xml --cov=athenian.api tests/controllers/test_filter_controller.py tests/controllers/test_metrics_controller.py tests/controllers/test_histograms_controller.py tests/controllers/test_pagination_controller.py
         - set +e
       after_success:
         - codecov

@@ -33,6 +33,7 @@ class UpdatedMixin:
 
 
 class UserMixin:
+    user_node_id = Column(Text)
     user_login = Column(Text)
 
 
@@ -150,12 +151,12 @@ class PullRequestReview(Base,
                         IDMixin,
                         UserMixin,
                         PullRequestMixin,
+                        RepositoryMixin,
                         ):
     __tablename__ = "github_pull_request_reviews_compat"
 
     state = Column(Text, nullable=False)
     submitted_at = Column(TIMESTAMP(timezone=True), nullable=False)
-    repository_full_name = Column(Text)
     created_at = synonym("submitted_at")
 
 
@@ -198,6 +199,7 @@ class PullRequest(Base,
     merge_commit_sha = Column(Text)
     merged = Column(Boolean)
     merged_at = Column(TIMESTAMP(timezone=True))
+    merged_by = Column(Text)
     merged_by_login = Column(Text)
     number = Column(BigInteger, nullable=False)
     title = Column(Text)
