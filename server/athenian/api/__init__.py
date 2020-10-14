@@ -329,6 +329,8 @@ class AthenianApp(connexion.AioHttpApp):
             if db is not None:
                 await db.disconnect()
         if self._cache is not None:
+            if (f := getattr(self._cache, "version_future", None)) is not None:
+                f.cancel()
             await self._cache.close()
 
     @property
@@ -546,8 +548,9 @@ def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Clien
     async def print_memcached_version():
         version = await client.version()
         log.info("memcached: %s on %s", version.decode(), addr)
+        delattr(client, "version_future")
 
-    asyncio.ensure_future(print_memcached_version())
+    client.version_future = asyncio.ensure_future(print_memcached_version())
     return client
 
 
