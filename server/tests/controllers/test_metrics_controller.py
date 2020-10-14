@@ -700,7 +700,7 @@ developer_metric_be_stats = {
     "dev-review-approvals": [[1], [3], [2], [3]],
     "dev-review-rejections": [[1], [1], [0], [0]],
     "dev-review-neutrals": [[6], [2], [5], [1]],
-    "dev-pr-comments": [[10], [6], [0], [2]],
+    "dev-pr-comments": [[10], [6], [5], [2]],
     "dev-regular-pr-comments": [[3], [1], [0], [1]],
     "dev-review-pr-comments": [[7], [5], [5], [1]],
 }
@@ -770,6 +770,32 @@ async def test_developer_metrics_all(client, headers, dev):
     else:
         assert all(isinstance(v, int) for v in result.calculated[0].values[0]), \
             "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID))
+
+
+async def test_developer_metrics_repogroups(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "timezone": 60,
+        "for": [
+            {"repositories": ["github.com/src-d/go-git", "github.com/src-d/gitbase"],
+             "repogroups": [[0], [1]],
+             "developers": ["github.com/mcuadros"]},
+        ],
+        "metrics": sorted(DeveloperMetricID),
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200, (await response.read()).decode("utf-8")
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert set(result.metrics) == set(DeveloperMetricID)
+    assert len(result.calculated) == 2
+    assert all(v > 0 for v in result.calculated[0].values[0])
+    assert all(v == 0 for v in result.calculated[1].values[0])
 
 
 @pytest.mark.parametrize("metric, value", [(m, developer_metric_be_stats[m])

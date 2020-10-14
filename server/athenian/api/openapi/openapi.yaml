@@ -2391,16 +2391,7 @@ components:
         repositories:
           $ref: '#/components/schemas/RepositorySet'
         repogroups:
-          description: Lists of indexes in `repositories` that define independent
-            groups that must be processed individually. The groups may have intersections.
-          items:
-            items:
-              minItems: 1
-              minimum: 0
-              type: integer
-            type: array
-          minItems: 1
-          type: array
+          $ref: '#/components/schemas/RepositoryGroups'
         with:
           $ref: '#/components/schemas/PullRequestWith'
         labels_include:
@@ -2434,6 +2425,8 @@ components:
           $ref: '#/components/schemas/RepositorySet'
         developers:
           $ref: '#/components/schemas/DeveloperSet'
+        repogroups:
+          $ref: '#/components/schemas/RepositoryGroups'
         labels_include:
           description: PRs must be labeled with at least one name from this list so
             that the related metrics include them.
@@ -3824,6 +3817,7 @@ components:
     CalculatedDeveloperMetricsItem:
       additionalProperties: false
       description: Measured developer metrics for each `DeveloperMetricsRequest.for`.
+        Each repository group maps to a distinct `CalculatedDeveloperMetricsItem`.
       example:
         values:
         - - 20
@@ -5031,3 +5025,17 @@ components:
             type: string
           type: array
       type: object
+    RepositoryGroups:
+      description: Lists of indexes in `repositories` that define independent
+        groups that must be processed individually. The groups may have intersections.
+      example:
+      - 0
+      - 1
+      items:
+        items:
+          minItems: 1
+          minimum: 0
+          type: integer
+        type: array
+      minItems: 1
+      type: array

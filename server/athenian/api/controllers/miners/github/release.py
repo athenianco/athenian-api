@@ -348,6 +348,23 @@ def _match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
     return false()
 
 
+def remove_ambigous_precomputed_releases(df: pd.DataFrame, repo_column: str) -> pd.DataFrame:
+    """Deal with "tag_or_branch" precomputed releases."""
+    matched_by_tag_mask = df[PrecomputedRelease.release_match.key].str.startswith("tag|")
+    matched_by_branch_mask = df[PrecomputedRelease.release_match.key].str.startswith("branch|")
+    repos = df[repo_column].values
+    ambiguous_repos = np.intersect1d(repos[matched_by_tag_mask], repos[matched_by_branch_mask])
+    if len(ambiguous_repos):
+        matched_by_branch_mask[np.in1d(repos, ambiguous_repos)] = False
+    df[matched_by_column] = None
+    df.loc[matched_by_tag_mask, matched_by_column] = ReleaseMatch.tag
+    df.loc[matched_by_branch_mask, matched_by_column] = ReleaseMatch.branch
+    df.drop(PrecomputedRelease.release_match.key, inplace=True, axis=1)
+    df = df.take(np.where(~df[matched_by_column].isnull())[0])
+    df[matched_by_column] = df[matched_by_column].astype(int)
+    return df
+
+
 @sentry_span
 async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
                                       time_from: datetime,
@@ -363,18 +380,7 @@ async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str,
         .order_by(desc(prel.published_at)),
         pdb, prel,
     )
-    matched_by_tag_mask = df[prel.release_match.key].str.startswith("tag|")
-    matched_by_branch_mask = df[prel.release_match.key].str.startswith("branch|")
-    repos = df[prel.repository_full_name.key].values
-    ambiguous_repos = np.intersect1d(repos[matched_by_tag_mask], repos[matched_by_branch_mask])
-    if len(ambiguous_repos):
-        matched_by_branch_mask[np.in1d(repos, ambiguous_repos)] = False
-    df[matched_by_column] = None
-    df.loc[matched_by_tag_mask, matched_by_column] = ReleaseMatch.tag
-    df.loc[matched_by_branch_mask, matched_by_column] = ReleaseMatch.branch
-    df.drop(prel.release_match.key, inplace=True, axis=1)
-    df = df.take(np.where(~df[matched_by_column].isnull())[0])
-    df[matched_by_column] = df[matched_by_column].astype(int)
+    df = remove_ambigous_precomputed_releases(df, prel.repository_full_name.key)
     if index is not None:
         df.set_index(index, inplace=True)
     else:

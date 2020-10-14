@@ -37,7 +37,7 @@ from athenian.api.models.web.filter_repositories_request import FilterRepositori
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.filtered_releases import FilteredReleases
-from athenian.api.models.web.for_set import ForSet
+from athenian.api.models.web.for_set import ForSet, RepositoryGroupsMixin
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
 from athenian.api.models.web.found_jira_stuff import FoundJIRAStuff
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, \
