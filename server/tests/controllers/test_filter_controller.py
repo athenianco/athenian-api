@@ -503,6 +503,9 @@ async def validate_prs_response(response: ClientResponse,
     prs = PullRequestSet.from_dict(obj)
     users = prs.include.users
     assert len(users) > 0, text
+    for user in users:
+        assert user.startswith("github.com/")
+        assert len(user.split("/")) == 2
     assert len(prs.data) > 0, text
     numbers = set()
     total_comments = total_commits = total_review_comments = total_released = total_rejected = \

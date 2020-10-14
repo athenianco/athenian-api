@@ -541,8 +541,14 @@ def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Clien
         return None
     host, port = addr.split(":")
     port = int(port)
-    log.info("memcached: %s", addr)
-    return aiomcache.Client(host, port)
+    client = aiomcache.Client(host, port)
+
+    async def print_memcached_version():
+        version = await client.version()
+        log.info("memcached: %s on %s", version.decode(), addr)
+
+    asyncio.ensure_future(print_memcached_version())
+    return client
 
 
 def create_auth0_factory(single_tenant: bool, force_user: str) -> Callable[[], Auth0]:

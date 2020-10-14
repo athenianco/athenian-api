@@ -30,7 +30,7 @@ async def mine_users(logins: Collection[str],
     exptime=60 * 60,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
-    key=lambda logins, **_: (",".join(sorted(logins)),),
+    key=lambda logins, prefix="", **_: (",".join(sorted(logins)), prefix),
 )
 async def mine_user_avatars(logins: Iterable[str],
                             db: databases.Database,
