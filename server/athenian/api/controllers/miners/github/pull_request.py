@@ -351,15 +351,15 @@ class PullRequestMiner:
         async def fetch_reviews():
             return await cls._read_filtered_models(
                 mdb, PullRequestReview, node_ids, time_to,
-                columns=[PullRequestReview.submitted_at, PullRequestReview.user_id,
-                         PullRequestReview.state, PullRequestReview.user_login],
+                columns=[PullRequestReview.submitted_at, PullRequestReview.state,
+                         PullRequestReview.user_login],
                 created_at=truncate)
 
         @sentry_span
         async def fetch_review_comments():
             return await cls._read_filtered_models(
                 mdb, PullRequestReviewComment, node_ids, time_to,
-                columns=[PullRequestReviewComment.created_at, PullRequestReviewComment.user_id],
+                columns=[PullRequestReviewComment.created_at, PullRequestReviewComment.user_login],
                 created_at=truncate)
 
         @sentry_span
@@ -373,8 +373,7 @@ class PullRequestMiner:
         async def fetch_comments():
             return await cls._read_filtered_models(
                 mdb, PullRequestComment, node_ids, time_to,
-                columns=[PullRequestComment.created_at, PullRequestComment.user_id,
-                         PullRequestComment.user_login],
+                columns=[PullRequestComment.created_at, PullRequestComment.user_login],
                 created_at=truncate)
 
         @sentry_span
@@ -1149,20 +1148,20 @@ class PullRequestFactsMiner:
         if reviews_before_merge.empty:
             # express lane
             grouped_reviews = self.dummy_reviews
-        elif reviews_before_merge[PullRequestReview.user_id.key].nunique() == 1:
+        elif reviews_before_merge[PullRequestReview.user_login.key].nunique() == 1:
             # fast lane
             grouped_reviews = reviews_before_merge._ixs(
                 reviews_before_merge[PullRequestReview.submitted_at.key].values.argmax())
         else:
             # the most recent review for each reviewer
             latest_review_ixs = np.where(
-                reviews_before_merge[[PullRequestReview.user_id.key,
+                reviews_before_merge[[PullRequestReview.user_login.key,
                                       PullRequestReview.submitted_at.key]]
                 .take(np.where(reviews_before_merge[PullRequestReview.state.key] !=
                                ReviewResolution.COMMENTED.value)[0])
                 .sort_values([PullRequestReview.submitted_at.key],
                              ascending=False, ignore_index=True)
-                .groupby(PullRequestReview.user_id.key, sort=False, as_index=False)
+                .groupby(PullRequestReview.user_login.key, sort=False, as_index=False)
                 ._cumcount_array())[0]
             grouped_reviews = {
                 k: reviews_before_merge[k].take(latest_review_ixs)

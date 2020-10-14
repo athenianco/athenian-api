@@ -185,14 +185,14 @@ class PullRequestListMiner:
             facts_now,
             {k: (pr_node_id in v) for k, v in hard_events_now.items()},
             self._no_time_from)
-        author = pr.pr[PullRequest.user_id.key]
-        external_reviews_mask = pr.reviews[PullRequestReview.user_id.key].values != author
+        author = pr.pr[PullRequest.user_login.key]
+        external_reviews_mask = pr.reviews[PullRequestReview.user_login.key].values != author
         external_review_times = pr.reviews[PullRequestReview.created_at.key].values[
             external_reviews_mask]
         first_review = pd.Timestamp(external_review_times.min(), tz=timezone.utc) \
             if len(external_review_times) > 0 else None
         review_comments = (
-            pr.review_comments[PullRequestReviewComment.user_id.key].values != author
+            pr.review_comments[PullRequestReviewComment.user_login.key].values != author
         ).sum()
         delta_comments = len(pr.review_comments) - review_comments
         reviews = external_reviews_mask.sum()

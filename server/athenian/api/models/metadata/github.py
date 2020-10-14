@@ -33,7 +33,6 @@ class UpdatedMixin:
 
 
 class UserMixin:
-    user_id = Column(BigInteger)
     user_login = Column(Text)
 
 
