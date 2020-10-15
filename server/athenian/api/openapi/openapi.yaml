@@ -2407,6 +2407,13 @@ components:
           type: array
         jira:
           $ref: '#/components/schemas/JIRAFilter'
+        lines:
+          description: Split by changed number of lines (inserted + removed).
+          minLength: 2
+          items:
+            minimum: 0
+            type: integer
+          type: array
       required:
       - repositories
       type: object

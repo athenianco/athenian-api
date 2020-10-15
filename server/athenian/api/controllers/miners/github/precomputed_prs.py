@@ -427,6 +427,32 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
     return new_released_prs_df(records)
 
 
+def _collect_activity_days(pr: MinedPullRequest, facts: PullRequestFacts, sqlite: bool):
+    activity_days = set()
+    if facts.released is not None:
+        activity_days.add(facts.released.date())
+    if facts.closed is not None:
+        activity_days.add(facts.closed.date())
+    activity_days.add(facts.created.date())
+    # if they are empty the column dtype is sometimes an object so .dt raises an exception
+    if not pr.review_requests.empty:
+        activity_days.update(
+            pr.review_requests[PullRequestReviewRequest.created_at.key].dt.date)
+    if not pr.reviews.empty:
+        activity_days.update(pr.reviews[PullRequestReview.created_at.key].dt.date)
+    if not pr.comments.empty:
+        activity_days.update(pr.comments[PullRequestComment.created_at.key].dt.date)
+    if not pr.commits.empty:
+        activity_days.update(pr.commits[PullRequestCommit.committed_date.key].dt.date)
+    if sqlite:
+        activity_days = [d.strftime("%Y-%m-%d") for d in sorted(activity_days)]
+    else:
+        # Postgres is "clever" enough to localize them otherwise
+        activity_days = [datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
+                         for d in activity_days]
+    return activity_days
+
+
 @sentry_span
 async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
                                        pr_facts: Iterable[Optional[Tuple[Any, PullRequestFacts]]],
@@ -444,7 +470,6 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             # ImpossiblePullRequest
             continue
         assert pr.pr[PullRequest.created_at.key] == facts.created
-        activity_days = set()
         if not facts.released:
             if not (facts.force_push_dropped or (facts.closed and not facts.merged)):
                 continue
@@ -458,9 +483,6 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
                           pr.pr[PullRequest.number.key],
                           facts)
                 continue
-            activity_days.add(facts.released.date())
-        activity_days.add(facts.created.date())
-        activity_days.add(facts.closed.date())
         repo = pr.pr[PullRequest.repository_full_name.key]
         if pr.release[matched_by_column] is not None:
             release_match = release_settings[prefix + repo]
@@ -478,22 +500,6 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
         else:
             release_match = ReleaseMatch.rejected.name
         participants = pr.participants()
-        # if they are empty the column dtype is sometimes an object so .dt raises an exception
-        if not pr.review_requests.empty:
-            activity_days.update(
-                pr.review_requests[PullRequestReviewRequest.created_at.key].dt.date)
-        if not pr.reviews.empty:
-            activity_days.update(pr.reviews[PullRequestReview.created_at.key].dt.date)
-        if not pr.comments.empty:
-            activity_days.update(pr.comments[PullRequestComment.created_at.key].dt.date)
-        if not pr.commits.empty:
-            activity_days.update(pr.commits[PullRequestCommit.committed_date.key].dt.date)
-        if sqlite:
-            activity_days = [d.strftime("%Y-%m-%d") for d in sorted(activity_days)]
-        else:
-            # Postgres is "clever" enough to localize them otherwise
-            activity_days = [datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
-                             for d in activity_days]
         inserted.append(GitHubDonePullRequestFacts(
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,
@@ -511,7 +517,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             commit_authors={k: "" for k in participants[PRParticipationKind.COMMIT_AUTHOR]},
             commit_committers={k: "" for k in participants[PRParticipationKind.COMMIT_COMMITTER]},
             labels={label: "" for label in pr.labels[PullRequestLabel.name.key].values},
-            activity_days=activity_days,
+            activity_days=_collect_activity_days(pr, facts, sqlite),
             data=pickle.dumps(facts),
         ).create_defaults().explode(with_primary_keys=True))
     if not inserted:
@@ -692,6 +698,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                     merged_at=merged_at,
                     author=author,
                     merger=merger,
+                    activity_days={},
                     labels={label: "" for label in labels.get(node_id, [])},
                 ).create_defaults().explode(with_primary_keys=True))
         if not values:
@@ -723,7 +730,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
 
 @sentry_span
 async def store_merged_unreleased_pull_request_facts(
-        merged_prs_and_facts: Iterable[Tuple[Mapping[str, Any], PullRequestFacts]],
+        merged_prs_and_facts: Iterable[Tuple[MinedPullRequest, PullRequestFacts]],
         matched_bys: Dict[str, ReleaseMatch],
         default_branches: Dict[str, str],
         release_settings: Dict[str, ReleaseMatchSetting],
@@ -741,15 +748,16 @@ async def store_merged_unreleased_pull_request_facts(
     dt = datetime(2000, 1, 1, tzinfo=timezone.utc)
     for pr, facts in merged_prs_and_facts:
         assert facts.merged and not facts.released
-        repo = pr[PullRequest.repository_full_name.key]
+        repo = pr.pr[PullRequest.repository_full_name.key]
         if (release_match := _extract_release_match(
                 repo, matched_bys, default_branches, release_settings)) is None:
             # no new releases
             continue
         values.append(GitHubMergedPullRequestFacts(
-            pr_node_id=pr[PullRequest.node_id.key],
+            pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,
             data=pickle.dumps(facts),
+            activity_days=_collect_activity_days(pr, facts, not postgres),
             # the following does not matter, are not updated so we set to 0xdeadbeef
             repository_full_name="",
             checked_until=dt,
@@ -759,24 +767,26 @@ async def store_merged_unreleased_pull_request_facts(
             labels={},
         ).create_defaults().explode(with_primary_keys=True))
     await unreleased_prs_event.wait()
+    ghmprf = GitHubMergedPullRequestFacts
     if postgres:
-        sql = postgres_insert(GitHubMergedPullRequestFacts)
+        sql = postgres_insert(ghmprf)
         sql = sql.on_conflict_do_update(
-            constraint=GitHubMergedPullRequestFacts.__table__.primary_key,
+            constraint=ghmprf.__table__.primary_key,
             set_={
-                GitHubMergedPullRequestFacts.data.key: sql.excluded.data,
+                ghmprf.data.key: sql.excluded.data,
+                ghmprf.activity_days.key: sql.excluded.activity_days,
             },
         )
-        with sentry_sdk.start_span(op="store_open_pull_request_facts/execute"):
+        with sentry_sdk.start_span(op="store_merged_unreleased_pull_request_facts/execute"):
             await pdb.execute_many(sql, values)
     else:
-        ghmprf = GitHubMergedPullRequestFacts
         tasks = [
             pdb.execute(update(ghmprf).where(and_(
                 ghmprf.pr_node_id == v[ghmprf.pr_node_id.key],
                 ghmprf.release_match == v[ghmprf.release_match.key],
                 ghmprf.format_version == v[ghmprf.format_version.key],
             )).values({ghmprf.data: v[ghmprf.data.key],
+                       ghmprf.activity_days: v[ghmprf.activity_days.key],
                        ghmprf.updated_at: datetime.now(timezone.utc)})) for v in values
         ]
         for err in await asyncio.gather(*tasks, return_exceptions=True):
@@ -920,7 +930,7 @@ async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
 
 @sentry_span
 async def store_open_pull_request_facts(
-        open_prs_and_facts: Iterable[Tuple[Mapping[str, Any], PullRequestFacts]],
+        open_prs_and_facts: Iterable[Tuple[MinedPullRequest, PullRequestFacts]],
         pdb: databases.Database) -> None:
     """
     Persist the facts about open pull requests to the database.
@@ -933,15 +943,16 @@ async def store_open_pull_request_facts(
     values = []
     for pr, facts in open_prs_and_facts:
         assert not facts.closed
-        updated_at = pr[PullRequest.updated_at.key]
+        updated_at = pr.pr[PullRequest.updated_at.key]
         if updated_at != updated_at:
             continue
         values.append(GitHubOpenPullRequestFacts(
-            pr_node_id=pr[PullRequest.node_id.key],
-            repository_full_name=pr[PullRequest.repository_full_name.key],
-            pr_created_at=pr[PullRequest.created_at.key],
-            number=pr[PullRequest.number.key],
+            pr_node_id=pr.pr[PullRequest.node_id.key],
+            repository_full_name=pr.pr[PullRequest.repository_full_name.key],
+            pr_created_at=pr.pr[PullRequest.created_at.key],
+            number=pr.pr[PullRequest.number.key],
             pr_updated_at=updated_at,
+            activity_days=_collect_activity_days(pr, facts, not postgres),
             data=pickle.dumps(facts),
         ).create_defaults().explode(with_primary_keys=True))
     if postgres:
