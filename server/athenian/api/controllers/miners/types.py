@@ -12,8 +12,8 @@ from athenian.api.models.metadata.github import PullRequest, PullRequestComment,
     PullRequestCommit, PullRequestReview, Release
 
 
-class ParticipationKind(IntEnum):
-    """The way the developer relates to a pull request.
+class PRParticipationKind(IntEnum):
+    """Developer relationship with a pull request.
 
     These values are written to the precomputed DB, so be careful with changing them.
     """
@@ -27,7 +27,18 @@ class ParticipationKind(IntEnum):
     RELEASER = 7
 
 
-Participants = Mapping[ParticipationKind, Set[str]]
+PRParticipants = Mapping[PRParticipationKind, Set[str]]
+
+
+class ReleaseParticipationKind(IntEnum):
+    """Developer relationship with a release."""
+
+    PR_AUTHOR = 1
+    COMMIT_AUTHOR = 2
+    RELEASER = 3
+
+
+ReleaseParticipants = Mapping[ReleaseParticipationKind, List[str]]
 
 
 class Property(IntEnum):
@@ -127,7 +138,7 @@ class PullRequestListItem:
     stages_time_machine: Optional[Set[PullRequestStage]]
     events_now: Set[PullRequestEvent]
     stages_now: Set[PullRequestStage]
-    participants: Participants
+    participants: PRParticipants
     labels: List[Label]
     jira: Optional[List[PullRequestJIRAIssueItem]]
 
@@ -152,25 +163,25 @@ class MinedPullRequest:
     labels: pd.DataFrame
     jiras: pd.DataFrame
 
-    def participants(self) -> Participants:
+    def participants(self) -> PRParticipants:
         """Collect unique developer logins that are mentioned in this pull request."""
         author = self.pr[PullRequest.user_login.key]
         merger = self.pr[PullRequest.merged_by_login.key]
         releaser = self.release[Release.author.key]
         participants = {
-            ParticipationKind.AUTHOR: {author} if author else set(),
-            ParticipationKind.REVIEWER: self._extract_people(
+            PRParticipationKind.AUTHOR: {author} if author else set(),
+            PRParticipationKind.REVIEWER: self._extract_people(
                 self.reviews, PullRequestReview.user_login.key),
-            ParticipationKind.COMMENTER: self._extract_people(
+            PRParticipationKind.COMMENTER: self._extract_people(
                 self.comments, PullRequestComment.user_login.key),
-            ParticipationKind.COMMIT_COMMITTER: self._extract_people(
+            PRParticipationKind.COMMIT_COMMITTER: self._extract_people(
                 self.commits, PullRequestCommit.committer_login.key),
-            ParticipationKind.COMMIT_AUTHOR: self._extract_people(
+            PRParticipationKind.COMMIT_AUTHOR: self._extract_people(
                 self.commits, PullRequestCommit.author_login.key),
-            ParticipationKind.MERGER: {merger} if merger else set(),
-            ParticipationKind.RELEASER: {releaser} if releaser else set(),
+            PRParticipationKind.MERGER: {merger} if merger else set(),
+            PRParticipationKind.RELEASER: {releaser} if releaser else set(),
         }
-        reviewers = participants[ParticipationKind.REVIEWER]
+        reviewers = participants[PRParticipationKind.REVIEWER]
         if author in reviewers:
             reviewers.remove(author)
         return participants

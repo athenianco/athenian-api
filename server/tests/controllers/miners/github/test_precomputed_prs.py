@@ -22,7 +22,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
 from athenian.api.controllers.miners.github.release import load_releases, map_prs_to_releases
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
-from athenian.api.controllers.miners.types import MinedPullRequest, ParticipationKind, \
+from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipationKind, \
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
@@ -149,12 +149,12 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
         False, settings, pdb)
     assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[::3]}
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, names, {ParticipationKind.AUTHOR: {"wow"},
-                                    ParticipationKind.RELEASER: {"zzz"}},
+        time_from, time_to, names, {PRParticipationKind.AUTHOR: {"wow"},
+                                    PRParticipationKind.RELEASER: {"zzz"}},
         LabelFilter.empty(), default_branches, False, settings, pdb)
     assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[1::2]}
     loaded_prs = await load_precomputed_done_facts_filters(
-        time_from, time_to, names, {ParticipationKind.COMMIT_AUTHOR: {"yyy"}},
+        time_from, time_to, names, {PRParticipationKind.COMMIT_AUTHOR: {"yyy"}},
         LabelFilter.empty(), default_branches, False, settings, pdb)
     assert len(loaded_prs) == len(prs)
     loaded_prs = await load_precomputed_done_facts_filters(
@@ -573,7 +573,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     unreleased_time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     unreleased_prs = (await discover_inactive_merged_unreleased_prs(
         unreleased_time_from, unreleased_time_to, {"src-d/go-git"},
-        {ParticipationKind.MERGER: {"mcuadros"}}, LabelFilter.empty(), {},
+        {PRParticipationKind.MERGER: {"mcuadros"}}, LabelFilter.empty(), {},
         release_match_setting_tag, pdb, cache))[0]
     await wait_deferred()
     assert len(unreleased_prs) == 11
@@ -584,7 +584,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
             datetime(2018, 10, 17, tzinfo=timezone.utc)).all()
     unreleased_prs = (await discover_inactive_merged_unreleased_prs(
         unreleased_time_from, unreleased_time_to, {"src-d/go-git"},
-        {ParticipationKind.MERGER: {"mcuadros"}}, LabelFilter.empty(), {},
+        {PRParticipationKind.MERGER: {"mcuadros"}}, LabelFilter.empty(), {},
         release_match_setting_tag, None, cache))[0]
     assert len(unreleased_prs) == 11
     unreleased_prs = await read_sql_query(
@@ -603,7 +603,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     unreleased_time_to = datetime(2018, 11, 20, tzinfo=timezone.utc)
     unreleased_prs = (await discover_inactive_merged_unreleased_prs(
         unreleased_time_from, unreleased_time_to, {"src-d/go-git"},
-        {ParticipationKind.MERGER: {"mcuadros"}}, LabelFilter.empty(), {},
+        {PRParticipationKind.MERGER: {"mcuadros"}}, LabelFilter.empty(), {},
         release_match_setting_tag, pdb, cache))[0]
     assert not unreleased_prs
 

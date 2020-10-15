@@ -11,9 +11,9 @@ class HistogramDefinition(Model):
 
     openapi_types = {
         "metric": PullRequestMetricID,
-        "scale": HistogramScale,
-        "bins": int,
-        "ticks": List[object],
+        "scale": Optional[HistogramScale],
+        "bins": Optional[int],
+        "ticks": Optional[List[object]],
     }
 
     attribute_map = {

@@ -21,8 +21,8 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
-from athenian.api.controllers.miners.types import MinedPullRequest, Participants, \
-    ParticipationKind, PullRequestFacts
+from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
+    PRParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, greatest
@@ -113,16 +113,16 @@ async def load_precomputed_done_candidates(time_from: datetime,
     return result
 
 
-def _build_participants_filters(participants: Participants,
+def _build_participants_filters(participants: PRParticipants,
                                 filters: list,
                                 selected: list,
                                 postgres: bool) -> None:
     ghdprf = GitHubDonePullRequestFacts
     if postgres:
         developer_filters_single = []
-        for col, pk in ((ghdprf.author, ParticipationKind.AUTHOR),
-                        (ghdprf.merger, ParticipationKind.MERGER),
-                        (ghdprf.releaser, ParticipationKind.RELEASER)):
+        for col, pk in ((ghdprf.author, PRParticipationKind.AUTHOR),
+                        (ghdprf.merger, PRParticipationKind.MERGER),
+                        (ghdprf.releaser, PRParticipationKind.RELEASER)):
             col_parts = participants.get(pk)
             if not col_parts:
                 continue
@@ -131,10 +131,10 @@ def _build_participants_filters(participants: Participants,
         for f in developer_filters_single[1:]:
             f.right = developer_filters_single[0].right
         developer_filters_multiple = []
-        for col, pk in ((ghdprf.commenters, ParticipationKind.COMMENTER),
-                        (ghdprf.reviewers, ParticipationKind.REVIEWER),
-                        (ghdprf.commit_authors, ParticipationKind.COMMIT_AUTHOR),
-                        (ghdprf.commit_committers, ParticipationKind.COMMIT_COMMITTER)):
+        for col, pk in ((ghdprf.commenters, PRParticipationKind.COMMENTER),
+                        (ghdprf.reviewers, PRParticipationKind.REVIEWER),
+                        (ghdprf.commit_authors, PRParticipationKind.COMMIT_AUTHOR),
+                        (ghdprf.commit_committers, PRParticipationKind.COMMIT_COMMITTER)):
             col_parts = participants.get(pk)
             if not col_parts:
                 continue
@@ -182,18 +182,18 @@ def _labels_are_compatible(include_singles: Set[str],
             (not exclude or not exclude.intersection(labels)))
 
 
-def _check_participants(row: Mapping, participants: Participants) -> bool:
+def _check_participants(row: Mapping, participants: PRParticipants) -> bool:
     ghprt = GitHubDonePullRequestFacts
-    for col, pk in ((ghprt.author, ParticipationKind.AUTHOR),
-                    (ghprt.merger, ParticipationKind.MERGER),
-                    (ghprt.releaser, ParticipationKind.RELEASER)):
+    for col, pk in ((ghprt.author, PRParticipationKind.AUTHOR),
+                    (ghprt.merger, PRParticipationKind.MERGER),
+                    (ghprt.releaser, PRParticipationKind.RELEASER)):
         dev = row[col.key]
         if dev and dev in participants.get(pk, set()):
             return True
-    for col, pk in ((ghprt.reviewers, ParticipationKind.REVIEWER),
-                    (ghprt.commenters, ParticipationKind.COMMENTER),
-                    (ghprt.commit_authors, ParticipationKind.COMMIT_AUTHOR),
-                    (ghprt.commit_committers, ParticipationKind.COMMIT_COMMITTER)):
+    for col, pk in ((ghprt.reviewers, PRParticipationKind.REVIEWER),
+                    (ghprt.commenters, PRParticipationKind.COMMENTER),
+                    (ghprt.commit_authors, PRParticipationKind.COMMIT_AUTHOR),
+                    (ghprt.commit_committers, PRParticipationKind.COMMIT_COMMITTER)):
         devs = set(row[col.key])
         if devs.intersection(participants.get(pk, set())):
             return True
@@ -204,7 +204,7 @@ def _check_participants(row: Mapping, participants: Participants) -> bool:
 async def load_precomputed_done_facts_filters(time_from: datetime,
                                               time_to: datetime,
                                               repos: Collection[str],
-                                              participants: Participants,
+                                              participants: PRParticipants,
                                               labels: LabelFilter,
                                               default_branches: Dict[str, str],
                                               exclude_inactive: bool,
@@ -228,7 +228,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
 async def load_precomputed_done_timestamp_filters(time_from: datetime,
                                                   time_to: datetime,
                                                   repos: Collection[str],
-                                                  participants: Participants,
+                                                  participants: PRParticipants,
                                                   labels: LabelFilter,
                                                   default_branches: Dict[str, str],
                                                   exclude_inactive: bool,
@@ -252,7 +252,7 @@ async def _load_precomputed_done_filters(column: InstrumentedAttribute,
                                          time_from: datetime,
                                          time_to: datetime,
                                          repos: Collection[str],
-                                         participants: Participants,
+                                         participants: PRParticipants,
                                          labels: LabelFilter,
                                          default_branches: Dict[str, str],
                                          exclude_inactive: bool,
@@ -503,13 +503,13 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             number=pr.pr[PullRequest.number.key],
             release_url=pr.release[Release.url.key],
             release_node_id=pr.release[Release.id.key],
-            author=_flatten_set(participants[ParticipationKind.AUTHOR]),
-            merger=_flatten_set(participants[ParticipationKind.MERGER]),
-            releaser=_flatten_set(participants[ParticipationKind.RELEASER]),
-            commenters={k: "" for k in participants[ParticipationKind.COMMENTER]},
-            reviewers={k: "" for k in participants[ParticipationKind.REVIEWER]},
-            commit_authors={k: "" for k in participants[ParticipationKind.COMMIT_AUTHOR]},
-            commit_committers={k: "" for k in participants[ParticipationKind.COMMIT_COMMITTER]},
+            author=_flatten_set(participants[PRParticipationKind.AUTHOR]),
+            merger=_flatten_set(participants[PRParticipationKind.MERGER]),
+            releaser=_flatten_set(participants[PRParticipationKind.RELEASER]),
+            commenters={k: "" for k in participants[PRParticipationKind.COMMENTER]},
+            reviewers={k: "" for k in participants[PRParticipationKind.REVIEWER]},
+            commit_authors={k: "" for k in participants[PRParticipationKind.COMMIT_AUTHOR]},
+            commit_committers={k: "" for k in participants[PRParticipationKind.COMMIT_COMMITTER]},
             labels={label: "" for label in pr.labels[PullRequestLabel.name.key].values},
             activity_days=activity_days,
             data=pickle.dumps(facts),
@@ -799,7 +799,7 @@ async def store_merged_unreleased_pull_request_facts(
 async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   time_to: datetime,
                                                   repos: Collection[str],
-                                                  participants: Participants,
+                                                  participants: PRParticipants,
                                                   labels: LabelFilter,
                                                   default_branches: Dict[str, str],
                                                   release_settings: Dict[str, ReleaseMatchSetting],
@@ -817,8 +817,8 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
         GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
         GitHubMergedPullRequestFacts.merged_at < time_from,
     ]
-    for role, col in ((ParticipationKind.AUTHOR, GitHubMergedPullRequestFacts.author),
-                      (ParticipationKind.MERGER, GitHubMergedPullRequestFacts.merger)):
+    for role, col in ((PRParticipationKind.AUTHOR, GitHubMergedPullRequestFacts.author),
+                      (PRParticipationKind.MERGER, GitHubMergedPullRequestFacts.merger)):
         people = participants.get(role)
         if people:
             filters.append(col.in_(people))

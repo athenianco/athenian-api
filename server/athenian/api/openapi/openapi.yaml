@@ -4573,11 +4573,9 @@ components:
           allOf:
           - $ref: '#/components/schemas/HistogramScale'
           - description: Histogram's X axis scale.
-            nullable: true
         bins:
           description: Number of bars in the histogram. 0 or null means automatic.
           minimum: 0
-          nullable: true
           type: integer
         ticks:
           description: |-
@@ -4591,7 +4589,6 @@ components:
             - type: number
             - $ref: '#/components/schemas/TimeDuration'
           minItems: 1
-          nullable: true
           type: array
       required:
       - metric
@@ -5006,8 +5003,11 @@ components:
       type: object
     PaginatePullRequestsRequest:
       additionalProperties: false
-      description: Request of `/paginate/pull_requests`. According to the target batch
-        size, compute the optimal PR updated timestamp ranges.
+      description: |-
+        Request of `/paginate/pull_requests`. According to the target batch size,
+        compute the optimal PR updated timestamp ranges. `request` should match
+        the body to be sent to `/filter/pull_requests`. `updated_from` and `updated_to`
+        inside `request` are ignored.
       properties:
         batch:
           description: Target batch size. The returned ranges do not guarantee the
@@ -5015,10 +5015,7 @@ components:
           minimum: 1
           type: integer
         request:
-          allOf:
-          - $ref: '#/components/schemas/FilterPullRequestsRequest'
-          - description: Same body to be sent to `/filter/pull_requests`. Inner
-              pagination is ignored.
+          $ref: '#/components/schemas/FilterPullRequestsRequest'
       required:
       - batch
       - request
@@ -5055,7 +5052,7 @@ components:
       type: array
     ReleaseWith:
       additionalProperties: false
-      description: Release contribution roles.
+      description: Release contribution roles. The aggregation is `OR` everywhere.
       example:
         pr_author:
         - github.com/se7entyse7en

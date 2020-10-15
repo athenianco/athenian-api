@@ -140,7 +140,7 @@ def main():
                 log.info("Mining all the releases")
                 branches, default_branches = await extract_branches(repos, mdb, None)
                 releases, _, _ = await mine_releases(
-                    repos, branches, default_branches, no_time_from, time_to,
+                    repos, {}, branches, default_branches, no_time_from, time_to,
                     settings, mdb, pdb, None, force_fresh=True)
                 branches_count = len(branches)
                 del branches

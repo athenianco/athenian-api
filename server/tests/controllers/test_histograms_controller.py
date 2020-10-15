@@ -105,9 +105,9 @@ async def test_calc_histogram_prs_nasty_input(
         ],
         "histograms": [{
             "metric": metric,
-            "scale": scale,
-            "bins": bins,
-            "ticks": ticks,
+            **({"scale": scale} if scale is not None else {}),
+            **({"bins": bins} if bins is not None else {}),
+            **({"ticks": ticks} if ticks is not None else {}),
         }],
         "date_from": "2015-10-13",
         "date_to": date_to,

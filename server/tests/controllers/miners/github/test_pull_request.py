@@ -19,7 +19,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
 from athenian.api.controllers.miners.github.release import load_releases
-from athenian.api.controllers.miners.types import MinedPullRequest, ParticipationKind, \
+from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipationKind, \
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 import athenian.api.db
@@ -176,7 +176,7 @@ async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, 
         datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
         datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
         {"src-d/go-git"},
-        {ParticipationKind.AUTHOR: {"mcuadros"}, ParticipationKind.MERGER: {"mcuadros"}},
+        {PRParticipationKind.AUTHOR: {"mcuadros"}, PRParticipationKind.MERGER: {"mcuadros"}},
         LabelFilter.empty(),
         JIRAFilter.empty(),
         branches, default_branches,
@@ -195,7 +195,7 @@ async def test_pr_miner_iter_cache(branches, default_branches, mdb, pdb, cache, 
             datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc),
             datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc),
             {"src-d/go-git"},
-            {ParticipationKind.AUTHOR: {"mcuadros"}, ParticipationKind.MERGER: {"mcuadros"}},
+            {PRParticipationKind.AUTHOR: {"mcuadros"}, PRParticipationKind.MERGER: {"mcuadros"}},
             LabelFilter.empty(),
             JIRAFilter.empty(),
             branches, default_branches,
@@ -300,7 +300,7 @@ async def test_pr_miner_cache_pr_blacklist(
         "MDExOlB1bGxSZXF1ZXN0MTYwODI1NTE4", "MDExOlB1bGxSZXF1ZXN0MTYyMDE1NTI4"}
 
 
-@pytest.mark.parametrize("pk", [[v] for v in ParticipationKind] + [list(ParticipationKind)])
+@pytest.mark.parametrize("pk", [[v] for v in PRParticipationKind] + [list(PRParticipationKind)])
 @with_defer
 async def test_pr_miner_participant_filters(
         branches, default_branches, mdb, pdb, release_match_setting_tag, pk):

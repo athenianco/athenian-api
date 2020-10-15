@@ -36,6 +36,7 @@ _install: &_install
   - pip install -r lint-requirements.txt
   - pip install -r test-requirements.txt
   - pip install -e .
+  - patch /home/travis/virtualenv/python3.8.*/lib/python*/site-packages/aiomcache/client.py ../patches/aiomcache_version.patch
 
 _setup_postgres: &_setup_postgres
   - psql -c "create database state template 'template0' lc_collate 'C.UTF-8';" -U postgres
