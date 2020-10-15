@@ -6,6 +6,7 @@ from athenian.api.models.web.common_filter_properties import CommonFilterPropert
 from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.quantiles import validate_quantiles
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
+from athenian.api.models.web.release_with import ReleaseWith
 
 
 class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
@@ -13,6 +14,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
 
     openapi_types = {
         "for_": List[List[str]],
+        "with_": Optional[ReleaseWith],
         "metrics": List[str],
         "date_from": date,
         "date_to": date,
@@ -24,6 +26,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
 
     attribute_map = {
         "for_": "for",
+        "with_": "with",
         "metrics": "metrics",
         "date_from": "date_from",
         "date_to": "date_to",
@@ -36,6 +39,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
     def __init__(
         self,
         for_: Optional[List[List[str]]] = None,
+        with_: Optional[ReleaseWith] = None,
         metrics: Optional[List[str]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
@@ -47,6 +51,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         """ReleaseMetricsRequest - a model defined in OpenAPI
 
         :param for_: The for of this ReleaseMetricsRequest.
+        :param with_: The with of this ReleaseMetricsRequest.
         :param metrics: The metrics of this ReleaseMetricsRequest.
         :param date_from: The date_from of this ReleaseMetricsRequest.
         :param date_to: The date_to of this ReleaseMetricsRequest.
@@ -55,6 +60,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         :param account: The account of this ReleaseMetricsRequest.
         """
         self._for_ = for_
+        self._with_ = with_
         self._metrics = metrics
         self._date_from = date_from
         self._date_to = date_to
@@ -85,6 +91,26 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
             raise ValueError("Invalid value for `for_`, must not be `None`")
 
         self._for_ = for_
+
+    @property
+    def with_(self) -> Optional[ReleaseWith]:
+        """Gets the with_ of this ReleaseMetricsRequest.
+
+        Release contribution roles.
+
+        :return: The with_ of this ReleaseMetricsRequest.
+        """
+        return self._with_
+
+    @with_.setter
+    def with_(self, with_: Optional[ReleaseWith]):
+        """Sets the with_ of this ReleaseMetricsRequest.
+
+        Release contribution roles.
+
+        :param with_: The with_ of this ReleaseMetricsRequest.
+        """
+        self._with_ = with_
 
     @property
     def metrics(self) -> List[str]:

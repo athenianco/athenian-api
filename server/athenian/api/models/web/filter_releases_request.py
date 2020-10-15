@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
+from athenian.api.models.web.release_with import ReleaseWith
 
 
 class FilterReleasesRequest(Model, CommonFilterPropertiesMixin):
@@ -14,6 +15,7 @@ class FilterReleasesRequest(Model, CommonFilterPropertiesMixin):
         "date_to": date,
         "timezone": int,
         "in_": List[str],
+        "with_": Optional[ReleaseWith],
     }
 
     attribute_map = {
@@ -22,6 +24,7 @@ class FilterReleasesRequest(Model, CommonFilterPropertiesMixin):
         "date_to": "date_to",
         "timezone": "timezone",
         "in_": "in",
+        "with_": "with",
     }
 
     def __init__(
@@ -31,6 +34,7 @@ class FilterReleasesRequest(Model, CommonFilterPropertiesMixin):
         date_to: Optional[date] = None,
         timezone: Optional[int] = None,
         in_: Optional[List[str]] = None,
+        with_: Optional[ReleaseWith] = None,
     ):
         """FilterReleasesRequest - a model defined in OpenAPI
 
@@ -39,12 +43,14 @@ class FilterReleasesRequest(Model, CommonFilterPropertiesMixin):
         :param date_to: The date_to of this FilterReleasesRequest.
         :param timezone: The timezone of this FilterReleasesRequest.
         :param in_: The in of this FilterReleasesRequest.
+        :param with_: The with of this FilterReleasesRequest.
         """
         self._account = account
         self._date_from = date_from
         self._date_to = date_to
         self._timezone = timezone
         self._in_ = in_
+        self._with_ = with_
 
     @property
     def in_(self) -> List[str]:
@@ -61,3 +67,23 @@ class FilterReleasesRequest(Model, CommonFilterPropertiesMixin):
         :param in_: The in_ of this FilterReleasesRequest.
         """
         self._in_ = in_
+
+    @property
+    def with_(self) -> Optional[ReleaseWith]:
+        """Gets the with_ of this FilterReleasesRequest.
+
+        Release contribution roles.
+
+        :return: The with_ of this FilterReleasesRequest.
+        """
+        return self._with_
+
+    @with_.setter
+    def with_(self, with_: Optional[ReleaseWith]):
+        """Sets the with_ of this FilterReleasesRequest.
+
+        Release contribution roles.
+
+        :param with_: The with_ of this FilterReleasesRequest.
+        """
+        self._with_ = with_

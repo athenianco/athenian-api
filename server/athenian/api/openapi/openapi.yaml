@@ -2823,6 +2823,9 @@ components:
         date_to: 2020-05-23
         in:
         - '{1}'
+        with:
+          pr_author:
+          - github.com/vmarkovtsev
       properties:
         account:
           description: Session account ID.
@@ -2841,6 +2844,8 @@ components:
           $ref: '#/components/schemas/TimeZone'
         in:
           $ref: '#/components/schemas/RepositorySet'
+        with:
+          $ref: '#/components/schemas/ReleaseWith'
       required:
       - account
       - date_from
@@ -4565,9 +4570,10 @@ components:
         metric:
           $ref: '#/components/schemas/PullRequestMetricID'
         scale:
-          description: Histogram's X axis scale.
-          $ref: '#/components/schemas/HistogramScale'
-          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/HistogramScale'
+          - description: Histogram's X axis scale.
+            nullable: true
         bins:
           description: Number of bars in the histogram. 0 or null means automatic.
           minimum: 0
@@ -4838,6 +4844,11 @@ components:
         for:
         - - athenianco/athenian-api
           - athenianco/athenian-webapp
+        with:
+          pr_author:
+          - github.com/se7entyse7en
+          releaser:
+          - github.com/gkwillie
         metrics:
         - release-count
         granularities:
@@ -4851,6 +4862,8 @@ components:
           items:
             $ref: '#/components/schemas/RepositorySet'
           type: array
+        with:
+          $ref: '#/components/schemas/ReleaseWith'
         metrics:
           description: List of desired release metrics.
           items:
@@ -5002,9 +5015,10 @@ components:
           minimum: 1
           type: integer
         request:
-          description: Same body to be sent to `/filter/pull_requests`. Inner pagination
-            is ignored.
-          $ref: '#/components/schemas/FilterPullRequestsRequest'
+          allOf:
+          - $ref: '#/components/schemas/FilterPullRequestsRequest'
+          - description: Same body to be sent to `/filter/pull_requests`. Inner
+              pagination is ignored.
       required:
       - batch
       - request
@@ -5026,8 +5040,8 @@ components:
           type: array
       type: object
     RepositoryGroups:
-      description: Lists of indexes in `repositories` that define independent
-        groups that must be processed individually. The groups may have intersections.
+      description: Lists of indexes in `repositories` that define independent groups
+        that must be processed individually. The groups may have intersections.
       example:
       - 0
       - 1
@@ -5039,3 +5053,25 @@ components:
         type: array
       minItems: 1
       type: array
+    ReleaseWith:
+      additionalProperties: false
+      description: Release contribution roles.
+      example:
+        pr_author:
+        - github.com/se7entyse7en
+        releaser:
+        - github.com/gkwillie
+      properties:
+        pr_author:
+          allOf:
+          - $ref: '#/components/schemas/DeveloperSet'
+          - description: Authors of released pull requests.
+        commit_author:
+          allOf:
+          - $ref: '#/components/schemas/DeveloperSet'
+          - description: Authors of released commits.
+        releaser:
+          allOf:
+          - $ref: '#/components/schemas/DeveloperSet'
+          - description: Release publishers.
+      type: object
