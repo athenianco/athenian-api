@@ -69,6 +69,7 @@ class GitHubOpenPullRequestFacts(Base, UpdatedMixin):
     pr_created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     number = Column(Integer(), nullable=False)
     pr_updated_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    activity_days = Column(TSARRAY, nullable=False, server_default="{}")
     data = Column(LargeBinary(), nullable=False)
 
 
@@ -94,6 +95,7 @@ class GitHubMergedPullRequestFacts(Base, UpdatedMixin):
     author = Column(CHAR(100))  # can be null, see @ghost
     merger = Column(CHAR(100))  # @ghost can merge, too
     labels = Column(HSTORE, nullable=False, server_default="")
+    activity_days = Column(TSARRAY, nullable=False, server_default="{}")
     data = Column(LargeBinary())  # can be null, we run a 2-step update procedure
 
 

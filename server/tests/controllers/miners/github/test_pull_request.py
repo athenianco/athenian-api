@@ -819,10 +819,10 @@ async def test_pr_miner_unreleased_facts(
     for pr in miner:
         facts = facts_miner(pr)
         if not facts.closed:
-            open_prs_and_facts.append((pr.pr, facts))
+            open_prs_and_facts.append((pr, facts))
         elif facts.merged and not facts.released:
             if not facts.force_push_dropped:
-                merged_unreleased_prs_and_facts.append((pr.pr, facts))
+                merged_unreleased_prs_and_facts.append((pr, facts))
             else:
                 force_push_dropped.append((pr.pr, facts))
     assert len(open_prs_and_facts) == 21
@@ -835,14 +835,14 @@ async def test_pr_miner_unreleased_facts(
     discovered = await load_merged_unreleased_pull_request_facts(
         miner._dfs.prs, time_to, LabelFilter.empty(), matched_bys, default_branches,
         release_match_setting_tag, pdb)
-    assert {pr[PullRequest.node_id.key] for pr, _ in merged_unreleased_prs_and_facts} == \
+    assert {pr.pr[PullRequest.node_id.key] for pr, _ in merged_unreleased_prs_and_facts} == \
         set(discovered)
     await store_open_pull_request_facts(open_prs_and_facts, pdb)
     await store_merged_unreleased_pull_request_facts(
         merged_unreleased_prs_and_facts, matched_bys, default_branches,
         release_match_setting_tag, pdb, event)
     miner, unreleased_facts, _, _ = await PullRequestMiner.mine(*args)
-    true_pr_node_set = {pr[PullRequest.node_id.key] for pr, _ in chain(
+    true_pr_node_set = {pr.pr[PullRequest.node_id.key] for pr, _ in chain(
         open_prs_and_facts, merged_unreleased_prs_and_facts)}
     assert set(unreleased_facts) == true_pr_node_set
     assert len(miner) == 325

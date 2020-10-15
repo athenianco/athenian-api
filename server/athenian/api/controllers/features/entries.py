@@ -159,9 +159,9 @@ async def calc_pull_request_facts_github(time_from: datetime,
             if facts.done:
                 done_count += 1
             elif not facts.closed:
-                open_pr_facts.append((pr.pr, facts))
+                open_pr_facts.append((pr, facts))
             else:
-                merged_unreleased_pr_facts.append((pr.pr, facts))
+                merged_unreleased_pr_facts.append((pr, facts))
     add_pdb_misses(pdb, "precomputed_done_facts", done_count)
     add_pdb_misses(pdb, "precomputed_open_facts", len(open_pr_facts))
     add_pdb_misses(pdb, "precomputed_merged_unreleased_facts", len(merged_unreleased_pr_facts))

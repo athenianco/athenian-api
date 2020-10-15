@@ -68,6 +68,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         "labels_include": Optional[List[str]],
         "labels_exclude": Optional[List[str]],
         "jira": Optional[JIRAFilter],
+        "lines": Optional[List[int]],
     }
 
     attribute_map = {
@@ -77,6 +78,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         "labels_include": "labels_include",
         "labels_exclude": "labels_exclude",
         "jira": "jira",
+        "lines": "lines",
     }
 
     def __init__(
@@ -87,6 +89,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         labels_include: Optional[List[str]] = None,
         labels_exclude: Optional[List[str]] = None,
         jira: Optional[JIRAFilter] = None,
+        lines: Optional[List[int]] = None,
     ):
         """ForSet - a model defined in OpenAPI
 
@@ -96,6 +99,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         :param labels_include: The labels_include of this ForSet.
         :param labels_exclude: The labels_exclude of this ForSet.
         :param jira: The jira of this ForSet.
+        :param lines: The lines of this ForSet.
         """
         self._repositories = repositories
         self._repogroups = repogroups
@@ -103,6 +107,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         self._labels_include = labels_include
         self._labels_exclude = labels_exclude
         self._jira = jira
+        self._lines = lines
 
     @property
     def repositories(self) -> List[str]:
@@ -197,3 +202,39 @@ class ForSet(Model, RepositoryGroupsMixin):
         :param jira: The jira of this ForSet.
         """
         self._jira = jira
+
+    @property
+    def lines(self) -> Optional[List[int]]:
+        """Gets the lines of this ForSet.
+
+        :return: The lines of this ForSet.
+        """
+        return self._lines
+
+    @lines.setter
+    def lines(self, lines: Optional[List[int]]):
+        """Sets the lines of this ForSet.
+
+        :param lines: The lines of this ForSet.
+        """
+        if lines is not None:
+            if len(lines) < 2:
+                raise ValueError("`lines` must contain at least 2 elements")
+            if lines[0] < 0:
+                raise ValueError("all elements of `lines` must be non-negative")
+            for i, val in enumerate(lines[:-1]):
+                if val >= lines[i + 1]:
+                    raise ValueError("`lines` must monotonically increase")
+        self._lines = lines
+
+    def select_lines(self, index: int) -> "ForSet":
+        """Change `lines` to point at the specified line range."""
+        fs = self.copy()
+        if self.lines is None:
+            if index > 0:
+                raise IndexError("%d is out of range (no lines)" % index)
+            return fs
+        if index >= len(self.lines) - 1:
+            raise IndexError("%d is out of range (max is %d)" % (index, len(self.lines) - 1))
+        fs.lines = [fs.lines[index], fs.lines[index + 1]]
+        return fs

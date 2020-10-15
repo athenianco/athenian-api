@@ -36,7 +36,7 @@ from athenian.api.controllers.miners.github.release import dummy_releases_df, \
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, PRParticipants, \
     PullRequestEvent, PullRequestFacts, PullRequestJIRAIssueItem, PullRequestListItem, \
     PullRequestStage
-from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.db import set_pdb_hits, set_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
@@ -596,12 +596,12 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                         await store_missed_done_facts()
                 elif not pr_facts.closed:
                     missed_open_facts_counter += 1
-                    missed_open_facts.append((pr.pr, pr_facts))
+                    missed_open_facts.append((pr, pr_facts))
                     if (len(missed_open_facts) + 1) % 100 == 0:
                         await store_missed_open_facts()
                 elif pr_facts.merged and not pr_facts.released:
                     missed_merged_unreleased_facts_counter += 1
-                    missed_merged_unreleased_facts.append((pr.pr, pr_facts))
+                    missed_merged_unreleased_facts.append((pr, pr_facts))
                     if (len(missed_merged_unreleased_facts) + 1) % 100 == 0:
                         await store_missed_merged_unreleased_facts()
             else:
@@ -654,6 +654,24 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
 
     :params prs: For each repository name without the prefix, there is a set of PR numbers to list.
     """
+    mined_prs, dfs, facts, _ = await _fetch_pull_requests(prs, release_settings, mdb, pdb, cache)
+    if not mined_prs:
+        return []
+    miner = PullRequestListMiner(
+        mined_prs, dfs, facts, set(), set(),
+        datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc), False)
+    return await list_with_yield(miner, "PullRequestListMiner.__iter__")
+
+
+async def _fetch_pull_requests(prs: Dict[str, Set[int]],
+                               release_settings: Dict[str, ReleaseMatchSetting],
+                               mdb: databases.Database,
+                               pdb: databases.Database,
+                               cache: Optional[aiomcache.Client],
+                               ) -> Tuple[List[MinedPullRequest],
+                                          PRDataFrames,
+                                          Dict[str, PullRequestFacts],
+                                          Dict[str, ReleaseMatch]]:
     branches, default_branches = await extract_branches(prs, mdb, cache)
     filters = [and_(PullRequest.repository_full_name == repo, PullRequest.number.in_(numbers))
                for repo, numbers in prs.items()]
@@ -669,7 +687,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
         if isinstance(r, Exception):
             raise r from None
     if prs_df.empty:
-        return []
+        return [], PRDataFrames(*(pd.DataFrame() for _ in range(9))), {}, {}
     now = datetime.now(timezone.utc)
     rel_time_from = prs_df[PullRequest.merged_at.key].nonemin()
     if rel_time_from:
@@ -726,10 +744,6 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
             filtered_prs.append(pr)
 
     facts = {k: v for k, (_, v) in facts.items()}
-    miner = PullRequestListMiner(
-        filtered_prs, dfs, facts, set(), set(),
-        datetime(1970, 1, 1, tzinfo=timezone.utc), now, False)
-    prs = await list_with_yield(miner, "PullRequestListMiner.__iter__")
-    set_pdb_hits(pdb, "filter_pull_requests/facts", len(prs) - pdb_misses)
-    set_pdb_misses(pdb, "filter_pull_requests/facts", pdb_misses)
-    return prs
+    set_pdb_hits(pdb, "fetch_pull_requests/facts", len(filtered_prs) - pdb_misses)
+    set_pdb_misses(pdb, "fetch_pull_requests/facts", pdb_misses)
+    return filtered_prs, dfs, facts, matched_bys
