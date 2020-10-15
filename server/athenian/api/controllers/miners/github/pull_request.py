@@ -31,7 +31,7 @@ from athenian.api.controllers.miners.github.release import map_prs_to_releases, 
     map_releases_to_prs
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import MinedPullRequest, nonemax, nonemin, \
-    Participants, ParticipationKind, PullRequestFacts
+    PRParticipants, PRParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import AllEvents, defer
 from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, PullRequest, \
@@ -96,7 +96,7 @@ class PullRequestMiner:
     def _deserialize_mine_cache(buffer: bytes) -> Tuple[PRDataFrames,
                                                         Dict[str, Tuple[str, PullRequestFacts]],
                                                         Set[str],
-                                                        Participants,
+                                                        PRParticipants,
                                                         LabelFilter,
                                                         JIRAFilter,
                                                         Dict[str, ReleaseMatch],
@@ -111,14 +111,14 @@ class PullRequestMiner:
             result: Tuple[PRDataFrames,
                           Dict[str, Tuple[str, PullRequestFacts]],
                           Set[str],
-                          Participants,
+                          PRParticipants,
                           LabelFilter,
                           JIRAFilter,
                           Dict[str, ReleaseMatch],
                           asyncio.Event],
             date_to: date,
             repositories: Set[str],
-            participants: Participants,
+            participants: PRParticipants,
             labels: LabelFilter,
             jira: JIRAFilter,
             pr_blacklist: Optional[Collection[str]],
@@ -126,7 +126,7 @@ class PullRequestMiner:
             **_) -> Tuple[PRDataFrames,
                           Dict[str, Tuple[str, PullRequestFacts]],
                           Set[str],
-                          Participants,
+                          PRParticipants,
                           LabelFilter,
                           JIRAFilter,
                           Dict[str, ReleaseMatch],
@@ -170,7 +170,7 @@ class PullRequestMiner:
                     date_from: date,
                     date_to: date,
                     repositories: Set[str],
-                    participants: Participants,
+                    participants: PRParticipants,
                     labels: LabelFilter,
                     jira: JIRAFilter,
                     branches: pd.DataFrame,
@@ -188,7 +188,7 @@ class PullRequestMiner:
                     ) -> Tuple[PRDataFrames,
                                Dict[str, Tuple[str, PullRequestFacts]],
                                Set[str],
-                               Participants,
+                               PRParticipants,
                                LabelFilter,
                                JIRAFilter,
                                Dict[str, ReleaseMatch],
@@ -207,8 +207,8 @@ class PullRequestMiner:
         tasks = [
             map_releases_to_prs(
                 repositories, branches, default_branches, time_from, time_to,
-                participants.get(ParticipationKind.AUTHOR, []),
-                participants.get(ParticipationKind.MERGER, []),
+                participants.get(PRParticipationKind.AUTHOR, []),
+                participants.get(PRParticipationKind.MERGER, []),
                 jira, release_settings, updated_min, updated_max, limit,
                 mdb, pdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
@@ -514,7 +514,7 @@ class PullRequestMiner:
                    time_from: datetime,
                    time_to: datetime,
                    repositories: Set[str],
-                   participants: Participants,
+                   participants: PRParticipants,
                    labels: LabelFilter,
                    jira: JIRAFilter,
                    branches: pd.DataFrame,
@@ -582,7 +582,7 @@ class PullRequestMiner:
                         time_from: datetime,
                         time_to: datetime,
                         repositories: Set[str],
-                        participants: Participants,
+                        participants: PRParticipants,
                         labels: LabelFilter,
                         jira: JIRAFilter,
                         limit: int,
@@ -616,16 +616,17 @@ class PullRequestMiner:
         if pr_blacklist is not None:
             filters.append(pr_blacklist)
         if len(participants) == 1:
-            if ParticipationKind.AUTHOR in participants:
-                filters.append(PullRequest.user_login.in_(participants[ParticipationKind.AUTHOR]))
-            elif ParticipationKind.MERGER in participants:
+            if PRParticipationKind.AUTHOR in participants:
+                filters.append(PullRequest.user_login.in_(
+                    participants[PRParticipationKind.AUTHOR]))
+            elif PRParticipationKind.MERGER in participants:
                 filters.append(
-                    PullRequest.merged_by_login.in_(participants[ParticipationKind.MERGER]))
-        elif len(participants) == 2 and ParticipationKind.AUTHOR in participants and \
-                ParticipationKind.MERGER in participants:
+                    PullRequest.merged_by_login.in_(participants[PRParticipationKind.MERGER]))
+        elif len(participants) == 2 and PRParticipationKind.AUTHOR in participants and \
+                PRParticipationKind.MERGER in participants:
             filters.append(sql.or_(
-                PullRequest.user_login.in_(participants[ParticipationKind.AUTHOR]),
-                PullRequest.merged_by_login.in_(participants[ParticipationKind.MERGER]),
+                PullRequest.user_login.in_(participants[PRParticipationKind.AUTHOR]),
+                PullRequest.merged_by_login.in_(participants[PRParticipationKind.MERGER]),
             ))
         selected_columns = [PullRequest] if columns is PullRequest else columns
         if not jira:
@@ -680,7 +681,7 @@ class PullRequestMiner:
             time_from: datetime,
             time_to: datetime,
             repos: Collection[str],
-            participants: Participants,
+            participants: PRParticipants,
             labels: LabelFilter,
             jira: JIRAFilter,
             default_branches: Dict[str, str],
@@ -714,8 +715,8 @@ class PullRequestMiner:
         return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
 
     @staticmethod
-    def _check_participants_compatibility(cached_participants: Participants,
-                                          participants: Participants) -> bool:
+    def _check_participants_compatibility(cached_participants: PRParticipants,
+                                          participants: PRParticipants) -> bool:
         if not cached_participants:
             return True
         if not participants:
@@ -747,7 +748,7 @@ class PullRequestMiner:
     @sentry_span
     def _find_drop_by_participants(cls,
                                    dfs: PRDataFrames,
-                                   participants: Participants,
+                                   participants: PRParticipants,
                                    time_to: Optional[datetime],
                                    ) -> pd.Index:
         if not participants:
@@ -762,9 +763,9 @@ class PullRequestMiner:
                 setattr(dfs, df_name, df.take(np.where(df[col.key] < time_to)[0]))
         passed = []
         dict_iter = (
-            (dfs.prs, PullRequest.user_login, None, ParticipationKind.AUTHOR),
-            (dfs.prs, PullRequest.merged_by_login, PullRequest.merged_at, ParticipationKind.MERGER),  # noqa
-            (dfs.releases, Release.author, Release.published_at, ParticipationKind.RELEASER),
+            (dfs.prs, PullRequest.user_login, None, PRParticipationKind.AUTHOR),
+            (dfs.prs, PullRequest.merged_by_login, PullRequest.merged_at, PRParticipationKind.MERGER),  # noqa
+            (dfs.releases, Release.author, Release.published_at, PRParticipationKind.RELEASER),
         )
         for df, part_col, date_col, pk in dict_iter:
             col_parts = participants.get(pk)
@@ -774,7 +775,7 @@ class PullRequestMiner:
             if time_to is not None and date_col is not None:
                 mask &= df[date_col.key] < time_to
             passed.append(df.index.take(np.where(mask)[0]))
-        reviewers = participants.get(ParticipationKind.REVIEWER)
+        reviewers = participants.get(PRParticipationKind.REVIEWER)
         if reviewers:
             ulkr = PullRequestReview.user_login.key
             ulkp = PullRequest.user_login.key
@@ -786,9 +787,9 @@ class PullRequestMiner:
                 (user_logins[ulkr] != user_logins[ulkp]) & user_logins[ulkr].isin(reviewers),
             )[0]).unique())
         for df, col, pk in (
-                (dfs.comments, PullRequestComment.user_login, ParticipationKind.COMMENTER),
-                (dfs.commits, PullRequestCommit.author_login, ParticipationKind.COMMIT_AUTHOR),
-                (dfs.commits, PullRequestCommit.committer_login, ParticipationKind.COMMIT_COMMITTER)):  # noqa
+                (dfs.comments, PullRequestComment.user_login, PRParticipationKind.COMMENTER),
+                (dfs.commits, PullRequestCommit.author_login, PRParticipationKind.COMMIT_AUTHOR),
+                (dfs.commits, PullRequestCommit.committer_login, PRParticipationKind.COMMIT_COMMITTER)):  # noqa
             col_parts = participants.get(pk)
             if not col_parts:
                 continue

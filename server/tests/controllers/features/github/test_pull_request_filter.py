@@ -8,7 +8,7 @@ from athenian.api.controllers.features.entries import calc_pull_request_facts_gi
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.types import ParticipationKind, PullRequestEvent, \
+from athenian.api.controllers.miners.types import PRParticipationKind, PullRequestEvent, \
     PullRequestStage
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
@@ -43,8 +43,8 @@ async def test_pr_list_miner_stages(mdb, pdb, release_match_setting_tag, time_fr
 
 @with_defer
 async def test_pr_list_miner_match_participants(mdb, pdb, release_match_setting_tag, time_from_to):
-    participants = {ParticipationKind.AUTHOR: {"mcuadros", "smola"},
-                    ParticipationKind.COMMENTER: {"mcuadros"}}
+    participants = {PRParticipationKind.AUTHOR: {"mcuadros", "smola"},
+                    PRParticipationKind.COMMENTER: {"mcuadros"}}
     prs = await filter_pull_requests(
         set(), set(), *time_from_to, {"src-d/go-git"},
         participants, LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,
@@ -52,10 +52,10 @@ async def test_pr_list_miner_match_participants(mdb, pdb, release_match_setting_
     assert isinstance(prs, list)
     assert len(prs) == 320
     for pr in prs:
-        mcuadros_is_author = "mcuadros" in pr.participants[ParticipationKind.AUTHOR]
-        smola_is_author = "smola" in pr.participants[ParticipationKind.AUTHOR]
+        mcuadros_is_author = "mcuadros" in pr.participants[PRParticipationKind.AUTHOR]
+        smola_is_author = "smola" in pr.participants[PRParticipationKind.AUTHOR]
         mcuadros_is_only_commenter = (
-            ("mcuadros" in pr.participants[ParticipationKind.COMMENTER])
+            ("mcuadros" in pr.participants[PRParticipationKind.COMMENTER])
             and  # noqa
             (not mcuadros_is_author)
             and  # noqa
@@ -136,9 +136,9 @@ async def test_pr_list_miner_release_cache_participants(
         mdb, pdb, release_match_setting_tag, cache):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2019, month=1, day=1, tzinfo=timezone.utc)
-    participants = {ParticipationKind.AUTHOR: {"mcuadros", "smola"},
-                    ParticipationKind.COMMENTER: {"mcuadros"},
-                    ParticipationKind.REVIEWER: {"mcuadros", "alcortes"}}
+    participants = {PRParticipationKind.AUTHOR: {"mcuadros", "smola"},
+                    PRParticipationKind.COMMENTER: {"mcuadros"},
+                    PRParticipationKind.REVIEWER: {"mcuadros", "alcortes"}}
     prs1 = await filter_pull_requests(
         set(), {PullRequestStage.RELEASING}, time_from, time_to, {"src-d/go-git"}, participants,
         LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,
@@ -146,9 +146,9 @@ async def test_pr_list_miner_release_cache_participants(
     await wait_deferred()
     assert prs1
     # reorder
-    participants = {ParticipationKind.REVIEWER: {"alcortes", "mcuadros"},
-                    ParticipationKind.COMMENTER: {"mcuadros"},
-                    ParticipationKind.AUTHOR: {"smola", "mcuadros"}}
+    participants = {PRParticipationKind.REVIEWER: {"alcortes", "mcuadros"},
+                    PRParticipationKind.COMMENTER: {"mcuadros"},
+                    PRParticipationKind.AUTHOR: {"smola", "mcuadros"}}
     prs2 = await filter_pull_requests(
         set(), {PullRequestStage.RELEASING}, time_from, time_to, {"src-d/go-git"}, participants,
         LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,

@@ -34,7 +34,8 @@ from athenian.api.controllers.miners.github.release_accelerated import extract_f
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.github.users import mine_user_avatars
-from athenian.api.controllers.miners.types import nonemax, PullRequestFacts, ReleaseFacts
+from athenian.api.controllers.miners.types import nonemax, PullRequestFacts, ReleaseFacts, \
+    ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses, greatest, least
@@ -1414,10 +1415,13 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda repos, time_from, time_to, settings, **_: (
-        ",".join(sorted(repos)), time_from, time_to, settings),
+    key=lambda repos, participants, time_from, time_to, settings, **_: (
+        ",".join(sorted(repos)),
+        ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+        time_from, time_to, settings),
 )
 async def mine_releases(repos: Iterable[str],
+                        participants: ReleaseParticipants,
                         branches: pd.DataFrame,
                         default_branches: Dict[str, str],
                         time_from: datetime,
@@ -1640,7 +1644,8 @@ async def mine_releases(repos: Iterable[str],
                          prs_additions[my_prs_indexes],
                          prs_deletions[my_prs_indexes],
                          my_prs_authors]))
-                    my_commit_authors = my_commit_authors[my_commit_authors.nonzero()[0]].tolist()
+                    my_commit_authors = \
+                        np.unique(my_commit_authors[my_commit_authors.nonzero()[0]]).tolist()
                     mentioned_authors.update(my_commit_authors)
                     parent = parents[i]
                     if parent < len(repo_releases):
@@ -1695,4 +1700,57 @@ async def mine_releases(repos: Iterable[str],
                 "store_precomputed_release_facts(%d)" % len(mined_releases))
     avatars = [p for p in avatars if p[0] in mentioned_authors]
     result.extend(mined_releases)
+    if participants:
+        result = _filter_by_participants(result, participants)
     return result, avatars, {r: v.match for r, v in settings.items()}
+
+
+def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+                            participants: ReleaseParticipants,
+                            ) -> List[Tuple[Dict[str, Any], ReleaseFacts]]:
+    participants = participants.copy()
+    for k, v in participants.items():
+        participants[k] = np.unique(v).astype("U")
+    if ReleaseParticipationKind.COMMIT_AUTHOR in participants:
+        commit_authors = [r[1].commit_authors for r in releases]
+        lengths = np.asarray([len(ca) for ca in commit_authors])
+        offsets = np.zeros(len(lengths) + 1, dtype=int)
+        np.cumsum(lengths, out=offsets[1:])
+        commit_authors = np.concatenate(commit_authors).astype("U")
+        included_indexes = np.nonzero(np.in1d(
+            commit_authors, participants[ReleaseParticipationKind.COMMIT_AUTHOR]))[0]
+        passed_indexes = np.unique(np.searchsorted(offsets, included_indexes, side="right") - 1)
+        mask = np.full(len(releases), False)
+        mask[passed_indexes] = True
+        missing_indexes = np.nonzero(~mask)[0]
+    else:
+        missing_indexes = np.arange(len(releases))
+    if len(missing_indexes) == 0:
+        return releases
+    if ReleaseParticipationKind.RELEASER in participants:
+        key = Release.author.key
+        still_missing = np.in1d(
+            np.array([releases[i][0][key] for i in missing_indexes], dtype="U"),
+            participants[ReleaseParticipationKind.RELEASER],
+            invert=True)
+        missing_indexes = missing_indexes[still_missing]
+    if len(missing_indexes) == 0:
+        return releases
+    if ReleaseParticipationKind.PR_AUTHOR in participants:
+        key = PullRequest.user_login.key
+        pr_authors = [releases[i][1].prs[key] for i in missing_indexes]
+        lengths = np.asarray([len(pra) for pra in pr_authors])
+        offsets = np.zeros(len(lengths) + 1, dtype=int)
+        np.cumsum(lengths, out=offsets[1:])
+        pr_authors = np.concatenate(pr_authors).astype("U")
+        included_indexes = np.nonzero(np.in1d(
+            pr_authors, participants[ReleaseParticipationKind.PR_AUTHOR]))[0]
+        passed_indexes = np.unique(np.searchsorted(offsets, included_indexes, side="right") - 1)
+        mask = np.full(len(missing_indexes), False)
+        mask[passed_indexes] = True
+        missing_indexes = missing_indexes[~mask]
+    if len(missing_indexes) == 0:
+        return releases
+    mask = np.full(len(releases), True)
+    mask[missing_indexes] = False
+    return [releases[i] for i in np.nonzero(mask)[0]]

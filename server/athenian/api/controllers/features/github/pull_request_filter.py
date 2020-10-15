@@ -33,7 +33,7 @@ from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRe
     PRDataFrames, PullRequestFactsMiner, PullRequestMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release import dummy_releases_df, \
     fetch_precomputed_commit_history_dags, load_commit_dags, load_releases
-from athenian.api.controllers.miners.types import Label, MinedPullRequest, Participants, \
+from athenian.api.controllers.miners.types import Label, MinedPullRequest, PRParticipants, \
     PullRequestEvent, PullRequestFacts, PullRequestJIRAIssueItem, PullRequestListItem, \
     PullRequestStage
 from athenian.api.controllers.settings import ReleaseMatchSetting
@@ -358,7 +358,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
                                time_from: datetime,
                                time_to: datetime,
                                repos: Set[str],
-                               participants: Participants,
+                               participants: PRParticipants,
                                labels: LabelFilter,
                                jira: JIRAFilter,
                                exclude_inactive: bool,
@@ -501,7 +501,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                                 time_from: datetime,
                                 time_to: datetime,
                                 repos: Set[str],
-                                participants: Participants,
+                                participants: PRParticipants,
                                 labels: LabelFilter,
                                 jira: JIRAFilter,
                                 exclude_inactive: bool,

@@ -34,7 +34,8 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner
 from athenian.api.controllers.miners.github.release import mine_releases
-from athenian.api.controllers.miners.types import Participants, ParticipationKind, PullRequestFacts
+from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
+    PullRequestFacts, ReleaseParticipants
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
@@ -68,7 +69,7 @@ unfresh_participants_threshold = 50
 async def calc_pull_request_facts_github(time_from: datetime,
                                          time_to: datetime,
                                          repositories: Set[str],
-                                         participants: Participants,
+                                         participants: PRParticipants,
                                          labels: LabelFilter,
                                          jira: JIRAFilter,
                                          exclude_inactive: bool,
@@ -104,11 +105,11 @@ async def calc_pull_request_facts_github(time_from: datetime,
         precomputed_facts = blacklist = await precomputed_tasks[0]
     add_pdb_hits(pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
 
+    prpk = PRParticipationKind
     if (len(precomputed_facts) > unfresh_prs_threshold
-        or
-        len(participants.get(ParticipationKind.AUTHOR, [])) > unfresh_participants_threshold) and \
-            not fresh and \
-            not (participants.keys() - {ParticipationKind.AUTHOR, ParticipationKind.MERGER}):
+            or
+            len(participants.get(prpk.AUTHOR, [])) > unfresh_participants_threshold) and \
+            not fresh and not (participants.keys() - {prpk.AUTHOR, prpk.MERGER}):
         return await fetch_pull_request_facts_unfresh(
             precomputed_facts, time_from, time_to, repositories, participants, labels, jira,
             exclude_inactive, branches, default_branches, release_settings, mdb, pdb, cache)
@@ -193,14 +194,14 @@ async def calc_pull_request_facts_github(time_from: datetime,
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
+    key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jira, exclude_inactive, release_settings, **_:  # noqa
     (
         ",".join(sorted(metrics)),
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
         ",".join(str(q) for q in quantiles),
         ",".join(str(sorted(r)) for r in repositories),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
-        labels,
+        labels, jira,
         exclude_inactive,
         release_settings,
     ),
@@ -209,7 +210,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
                                                 quantiles: Sequence[float],
                                                 repositories: Sequence[Collection[str]],
-                                                participants: Participants,
+                                                participants: PRParticipants,
                                                 labels: LabelFilter,
                                                 jira: JIRAFilter,
                                                 exclude_inactive: bool,
@@ -258,13 +259,14 @@ async def calc_code_metrics(prop: FilterCommitsProperty,
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda defs, time_from, time_to, quantiles, repositories, participants, labels, exclude_inactive, release_settings, **_:  # noqa
+    key=lambda defs, time_from, time_to, quantiles, repositories, participants, labels, jira, exclude_inactive, release_settings, **_:  # noqa
     (
         ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
         time_from, time_to,
         ",".join(str(q) for q in quantiles),
         ",".join(str(sorted(r)) for r in repositories),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+        labels, jira,
         exclude_inactive,
         release_settings,
     ),
@@ -274,7 +276,7 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
                                              time_to: datetime,
                                              quantiles: Sequence[float],
                                              repositories: Sequence[Collection[str]],
-                                             participants: Participants,
+                                             participants: PRParticipants,
                                              labels: LabelFilter,
                                              jira: JIRAFilter,
                                              exclude_inactive: bool,
@@ -302,10 +304,26 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
     return result
 
 
+@sentry_span
+@cached(
+    exptime=5 * 60,  # 5 min
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda metrics, time_intervals, quantiles, repositories, participants, release_settings, **_:  # noqa
+    (
+        ",".join(sorted(metrics)),
+        ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+        ",".join(str(q) for q in quantiles),
+        ",".join(str(sorted(r)) for r in repositories),
+        ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+        release_settings,
+    ),
+)
 async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            time_intervals: Sequence[Sequence[datetime]],
                                            quantiles: Sequence[float],
                                            repositories: Sequence[Collection[str]],
+                                           participants: ReleaseParticipants,
                                            release_settings: Dict[str, ReleaseMatchSetting],
                                            mdb: Database,
                                            pdb: Database,
@@ -318,8 +336,8 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
     calc = ReleaseBinnedMetricCalculator(metrics, quantiles)
     branches, default_branches = await extract_branches(all_repositories, mdb, cache)
     releases, _, matched_bys = await mine_releases(
-        all_repositories, branches, default_branches, time_from, time_to, release_settings,
-        mdb, pdb, cache)
+        all_repositories, participants, branches, default_branches, time_from, time_to,
+        release_settings, mdb, pdb, cache)
     mined_facts = defaultdict(list)
     for i, f in releases:
         mined_facts[i[Release.repository_full_name.key].split("/", 1)[1]].append(f)

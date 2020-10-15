@@ -127,6 +127,7 @@ def client_cache(loop, app):
 @pytest.fixture(scope="function")
 def memcached(loop, xapp, request):
     client = create_memcached(override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
+    client.version_future.cancel()
     trash = []
     set = client.set
 
@@ -153,6 +154,7 @@ def memcached(loop, xapp, request):
 
 def check_memcached():
     client = create_memcached(override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
+    client.version_future.cancel()
 
     async def probe():
         try:

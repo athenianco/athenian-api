@@ -15,7 +15,7 @@ from sqlalchemy import and_, create_engine, extract, func, insert, or_, select, 
 from athenian.api import create_memcached, ParallelDatabase, patch_pandas
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests
-from athenian.api.controllers.miners.types import ParticipationKind, PullRequestListItem
+from athenian.api.controllers.miners.types import PRParticipationKind, PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
 from athenian.api.defer import enable_defer
 from athenian.api.experiments.aggregates.models import Base, PullRequestEvent, PullRequestStatus
@@ -335,7 +335,7 @@ def _eventify_prs(account: int, prs_data: List[PullRequestListItem],
         row["event_type"] = "created"
         row["timestamp"] = getattr(pr, row["event_type"])
         row["opened"] = 1
-        row["event_owners"] = pr.participants[ParticipationKind.AUTHOR]
+        row["event_owners"] = pr.participants[PRParticipationKind.AUTHOR]
         return row
 
     def enrich_review_requested_event(row, pr):
@@ -357,7 +357,7 @@ def _eventify_prs(account: int, prs_data: List[PullRequestListItem],
         row["timestamp"] = getattr(pr, row["event_type"])
         row["review_time"] = int(pr.stage_timings["review"].total_seconds())
         row["review_count"] = 1
-        row["event_owners"] = pr.participants[ParticipationKind.REVIEWER]
+        row["event_owners"] = pr.participants[PRParticipationKind.REVIEWER]
         return row
 
     def enrich_closed_event(row, pr):
@@ -372,7 +372,7 @@ def _eventify_prs(account: int, prs_data: List[PullRequestListItem],
         row["merging_time"] = int(pr.stage_timings["merge"].total_seconds())
         row["merging_count"] = 1
         row["merged"] = 1
-        row["event_owners"] = pr.participants[ParticipationKind.MERGER]
+        row["event_owners"] = pr.participants[PRParticipationKind.MERGER]
         return row
 
     def enrich_rejected_event(row, pr):
@@ -392,7 +392,7 @@ def _eventify_prs(account: int, prs_data: List[PullRequestListItem],
         row["lead_count"] = 1
         row["released"] = 1
         row["release_setting"] = str(releases_match_settings[pr.repository])
-        row["event_owners"] = pr.participants[ParticipationKind.RELEASER]
+        row["event_owners"] = pr.participants[PRParticipationKind.RELEASER]
         return row
 
     def eventify_pr(pr):

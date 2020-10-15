@@ -17,7 +17,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     load_open_pull_request_facts_unfresh
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release import load_releases
-from athenian.api.controllers.miners.types import Participants, PullRequestFacts
+from athenian.api.controllers.miners.types import PRParticipants, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits
 from athenian.api.models.metadata.github import PullRequest
@@ -29,7 +29,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
                                            time_from: datetime,
                                            time_to: datetime,
                                            repositories: Set[str],
-                                           participants: Participants,
+                                           participants: PRParticipants,
                                            labels: LabelFilter,
                                            jira: JIRAFilter,
                                            exclude_inactive: bool,
@@ -122,7 +122,7 @@ async def _filter_done_facts_jira(done_facts: Dict[str, PullRequestFacts],
 async def _fetch_inactive_merged_unreleased_prs(time_from: datetime,
                                                 time_to: datetime,
                                                 repos: Set[str],
-                                                participants: Participants,
+                                                participants: PRParticipants,
                                                 labels: LabelFilter,
                                                 jira: JIRAFilter,
                                                 default_branches: Dict[str, str],

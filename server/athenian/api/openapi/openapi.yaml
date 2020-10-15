@@ -2823,6 +2823,9 @@ components:
         date_to: 2020-05-23
         in:
         - '{1}'
+        with:
+          pr_author:
+          - github.com/vmarkovtsev
       properties:
         account:
           description: Session account ID.
@@ -2841,6 +2844,8 @@ components:
           $ref: '#/components/schemas/TimeZone'
         in:
           $ref: '#/components/schemas/RepositorySet'
+        with:
+          $ref: '#/components/schemas/ReleaseWith'
       required:
       - account
       - date_from
@@ -4565,13 +4570,12 @@ components:
         metric:
           $ref: '#/components/schemas/PullRequestMetricID'
         scale:
-          description: Histogram's X axis scale.
-          $ref: '#/components/schemas/HistogramScale'
-          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/HistogramScale'
+          - description: Histogram's X axis scale.
         bins:
           description: Number of bars in the histogram. 0 or null means automatic.
           minimum: 0
-          nullable: true
           type: integer
         ticks:
           description: |-
@@ -4585,7 +4589,6 @@ components:
             - type: number
             - $ref: '#/components/schemas/TimeDuration'
           minItems: 1
-          nullable: true
           type: array
       required:
       - metric
@@ -4838,6 +4841,11 @@ components:
         for:
         - - athenianco/athenian-api
           - athenianco/athenian-webapp
+        with:
+          pr_author:
+          - github.com/se7entyse7en
+          releaser:
+          - github.com/gkwillie
         metrics:
         - release-count
         granularities:
@@ -4851,6 +4859,8 @@ components:
           items:
             $ref: '#/components/schemas/RepositorySet'
           type: array
+        with:
+          $ref: '#/components/schemas/ReleaseWith'
         metrics:
           description: List of desired release metrics.
           items:
@@ -4993,8 +5003,11 @@ components:
       type: object
     PaginatePullRequestsRequest:
       additionalProperties: false
-      description: Request of `/paginate/pull_requests`. According to the target batch
-        size, compute the optimal PR updated timestamp ranges.
+      description: |-
+        Request of `/paginate/pull_requests`. According to the target batch size,
+        compute the optimal PR updated timestamp ranges. `request` should match
+        the body to be sent to `/filter/pull_requests`. `updated_from` and `updated_to`
+        inside `request` are ignored.
       properties:
         batch:
           description: Target batch size. The returned ranges do not guarantee the
@@ -5002,8 +5015,6 @@ components:
           minimum: 1
           type: integer
         request:
-          description: Same body to be sent to `/filter/pull_requests`. Inner pagination
-            is ignored.
           $ref: '#/components/schemas/FilterPullRequestsRequest'
       required:
       - batch
@@ -5026,8 +5037,8 @@ components:
           type: array
       type: object
     RepositoryGroups:
-      description: Lists of indexes in `repositories` that define independent
-        groups that must be processed individually. The groups may have intersections.
+      description: Lists of indexes in `repositories` that define independent groups
+        that must be processed individually. The groups may have intersections.
       example:
       - 0
       - 1
@@ -5039,3 +5050,25 @@ components:
         type: array
       minItems: 1
       type: array
+    ReleaseWith:
+      additionalProperties: false
+      description: Release contribution roles. The aggregation is `OR` everywhere.
+      example:
+        pr_author:
+        - github.com/se7entyse7en
+        releaser:
+        - github.com/gkwillie
+      properties:
+        pr_author:
+          allOf:
+          - $ref: '#/components/schemas/DeveloperSet'
+          - description: Authors of released pull requests.
+        commit_author:
+          allOf:
+          - $ref: '#/components/schemas/DeveloperSet'
+          - description: Authors of released commits.
+        releaser:
+          allOf:
+          - $ref: '#/components/schemas/DeveloperSet'
+          - description: Release publishers.
+      type: object

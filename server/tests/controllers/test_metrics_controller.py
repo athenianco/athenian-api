@@ -993,6 +993,51 @@ async def test_release_metrics_smoke(client, headers):
             assert len(model.values) == 9
 
 
+@pytest.mark.parametrize("role, n", [("releaser", 21), ("pr_author", 10), ("commit_author", 21)])
+async def test_release_metrics_participants_single(client, headers, role, n):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [["github.com/src-d/go-git"]],
+        "with": {role: ["github.com/mcuadros"]},
+        "metrics": [ReleaseMetricID.RELEASE_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+    assert len(models) == 1
+    assert models[0].values[0].values[0] == n
+
+
+async def test_release_metrics_participants_multiple(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [["github.com/src-d/go-git"]],
+        "with": {"releaser": ["github.com/smola"],
+                 "pr_author": ["github.com/mcuadros"],
+                 "commit_author": ["github.com/smola"]},
+        "metrics": [ReleaseMetricID.RELEASE_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+    assert len(models) == 1
+    assert models[0].values[0].values[0] == 12
+
+
 @pytest.mark.parametrize("account, date_to, quantiles, extra_metrics, code",
                          [(3, "2020-02-22", [0, 1], [], 403),
                           (10, "2020-02-22", [0, 1], [], 403),

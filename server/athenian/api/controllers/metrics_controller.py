@@ -15,7 +15,8 @@ from athenian.api.controllers.miners.access_classes import access_classes, Acces
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
-from athenian.api.controllers.miners.types import Participants, ParticipationKind
+from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
+    ReleaseParticipationKind
 from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
@@ -30,7 +31,7 @@ from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
 
 #               service                       developers                           originals
-FilterPRs = Tuple[str, Tuple[List[Set[str]], Participants, LabelFilter, JIRAFilter, ForSet]]
+FilterPRs = Tuple[str, Tuple[List[Set[str]], PRParticipants, LabelFilter, JIRAFilter, ForSet]]
 #                             repositories
 
 #                service                     developers
@@ -182,7 +183,7 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
             for k, v in (for_set.with_ or {}).items():
                 if not v:
                     continue
-                devs[ParticipationKind[k.upper()]] = dk = set()
+                devs[PRParticipationKind[k.upper()]] = dk = set()
                 for dev in v:
                     if not dev.startswith(prefix):
                         raise ResponseError(InvalidRequestError(
@@ -402,9 +403,15 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
 
     @sentry_span
     async def calculate_for_set_metrics(service, repos, for_sets):
+        participants = {
+            rpk: getattr(filt.with_, attr) or []
+            for attr, rpk in (("releaser", ReleaseParticipationKind.RELEASER),
+                              ("pr_author", ReleaseParticipationKind.PR_AUTHOR),
+                              ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
+        } if filt.with_ is not None else {}
         ti_mvs, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
-            filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, release_settings,
-            request.mdb, request.pdb, request.cache)
+            filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
+            release_settings, request.mdb, request.pdb, request.cache)
         release_matches = {k: v.name for k, v in release_matches.items()}
         mrange = range(len(filt.metrics))
         assert len(ti_mvs) == len(time_intervals)

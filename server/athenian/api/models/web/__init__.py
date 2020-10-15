@@ -82,6 +82,7 @@ from athenian.api.models.web.release_match_setting import ReleaseMatchSetting
 from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_metrics_request import ReleaseMetricsRequest
+from athenian.api.models.web.release_with import ReleaseWith
 from athenian.api.models.web.released_pull_request import ReleasedPullRequest
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem

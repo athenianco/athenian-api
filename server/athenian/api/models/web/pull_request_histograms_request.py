@@ -17,8 +17,8 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
         "for_": List[ForSet],
         "histograms": List[HistogramDefinition],
         "metrics": List[str],
-        "scale": str,
-        "bins": int,
+        "scale": Optional[str],
+        "bins": Optional[int],
         "date_from": date,
         "date_to": date,
         "timezone": int,
@@ -178,7 +178,7 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
         self._scale = scale
 
     @property
-    def bins(self) -> int:
+    def bins(self) -> Optional[int]:
         """Gets the bins of this PullRequestHistogramsRequest.
 
         Number of bars in the histogram. 0 means automatic.
@@ -188,7 +188,7 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
         return self._bins
 
     @bins.setter
-    def bins(self, bins: int):
+    def bins(self, bins: Optional[int]):
         """Sets the bins of this PullRequestHistogramsRequest.
 
         Number of bars in the histogram. 0 means automatic.

@@ -1053,6 +1053,34 @@ async def test_filter_releases_by_branch(client, headers, client_cache, app):
 
 
 @pytest.mark.filter_releases
+async def test_filter_releases_by_participants(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-01-12",
+        "timezone": 60,
+        "in": ["{1}"],
+        "with": {"releaser": ["github.com/smola"],
+                 "pr_author": ["github.com/mcuadros"],
+                 "commit_author": ["github.com/smola"]},
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/releases", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+    releases = FilteredReleases.from_dict(json.loads(response_text))
+    releases.include.users = set(releases.include.users)
+    assert len(releases.include.users) == 78
+    assert "github.com/mcuadros" in releases.include.users
+    assert len(releases.data) == 12
+    for release in releases.data:
+        match_releaser = release.publisher == "github.com/smola"
+        match_pr_author = "github.com/mcuadros" in {pr.author for pr in release.prs}
+        match_commit_author = "github.com/smola" in release.commit_authors
+        assert match_releaser or match_pr_author or match_commit_author, release
+
+
+@pytest.mark.filter_releases
 @pytest.mark.parametrize("account, date_to, code",
                          [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2020-01-12", 200),
                           (1, "2010-01-11", 400), (1, "2020-02-32", 400)])

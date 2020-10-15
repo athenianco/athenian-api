@@ -23,10 +23,8 @@ from athenian.api.controllers.miners.github.label import mine_labels
 from athenian.api.controllers.miners.github.release import mine_releases
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
-from athenian.api.controllers.miners.types import Participants, ParticipationKind, Property, \
-    PullRequestEvent, \
-    PullRequestListItem, \
-    PullRequestStage
+from athenian.api.controllers.miners.types import Property, PRParticipants, PRParticipationKind, \
+    PullRequestEvent, PullRequestListItem, PullRequestStage, ReleaseParticipationKind
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
 from athenian.api.models.metadata import PREFIXES
@@ -128,7 +126,7 @@ async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
 
 async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
                                         request: AthenianWebRequest,
-                                        ) -> Tuple[Set[str], Set[str], Set[str], Participants,
+                                        ) -> Tuple[Set[str], Set[str], Set[str], PRParticipants,
                                                    LabelFilter, JIRAFilter,
                                                    Dict[str, ReleaseMatchSetting]]:
     """Infer all the required PR filters from the request."""
@@ -147,7 +145,7 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
             for e in range(Property.CREATED, Property.RELEASE_HAPPENED + 1):
                 if Property(e) in props:
                     events.add(PullRequestEvent(e - Property.CREATED + 1))
-    participants = {ParticipationKind[k.upper()]: {d.split("/", 1)[1] for d in v}
+    participants = {PRParticipationKind[k.upper()]: {d.split("/", 1)[1] for d in v}
                     for k, v in (filt.with_ or {}).items() if v}
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = {r.split("/", 1)[1] for r in repos}
@@ -298,11 +296,17 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
+    participants = {
+        rpk: getattr(filt.with_, attr) or []
+        for attr, rpk in (("releaser", ReleaseParticipationKind.RELEASER),
+                          ("pr_author", ReleaseParticipationKind.PR_AUTHOR),
+                          ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
+    } if filt.with_ is not None else {}
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     branches, default_branches = await extract_branches(repos, request.mdb, request.cache)
     releases, avatars, _ = await mine_releases(
-        repos, branches, default_branches, filt.date_from, filt.date_to, settings,
+        repos, participants, branches, default_branches, filt.date_from, filt.date_to, settings,
         request.mdb, request.pdb, request.cache)
     data = [FilteredRelease(name=details[Release.name.key],
                             repository=details[Release.repository_full_name.key],
