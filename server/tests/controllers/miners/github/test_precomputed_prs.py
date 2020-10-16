@@ -17,7 +17,9 @@ from athenian.api.controllers.features.github.pull_request_filter import _fetch_
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
-    load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
+    load_open_pull_request_facts, load_open_pull_request_facts_unfresh, \
+    load_precomputed_done_candidates, \
+    load_precomputed_done_facts_filters, \
     load_precomputed_done_facts_reponums, load_precomputed_pr_releases, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
     store_precomputed_done_facts, update_unreleased_prs
@@ -555,11 +557,54 @@ async def test_discover_update_unreleased_prs_released(
         release_match_setting_tag, pdb)
     assert len(unreleased_prs) == 1
     assert next(iter(unreleased_prs.keys())) == "MDExOlB1bGxSZXF1ZXN0MjI2NTg3NjE1"
-    releases = releases[releases[Release.published_at.key] < datetime(2018, 11, 1, tzinfo=utc)]
     unreleased_prs = await load_merged_unreleased_pull_request_facts(
-        prs, releases[Release.published_at.key].nonemax(), LabelFilter.empty(),
+        prs, datetime(2018, 11, 1, tzinfo=utc), LabelFilter.empty(),
         matched_bys, default_branches, release_match_setting_tag, pdb)
     assert len(unreleased_prs) == 7
+
+
+@with_defer
+async def test_discover_update_unreleased_prs_exclude_inactive(
+        mdb, pdb, dag, default_branches, release_match_setting_tag):
+    postgres = pdb.url.dialect in ("postgres", "postgresql")
+    prs = await read_sql_query(
+        select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
+                                         PullRequest.merged_at.isnot(None))),
+        mdb, PullRequest, index=PullRequest.node_id.key)
+    prs[prs[PullRequest.merged_at.key].isnull()] = datetime.now(tz=timezone.utc)
+    utc = timezone.utc
+    time_from = datetime(2018, 10, 1, tzinfo=utc)
+    time_to = datetime(2018, 12, 1, tzinfo=utc)
+    releases, matched_bys = await load_releases(
+        ["src-d/go-git"], None, default_branches,
+        time_from,
+        time_to,
+        release_match_setting_tag,
+        mdb, pdb, None)
+    released_prs, _, _ = await map_prs_to_releases(
+        prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {}, time_to, dag,
+        release_match_setting_tag, mdb, pdb, None)
+    await wait_deferred()
+    await update_unreleased_prs(
+        prs, released_prs, time_to, {},
+        matched_bys, default_branches, release_match_setting_tag, pdb, asyncio.Event())
+    await pdb.execute(update(GitHubMergedPullRequestFacts).values({
+        GitHubMergedPullRequestFacts.data: pickle.dumps("fake"),
+        GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
+        GitHubMergedPullRequestFacts.activity_days: [
+            datetime(2018, 10, 15, tzinfo=timezone.utc) if postgres else "2018-10-15",
+        ],
+    }))
+    unreleased_prs = await load_merged_unreleased_pull_request_facts(
+        prs, datetime(2018, 11, 1, tzinfo=utc), LabelFilter.empty(),
+        matched_bys, default_branches, release_match_setting_tag, pdb,
+        time_from=datetime(2018, 10, 14, tzinfo=utc), exclude_inactive=True)
+    assert len(unreleased_prs) == 7
+    unreleased_prs = await load_merged_unreleased_pull_request_facts(
+        prs, datetime(2018, 11, 1, tzinfo=utc), LabelFilter.empty(),
+        matched_bys, default_branches, release_match_setting_tag, pdb,
+        time_from=datetime(2018, 10, 16, tzinfo=utc), exclude_inactive=True)
+    assert len(unreleased_prs) == 0
 
 
 @with_defer
@@ -719,7 +764,7 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
 @with_defer
 async def test_store_open_pull_request_facts_smoke(
         mdb, pdb, release_match_setting_tag):
-    prs, _, facts, _ = await _fetch_pull_requests(
+    prs, dfs, facts, _ = await _fetch_pull_requests(
         {"src-d/go-git": set(range(1000, 1010))}, release_match_setting_tag, mdb, pdb, None)
     with pytest.raises(AssertionError):
         await store_open_pull_request_facts(
@@ -733,6 +778,7 @@ async def test_store_open_pull_request_facts_smoke(
         f = PullRequestFacts(**fields)
         samples.append(f)
         true_dict[pr.pr[PullRequest.node_id.key]] = f
+    dfs.prs[PullRequest.closed_at.key] = None
     await store_open_pull_request_facts(zip(prs, samples), pdb)
     ghoprf = GitHubOpenPullRequestFacts
     rows = await pdb.fetch_all(select([ghoprf]))
@@ -743,3 +789,19 @@ async def test_store_open_pull_request_facts_smoke(
         assert len(row[ghoprf.activity_days.key]) > 0
         new_dict[row[ghoprf.pr_node_id.key]] = pickle.loads(row[ghoprf.data.key])
     assert true_dict == new_dict
+
+    loaded_facts = await load_open_pull_request_facts(dfs.prs, pdb)
+    for repo, _ in loaded_facts.values():
+        assert repo == "src-d/go-git"
+    loaded_facts = {k: v[1] for k, v in loaded_facts.items()}
+    assert true_dict == loaded_facts
+
+    loaded_facts = await load_open_pull_request_facts_unfresh(
+        dfs.prs.index, datetime(2016, 1, 1), datetime(2020, 1, 1), True, pdb)
+    for repo, _ in loaded_facts.values():
+        assert repo == "src-d/go-git"
+    loaded_facts = {k: v[1] for k, v in loaded_facts.items()}
+    assert true_dict == loaded_facts
+    loaded_facts = await load_open_pull_request_facts_unfresh(
+        dfs.prs.index, datetime(2019, 11, 1), datetime(2020, 1, 1), True, pdb)
+    assert len(loaded_facts) == 0

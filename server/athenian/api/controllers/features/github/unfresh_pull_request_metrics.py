@@ -81,7 +81,6 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
     for r in (releases, unreleased_prs, done_facts, inactive_merged_prs):
         if isinstance(r, Exception):
             raise r from None
-    # FIXME(vmarkovtsev): add `activity_days` to pdb tables with open and merged PRs, filter better
     unreleased_pr_node_ids = unreleased_prs.index.values
     merged_mask = unreleased_prs[PullRequest.merged_at.key].notnull()
     open_prs = unreleased_pr_node_ids[~merged_mask]
@@ -90,10 +89,11 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
     if not inactive_merged_prs.empty:
         merged_prs = pd.concat([merged_prs, inactive_merged_prs])
     tasks = [
-        load_open_pull_request_facts_unfresh(open_prs, pdb),
+        load_open_pull_request_facts_unfresh(open_prs, time_from, time_to, exclude_inactive, pdb),
         load_merged_unreleased_pull_request_facts(
             merged_prs, time_to, LabelFilter.empty(), releases[1],
-            default_branches, release_settings, pdb),
+            default_branches, release_settings, pdb,
+            time_from=time_from, exclude_inactive=exclude_inactive),
     ]
     open_facts, merged_facts = await asyncio.gather(*tasks, return_exceptions=True)
     for r in (open_facts, merged_facts):
