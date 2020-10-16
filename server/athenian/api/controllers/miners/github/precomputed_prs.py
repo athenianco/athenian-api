@@ -278,18 +278,8 @@ async def _load_precomputed_done_filters(column: InstrumentedAttribute,
     if labels:
         _build_labels_filters(GitHubDonePullRequestFacts, labels, filters, selected, postgres)
     if exclude_inactive:
-        # timezones: date_from and date_to may be not exactly 00:00
-        date_from_day = datetime.combine(
-            time_from.date(), datetime.min.time(), tzinfo=timezone.utc)
-        date_to_day = datetime.combine(
-            time_to.date(), datetime.min.time(), tzinfo=timezone.utc)
-        # date_to_day will be included
-        date_range = rrule(DAILY, dtstart=date_from_day, until=date_to_day)
-        if postgres:
-            filters.append(ghprt.activity_days.overlap(list(date_range)))
-        else:
-            selected.append(ghprt.activity_days)
-            date_range = set(date_range)
+        date_range = _append_activity_days_filter(
+            time_from, time_to, selected, filters, ghprt.activity_days, postgres)
     with sentry_sdk.start_span(op="_load_precomputed_done_filters/fetch"):
         rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
@@ -322,6 +312,26 @@ async def _load_precomputed_done_filters(column: InstrumentedAttribute,
         if node_id not in result:
             result[node_id] = smth
     return result
+
+
+def _append_activity_days_filter(time_from: datetime, time_to: datetime,
+                                 selected: List[InstrumentedAttribute],
+                                 filters: List[ClauseElement],
+                                 activity_days_column: InstrumentedAttribute,
+                                 postgres: bool) -> Set[datetime]:
+    # timezones: date_from and date_to may be not exactly 00:00
+    date_from_day = datetime.combine(
+        time_from.date(), datetime.min.time(), tzinfo=timezone.utc)
+    date_to_day = datetime.combine(
+        time_to.date(), datetime.min.time(), tzinfo=timezone.utc)
+    # date_to_day will be included
+    date_range = rrule(DAILY, dtstart=date_from_day, until=date_to_day)
+    if postgres:
+        filters.append(activity_days_column.overlap(list(date_range)))
+    else:
+        selected.append(activity_days_column)
+        date_range = set(date_range)
+    return date_range
 
 
 @sentry_span
@@ -560,7 +570,10 @@ async def load_merged_unreleased_pull_request_facts(
         matched_bys: Dict[str, ReleaseMatch],
         default_branches: Dict[str, str],
         release_settings: Dict[str, ReleaseMatchSetting],
-        pdb: databases.Database) -> Dict[str, Tuple[str, PullRequestFacts]]:
+        pdb: databases.Database,
+        time_from: Optional[datetime] = None,
+        exclude_inactive: bool = False,
+) -> Dict[str, Tuple[str, PullRequestFacts]]:
     """
     Load the mapping from PR node identifiers which we are sure are not released in one of \
     `releases` to the `pickle`-d facts.
@@ -570,6 +583,8 @@ async def load_merged_unreleased_pull_request_facts(
     if time_to != time_to:
         return {}
     assert time_to.tzinfo is not None
+    if exclude_inactive:
+        assert time_from is not None
     log = logging.getLogger("%s.load_merged_unreleased_pull_request_facts" % metadata.__package__)
     ghmprf = GitHubMergedPullRequestFacts
     postgres = pdb.url.dialect in ("postgres", "postgresql")
@@ -581,6 +596,9 @@ async def load_merged_unreleased_pull_request_facts(
     ]
     if labels:
         _build_labels_filters(ghmprf, labels, common_filters, selected, postgres)
+    if exclude_inactive:
+        date_range = _append_activity_days_filter(
+            time_from, time_to, selected, common_filters, ghmprf.activity_days, postgres)
     repos_by_match = defaultdict(list)
     for repo in prs[PullRequest.repository_full_name.key].unique():
         if (release_match := _extract_release_match(
@@ -610,6 +628,11 @@ async def load_merged_unreleased_pull_request_facts(
         include_multiples = [set(m) for m in include_multiples]
     facts = {}
     for row in rows:
+        if exclude_inactive and not postgres:
+            activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                             for d in row[ghmprf.activity_days.key]}
+            if not activity_days.intersection(date_range):
+                continue
         node_id = row[ghmprf.pr_node_id.key]
         data = row[ghmprf.data.key]
         if data is None:
@@ -907,6 +930,9 @@ async def load_open_pull_request_facts(prs: pd.DataFrame,
 
 @sentry_span
 async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
+                                               time_from: datetime,
+                                               time_to: datetime,
+                                               exclude_inactive: bool,
                                                pdb: databases.Database,
                                                ) -> Dict[str, Tuple[str, PullRequestFacts]]:
     """
@@ -914,17 +940,26 @@ async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
 
     We don't filter PRs by the last update here.
     """
+    postgres = pdb.url.dialect in ("postgres", "postgresql")
     ghoprf = GitHubOpenPullRequestFacts
+    selected = [ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data]
     default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
-    rows = await pdb.fetch_all(
-        select([ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data])
-        .where(and_(ghoprf.pr_node_id.in_(prs),
-                    ghoprf.format_version == default_version)))
+    filters = [ghoprf.pr_node_id.in_(prs), ghoprf.format_version == default_version]
+    if exclude_inactive:
+        date_range = _append_activity_days_filter(
+            time_from, time_to, selected, filters, ghoprf.activity_days, postgres)
+    rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     if not rows:
         return {}
-    facts = {row[ghoprf.pr_node_id.key].rstrip(): (
-        row[ghoprf.repository_full_name.key], pickle.loads(row[ghoprf.data.key]),
-    ) for row in rows}
+    facts = {}
+    for row in rows:
+        if exclude_inactive and not postgres:
+            activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                             for d in row[ghoprf.activity_days.key]}
+            if not activity_days.intersection(date_range):
+                continue
+        facts[row[ghoprf.pr_node_id.key].rstrip()] = \
+            row[ghoprf.repository_full_name.key], pickle.loads(row[ghoprf.data.key])
     return facts
 
 
