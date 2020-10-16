@@ -147,7 +147,7 @@ def test_pull_request_metrics_float_binned(pr_samples, metric):  # noqa: F811
     time_to = (datetime.now(tz=timezone.utc) - timedelta(days=365 // 2)).date()
     time_intervals = [[datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc)
                        for i in Granularity.split("month", time_from, time_to)]]
-    binned = PullRequestBinnedMetricCalculator([metric], quantiles=(0, 1))
+    binned = PullRequestBinnedMetricCalculator([metric], quantiles=(0, 1), lines=[])
     samples = pr_samples(1000)
     if metric == PullRequestMetricID.PR_REJECTED:
         for i, s in enumerate(samples):
@@ -332,7 +332,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
         cache = memcached
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
-    args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1],
+    args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, False, mdb, pdb, cache)
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
@@ -355,7 +355,7 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
         mdb, pdb, cache, release_match_setting_tag):
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=10, day=1, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1],
+    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, False, mdb, pdb, cache]
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
@@ -374,20 +374,20 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
     time_middle = time_from + timedelta(days=14)
     time_to = datetime(year=2016, month=12, day=15, tzinfo=timezone.utc)
     metric1 = (await calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]], [0, 1],
+        [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]], [0, 1], [],
         [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
         release_match_setting_tag, False, mdb, pdb, None,
     ))[0][0][0][0].value
     await wait_deferred()
     metric2 = (await calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]], [0, 1],
+        [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]], [0, 1], [],
         [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
         release_match_setting_tag, False, mdb, pdb, None,
     ))[0][0][0][0].value
     await wait_deferred()
     metric1_ext, metric2_ext = (m[0].value for m in (
         await calc_pull_request_metrics_line_github(
-            [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]], [0, 1],
+            [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]], [0, 1], [],
             [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, False, mdb, pdb, None,
         )
@@ -401,13 +401,13 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
         mdb, pdb, cache, release_match_setting_tag):
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 1],
+    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, False, mdb, pdb, cache]
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     await wait_deferred()
     assert metrics.value == 7
-    args[7] = True
+    args[8] = True
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     await wait_deferred()
     assert metrics.value == 6
@@ -415,14 +415,14 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     date_to = datetime(year=2017, month=5, day=25, tzinfo=timezone.utc)
     args[0] = [PullRequestMetricID.PR_RELEASE_COUNT]
     args[1] = [[date_from, date_to]]
-    args[7] = False
+    args[8] = False
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     await wait_deferred()
     assert metrics.value == 70
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     await wait_deferred()
     assert metrics.value == 70
-    args[7] = True
+    args[8] = True
     metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
     assert metrics.value == 71
 

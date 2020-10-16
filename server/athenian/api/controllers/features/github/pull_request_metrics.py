@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from enum import IntEnum
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Type
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type
 
 import numpy as np
 import pandas as pd
@@ -10,7 +10,7 @@ from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedEnsemblesCalculator, BinnedMetricsCalculator, Counter, HistogramCalculator, \
     HistogramCalculatorEnsemble, \
-    MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator, WithoutQuantilesMixin
+    M, MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.models.web import PullRequestMetricID
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
@@ -35,13 +35,39 @@ class PullRequestHistogramCalculatorEnsemble(HistogramCalculatorEnsemble):
         super().__init__(*metrics, quantiles=quantiles, class_mapping=histogram_calculators)
 
 
-class PullRequestBinnedMetricCalculator(BinnedMetricsCalculator):
+class PullRequestBinnedSplitter(BinnedEnsemblesCalculator[M]):
+    """Add support for splitting PRs into groups by number of changed lines."""
+
+    def __init__(self,
+                 metrics: Iterable[Sequence[str]],
+                 quantiles: Sequence[float],
+                 lines: Sequence[int],
+                 **kwargs):
+        """Initialize a new instance of PullRequestBinnedSplitter."""
+        super().__init__(metrics, quantiles, **kwargs)
+        self._lines = np.asarray(lines)
+        if len(self._lines):
+            assert len(self._lines) >= 2
+            assert (np.diff(self._lines) > 0).all()
+
+    def _split_items(self, items: pd.DataFrame) -> Tuple[np.ndarray, int]:
+        if len(self._lines) == 0:
+            return super()._split_items(items)
+        values = items["size"].values
+        indexes = np.digitize(values, self._lines) - 1
+        indexes[values >= self._lines[-1]] = -1
+        return indexes
+
+
+class PullRequestBinnedMetricCalculator(PullRequestBinnedSplitter[Metric],
+                                        BinnedMetricsCalculator):
     """BinnedMetricCalculator adapted for pull requests."""
 
     ensemble_class = PullRequestMetricCalculatorEnsemble
 
 
-class PullRequestBinnedHistogramCalculator(BinnedEnsemblesCalculator[Histogram]):
+class PullRequestBinnedHistogramCalculator(PullRequestBinnedSplitter[Histogram],
+                                           BinnedEnsemblesCalculator[Histogram]):
     """BinnedEnsemblesCalculator adapted for pull request histograms."""
 
     ensemble_class = PullRequestHistogramCalculatorEnsemble

@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from itertools import chain
-from typing import Any, Collection, Dict, Generic, Iterable, List, Optional, Sequence, Tuple, \
-    Type, TypeVar
+from typing import Any, Collection, Dict, Generic, Iterable, List, Optional, Sequence, \
+    Tuple, Type, TypeVar
 
 import networkx as nx
 import numpy as np
@@ -396,8 +396,43 @@ class BinnedEnsemblesCalculator(Generic[M]):
                                `[time_intervals[i], time_intervals[i + 1]]`, the ending \
                                not included.
         :param groups: Repositories within the same group share the metrics scope.
-        :return: ensembles x time intervals primary x groups x time intervals secondary x metrics.
+        :return:   ensembles \
+                 x time intervals primary \
+                 x splitted groups (groups x splits) \
+                 x time intervals secondary \
+                 x metrics.
         """
+        sizes = [len(repo_items) for repo_items in chain([[]], items.values())]
+        df_items = df_from_dataclasses(chain.from_iterable(items.values()), length=sum(sizes))
+        splits, max_splits = self._split_items(df_items)
+        offsets = np.cumsum(sizes)
+        keyix = {k: i for i, k in enumerate(items)}
+        group_indexes = []
+        for group in groups:
+            indexes = []
+            for k in group:
+                try:
+                    indexes.append(np.arange(offsets[keyix[k]], offsets[keyix[k] + 1]))
+                except KeyError:
+                    continue
+            indexes = np.concatenate(indexes) if indexes else np.array([], dtype=int)
+            if max_splits > 1:
+                group_splits = splits[indexes]
+                order = np.argsort(group_splits)
+                indexes = indexes[order]
+                group_splits = group_splits[order]
+                split_indexes, split_counts = np.unique(group_splits, return_counts=True)
+                if split_indexes[0] < 0:
+                    # remove excluded items
+                    indexes = indexes[split_counts[0]:]
+                    split_counts = split_counts[1:]
+                    split_indexes = split_indexes[1:]
+                indexes = dict(zip(split_indexes, np.split(indexes, np.cumsum(split_counts)[:-1])))
+            else:
+                indexes = {0: indexes}
+            for sx in range(max_splits):
+                group_indexes.append(indexes.get(sx, []))
+
         sizes = np.zeros(len(time_intervals) + 1, dtype=int)
         for i, ts in enumerate(time_intervals):
             size = len(ts)
@@ -422,20 +457,6 @@ class BinnedEnsemblesCalculator(Generic[M]):
                 ts_index_map[j] = i, j - offset
             offset = next_offset
 
-        sizes = [len(repo_items) for repo_items in chain([[]], items.values())]
-        df_items = df_from_dataclasses(chain.from_iterable(items.values()), length=sum(sizes))
-        offsets = np.cumsum(sizes)
-        keyix = {k: i for i, k in enumerate(items.keys())}
-        group_indexes = []
-        for group in groups:
-            indexes = []
-            for k in group:
-                try:
-                    indexes.append(np.arange(offsets[keyix[k]], offsets[keyix[k] + 1]))
-                except KeyError:
-                    continue
-            group_indexes.append(np.concatenate(indexes) if indexes else np.array([], dtype=int))
-
         for ensemble in self.ensembles:
             ensemble(df_items, min_times, max_times, group_indexes)
 
@@ -452,6 +473,9 @@ class BinnedEnsemblesCalculator(Generic[M]):
                         primary, secondary = ts_index_map[tix]
                         result[eix][primary][gix][secondary][mix] = value
         return result
+
+    def _split_items(self, items: pd.DataFrame) -> Tuple[np.ndarray, int]:
+        return np.zeros(len(items)), 1
 
     def _aggregate_ensembles(self, kwargs: Iterable[Dict[str, Any]],
                              ) -> List[Dict[str, List[List[M]]]]:
