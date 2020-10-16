@@ -84,16 +84,20 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     async def calculate_for_set_metrics(service, repos, devs, labels, jira, for_set):
         ti_mvs = await METRIC_ENTRIES[service]["prs_linear"](
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
-            repos, devs, labels, jira,
+            for_set.lines or [], repos, devs, labels, jira,
             filt.exclude_inactive, release_settings, filt.fresh,
             request.mdb, request.pdb, request.cache)
         assert len(ti_mvs) == len(time_intervals)
         mrange = range(len(met.metrics))
         for granularity, ts, group_mvs in zip(filt.granularities, time_intervals, ti_mvs):
-            assert len(group_mvs) == len(repos)
+            line_index = 0
+            line_bins = len(for_set.lines or [None] * 2) - 1
+            assert len(group_mvs) == len(repos) * line_bins
             for group, mvs in enumerate(group_mvs):
+                group_for_set = for_set.select_lines(line_index).select_repogroup(group)
+                line_index = (line_index + 1) % line_bins
                 cm = CalculatedPullRequestMetricsItem(
-                    for_=for_set.select_repogroup(group),
+                    for_=group_for_set,
                     granularity=granularity,
                     values=[CalculatedLinearMetricValues(
                         date=(d - tzoffset).date(),

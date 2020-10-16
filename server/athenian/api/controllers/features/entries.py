@@ -209,6 +209,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
 async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
                                                 quantiles: Sequence[float],
+                                                lines: Sequence[int],
                                                 repositories: Sequence[Collection[str]],
                                                 participants: PRParticipants,
                                                 labels: LabelFilter,
@@ -219,15 +220,16 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 mdb: Database,
                                                 pdb: Database,
                                                 cache: Optional[aiomcache.Client],
-                                                ) -> List[List[List[List[Metric]]]]:
+                                                ) -> List[List[List[List[List[Metric]]]]]:
     """
     Calculate pull request metrics on GitHub.
 
-    :return: granularities x groups x time intervals x metrics.
+    :return: lines x granularities x groups x time intervals x metrics.
     """
     assert isinstance(repositories, (tuple, list))
     all_repositories = set(chain.from_iterable(repositories))
-    calc = PullRequestBinnedMetricCalculator(metrics, quantiles, exclude_inactive=exclude_inactive)
+    calc = PullRequestBinnedMetricCalculator(
+        metrics, quantiles, lines, exclude_inactive=exclude_inactive)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
@@ -275,6 +277,7 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
                                              time_from: datetime,
                                              time_to: datetime,
                                              quantiles: Sequence[float],
+                                             lines: Sequence[int],
                                              repositories: Sequence[Collection[str]],
                                              participants: PRParticipants,
                                              labels: LabelFilter,
@@ -289,7 +292,7 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
     """Calculate the pull request histograms on GitHub."""
     all_repositories = set(chain.from_iterable(repositories))
     try:
-        calc = PullRequestBinnedHistogramCalculator(defs.values(), quantiles)
+        calc = PullRequestBinnedHistogramCalculator(defs.values(), quantiles, lines)
     except KeyError as e:
         raise ValueError("Unsupported metric: %s" % e)
     mined_facts = await calc_pull_request_facts_github(
