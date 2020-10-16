@@ -314,8 +314,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FoundJIRAStuff'
-          description: List of found JIRA epics and labels, ordered by the last usage
-            date.
+          description: List of found JIRA entities, ordered by the last usage time.
         403:
           content:
             application/json:
@@ -881,6 +880,48 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.metrics_controller
+      x-codegen-request-body-name: body
+  /metrics/jira:
+    post:
+      operationId: calc_metrics_jira_linear
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JIRAMetricsRequest'
+        description: Query for selecting JIRA issues and measured activities.
+        required: true
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculatedJIRAMetrics'
+          description: Calculated metrics.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to access the specified repositories
+            on behalf of the specified account.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: Calculate metrics over JIRA issue activities.
+      tags:
+      - metrics
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.jira_controller
       x-codegen-request-body-name: body
   /metrics/prs:
     post:
@@ -2409,10 +2450,10 @@ components:
           $ref: '#/components/schemas/JIRAFilter'
         lines:
           description: Split by changed number of lines (inserted + removed).
-          minLength: 2
           items:
             minimum: 0
             type: integer
+          minLength: 2
           type: array
       required:
       - repositories
@@ -4698,8 +4739,9 @@ components:
       type: object
     FoundJIRAStuff:
       additionalProperties: false
-      description: 'Response from `/filter/jira`: found JIRA epics, labels, and issue
-        types.'
+      description: |-
+        Response from `/filter/jira`: found JIRA epics, labels, issue types, priorities,
+        and mentioned users.
       example:
         epics:
         - id: DEV-158
@@ -4736,6 +4778,15 @@ components:
         issue_types:
         - Story
         - Task
+        priorities:
+        - Lowest
+        - Low
+        - Medium
+        - High
+        - Critical
+        users:
+        - athenianco.atlassian.net/Vadim Markovtsev
+        - athenianco.atlassian.net/Lou Marvin Caraig
       properties:
         epics:
           items:
@@ -4750,10 +4801,22 @@ components:
           items:
             type: string
           type: array
+        priorities:
+          description: Issue priority names sorted by importance in ascending order.
+          items:
+            type: string
+          type: array
+        users:
+          description: Mentioned users in the found JIRA issues.
+          items:
+            $ref: '#/components/schemas/DeveloperID'
+          type: array
       required:
       - epics
       - issue_types
       - labels
+      - priorities
+      - users
       type: object
     JIRAEpic:
       additionalProperties: false
@@ -4881,14 +4944,14 @@ components:
           description: Date up to which to measure the metrics.
           format: date
           type: string
+        timezone:
+          $ref: '#/components/schemas/TimeZone'
         granularities:
           items:
             $ref: '#/components/schemas/Granularity'
           type: array
         quantiles:
           $ref: '#/components/schemas/Quantiles'
-        timezone:
-          $ref: '#/components/schemas/TimeZone'
         account:
           description: Session account ID.
           type: integer
@@ -5015,6 +5078,19 @@ components:
         compute the optimal PR updated timestamp ranges. `request` should match
         the body to be sent to `/filter/pull_requests`. `updated_from` and `updated_to`
         inside `request` are ignored.
+      example:
+        request:
+          account: 1
+          date_from: 2020-01-23
+          date_to: 2020-05-23
+          in:
+          - '{1}'
+          properties:
+          - wip
+          with:
+            author:
+            - github.com/vmarkovtsev
+        batch: 100
       properties:
         batch:
           description: Target batch size. The returned ranges do not guarantee the
@@ -5078,4 +5154,108 @@ components:
           allOf:
           - $ref: '#/components/schemas/DeveloperSet'
           - description: Release publishers.
+      type: object
+    JIRAMetricID:
+      description: |-
+        Currently supported JIRA activity metrics.
+        * `jira-bug-open` - number of bug-like issues active by the end of the time interval.
+        * `jira-bug-resolved` - number of bug-like issues closed in the given time range.
+        * `jira-bug-raised` - number of bug-like issues reported in the given time range.
+      enum:
+      - jira-bug-open
+      - jira-bug-resolved
+      - jira-bug-raised
+      example: jira-bug-resolved
+      type: string
+    JIRAMetricsRequest:
+      additionalProperties: false
+      description: Request body of `/metrics/jira`.
+      example:
+        account: 1
+        date_from: 2020-10-01
+        date_to: 2020-10-30
+        priorities:
+        - High
+        metrics:
+        - jira-bug-open
+        - jira-bug-resolved
+        - jira-bug-raised
+        granularities:
+        - all
+      properties:
+        account:
+          description: Session account ID.
+          type: integer
+        date_from:
+          description: Issues must be resolved after this date.
+          format: date
+          type: string
+        date_to:
+          description: Issues must be created before this date.
+          format: date
+          type: string
+        timezone:
+          $ref: '#/components/schemas/TimeZone'
+        priorities:
+          description: Selected issue priorities.
+          items:
+            type: string
+          type: array
+        assignees:
+          description: Selected issue assignee users.
+          items:
+            $ref: '#/components/schemas/DeveloperID'
+          type: array
+        reporters:
+          description: Selected issue reporter users.
+          items:
+            $ref: '#/components/schemas/DeveloperID'
+          type: array
+        commenters:
+          description: Selected issue commenter users.
+          items:
+            $ref: '#/components/schemas/DeveloperID'
+          type: array
+        stakeholders:
+          description: Selected issue stakeholder users.
+          items:
+            $ref: '#/components/schemas/DeveloperID'
+          type: array
+        metrics:
+          description: List of measured metrics.
+          items:
+            $ref: '#/components/schemas/JIRAMetricID'
+          type: array
+        quantiles:
+          $ref: '#/components/schemas/Quantiles'
+        granularities:
+          description: Splits of the specified time range `[date_from, date_to)`.
+          items:
+            $ref: '#/components/schemas/Granularity'
+          type: array
+      required:
+      - account
+      - date_from
+      - date_to
+      - granularities
+      - metrics
+      type: object
+    CalculatedJIRAMetrics:
+      description: Response from `/metrics/jira`.
+      items:
+        $ref: '#/components/schemas/CalculatedJIRAMetricValues'
+      type: array
+    CalculatedJIRAMetricValues:
+      additionalProperties: false
+      description: Calculated JIRA metrics for a specific granularity.
+      properties:
+        granularity:
+          $ref: '#/components/schemas/Granularity'
+        values:
+          items:
+            $ref: '#/components/schemas/CalculatedLinearMetricValues'
+          type: array
+      required:
+      - granularity
+      - values
       type: object

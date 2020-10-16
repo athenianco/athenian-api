@@ -158,3 +158,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                 raise r from None
     labels, types = issues
     return model_response(FoundJIRAStuff(epics=epics, labels=labels, issue_types=types))
+
+
+async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Calculate metrics over JIRA issue activities."""
+    raise NotImplementedError
