@@ -44,6 +44,10 @@ async def mine_repositories(repos: Collection[str],
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
     prefix = PREFIXES["github"]
+    with sentry_sdk.start_span(op="mine_repositories/nodes", description=str(len(repos))):
+        rows = await mdb.fetch_all(select([NodeRepository.id])
+                                   .where(NodeRepository.name_with_owner.in_(repos)))
+        repo_ids = [r[0] for r in rows]
 
     @sentry_span
     async def fetch_active_prs():
@@ -69,7 +73,7 @@ async def mine_repositories(repos: Collection[str],
     async def fetch_inactive_open_prs():
         return await mdb.fetch_all(
             select([distinct(PullRequest.repository_full_name)])
-            .where(and_(PullRequest.repository_full_name.in_(repos),
+            .where(and_(PullRequest.repository_node_id.in_(repo_ids),
                         PullRequest.hidden.is_(False),
                         PullRequest.created_at < time_from,
                         PullRequest.closed_at.is_(None))))
@@ -86,7 +90,7 @@ async def mine_repositories(repos: Collection[str],
     async def fetch_commits_comments_reviews():
         query_comments = \
             select([distinct(PullRequestComment.repository_full_name)]) \
-            .where(and_(PullRequestComment.repository_full_name.in_(repos),
+            .where(and_(PullRequestComment.repository_node_id.in_(repo_ids),
                         PullRequestComment.created_at.between(time_from, time_to),
                         ))
         query_commits = \
@@ -94,12 +98,12 @@ async def mine_repositories(repos: Collection[str],
                    .label(PushCommit.repository_full_name.key)]) \
             .select_from(join(NodeCommit, NodeRepository,
                               NodeCommit.repository == NodeRepository.id)) \
-            .where(and_(NodeRepository.name_with_owner.in_(repos),
+            .where(and_(NodeCommit.repository.in_(repo_ids),
                         NodeCommit.committed_date.between(time_from, time_to),
                         ))
         query_reviews = \
             select([distinct(PullRequestReview.repository_full_name)]) \
-            .where(and_(PullRequestReview.repository_full_name.in_(repos),
+            .where(and_(PullRequestReview.repository_node_id.in_(repo_ids),
                         PullRequestReview.submitted_at.between(time_from, time_to),
                         ))
         return await mdb.fetch_all(union(query_comments, query_commits, query_reviews))
