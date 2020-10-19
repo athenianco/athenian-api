@@ -56,6 +56,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         line_bins = len(for_set.lines or [None] * 2) - 1
         assert len(group_histograms) == len(repos) * line_bins
         for group, histograms in enumerate(group_histograms):
+            group //= line_bins
             group_for_set = for_set.select_lines(line_index).select_repogroup(group)
             line_index = (line_index + 1) % line_bins
             for metric, histogram in sorted(histograms):

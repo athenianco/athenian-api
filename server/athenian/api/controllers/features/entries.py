@@ -299,7 +299,7 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
         time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
         release_settings, fresh, mdb, pdb, cache)
     hists = calc(mined_facts, [[time_from, time_to]], repositories, [k.__dict__ for k in defs])
-    result = [[] for _ in repositories]
+    result = [[] for _ in range(len(repositories) * (len(lines or [None] * 2) - 1))]
     for defs_hists, metrics in zip(hists, defs.values()):
         for group_result, group_hists in zip(result, defs_hists[0]):
             for hist, m in zip(group_hists[0], metrics):

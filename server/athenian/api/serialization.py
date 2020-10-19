@@ -48,6 +48,12 @@ def _deserialize(
             return _deserialize_dict(data, klass.__args__[1])
         if typing_utils.is_optional(klass):
             return _deserialize(data, klass.__args__[0])
+        if typing_utils.is_union(klass):
+            for arg in klass.__args__:
+                try:
+                    return _deserialize(data, arg)
+                except (ValueError, TypeError):
+                    continue
     else:
         return deserialize_model(data, klass)
 

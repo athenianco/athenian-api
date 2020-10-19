@@ -56,7 +56,7 @@ class PullRequestBinnedSplitter(BinnedEnsemblesCalculator[M]):
         values = items["size"].values
         indexes = np.digitize(values, self._lines) - 1
         indexes[values >= self._lines[-1]] = -1
-        return indexes
+        return indexes, len(self._lines) - 1
 
 
 class PullRequestBinnedMetricCalculator(PullRequestBinnedSplitter[Metric],
