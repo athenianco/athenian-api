@@ -157,7 +157,13 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             if isinstance(r, Exception):
                 raise r from None
     labels, types = issues
-    return model_response(FoundJIRAStuff(epics=epics, labels=labels, issue_types=types))
+    return model_response(FoundJIRAStuff(
+        epics=epics,
+        labels=labels,
+        issue_types=types,
+        priorities=[],
+        users={},
+    ))
 
 
 async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:

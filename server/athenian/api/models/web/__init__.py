@@ -5,6 +5,7 @@ from athenian.api.models.web.base_model_ import Enum, Model, Slots
 from athenian.api.models.web.calculated_developer_metrics import CalculatedDeveloperMetrics
 from athenian.api.models.web.calculated_developer_metrics_item import \
     CalculatedDeveloperMetricsItem
+from athenian.api.models.web.calculated_jira_metric_values import CalculatedJIRAMetricValues
 from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues
 from athenian.api.models.web.calculated_pull_request_histogram import \
     CalculatedPullRequestHistogram
@@ -58,6 +59,8 @@ from athenian.api.models.web.jira_epic import JIRAEpic
 from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.jira_label import JIRALabel
+from athenian.api.models.web.jira_metric_id import JIRAMetricID
+from athenian.api.models.web.jira_metrics_request import JIRAMetricsRequest
 from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
 from athenian.api.models.web.paginate_pull_requests_request import PaginatePullRequestsRequest
