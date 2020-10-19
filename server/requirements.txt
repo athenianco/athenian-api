@@ -7,7 +7,7 @@ databases[postgresql,sqlite]==0.3.2
 xxhash==2.0.0
 # remember to change these versions in Dockerfile, too!
 numpy==1.19.1
-scipy==1.5.2
+scipy==1.5.3
 sentry-sdk[pure_eval]==0.18.0
 prometheus_client==0.8.0
 alembic==1.4.3
