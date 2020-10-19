@@ -26,6 +26,6 @@ gcloud-aio-kms==3.2.0
 gcloud-aio-auth==3.4.3
 backoff==1.10.0
 # end of gcloud-aio-kms unpinned deps
-pympler==0.8
+pympler==0.9
 objgraph==3.5.0
 lz4==3.1.0
