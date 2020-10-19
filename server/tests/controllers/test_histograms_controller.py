@@ -3,8 +3,7 @@ import itertools
 import pytest
 
 from athenian.api import FriendlyJson
-from athenian.api.models.web import CalculatedPullRequestHistogram, Interquartile, \
-    PullRequestMetricID
+from athenian.api.models.web import CalculatedPullRequestHistogram, PullRequestMetricID
 
 
 @pytest.mark.parametrize(
@@ -61,8 +60,6 @@ async def test_calc_histogram_prs_smoke(
         assert response.status == 200, "Response body is : " + body
         body = FriendlyJson.loads(body)
         for item in body:
-            item = item.copy()
-            item["interquartile"] = Interquartile(**item["interquartile"])
             CalculatedPullRequestHistogram.from_dict(item)
 
         assert body == [{
@@ -254,8 +251,6 @@ async def test_calc_histogram_prs_groups(client, headers):
     body = FriendlyJson.loads(body)
     cprh = []
     for item in body:
-        item = item.copy()
-        item["interquartile"] = Interquartile(**item["interquartile"])
         cprh.append(CalculatedPullRequestHistogram.from_dict(item))
 
     assert len(cprh) == 2
@@ -268,3 +263,49 @@ async def test_calc_histogram_prs_groups(client, headers):
                       "157688s", "485648s"], "frequencies": [6, 5, 8, 5, 4, 14, 10, 2],
             "interquartile": {"left": "790s", "right": "45167s"},
         }
+
+
+async def test_calc_histogram_prs_lines(client, headers):
+    body = {
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "lines": [0, 100, 100500],
+            },
+        ],
+        "histograms": [{
+            "metric": PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME,
+            "scale": "log",
+        }],
+        "date_from": "2017-10-13",
+        "date_to": "2018-05-23",
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = FriendlyJson.loads(body)
+    cprh = []
+    for item in body:
+        cprh.append(CalculatedPullRequestHistogram.from_dict(item))
+
+    assert len(cprh) == 2
+    assert body[0] == {
+        "for": {"repositories": ["{1}"], "lines": [0, 100]},
+        "metric": "pr-wait-first-review-time", "scale": "log",
+        "ticks": ["60s", "195s", "637s", "2078s", "6776s", "22090s", "72014s",
+                  "234763s", "765318s", "2494902s"],
+        "frequencies": [4, 8, 7, 8, 4, 22, 8, 6, 1],
+        "interquartile": {"left": "1762s", "right": "62368s"},
+    }
+
+    assert body[1] == {
+        "for": {"repositories": ["{1}"], "lines": [100, 100500]},
+        "metric": "pr-wait-first-review-time", "scale": "log",
+        "ticks": ["60s", "273s", "1243s", "5661s", "25774s", "117343s", "534220s"],
+        "frequencies": [8, 4, 1, 4, 7, 2],
+        "interquartile": {"left": "60s", "right": "49999s"},
+    }

@@ -232,18 +232,25 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
     assert len(cm.calculated[0].values) > 0
 
 
-@pytest.mark.parametrize("account, date_to, quantiles, code",
-                         [(3, "2020-02-22", [0, 1], 403),
-                          (10, "2020-02-22", [0, 1], 403),
-                          (1, "2015-10-13", [0, 1], 200),
-                          (1, "2010-01-11", [0, 1], 400),
-                          (1, "2020-01-32", [0, 1], 400),
-                          (1, "2020-01-01", [-1, 0.5], 400),
-                          (1, "2020-01-01", [0, -1], 400),
-                          (1, "2020-01-01", [10, 20], 400),
-                          (1, "2020-01-01", [0.5, 0.25], 400),
-                          (1, "2020-01-01", [0.5, 0.5], 400)])
-async def test_calc_metrics_prs_nasty_input(client, headers, account, date_to, quantiles, code):
+@pytest.mark.parametrize("account, date_to, quantiles, lines, code",
+                         [(3, "2020-02-22", [0, 1], None, 403),
+                          (10, "2020-02-22", [0, 1], None, 403),
+                          (1, "2015-10-13", [0, 1], None, 200),
+                          (1, "2010-01-11", [0, 1], None, 400),
+                          (1, "2020-01-32", [0, 1], None, 400),
+                          (1, "2020-01-01", [-1, 0.5], None, 400),
+                          (1, "2020-01-01", [0, -1], None, 400),
+                          (1, "2020-01-01", [10, 20], None, 400),
+                          (1, "2020-01-01", [0.5, 0.25], None, 400),
+                          (1, "2020-01-01", [0.5, 0.5], None, 400),
+                          (1, "2015-10-13", [0, 1], [], 400),
+                          (1, "2015-10-13", [0, 1], [1], 400),
+                          (1, "2015-10-13", [0, 1], [1, 1], 400),
+                          (1, "2015-10-13", [0, 1], [-1, 1], 400),
+                          (1, "2015-10-13", [0, 1], [1, 0], 400),
+                          ])
+async def test_calc_metrics_prs_nasty_input(
+        client, headers, account, date_to, quantiles, lines, code):
     """What if we specify a date that does not exist?"""
     body = {
         "for": [
@@ -252,6 +259,7 @@ async def test_calc_metrics_prs_nasty_input(client, headers, account, date_to, q
                 "repositories": [
                     "{1}",
                 ],
+                **({"lines": lines} if lines is not None else {}),
             },
             {
                 "with": {"releaser": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
@@ -628,6 +636,36 @@ async def test_calc_metrics_prs_groups_nasty(client, headers, repogroups):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 400, "Response body is : " + body
+
+
+async def test_calc_metrics_prs_lines_smoke(client, headers):
+    """Two repository groups."""
+    body = {
+        "for": [
+            {
+                "with": {"author": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
+                "repositories": ["{1}", "github.com/src-d/go-git"],
+                "lines": [0, 500, 100500],
+            },
+        ],
+        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
+        "date_from": "2017-10-13",
+        "date_to": "2018-01-23",
+        "granularities": ["all"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
+    assert len(cm.calculated) == 2
+    assert cm.calculated[0].values[0].values[0] == "3561521s"
+    assert cm.calculated[0].for_.lines == [0, 500]
+    assert cm.calculated[1].values[0].values[0] == "4194716s"
+    assert cm.calculated[1].for_.lines == [500, 100500]
 
 
 async def test_code_bypassing_prs_smoke(client, headers):

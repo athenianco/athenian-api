@@ -1,4 +1,5 @@
-from typing import Optional
+from datetime import timedelta
+from typing import Optional, Union
 
 from athenian.api.models.web.base_model_ import Model
 
@@ -6,12 +7,12 @@ from athenian.api.models.web.base_model_ import Model
 class Interquartile(Model):
     """Middle 50% range."""
 
-    openapi_types = {"left": float, "right": float}
+    openapi_types = {"left": Union[float, timedelta], "right": Union[float, timedelta]}
     attribute_map = {"left": "left", "right": "right"}
 
     def __init__(self,
-                 left: Optional[float] = None,
-                 right: Optional[float] = None):
+                 left: Optional[Union[float, timedelta]] = None,
+                 right: Optional[Union[float, timedelta]] = None):
         """Interquartile - a model defined in OpenAPI
 
         :param left: The left of this Interquartile.
@@ -21,7 +22,7 @@ class Interquartile(Model):
         self._right = right
 
     @property
-    def left(self) -> float:
+    def left(self) -> Union[float, timedelta]:
         """Gets the left of this Interquartile.
 
         :return: The left of this Interquartile.
@@ -29,7 +30,7 @@ class Interquartile(Model):
         return self._left
 
     @left.setter
-    def left(self, left: float):
+    def left(self, left: Union[float, timedelta]):
         """Sets the left of this Interquartile.
 
         :param left: The left of this Interquartile.
@@ -40,7 +41,7 @@ class Interquartile(Model):
         self._left = left
 
     @property
-    def right(self) -> float:
+    def right(self) -> Union[float, timedelta]:
         """Gets the right of this Interquartile.
 
         :return: The right of this Interquartile.
@@ -48,7 +49,7 @@ class Interquartile(Model):
         return self._right
 
     @right.setter
-    def right(self, right: float):
+    def right(self, right: Union[float, timedelta]):
         """Sets the right of this Interquartile.
 
         :param right: The right of this Interquartile.

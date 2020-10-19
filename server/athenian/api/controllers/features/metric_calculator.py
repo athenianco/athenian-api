@@ -385,7 +385,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
     def __call__(self,
                  items: Dict[str, Iterable[Any]],
                  time_intervals: Sequence[Sequence[datetime]],
-                 groups: Iterable[Collection[str]],
+                 groups: Sequence[Collection[str]],
                  kwargs: Iterable[Dict[str, Any]],
                  ) -> List[List[List[List[List[M]]]]]:
         """
@@ -463,7 +463,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
         values_dicts = self._aggregate_ensembles(kwargs)
         result = [[[[[None] * len(metrics)
                      for _ in range(len(ts) - 1)]
-                    for _ in groups]
+                    for _ in range(len(groups) * max_splits)]
                    for ts in time_intervals]
                   for metrics in self.metrics]
         for eix, (metrics, values_dict) in enumerate(zip(self.metrics, values_dicts)):
@@ -500,7 +500,7 @@ class BinnedMetricsCalculator(BinnedEnsemblesCalculator[Metric]):
     def __call__(self,
                  items: Dict[str, Iterable[Any]],
                  time_intervals: Sequence[Sequence[datetime]],
-                 groups: Iterable[Collection[str]],
+                 groups: Sequence[Collection[str]],
                  ) -> List[List[List[List[Metric]]]]:
         """Override the parent's method to reduce the number of nested lists."""
         return super().__call__(items, time_intervals, groups, [{}])[0]

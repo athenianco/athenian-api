@@ -94,6 +94,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
             line_bins = len(for_set.lines or [None] * 2) - 1
             assert len(group_mvs) == len(repos) * line_bins
             for group, mvs in enumerate(group_mvs):
+                group //= line_bins
                 group_for_set = for_set.select_lines(line_index).select_repogroup(group)
                 line_index = (line_index + 1) % line_bins
                 cm = CalculatedPullRequestMetricsItem(

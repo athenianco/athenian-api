@@ -18,9 +18,14 @@ def is_list(klass: type):
     return getattr(klass, "__origin__", None) == list
 
 
+def is_union(klass: type):
+    """Determine whether klass is a Union."""
+    return getattr(klass, "__origin__", None) == Union
+
+
 def is_optional(klass: type):
     """Determine whether klass is an Optional."""
-    return getattr(klass, "__origin__", None) == Union and \
+    return is_union(klass) and \
         len(klass.__args__) == 2 and issubclass(klass.__args__[1], type(None))
 
 
