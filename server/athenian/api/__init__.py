@@ -511,6 +511,7 @@ def setup_context(log: logging.Logger) -> None:
         integrations=[AioHttpIntegration(), SqlalchemyIntegration(),
                       LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
                       PureEvalIntegration(), ExecutingIntegration()],
+        auto_enabling_integrations=False,
         send_default_pii=True,
         debug=sentry_env != "production",
         max_breadcrumbs=20,
