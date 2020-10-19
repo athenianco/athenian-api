@@ -125,6 +125,8 @@ class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
     def granularities(self) -> List[str]:
         """Gets the granularities of this PullRequestMetricsRequest.
 
+        Splits of the specified time range `[date_from, date_to)`.
+
         :return: The granularities of this PullRequestMetricsRequest.
         """
         return self._granularities
@@ -132,6 +134,8 @@ class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
     @granularities.setter
     def granularities(self, granularities: List[str]):
         """Sets the granularities of this PullRequestMetricsRequest.
+
+        Splits of the specified time range `[date_from, date_to)`.
 
         :param granularities: The granularities of this PullRequestMetricsRequest.
         """

@@ -689,8 +689,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
     if prs_df.empty:
         return [], PRDataFrames(*(pd.DataFrame() for _ in range(9))), {}, {}
     now = datetime.now(timezone.utc)
-    rel_time_from = prs_df[PullRequest.merged_at.key].nonemin()
-    if rel_time_from:
+    if rel_time_from := prs_df[PullRequest.merged_at.key].nonemin():
         milestone_prs = prs_df[[PullRequest.merge_commit_sha.key,
                                 PullRequest.merge_commit_id.key,
                                 PullRequest.merged_at.key,
@@ -733,8 +732,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
         facts_miner = PullRequestFactsMiner(await bots(mdb))
         pdb_misses = 0
         for pr in prs:
-            node_id = pr.pr[PullRequest.node_id.key]
-            if node_id not in facts:
+            if (node_id := pr.pr[PullRequest.node_id.key]) not in facts:
                 try:
                     facts[node_id] = None, facts_miner(pr)
                 except ImpossiblePullRequest:
