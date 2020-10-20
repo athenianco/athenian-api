@@ -222,6 +222,20 @@ async def eiso(app, eiso_user) -> User:
 @pytest.fixture(scope="function")
 async def gkwillie(app) -> User:
     app._auth0._default_user_id = "github|60340680"
+    app._auth0._default_user = User(
+        id="github|60340680",
+        login="gkwillie",
+        email="bot@athenian.co",
+        name="Groundskeeper Willie",
+        native_id="60340680",
+        picture="https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
+        updated=datetime.now(timezone.utc),
+    )
+
+
+@pytest.fixture(scope="function")
+async def lazy_gkwillie(app) -> User:
+    app._auth0._default_user_id = "github|60340680"
     app._auth0._default_user = None
 
 

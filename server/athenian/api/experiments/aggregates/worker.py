@@ -317,7 +317,7 @@ async def _fetch_prs_data(
     await asyncio.gather(sdb_.connect(), mdb_.connect(), pdb_.connect())
 
     log.info("Fetching PRs data...")
-    account_settings = Settings(account, None, None, sdb_, mdb_, cache, None)
+    account_settings = Settings.from_account(account, sdb_, mdb_, cache, None)
     releases_match_settings = await account_settings.list_release_matches(
         [PREFIXES["github"] + repo for repo in prs_collection.keys()])
 

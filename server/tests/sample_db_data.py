@@ -14,7 +14,7 @@ from athenian.api.models.metadata import __min_version__
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest, PushCommit, \
     SchemaMigration
 from athenian.api.models.metadata.jira import Base as JiraBase
-from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubInstallation, \
+from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
     AccountJiraInstallation, Feature, FeatureComponent, Invitation, RepositorySet, UserAccount
 
 
@@ -102,7 +102,7 @@ def fill_state_session(session: sqlalchemy.orm.Session):
     salt, secret = _generate_account_secret(invitation_controller.admin_backdoor)
     session.add(Account(id=invitation_controller.admin_backdoor, secret_salt=salt, secret=secret))
     session.flush()
-    session.add(AccountGitHubInstallation(id=6366825, account_id=1))
+    session.add(AccountGitHubAccount(id=6366825, account_id=1))
     session.add(UserAccount(
         user_id="auth0|5e1f6dfb57bc640ea390557b", account_id=1, is_admin=True))
     session.add(UserAccount(

@@ -9,7 +9,7 @@ import pickle
 from random import randint
 from sqlite3 import IntegrityError, OperationalError
 import struct
-from typing import List, Optional, Tuple
+from typing import Callable, Coroutine, List, Optional, Tuple
 
 from aiohttp import web
 import aiomcache
@@ -22,9 +22,10 @@ from sqlalchemy import and_, delete, func, insert, select, update
 
 from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
-from athenian.api.controllers.account import get_github_installation_ids, get_user_account_status
+from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.reposet import load_account_reposets
-from athenian.api.models.metadata.github import FetchProgress, InstallationOwner, InstallationRepo
+from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
+    FetchProgress
 from athenian.api.models.state.models import Account, Invitation, RepositorySet, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
     NoSourceDataError, NotFoundError
@@ -296,14 +297,12 @@ async def get_installation_event_ids(account: int,
                                      cache: Optional[aiomcache.Client],
                                      ) -> List[Tuple[int, str]]:
     """Load the app installation and delivery IDs for the given account."""
-    installation_ids = await get_github_installation_ids(account, sdb_conn, cache)
+    metadata_account_ids = await get_metadata_account_ids(account, sdb_conn, cache)
     rows = await mdb_conn.fetch_all(
-        select([InstallationRepo.install_id, InstallationRepo.event_id])
-        .where(InstallationRepo.install_id.in_(installation_ids))
+        select([AccountRepository.acc_id, AccountRepository.event_id])
+        .where(AccountRepository.acc_id.in_(metadata_account_ids))
         .distinct())
-    repo_iids = {r[0] for r in rows}
-    diff = set(installation_ids) - repo_iids
-    if diff:
+    if diff := set(metadata_account_ids) - {r[0] for r in rows}:
         raise ResponseError(NoSourceDataError(detail="Some installation%s missing: %s." %
                                                      ("s are" if len(diff) > 1 else " is", diff)))
     return [(r[0], r[1]) for r in rows]
@@ -313,17 +312,17 @@ async def get_installation_event_ids(account: int,
     exptime=max_exptime,
     serialize=lambda s: s.encode(),
     deserialize=lambda b: b.decode(),
-    key=lambda installation_id, **_: (installation_id,),
+    key=lambda metadata_account_id, **_: (metadata_account_id,),
     refresh_on_access=True,
 )
-async def get_installation_owner(installation_id: int,
+async def get_installation_owner(metadata_account_id: int,
                                  mdb_conn: databases.core.Connection,
                                  cache: Optional[aiomcache.Client],
                                  ) -> str:
     """Load the native user ID who installed the app."""
     user_login = await mdb_conn.fetch_val(
-        select([InstallationOwner.user_login])
-        .where(InstallationOwner.install_id == installation_id))
+        select([MetadataAccount.owner_login])
+        .where(MetadataAccount.id == metadata_account_id))
     if user_login is None:
         raise ResponseError(NoSourceDataError(detail="The installation has not started yet."))
     return user_login
@@ -343,14 +342,14 @@ async def fetch_github_installation_progress(account: int,
     mdb_sqlite = mdb.url.dialect == "sqlite"
     idle_threshold = timedelta(hours=3)
     async with mdb.connection() as mdb_conn:
-        id_ids = await get_installation_event_ids(account, sdb, mdb_conn, cache)
-        owner = await get_installation_owner(id_ids[0][0], mdb_conn, cache)
+        event_ids = await get_installation_event_ids(account, sdb, mdb_conn, cache)
+        owner = await get_installation_owner(event_ids[0][0], mdb_conn, cache)
         # we don't cache this because the number of repos can dynamically change
         models = []
-        for installation_id, event_id in id_ids:
+        for metadata_account_id, event_id in event_ids:
             repositories = await mdb_conn.fetch_val(
-                select([func.count(InstallationRepo.repo_id)])
-                .where(InstallationRepo.install_id == installation_id))
+                select([func.count(AccountRepository.repo_node_id)])
+                .where(AccountRepository.acc_id == metadata_account_id))
             rows = await mdb_conn.fetch_all(
                 select([FetchProgress]).where(FetchProgress.event_id == event_id))
             if not rows:
@@ -408,13 +407,13 @@ async def fetch_github_installation_progress(account: int,
 async def _append_precomputed_progress(model: InstallationProgress,
                                        account: int,
                                        uid: str,
-                                       native_uid: str,
+                                       login: Callable[[], Coroutine[None, None, str]],
                                        sdb: DatabaseLike,
                                        mdb: databases.Database,
                                        cache: Optional[aiomcache.Client],
                                        slack: Optional[slack.WebClient]) -> None:
     reposets = await load_account_reposets(
-        account, native_uid,
+        account, login,
         [RepositorySet.name, RepositorySet.precomputed, RepositorySet.created_at],
         sdb, mdb, cache, slack)
     precomputed = False
@@ -456,8 +455,12 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status(request.uid, id, sdb_conn, request.cache)
         model = await fetch_github_installation_progress(id, sdb_conn, request.mdb, request.cache)
+
+        async def login_loader() -> str:
+            return (await request.user()).login
+
         await _append_precomputed_progress(
-            model, id, request.uid, request.native_uid, sdb_conn, request.mdb,
+            model, id, request.uid, login_loader, sdb_conn, request.mdb,
             request.cache, request.app["slack"])
         return model_response(model)
 

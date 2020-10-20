@@ -2365,8 +2365,7 @@ components:
           nullable: true
           type: string
         owner:
-          description: Native user ID of the person who installed the metadata retrieval
-            app.
+          description: Login of the person who installed the metadata.
           type: string
         repositories:
           description: Number of discovered repositories.

@@ -151,9 +151,13 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
 async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current user's repository sets."""
     await get_user_account_status(request.uid, id, request.sdb, request.cache)
+
+    async def login_loader() -> str:
+        return (await request.user()).login
+
     async with request.sdb.connection() as sdb_conn:
         rss = await load_account_reposets(
-            id, request.native_uid, [RepositorySet], sdb_conn, request.mdb, request.cache,
+            id, login_loader, [RepositorySet], sdb_conn, request.mdb, request.cache,
             request.app["slack"])
     items = [RepositorySetListItem(
         id=rs[RepositorySet.id.key],

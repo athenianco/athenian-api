@@ -45,7 +45,7 @@ class Auth0:
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
                  client_secret=AUTH0_CLIENT_SECRET, whitelist: Sequence[str] = tuple(),
                  default_user=DEFAULT_USER, cache: Optional[aiomcache.Client] = None, lazy=False,
-                 single_tenant: bool = False, force_user: str = ""):
+                 force_user: str = ""):
         """
         Create a new Auth0 middleware.
 
@@ -63,7 +63,6 @@ class Auth0:
         :param cache: memcached client to cache the user profiles.
         :param lazy: Value that indicates whether Auth0 Management API tokens and JWKS data \
                      must be asynchronously requested at first related method call.
-        :param single_tenant: Ignore native user IDs, set them to None.
         :param force_user: Ignore all the incoming bearer tokens and make all requests on behalf \
                            of this user ID.
         """
@@ -82,9 +81,6 @@ class Auth0:
         self._client_secret = client_secret
         self._default_user_id = default_user
         self._default_user = None  # type: Optional[User]
-        self._single_tenant = single_tenant
-        if single_tenant:
-            self.log.warning("Single tenant authorization mode")
         self.force_user = force_user
         if force_user:
             self.log.warning("Forced user authorization mode: %s", force_user)
@@ -372,11 +368,6 @@ class Auth0:
                 request.uid = mapped_id
                 self.log.info("God mode: %s became %s", request.god_id, mapped_id)
 
-        if not self._single_tenant:
-            request.native_uid = request.uid.rsplit("|", 1)[1]
-            assert request.native_uid is not None  # better to double-check here, super critical
-        else:
-            request.native_uid = None
         request.is_default_user = request.uid == self._default_user_id
         sentry_sdk.add_breadcrumb(category="user", message=request.uid, level="info")
 

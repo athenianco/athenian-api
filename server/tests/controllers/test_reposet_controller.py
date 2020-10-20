@@ -226,5 +226,8 @@ async def test_list_repository_sets_installation(client, sdb, headers):
 
 @pytest.mark.parametrize("user_id", ["777", "676724"])
 async def test_load_account_reposets_bad_installation(sdb, mdb, user_id):
+    async def login():
+        return user_id
+
     with pytest.raises(ResponseError):
-        await load_account_reposets(4, user_id, [RepositorySet.items], sdb, mdb, None, None)
+        await load_account_reposets(4, login, [RepositorySet.items], sdb, mdb, None, None)

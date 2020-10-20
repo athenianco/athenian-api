@@ -4,9 +4,9 @@ from typing import Iterable, Set
 from sqlalchemy import select
 
 from athenian.api.cache import cached
-from athenian.api.controllers.account import get_github_installation_ids
+from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.miners.access import AccessChecker
-from athenian.api.models.metadata.github import InstallationRepo
+from athenian.api.models.metadata.github import AccountRepository
 from athenian.api.tracing import sentry_span
 
 
@@ -25,22 +25,22 @@ class GitHubAccessChecker(AccessChecker):
     @sentry_span
     async def load(self) -> "AccessChecker":
         """Fetch the list of accessible repositories."""
-        iids = await get_github_installation_ids(self.account, self.sdb, self.cache)
-        self._installed_repos = await self._fetch_installed_repos(iids)
+        metadata_ids = await get_metadata_account_ids(self.account, self.sdb, self.cache)
+        self._installed_repos = await self._fetch_installed_repos(metadata_ids)
         return self
 
     @cached(
         exptime=lambda self, **_: self.cache_ttl,
         serialize=marshal.dumps,
         deserialize=marshal.loads,
-        key=lambda iids, **_: tuple(iids),
+        key=lambda metadata_ids, **_: tuple(metadata_ids),
         cache=lambda self, **_: self.cache,
     )
-    async def _fetch_installed_repos(self, iids: Iterable[int]) -> Set[str]:
+    async def _fetch_installed_repos(self, metadata_ids: Iterable[int]) -> Set[str]:
         installed_repos_db = await self.mdb.fetch_all(
-            select([InstallationRepo.repo_full_name])
-            .where(InstallationRepo.install_id.in_(iids)))
-        key = InstallationRepo.repo_full_name.key
+            select([AccountRepository.repo_full_name])
+            .where(AccountRepository.acc_id.in_(metadata_ids)))
+        key = AccountRepository.repo_full_name.key
         return {r[key] for r in installed_repos_db}
 
     async def check(self, repos: Set[str]) -> Set[str]:
