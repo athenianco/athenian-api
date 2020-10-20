@@ -119,9 +119,14 @@ async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
         tzoffset = timedelta(minutes=-filt.timezone)
         filt.date_from += tzoffset
         filt.date_to += tzoffset
+
+    async def login_loader() -> str:
+        return (await request.user()).login
+
     return await resolve_repos(
-        filt.in_, filt.account, request.uid, request.native_uid,
-        request.sdb, request.mdb, request.cache, request.app["slack"], strip_prefix=strip_prefix)
+        filt.in_, filt.account, request.uid, login_loader,
+        request.sdb, request.mdb, request.cache, request.app["slack"],
+        strip_prefix=strip_prefix)
 
 
 async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
@@ -400,7 +405,11 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
 async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find labels used in the given repositories."""
     body = FilterLabelsRequest.from_dict(body)
-    repos = await resolve_repos(body.repositories, body.account, request.uid, request.native_uid,
+
+    async def login_loader() -> str:
+        return (await request.user()).login
+
+    repos = await resolve_repos(body.repositories, body.account, request.uid, login_loader,
                                 request.sdb, request.mdb, request.cache, request.app["slack"])
     labels = await mine_labels(repos, request.mdb, request.cache)
     labels = [FilteredLabel(**label.__dict__) for label in labels]

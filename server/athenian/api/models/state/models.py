@@ -118,10 +118,10 @@ class Team(create_time_mixin(created_at=True, updated_at=True),
                       nullable=False)
 
 
-class AccountGitHubInstallation(Base):
-    """Mapping account -> installation_id, one-to-many."""
+class AccountGitHubAccount(Base):
+    """Mapping API account -> metadata account, one-to-many."""
 
-    __tablename__ = "account_github_installations"
+    __tablename__ = "account_github_accounts"
 
     id = Column(BigInteger(), primary_key=True, autoincrement=False)
     account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_installation_id_owner"),

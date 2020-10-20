@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from functools import lru_cache
 import re
-from typing import Collection, Dict, List, Optional, Set
+from typing import Any, Callable, Collection, Coroutine, Dict, List, Optional, Set
 
 import aiomcache
 import databases
@@ -60,9 +60,10 @@ class Settings:
     """User's settings."""
 
     def __init__(self,
+                 do_not_call_me_directly: Any, *,
                  account: int,
                  user_id: Optional[str],
-                 native_user_id: Optional[str],
+                 login: Optional[Callable[[], Coroutine[None, None, str]]],
                  sdb: databases.Database,
                  mdb: databases.Database,
                  cache: Optional[aiomcache.Client],
@@ -70,7 +71,7 @@ class Settings:
         """Initialize a new instance of Settings class."""
         self._account = account
         self._user_id = user_id
-        self._native_user_id = native_user_id
+        self._login = login
         assert isinstance(sdb, databases.Database)
         self._sdb = sdb
         assert isinstance(mdb, databases.Database)
@@ -79,11 +80,37 @@ class Settings:
         self._slack = slack
 
     @classmethod
+    def from_account(cls,
+                     account: int,
+                     sdb: databases.Database,
+                     mdb: databases.Database,
+                     cache: Optional[aiomcache.Client],
+                     slack: Optional[slack.WebClient]):
+        """Create a new Settings class instance in readonly mode given the account ID."""
+        return Settings(None,
+                        account=account,
+                        user_id=None,
+                        login=None,
+                        sdb=sdb,
+                        mdb=mdb,
+                        cache=cache,
+                        slack=slack)
+
+    @classmethod
     def from_request(cls, request: AthenianWebRequest, account: int) -> "Settings":
-        """Create a new Settings class instance from the request object and the account ID."""
-        return Settings(
-            account=account, user_id=request.uid, native_user_id=request.native_uid,
-            sdb=request.sdb, mdb=request.mdb, cache=request.cache, slack=request.app["slack"])
+        """Create a new Settings class instance in readwrite mode from the request object and \
+        the account ID."""
+        async def login_loader() -> str:
+            return (await request.user()).login
+
+        return Settings(None,
+                        account=account,
+                        user_id=request.uid,
+                        login=login_loader,
+                        sdb=request.sdb,
+                        mdb=request.mdb,
+                        cache=request.cache,
+                        slack=request.app["slack"])
 
     @staticmethod
     @lru_cache(1024)
@@ -159,7 +186,7 @@ class Settings:
             # check that the user belongs to the account
             await get_user_account_status(self._user_id, self._account, conn, self._cache)
             repos = await resolve_repos(
-                repos, self._account, self._user_id, self._native_user_id,
+                repos, self._account, self._user_id, self._login,
                 conn, self._mdb, self._cache, self._slack, strip_prefix=False)
             values = [ReleaseSetting(repository=r,
                                      account_id=self._account,

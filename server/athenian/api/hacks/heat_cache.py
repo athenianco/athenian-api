@@ -106,8 +106,8 @@ def main():
                 try:
                     progress = await fetch_github_installation_progress(
                         reposet.owner_id, sdb, mdb, cache)
-                    settings = await Settings(
-                        reposet.owner_id, None, None, sdb, mdb, cache, None).list_release_matches()
+                    settings = await Settings.from_account(
+                        reposet.owner_id, sdb, mdb, cache, None).list_release_matches()
                 except ResponseError as e:
                     if e.response.status != HTTPStatus.UNPROCESSABLE_ENTITY:
                         sentry_sdk.capture_exception(e)
@@ -227,10 +227,8 @@ async def create_bots_team(account: int,
                                            Team.owner_id == account)))
     if team is not None:
         return team[Team.members_count.key]
-    release_settings = await Settings(
-        account=account, user_id=None, native_user_id=None,
-        sdb=sdb, mdb=mdb, cache=None, slack=None,
-    ).list_release_matches(repos)
+    release_settings = await Settings.from_account(
+        account, sdb, mdb, None, None).list_release_matches(repos)
     contributors = await mine_contributors(
         {r.split("/", 1)[1] for r in repos}, None, None, False, [],
         release_settings, mdb, pdb, None)

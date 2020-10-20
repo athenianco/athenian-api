@@ -1,7 +1,4 @@
-*New API installation on {{ env }}*
+*API linked to metadata on {{ env }}*
 
-Account {{ account }} has bound to metadata installation{{ "s" if iids|length > 1 else "" }} {{ iids | join(", ") }} ({{ repos|length }} repos):
-
-{% for repo in repos %}
-  * {{ repo }}
-{% endfor %}
+Account *{{ account }}* has bound to metadata account {{ "s" if iids|length > 1 else "" }}{% for acc, owner in metadata_accounts %}{{ acc }} owned by *{{ owner }}*{{ ", " if not loop.last }}{% endfor %} on behalf of *{{ login }}*.
+Its "{{ all_reposet_name }}" reposet *{{ reposet }}* contains {{ repos }} repos prefixed with {% for prefix in prefixes %}`{{ prefix }}`{{ ", " if not loop.last }}{% endfor %}.

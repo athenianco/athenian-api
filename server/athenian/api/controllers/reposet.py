@@ -2,7 +2,7 @@ import asyncio
 from itertools import chain
 import logging
 from sqlite3 import IntegrityError, OperationalError
-from typing import List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
+from typing import Callable, Coroutine, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
 import aiomcache
 from asyncpg import UniqueViolationError
@@ -12,11 +12,12 @@ from sqlalchemy import and_, insert, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
-from athenian.api.controllers.account import get_github_installation_ids, get_user_account_status
+from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import InstallationOwner, InstallationRepo
-from athenian.api.models.state.models import AccountGitHubInstallation, RepositorySet, UserAccount
+from athenian.api.models.metadata.github import Account, AccountRepository, OrganizationMember, \
+    User
+from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourceDataError, \
     NotFoundError
 from athenian.api.models.web.generic_error import DatabaseConflict
@@ -93,7 +94,7 @@ async def fetch_reposet(
 async def resolve_repos(repositories: List[str],
                         account: int,
                         uid: str,
-                        native_uid: str,
+                        login: Callable[[], Coroutine[None, None, str]],
                         sdb_conn: Union[databases.core.Connection, databases.Database],
                         mdb_conn: Union[databases.core.Connection, databases.Database],
                         cache: Optional[aiomcache.Client],
@@ -109,7 +110,7 @@ async def resolve_repos(repositories: List[str],
             detail="User %s is forbidden to access account %d" % (uid, account)))
     if not repositories:
         rss = await load_account_reposets(
-            account, native_uid, [RepositorySet.id], sdb_conn, mdb_conn, cache, slack)
+            account, login, [RepositorySet.id], sdb_conn, mdb_conn, cache, slack)
         repositories = ["{%d}" % rss[0][RepositorySet.id.key]]
     repos = set(chain.from_iterable(
         await asyncio.gather(*[
@@ -130,7 +131,7 @@ async def resolve_repos(repositories: List[str],
 
 @sentry_span
 async def load_account_reposets(account: int,
-                                native_uid: Optional[str],
+                                login: Callable[[], Coroutine[None, None, str]],
                                 fields: list,
                                 sdb_conn: DatabaseLike,
                                 mdb_conn: DatabaseLike,
@@ -144,7 +145,7 @@ async def load_account_reposets(account: int,
     :param mdb_conn: Connection to the metadata DB, needed only if no reposet exists.
     :param cache: memcached Client.
     :param account: Owner of the loaded reposets.
-    :param native_uid: Native user ID, needed only if no reposet exists.
+    :param login: Coroutine to load the contextual user's login.
     :param fields: Which columns to fetch for each RepositorySet.
     :return: List of DB rows or __dict__-s representing the loaded RepositorySets.
     """
@@ -152,9 +153,9 @@ async def load_account_reposets(account: int,
         if isinstance(mdb_conn, databases.Database):
             async with mdb_conn.connection() as _mdb_conn:
                 return await _load_account_reposets(
-                    account, native_uid, fields, _sdb_conn, _mdb_conn, cache, slack)
+                    account, login, fields, _sdb_conn, _mdb_conn, cache, slack)
         return await _load_account_reposets(
-            account, native_uid, fields, _sdb_conn, mdb_conn, cache, slack)
+            account, login, fields, _sdb_conn, mdb_conn, cache, slack)
 
     if isinstance(sdb_conn, databases.Database):
         async with sdb_conn.connection() as _sdb_conn:
@@ -163,7 +164,7 @@ async def load_account_reposets(account: int,
 
 
 async def _load_account_reposets(account: int,
-                                 native_uid: Optional[str],
+                                 login: Callable[[], Coroutine[None, None, str]],
                                  fields: list,
                                  sdb_conn: databases.core.Connection,
                                  mdb_conn: databases.core.Connection,
@@ -187,35 +188,41 @@ async def _load_account_reposets(account: int,
     try:
         async with sdb_conn.transaction():
             # new account, discover their repos from the installation and create the first reposet
-            try:
-                iids = await get_github_installation_ids(account, sdb_conn, cache)
-            except ResponseError:
-                if native_uid is None:
+            tasks = [
+                get_metadata_account_ids(account, sdb_conn, cache),
+                login(),
+            ]
+            metadata_ids, login = await asyncio.gather(*tasks, return_exceptions=True)
+            if isinstance(login, Exception):
+                raise ResponseError(ForbiddenError(detail=str(login)))
+            if isinstance(metadata_ids, Exception):
+                if login is None:
                     # single tenant mode, fetch all installations
                     # if this happens on a regular cloud instance, everybody is deeply fucked
                     cond = True
                 else:
-                    cond = InstallationOwner.user_id == int(native_uid)
-                iids = await mdb_conn.fetch_all(select([InstallationOwner.install_id]).where(cond))
-                iids = {r[0] for r in iids}
-                if not iids:
+                    members = await _load_organization_member_logins(login, mdb_conn)
+                    cond = Account.owner_login.in_(members)
+                metadata_ids = {r[0] for r in await mdb_conn.fetch_all(select([Account.id])
+                                                                       .where(cond))}
+                if not metadata_ids:
                     raise_no_source_data()
-                owned_iids = await sdb_conn.fetch_all(
-                    select([AccountGitHubInstallation.id])
-                    .where(AccountGitHubInstallation.id.in_(iids)))
-                owned_iids = {r[0] for r in owned_iids}
-                iids -= owned_iids
-                if not iids:
+                owned_accounts = {r[0] for r in await sdb_conn.fetch_all(
+                    select([AccountGitHubAccount.id])
+                    .where(AccountGitHubAccount.id.in_(metadata_ids)))}
+                metadata_ids -= owned_accounts
+                if not metadata_ids:
                     raise_no_source_data()
-                for iid in iids:
+                for acc_id in metadata_ids:
                     # we don't expect many installations for the same account so don't go parallel
-                    values = AccountGitHubInstallation(id=iid, account_id=account).explode(
+                    values = AccountGitHubAccount(id=acc_id, account_id=account).explode(
                         with_primary_keys=True)
-                    await sdb_conn.execute(insert(AccountGitHubInstallation).values(values))
-            repos = await mdb_conn.fetch_all(select([InstallationRepo.repo_full_name])
-                                             .where(and_(InstallationRepo.install_id.in_(iids),
-                                                         InstallationRepo.exists))
-                                             .order_by(InstallationRepo.repo_full_name))
+                    await sdb_conn.execute(insert(AccountGitHubAccount).values(values))
+            repos = await mdb_conn.fetch_all(
+                select([AccountRepository.repo_full_name])
+                .where(and_(AccountRepository.acc_id.in_(metadata_ids),
+                            AccountRepository.enabled))
+                .order_by(AccountRepository.repo_full_name))
             prefix = PREFIXES["github"]
             repos = [(prefix + r[0]) for r in repos]
             rs = RepositorySet(
@@ -224,14 +231,38 @@ async def _load_account_reposets(account: int,
             rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
             log.info(
                 "Created the first reposet %d for account %d with %d repos on behalf of %s",
-                rs.id, account, len(repos), native_uid,
+                rs.id, account, len(repos), login,
             )
             if slack is not None:
-                await slack.post(
-                    "new_installation.jinja2", account=account, repos=repos, iids=iids)
+                metadata_accounts = [(r[0], r[1]) for r in await mdb_conn.fetch_all(
+                    select([Account.id, Account.owner_login]).where(Account.id.in_(metadata_ids)))]
+                prefixes = {r.split("/", 2)[1] for r in repos}
+                await slack.post("new_installation.jinja2",
+                                 account=account,
+                                 repos=len(repos),
+                                 prefixes=prefixes,
+                                 all_reposet_name=RepositorySet.ALL,
+                                 reposet=rs.id,
+                                 metadata_accounts=metadata_accounts,
+                                 login=login)
 
             return [rs.explode(with_primary_keys=True)]
     except (UniqueViolationError, IntegrityError, OperationalError) as e:
         log.error("%s: %s", type(e).__name__, e)
         raise ResponseError(DatabaseConflict(
             detail="concurrent or duplicate initial reposet creation")) from None
+
+
+async def _load_organization_member_logins(seed_login: str, mdb: DatabaseLike) -> List[str]:
+    seed_node_id = await mdb.fetch_val(select([User.node_id]).where(User.login == seed_login))
+    if seed_node_id is None:
+        return [seed_login]
+    orgs = [r[0] for r in await mdb.fetch_all(select([OrganizationMember.parent_id])
+                                              .where(OrganizationMember.child_id == seed_node_id))]
+    if not orgs:
+        return [seed_login]
+    members = [r[0] for r in await mdb.fetch_all(select([OrganizationMember.child_id])
+                                                 .where(OrganizationMember.parent_id.in_(orgs)))]
+    logins = [r[0] for r in await mdb.fetch_all(select([User.login])
+                                                .where(User.node_id.in_(members)))]
+    return logins

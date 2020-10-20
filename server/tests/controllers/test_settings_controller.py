@@ -1,10 +1,12 @@
 import json
 
+from aiohttp.web_runner import GracefulExit
 import pytest
 from sqlalchemy import delete, insert, select, update
 
+from athenian.api import auth
 from athenian.api.async_read_sql_query import read_sql_query
-from athenian.api.models.state.models import AccountGitHubInstallation, ReleaseSetting, \
+from athenian.api.models.state.models import AccountGitHubAccount, ReleaseSetting, \
     RepositorySet, UserAccount
 from athenian.api.models.web import ReleaseMatchSetting, ReleaseMatchStrategy
 
@@ -60,10 +62,10 @@ async def test_set_release_match_different_accounts(client, headers, sdb, disabl
     }
     response1 = await client.request(
         method="PUT", path="/v1/settings/release_match", headers=headers, json=body1)
-    await sdb.execute(delete(AccountGitHubInstallation)
-                      .where(AccountGitHubInstallation.account_id == 1))
-    await sdb.execute(insert(AccountGitHubInstallation).values(
-        AccountGitHubInstallation(id=6366825, account_id=2).explode(with_primary_keys=True)))
+    await sdb.execute(delete(AccountGitHubAccount)
+                      .where(AccountGitHubAccount.account_id == 1))
+    await sdb.execute(insert(AccountGitHubAccount).values(
+        AccountGitHubAccount(id=6366825, account_id=2).explode(with_primary_keys=True)))
     await sdb.execute(update(UserAccount).where(UserAccount.account_id == 2).values(
         {UserAccount.is_admin.key: True}))
     body2 = {
@@ -127,12 +129,35 @@ async def test_set_release_match_nasty_input(
     assert response.status == code
 
 
-async def test_set_release_match_422(client, headers, sdb, gkwillie, disable_default_user):
+async def cleanup_gkwillie(sdb):
     await sdb.execute(delete(RepositorySet))
-    await sdb.execute(delete(AccountGitHubInstallation))
+    await sdb.execute(delete(AccountGitHubAccount))
     await sdb.execute(insert(UserAccount).values(UserAccount(
         user_id="github|60340680", account_id=1, is_admin=True,
     ).create_defaults().explode(with_primary_keys=True)))
+
+
+async def test_set_release_match_login_failure(
+        client, headers, sdb, lazy_gkwillie, disable_default_user):
+    await cleanup_gkwillie(sdb)
+    body = {
+        "repositories": [],
+        "account": 1,
+        "branches": ".*",
+        "tags": ".*",
+        "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
+    }
+    auth.GracefulExit = ValueError
+    try:
+        response = await client.request(
+            method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+    finally:
+        auth.GracefulExit = GracefulExit
+    assert response.status == 403, await response.read()
+
+
+async def test_set_release_match_422(client, headers, sdb, gkwillie, disable_default_user):
+    await cleanup_gkwillie(sdb)
     body = {
         "repositories": [],
         "account": 1,
@@ -142,7 +167,7 @@ async def test_set_release_match_422(client, headers, sdb, gkwillie, disable_def
     }
     response = await client.request(
         method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
-    assert response.status == 422
+    assert response.status == 422, await response.read()
 
 
 async def test_get_release_match_settings_defaults(client, headers):

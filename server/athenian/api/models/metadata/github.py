@@ -58,25 +58,32 @@ class PullRequestPKMixin:
 # -- TABLES --
 
 
-class InstallationOwner(Base, UpdatedMixin):
-    __tablename__ = "installation_owners"
+class Account(Base, UpdatedMixin):
+    __tablename__ = "accounts"
     __table_args__ = {"schema": "github"}
 
-    install_id = Column(BigInteger, primary_key=True)
-    user_id = Column(BigInteger, primary_key=True)
-    user_login = Column(Text, nullable=False)
+    id = Column(BigInteger, primary_key=True)
+    owner_id = Column(BigInteger, nullable=False)
+    owner_login = Column(Text, nullable=False)
 
 
-class InstallationRepo(Base):
-    __tablename__ = "installation_repos_compat"
+class AccountRepository(Base):
+    __tablename__ = "account_repos_log"
     __table_args__ = {"schema": "github"}
 
-    install_id = Column(BigInteger, primary_key=True)
-    event_id = Column(Text, nullable=False)
-    repo_id = Column(Text, primary_key=True)
+    acc_id = Column(BigInteger, primary_key=True)
+    repo_node_id = Column(Text, primary_key=True)
     repo_full_name = Column(Text, nullable=False)
+    event_id = Column(Text, nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False)
-    exists = Column(Boolean, nullable=False, quote=True, name="exists")
+    enabled = Column(Boolean, nullable=False)
+
+
+class OrganizationMember(Base):
+    __tablename__ = "github_node_organization_members_with_role"
+
+    parent_id = Column(Text, primary_key=True, comment="Organization ID")
+    child_id = Column(Text, primary_key=True, comment="User ID")
 
 
 class FetchProgress(Base, UpdatedMixin):

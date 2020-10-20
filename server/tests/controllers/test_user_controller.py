@@ -60,7 +60,7 @@ async def test_is_default_user(client, headers, app, value):
     assert items == {"is_default_user": value}
 
 
-async def test_get_default_user(client, headers, gkwillie):
+async def test_get_default_user(client, headers, lazy_gkwillie):
     response = await client.request(
         method="GET", path="/v1/user", headers=headers, json={},
     )

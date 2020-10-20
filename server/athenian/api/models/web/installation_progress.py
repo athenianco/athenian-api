@@ -93,7 +93,7 @@ class InstallationProgress(Model):
     def owner(self) -> str:
         """Gets the owner of this InstallationProgress.
 
-        Native user ID of the person who installed the metadata retrieval app.
+        Login of the person who installed the metadata.
 
         :return: The owner of this InstallationProgress.
         """
@@ -103,7 +103,7 @@ class InstallationProgress(Model):
     def owner(self, owner: str):
         """Sets the owner of this InstallationProgress.
 
-        Native user ID of the person who installed the metadata retrieval app.
+        Login of the person who installed the metadata.
 
         :param owner: The owner of this InstallationProgress.
         """

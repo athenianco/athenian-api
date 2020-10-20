@@ -3,22 +3,23 @@ import json
 from random import randint
 import re
 
+import databases
 import pytest
 from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import FetchProgress
-from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubInstallation, \
+from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
     AccountJiraInstallation, God, Invitation, ReleaseSetting, RepositorySet, UserAccount, UserToken
 from athenian.api.models.web import User
 
 
-async def test_empty_db_account_creation(client, headers, sdb, no_default_user):
+async def clean_state(sdb: databases.Database) -> int:
     await sdb.execute(delete(RepositorySet))
     await sdb.execute(delete(AccountFeature))
     await sdb.execute(delete(UserAccount))
     await sdb.execute(delete(Invitation))
-    await sdb.execute(delete(AccountGitHubInstallation))
+    await sdb.execute(delete(AccountGitHubAccount))
     await sdb.execute(delete(UserToken))
     await sdb.execute(delete(ReleaseSetting))
     await sdb.execute(delete(AccountJiraInstallation))
@@ -26,10 +27,14 @@ async def test_empty_db_account_creation(client, headers, sdb, no_default_user):
     if sdb.url.dialect != "sqlite":
         await sdb.execute("ALTER SEQUENCE accounts_id_seq RESTART;")
 
-    iid = await sdb.execute(
+    return await sdb.execute(
         insert(Invitation).values(
             Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
             .create_defaults().explode()))
+
+
+async def test_empty_db_account_creation(client, headers, sdb, no_default_user, eiso):
+    iid = await clean_state(sdb)
     body = {
         "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
     }
@@ -43,17 +48,25 @@ async def test_empty_db_account_creation(client, headers, sdb, no_default_user):
     assert body == {
         "account": 1,
         "user": {
-            "id": "auth0|5e1f6dfb57bc640ea390557b",
-            "name": "Vadim Markovtsev",
-            "login": "vadim",
-            "native_id": "5e1f6dfb57bc640ea390557b",
-            "email": "vadim@athenian.co",
-            "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png", # noqa
+            "id": "auth0|5e1f6e2e8bfa520ea5290741",
+            "name": "Eiso Kant",
+            "login": "eiso",
+            "native_id": "5e1f6e2e8bfa520ea5290741",
+            "email": "eiso@athenian.co",
+            "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png", # noqa
             "accounts": {"1": True},
         },
     }
     # the second is admin backdoor
     assert len(await sdb.fetch_all(select([Account]))) == 2
+    assert len(await sdb.fetch_all(select([RepositorySet]))) == 0
+    response = await client.request(
+        method="GET", path="/v1/reposets/1", headers=headers, json={},
+    )
+    assert response.status == 200
+    reposets = await sdb.fetch_all(select([RepositorySet]))
+    assert len(reposets) == 1
+    assert "github.com/src-d/go-git" in reposets[0]["items"]
 
 
 async def test_gen_invitation_new(client, headers, sdb):
@@ -121,9 +134,7 @@ async def no_default_user(app):
     app.app["auth"].default_user = default_user
 
 
-@pytest.mark.parametrize("single_tenant", [False, True])
-async def test_accept_invitation_smoke(client, headers, app, sdb, no_default_user, single_tenant):
-    app._auth0._single_tenant = single_tenant
+async def test_accept_invitation_smoke(client, headers, sdb, no_default_user):
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     body = {
         "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),

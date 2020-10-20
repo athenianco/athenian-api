@@ -275,8 +275,12 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
+
+    async def login_loader() -> str:
+        return (await request.user()).login
+
     repos = await resolve_repos(
-        filt.in_, filt.account, request.uid, request.native_uid,
+        filt.in_, filt.account, request.uid, login_loader,
         request.sdb, request.mdb, request.cache, request.app["slack"])
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularity, filt.timezone)
