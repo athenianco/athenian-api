@@ -15,10 +15,11 @@ from sqlalchemy import and_, or_, select
 from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_user_account_status
+from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.models.metadata.jira import Component, Issue
 from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import FilterJIRAStuff, FoundJIRAStuff, InvalidRequestError, \
-    JIRAEpic, JIRALabel, NoSourceDataError
+    JIRAEpic, JIRALabel, JIRAMetricsRequest, NoSourceDataError
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -168,4 +169,12 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
 async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over JIRA issue activities."""
-    raise NotImplementedError
+    try:
+        filt = JIRAMetricsRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+    time_intervals, tzoffset = split_to_time_intervals(
+        filt.date_from, filt.date_to, filt.granularities, filt.timezone)
+    mets = []
+    return model_response(mets)

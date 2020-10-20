@@ -1,13 +1,13 @@
 import asyncio
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from itertools import chain
-from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import Dict, List, Sequence, Set, Tuple
 
 from aiohttp import web
 import databases.core
 
+from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
 from athenian.api.controllers.jira_controller import get_jira_installation
@@ -23,7 +23,7 @@ from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
     CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, \
-    ForSet, ForSetDevelopers, Granularity, ReleaseMetricsRequest
+    ForSet, ForSetDevelopers, ReleaseMetricsRequest
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.request import AthenianWebRequest
@@ -52,7 +52,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     filters, repos = await compile_repos_and_devs_prs(filt.for_, request, filt.account)
-    time_intervals, tzoffset = _split_to_time_intervals(
+    time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 
     """
@@ -124,36 +124,6 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
             if isinstance(err, Exception):
                 raise err from None
     return model_response(met)
-
-
-def _split_to_time_intervals(date_from: date,
-                             date_to: date,
-                             granularities: Union[str, List[str]],
-                             tzoffset: Optional[int],
-                             ) -> Tuple[Union[List[datetime], List[List[datetime]]], timedelta]:
-    if date_to < date_from:
-        raise ResponseError(InvalidRequestError(
-            detail="date_from may not be greater than date_to",
-            pointer=".date_from",
-        ))
-    tzoffset = timedelta(minutes=-tzoffset) if tzoffset is not None else timedelta(0)
-
-    def split(granularity: str, ptr: str) -> List[datetime]:
-        try:
-            intervals = Granularity.split(granularity, date_from, date_to)
-        except ValueError:
-            raise ResponseError(InvalidRequestError(
-                detail='granularity "%s" does not match /%s/' % (
-                    granularity, Granularity.format.pattern),
-                pointer=ptr,
-            ))
-        return [datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc) + tzoffset
-                for i in intervals]
-
-    if isinstance(granularities, str):
-        return split(granularities, ".granularity"), tzoffset
-
-    return [split(g, ".granularities[%d]" % i) for i, g in enumerate(granularities)], tzoffset
 
 
 async def compile_repos_and_devs_prs(for_sets: List[ForSet],
@@ -308,7 +278,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     repos = await resolve_repos(
         filt.in_, filt.account, request.uid, request.native_uid,
         request.sdb, request.mdb, request.cache, request.app["slack"])
-    time_intervals, tzoffset = _split_to_time_intervals(
+    time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularity, filt.timezone)
     with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
@@ -400,7 +370,7 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
         grouped_for_sets[service].append(for_set)
         grouped_repos[service].append(repos)
     del filters
-    time_intervals, tzoffset = _split_to_time_intervals(
+    time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(all_repos)
