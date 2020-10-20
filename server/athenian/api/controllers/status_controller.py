@@ -7,22 +7,38 @@ import time
 from typing import Optional
 
 from aiohttp import web
+import aiomcache
+import databases
 import objgraph
 import prometheus_client
 import pympler.muppy
 import pympler.summary
 import sentry_sdk
+from sqlalchemy import select
 
+from athenian.api.cache import cached
 from athenian.api.metadata import __package__, __version__
 import athenian.api.models.metadata as metadata
 from athenian.api.models.web import BadRequestError
 from athenian.api.models.web.versions import Versions
+from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
 
-async def get_versions(request: web.Request) -> web.Response:
+@cached(
+    exptime=60 * 60,  # 1 hour
+    key=lambda **_: (),
+    serialize=lambda s: s.encode(),
+    deserialize=lambda b: b.decode(),
+)
+async def _get_metadata_version(mdb: databases.Database, cache: Optional[aiomcache.Client]) -> str:
+    return str(await mdb.fetch_val(select([metadata.SchemaMigration.version])))
+
+
+async def get_versions(request: AthenianWebRequest) -> web.Response:
     """Return the versions of the backend components."""
-    model = Versions(api=__version__, metadata=str(metadata.__version__))
+    metadata_version = await _get_metadata_version(request.mdb, request.cache)
+    model = Versions(api=__version__, metadata=metadata_version)
     return model_response(model)
 
 

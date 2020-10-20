@@ -15,8 +15,7 @@ PREFIXES = {
 }
 
 
-__min_version__ = 13
-__version__ = None
+__min_version__ = 34
 
 
 def dereference_schemas():
@@ -31,13 +30,12 @@ def dereference_schemas():
 def check_schema_version(conn_str: str, log: logging.Logger) -> None:
     """Validate the metadata DB schema version."""
     engine = create_engine(conn_str.split("?", 1)[0])
-    global __version__
     session = sessionmaker(bind=engine)()
     try:
-        __version__ = session.query(SchemaMigration.version).scalar()
+        version = session.query(SchemaMigration.version).scalar()
     finally:
         session.close()
-    if __version__ < __min_version__:
+    if version < __min_version__:
         raise DBSchemaMismatchError(
-            "%s version: required: %s connected: %s" % (conn_str, __min_version__, __version__))
-    log.info("metadata DB schema version: %s", __version__)
+            "%s version: required: %s connected: %s" % (conn_str, __min_version__, version))
+    log.info("metadata DB schema version: %s", version)
