@@ -76,7 +76,6 @@ RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends python3-dev gcc g++ patch && \
     pip3 install --no-cache-dir -r /server/requirements.txt && \
     pip3 uninstall -y flask && \
-    patch /usr/local/lib/python*/dist-packages/databases/backends/postgres.py /patches/databases.patch && \
     patch /usr/local/lib/python*/dist-packages/prometheus_client/exposition.py /patches/prometheus_client.patch && \
     patch /usr/local/lib/python*/dist-packages/aiomcache/client.py /patches/aiomcache_version.patch && \
     apt-get remove -y patch && \
