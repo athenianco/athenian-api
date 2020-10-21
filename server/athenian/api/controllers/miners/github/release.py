@@ -563,10 +563,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
     branches_matched = _match_branches_by_release_settings(branches, default_branches, settings)
     if not branches_matched:
         return dummy_releases_df()
-    mismatched_repos = set(repos) - branches_matched.keys()
-    if mismatched_repos:
-        branches = branches.take(np.where(
-            ~branches[Branch.repository_full_name.key].isin(mismatched_repos))[0])
+    branches = pd.concat(branches_matched.values())
     commit_ids = branches[Branch.commit_id.key].values
     tasks = [
         mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
