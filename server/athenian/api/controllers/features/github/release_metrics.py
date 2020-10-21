@@ -27,7 +27,7 @@ def register_metric(name: str):
 
 
 class ReleaseMetricCalculatorEnsemble(MetricCalculatorEnsemble):
-    """MetricCalculatorEnsemble adapted for pull requests."""
+    """MetricCalculatorEnsemble adapted for releases."""
 
     def __init__(self, *metrics: str, quantiles: Sequence[float]):
         """Initialize a new instance of ReleaseMetricCalculatorEnsemble class."""
@@ -35,7 +35,7 @@ class ReleaseMetricCalculatorEnsemble(MetricCalculatorEnsemble):
 
 
 class ReleaseBinnedMetricCalculator(BinnedMetricsCalculator):
-    """BinnedMetricCalculator adapted for pull requests."""
+    """BinnedMetricCalculator adapted for releases."""
 
     ensemble_class = ReleaseMetricCalculatorEnsemble
 
@@ -53,7 +53,7 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
         result = np.full((len(min_times), len(facts)), None, object)
-        checked_mask = np.atleast_2d(self._check(facts, min_times, max_times))
+        checked_mask = self._check(facts, min_times, max_times)
         extracted = np.repeat(self._extract(facts)[None, :], len(min_times), axis=0)
         result[checked_mask] = extracted[checked_mask]
         return result

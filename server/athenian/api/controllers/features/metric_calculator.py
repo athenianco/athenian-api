@@ -28,6 +28,9 @@ class MetricCalculator(Generic[T]):
     # Types of dependencies - upstream MetricCalculator-s.
     deps = tuple()
 
+    # numpy data type of the metric value
+    dtype = None
+
     def __init__(self, *deps: "MetricCalculator", quantiles: Sequence[float]):
         """Initialize a new `MetricCalculator` instance."""
         self.reset()
@@ -169,7 +172,7 @@ class SumMetricCalculator(MetricCalculator[T]):
 
     def _value(self, samples: np.ndarray) -> Metric[T]:
         exists = len(samples) > 0
-        return Metric(exists, samples.sum() if exists else None, None, None)
+        return Metric(True, samples.sum() if exists else np.dtype(self.dtype).type(), None, None)
 
     def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
                  **kwargs) -> Optional[T]:
@@ -366,7 +369,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
     ensemble_class: Type[MetricCalculatorEnsemble]
 
     def __init__(self,
-                 metrics: Iterable[Sequence[str]],
+                 metrics: Sequence[Sequence[str]],
                  quantiles: Sequence[float],
                  **kwargs):
         """
@@ -433,29 +436,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
             for sx in range(max_splits):
                 group_indexes.append(indexes.get(sx, []))
 
-        sizes = np.zeros(len(time_intervals) + 1, dtype=int)
-        for i, ts in enumerate(time_intervals):
-            size = len(ts)
-            sizes[i + 1] = size
-            assert size >= 2, "Each time interval series must contain at least two elements."
-        flat_time_intervals = np.fromiter(
-            chain.from_iterable((dt.replace(tzinfo=None) for dt in ts) for ts in time_intervals),
-            dtype="datetime64[ns]", count=sizes.sum())
-        offsets = np.cumsum(sizes)
-        flat_intervals_count = len(flat_time_intervals) - len(time_intervals)
-        nat = np.datetime64("NaT")
-        min_times = np.full_like(flat_time_intervals, nat, shape=flat_intervals_count)
-        max_times = np.full_like(flat_time_intervals, nat, shape=flat_intervals_count)
-        offset = 0
-        ts_index_map = {}
-        for i in range(len(time_intervals)):
-            begin, end = offsets[i], offsets[i + 1]
-            next_offset = offset + end - begin - 1
-            min_times[offset:next_offset] = flat_time_intervals[begin:end - 1]
-            max_times[offset:next_offset] = flat_time_intervals[begin + 1:end]
-            for j in range(offset, next_offset):
-                ts_index_map[j] = i, j - offset
-            offset = next_offset
+        min_times, max_times, ts_index_map = self._make_min_max_times(time_intervals)
 
         for ensemble in self.ensembles:
             ensemble(df_items, min_times, max_times, group_indexes)
@@ -476,6 +457,34 @@ class BinnedEnsemblesCalculator(Generic[M]):
 
     def _split_items(self, items: pd.DataFrame) -> Tuple[np.ndarray, int]:
         return np.zeros(len(items)), 1
+
+    @classmethod
+    def _make_min_max_times(cls, time_intervals: Sequence[Sequence[datetime]],
+                            ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, int]]]:
+        sizes = np.zeros(len(time_intervals) + 1, dtype=int)
+        for i, ts in enumerate(time_intervals):
+            size = len(ts)
+            sizes[i + 1] = size
+            assert size >= 2, "Each time interval series must contain at least two elements."
+        flat_time_intervals = np.fromiter(
+            chain.from_iterable((dt.replace(tzinfo=None) for dt in ts) for ts in time_intervals),
+            dtype="datetime64[ns]", count=sizes.sum())
+        offsets = np.cumsum(sizes)
+        flat_intervals_count = len(flat_time_intervals) - len(time_intervals)
+        nat = np.datetime64("NaT")
+        min_times = np.full_like(flat_time_intervals, nat, shape=flat_intervals_count)
+        max_times = np.full_like(flat_time_intervals, nat, shape=flat_intervals_count)
+        offset = 0
+        ts_index_map = []
+        for i in range(len(time_intervals)):
+            begin, end = offsets[i], offsets[i + 1]
+            next_offset = offset + end - begin - 1
+            min_times[offset:next_offset] = flat_time_intervals[begin:end - 1]
+            max_times[offset:next_offset] = flat_time_intervals[begin + 1:end]
+            for j in range(offset, next_offset):
+                ts_index_map.append((i, j - offset))
+            offset = next_offset
+        return min_times, max_times, ts_index_map
 
     def _aggregate_ensembles(self, kwargs: Iterable[Dict[str, Any]],
                              ) -> List[Dict[str, List[List[M]]]]:

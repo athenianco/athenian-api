@@ -62,6 +62,7 @@ from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
 from athenian.api.models.web.jira_metrics_request import JIRAMetricsRequest
 from athenian.api.models.web.jira_priority import JIRAPriority
+from athenian.api.models.web.jira_user import JIRAUser
 from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
 from athenian.api.models.web.paginate_pull_requests_request import PaginatePullRequestsRequest

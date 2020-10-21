@@ -1,9 +1,10 @@
 from datetime import date
 from typing import List, Optional
 
-from athenian.api.models.web import Granularity
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
+from athenian.api.models.web.quantiles import validate_quantiles
 
 
 class JIRAMetricsRequest(Model):
@@ -19,9 +20,10 @@ class JIRAMetricsRequest(Model):
         "reporters": List[str],
         "commenters": List[str],
         "stakeholders": List[str],
-        "metrics": List[JIRAMetricID],
+        "metrics": List[str],
         "quantiles": List[float],
         "granularities": List[str],
+        "exclude_inactive": bool,
     }
 
     attribute_map = {
@@ -37,6 +39,7 @@ class JIRAMetricsRequest(Model):
         "metrics": "metrics",
         "quantiles": "quantiles",
         "granularities": "granularities",
+        "exclude_inactive": "exclude_inactive",
     }
 
     def __init__(
@@ -53,6 +56,7 @@ class JIRAMetricsRequest(Model):
         metrics: Optional[List[str]] = None,
         quantiles: Optional[List[float]] = None,
         granularities: Optional[List[str]] = None,
+        exclude_inactive: Optional[bool] = None,
     ):
         """JIRAMetricsRequest - a model defined in OpenAPI
 
@@ -81,6 +85,7 @@ class JIRAMetricsRequest(Model):
         self._metrics = metrics
         self._quantiles = quantiles
         self._granularities = granularities
+        self._exclude_inactive = exclude_inactive
 
     @property
     def account(self) -> int:
@@ -304,7 +309,7 @@ class JIRAMetricsRequest(Model):
         self._metrics = metrics
 
     @property
-    def quantiles(self) -> List[float]:
+    def quantiles(self) -> Optional[List[float]]:
         """Gets the quantiles of this JIRAMetricsRequest.
 
         Cut the distributions at certain quantiles. The default is [0, 1].
@@ -314,13 +319,17 @@ class JIRAMetricsRequest(Model):
         return self._quantiles
 
     @quantiles.setter
-    def quantiles(self, quantiles: List[float]):
+    def quantiles(self, quantiles: Optional[List[float]]):
         """Sets the quantiles of this JIRAMetricsRequest.
 
         Cut the distributions at certain quantiles. The default is [0, 1].
 
         :param quantiles: The quantiles of this JIRAMetricsRequest.
         """
+        if quantiles is None:
+            self._quantiles = None
+            return
+        validate_quantiles(quantiles)
         self._quantiles = quantiles
 
     @property
@@ -350,3 +359,25 @@ class JIRAMetricsRequest(Model):
                     (i, g, Granularity.format.pattern))
 
         self._granularities = granularities
+
+    @property
+    def exclude_inactive(self) -> bool:
+        """Gets the exclude_inactive of this JIRAMetricsRequest.
+
+        Value indicating whether issues with the last update older than
+        `date_from` should be ignored.
+
+        :return: The exclude_inactive of this JIRAMetricsRequest.
+        """
+        return self._exclude_inactive
+
+    @exclude_inactive.setter
+    def exclude_inactive(self, exclude_inactive: bool):
+        """Sets the exclude_inactive of this JIRAMetricsRequest.
+
+        Value indicating whether issues with the last update older than
+        `date_from` should be ignored.
+
+        :param exclude_inactive: The exclude_inactive of this JIRAMetricsRequest.
+        """
+        self._exclude_inactive = exclude_inactive

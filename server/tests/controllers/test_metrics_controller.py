@@ -15,28 +15,28 @@ from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRe
     "metric, count", [
         (PullRequestMetricID.PR_WIP_TIME, 51),
         (PullRequestMetricID.PR_WIP_PENDING_COUNT, 0),
-        (PullRequestMetricID.PR_WIP_COUNT, 224),
-        (PullRequestMetricID.PR_WIP_COUNT_Q, 224),
+        (PullRequestMetricID.PR_WIP_COUNT, 51),
+        (PullRequestMetricID.PR_WIP_COUNT_Q, 51),
         (PullRequestMetricID.PR_REVIEW_TIME, 46),
         (PullRequestMetricID.PR_REVIEW_PENDING_COUNT, 0),
-        (PullRequestMetricID.PR_REVIEW_COUNT, 224),
-        (PullRequestMetricID.PR_REVIEW_COUNT_Q, 224),
+        (PullRequestMetricID.PR_REVIEW_COUNT, 46),
+        (PullRequestMetricID.PR_REVIEW_COUNT_Q, 46),
         (PullRequestMetricID.PR_MERGING_TIME, 51),
         (PullRequestMetricID.PR_MERGING_PENDING_COUNT, 0),
-        (PullRequestMetricID.PR_MERGING_COUNT, 224),
-        (PullRequestMetricID.PR_MERGING_COUNT_Q, 224),
+        (PullRequestMetricID.PR_MERGING_COUNT, 51),
+        (PullRequestMetricID.PR_MERGING_COUNT_Q, 51),
         (PullRequestMetricID.PR_RELEASE_TIME, 17),
         (PullRequestMetricID.PR_RELEASE_PENDING_COUNT, 189),
-        (PullRequestMetricID.PR_RELEASE_COUNT, 224),
-        (PullRequestMetricID.PR_RELEASE_COUNT_Q, 224),
+        (PullRequestMetricID.PR_RELEASE_COUNT, 17),
+        (PullRequestMetricID.PR_RELEASE_COUNT_Q, 17),
         (PullRequestMetricID.PR_LEAD_TIME, 17),
-        (PullRequestMetricID.PR_LEAD_COUNT, 224),
-        (PullRequestMetricID.PR_LEAD_COUNT_Q, 224),
+        (PullRequestMetricID.PR_LEAD_COUNT, 17),
+        (PullRequestMetricID.PR_LEAD_COUNT_Q, 17),
         (PullRequestMetricID.PR_CYCLE_TIME, 70),
-        (PullRequestMetricID.PR_CYCLE_COUNT, 224),
-        (PullRequestMetricID.PR_CYCLE_COUNT_Q, 224),
+        (PullRequestMetricID.PR_CYCLE_COUNT, 70),
+        (PullRequestMetricID.PR_CYCLE_COUNT_Q, 70),
         (PullRequestMetricID.PR_ALL_COUNT, 223),
-        (PullRequestMetricID.PR_FLOW_RATIO, 59),
+        (PullRequestMetricID.PR_FLOW_RATIO, 224),
         (PullRequestMetricID.PR_OPENED, 51),
         (PullRequestMetricID.PR_REVIEWED, 45),
         (PullRequestMetricID.PR_NOT_REVIEWED, 19),
@@ -45,8 +45,8 @@ from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRe
         (PullRequestMetricID.PR_CLOSED, 51),
         (PullRequestMetricID.PR_DONE, 23),
         (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME, 51),
-        (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT, 224),
-        (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT_Q, 224),
+        (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT, 51),
+        (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT_Q, 51),
         (PullRequestMetricID.PR_SIZE, 223),
     ],
 )
@@ -83,9 +83,14 @@ async def test_calc_metrics_prs_smoke(client, metric, count, headers, app, clien
         assert len(cm.calculated) == 1
         assert len(cm.calculated[0].values) > 0
         s = 0
+        is_int = "TIME" not in metric
         for val in cm.calculated[0].values:
             assert len(val.values) == 1
-            s += val.values[0] is not None
+            m = val.values[0]
+            if is_int:
+                s += m != 0 and m is not None
+            else:
+                s += m is not None
         assert s == count
 
 
@@ -1016,13 +1021,15 @@ async def test_release_metrics_smoke(client, headers):
         }
         assert model.granularity in body["granularities"]
         for mv in model.values:
-            exist = any(v is not None for v in mv.values)
+            exist = mv.values[model.metrics.index(ReleaseMetricID.TAG_RELEASE_AGE)] is not None
             for metric, value in zip(model.metrics, mv.values):
                 if "branch" in metric:
-                    assert value is None, metric
-                else:
-                    if exist:
-                        assert value is not None, metric
+                    if "avg" not in metric and metric != ReleaseMetricID.BRANCH_RELEASE_AGE:
+                        assert value == 0, metric
+                    else:
+                        assert value is None, metric
+                elif exist:
+                    assert value is not None, metric
         if model.granularity == "all":
             assert len(model.values) == 1
             assert any(v is not None for v in model.values[0].values)

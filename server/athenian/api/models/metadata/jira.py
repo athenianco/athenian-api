@@ -23,6 +23,8 @@ class Issue(Base):
 
     acc_id = Column(BigInteger, primary_key=True)
     id = Column(Text, primary_key=True)
+    project_id = Column(Text, nullable=False)
+    parent_id = Column(Text)
     key = Column(Text, nullable=False)
     title = Column(Text, nullable=False)
     type = Column(Text, nullable=False)
@@ -36,12 +38,12 @@ class Issue(Base):
     reporter_id = Column(Text, nullable=False)
     reporter_display_name = Column(Text, nullable=False)
     assignee_id = Column(Text)
-    assignee_display_name = Column(Text, nullable=False)
+    assignee_display_name = Column(Text)
     commenters_ids = Column(
         postgresql.ARRAY(BigInteger).with_variant(JSON(), sqlite.dialect.name))
     commenters_display_names = Column(
         postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
-    priority_id = Column(Text, nullable=False)
+    priority_id = Column(Text)  # TODO(vmarkovtsev): make it nullable=False
     priority_name = Column(Text, nullable=False)
 
 
@@ -51,3 +53,13 @@ class Component(Base):
     acc_id = Column(BigInteger, primary_key=True)
     id = Column(Text, primary_key=True)
     name = Column(Text, nullable=False)
+
+
+class User(Base):
+    __tablename__ = "user"
+
+    acc_id = Column(BigInteger, primary_key=True)
+    id = Column(Text, primary_key=True)
+    type = Column(Text, nullable=False)
+    display_name = Column(Text, nullable=False)
+    avatar_url = Column(Text, nullable=False)

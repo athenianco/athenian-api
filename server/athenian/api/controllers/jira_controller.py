@@ -16,9 +16,13 @@ from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_user_account_status
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
+from athenian.api.controllers.features.github.jira_metrics import JIRABinnedMetricCalculator
+from athenian.api.controllers.miners.github.jira import fetch_jira_issues
 from athenian.api.models.metadata.jira import Component, Issue
 from athenian.api.models.state.models import AccountJiraInstallation
-from athenian.api.models.web import FilterJIRAStuff, FoundJIRAStuff, InvalidRequestError, \
+from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinearMetricValues, \
+    FilterJIRAStuff, FoundJIRAStuff, \
+    InvalidRequestError, \
     JIRAEpic, JIRALabel, JIRAMetricsRequest, NoSourceDataError
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
@@ -91,7 +95,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     async def issue_flow():
         property_rows = await mdb.fetch_all(
             select([Issue.id, Issue.labels, Issue.components, Issue.type, Issue.updated,
-                    Issue.assignee_id, Issue.reporter_id, Issue.commenters_ids, Issue.priority_id])
+                    Issue.assignee_id, Issue.reporter_id])
+            # , Issue.commenters_ids, Issue.priority_id])
             .where(and_(Issue.acc_id == jira_id,
                         Issue.created < time_to,
                         or_(Issue.resolved.is_(None), Issue.resolved >= time_from),
@@ -100,9 +105,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             (r[Issue.components.key] or ()) for r in property_rows))
         people = set(r[Issue.reporter_id.key] for r in property_rows)
         people.update(r[Issue.assignee_id.key] for r in property_rows)
-        people.update(chain.from_iterable(r[Issue.commenters_ids.key] for r in property_rows))
-        priorities = set(r[Issue.priority_id.key] for r in property_rows)
-        _ = priorities
+        # people.update(chain.from_iterable(r[Issue.commenters_ids.key] for r in property_rows))
+        # priorities = set(r[Issue.priority_id.key] for r in property_rows)
 
         @sentry_span
         async def fetch_components():
@@ -170,7 +174,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         labels=labels,
         issue_types=types,
         priorities=[],
-        users={},
+        users=[],
     ))
 
 
@@ -181,7 +185,33 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
+    with sentry_sdk.start_span(op="sdb"):
+        async with request.sdb.connection() as conn:
+            await get_user_account_status(request.uid, filt.account, conn, request.cache)
+            jira_id = await get_jira_installation(filt.account, request.sdb, request.cache)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
-    mets = []
+
+    issues = await fetch_jira_issues(
+        jira_id,
+        time_intervals[0][0], time_intervals[0][-1], filt.exclude_inactive,
+        [p.lower() for p in (filt.priorities or [])],
+        [p.lower() for p in (filt.reporters or [])],
+        [p.lower() for p in (filt.assignees or [])],
+        [p.lower() for p in (filt.commenters or [])],
+        request.mdb, request.cache,
+    )
+    calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1])
+    metric_values = calc(issues, time_intervals)
+    mets = [
+        CalculatedJIRAMetricValues(granularity=granularity, values=[
+            CalculatedLinearMetricValues(date=dt.date(),
+                                         values=[v.value for v in vals],
+                                         confidence_mins=[v.confidence_min for v in vals],
+                                         confidence_maxs=[v.confidence_max for v in vals],
+                                         confidence_scores=[v.confidence_score() for v in vals])
+            for dt, vals in zip(ts, ts_values)
+        ])
+        for granularity, ts, ts_values in zip(filt.granularities, time_intervals, metric_values)
+    ]
     return model_response(mets)
