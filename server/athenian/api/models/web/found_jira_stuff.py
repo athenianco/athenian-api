@@ -3,6 +3,7 @@ from typing import Dict, List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_epic import JIRAEpic
 from athenian.api.models.web.jira_label import JIRALabel
+from athenian.api.models.web.jira_priority import JIRAPriority
 
 
 class FoundJIRAStuff(Model):
@@ -13,7 +14,7 @@ class FoundJIRAStuff(Model):
         "epics": List[JIRAEpic],
         "labels": List[JIRALabel],
         "issue_types": List[str],
-        "priorities": List[str],
+        "priorities": List[JIRAPriority],
         "users": Dict[str, str],
     }
     attribute_map = {
@@ -28,7 +29,7 @@ class FoundJIRAStuff(Model):
                  epics: Optional[List[JIRAEpic]] = None,
                  labels: Optional[List[JIRALabel]] = None,
                  issue_types: Optional[List[str]] = None,
-                 priorities: Optional[List[str]] = None,
+                 priorities: Optional[List[JIRAPriority]] = None,
                  users: Optional[Dict[str, str]] = None):
         """FoundJIRAStuff - a model defined in OpenAPI
 
@@ -106,7 +107,7 @@ class FoundJIRAStuff(Model):
         self._issue_types = issue_types
 
     @property
-    def priorities(self) -> List[str]:
+    def priorities(self) -> List[JIRAPriority]:
         """Gets the priorities of this FoundJIRAStuff.
 
         Issue priority names sorted by importance in ascending order.
@@ -116,7 +117,7 @@ class FoundJIRAStuff(Model):
         return self._priorities
 
     @priorities.setter
-    def priorities(self, priorities: List[str]):
+    def priorities(self, priorities: List[JIRAPriority]):
         """Sets the priorities of this FoundJIRAStuff.
 
         Issue priority names sorted by importance in ascending order.

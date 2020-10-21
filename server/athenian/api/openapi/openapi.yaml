@@ -4778,11 +4778,12 @@ components:
         - Story
         - Task
         priorities:
-        - Lowest
-        - Low
-        - Medium
-        - High
-        - Critical
+        - name: None
+          image: https://athenianco.atlassian.net/images/icons/priorities/trivial.svg
+          value: 0
+        - name: High
+          image: https://athenianco.atlassian.net/images/icons/priorities/high.svg
+          value: 5
         users:
         'jira/Vadim Markovtsev': https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/5de504edde32fb0d03a3b4e3/8c3ffc1b-2ac0-488e-ac55-295ff06f9e28/48
         'jira/Lou Marvin Caraig': https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/5ddec0b9be6c1f0d071ff82d/24b3b66a-a251-486c-ae1f-5daa954eba54/48
@@ -4803,7 +4804,7 @@ components:
         priorities:
           description: Issue priority names sorted by importance in ascending order.
           items:
-            type: string
+            $ref: '#/components/schemas/JIRAPriority'
           type: array
         users:
           description: Mentioned users in the found JIRA issues mapped to their avatar URLs.
@@ -4878,6 +4879,30 @@ components:
       - issues_count
       - last_used
       - title
+      type: object
+    JIRAPriority:
+      additionalProperties: false
+      description: JIRA issue priority details.
+      example:
+        name: High
+        image: https://athenianco.atlassian.net/images/icons/priorities/high.svg
+        value: 5
+      properties:
+        name:
+          description: Name of the priority.
+          type: string
+        image:
+          description: URL of the picture that indicates the priority.
+          format: url
+          type: string
+        value:
+          description: Measure of importance (bigger is more important).
+          minimum: 0
+          type: integer
+      required:
+      - image
+      - name
+      - value
       type: object
     FilterJIRAStuff:
       additionalProperties: false

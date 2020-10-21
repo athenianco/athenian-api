@@ -33,6 +33,16 @@ class Issue(Base):
     created = Column(TIMESTAMP(timezone=True), nullable=False)
     updated = Column(TIMESTAMP(timezone=True), nullable=False)
     resolved = Column(TIMESTAMP(timezone=True))
+    reporter_id = Column(Text, nullable=False)
+    reporter_display_name = Column(Text, nullable=False)
+    assignee_id = Column(Text)
+    assignee_display_name = Column(Text, nullable=False)
+    commenters_ids = Column(
+        postgresql.ARRAY(BigInteger).with_variant(JSON(), sqlite.dialect.name))
+    commenters_display_names = Column(
+        postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
+    priority_id = Column(Text, nullable=False)
+    priority_name = Column(Text, nullable=False)
 
 
 class Component(Base):

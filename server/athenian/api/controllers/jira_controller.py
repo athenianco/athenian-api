@@ -89,14 +89,20 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
     @sentry_span
     async def issue_flow():
-        label_rows = await mdb.fetch_all(
-            select([Issue.id, Issue.labels, Issue.components, Issue.type, Issue.updated])
+        property_rows = await mdb.fetch_all(
+            select([Issue.id, Issue.labels, Issue.components, Issue.type, Issue.updated,
+                    Issue.assignee_id, Issue.reporter_id, Issue.commenters_ids, Issue.priority_id])
             .where(and_(Issue.acc_id == jira_id,
                         Issue.created < time_to,
                         or_(Issue.resolved.is_(None), Issue.resolved >= time_from),
                         )))
         components = Counter(chain.from_iterable(
-            (r[Issue.components.key] or ()) for r in label_rows))
+            (r[Issue.components.key] or ()) for r in property_rows))
+        people = set(r[Issue.reporter_id.key] for r in property_rows)
+        people.update(r[Issue.assignee_id.key] for r in property_rows)
+        people.update(chain.from_iterable(r[Issue.commenters_ids.key] for r in property_rows))
+        priorities = set(r[Issue.priority_id.key] for r in property_rows)
+        _ = priorities
 
         @sentry_span
         async def fetch_components():
@@ -109,16 +115,17 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
         @sentry_span
         async def main_flow():
-            labels = Counter(chain.from_iterable((r[Issue.labels.key] or ()) for r in label_rows))
+            labels = Counter(chain.from_iterable(
+                (r[Issue.labels.key] or ()) for r in property_rows))
             labels = {k: JIRALabel(title=k, kind="regular", issues_count=v)
                       for k, v in labels.items()}
-            for row in label_rows:
+            for row in property_rows:
                 updated = row[Issue.updated.key]
                 for label in (row[Issue.labels.key] or ()):
                     label = labels[label]  # type: JIRALabel
                     if label.last_used is None or label.last_used < updated:
                         label.last_used = updated
-            types = sorted(set(r[Issue.type.key] for r in label_rows))
+            types = sorted(set(r[Issue.type.key] for r in property_rows))
             if mdb.url.dialect == "sqlite":
                 for label in labels.values():
                     label.last_used = label.last_used.replace(tzinfo=timezone.utc)
@@ -135,7 +142,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
             for row in component_names
         }
-        for row in label_rows:
+        for row in property_rows:
             updated = row[Issue.updated.key]
             for component in (row[Issue.components.key] or ()):
                 try:
