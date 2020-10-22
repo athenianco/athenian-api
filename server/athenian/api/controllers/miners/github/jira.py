@@ -1,14 +1,22 @@
+from datetime import datetime
 from itertools import chain
-from typing import List
+import pickle
+from typing import Collection, List, Optional
 
+import aiomcache
 import databases
+import numpy as np
+import pandas as pd
 from sqlalchemy import sql
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql import ClauseElement
 
+from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import Component, Issue
+from athenian.api.tracing import sentry_span
 
 
 async def generate_jira_prs_query(filters: List[ClauseElement],
@@ -93,3 +101,89 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
             _map.jira_id == _issue.id),
         PullRequest.node_id == _map.node_id,
     )).where(sql.and_(*filters))
+
+
+@sentry_span
+@cached(
+    exptime=5 * 60,  # 5 minutes
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda time_from, time_to, exclude_inactive, priorities, reporters, assignees, commenters, **_: (  # noqa
+        time_from.timestamp(), time_to.timestamp(),
+        exclude_inactive,
+        ",".join(sorted(priorities)),
+        ",".join(sorted(reporters)),
+        ",".join(sorted(assignees)),
+        ",".join(sorted(commenters)),
+    ),
+)
+async def fetch_jira_issues(account: int,
+                            time_from: datetime,
+                            time_to: datetime,
+                            exclude_inactive: bool,
+                            priorities: Collection[str],
+                            reporters: Collection[str],
+                            assignees: Collection[str],
+                            commenters: Collection[str],
+                            mdb: databases.Database,
+                            cache: Optional[aiomcache.Client],
+                            ) -> pd.DataFrame:
+    """
+    Load JIRA issues following the specified filters.
+
+    The aggregation is OR between the participation roles.
+
+    :param time_from: Issues should not be resolved before this timestamp.
+    :param time_to: Issues should be opened before this timestamp.
+    :param exclude_inactive: Issues must be updated after `time_from`.
+    :param priorities: List of lower-case priorities.
+    :param reporters: List of lower-case issue reporters.
+    :param assignees: List of lower-case issue assignees.
+    :param commenters: List of lower-case issue commenters.
+    """
+    postgres = mdb.url.dialect in ("postgres", "postgresql")
+    columns = [
+        Issue.created, Issue.resolved, Issue.updated, Issue.priority_name, Issue.epic_id,
+        Issue.status,
+    ]
+    and_filters = [
+        Issue.acc_id == account,
+        sql.func.coalesce(Issue.resolved >= time_from, sql.true()),
+        Issue.created < time_to,
+    ]
+    if exclude_inactive:
+        and_filters.append(Issue.updated >= time_from)
+    if priorities:
+        and_filters.append(sql.func.lower(Issue.priority_name).in_(priorities))
+    or_filters = []
+    if reporters and (postgres or not commenters):
+        or_filters.append(sql.func.lower(Issue.reporter_display_name).in_(reporters))
+    if assignees and (postgres or not commenters):
+        or_filters.append(sql.func.lower(Issue.assignee_display_name).in_(assignees))
+    if commenters:
+        if postgres:
+            or_filters.append(Issue.commenters_display_names.overlap(commenters))
+        else:
+            if reporters:
+                columns.append(Issue.reporter_display_name)
+            if assignees:
+                columns.append(Issue.assignee_display_name)
+            columns.append(Issue.commenters_display_names)
+    if or_filters:
+        query = sql.union(*(sql.select(columns).where(sql.and_(or_filter, *and_filters))
+                            for or_filter in or_filters))
+    else:
+        query = sql.select(columns).where(sql.and_(*and_filters))
+    df = await read_sql_query(query, mdb, columns)
+    if postgres or not commenters:
+        return df
+    passed = np.full(len(df), False)
+    if reporters:
+        passed |= df[Issue.reporter_display_name.key].str.lower().isin(reporters).values
+    if assignees:
+        passed |= df[Issue.assignee_display_name.key].str.lower().isin(assignees).values
+    # don't go hardcore vectorized here, we don't have to with SQLite
+    for i, issue_commenters in enumerate(df[Issue.commenters_display_names.key].values):
+        if len(np.intersect1d(issue_commenters, commenters)):
+            passed[i] = True
+    return df.take(np.nonzero(passed)[0])

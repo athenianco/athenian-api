@@ -937,9 +937,11 @@ async def test_pr_miner_jira_fetch(
         if not (pr_type := jira[Issue.type.key]).empty:
             types.add(pr_type.iloc[0])
     assert labels == {"enhancement", "new-charts", "metrics", "usability", "security",
-                      "api", "webapp", "data retrieval", "infrastructure"}
-    assert epics == {"DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"}
-    assert types == {"Task", "Story"}
+                      "api", "webapp", "data retrieval", "infrastructure", "reliability",
+                      "code-quality", "accuracy", "bug", "performance", "functionality",
+                      "sentry", "test"}
+    assert epics == {"DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140", "DEV-818", None}
+    assert types == {"Task", "Story", "Epic", "Bug"}
 
 
 @with_defer

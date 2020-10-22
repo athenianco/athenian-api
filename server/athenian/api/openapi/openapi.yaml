@@ -4778,14 +4778,19 @@ components:
         - Story
         - Task
         priorities:
-        - Lowest
-        - Low
-        - Medium
-        - High
-        - Critical
+        - name: None
+          image: https://athenianco.atlassian.net/images/icons/priorities/trivial.svg
+          value: 0
+        - name: High
+          image: https://athenianco.atlassian.net/images/icons/priorities/high.svg
+          value: 5
         users:
-        'jira/Vadim Markovtsev': https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/5de504edde32fb0d03a3b4e3/8c3ffc1b-2ac0-488e-ac55-295ff06f9e28/48
-        'jira/Lou Marvin Caraig': https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/5ddec0b9be6c1f0d071ff82d/24b3b66a-a251-486c-ae1f-5daa954eba54/48
+        - name: Vadim Markovtsev
+          avatar: https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/5de504edde32fb0d03a3b4e3/8c3ffc1b-2ac0-488e-ac55-295ff06f9e28/48
+          type: atlassian
+        - name: Lou Marvin Caraig
+          avatar: https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/5ddec0b9be6c1f0d071ff82d/24b3b66a-a251-486c-ae1f-5daa954eba54/48
+          type: atlassian
       properties:
         epics:
           items:
@@ -4803,13 +4808,13 @@ components:
         priorities:
           description: Issue priority names sorted by importance in ascending order.
           items:
-            type: string
+            $ref: '#/components/schemas/JIRAPriority'
           type: array
         users:
-          description: Mentioned users in the found JIRA issues mapped to their avatar URLs.
-          additionalProperties:
-            type: string
-          type: object
+          description: Mentioned users in the found JIRA issues.
+          items:
+            $ref: '#/components/schemas/JIRAUser'
+          type: array
       required:
       - epics
       - issue_types
@@ -4878,6 +4883,60 @@ components:
       - issues_count
       - last_used
       - title
+      type: object
+    JIRAPriority:
+      additionalProperties: false
+      description: JIRA issue priority details.
+      example:
+        name: High
+        image: https://athenianco.atlassian.net/images/icons/priorities/high.svg
+        value: 5
+      properties:
+        name:
+          description: Name of the priority.
+          type: string
+        image:
+          description: URL of the picture that indicates the priority.
+          format: url
+          type: string
+        value:
+          description: Measure of importance (bigger is more important).
+          minimum: 0
+          type: integer
+      required:
+      - image
+      - name
+      - value
+      type: object
+    JIRAUser:
+      additionalProperties: false
+      description: Details about a JIRA user.
+      example:
+        name: Vadim Markovtsev
+        avatar: https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/5de504edde32fb0d03a3b4e3/8c3ffc1b-2ac0-488e-ac55-295ff06f9e28/48
+        type: atlassian
+      properties:
+        name:
+          description: Full name of the user.
+          type: string
+        avatar:
+          description: User's profile picture URL.
+          format: url
+          type: string
+        type:
+          description: |-
+            * `atlassian` indicates a regular account backed by a human.
+            * `app` indicates a service account.
+            * `customer` indicates an external service desk account.
+          enum:
+          - atlassian
+          - app
+          - customer
+          type: string
+      required:
+      - avatar
+      - name
+      - type
       type: object
     FilterJIRAStuff:
       additionalProperties: false
@@ -5232,10 +5291,15 @@ components:
           items:
             $ref: '#/components/schemas/Granularity'
           type: array
+        exclude_inactive:
+          description: Value indicating whether issues with the last update older
+            than `date_from` should be ignored.
+          type: boolean
       required:
       - account
       - date_from
       - date_to
+      - exclude_inactive
       - granularities
       - metrics
       type: object

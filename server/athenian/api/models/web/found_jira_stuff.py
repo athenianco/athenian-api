@@ -1,8 +1,10 @@
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_epic import JIRAEpic
 from athenian.api.models.web.jira_label import JIRALabel
+from athenian.api.models.web.jira_priority import JIRAPriority
+from athenian.api.models.web.jira_user import JIRAUser
 
 
 class FoundJIRAStuff(Model):
@@ -13,8 +15,8 @@ class FoundJIRAStuff(Model):
         "epics": List[JIRAEpic],
         "labels": List[JIRALabel],
         "issue_types": List[str],
-        "priorities": List[str],
-        "users": Dict[str, str],
+        "priorities": List[JIRAPriority],
+        "users": List[JIRAUser],
     }
     attribute_map = {
         "epics": "epics",
@@ -28,8 +30,8 @@ class FoundJIRAStuff(Model):
                  epics: Optional[List[JIRAEpic]] = None,
                  labels: Optional[List[JIRALabel]] = None,
                  issue_types: Optional[List[str]] = None,
-                 priorities: Optional[List[str]] = None,
-                 users: Optional[Dict[str, str]] = None):
+                 priorities: Optional[List[JIRAPriority]] = None,
+                 users: Optional[List[JIRAUser]] = None):
         """FoundJIRAStuff - a model defined in OpenAPI
 
         :param epics: The epics of this FoundJIRAStuff.
@@ -106,7 +108,7 @@ class FoundJIRAStuff(Model):
         self._issue_types = issue_types
 
     @property
-    def priorities(self) -> List[str]:
+    def priorities(self) -> List[JIRAPriority]:
         """Gets the priorities of this FoundJIRAStuff.
 
         Issue priority names sorted by importance in ascending order.
@@ -116,7 +118,7 @@ class FoundJIRAStuff(Model):
         return self._priorities
 
     @priorities.setter
-    def priorities(self, priorities: List[str]):
+    def priorities(self, priorities: List[JIRAPriority]):
         """Sets the priorities of this FoundJIRAStuff.
 
         Issue priority names sorted by importance in ascending order.
@@ -129,20 +131,20 @@ class FoundJIRAStuff(Model):
         self._priorities = priorities
 
     @property
-    def users(self) -> Dict[str, str]:
+    def users(self) -> List[JIRAUser]:
         """Gets the users of this FoundJIRAStuff.
 
-        Mentioned users in the found JIRA issues mapped to their avatar URLs.
+        Mentioned users in the found JIRA issues.
 
         :return: The users of this FoundJIRAStuff.
         """
         return self._users
 
     @users.setter
-    def users(self, users: Dict[str, str]):
+    def users(self, users: List[JIRAUser]):
         """Sets the users of this FoundJIRAStuff.
 
-        Mentioned users in the found JIRA issues mapped to their avatar URLs.
+        Mentioned users in the found JIRA issues.
 
         :param users: The users of this FoundJIRAStuff.
         """

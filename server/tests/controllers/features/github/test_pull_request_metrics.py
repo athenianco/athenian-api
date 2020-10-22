@@ -172,7 +172,8 @@ def test_pull_request_opened_no(pr_samples):  # noqa: F811
     calc(prs, dt64arr(time_from), dt64arr(time_to), [np.arange(len(prs))])
     assert len(prs) > 0
     m = calc.values[0][0]
-    assert not m.exists
+    assert m.exists
+    assert m.value == 0
 
 
 def test_pull_request_closed_no(pr_samples):  # noqa: F811
@@ -184,8 +185,10 @@ def test_pull_request_closed_no(pr_samples):  # noqa: F811
     args = prs, dt64arr(time_from), dt64arr(time_to), [np.arange(len(prs))]
     calc_closed(*args)
     calc_released(*args)
-    assert not calc_closed.values[0][0].exists
-    assert not calc_released.values[0][0].exists
+    assert calc_closed.values[0][0].exists
+    assert calc_closed.values[0][0].value == 0
+    assert calc_released.values[0][0].exists
+    assert calc_released.values[0][0].value == 0
 
 
 def test_pull_request_flow_ratio(pr_samples):  # noqa: F811

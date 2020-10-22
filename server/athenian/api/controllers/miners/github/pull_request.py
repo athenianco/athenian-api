@@ -435,7 +435,7 @@ class PullRequestMiner:
                     PullRequest, sql.join(
                         _map, sql.join(_issue, _issue_epic, sql.and_(
                             _issue.epic_id == _issue_epic.id,
-                            _issue.acc_id == _issue_epic.acc_id)),
+                            _issue.acc_id == _issue_epic.acc_id), isouter=True),
                         sql.and_(_map.jira_id == _issue.id,
                                  _map.jira_acc == _issue.acc_id)),
                     PullRequest.node_id == _map.node_id,

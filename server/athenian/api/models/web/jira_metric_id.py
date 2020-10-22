@@ -1,9 +1,9 @@
-from athenian.api.models.web.base_model_ import Enum
+from athenian.api.models.web.base_model_ import Enum, Model
 
 
-class JIRAMetricID(Enum):
+class JIRAMetricID(Model, metaclass=Enum):
     """Currently supported JIRA activity metrics."""
 
-    OPEN = "jira-bug-open"
-    RESOLVED = "jira-bug-resolved"
-    RAISED = "jira-bug-raised"
+    BUG_OPEN = "jira-bug-open"
+    BUG_RESOLVED = "jira-bug-resolved"
+    BUG_RAISED = "jira-bug-raised"
