@@ -590,6 +590,8 @@ async def _match_releases_by_branch(repos: Iterable[str],
     for repo in branches_matched:
         commits = first_commits.take(
             np.where(first_commits[PushCommit.repository_full_name.key] == repo)[0])
+        if commits.empty:
+            continue
         gh_merge = ((commits[PushCommit.committer_name.key] == "GitHub")
                     & (commits[PushCommit.committer_email.key] == "noreply@github.com"))
         commits[PushCommit.author_login.key].where(
@@ -651,12 +653,24 @@ async def _fetch_commits(commit_shas: Sequence[str],
                          time_to: datetime,
                          db: databases.Database,
                          cache: Optional[aiomcache.Client]) -> pd.DataFrame:
-    return await read_sql_query(
-        select([PushCommit])
-        .where(and_(PushCommit.sha.in_(commit_shas),
-                    PushCommit.committed_date.between(time_from, time_to)))
-        .order_by(desc(PushCommit.committed_date)),
-        db, PushCommit)
+    if (min(time_to, datetime.now(timezone.utc)) - time_from) > timedelta(hours=6):
+        query = select([PushCommit]) \
+            .where(and_(PushCommit.sha.in_(commit_shas),
+                        PushCommit.committed_date.between(time_from, time_to))) \
+            .order_by(desc(PushCommit.committed_date))
+    else:
+        # Postgres planner sucks in this case and we have to be inventive
+        rows = await db.fetch_all(
+            select([NodeCommit.id])
+            .where(and_(PushCommit.sha.in_any_values(commit_shas),
+                        PushCommit.committed_date.between(time_from, time_to))))
+        if not rows:
+            return pd.DataFrame(columns=[c.key for c in PushCommit.__table__.columns])
+        ids = [r[0] for r in rows]
+        query = select([PushCommit]) \
+            .where(PushCommit.node_id.in_(ids)) \
+            .order_by(desc(PushCommit.committed_date))
+    return await read_sql_query(query, db, PushCommit)
 
 
 @sentry_span
