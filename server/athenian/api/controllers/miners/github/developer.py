@@ -12,11 +12,13 @@ import databases
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, distinct, func, join, or_, select
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.jira import generate_jira_prs_query
 from athenian.api.controllers.miners.github.pull_request import ReviewResolution
 from athenian.api.controllers.miners.github.release import load_releases
 from athenian.api.controllers.settings import ReleaseMatchSetting
@@ -130,7 +132,8 @@ async def _set_prs_created(stats_by_repo_by_dev: StatsByRepoByDev,
                            pdb: databases.Database,
                            cache: Optional[aiomcache.Client]) -> None:
     prs = await _fetch_developer_created_prs(
-        dev_ids.values(), repo_ids.values(), repogroups, labels, time_from, time_to, mdb, cache)
+        dev_ids.values(), repo_ids.values(), repogroups, labels, jira,
+        time_from, time_to, mdb, cache)
     _set_stats(DeveloperTopic.prs_created, prs["count"], repogroups, stats_by_repo_by_dev)
 
 
@@ -149,7 +152,8 @@ async def _set_prs_reviewed(stats_by_repo_by_dev: StatsByRepoByDev,
                             pdb: databases.Database,
                             cache: Optional[aiomcache.Client]) -> None:
     prs = await _fetch_developer_reviewed_prs(
-        dev_ids.values(), repo_ids.values(), repogroups, labels, time_from, time_to, mdb, cache)
+        dev_ids.values(), repo_ids.values(), repogroups, labels, jira,
+        time_from, time_to, mdb, cache)
     _set_stats(DeveloperTopic.prs_reviewed, prs["count"], repogroups, stats_by_repo_by_dev)
 
 
@@ -168,7 +172,8 @@ async def _set_prs_merged(stats_by_repo_by_dev: StatsByRepoByDev,
                           pdb: databases.Database,
                           cache: Optional[aiomcache.Client]) -> None:
     prs = await _fetch_developer_merged_prs(
-        dev_ids.values(), repo_ids.values(), repogroups, labels, time_from, time_to, mdb, cache)
+        dev_ids.values(), repo_ids.values(), repogroups, labels, jira,
+        time_from, time_to, mdb, cache)
     _set_stats(DeveloperTopic.prs_merged, prs["count"], repogroups, stats_by_repo_by_dev)
 
 
@@ -218,7 +223,8 @@ async def _set_reviews(stats_by_repo_by_dev: StatsByRepoByDev,
                        pdb: databases.Database,
                        cache: Optional[aiomcache.Client]) -> None:
     reviews = await _fetch_developer_reviews(
-        dev_ids.values(), repo_ids.values(), repogroups, labels, time_from, time_to, mdb, cache)
+        dev_ids.values(), repo_ids.values(), repogroups, labels, jira,
+        time_from, time_to, mdb, cache)
     if reviews.empty:
         return
     if DeveloperTopic.reviews in topics:
@@ -270,14 +276,14 @@ async def _set_pr_comments(stats_by_repo_by_dev: StatsByRepoByDev,
     if DeveloperTopic.review_pr_comments in topics or DeveloperTopic.pr_comments in topics:
         review_comments = await _fetch_developer_review_comments(
             dev_ids.values(), repo_ids.values(), repogroups,
-            labels, time_from, time_to, mdb, cache)
+            labels, jira, time_from, time_to, mdb, cache)
         if DeveloperTopic.review_pr_comments in topics:
             _set_stats(DeveloperTopic.review_pr_comments, review_comments["count"],
                        repogroups, stats_by_repo_by_dev)
     if DeveloperTopic.regular_pr_comments in topics or DeveloperTopic.pr_comments in topics:
         regular_pr_comments = await _fetch_developer_regular_pr_comments(
             dev_ids.values(), repo_ids.values(), repogroups,
-            labels, time_from, time_to, mdb, cache)
+            labels, jira, time_from, time_to, mdb, cache)
         if DeveloperTopic.regular_pr_comments in topics:
             _set_stats(DeveloperTopic.regular_pr_comments, regular_pr_comments["count"],
                        repogroups, stats_by_repo_by_dev)
@@ -427,6 +433,52 @@ async def _fetch_developer_commits(devs: Iterable[str],
     return df
 
 
+async def _fetch_developer_timestamp_prs(attr_filter: InstrumentedAttribute,
+                                         attr_user: InstrumentedAttribute,
+                                         devs: Iterable[str],
+                                         repos: Iterable[str],
+                                         repogroups: bool,
+                                         labels: LabelFilter,
+                                         jira: JIRAFilter,
+                                         time_from: datetime,
+                                         time_to: datetime,
+                                         mdb: databases.Database,
+                                         ) -> pd.DataFrame:
+    selected = [attr_user, func.count(PullRequest.node_id).label("count")]
+    group_by = [attr_user]
+    if repogroups:
+        selected.insert(0, PullRequest.repository_node_id)
+        group_by.insert(0, PullRequest.repository_node_id)
+    filters = [
+        attr_filter.between(time_from, time_to),
+        attr_user.in_(devs),
+        PullRequest.repository_node_id.in_(repos),
+    ]
+    if labels:
+        filters.extend([
+            func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
+            or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
+                PullRequestLabel.name.is_(None)) if labels.exclude else True,
+        ])
+        seed = join(
+            PullRequest, PullRequestLabel,
+            PullRequest.node_id == PullRequestLabel.pull_request_node_id,
+            isouter=not labels.include,
+        )
+        if jira:
+            query = await generate_jira_prs_query(filters, jira, mdb, columns=selected, seed=seed)
+        else:
+            query = select(selected).select_from(seed).where(and_(*filters))
+    elif jira:
+        query = await generate_jira_prs_query(filters, jira, mdb, columns=selected)
+    else:
+        query = select(selected).where(and_(*filters))
+    df = await read_sql_query(
+        query.group_by(*group_by), mdb, [c.key for c in selected], index=[c.key for c in group_by])
+    df.fillna(0, inplace=True, downcast="infer")
+    return df
+
+
 @cached(
     exptime=CACHE_EXPIRATION_TIME,
     serialize=pickle.dumps,
@@ -440,44 +492,16 @@ async def _fetch_developer_created_prs(devs: Iterable[str],
                                        repos: Iterable[str],
                                        repogroups: bool,
                                        labels: LabelFilter,
+                                       jira: JIRAFilter,
                                        time_from: datetime,
                                        time_to: datetime,
                                        mdb: databases.Database,
                                        cache: Optional[aiomcache.Client],
                                        ) -> pd.DataFrame:
-    selected = [PullRequest.user_node_id, func.count(PullRequest.node_id).label("count")]
-    group_by = [PullRequest.user_node_id]
-    if repogroups:
-        selected.insert(0, PullRequest.repository_node_id)
-        group_by.insert(0, PullRequest.repository_node_id)
-    query = select(selected)
-    if labels:
-        query = (
-            query.select_from(join(
-                PullRequest, PullRequestLabel,
-                PullRequest.node_id == PullRequestLabel.pull_request_node_id,
-                isouter=not labels.include,
-            )).where(and_(
-                PullRequest.created_at.between(time_from, time_to),
-                PullRequest.user_node_id.in_(devs),
-                PullRequest.repository_node_id.in_(repos),
-                func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
-                or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
-                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
-            ))
-        )
-    else:
-        query = (
-            query.where(and_(
-                PullRequest.created_at.between(time_from, time_to),
-                PullRequest.user_node_id.in_(devs),
-                PullRequest.repository_node_id.in_(repos),
-            ))
-        )
-    df = await read_sql_query(
-        query.group_by(*group_by), mdb, [c.key for c in selected], index=[c.key for c in group_by])
-    df.fillna(0, inplace=True, downcast="infer")
-    return df
+    return await _fetch_developer_timestamp_prs(
+        PullRequest.created_at, PullRequest.user_node_id,
+        devs, repos, repogroups, labels, jira, time_from, time_to, mdb,
+    )
 
 
 @cached(
@@ -493,40 +517,60 @@ async def _fetch_developer_merged_prs(devs: Iterable[str],
                                       repos: Iterable[str],
                                       repogroups: bool,
                                       labels: LabelFilter,
+                                      jira: JIRAFilter,
                                       time_from: datetime,
                                       time_to: datetime,
                                       mdb: databases.Database,
                                       cache: Optional[aiomcache.Client],
                                       ) -> pd.DataFrame:
-    selected = [PullRequest.merged_by, func.count(PullRequest.merged_at).label("count")]
-    group_by = [PullRequest.merged_by]
+    return await _fetch_developer_timestamp_prs(
+        PullRequest.merged_at, PullRequest.merged_by,
+        devs, repos, repogroups, labels, jira, time_from, time_to, mdb,
+    )
+
+
+async def _fetch_developer_review_common(selected: List[InstrumentedAttribute],
+                                         group_by: List[InstrumentedAttribute],
+                                         devs: Iterable[str],
+                                         repos: Iterable[str],
+                                         repogroups: bool,
+                                         labels: LabelFilter,
+                                         jira: JIRAFilter,
+                                         time_from: datetime,
+                                         time_to: datetime,
+                                         mdb: databases.Database,
+                                         ) -> pd.DataFrame:
     if repogroups:
-        selected.insert(0, PullRequest.repository_node_id)
-        group_by.insert(0, PullRequest.repository_node_id)
-    query = select(selected)
+        selected.insert(0, PullRequestReview.repository_node_id)
+        group_by.insert(0, PullRequestReview.repository_node_id)
+    filters = [
+        PullRequestReview.submitted_at.between(time_from, time_to),
+        PullRequestReview.user_node_id.in_(devs),
+        PullRequestReview.repository_node_id.in_(repos),
+    ]
     if labels:
-        query = (
-            query.select_from(join(
-                PullRequest, PullRequestLabel,
-                PullRequest.node_id == PullRequestLabel.pull_request_node_id,
-                isouter=not labels.include,
-            )).where(and_(
-                PullRequest.merged_at.between(time_from, time_to),
-                PullRequest.merged_by.in_(devs),
-                PullRequest.repository_node_id.in_(repos),
-                func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
-                or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
-                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
-            ))
+        filters.extend([
+            func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
+            or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
+                PullRequestLabel.name.is_(None)) if labels.exclude else True,
+        ])
+        seed = join(
+            PullRequestReview, PullRequestLabel,
+            PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+            isouter=not labels.include,
         )
+        if jira:
+            query = await generate_jira_prs_query(
+                filters, jira, mdb, columns=selected, seed=seed,
+                on=PullRequestReview.pull_request_node_id)
+        else:
+            query = select(selected).select_from(seed).where(and_(*filters))
+    elif jira:
+        query = await generate_jira_prs_query(
+            filters, jira, mdb, columns=selected, seed=PullRequestReview,
+            on=PullRequestReview.pull_request_node_id)
     else:
-        query = (
-            query.where(and_(
-                PullRequest.merged_at.between(time_from, time_to),
-                PullRequest.merged_by.in_(devs),
-                PullRequest.repository_node_id.in_(repos),
-            ))
-        )
+        query = select(selected).where(and_(*filters))
     df = await read_sql_query(
         query.group_by(*group_by), mdb, [c.key for c in selected], index=[c.key for c in group_by])
     df.fillna(0, inplace=True, downcast="infer")
@@ -546,45 +590,17 @@ async def _fetch_developer_reviewed_prs(devs: Iterable[str],
                                         repos: Iterable[str],
                                         repogroups: bool,
                                         labels: LabelFilter,
+                                        jira: JIRAFilter,
                                         time_from: datetime,
                                         time_to: datetime,
-                                        db: databases.Database,
+                                        mdb: databases.Database,
                                         cache: Optional[aiomcache.Client],
                                         ) -> pd.DataFrame:
     selected = [PullRequestReview.user_node_id,
                 func.count(distinct(PullRequestReview.pull_request_node_id)).label("count")]
     group_by = [PullRequestReview.user_node_id]
-    if repogroups:
-        selected.insert(0, PullRequestReview.repository_node_id)
-        group_by.insert(0, PullRequestReview.repository_node_id)
-    query = select(selected)
-    if labels:
-        query = (
-            query.select_from(join(
-                PullRequestReview, PullRequestLabel,
-                PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id,
-                isouter=not labels.include,
-            )).where(and_(
-                PullRequestReview.submitted_at.between(time_from, time_to),
-                PullRequestReview.user_node_id.in_(devs),
-                PullRequestReview.repository_node_id.in_(repos),
-                func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
-                or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
-                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
-            ))
-        )
-    else:
-        query = (
-            query.where(and_(
-                PullRequestReview.submitted_at.between(time_from, time_to),
-                PullRequestReview.user_node_id.in_(devs),
-                PullRequestReview.repository_node_id.in_(repos),
-            ))
-        )
-    df = await read_sql_query(
-        query.group_by(*group_by), db, [c.key for c in selected], index=[c.key for c in group_by])
-    df.fillna(0, inplace=True, downcast="infer")
-    return df
+    return await _fetch_developer_review_common(
+        selected, group_by, devs, repos, repogroups, labels, jira, time_from, time_to, mdb)
 
 
 @cached(
@@ -600,45 +616,17 @@ async def _fetch_developer_reviews(devs: Iterable[str],
                                    repos: Iterable[str],
                                    repogroups: bool,
                                    labels: LabelFilter,
+                                   jira: JIRAFilter,
                                    time_from: datetime,
                                    time_to: datetime,
-                                   db: databases.Database,
+                                   mdb: databases.Database,
                                    cache: Optional[aiomcache.Client],
                                    ) -> pd.DataFrame:
     selected = [PullRequestReview.user_node_id, PullRequestReview.state,
                 func.count(PullRequestReview.node_id).label("count")]
     group_by = [PullRequestReview.user_node_id, PullRequestReview.state]
-    if repogroups:
-        selected.insert(0, PullRequestReview.repository_node_id)
-        group_by.insert(0, PullRequestReview.repository_node_id)
-    query = select(selected)
-    if labels:
-        query = (
-            query.select_from(join(
-                PullRequestReview, PullRequestLabel,
-                PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id,
-                isouter=not labels.include,
-            )).where(and_(
-                PullRequestReview.submitted_at.between(time_from, time_to),
-                PullRequestReview.user_node_id.in_(devs),
-                PullRequestReview.repository_node_id.in_(repos),
-                func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
-                or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
-                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
-            ))
-        )
-    else:
-        query = (
-            query.where(and_(
-                PullRequestReview.submitted_at.between(time_from, time_to),
-                PullRequestReview.user_node_id.in_(devs),
-                PullRequestReview.repository_node_id.in_(repos),
-            ))
-        )
-    df = await read_sql_query(
-        query.group_by(*group_by), db, [c.key for c in selected], index=[c.key for c in group_by])
-    df.fillna(0, inplace=True, downcast="infer")
-    return df
+    return await _fetch_developer_review_common(
+        selected, group_by, devs, repos, repogroups, labels, jira, time_from, time_to, mdb)
 
 
 @cached(
@@ -654,9 +642,10 @@ async def _fetch_developer_review_comments(devs: Iterable[str],
                                            repos: Iterable[str],
                                            repogroups: bool,
                                            labels: LabelFilter,
+                                           jira: JIRAFilter,
                                            time_from: datetime,
                                            time_to: datetime,
-                                           db: databases.Database,
+                                           mdb: databases.Database,
                                            cache: Optional[aiomcache.Client],
                                            ) -> pd.DataFrame:
     selected = [PullRequestReviewComment.user_node_id,
@@ -665,32 +654,36 @@ async def _fetch_developer_review_comments(devs: Iterable[str],
     if repogroups:
         selected.insert(0, PullRequestReviewComment.repository_node_id)
         group_by.insert(0, PullRequestReviewComment.repository_node_id)
-    query = select(selected)
+    filters = [
+        PullRequestReviewComment.created_at.between(time_from, time_to),
+        PullRequestReviewComment.user_node_id.in_(devs),
+        PullRequestReviewComment.repository_node_id.in_(repos),
+    ]
     if labels:
-        query = (
-            query.select_from(join(
-                PullRequestReviewComment, PullRequestLabel,
-                PullRequestReviewComment.pull_request_node_id == PullRequestLabel.pull_request_node_id,  # noqa
-                isouter=not labels.include,
-            )).where(and_(
-                PullRequestReviewComment.created_at.between(time_from, time_to),
-                PullRequestReviewComment.user_node_id.in_(devs),
-                PullRequestReviewComment.repository_node_id.in_(repos),
-                func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
-                or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
-                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
-            ))
+        filters.extend([
+            func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
+            or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
+                PullRequestLabel.name.is_(None)) if labels.exclude else True,
+        ])
+        seed = join(
+            PullRequestReviewComment, PullRequestLabel,
+            PullRequestReviewComment.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+            isouter=not labels.include,
         )
+        if jira:
+            query = await generate_jira_prs_query(
+                filters, jira, mdb, columns=selected, seed=seed,
+                on=PullRequestReviewComment.pull_request_node_id)
+        else:
+            query = select(selected).select_from(seed).where(and_(*filters))
+    elif jira:
+        query = await generate_jira_prs_query(
+            filters, jira, mdb, columns=selected, seed=PullRequestReviewComment,
+            on=PullRequestReviewComment.pull_request_node_id)
     else:
-        query = (
-            query.where(and_(
-                PullRequestReviewComment.created_at.between(time_from, time_to),
-                PullRequestReviewComment.user_node_id.in_(devs),
-                PullRequestReviewComment.repository_node_id.in_(repos),
-            ))
-        )
+        query = select(selected).where(and_(*filters))
     df = await read_sql_query(
-        query.group_by(*group_by), db, [c.key for c in selected], index=[c.key for c in group_by])
+        query.group_by(*group_by), mdb, [c.key for c in selected], index=[c.key for c in group_by])
     df.fillna(0, inplace=True, downcast="infer")
     return df
 
@@ -708,9 +701,10 @@ async def _fetch_developer_regular_pr_comments(devs: Iterable[str],
                                                repos: Iterable[str],
                                                repogroups: bool,
                                                labels: LabelFilter,
+                                               jira: JIRAFilter,
                                                time_from: datetime,
                                                time_to: datetime,
-                                               db: databases.Database,
+                                               mdb: databases.Database,
                                                cache: Optional[aiomcache.Client],
                                                ) -> pd.DataFrame:
     selected = [PullRequestComment.user_node_id,
@@ -719,31 +713,35 @@ async def _fetch_developer_regular_pr_comments(devs: Iterable[str],
     if repogroups:
         selected.insert(0, PullRequestComment.repository_node_id)
         group_by.insert(0, PullRequestComment.repository_node_id)
-    query = select(selected)
+    filters = [
+        PullRequestComment.created_at.between(time_from, time_to),
+        PullRequestComment.user_node_id.in_(devs),
+        PullRequestComment.repository_node_id.in_(repos),
+    ]
     if labels:
-        query = (
-            query.select_from(join(
-                PullRequestComment, PullRequestLabel,
-                PullRequestComment.pull_request_node_id == PullRequestLabel.pull_request_node_id,
-                isouter=not labels.include,
-            )).where(and_(
-                PullRequestComment.created_at.between(time_from, time_to),
-                PullRequestComment.user_node_id.in_(devs),
-                PullRequestComment.repository_node_id.in_(repos),
-                func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
-                or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
-                    PullRequestLabel.name.is_(None)) if labels.exclude else True,
-            ))
+        filters.extend([
+            func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
+            or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
+                PullRequestLabel.name.is_(None)) if labels.exclude else True,
+        ])
+        seed = join(
+            PullRequestComment, PullRequestLabel,
+            PullRequestComment.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+            isouter=not labels.include,
         )
+        if jira:
+            query = await generate_jira_prs_query(
+                filters, jira, mdb, columns=selected, seed=seed,
+                on=PullRequestComment.pull_request_node_id)
+        else:
+            query = select(selected).select_from(seed).where(and_(*filters))
+    elif jira:
+        query = await generate_jira_prs_query(
+            filters, jira, mdb, columns=selected, seed=PullRequestComment,
+            on=PullRequestComment.pull_request_node_id)
     else:
-        query = (
-            query.where(and_(
-                PullRequestComment.created_at.between(time_from, time_to),
-                PullRequestComment.user_node_id.in_(devs),
-                PullRequestComment.repository_node_id.in_(repos),
-            ))
-        )
+        query = select(selected).where(and_(*filters))
     df = await read_sql_query(
-        query.group_by(*group_by), db, [c.key for c in selected], index=[c.key for c in group_by])
+        query.group_by(*group_by), mdb, [c.key for c in selected], index=[c.key for c in group_by])
     df.fillna(0, inplace=True, downcast="infer")
     return df

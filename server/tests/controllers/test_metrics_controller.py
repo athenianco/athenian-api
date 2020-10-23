@@ -777,6 +777,105 @@ async def test_developer_metrics_single(client, headers, metric, value):
     assert result.calculated[0].values == [[value]]
 
 
+developer_metric_mcuadros_jira_stats = {
+    "dev-prs-created": 3,
+    "dev-prs-reviewed": 11,
+    "dev-prs-merged": 42,
+    "dev-reviews": 23,
+    "dev-review-approvals": 7,
+    "dev-review-rejections": 3,
+    "dev-review-neutrals": 13,
+    "dev-pr-comments": 43,
+    "dev-regular-pr-comments": 24,
+    "dev-review-pr-comments": 19,
+}
+
+
+@pytest.mark.parametrize("metric, value", list(developer_metric_mcuadros_jira_stats.items()))
+async def test_developer_metrics_jira_single(client, headers, metric, value):
+    body = {
+        "account": 1,
+        "date_from": "2016-01-12",
+        "date_to": "2020-03-01",
+        "for": [
+            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"],
+             "jira": {
+                 "labels_include": [
+                     "API", "Webapp", "accounts", "bug", "code-quality", "discarded",
+                     "discussion", "feature", "functionality", "internal-story", "needs-specs",
+                     "onboarding", "performance", "user-story", "webapp",
+                 ],
+            }},
+        ],
+        "metrics": [metric],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert result.metrics == [metric]
+    assert result.date_from == date(year=2016, month=1, day=12)
+    assert result.date_to == date(year=2020, month=3, day=1)
+    assert len(result.calculated) == 1
+    assert result.calculated[0].for_.repositories == ["{1}"]
+    assert result.calculated[0].for_.developers == ["github.com/mcuadros"]
+    assert result.calculated[0].values == [[value]]
+
+
+developer_metric_mcuadros_jira_labels_stats = {
+    "dev-prs-created": 0,
+    "dev-prs-reviewed": 0,
+    "dev-prs-merged": 1,
+    "dev-reviews": 0,
+    "dev-review-approvals": 0,
+    "dev-review-rejections": 0,
+    "dev-review-neutrals": 0,
+    "dev-pr-comments": 0,
+    "dev-regular-pr-comments": 0,
+    "dev-review-pr-comments": 0,
+}
+
+
+@pytest.mark.parametrize("metric, value",
+                         list(developer_metric_mcuadros_jira_labels_stats.items()))
+async def test_developer_metrics_jira_labels_single(client, headers, metric, value):
+    body = {
+        "account": 1,
+        "date_from": "2016-01-12",
+        "date_to": "2020-03-01",
+        "for": [
+            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"],
+             "labels_include": ["enhancement", "bug", "plumbing", "performance", "ssh",
+                                "documentation", "windows"],
+             "jira": {
+                 "labels_include": [
+                     "API", "Webapp", "accounts", "bug", "code-quality", "discarded",
+                     "discussion", "feature", "functionality", "internal-story", "needs-specs",
+                     "onboarding", "performance", "user-story", "webapp",
+                 ],
+            }},
+        ],
+        "metrics": [metric],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result: CalculatedDeveloperMetrics
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert result.metrics == [metric]
+    assert result.date_from == date(year=2016, month=1, day=12)
+    assert result.date_to == date(year=2020, month=3, day=1)
+    assert len(result.calculated) == 1
+    assert result.calculated[0].for_.repositories == ["{1}"]
+    assert result.calculated[0].for_.developers == ["github.com/mcuadros"]
+    assert result.calculated[0].values == [[value]]
+
+
 @pytest.mark.parametrize("dev", ["mcuadros", "vmarkovtsev", "xxx", "EmrysMyrddin"])
 async def test_developer_metrics_all(client, headers, dev):
     body = {

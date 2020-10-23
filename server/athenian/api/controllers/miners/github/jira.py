@@ -22,8 +22,16 @@ from athenian.api.tracing import sentry_span
 async def generate_jira_prs_query(filters: List[ClauseElement],
                                   jira: JIRAFilter,
                                   mdb: databases.Database,
-                                  columns=PullRequest) -> sql.Select:
-    """Produce SQLAlchemy statement to fetch PRs that satisfy JIRA conditions."""
+                                  columns=PullRequest,
+                                  seed=PullRequest,
+                                  on=PullRequest.node_id) -> sql.Select:
+    """
+    Produce SQLAlchemy statement to fetch PRs that satisfy JIRA conditions.
+
+    :param filters: Extra WHERE conditions.
+    :param columns: SELECT these columns.
+    :param seed: JOIN with this object.
+    """
     assert jira
     if columns is PullRequest:
         columns = [PullRequest]
@@ -90,16 +98,16 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
         filters.append(sql.func.lower(_issue.type).in_(jira.issue_types))
     if not jira.epics:
         return sql.select(columns).select_from(sql.join(
-            PullRequest, sql.join(_map, _issue, _map.jira_id == _issue.id),
-            PullRequest.node_id == _map.node_id,
+            seed, sql.join(_map, _issue, _map.jira_id == _issue.id),
+            on == _map.node_id,
         )).where(sql.and_(*filters))
     _issue_epic = aliased(Issue, name="e")
     filters.append(_issue_epic.key.in_(jira.epics))
     return sql.select(columns).select_from(sql.join(
-        PullRequest, sql.join(
+        seed, sql.join(
             _map, sql.join(_issue, _issue_epic, _issue.epic_id == _issue_epic.id),
             _map.jira_id == _issue.id),
-        PullRequest.node_id == _map.node_id,
+        on == _map.node_id,
     )).where(sql.and_(*filters))
 
 
