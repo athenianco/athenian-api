@@ -10,7 +10,7 @@ from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinear
 
 async def test_filter_jira_smoke(client, headers):
     body = {
-        "date_from": "2015-10-13",
+        "date_from": "2019-10-13",
         "date_to": "2020-01-23",
         "timezone": 120,
         "account": 1,
@@ -118,9 +118,9 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
         "date_to": "2020-10-23",
         "timezone": 120,
         "account": 1,
-        "metrics": [JIRAMetricID.BUG_RAISED, JIRAMetricID.BUG_RESOLVED],
+        "metrics": [JIRAMetricID.JIRA_BUG_RAISED, JIRAMetricID.JIRA_BUG_RESOLVED],
         "exclude_inactive": exclude_inactive,
-        "granularities": ["all", "2 week"],
+        "granularities": ["all", "2 month"],
     }
     response = await client.request(
         method="POST", path="/v1/metrics/jira", headers=headers, json=body,
@@ -133,23 +133,23 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     assert items[0].granularity == "all"
     assert items[0].values == [CalculatedLinearMetricValues(
         date=date(2019, 12, 31),
-        values=[1765, 826],
+        values=[432, 172],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
     )]
-    assert items[1].granularity == "2 week"
-    assert len(items[1].values) == 22
+    assert items[1].granularity == "2 month"
+    assert len(items[1].values) == 5
     assert items[1].values[0] == CalculatedLinearMetricValues(
         date=date(2019, 12, 31),
-        values=[36, 3],
+        values=[2, 0],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
     )
     assert items[1].values[-1] == CalculatedLinearMetricValues(
-        date=date(2020, 10, 20),
-        values=[4, 0],
+        date=date(2020, 8, 31),
+        values=[84, 0],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
@@ -157,14 +157,14 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
 
 
 @pytest.mark.parametrize("account, metrics, date_from, date_to, timezone, granularities, status", [
-    (1, [JIRAMetricID.BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 200),
-    (2, [JIRAMetricID.BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 422),
-    (3, [JIRAMetricID.BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 404),
+    (1, [JIRAMetricID.JIRA_BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 200),
+    (2, [JIRAMetricID.JIRA_BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 422),
+    (3, [JIRAMetricID.JIRA_BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 404),
     (1, [], "2020-01-01", "2020-04-01", 120, ["all"], 200),
     (1, None, "2020-01-01", "2020-04-01", 120, ["all"], 400),
-    (1, [JIRAMetricID.BUG_RAISED], "2020-05-01", "2020-04-01", 120, ["all"], 400),
-    (1, [JIRAMetricID.BUG_RAISED], "2020-01-01", "2020-04-01", 100500, ["all"], 400),
-    (1, [JIRAMetricID.BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["whatever"], 400),
+    (1, [JIRAMetricID.JIRA_BUG_RAISED], "2020-05-01", "2020-04-01", 120, ["all"], 400),
+    (1, [JIRAMetricID.JIRA_BUG_RAISED], "2020-01-01", "2020-04-01", 100500, ["all"], 400),
+    (1, [JIRAMetricID.JIRA_BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["whatever"], 400),
 ])
 async def test_jira_metrics_nasty_input1(
         client, headers, account, metrics, date_from, date_to, timezone, granularities, status):
@@ -190,7 +190,7 @@ async def test_jira_metrics_priorities(client, headers):
         "date_to": "2020-10-20",
         "timezone": 0,
         "account": 1,
-        "metrics": [JIRAMetricID.BUG_RAISED],
+        "metrics": [JIRAMetricID.JIRA_BUG_RAISED],
         "exclude_inactive": True,
         "granularities": ["all"],
         "priorities": ["high"],
@@ -204,14 +204,14 @@ async def test_jira_metrics_priorities(client, headers):
     assert len(body) == 1
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
     assert items[0].granularity == "all"
-    assert items[0].values[0].values == [410]
+    assert items[0].values[0].values == [139]
 
 
 @pytest.mark.parametrize("assignees, reporters, commenters, count", [
-    (["Vadim markovtsev"], ["waren long"], ["lou Marvin caraig"], 1177),
-    (["Vadim markovtsev"], [], [], 536),
-    ([], ["waren long"], [], 567),
-    ([], [], ["lou Marvin caraig"], 252),
+    (["Vadim markovtsev"], ["waren long"], ["lou Marvin caraig"], 336),
+    (["Vadim markovtsev"], [], [], 206),
+    ([], ["waren long"], [], 158),
+    ([], [], ["lou Marvin caraig"], 37),
 ])
 async def test_jira_metrics_people(client, headers, assignees, reporters, commenters, count):
     body = {
@@ -219,7 +219,7 @@ async def test_jira_metrics_people(client, headers, assignees, reporters, commen
         "date_to": "2020-10-20",
         "timezone": 0,
         "account": 1,
-        "metrics": [JIRAMetricID.BUG_RAISED],
+        "metrics": [JIRAMetricID.JIRA_BUG_RAISED],
         "exclude_inactive": True,
         "granularities": ["all"],
         "assignees": assignees,
@@ -236,3 +236,32 @@ async def test_jira_metrics_people(client, headers, assignees, reporters, commen
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
     assert items[0].granularity == "all"
     assert items[0].values[0].values == [count]
+
+
+@pytest.mark.parametrize("exclude_inactive, n", [(False, 260), (True, 258)])
+async def test_jira_metrics_bugs_open(client, headers, exclude_inactive, n):
+    body = {
+        "date_from": "2020-06-01",
+        "date_to": "2020-10-23",
+        "timezone": 120,
+        "account": 1,
+        "metrics": [JIRAMetricID.JIRA_BUG_OPEN],
+        "exclude_inactive": exclude_inactive,
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = json.loads(body)
+    assert len(body) == 1
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
+    assert items[0].granularity == "all"
+    assert items[0].values == [CalculatedLinearMetricValues(
+        date=date(2020, 5, 31),
+        values=[n],
+        confidence_mins=[None],
+        confidence_maxs=[None],
+        confidence_scores=[None],
+    )]
