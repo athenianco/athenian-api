@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 import databases
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, insert, or_, select
+from sqlalchemy import and_, insert, select, union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api.controllers.miners.types import ReleaseFacts
@@ -45,13 +45,16 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
         grouped_releases[repo].append(rid)
     default_version = \
         GitHubReleaseFacts.__table__.columns[GitHubReleaseFacts.format_version.key].default.arg
-    query = select([GitHubReleaseFacts.id, GitHubReleaseFacts.data]).where(and_(
-        GitHubReleaseFacts.format_version == default_version,
-        or_(*(and_(
-            GitHubReleaseFacts.id.in_(chain.from_iterable(
-                grouped_releases[i] for i in r if i in grouped_releases)),
-            GitHubReleaseFacts.release_match == _compose_release_match(m, v),
-        ) for (m, v), r in reverse_settings.items()))))
+
+    queries = [
+        select([GitHubReleaseFacts.id, GitHubReleaseFacts.data])
+        .where(and_(GitHubReleaseFacts.format_version == default_version,
+                    GitHubReleaseFacts.id.in_(chain.from_iterable(
+                        grouped_releases[i] for i in r if i in grouped_releases)),
+                    GitHubReleaseFacts.release_match == _compose_release_match(m, v)))
+        for (m, v), r in reverse_settings.items()
+    ]
+    query = union_all(*queries)
     with sentry_sdk.start_span(op="load_precomputed_release_facts/fetch",
                                description=str(len(releases))):
         rows = await pdb.fetch_all(query)

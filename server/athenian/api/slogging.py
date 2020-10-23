@@ -295,7 +295,7 @@ def log_multipart(log: logging.Logger, data: bytes) -> str:
     """
     data = base64.b64encode(lzma.compress(data)).decode()
     record_id = str(uuid.uuid4())
-    chunk_size = 99000  # Google's limit on overall record size is 10k, we leave 1k for the rest
+    chunk_size = 95000  # Google's limit on overall record size is 100k, we leave 5k for the rest
     chunks = int(math.ceil(len(data) / chunk_size))
     for i in range(chunks):
         log.info("%d / %d %s %s", i + 1, chunks, record_id,
