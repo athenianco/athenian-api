@@ -5,7 +5,7 @@ from dateutil.tz import tzutc
 import pytest
 
 from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinearMetricValues, \
-    FoundJIRAStuff, JIRAEpic, JIRALabel, JIRAMetricID
+    FoundJIRAStuff, JIRAEpic, JIRALabel, JIRAMetricID, JIRAUser
 
 
 async def test_filter_jira_smoke(client, headers):
@@ -64,6 +64,31 @@ async def test_filter_jira_smoke(client, headers):
                  updated=datetime(2020, 6, 1, 7, 19, tzinfo=tzutc()), children=[]),
     ]
     assert model.issue_types == ["Design document", "Epic", "Story", "Subtask", "Task"]
+    assert model.users == [
+        JIRAUser(name="David Pordomingo",
+                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/DP-4.png",  # noqa
+                 type="atlassian"),
+        JIRAUser(name="Denys Smirnov",
+                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/DS-1.png",  # noqa
+                 type="atlassian"),
+        JIRAUser(name="Kuba Podgórski",
+                 avatar="https://secure.gravatar.com/avatar/ec2f95fe07b5ffec5cde78781f433b68?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FKP-3.png",  # noqa
+                 type="atlassian"),
+        JIRAUser(name="Lou Marvin Caraig",
+                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/LC-0.png",  # noqa
+                 type="atlassian"),
+        JIRAUser(name="Marcelo Novaes",
+                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/MN-4.png",  # noqa
+                 type="atlassian"),
+        JIRAUser(name="Oleksandr Chabaiev",
+                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/OC-5.png",  # noqa
+                 type="atlassian"),
+        JIRAUser(name="Vadim Markovtsev",
+                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/VM-6.png",  # noqa
+                 type="atlassian"),
+        JIRAUser(name="Waren Long",
+                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/WL-5.png",  # noqa
+                 type="atlassian")]
 
 
 @pytest.mark.parametrize("account, date_to, timezone, status", [
