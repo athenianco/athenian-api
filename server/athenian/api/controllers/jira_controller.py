@@ -18,12 +18,12 @@ from athenian.api.controllers.account import get_user_account_status
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.github.jira_metrics import JIRABinnedMetricCalculator
 from athenian.api.controllers.miners.github.jira import fetch_jira_issues
-from athenian.api.models.metadata.jira import Component, Issue
+from athenian.api.models.metadata.jira import Component, Issue, User
 from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinearMetricValues, \
     FilterJIRAStuff, FoundJIRAStuff, \
     InvalidRequestError, \
-    JIRAEpic, JIRALabel, JIRAMetricsRequest, NoSourceDataError
+    JIRAEpic, JIRALabel, JIRAMetricsRequest, JIRAUser, NoSourceDataError
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -95,8 +95,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     async def issue_flow():
         property_rows = await mdb.fetch_all(
             select([Issue.id, Issue.labels, Issue.components, Issue.type, Issue.updated,
-                    Issue.assignee_id, Issue.reporter_id])
-            # , Issue.commenters_ids, Issue.priority_id])
+                    Issue.assignee_id, Issue.reporter_id, Issue.commenters_ids, Issue.priority_id])
             .where(and_(Issue.acc_id == jira_id,
                         Issue.created < time_to,
                         or_(Issue.resolved.is_(None), Issue.resolved >= time_from),
@@ -105,7 +104,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             (r[Issue.components.key] or ()) for r in property_rows))
         people = set(r[Issue.reporter_id.key] for r in property_rows)
         people.update(r[Issue.assignee_id.key] for r in property_rows)
-        # people.update(chain.from_iterable(r[Issue.commenters_ids.key] for r in property_rows))
+        people.update(chain.from_iterable(r[Issue.commenters_ids.key] for r in property_rows))
         # priorities = set(r[Issue.priority_id.key] for r in property_rows)
 
         @sentry_span
@@ -116,6 +115,16 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                     Component.id.in_(components),
                     Component.acc_id == jira_id,
                 )))
+
+        @sentry_span
+        async def fetch_users():
+            return await mdb.fetch_all(
+                select([User.display_name, User.avatar_url, User.type])
+                .where(and_(
+                    User.id.in_(people),
+                    User.acc_id == jira_id,
+                ))
+                .order_by(User.display_name))
 
         @sentry_span
         async def main_flow():
@@ -135,9 +144,9 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                     label.last_used = label.last_used.replace(tzinfo=timezone.utc)
             return labels, types
 
-        component_names, issues = await asyncio.gather(
-            fetch_components(), main_flow(), return_exceptions=True)
-        for e in (components, issues):
+        component_names, users, issues = await asyncio.gather(
+            fetch_components(), fetch_users(), main_flow(), return_exceptions=True)
+        for e in (components, users, issues):
             if isinstance(e, Exception):
                 raise e from None
         labels, types = issues
@@ -146,6 +155,10 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
             for row in component_names
         }
+        users = [JIRAUser(avatar=row[User.avatar_url.key],
+                          name=row[User.display_name.key],
+                          type=row[User.type.key])
+                 for row in users]
         for row in property_rows:
             updated = row[Issue.updated.key]
             for component in (row[Issue.components.key] or ()):
@@ -161,20 +174,20 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                 label.last_used = label.last_used.replace(tzinfo=timezone.utc)
 
         labels = sorted(chain(components.values(), labels.values()))
-        return labels, types
+        return labels, users, types
 
     with sentry_sdk.start_span(op="mdb"):
         epics, issues = await asyncio.gather(epic_flow(), issue_flow(), return_exceptions=True)
         for r in (epics, issues):
             if isinstance(r, Exception):
                 raise r from None
-    labels, types = issues
+    labels, users, types = issues
     return model_response(FoundJIRAStuff(
         epics=epics,
         labels=labels,
         issue_types=types,
         priorities=[],
-        users=[],
+        users=users,
     ))
 
 
