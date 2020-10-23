@@ -82,7 +82,7 @@ class JIRABinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
         return result
 
 
-@register_metric(JIRAMetricID.BUG_RAISED)
+@register_metric(JIRAMetricID.JIRA_BUG_RAISED)
 class RaisedCounter(SumMetricCalculator[int]):
     """Number of created issues metric."""
 
@@ -96,11 +96,12 @@ class RaisedCounter(SumMetricCalculator[int]):
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
         created = facts[Issue.created.key].values
-        result[(min_times[:, None] <= created) & (created < max_times[:, None])] = 1
+        is_bug = facts[Issue.type.key].str.lower().values == "bug"
+        result[(min_times[:, None] <= created) & (created < max_times[:, None]) & is_bug] = 1
         return result
 
 
-@register_metric(JIRAMetricID.BUG_RESOLVED)
+@register_metric(JIRAMetricID.JIRA_BUG_RESOLVED)
 class ResolvedCounter(SumMetricCalculator[int]):
     """Number of resolved issues metric."""
 
@@ -114,5 +115,29 @@ class ResolvedCounter(SumMetricCalculator[int]):
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
         resolved = facts[Issue.resolved.key].values
-        result[(min_times[:, None] <= resolved) & (resolved < max_times[:, None])] = 1
+        is_bug = facts[Issue.type.key].str.lower().values == "bug"
+        result[(min_times[:, None] <= resolved) & (resolved < max_times[:, None]) & is_bug] = 1
+        return result
+
+
+@register_metric(JIRAMetricID.JIRA_BUG_OPEN)
+class OpenCounter(SumMetricCalculator[int]):
+    """Number of created issues metric."""
+
+    may_have_negative_values = False
+    dtype = int
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), None, object)
+        created = facts[Issue.created.key].values
+        resolved = facts[Issue.resolved.key].values
+        is_bug = facts[Issue.type.key].str.lower().values == "bug"
+        not_resolved = resolved != resolved
+        resolved_later = resolved >= max_times[:, None]
+        created_earlier = created < max_times[:, None]
+        result[is_bug & (resolved_later | not_resolved) & created_earlier] = 1
         return result

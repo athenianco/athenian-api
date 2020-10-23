@@ -144,7 +144,7 @@ async def fetch_jira_issues(account: int,
     postgres = mdb.url.dialect in ("postgres", "postgresql")
     columns = [
         Issue.created, Issue.resolved, Issue.updated, Issue.priority_name, Issue.epic_id,
-        Issue.status,
+        Issue.status, Issue.type,
     ]
     and_filters = [
         Issue.acc_id == account,
