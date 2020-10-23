@@ -3,6 +3,7 @@ from contextvars import ContextVar
 import logging
 import os
 import pickle
+import re
 import sys
 import time
 from typing import Callable, List, Mapping, Tuple, Union
@@ -172,6 +173,7 @@ class ParallelDatabase(databases.Database):
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
 _testing = "pytest" in sys.modules or os.getenv("SENTRY_ENV", "development") == "development"
+_sql_str_re = re.compile(r"'[^']+'(, )?")
 
 
 async def _asyncpg_execute(self, query: str, args, limit, timeout, return_status=False):
@@ -183,7 +185,8 @@ async def _asyncpg_execute(self, query: str, args, limit, timeout, return_status
             transaction = sentry_sdk.Hub.current.scope.transaction
             if transaction is not None and transaction.sampled:
                 query_id = log_multipart(_sql_log, pickle.dumps((query, args)))
-                description = "%s\n%s..." % (query_id, query[:1000])
+                brief = _sql_str_re.sub("", query)
+                description = "%s\n%s" % (query_id, brief[:MAX_SENTRY_STRING_LENGTH])
     with sentry_sdk.start_span(op="sql", description=description) as span:
         result = await self._execute_original(query, args, limit, timeout, return_status)
         try:
