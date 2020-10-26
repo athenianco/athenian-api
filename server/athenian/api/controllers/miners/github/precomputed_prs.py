@@ -48,13 +48,15 @@ def _create_common_filters(time_from: datetime,
     ]
 
 
-def _check_release_match(repo: str,
-                         release_match: str,
-                         release_settings: Dict[str, ReleaseMatchSetting],
-                         default_branches: Dict[str, str],
-                         prefix: str,
-                         result: Any,
-                         ambiguous: Dict[str, Any]) -> Optional[Any]:
+def triage_by_release_match(repo: str,
+                            release_match: str,
+                            release_settings: Dict[str, ReleaseMatchSetting],
+                            default_branches: Dict[str, str],
+                            prefix: str,
+                            result: Any,
+                            ambiguous: Dict[str, Any]) -> Optional[Any]:
+    """Check the release match of the specified `repo` and return `None` if it is not effective \
+    or decide between `result` and `ambioguous`, depending on the settings."""
     if release_match in (ReleaseMatch.rejected.name, ReleaseMatch.force_push_drop.name):
         dump = result
     else:
@@ -103,7 +105,7 @@ async def load_precomputed_done_candidates(time_from: datetime,
     result = set()
     ambiguous = {ReleaseMatch.tag.name: set(), ReleaseMatch.branch.name: set()}
     for row in rows:
-        dump = _check_release_match(
+        dump = triage_by_release_match(
             row[1], row[2], release_settings, default_branches, prefix, result, ambiguous)
         if dump is None:
             continue
@@ -291,7 +293,7 @@ async def _load_precomputed_done_filters(column: InstrumentedAttribute,
         include_multiples = [set(m) for m in include_multiples]
     for row in rows:
         repo, rm = row[ghprt.repository_full_name.key], row[ghprt.release_match.key]
-        dump = _check_release_match(
+        dump = triage_by_release_match(
             repo, rm, release_settings, default_branches, prefix, result, ambiguous)
         if dump is None:
             continue
@@ -362,7 +364,7 @@ async def load_precomputed_done_facts_reponums(prs: Dict[str, Set[int]],
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     for row in rows:
         repo = row[ghprt.repository_full_name.key]
-        dump = _check_release_match(
+        dump = triage_by_release_match(
             repo, row[ghprt.release_match.key], release_settings, default_branches, prefix,
             result, ambiguous)
         if dump is None:
@@ -877,7 +879,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
         include_singles = set(include_singles)
         include_multiples = [set(m) for m in include_multiples]
     for row in rows:
-        dump = _check_release_match(
+        dump = triage_by_release_match(
             row[1], row[2], release_settings, default_branches, prefix, "whatever", ambiguous)
         if dump is None:
             continue
