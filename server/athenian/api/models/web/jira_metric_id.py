@@ -7,3 +7,5 @@ class JIRAMetricID(Model, metaclass=Enum):
     JIRA_BUG_OPEN = "jira-bug-open"
     JIRA_BUG_RESOLVED = "jira-bug-resolved"
     JIRA_BUG_RAISED = "jira-bug-raised"
+    JIRA_MTT_RESTORE = "jira-mtt-restore"
+    JIRA_MTT_REPAIR = "jira-mtt-repair"

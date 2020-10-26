@@ -279,6 +279,7 @@ async def _fetch_issues(account: int,
     else:
         query = sql.select(columns).where(sql.and_(*and_filters))
     df = await read_sql_query(query, mdb, columns, index=Issue.id.key)
+    df.sort_index(inplace=True)
     if postgres or not commenters:
         return df
     passed = np.full(len(df), False)
