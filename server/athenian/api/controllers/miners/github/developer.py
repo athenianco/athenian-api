@@ -18,9 +18,9 @@ from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.github.jira import generate_jira_prs_query
 from athenian.api.controllers.miners.github.pull_request import ReviewResolution
 from athenian.api.controllers.miners.github.release import load_releases
+from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestLabel, PullRequestReview, PullRequestReviewComment, PushCommit, Release, \

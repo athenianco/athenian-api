@@ -11,12 +11,12 @@ import sentry_sdk
 
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.jira import generate_jira_prs_query
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
     load_open_pull_request_facts_unfresh
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release import load_releases
+from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import PRParticipants, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits

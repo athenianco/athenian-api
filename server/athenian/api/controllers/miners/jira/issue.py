@@ -1,7 +1,8 @@
+from collections import defaultdict
 from datetime import datetime
 from itertools import chain
 import pickle
-from typing import Collection, List, Optional
+from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional
 
 import aiomcache
 import databases
@@ -14,8 +15,12 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api.async_read_sql_query import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.precomputed_prs import triage_by_release_match
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import Component, Issue
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.tracing import sentry_span
 
 
@@ -111,12 +116,17 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
     )).where(sql.and_(*filters))
 
 
+ISSUE_WORK_BEGAN = "work_began"
+ISSUE_RELEASED = "released"
+
+
 @sentry_span
 @cached(
     exptime=5 * 60,  # 5 minutes
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, exclude_inactive, priorities, reporters, assignees, commenters, **_: (  # noqa
+    key=lambda account, time_from, time_to, exclude_inactive, priorities, reporters, assignees, commenters, **_: (  # noqa
+        account,
         time_from.timestamp(), time_to.timestamp(),
         exclude_inactive,
         ",".join(sorted(priorities)),
@@ -133,7 +143,10 @@ async def fetch_jira_issues(account: int,
                             reporters: Collection[str],
                             assignees: Collection[str],
                             commenters: Collection[str],
+                            default_branches: Dict[str, str],
+                            release_settings: Dict[str, ReleaseMatchSetting],
                             mdb: databases.Database,
+                            pdb: databases.Database,
                             cache: Optional[aiomcache.Client],
                             ) -> pd.DataFrame:
     """
@@ -141,6 +154,7 @@ async def fetch_jira_issues(account: int,
 
     The aggregation is OR between the participation roles.
 
+    :param account: JIRA installation ID.
     :param time_from: Issues should not be resolved before this timestamp.
     :param time_to: Issues should be opened before this timestamp.
     :param exclude_inactive: Issues must be updated after `time_from`.
@@ -149,10 +163,92 @@ async def fetch_jira_issues(account: int,
     :param assignees: List of lower-case issue assignees.
     :param commenters: List of lower-case issue commenters.
     """
+    issues = await _fetch_issues(account, time_from, time_to, exclude_inactive, priorities,
+                                 reporters, assignees, commenters, mdb)
+    pr_rows = await mdb.fetch_all(
+        sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
+        .where(sql.and_(NodePullRequestJiraIssues.jira_acc == account,
+                        NodePullRequestJiraIssues.jira_id.in_(issues.index))))
+    pr_to_issue = {r[0]: r[1] for r in pr_rows}
+    # TODO(vmarkovtsev): load the "fresh" released PRs
+    released_prs = await _fetch_released_prs(pr_to_issue, default_branches, release_settings, pdb)
+    issue_to_index = {iid: i for i, iid in enumerate(issues.index.values)}
+    # FIXME(vmarkovtsev): we collect work_began only for released issues right now
+    work_began = np.full(len(issues.index), np.datetime64("nat"), "datetime64[ns]")
+    released = work_began.copy()
+    ghdprf = GitHubDonePullRequestFacts
+    for pr_node_id, row in released_prs.items():
+        pr_created_at = row[ghdprf.pr_created_at.key]
+        pr_released_at = row[ghdprf.pr_done_at.key]
+        i = issue_to_index[pr_to_issue[pr_node_id]]
+        dt = work_began[i]
+        if dt != dt:
+            work_began[i] = pr_created_at
+        else:
+            work_began[i] = min(dt, np.datetime64(pr_created_at))
+        dt = released[i]
+        if dt != dt:
+            released[i] = pr_released_at
+        else:
+            released[i] = max(dt, np.datetime64(pr_released_at))
+    issues[ISSUE_WORK_BEGAN] = work_began
+    issues[ISSUE_RELEASED] = released
+    return issues
+
+
+@sentry_span
+async def _fetch_released_prs(pr_node_ids: Iterable[str],
+                              default_branches: Dict[str, str],
+                              release_settings: Dict[str, ReleaseMatchSetting],
+                              pdb: databases.Database,
+                              ) -> Dict[str, Mapping[str, Any]]:
+    ghdprf = GitHubDonePullRequestFacts
+    released_rows = await pdb.fetch_all(
+        sql.select([ghdprf.pr_node_id,
+                    ghdprf.pr_created_at,
+                    ghdprf.pr_done_at,
+                    ghdprf.repository_full_name,
+                    ghdprf.release_match])
+        .where(sql.and_(ghdprf.pr_node_id.in_(pr_node_ids),
+                        ghdprf.release_node_id.isnot(None))))
+    released_by_repo = defaultdict(lambda: defaultdict(dict))
+    for r in released_rows:
+        released_by_repo[
+            r[ghdprf.repository_full_name.key]][
+            r[ghdprf.release_match.key]][
+            r[ghdprf.pr_node_id.key]] = r
+    released_prs = {}
+    ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
+    prefix = PREFIXES["github"]
+    for repo, matches in released_by_repo.items():
+        for match, prs in matches.items():
+            dump = triage_by_release_match(repo, match, release_settings, default_branches,
+                                           prefix, released_prs, ambiguous)
+            if dump is None:
+                continue
+            dump.update(prs)
+    released_prs.update(ambiguous[ReleaseMatch.tag.name])
+    for node_id, row in ambiguous[ReleaseMatch.branch.name].items():
+        if node_id not in released_prs:
+            released_prs[node_id] = row
+    return released_prs
+
+
+@sentry_span
+async def _fetch_issues(account: int,
+                        time_from: datetime,
+                        time_to: datetime,
+                        exclude_inactive: bool,
+                        priorities: Collection[str],
+                        reporters: Collection[str],
+                        assignees: Collection[str],
+                        commenters: Collection[str],
+                        mdb: databases.Database,
+                        ) -> pd.DataFrame:
     postgres = mdb.url.dialect in ("postgres", "postgresql")
     columns = [
         Issue.created, Issue.resolved, Issue.updated, Issue.priority_name, Issue.epic_id,
-        Issue.status, Issue.type,
+        Issue.status, Issue.type, Issue.id,
     ]
     and_filters = [
         Issue.acc_id == account,
@@ -182,7 +278,7 @@ async def fetch_jira_issues(account: int,
                             for or_filter in or_filters))
     else:
         query = sql.select(columns).where(sql.and_(*and_filters))
-    df = await read_sql_query(query, mdb, columns)
+    df = await read_sql_query(query, mdb, columns, index=Issue.id.key)
     if postgres or not commenters:
         return df
     passed = np.full(len(df), False)

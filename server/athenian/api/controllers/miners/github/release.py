@@ -22,7 +22,6 @@ from athenian.api import metadata
 from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.jira import generate_jira_prs_query
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_merged_unreleased_pull_request_facts, load_precomputed_pr_releases, \
     update_unreleased_prs
@@ -34,6 +33,7 @@ from athenian.api.controllers.miners.github.release_accelerated import extract_f
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.github.users import mine_user_avatars
+from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import nonemax, PullRequestFacts, ReleaseFacts, \
     ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \

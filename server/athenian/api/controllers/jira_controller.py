@@ -14,10 +14,12 @@ from sqlalchemy import and_, or_, select
 
 from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
-from athenian.api.controllers.account import get_user_account_status
+from athenian.api.controllers.account import get_account_repositories, get_user_account_status
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.github.jira_metrics import JIRABinnedMetricCalculator
-from athenian.api.controllers.miners.github.jira import fetch_jira_issues
+from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
+from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata.jira import Component, Issue, User
 from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinearMetricValues, \
@@ -199,11 +201,27 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     with sentry_sdk.start_span(op="sdb"):
-        async with request.sdb.connection() as conn:
-            await get_user_account_status(request.uid, filt.account, conn, request.cache)
-            jira_id = await get_jira_installation(filt.account, request.sdb, request.cache)
+        tasks = [
+            get_user_account_status(request.uid, filt.account, request.sdb, request.cache),
+            get_account_repositories(filt.account, request.sdb),
+            get_jira_installation(filt.account, request.sdb, request.cache),
+        ]
+        status, repos, jira_id = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in (status, repos, jira_id):
+            if isinstance(r, Exception):
+                raise r from None
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
+    tasks = [
+        extract_branches([r.split("/", 1)[1] for r in repos], request.mdb, request.cache),
+        Settings.from_request(request, filt.account).list_release_matches(repos),
+    ]
+    with sentry_sdk.start_span(op="branches and release settings"):
+        branches, release_settings = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in (branches, release_settings):
+        if isinstance(r, Exception):
+            raise r from None
+    _, default_branches = branches
 
     issues = await fetch_jira_issues(
         jira_id,
@@ -212,7 +230,8 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
         [p.lower() for p in (filt.reporters or [])],
         [p.lower() for p in (filt.assignees or [])],
         [p.lower() for p in (filt.commenters or [])],
-        request.mdb, request.cache,
+        default_branches, release_settings,
+        request.mdb, request.pdb, request.cache,
     )
     calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1])
     metric_values = calc(issues, time_intervals)
