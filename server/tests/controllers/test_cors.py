@@ -4,7 +4,7 @@ async def test_cors(client, headers):
     )
     assert set(response.headers["Access-Control-Expose-Headers"].split(",")) == \
         {"X-Performance-DB", "X-Backend-Server", "X-Performance-Precomputed-Hits",
-         "X-Performance-Precomputed-Misses"}
+         "X-Performance-Precomputed-Misses", "Content-Length", "Server", "Date"}
     assert response.headers["Access-Control-Allow-Origin"] == "http://localhost"
     assert response.headers["Access-Control-Allow-Credentials"] == "true"
     assert response.headers["X-Backend-Server"]
@@ -33,4 +33,5 @@ async def test_cors_cache(client, headers, client_cache):
     assert set(response.headers["Access-Control-Expose-Headers"].split(",")) == \
         {"X-Performance-DB", "X-Backend-Server", "X-Performance-Cache-Ignores",
          "X-Performance-Cache-Hits", "X-Performance-Cache-Misses",
-         "X-Performance-Precomputed-Hits", "X-Performance-Precomputed-Misses"}
+         "X-Performance-Precomputed-Hits", "X-Performance-Precomputed-Misses",
+         "Content-Length", "Server", "Date"}
