@@ -2,6 +2,7 @@ from datetime import date, datetime
 import json
 
 from dateutil.tz import tzutc
+import numpy as np
 import pytest
 
 from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinearMetricValues, \
@@ -264,4 +265,33 @@ async def test_jira_metrics_bugs_open(client, headers, exclude_inactive, n):
         confidence_mins=[None],
         confidence_maxs=[None],
         confidence_scores=[None],
+    )]
+
+
+async def test_jira_metrics_bugs_restore(client, headers):
+    np.random.seed(7)
+    body = {
+        "date_from": "2016-01-01",
+        "date_to": "2020-10-23",
+        "timezone": 120,
+        "account": 1,
+        "metrics": [JIRAMetricID.JIRA_MTT_RESTORE],
+        "exclude_inactive": False,
+        "granularities": ["all", "1 year"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = json.loads(body)
+    assert len(body) == 2
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
+    assert items[0].granularity == "all"
+    assert items[0].values == [CalculatedLinearMetricValues(
+        date=date(2015, 12, 31),
+        values=["560503s"],
+        confidence_mins=["461188s"],
+        confidence_maxs=["657270s"],
+        confidence_scores=[66],
     )]

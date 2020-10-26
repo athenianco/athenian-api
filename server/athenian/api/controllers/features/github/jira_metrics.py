@@ -1,12 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Sequence, Type
 
 import numpy as np
 import pandas as pd
 
 from athenian.api.controllers.features.metric import Metric
-from athenian.api.controllers.features.metric_calculator import BinnedEnsemblesCalculator, \
+from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
+    BinnedEnsemblesCalculator, \
     MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
+from athenian.api.controllers.miners.jira.issue import ISSUE_RELEASED, ISSUE_WORK_BEGAN
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.web import JIRAMetricID
 from athenian.api.tracing import sentry_span
@@ -86,7 +88,6 @@ class JIRABinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
 class RaisedCounter(SumMetricCalculator[int]):
     """Number of created issues metric."""
 
-    may_have_negative_values = False
     dtype = int
 
     def _analyze(self,
@@ -105,7 +106,6 @@ class RaisedCounter(SumMetricCalculator[int]):
 class ResolvedCounter(SumMetricCalculator[int]):
     """Number of resolved issues metric."""
 
-    may_have_negative_values = False
     dtype = int
 
     def _analyze(self,
@@ -124,7 +124,6 @@ class ResolvedCounter(SumMetricCalculator[int]):
 class OpenCounter(SumMetricCalculator[int]):
     """Number of created issues metric."""
 
-    may_have_negative_values = False
     dtype = int
 
     def _analyze(self,
@@ -141,3 +140,70 @@ class OpenCounter(SumMetricCalculator[int]):
         created_earlier = created < max_times[:, None]
         result[is_bug & (resolved_later | not_resolved) & created_earlier] = 1
         return result
+
+
+@register_metric(JIRAMetricID.JIRA_MTT_RESTORE)
+class MeanTimeToRestoreCalculator(AverageMetricCalculator[timedelta]):
+    """
+    Mean Time to Restore calculator.
+
+    Mean Time To Restore is the time it takes for a bug ticket to go from the ticket creation to \
+    release.
+
+    * If a bug is linked to PRs, the MTTR ends at the last PR release.
+    * If a bug is not linked to any PR, the MTTR ends when the bug transition to the Done status \
+    category.
+    * If a bug is created after the work began, we consider the latter as the real ticket creation.
+    """
+
+    may_have_negative_values = False
+    dtype = "timedelta64[s]"
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), None, object)
+        created = facts[Issue.created.key].values
+        work_began = facts[ISSUE_WORK_BEGAN].values
+        resolved = facts[Issue.resolved.key].values
+        released = facts[ISSUE_RELEASED].values
+        is_bug = facts[Issue.type.key].str.lower().values == "bug"
+        focus_mask = (min_times[:, None] <= resolved) & (resolved < max_times[:, None]) & is_bug
+        mttr = released - np.minimum(created, work_began)
+        mttr[resolved != resolved] = np.datetime64("nat")
+        mttr_fallback = resolved - created
+        empty_mttr_mask = mttr != mttr
+        mttr[empty_mttr_mask] = mttr_fallback[empty_mttr_mask]
+        empty_mttr_mask = mttr != mttr
+        mttr = mttr.astype(self.dtype).view(int)
+        result[:] = mttr
+        result[:, empty_mttr_mask] = None
+        result[~focus_mask] = None
+        return result
+
+
+@register_metric(JIRAMetricID.JIRA_MTT_REPAIR)
+class MeanTimeToRepairCalculator(AverageMetricCalculator[timedelta]):
+    """
+    Mean Time to Repair calculator.
+
+    Mean Time To Repair is the time it takes for the fixes to be released since the work on them \
+    started.
+
+    * If a bug is linked to PRs, the MTTR ends at the last PR release.
+    * If a bug is not linked to any PR, the MTTR ends when the bug transition to the Done status \
+    category.
+    * The timestamp of work_began is min(issue became in progress, PR created).
+    """
+
+    may_have_negative_values = False
+    dtype = "timedelta64[s]"
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        raise NotImplementedError
