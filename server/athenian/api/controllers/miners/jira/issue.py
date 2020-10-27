@@ -1,8 +1,9 @@
+import asyncio
 from collections import defaultdict
 from datetime import datetime
 from itertools import chain
 import pickle
-from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Union
 
 import aiomcache
 import databases
@@ -172,28 +173,59 @@ async def fetch_jira_issues(account: int,
     pr_to_issue = {r[0]: r[1] for r in pr_rows}
     # TODO(vmarkovtsev): load the "fresh" released PRs
     released_prs = await _fetch_released_prs(pr_to_issue, default_branches, release_settings, pdb)
+    unreleased_prs = pr_to_issue.keys() - released_prs.keys()
     issue_to_index = {iid: i for i, iid in enumerate(issues.index.values)}
-    # FIXME(vmarkovtsev): we collect work_began only for released issues right now
-    work_began = np.full(len(issues.index), np.datetime64("nat"), "datetime64[ns]")
+    nat = np.datetime64("nat")
+    work_began = np.full(len(issues.index), nat, "datetime64[ns]")
     released = work_began.copy()
-    ghdprf = GitHubDonePullRequestFacts
-    for pr_node_id, row in released_prs.items():
-        pr_created_at = row[ghdprf.pr_created_at.key]
-        pr_released_at = row[ghdprf.pr_done_at.key]
-        i = issue_to_index[pr_to_issue[pr_node_id]]
-        dt = work_began[i]
-        if dt != dt:
-            work_began[i] = pr_created_at
-        else:
-            work_began[i] = min(dt, np.datetime64(pr_created_at))
-        dt = released[i]
-        if dt != dt:
-            released[i] = pr_released_at
-        else:
-            released[i] = max(dt, np.datetime64(pr_released_at))
+
+    @sentry_span
+    async def released_flow():
+        ghdprf = GitHubDonePullRequestFacts
+        for pr_node_id, row in released_prs.items():
+            pr_created_at = row[ghdprf.pr_created_at.key]
+            i = issue_to_index[pr_to_issue[pr_node_id]]
+            dt = work_began[i]
+            if dt != dt:
+                work_began[i] = pr_created_at
+            else:
+                work_began[i] = min(dt, np.datetime64(pr_created_at))
+            pr_released_at = row[ghdprf.pr_done_at.key]
+            dt = released[i]
+            if dt != dt:
+                released[i] = pr_released_at
+            else:
+                released[i] = max(dt, np.datetime64(pr_released_at))
+
+    if not unreleased_prs:
+        await released_flow()
+    else:
+        pr_created_ats, err = await asyncio.gather(
+            _fetch_created_ats(unreleased_prs, mdb), released_flow(), return_exceptions=True)
+        for r in (err, pr_created_ats):
+            if isinstance(r, Exception):
+                raise r from None
+        for row in pr_created_ats:
+            pr_created_at = row[PullRequest.created_at.key]
+            i = issue_to_index[pr_to_issue[row[PullRequest.node_id.key]]]
+            dt = work_began[i]
+            if dt != dt:
+                work_began[i] = pr_created_at
+            else:
+                work_began[i] = min(dt, np.datetime64(pr_created_at))
+            released[i] = nat
+
     issues[ISSUE_WORK_BEGAN] = work_began
     issues[ISSUE_RELEASED] = released
     return issues
+
+
+@sentry_span
+async def _fetch_created_ats(pr_node_ids: Iterable[str],
+                             mdb: databases.Database) -> List[Mapping[str, Union[str, datetime]]]:
+    return await mdb.fetch_all(
+        sql.select([PullRequest.node_id, PullRequest.created_at])
+        .where(PullRequest.node_id.in_(pr_node_ids)))
 
 
 @sentry_span
@@ -209,8 +241,7 @@ async def _fetch_released_prs(pr_node_ids: Iterable[str],
                     ghdprf.pr_done_at,
                     ghdprf.repository_full_name,
                     ghdprf.release_match])
-        .where(sql.and_(ghdprf.pr_node_id.in_(pr_node_ids),
-                        ghdprf.release_node_id.isnot(None))))
+        .where(ghdprf.pr_node_id.in_(pr_node_ids)))
     released_by_repo = defaultdict(lambda: defaultdict(dict))
     for r in released_rows:
         released_by_repo[
