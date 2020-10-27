@@ -20,12 +20,12 @@ from athenian.api.controllers.features.github.jira_metrics import JIRABinnedMetr
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
 from athenian.api.controllers.settings import Settings
-from athenian.api.models.metadata.jira import Component, Issue, User
+from athenian.api.models.metadata.jira import Component, Issue, Priority, User
 from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinearMetricValues, \
     FilterJIRAStuff, FoundJIRAStuff, \
     InvalidRequestError, \
-    JIRAEpic, JIRALabel, JIRAMetricsRequest, JIRAUser, NoSourceDataError
+    JIRAEpic, JIRALabel, JIRAMetricsRequest, JIRAPriority, JIRAUser, NoSourceDataError
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -107,7 +107,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         people = set(r[Issue.reporter_id.key] for r in property_rows)
         people.update(r[Issue.assignee_id.key] for r in property_rows)
         people.update(chain.from_iterable(r[Issue.commenters_ids.key] for r in property_rows))
-        # priorities = set(r[Issue.priority_id.key] for r in property_rows)
+        priorities = set(r[Issue.priority_id.key] for r in property_rows)
 
         @sentry_span
         async def fetch_components():
@@ -129,6 +129,16 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                 .order_by(User.display_name))
 
         @sentry_span
+        async def fetch_priorities():
+            return await mdb.fetch_all(
+                select([Priority.name, Priority.icon_url, Priority.rank])
+                .where(and_(
+                    Priority.id.in_(priorities),
+                    Priority.acc_id == jira_id,
+                ))
+                .order_by(Priority.rank))
+
+        @sentry_span
         async def main_flow():
             labels = Counter(chain.from_iterable(
                 (r[Issue.labels.key] or ()) for r in property_rows))
@@ -146,9 +156,10 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                     label.last_used = label.last_used.replace(tzinfo=timezone.utc)
             return labels, types
 
-        component_names, users, issues = await asyncio.gather(
-            fetch_components(), fetch_users(), main_flow(), return_exceptions=True)
-        for e in (components, users, issues):
+        component_names, users, priorities, issues = await asyncio.gather(
+            fetch_components(), fetch_users(), fetch_priorities(), main_flow(),
+            return_exceptions=True)
+        for e in (components, users, priorities, issues):
             if isinstance(e, Exception):
                 raise e from None
         labels, types = issues
@@ -161,6 +172,10 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                           name=row[User.display_name.key],
                           type=row[User.type.key])
                  for row in users]
+        priorities = [JIRAPriority(name=row[Priority.name.key],
+                                   image=row[Priority.icon_url.key],
+                                   rank=row[Priority.rank.key])
+                      for row in priorities]
         for row in property_rows:
             updated = row[Issue.updated.key]
             for component in (row[Issue.components.key] or ()):
@@ -176,19 +191,19 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                 label.last_used = label.last_used.replace(tzinfo=timezone.utc)
 
         labels = sorted(chain(components.values(), labels.values()))
-        return labels, users, types
+        return labels, users, types, priorities
 
     with sentry_sdk.start_span(op="mdb"):
         epics, issues = await asyncio.gather(epic_flow(), issue_flow(), return_exceptions=True)
         for r in (epics, issues):
             if isinstance(r, Exception):
                 raise r from None
-    labels, users, types = issues
+    labels, users, types, priorities = issues
     return model_response(FoundJIRAStuff(
         epics=epics,
         labels=labels,
         issue_types=types,
-        priorities=[],
+        priorities=priorities,
         users=users,
     ))
 

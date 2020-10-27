@@ -2523,6 +2523,7 @@ components:
         granularities:
         - day
         account: 1
+        exclude_inactive: true
       properties:
         for:
           description: |-
@@ -2649,6 +2650,7 @@ components:
         date_to: 2020-01-24
         granularities:
         - day
+        exclude_inactive: true
         calculated:
         - values:
           - date: 2020-01-23
@@ -2960,6 +2962,7 @@ components:
         with:
           author:
           - github.com/vmarkovtsev
+        exclude_inactive: true
       properties:
         account:
           description: Session account ID.
@@ -4899,14 +4902,14 @@ components:
           description: URL of the picture that indicates the priority.
           format: url
           type: string
-        value:
-          description: Measure of importance (bigger is more important).
-          minimum: 0
+        rank:
+          description: Measure of importance (smaller is more important).
+          minimum: 1
           type: integer
       required:
       - image
       - name
-      - value
+      - rank
       type: object
     JIRAUser:
       additionalProperties: false
@@ -5244,6 +5247,7 @@ components:
         - jira-bug-raised
         granularities:
         - all
+        exclude_inactive: true
       properties:
         account:
           description: Session account ID.

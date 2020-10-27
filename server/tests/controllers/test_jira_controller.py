@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinearMetricValues, \
-    FoundJIRAStuff, JIRAEpic, JIRALabel, JIRAMetricID, JIRAUser
+    FoundJIRAStuff, JIRAEpic, JIRALabel, JIRAMetricID, JIRAPriority, JIRAUser
 
 
 async def test_filter_jira_smoke(client, headers):
@@ -90,6 +90,16 @@ async def test_filter_jira_smoke(client, headers):
         JIRAUser(name="Waren Long",
                  avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/WL-5.png",  # noqa
                  type="atlassian")]
+    assert model.priorities == [
+        JIRAPriority(name="Medium",
+                     image="https://athenianco.atlassian.net/images/icons/priorities/medium.svg",
+                     rank=3),
+        JIRAPriority(name="Low",
+                     image="https://athenianco.atlassian.net/images/icons/priorities/low.svg",
+                     rank=4),
+        JIRAPriority(name="None",
+                     image="https://athenianco.atlassian.net/images/icons/priorities/trivial.svg",
+                     rank=6)]
 
 
 @pytest.mark.parametrize("account, date_to, timezone, status", [

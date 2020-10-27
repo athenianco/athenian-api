@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Boolean, Column, JSON, Text, TIMESTAMP
+from sqlalchemy import BigInteger, Boolean, Column, JSON, SmallInteger, Text, TIMESTAMP
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -63,3 +63,14 @@ class User(Base):
     type = Column(Text, nullable=False)
     display_name = Column(Text, nullable=False)
     avatar_url = Column(Text, nullable=False)
+
+
+class Priority(Base):
+    __tablename__ = "priority"
+
+    acc_id = Column(BigInteger, primary_key=True)
+    id = Column(Text, primary_key=True)
+    name = Column(Text, nullable=False)
+    rank = Column(SmallInteger, nullable=False)
+    status_color = Column(Text, nullable=False)
+    icon_url = Column(Text)
