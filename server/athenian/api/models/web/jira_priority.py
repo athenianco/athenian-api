@@ -6,22 +6,22 @@ from athenian.api.models.web.base_model_ import Model
 class JIRAPriority(Model):
     """JIRA issue priority details."""
 
-    openapi_types = {"name": str, "image": str, "value": int}
-    attribute_map = {"name": "name", "image": "image", "value": "value"}
+    openapi_types = {"name": str, "image": str, "rank": int}
+    attribute_map = {"name": "name", "image": "image", "rank": "rank"}
 
     def __init__(self,
                  name: Optional[str] = None,
                  image: Optional[str] = None,
-                 value: Optional[int] = None):
+                 rank: Optional[int] = None):
         """JIRAPriority - a model defined in OpenAPI
 
         :param name: The name of this JIRAPriority.
         :param image: The image of this JIRAPriority.
-        :param value: The value of this JIRAPriority.
+        :param rank: The rank of this JIRAPriority.
         """
         self._name = name
         self._image = image
-        self._value = value
+        self._rank = rank
 
     @property
     def name(self) -> str:
@@ -42,7 +42,7 @@ class JIRAPriority(Model):
         :param name: The name of this JIRAPriority.
         """
         if name is None:
-            raise ValueError("Invalid value for `name`, must not be `None`")
+            raise ValueError("Invalid rank for `name`, must not be `None`")
 
         self._name = name
 
@@ -65,32 +65,32 @@ class JIRAPriority(Model):
         :param image: The image of this JIRAPriority.
         """
         if image is None:
-            raise ValueError("Invalid value for `image`, must not be `None`")
+            raise ValueError("Invalid rank for `image`, must not be `None`")
 
         self._image = image
 
     @property
-    def value(self) -> int:
-        """Gets the value of this JIRAPriority.
+    def rank(self) -> int:
+        """Gets the rank of this JIRAPriority.
 
         Measure of importance (bigger is more important).
 
-        :return: The value of this JIRAPriority.
+        :return: The rank of this JIRAPriority.
         """
-        return self._value
+        return self._rank
 
-    @value.setter
-    def value(self, value: int):
-        """Sets the value of this JIRAPriority.
+    @rank.setter
+    def rank(self, rank: int):
+        """Sets the rank of this JIRAPriority.
 
-        Measure of importance (bigger is more important).
+        Measure of importance (smaller is more important).
 
-        :param value: The value of this JIRAPriority.
+        :param rank: The rank of this JIRAPriority.
         """
-        if value is None:
-            raise ValueError("Invalid value for `value`, must not be `None`")
-        if value is not None and value < 0:
+        if rank is None:
+            raise ValueError("Invalid rank for `rank`, must not be `None`")
+        if rank is not None and rank < 1:
             raise ValueError(
-                "Invalid value for `value`, must be a value greater than or equal to `0`")
+                "Invalid rank for `rank`, must be a rank greater than or equal to `1`")
 
-        self._value = value
+        self._rank = rank
