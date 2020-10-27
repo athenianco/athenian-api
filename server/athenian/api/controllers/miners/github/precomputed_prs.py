@@ -58,26 +58,25 @@ def triage_by_release_match(repo: str,
     """Check the release match of the specified `repo` and return `None` if it is not effective \
     or decide between `result` and `ambioguous`, depending on the settings."""
     if release_match in (ReleaseMatch.rejected.name, ReleaseMatch.force_push_drop.name):
+        return result
+    match_name, match_by = release_match.split("|", 1)
+    match = ReleaseMatch[match_name]
+    required_release_match = release_settings[prefix + repo]
+    if required_release_match.match != ReleaseMatch.tag_or_branch:
+        if match != required_release_match.match:
+            return None
         dump = result
     else:
-        match_name, match_by = release_match.split("|", 1)
-        match = ReleaseMatch[match_name]
-        required_release_match = release_settings[prefix + repo]
-        if required_release_match.match != ReleaseMatch.tag_or_branch:
-            if match != required_release_match.match:
-                return None
-            dump = result
-        else:
-            dump = ambiguous[match_name]
-        if match == ReleaseMatch.tag:
-            target = required_release_match.tags
-        elif match == ReleaseMatch.branch:
-            target = required_release_match.branches.replace(
-                default_branch_alias, default_branches.get(repo, default_branch_alias))
-        else:
-            raise AssertionError("Precomputed DB may not contain Match.tag_or_branch")
-        if target != match_by:
-            return None
+        dump = ambiguous[match_name]
+    if match == ReleaseMatch.tag:
+        target = required_release_match.tags
+    elif match == ReleaseMatch.branch:
+        target = required_release_match.branches.replace(
+            default_branch_alias, default_branches.get(repo, default_branch_alias))
+    else:
+        raise AssertionError("Precomputed DB may not contain Match.tag_or_branch")
+    if target != match_by:
+        return None
     return dump
 
 

@@ -171,11 +171,12 @@ class MeanTimeToRestoreCalculator(AverageMetricCalculator[timedelta]):
         released = facts[ISSUE_RELEASED].values
         is_bug = facts[Issue.type.key].str.lower().values == "bug"
         focus_mask = (min_times[:, None] <= resolved) & (resolved < max_times[:, None]) & is_bug
-        mttr = released - np.minimum(created, work_began)
-        mttr[resolved != resolved] = np.datetime64("nat")
-        mttr_fallback = resolved - created
-        empty_mttr_mask = mttr != mttr
-        mttr[empty_mttr_mask] = mttr_fallback[empty_mttr_mask]
+        mttr = np.maximum(released, resolved) - np.minimum(created, work_began)
+        nat = np.datetime64("nat")
+        mttr[released != released] = nat
+        mttr[resolved != resolved] = nat
+        unmapped_mask = work_began != work_began
+        mttr[unmapped_mask] = resolved[unmapped_mask] - created[unmapped_mask]
         empty_mttr_mask = mttr != mttr
         mttr = mttr.astype(self.dtype).view(int)
         result[:] = mttr

@@ -21,7 +21,7 @@ async def test_fetch_jira_issues_releases(mdb, pdb, default_branches, release_ma
                                      [], [], [], [],
                                      default_branches, release_match_setting_tag,
                                      mdb, pdb, None)
-    assert issues[ISSUE_WORK_BEGAN].notnull().sum() == 42
-    assert issues[ISSUE_RELEASED].notnull().sum() == 42
+    assert issues[ISSUE_WORK_BEGAN].notnull().sum() == 56
+    assert issues[ISSUE_RELEASED].notnull().sum() == 55
     assert (issues[ISSUE_RELEASED][issues[ISSUE_RELEASED].notnull()] >
-            issues[ISSUE_WORK_BEGAN][issues[ISSUE_WORK_BEGAN].notnull()]).all()
+            issues[ISSUE_WORK_BEGAN][issues[ISSUE_RELEASED].notnull()]).all()
