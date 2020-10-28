@@ -1,4 +1,3 @@
-import asyncio
 from collections import Counter
 from datetime import timezone
 from itertools import chain, groupby
@@ -13,6 +12,7 @@ import sentry_sdk
 from sqlalchemy import and_, or_, select
 
 from athenian.api import metadata
+from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_account_repositories, get_user_account_status
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
@@ -156,14 +156,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                     label.last_used = label.last_used.replace(tzinfo=timezone.utc)
             return labels, types
 
-        component_names, users, priorities, issues = await asyncio.gather(
-            fetch_components(), fetch_users(), fetch_priorities(), main_flow(),
-            return_exceptions=True)
-        for e in (components, users, priorities, issues):
-            if isinstance(e, Exception):
-                raise e from None
-        labels, types = issues
-
+        component_names, users, priorities, (labels, types) = await gather(
+            fetch_components(), fetch_users(), fetch_priorities(), main_flow())
         components = {
             row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
             for row in component_names
@@ -193,12 +187,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         labels = sorted(chain(components.values(), labels.values()))
         return labels, users, types, priorities
 
-    with sentry_sdk.start_span(op="mdb"):
-        epics, issues = await asyncio.gather(epic_flow(), issue_flow(), return_exceptions=True)
-        for r in (epics, issues):
-            if isinstance(r, Exception):
-                raise r from None
-    labels, users, types, priorities = issues
+    epics, (labels, users, types, priorities) = await gather(epic_flow(), issue_flow(), op="mdb")
     return model_response(FoundJIRAStuff(
         epics=epics,
         labels=labels,
@@ -215,29 +204,20 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    with sentry_sdk.start_span(op="sdb"):
-        tasks = [
-            get_user_account_status(request.uid, filt.account, request.sdb, request.cache),
-            get_account_repositories(filt.account, request.sdb),
-            get_jira_installation(filt.account, request.sdb, request.cache),
-        ]
-        status, repos, jira_id = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in (status, repos, jira_id):
-            if isinstance(r, Exception):
-                raise r from None
+    tasks = [
+        get_user_account_status(request.uid, filt.account, request.sdb, request.cache),
+        get_account_repositories(filt.account, request.sdb),
+        get_jira_installation(filt.account, request.sdb, request.cache),
+    ]
+    status, repos, jira_id = await gather(*tasks, op="sdb")
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     tasks = [
         extract_branches([r.split("/", 1)[1] for r in repos], request.mdb, request.cache),
         Settings.from_request(request, filt.account).list_release_matches(repos),
     ]
-    with sentry_sdk.start_span(op="branches and release settings"):
-        branches, release_settings = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (branches, release_settings):
-        if isinstance(r, Exception):
-            raise r from None
-    _, default_branches = branches
-
+    (_, default_branches), release_settings = await gather(
+        *tasks, op="branches and release settings")
     issues = await fetch_jira_issues(
         jira_id,
         time_intervals[0][0], time_intervals[0][-1], filt.exclude_inactive,

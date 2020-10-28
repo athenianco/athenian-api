@@ -12,7 +12,7 @@ import sentry_sdk
 from sqlalchemy import and_, or_, select
 
 from athenian.api import COROUTINE_YIELD_EVERY_ITER, list_with_yield, metadata
-from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
@@ -532,11 +532,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
             time_from, time_to, repos, participants, labels, default_branches,
             exclude_inactive, release_settings, pdb),
     )
-    pr_miner, facts = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (pr_miner, facts):
-        if isinstance(r, Exception):
-            raise r from None
-    pr_miner, unreleased_facts, matched_bys, unreleased_prs_event = pr_miner
+    (pr_miner, unreleased_facts, matched_bys, unreleased_prs_event), facts = await gather(*tasks)
     # we want the released PR facts to overwrite the others
     facts, unreleased_facts = unreleased_facts, facts
     facts.update(unreleased_facts)
@@ -682,10 +678,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                        mdb, PullRequest, index=PullRequest.node_id.key),
         load_precomputed_done_facts_reponums(prs, default_branches, release_settings, pdb),
     ]
-    prs_df, facts = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (prs, facts):
-        if isinstance(r, Exception):
-            raise r from None
+    prs_df, facts = await gather(*tasks)
     if prs_df.empty:
         return [], PRDataFrames(*(pd.DataFrame() for _ in range(9))), {}, {}
     now = datetime.now(timezone.utc)
@@ -710,10 +703,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                 prs_df, releases[Release.published_at.key].max(), LabelFilter.empty(),
                 matched_bys, default_branches, release_settings, pdb),
         ]
-        dags, unreleased = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in (dags, unreleased):
-            if isinstance(r, Exception):
-                raise r from None
+        dags, unreleased = await gather(*tasks)
     else:
         releases, matched_bys, unreleased = dummy_releases_df(), {}, {}
         dags = await fetch_precomputed_commit_history_dags(

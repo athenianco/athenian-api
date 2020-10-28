@@ -22,6 +22,7 @@ from multidict import CIMultiDict
 import sentry_sdk
 from sqlalchemy import select
 
+from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.state.models import God, UserToken
@@ -247,9 +248,7 @@ class Auth0:
                     self.log.warning("Auth0 Management API /users raised HTTP %d, bisecting "
                                      "%d/%d -> %d, %d",
                                      resp.status, len(batch), len(users), m, len(batch) - m)
-                    b1, b2 = await asyncio.gather(get_batch(batch[:m]), get_batch(batch[m:]))
-                    if b1 is None or b2 is None:
-                        return []
+                    b1, b2 = await gather(get_batch(batch[:m]), get_batch(batch[m:]))
                     return b1 + b2
                 elif resp.status == HTTPStatus.UNAUTHORIZED:
                     # force refresh the token

@@ -8,7 +8,7 @@ import pandas as pd
 from sqlalchemy import and_, select
 
 from athenian.api import metadata
-from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.async_utils import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.models.metadata.github import Branch, Repository
 from athenian.api.tracing import sentry_span

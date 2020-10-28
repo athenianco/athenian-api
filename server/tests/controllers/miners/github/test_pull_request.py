@@ -238,7 +238,7 @@ async def test_pr_miner_iter_cache_incompatible(
         pdb,
         cache,
     )
-    with pytest.raises(AttributeError):
+    with pytest.raises(AssertionError):
         await PullRequestMiner.mine(
             date_from,
             date_to,

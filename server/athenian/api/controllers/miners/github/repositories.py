@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime
 from itertools import chain
 import marshal
@@ -9,6 +8,7 @@ import databases
 import sentry_sdk
 from sqlalchemy import and_, distinct, join, or_, select, union
 
+from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -132,10 +132,7 @@ async def mine_repositories(repos: Collection[str],
     if not exclude_inactive:
         tasks = [fetch_inactive_open_prs(), fetch_inactive_merged_prs()] + tasks
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in results:
-        if isinstance(r, Exception):
-            raise r from None
+    results = await gather(*tasks)
     repos = set(r[0] for r in chain.from_iterable(results))
     with sentry_sdk.start_span(op="SELECT FROM github_repositories_v2_compat"):
         repos = await mdb.fetch_all(select([Repository.full_name])

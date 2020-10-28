@@ -1,9 +1,9 @@
-import asyncio
 from collections import defaultdict
 
 from aiohttp import web
 
 from athenian.api import ResponseError
+from athenian.api.async_utils import gather
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import compile_repos_and_devs_prs
@@ -72,10 +72,5 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     tasks = []
     for service, (repos, devs, labels, jira, for_set) in filters:
         tasks.append(calculate_for_set_histograms(service, repos, devs, labels, jira, for_set))
-    if len(tasks) == 0:
-        await tasks[0]
-    else:
-        for err in await asyncio.gather(*tasks, return_exceptions=True):
-            if isinstance(err, Exception):
-                raise err from None
+    await gather(*tasks)
     return model_response(result)

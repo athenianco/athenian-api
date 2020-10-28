@@ -1,4 +1,3 @@
-import asyncio
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -14,7 +13,7 @@ import pandas as pd
 from sqlalchemy import and_, distinct, func, join, or_, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -341,10 +340,7 @@ async def calc_developer_metrics(devs: Sequence[str],
             tasks.append(setter(stats_by_repo_by_dev, topics, time_from, time_to,
                                 dev_ids_map, repo_ids_map, len(repos) > 1,
                                 labels, jira, release_settings, mdb, pdb, cache))
-    errors = await asyncio.gather(*tasks, return_exceptions=True)
-    for err in errors:
-        if isinstance(err, Exception):
-            raise err from None
+    await gather(*tasks)
     return _convert_stats(stats_by_repo_by_dev, devs, repos, repo_ids_map, reverse_dev_ids_map)
 
 
@@ -360,10 +356,7 @@ async def _fetch_node_ids(devs: Collection[str],
         mdb.fetch_all(select([User.node_id, User.login])
                       .where(User.login.in_(devs))),
     ]
-    repo_ids, dev_ids = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (repo_ids, dev_ids):
-        if isinstance(r, Exception):
-            raise r from None
+    repo_ids, dev_ids = await gather(*tasks)
     repo_ids_map = {r[1]: r[0] for r in repo_ids}
     dev_ids_map = {r[1]: r[0] for r in dev_ids}
     reverse_dev_ids_map = {dev_ids_map[dev]: i for i, dev in enumerate(devs) if dev in dev_ids_map}

@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 from sqlalchemy import and_, select, update
 
-from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.async_utils import read_sql_query
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.features.github.pull_request_filter import _fetch_pull_requests
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter

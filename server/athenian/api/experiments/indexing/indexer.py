@@ -1,4 +1,3 @@
-import asyncio
 import bisect
 from datetime import datetime, timezone
 from enum import Enum
@@ -7,6 +6,8 @@ from typing import Dict
 
 import numpy as np
 import pandas as pd
+
+from athenian.api.async_utils import gather
 
 
 class LayerLevel(Enum):
@@ -363,7 +364,7 @@ class ContributorsIndexer:
     async def create(cls, mdb_conn):
         """Create a contributors indexer."""
         tasks = [ind_cls.get_instance(mdb_conn) for ind_cls in cls.indexers]
-        indexers = await asyncio.gather(*tasks, return_exceptions=True)
+        indexers = await gather(*tasks)
         return cls(indexers)
 
     def search(self, date_from, date_to, op, return_counts=False):

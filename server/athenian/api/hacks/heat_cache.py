@@ -16,6 +16,7 @@ from tqdm import tqdm
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
     create_slack, enable_defer, ParallelDatabase, patch_pandas, ResponseError, \
     setup_cache_metrics, setup_context, setup_defer, wait_deferred
+from athenian.api.async_utils import gather
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -257,11 +258,12 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
         tasks.append(mdb.fetch_all(
             select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
             .where(PullRequestLabel.pull_request_node_id.in_(unique_prs[batch:batch + 1000]))))
-    task_results = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in task_results:
-        if isinstance(r, Exception):
-            sentry_sdk.capture_exception(r)
-            return 1
+    try:
+        task_results = await gather(*tasks)
+    except Exception as e:
+        sentry_sdk.capture_exception(e)
+        log.warning("%s: %s", type(e).__name__, e)
+        return 1
     actual_labels = defaultdict(dict)
     for row in chain.from_iterable(task_results):
         actual_labels[row[0]][row[1]] = ""
@@ -280,12 +282,12 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
         return 0
     log.info("Updating %d records", len(tasks))
     for batch in range(0, len(tasks), 1000):
-        errors = await asyncio.gather(*tasks[batch:batch + 1000], return_exceptions=True)
-        for err in errors:
-            if isinstance(err, Exception):
-                sentry_sdk.capture_exception(err)
-                log.warning("%s: %s", type(err).__name__, err)
-                return 1
+        try:
+            await gather(*tasks[batch:batch + 1000])
+        except Exception as e:
+            sentry_sdk.capture_exception(e)
+            log.warning("%s: %s", type(e).__name__, e)
+            return 1
     return 0
 
 

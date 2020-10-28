@@ -1,4 +1,3 @@
-import asyncio
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain
@@ -10,6 +9,7 @@ import databases
 import sentry_sdk
 from sqlalchemy import and_, func, or_, select
 
+from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.release import load_releases
@@ -63,11 +63,7 @@ async def mine_contributors(repos: Collection[str],
         mdb.fetch_all(select([NodeRepository.node_id])
                       .where(NodeRepository.name_with_owner.in_(repos))),
     ]
-    branches, repo_rows = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (branches, repo_rows):
-        if isinstance(r, Exception):
-            raise r from None
-    branches, default_branches = branches
+    (branches, default_branches), repo_rows = await gather(*tasks)
     repo_nodes = [r[0] for r in repo_rows]
 
     @sentry_span
@@ -84,10 +80,7 @@ async def mine_contributors(repos: Collection[str],
             mdb.fetch_all(select([PullRequest.user_login, PullRequest.node_id])
                           .where(common_prs_where)),
         ]
-        released, main = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in (released, main):
-            if isinstance(r, Exception):
-                raise r from None
+        released, main = await gather(*tasks)
         return {
             "author": Counter(user for user, _ in set(chain(
                 ((r[0], r[1]) for r in released),
@@ -124,10 +117,7 @@ async def mine_contributors(repos: Collection[str],
                             NodeCommit.committer_user.isnot(None)))
                 .group_by(NodeCommit.committer_user)),
         ]
-        authors, committers = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in (authors, committers):
-            if isinstance(r, Exception):
-                raise r from None
+        authors, committers = await gather(*tasks)
         user_ids = set(r[0] for r in authors).union(r[0] for r in committers)
         logins = await mdb.fetch_all(select([User.node_id, User.login])
                                      .where(User.node_id.in_(user_ids)))
@@ -185,11 +175,9 @@ async def mine_contributors(repos: Collection[str],
 
     user_roles = user_roles or fetchers_mapping.keys()
     tasks = set(fetchers_mapping[role] for role in user_roles)
-    data = await asyncio.gather(*(t() for t in tasks), return_exceptions=True)
+    data = await gather(*(t() for t in tasks))
     stats = defaultdict(dict)
     for dikt in data:
-        if isinstance(dikt, Exception):
-            raise dikt from None
         for key, rows in dikt.items():
             for row in rows:
                 stats[row[0]][key] = row[1]
