@@ -662,8 +662,8 @@ async def _fetch_commits(commit_shas: Sequence[str],
         # Postgres planner sucks in this case and we have to be inventive
         rows = await db.fetch_all(
             select([NodeCommit.id])
-            .where(and_(PushCommit.sha.in_any_values(commit_shas),
-                        PushCommit.committed_date.between(time_from, time_to))))
+            .where(and_(NodeCommit.oid.in_any_values(commit_shas),
+                        NodeCommit.committed_date.between(time_from, time_to))))
         if not rows:
             return pd.DataFrame(columns=[c.key for c in PushCommit.__table__.columns])
         ids = [r[0] for r in rows]
