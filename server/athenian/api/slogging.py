@@ -58,9 +58,9 @@ def get_timezone() -> Tuple[datetime.tzinfo, str]:
 timezone, tzstr = get_timezone()
 _now = get_datetime_now()
 if _now.month == 12:
-    _fest = "🎅"
+    _fest = "🎅 "
 elif _now.month == 10 and _now.day > (31 - 7):
-    _fest = "🎃"
+    _fest = "🎃 "
 else:
     _fest = ""
 del _now
