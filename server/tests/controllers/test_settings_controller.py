@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api import auth
-from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.async_utils import read_sql_query
 from athenian.api.models.state.models import AccountGitHubAccount, ReleaseSetting, \
     RepositorySet, UserAccount
 from athenian.api.models.web import ReleaseMatchSetting, ReleaseMatchStrategy

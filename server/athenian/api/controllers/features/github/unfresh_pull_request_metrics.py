@@ -1,4 +1,3 @@
-import asyncio
 from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Set
@@ -7,9 +6,8 @@ import aiomcache
 import databases
 import numpy as np
 import pandas as pd
-import sentry_sdk
 
-from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
@@ -75,12 +73,8 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
             return pd.DataFrame()
 
         tasks.append(dummy_inactive_prs())
-    with sentry_sdk.start_span(op="discover PRs"):
-        releases, unreleased_prs, done_facts, inactive_merged_prs = await asyncio.gather(
-            *tasks, return_exceptions=True)
-    for r in (releases, unreleased_prs, done_facts, inactive_merged_prs):
-        if isinstance(r, Exception):
-            raise r from None
+    releases, unreleased_prs, done_facts, inactive_merged_prs = await gather(
+        *tasks, op="discover PRs")
     unreleased_pr_node_ids = unreleased_prs.index.values
     merged_mask = unreleased_prs[PullRequest.merged_at.key].notnull()
     open_prs = unreleased_pr_node_ids[~merged_mask]
@@ -95,10 +89,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
             default_branches, release_settings, pdb,
             time_from=time_from, exclude_inactive=exclude_inactive),
     ]
-    open_facts, merged_facts = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (open_facts, merged_facts):
-        if isinstance(r, Exception):
-            raise r from None
+    open_facts, merged_facts = await gather(*tasks)
     add_pdb_hits(pdb, "precomputed_open_facts", len(open_facts))
     add_pdb_hits(pdb, "precomputed_merged_unreleased_facts", len(merged_facts))
     # ensure the priority order

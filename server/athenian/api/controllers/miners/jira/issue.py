@@ -1,4 +1,3 @@
-import asyncio
 from collections import defaultdict
 from datetime import datetime
 from itertools import chain
@@ -13,7 +12,7 @@ from sqlalchemy import sql
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql import ClauseElement
 
-from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import triage_by_release_match
@@ -200,11 +199,8 @@ async def fetch_jira_issues(account: int,
     if not unreleased_prs:
         await released_flow()
     else:
-        pr_created_ats, err = await asyncio.gather(
-            _fetch_created_ats(unreleased_prs, mdb), released_flow(), return_exceptions=True)
-        for r in (err, pr_created_ats):
-            if isinstance(r, Exception):
-                raise r from None
+        pr_created_ats, err = await gather(
+            _fetch_created_ats(unreleased_prs, mdb), released_flow(), op="released and unreleased")
         for row in pr_created_ats:
             pr_created_at = row[PullRequest.created_at.key]
             i = issue_to_index[pr_to_issue[row[PullRequest.node_id.key]]]

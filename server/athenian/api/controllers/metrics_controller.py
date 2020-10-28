@@ -1,4 +1,3 @@
-import asyncio
 from collections import defaultdict
 from http import HTTPStatus
 from itertools import chain
@@ -7,6 +6,7 @@ from typing import Dict, List, Sequence, Set, Tuple
 from aiohttp import web
 import databases.core
 
+from athenian.api.async_utils import gather
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
@@ -117,12 +117,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     tasks = []
     for service, (repos, devs, labels, jira, for_set) in filters:
         tasks.append(calculate_for_set_metrics(service, repos, devs, labels, jira, for_set))
-    if len(tasks) == 1:
-        await tasks[0]
-    else:
-        for err in await asyncio.gather(*tasks, return_exceptions=True):
-            if isinstance(err, Exception):
-                raise err from None
+    await gather(*tasks)
     return model_response(met)
 
 
@@ -231,14 +226,11 @@ async def _extract_repos(request: AthenianWebRequest,
                          sdb: databases.core.Connection) -> Tuple[Sequence[Set[str]], str]:
     user = request.uid
     service = None
-    resolved = await asyncio.gather(*[
+    resolved = await gather(*[
         resolve_reposet(r, ".for[%d].repositories[%d]" % (
             for_set_index, j), user, account, sdb, request.cache)
-        for j, r in enumerate(for_set)
-    ], return_exceptions=True)
+        for j, r in enumerate(for_set)], op="resolve_reposet-s")
     for repos in resolved:
-        if isinstance(repos, Exception):
-            raise repos from None
         for i, repo in enumerate(repos):
             for key, prefix in PREFIXES.items():
                 if repo.startswith(prefix):
@@ -332,10 +324,8 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
             devs, repos, time_from, time_to, topics, labels, jira, release_settings,
             request.mdb, request.pdb, request.cache))
         for_sets.append(for_set)
-    all_stats = await asyncio.gather(*tasks, return_exceptions=True)
+    all_stats = await gather(*tasks)
     for stats, for_set in zip(all_stats, for_sets):
-        if isinstance(stats, Exception):
-            raise stats from None
         for i, group in enumerate(stats):
             met.calculated.append(CalculatedDeveloperMetricsItem(
                 for_=for_set.select_repogroup(i),
@@ -426,10 +416,5 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
     tasks = []
     for service, repos in grouped_repos.items():
         tasks.append(calculate_for_set_metrics(service, repos, grouped_for_sets[service]))
-    if len(tasks) == 1:
-        await tasks[0]
-    else:
-        for err in await asyncio.gather(*tasks, return_exceptions=True):
-            if isinstance(err, Exception):
-                raise err from None
+    await gather(*tasks)
     return model_response(met)

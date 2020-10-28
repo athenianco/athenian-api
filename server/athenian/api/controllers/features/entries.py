@@ -10,6 +10,7 @@ from databases import Database
 import sentry_sdk
 
 from athenian.api import COROUTINE_YIELD_EVERY_ITER
+from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
@@ -96,11 +97,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
     if exclude_inactive:
         precomputed_tasks.append(load_precomputed_done_candidates(
             time_from, time_to, repositories, default_branches, release_settings, pdb))
-        precomputed_facts, blacklist = await asyncio.gather(
-            *precomputed_tasks, return_exceptions=True)
-        for r in (precomputed_facts, blacklist):
-            if isinstance(r, Exception):
-                raise r from None
+        precomputed_facts, blacklist = await gather(*precomputed_tasks)
     else:
         precomputed_facts = blacklist = await precomputed_tasks[0]
     add_pdb_hits(pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
@@ -127,11 +124,8 @@ async def calc_pull_request_facts_github(time_from: datetime,
     if jira and precomputed_facts:
         tasks.append(PullRequestMiner.filter_jira(
             precomputed_facts, jira, mdb, columns=[PullRequest.node_id]))
-        mined, filtered = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in (mined, filtered):
-            if isinstance(r, Exception):
-                raise r from None
-        miner, unreleased_facts, matched_bys, unreleased_prs_event = mined
+        (miner, unreleased_facts, matched_bys, unreleased_prs_event), filtered = \
+            await gather(*tasks)
         precomputed_facts = {k: precomputed_facts[k] for k in filtered.index.values}
     else:
         miner, unreleased_facts, matched_bys, unreleased_prs_event = await tasks[0]

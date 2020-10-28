@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import delete, select, sql
 from sqlalchemy.schema import CreateTable
 
-from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.async_utils import read_sql_query
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches

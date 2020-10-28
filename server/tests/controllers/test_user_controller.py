@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime, timezone
 import json
 
@@ -7,6 +6,7 @@ import dateutil.parser
 import pytest
 from sqlalchemy import insert, update
 
+from athenian.api.async_utils import gather
 from athenian.api.controllers.user_controller import get_user
 from athenian.api.models.state.models import AccountFeature, Feature, God
 from athenian.api.models.web.product_feature import ProductFeature
@@ -151,8 +151,8 @@ async def test_get_users_query_size_limit(xapp):
 
 
 async def test_get_users_rate_limit(xapp):
-    users = await asyncio.gather(*[xapp._auth0.get_user("auth0|5e1f6dfb57bc640ea390557b")
-                                   for _ in range(20)])
+    users = await gather(*[xapp._auth0.get_user("auth0|5e1f6dfb57bc640ea390557b")
+                           for _ in range(20)])
     for u in users:
         assert u.name == "Vadim Markovtsev"
         assert u.email == "<classified>"  # "vadim@athenian.co"

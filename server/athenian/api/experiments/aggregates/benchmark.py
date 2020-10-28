@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from athenian.api import ParallelDatabase
+from athenian.api.async_utils import gather
 from athenian.api.experiments.aggregates.models import PullRequestEvent
 from athenian.api.experiments.aggregates.utils import get_accounts_and_repos
 
@@ -20,7 +21,7 @@ async def benchmark(sdb_conn_uri: str, adb_conn_uri: str, account: int, n: int):
     """Benchmark metrics aggregation query for the provided account."""
     sdb_conn = ParallelDatabase(sdb_conn_uri)
     adb_conn = ParallelDatabase(adb_conn_uri)
-    await asyncio.gather(sdb_conn.connect(), adb_conn.connect())
+    await gather(sdb_conn.connect(), adb_conn.connect())
 
     to = datetime(2020, 7, 1).replace(tzinfo=timezone.utc)
 

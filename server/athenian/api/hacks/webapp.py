@@ -5,6 +5,8 @@ import time
 
 import aiohttp
 
+from athenian.api.async_utils import gather
+
 
 def extract_account_id(user):
     """Extract the account id from the user information."""
@@ -402,7 +404,7 @@ async def main(
 
         account_id = extract_account_id(user)
 
-        feature_flags_out, reposets_out = await asyncio.gather(
+        feature_flags_out, reposets_out = await gather(
             get_feature_flags(client, headers, account_id),
             get_reposets(client, headers, account_id),
         )
@@ -412,7 +414,7 @@ async def main(
         reposets, datapoint = reposets_out
         data.append(datapoint)
 
-        all_reposets_out = await asyncio.gather(
+        all_reposets_out = await gather(
             *[get_reposet(client, headers, reposet["id"]) for reposet in reposets],
         )
 
@@ -473,7 +475,7 @@ async def main(
             custom_granularity = "month"
 
         # main parallel calls
-        parallel_block_outs = await asyncio.gather(
+        parallel_block_outs = await gather(
             filter_pull_requests(
                 client,
                 headers,

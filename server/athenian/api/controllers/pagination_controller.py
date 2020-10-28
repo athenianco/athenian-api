@@ -1,10 +1,10 @@
-import asyncio
 from datetime import timedelta
 
 from aiohttp import web
 import numpy as np
 
 from athenian.api import ResponseError
+from athenian.api.async_utils import gather
 from athenian.api.controllers.filter_controller import resolve_filter_prs_parameters
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -40,10 +40,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     if filt.request.jira:
         tasks.append(PullRequestMiner.filter_jira(
             done_ats, jira, request.mdb, columns=[PullRequest.node_id]))
-        other_prs, passed_jira = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in other_prs, passed_jira:
-            if isinstance(r, Exception):
-                raise r from None
+        other_prs, passed_jira = await gather(*tasks)
         done_ats = {k: done_ats[k] for k in passed_jira.index.values}
     else:
         other_prs = await tasks[0]

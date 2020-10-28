@@ -12,6 +12,7 @@ from sqlalchemy import and_, insert, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
+from athenian.api.async_utils import gather
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.models.metadata import PREFIXES
@@ -113,9 +114,9 @@ async def resolve_repos(repositories: List[str],
             account, login, [RepositorySet.id], sdb_conn, mdb_conn, cache, slack)
         repositories = ["{%d}" % rss[0][RepositorySet.id.key]]
     repos = set(chain.from_iterable(
-        await asyncio.gather(*[
+        await gather(*[
             resolve_reposet(r, ".in[%d]" % i, uid, account, sdb_conn, cache)
-            for i, r in enumerate(repositories)])))
+            for i, r in enumerate(repositories)], op="resolve_reposet-s")))
     prefix = PREFIXES["github"]
     checked_repos = {r[r.startswith(prefix) and len(prefix):] for r in repos}
     checker = await access_classes["github"](account, sdb_conn, mdb_conn, cache).load()

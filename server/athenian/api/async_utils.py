@@ -1,9 +1,11 @@
+import asyncio
 from datetime import datetime, timezone
 import logging
 import textwrap
-from typing import Collection, Iterable, Mapping, Optional, Sequence, Union
+from typing import Any, Collection, Iterable, Mapping, Optional, Sequence, Tuple, Type, Union
 
 import pandas as pd
+import sentry_sdk
 from sqlalchemy import Column, DateTime
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
@@ -114,3 +116,34 @@ def postprocess_datetime(frame: pd.DataFrame,
         except (AttributeError, TypeError):
             continue
     return frame
+
+
+async def gather(*coros_or_futures,
+                 op: Optional[str] = None,
+                 description: Optional[str] = None,
+                 catch: Type[BaseException] = Exception,
+                 ) -> Tuple[Any, ...]:
+    """Return a future aggregating results/exceptions from the given coroutines/futures.
+
+    This is equivalent to `asyncio.gather(*coros_or_futures, return_exceptions=True)` with
+    subsequent exception forwarding.
+
+    :param op: Wrap the execution in a Sentry span with this `op`.
+    :param description: Sentry span description.
+    :param catch: Forward exceptions of this type.
+    """
+    async def body():
+        if len(coros_or_futures) == 0:
+            return tuple()
+        if len(coros_or_futures) == 1:
+            return (await coros_or_futures[0],)
+        results = await asyncio.gather(*coros_or_futures, return_exceptions=True)
+        for r in results:
+            if isinstance(r, catch):
+                raise r from None
+        return results
+
+    if op is not None:
+        with sentry_sdk.start_span(op=op, description=description):
+            return await body()
+    return await body()

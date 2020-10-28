@@ -17,6 +17,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
+from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
@@ -813,9 +814,7 @@ async def store_merged_unreleased_pull_request_facts(
                        ghmprf.activity_days: v[ghmprf.activity_days.key],
                        ghmprf.updated_at: datetime.now(timezone.utc)})) for v in values
         ]
-        for err in await asyncio.gather(*tasks, return_exceptions=True):
-            if isinstance(err, Exception):
-                raise err from None
+        await gather(*tasks)
 
 
 @sentry_span

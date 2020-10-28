@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql.elements import BinaryExpression, ClauseElement
 
 from athenian.api import metadata
-from athenian.api.async_read_sql_query import postprocess_datetime, read_sql_query
+from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -89,10 +89,7 @@ async def load_releases(repos: Iterable[str],
             pdb, index=index),
         _fetch_precomputed_release_match_spans(match_groups, pdb),
     ]
-    releases, spans = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (releases, spans):
-        if isinstance(r, Exception):
-            raise r from None
+    releases, spans = await gather(*tasks)
     applied_matches = releases[[Release.repository_full_name.key, matched_by_column]].groupby(
         Release.repository_full_name.key, sort=False,
     )[matched_by_column].nth(0).to_dict()
@@ -175,10 +172,7 @@ async def load_releases(repos: Iterable[str],
             settings, mdb, pdb, cache, index=index))
         add_pdb_misses(pdb, "releases/all", len(missing_all))
     if tasks:
-        missings = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in missings:
-            if isinstance(r, Exception):
-                raise r from None
+        missings = await gather(*tasks)
         missings = pd.concat(missings, copy=False)
 
         async def store_precomputed_releases():
@@ -252,10 +246,7 @@ async def _load_releases(repos: Iterable[str],
         result.append(_match_releases_by_branch(
             repos_by_branch, branches, default_branches, time_from, time_to, settings,
             mdb, pdb, cache))
-    result = await asyncio.gather(*result, return_exceptions=True)
-    for r in result:
-        if isinstance(r, Exception):
-            raise r from None
+    result = await gather(*result)
     result = pd.concat(result) if result else dummy_releases_df()
     if index is not None:
         result.set_index(index, inplace=True)
@@ -303,10 +294,7 @@ async def _match_releases_by_tag_or_branch(repos: Iterable[str],
         matched.append(_match_releases_by_branch(
             repos_by_branch, branches, default_branches, time_from, time_to, settings,
             mdb, pdb, cache))
-    matched = await asyncio.gather(*matched, return_exceptions=True)
-    for m in matched:
-        if isinstance(m, Exception):
-            raise m
+    matched = await gather(*matched)
     return pd.concat(matched)
 
 
@@ -570,10 +558,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
                       .where(NodeCommit.id.in_(commit_ids))),
         fetch_precomputed_commit_history_dags(branches_matched, pdb, cache),
     ]
-    commit_dates, dags = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (commit_dates, dags):
-        if isinstance(r, Exception):
-            raise r from None
+    commit_dates, dags = await gather(*tasks)
     commit_dates = {r[0]: r[1] for r in commit_dates}
     if mdb.url.dialect == "sqlite":
         commit_dates = {k: v.replace(tzinfo=timezone.utc) for k, v in commit_dates.items()}
@@ -714,11 +699,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
         load_precomputed_pr_releases(
             prs.index, time_to, matched_bys, default_branches, release_settings, pdb, cache),
     ]
-    branch_commit_dates, unreleased_prs, precomputed_pr_releases = await asyncio.gather(
-        *tasks, return_exceptions=True)
-    for r in (branch_commit_dates, unreleased_prs, precomputed_pr_releases):
-        if isinstance(r, Exception):
-            raise r from None
+    branch_commit_dates, unreleased_prs, precomputed_pr_releases = await gather(*tasks)
     add_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
     add_pdb_hits(pdb, "map_prs_to_releases/unreleased", len(unreleased_prs))
     pr_releases = precomputed_pr_releases
@@ -738,10 +719,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
         _find_dead_merged_prs(merged_prs, dags, branches, mdb, pdb, cache),
         _map_prs_to_releases(merged_prs, dags, releases),
     ]
-    labels, dead_prs, missed_released_prs = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (missed_released_prs, dead_prs, labels):
-        if isinstance(r, Exception):
-            raise r from None
+    labels, dead_prs, missed_released_prs = await gather(*tasks)
     # PRs may wrongly classified as dead although they are really released; remove the conflicts
     dead_prs.drop(index=missed_released_prs.index, inplace=True, errors="ignore")
     add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
@@ -958,12 +936,9 @@ async def _fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarra
     add_pdb_hits(pdb, "_fetch_repository_commits", len(branches) - missed_counter)
     add_pdb_misses(pdb, "_fetch_repository_commits", missed_counter)
     if tasks:
-        with sentry_sdk.start_span(op="_fetch_repository_commits/mdb"):
-            new_dags = await asyncio.gather(*tasks, return_exceptions=True)
+        new_dags = await gather(*tasks, op="_fetch_repository_commits/mdb")
         sql_values = []
         for nd in new_dags:
-            if isinstance(nd, Exception):
-                raise nd from None
             repo, hashes, vertexes, edges = nd
             assert (hashes[1:] > hashes[:-1]).all(), repo
             sql_values.append(GitHubCommitHistory(
@@ -1203,11 +1178,7 @@ async def map_releases_to_prs(repos: Collection[str],
                                         not truncate, release_settings, mdb, pdb, cache),
         fetch_precomputed_commit_history_dags(repos, pdb, cache),
     ]
-    matching_releases, pdags = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in (matching_releases, pdags):
-        if isinstance(r, Exception):
-            raise r from None
-    matched_bys, releases, releases_in_time_range, release_settings = matching_releases
+    (matched_bys, releases, releases_in_time_range, release_settings), pdags = await gather(*tasks)
 
     # ensure that our DAGs contain all the mentioned releases
     rpak = Release.published_at.key
@@ -1324,11 +1295,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                       mdb, pdb, cache),
         _fetch_repository_first_commit_dates(repos_matched_by_branch, mdb, pdb, cache),
     ]
-    releases_today, releases_old_branches, releases_old_tags, repo_births = await asyncio.gather(
-        *tasks, return_exceptions=True)
-    for r in (releases_today, releases_old_branches, releases_old_tags, repo_births):
-        if isinstance(r, Exception):
-            raise r from None
+    releases_today, releases_old_branches, releases_old_tags, repo_births = await gather(*tasks)
     releases_today = releases_today[0]
     releases_old_branches = releases_old_branches[0]
     releases_old_tags = releases_old_tags[0]
@@ -1518,12 +1485,7 @@ async def mine_releases(repos: Iterable[str],
             load_commit_dags(releases, mdb, pdb, cache),
             _fetch_repository_first_commit_dates(missing_repos, mdb, pdb, cache),
         ]
-        with sentry_sdk.start_span(op="mine_releases/commits"):
-            dags, first_commit_dates = await asyncio.gather(
-                *tasks, return_exceptions=True)
-        for r in (dags, first_commit_dates):
-            if isinstance(r, Exception):
-                raise r from None
+        dags, first_commit_dates = await gather(*tasks, op="mine_releases/commits")
 
         all_hashes = []
         for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
@@ -1713,11 +1675,7 @@ async def mine_releases(repos: Iterable[str],
         main_flow(),
         mine_user_avatars(all_authors, mdb, cache, prefix=prefix),
     ]
-    with sentry_sdk.start_span(op="main_flow + avatars"):
-        mined_releases, avatars = await asyncio.gather(*tasks, return_exceptions=True)
-    for r in avatars, mined_releases:
-        if isinstance(r, Exception):
-            raise r from None
+    mined_releases, avatars = await gather(*tasks, op="main_flow + avatars")
     await defer(store_precomputed_release_facts(mined_releases, default_branches, settings, pdb),
                 "store_precomputed_release_facts(%d)" % len(mined_releases))
     avatars = [p for p in avatars if p[0] in mentioned_authors]

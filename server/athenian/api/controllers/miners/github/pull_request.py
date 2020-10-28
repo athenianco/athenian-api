@@ -13,14 +13,13 @@ import databases
 import numpy as np
 import pandas as pd
 from pandas.core.common import flatten
-import sentry_sdk
 from sqlalchemy import sql
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
-from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -226,11 +225,7 @@ class PullRequestMiner:
             async def dummy_unreleased():
                 return pd.DataFrame()
             tasks.append(dummy_unreleased())
-        released, prs, unreleased = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in (prs, released, unreleased):
-            if isinstance(r, Exception):
-                raise r from None
-        released_prs, releases, matched_bys, dags = released
+        (released_prs, releases, matched_bys, dags), prs, unreleased = await gather(*tasks)
         prs = pd.concat([prs, released_prs, unreleased], copy=False)
         prs = prs[~prs.index.duplicated()]
         if 0 < limit < len(prs):
@@ -245,12 +240,8 @@ class PullRequestMiner:
                 dags, release_settings, mdb, pdb, cache, truncate=truncate),
             load_open_pull_request_facts(prs, pdb),
         ]
-        with sentry_sdk.start_span(op="PullRequestMiner.mine/external_data"):
-            mined, open_facts = await asyncio.gather(*tasks, return_exceptions=True)
-            for r in (mined, open_facts):
-                if isinstance(r, Exception):
-                    raise r from None
-        dfs, unreleased_facts, unreleased_prs_event = mined
+        (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
+            *tasks, op="PullRequestMiner.mine/external_data")
 
         to_drop = cls._find_drop_by_participants(dfs, participants, None if truncate else time_to)
         to_drop |= cls._find_drop_by_labels(dfs, labels)
@@ -401,10 +392,7 @@ class PullRequestMiner:
                     prs.take(np.where(~merged_mask)[0]),
                     nonemax(releases[Release.published_at.key].nonemax(), time_to),
                     LabelFilter.empty(), matched_bys, default_branches, release_settings, pdb)]
-            df_facts, other_facts = await asyncio.gather(*subtasks, return_exceptions=True)
-            for r in (df_facts, other_facts):
-                if isinstance(r, Exception):
-                    raise r from None
+            df_facts, other_facts = await gather(*subtasks)
             nonlocal facts
             nonlocal unreleased_prs_event
             df, facts, unreleased_prs_event = df_facts
@@ -469,7 +457,7 @@ class PullRequestMiner:
 
         # the order is important: it provides the best performance
         # we launch coroutines from the heaviest to the lightest
-        dfs = await asyncio.gather(
+        dfs = await gather(
             fetch_commits(),
             map_releases(),
             fetch_jira(),
@@ -477,11 +465,7 @@ class PullRequestMiner:
             fetch_review_comments(),
             fetch_review_requests(),
             fetch_comments(),
-            fetch_labels(),
-            return_exceptions=True)
-        for df in dfs:
-            if isinstance(df, Exception):
-                raise df from None
+            fetch_labels())
         dfs = PRDataFrames(prs, *dfs)
         if len(merged_unreleased_indexes):
             # if we truncate and there are PRs merged after `time_to`

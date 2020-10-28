@@ -13,7 +13,7 @@ import pandas as pd
 from sqlalchemy import and_, create_engine, extract, func, insert, or_, select, update
 
 from athenian.api import create_memcached, ParallelDatabase, patch_pandas
-from athenian.api.async_read_sql_query import read_sql_query
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests
 from athenian.api.controllers.miners.types import PRParticipationKind, PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
@@ -263,10 +263,8 @@ async def _get_outdated_aggregation_prs(
             mdb, [PullRequest.node_id.key, "last_event_update_timestamp"],
         )
 
-    unfresh_prs, release_settings = await asyncio.gather(
-        fetch_all_unfresh_prs(), fetch_all_release_setting(),
-        return_exceptions=True,
-    )
+    unfresh_prs, release_settings = await gather(
+        fetch_all_unfresh_prs(), fetch_all_release_setting())
 
     if unfresh_prs.empty:
         log.info("No non-fresh PRs found")
@@ -314,7 +312,7 @@ async def _fetch_prs_data(
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
     }
-    await asyncio.gather(sdb_.connect(), mdb_.connect(), pdb_.connect())
+    await gather(sdb_.connect(), mdb_.connect(), pdb_.connect())
 
     log.info("Fetching PRs data...")
     account_settings = Settings.from_account(account, sdb_, mdb_, cache, None)
@@ -497,8 +495,7 @@ async def _get_db_conns(
         ParallelDatabase(pdb_conn_uri),
         ParallelDatabase(adb_conn_uri),
     )
-    await asyncio.gather(sdb_conn.connect(), mdb_conn.connect(),
-                         pdb_conn.connect(), adb_conn.connect())
+    await gather(sdb_conn.connect(), mdb_conn.connect(), pdb_conn.connect(), adb_conn.connect())
 
     async with sdb_conn.connection() as sdb, mdb_conn.connection() as mdb, \
             pdb_conn.connection() as pdb, adb_conn.connection() as adb:
