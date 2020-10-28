@@ -667,6 +667,7 @@ async def _fetch_commits(commit_shas: Sequence[str],
         if not rows:
             return pd.DataFrame(columns=[c.key for c in PushCommit.__table__.columns])
         ids = [r[0] for r in rows]
+        assert len(ids) <= len(commit_shas), len(ids)
         query = select([PushCommit]) \
             .where(PushCommit.node_id.in_(ids)) \
             .order_by(desc(PushCommit.committed_date))
