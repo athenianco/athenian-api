@@ -1638,8 +1638,12 @@ async def mine_releases(repos: Iterable[str],
                     continue
                 dupe = computed_release_info_by_commit.get(my_commit)
                 if dupe is None:
-                    found_indexes = searchsorted_inrange(commits_index, owned_hashes[i])
-                    found_indexes = found_indexes[commits_index[found_indexes] == owned_hashes[i]]
+                    if len(commits_index) > 0:
+                        found_indexes = searchsorted_inrange(commits_index, owned_hashes[i])
+                        found_indexes = \
+                            found_indexes[commits_index[found_indexes] == owned_hashes[i]]
+                    else:
+                        found_indexes = np.array([], dtype=int)
                     commits_count = len(found_indexes)
                     my_additions = commits_additions[found_indexes].sum()
                     my_deletions = commits_deletions[found_indexes].sum()
