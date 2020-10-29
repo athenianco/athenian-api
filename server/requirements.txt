@@ -1,4 +1,4 @@
-aiohttp==3.7.1
+aiohttp==3.7.2
 connexion[aiohttp,swagger-ui]==2.7.0
 aiohttp_cors==0.7.0
 swagger-ui-bundle==0.0.8
