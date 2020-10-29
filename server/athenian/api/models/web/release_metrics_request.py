@@ -4,6 +4,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
 from athenian.api.models.web.granularity import Granularity
+from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.quantiles import validate_quantiles
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_with import ReleaseWith
@@ -22,6 +23,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         "quantiles": List[float],
         "timezone": int,
         "account": int,
+        "jira": Optional[JIRAFilter],
     }
 
     attribute_map = {
@@ -34,6 +36,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         "quantiles": "quantiles",
         "timezone": "timezone",
         "account": "account",
+        "jira": "jira",
     }
 
     def __init__(
@@ -47,6 +50,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         quantiles: Optional[List[float]] = None,
         timezone: Optional[int] = None,
         account: Optional[int] = None,
+        jira: Optional[JIRAFilter] = None,
     ):
         """ReleaseMetricsRequest - a model defined in OpenAPI
 
@@ -58,6 +62,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         :param granularities: The granularities of this ReleaseMetricsRequest.
         :param timezone: The timezone of this ReleaseMetricsRequest.
         :param account: The account of this ReleaseMetricsRequest.
+        :param jira: The jira of this ReleaseMetricsRequest.
         """
         self._for_ = for_
         self._with_ = with_
@@ -68,6 +73,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         self._quantiles = quantiles
         self._timezone = timezone
         self._account = account
+        self._jira = jira
 
     @property
     def for_(self) -> List[List]:
@@ -182,3 +188,19 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
             return
         validate_quantiles(quantiles)
         self._quantiles = quantiles
+
+    @property
+    def jira(self) -> Optional[JIRAFilter]:
+        """Gets the jira of this ReleaseMetricsRequest.
+
+        :return: The jira of this ReleaseMetricsRequest.
+        """
+        return self._jira
+
+    @jira.setter
+    def jira(self, jira: Optional[JIRAFilter]):
+        """Sets the jira of this ReleaseMetricsRequest.
+
+        :param jira: The jira of this ReleaseMetricsRequest.
+        """
+        self._jira = jira
