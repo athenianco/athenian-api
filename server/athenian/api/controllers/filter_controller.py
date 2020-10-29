@@ -3,17 +3,21 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import operator
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from aiohttp import web
 import aiomcache
 import databases
 from dateutil.parser import parse as parse_datetime
 import numpy as np
+from sqlalchemy import and_, join, outerjoin, select
+from sqlalchemy.orm import aliased
 
+from athenian.api.async_utils import gather
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
-from athenian.api.controllers.jira_controller import get_jira_installation
+from athenian.api.controllers.jira_controller import get_jira_installation, \
+    get_jira_installation_or_none
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -24,11 +28,13 @@ from athenian.api.controllers.miners.github.release import mine_releases
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.miners.types import Property, PRParticipants, PRParticipationKind, \
-    PullRequestEvent, PullRequestListItem, PullRequestStage, ReleaseParticipationKind
+    PullRequestEvent, PullRequestListItem, PullRequestStage, ReleaseFacts, ReleaseParticipationKind
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import PullRequest, PushCommit, Release
+from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest, \
+    PushCommit, Release
+from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
     ForbiddenError, InvalidRequestError, JIRAIssue
 from athenian.api.models.web.developer_summary import DeveloperSummary
@@ -41,7 +47,7 @@ from athenian.api.models.web.filter_releases_request import FilterReleasesReques
 from athenian.api.models.web.filter_repositories_request import FilterRepositoriesRequest
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_release import FilteredRelease
-from athenian.api.models.web.filtered_releases import FilteredReleases
+from athenian.api.models.web.filtered_releases import FilteredReleases, FilteredReleasesInclude
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
@@ -307,12 +313,17 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
                           ("pr_author", ReleaseParticipationKind.PR_AUTHOR),
                           ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
     } if filt.with_ is not None else {}
-    settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
+    tasks = [
+        Settings.from_request(request, filt.account).list_release_matches(repos),
+        get_jira_installation_or_none(filt.account, request.sdb, request.cache),
+    ]
+    settings, jira_id = await gather(*tasks)
     repos = [r.split("/", 1)[1] for r in repos]
     branches, default_branches = await extract_branches(repos, request.mdb, request.cache)
     releases, avatars, _ = await mine_releases(
         repos, participants, branches, default_branches, filt.date_from, filt.date_to, settings,
         request.mdb, request.pdb, request.cache)
+    issues = await _load_jira_issues(jira_id, releases, request.mdb)
     data = [FilteredRelease(name=details[Release.name.key],
                             repository=details[Release.repository_full_name.key],
                             url=details[Release.url.key],
@@ -325,9 +336,51 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
                             commit_authors=facts.commit_authors,
                             prs=_extract_release_prs(facts.prs))
             for details, facts in releases]
-    model = FilteredReleases(data=data, include=IncludedNativeUsers(users={
-        u: IncludedNativeUser(avatar=a) for u, a in avatars}))
+    model = FilteredReleases(data=data, include=FilteredReleasesInclude(
+        users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
+        jira=issues,
+    ))
     return model_response(model)
+
+
+async def _load_jira_issues(jira_account: Optional[int],
+                            releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+                            mdb: databases.Database) -> Dict[str, JIRAIssue]:
+    if jira_account is None:
+        for (_, facts) in releases:
+            facts.prs["jira"] = np.full(len(facts.prs[PullRequest.node_id.key]), None)
+        return {}
+
+    pr_to_ix = {}
+    for ri, (_, facts) in enumerate(releases):
+        node_ids = facts.prs[PullRequest.node_id.key]
+        facts.prs["jira"] = [[] for _ in range(len(node_ids))]
+        for pri, node_id in enumerate(node_ids):
+            pr_to_ix[node_id] = ri, pri
+    regiss = aliased(Issue, name="regular")
+    epiciss = aliased(Issue, name="epic")
+    prmap = aliased(NodePullRequestJiraIssues, name="m")
+    rows = await mdb.fetch_all(
+        select([prmap.node_id.label("node_id"),
+                regiss.key.label("key"),
+                regiss.title.label("title"),
+                regiss.labels.label("labels"),
+                regiss.type.label("type"),
+                epiciss.key.label("epic")])
+        .select_from(outerjoin(
+            join(regiss, prmap, and_(regiss.id == prmap.jira_id,
+                                     regiss.acc_id == prmap.jira_acc)),
+            epiciss, and_(epiciss.id == regiss.epic_id,
+                          epiciss.acc_id == regiss.acc_id)))
+        .where(prmap.node_id.in_(pr_to_ix)))
+    issues = {}
+    for r in rows:
+        key = r["key"]
+        issues[key] = JIRAIssue(
+            id=key, title=r["title"], epic=r["epic"], labels=r["labels"], type=r["type"])
+        ri, pri = pr_to_ix[r["node_id"]]
+        releases[ri][1].prs["jira"][pri].append(key)
+    return issues
 
 
 def _extract_release_prs(prs: Dict[str, np.ndarray]) -> List[ReleasedPullRequest]:
@@ -338,13 +391,15 @@ def _extract_release_prs(prs: Dict[str, np.ndarray]) -> List[ReleasedPullRequest
             additions=adds,
             deletions=dels,
             author=author,
+            jira=jira or None,
         )
-        for number, title, adds, dels, author in zip(
+        for number, title, adds, dels, author, jira in zip(
             prs[PullRequest.number.key],
             prs[PullRequest.title.key],
             prs[PullRequest.additions.key],
             prs[PullRequest.deletions.key],
             prs[PullRequest.user_login.key],
+            prs["jira"],
         )
     ]
 

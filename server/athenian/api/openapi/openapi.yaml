@@ -3165,7 +3165,7 @@ components:
       - avatar
       type: object
     IncludedNativeUsers:
-      additionalProperties: false
+      description: Mentioned GitHub users.
       example:
         users:
           github.com/gkwillie:
@@ -4007,6 +4007,7 @@ components:
           users:
             github.com/gkwillie:
               avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+          jira:
         data:
         - added_lines: 1000
           commits: 20
@@ -4028,7 +4029,9 @@ components:
           url: https://github.com/athenianco/athenian-api/releases/tag/v0.0.93
       properties:
         include:
-          $ref: '#/components/schemas/IncludedNativeUsers'
+          allOf:
+          - $ref: '#/components/schemas/IncludedNativeUsers'
+          - $ref: '#/components/schemas/IncludedJIRAIssues'
         data:
           description: List of matching release metadata.
           items:
@@ -4124,12 +4127,38 @@ components:
           type: integer
         author:
           $ref: '#/components/schemas/DeveloperID'
+        jira:
+          description: Mapped JIRA issue IDs.
+          items:
+            type: string
+          type: array
       required:
       - additions
       - author
       - deletions
       - number
       - title
+      type: object
+    IncludedJIRAIssues:
+      description: Mentioned JIRA issues.
+      example:
+        jira:
+          DEV-344:
+            id: DEV-344
+            title: Write the API specs to filter PRs by Jira epic, ticket type and
+              label.
+            epic: DEV-149
+            labels:
+            - API
+            type: task
+      properties:
+        jira:
+          additionalProperties:
+            $ref: '#/components/schemas/JIRAIssue'
+          description: Mapping JIRA issue ID -> details.
+          type: object
+      required:
+      - jira
       type: object
     ReleaseMatchRequest:
       additionalProperties: false

@@ -42,14 +42,34 @@ from athenian.api.typing_utils import DatabaseLike
 )
 async def get_jira_installation(account: int,
                                 sdb: DatabaseLike,
-                                cache: Optional[aiomcache.Client]) -> int:
-    """Retrieve the JIRA installation ID belonging to the account or raise an exception."""
+                                cache: Optional[aiomcache.Client],
+                                ) -> int:
+    """
+    Retrieve the JIRA installation ID belonging to the account or raise an exception.
+
+    Raise ResponseError if no installation exists.
+    """
     jira_id = await sdb.fetch_val(select([AccountJiraInstallation.id])
                                   .where(AccountJiraInstallation.account_id == account))
     if jira_id is None:
         raise ResponseError(NoSourceDataError(
             detail="JIRA has not been installed to the metadata yet."))
     return jira_id
+
+
+async def get_jira_installation_or_none(account: int,
+                                        sdb: DatabaseLike,
+                                        cache: Optional[aiomcache.Client],
+                                        ) -> Optional[int]:
+    """
+    Retrieve the JIRA installation ID belonging to the account or raise an exception.
+
+    Return None if no installation exists.
+    """
+    try:
+        return await get_jira_installation(account, sdb, cache)
+    except ResponseError:
+        return None
 
 
 async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Response:

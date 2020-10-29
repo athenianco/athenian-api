@@ -19,7 +19,8 @@ def main():
         mod = getattr(web, f.stem)
         imports = []
         for k, v in vars(mod).items():
-            if getattr(v, "__module__", None) == ip and not isinstance(v, TypeVar):
+            if getattr(v, "__module__", None) == ip and not isinstance(v, TypeVar) and \
+                    not v.__name__.startswith("_"):
                 imports.append(k)
         imports.sort()
         line = "from %s import %s" % (ip, ", ".join(imports))

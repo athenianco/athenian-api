@@ -15,7 +15,8 @@ from athenian.api.controllers.features.entries import calc_pull_request_facts_gi
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.types import Property
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.models.metadata.github import Branch
+from athenian.api.models.metadata.github import Branch, Release
+from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import CommitsList, PullRequestSet
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_releases import FilteredReleases
@@ -1006,11 +1007,23 @@ async def test_filter_releases_by_tag(client, headers):
     response_text = (await response.read()).decode("utf-8")
     assert response.status == 200, response_text
     releases = FilteredReleases.from_dict(json.loads(response_text))
-    releases.include.users = set(releases.include.users)
     assert len(releases.include.users) == 78
     assert "github.com/mcuadros" in releases.include.users
+    assert len(releases.include.jira) == 41
+    with_labels = 0
+    with_epics = 0
+    for key, val in releases.include.jira.items():
+        assert key.startswith("DEV-")
+        assert key == val.id
+        assert val.title
+        assert val.type
+        with_labels += bool(val.labels)
+        with_epics += bool(val.epic)
+    assert with_labels == 40
+    assert with_epics == 3
     assert len(releases.data) == 21
     pr_numbers = set()
+    jira_stats = defaultdict(int)
     for release in releases.data:
         assert release.publisher.startswith("github.com/"), str(release)
         assert len(release.commit_authors) > 0, str(release)
@@ -1035,21 +1048,33 @@ async def test_filter_releases_by_tag(client, headers):
             assert pr.additions + pr.deletions > 0 or pr.number in {804}
             assert (pr.author is None and pr.number in {749, 1203}) \
                 or pr.author.startswith("github.com/")
+            if pr.jira is not None:
+                jira_stats[len(pr.jira)] += 1
+    assert jira_stats == {1: 44}
 
 
 @pytest.mark.filter_releases
-async def test_filter_releases_by_branch(client, headers, client_cache, app):
+async def test_filter_releases_by_branch_no_jira(client, headers, client_cache, app, sdb, mdb):
     app._cache = client_cache
-    body = {
-        "account": 1,
-        "date_from": "2015-01-01",
-        "date_to": "2020-10-22",
-        "in": ["{1}"],
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/releases", headers=headers, json=body)
-    response_text = (await response.read()).decode("utf-8")
-    assert response.status == 200, response_text
+    backup = await mdb.fetch_all(select([Release]))
+    backup = [dict(r) for r in backup]
+    await sdb.execute(delete(AccountJiraInstallation))
+    await mdb.execute(delete(Release))
+    try:
+        body = {
+            "account": 1,
+            "date_from": "2018-01-01",
+            "date_to": "2020-10-22",
+            "in": ["{1}"],
+        }
+        response = await client.request(
+            method="POST", path="/v1/filter/releases", headers=headers, json=body)
+        response_text = (await response.read()).decode("utf-8")
+        assert response.status == 200, response_text
+        releases = FilteredReleases.from_dict(json.loads(response_text))
+        assert len(releases.data) == 188
+    finally:
+        await mdb.execute(insert(Release).values(backup))
 
 
 @pytest.mark.filter_releases

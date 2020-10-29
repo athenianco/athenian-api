@@ -1,7 +1,7 @@
 from athenian.api.models.web.account import Account
 from athenian.api.models.web.account_user_change_request import AccountUserChangeRequest, \
     UserChangeStatus
-from athenian.api.models.web.base_model_ import Enum, Model, Slots
+from athenian.api.models.web.base_model_ import AllOf, Enum, Model, Slots
 from athenian.api.models.web.calculated_developer_metrics import CalculatedDeveloperMetrics
 from athenian.api.models.web.calculated_developer_metrics_item import \
     CalculatedDeveloperMetricsItem
@@ -47,6 +47,7 @@ from athenian.api.models.web.get_pull_requests_request import GetPullRequestsReq
 from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.histogram_definition import HistogramDefinition
 from athenian.api.models.web.histogram_scale import HistogramScale
+from athenian.api.models.web.included_jira_issues import IncludedJIRAIssues
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
 from athenian.api.models.web.installation_progress import InstallationProgress
