@@ -2895,6 +2895,8 @@ components:
           $ref: '#/components/schemas/RepositorySet'
         with:
           $ref: '#/components/schemas/ReleaseWith'
+        jira:
+          $ref: '#/components/schemas/JIRAFilter'
       required:
       - account
       - date_from
@@ -5021,6 +5023,8 @@ components:
           type: array
         with:
           $ref: '#/components/schemas/ReleaseWith'
+        jira:
+          $ref: '#/components/schemas/JIRAFilter'
         metrics:
           description: List of desired release metrics.
           items:
