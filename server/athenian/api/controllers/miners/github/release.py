@@ -1560,6 +1560,7 @@ async def mine_releases(repos: Iterable[str],
         commits_authors[commits_authors_nz] = prefix + commits_authors[commits_authors_nz]
         prs_columns = [
             PullRequest.merge_commit_id,
+            PullRequest.node_id,
             PullRequest.number,
             PullRequest.title,
             PullRequest.additions,
@@ -1577,6 +1578,7 @@ async def mine_releases(repos: Iterable[str],
         prs_authors = prs_df[PullRequest.user_login.key].values
         prs_authors_nz = prs_authors.nonzero()[0]
         prs_authors[prs_authors_nz] = prefix + prs_authors[prs_authors_nz]
+        prs_node_ids = prs_df[PullRequest.node_id.key].values.astype("U")
         prs_numbers = prs_df[PullRequest.number.key].values
         prs_titles = prs_df[PullRequest.title.key].values
         prs_additions = prs_df[PullRequest.additions.key].values
@@ -1623,7 +1625,8 @@ async def mine_releases(repos: Iterable[str],
                     mentioned_authors.update(my_prs_authors[my_prs_authors.nonzero()[0]])
                     my_prs = dict(zip(
                         [c.key for c in prs_columns[1:]],
-                        [prs_numbers[my_prs_indexes],
+                        [prs_node_ids[my_prs_indexes],
+                         prs_numbers[my_prs_indexes],
                          prs_titles[my_prs_indexes],
                          prs_additions[my_prs_indexes],
                          prs_deletions[my_prs_indexes],

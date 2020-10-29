@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 
@@ -12,6 +12,7 @@ class ReleasedPullRequest(Model):
         "additions": int,
         "deletions": int,
         "author": str,
+        "jira": Optional[List[str]],
     }
 
     attribute_map = {
@@ -20,6 +21,7 @@ class ReleasedPullRequest(Model):
         "additions": "additions",
         "deletions": "deletions",
         "author": "author",
+        "jira": "jira",
     }
 
     def __init__(
@@ -29,6 +31,7 @@ class ReleasedPullRequest(Model):
         additions: Optional[int] = None,
         deletions: Optional[int] = None,
         author: Optional[str] = None,
+        jira: List[str] = None,
     ):
         """ReleasedPullRequest - a model defined in OpenAPI
 
@@ -37,12 +40,14 @@ class ReleasedPullRequest(Model):
         :param additions: The additions of this ReleasedPullRequest.
         :param deletions: The deletions of this ReleasedPullRequest.
         :param author: The author of this ReleasedPullRequest.
+        :param jira: The jira of this ReleasedPullRequest.
         """
         self._number = number
         self._title = title
         self._additions = additions
         self._deletions = deletions
         self._author = author
+        self._jira = jira
 
     @property
     def number(self) -> int:
@@ -141,3 +146,23 @@ class ReleasedPullRequest(Model):
         :param author: The author of this ReleasedPullRequest.
         """
         self._author = author
+
+    @property
+    def jira(self) -> Optional[List[str]]:
+        """Gets the jira of this ReleasedPullRequest.
+
+        Mapped JIRA issue IDs.
+
+        :return: The jira of this ReleasedPullRequest.
+        """
+        return self._jira
+
+    @jira.setter
+    def jira(self, jira: Optional[List[str]]):
+        """Sets the jira of this ReleasedPullRequest.
+
+        Mapped JIRA issue IDs.
+
+        :param jira: The jira of this ReleasedPullRequest.
+        """
+        self._jira = jira
