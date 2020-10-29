@@ -16,7 +16,7 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_account_repositories, get_user_account_status
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
-from athenian.api.controllers.features.github.jira_metrics import JIRABinnedMetricCalculator
+from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedMetricCalculator
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
 from athenian.api.controllers.settings import Settings

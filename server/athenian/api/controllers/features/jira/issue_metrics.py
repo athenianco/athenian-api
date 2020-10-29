@@ -114,7 +114,7 @@ class ResolvedCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
-        resolved = facts[Issue.resolved.key].values
+        resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
         is_bug = facts[Issue.type.key].str.lower().values == "bug"
         result[(min_times[:, None] <= resolved) & (resolved < max_times[:, None]) & is_bug] = 1
         return result
@@ -133,7 +133,7 @@ class OpenCounter(SumMetricCalculator[int]):
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
         created = facts[Issue.created.key].values
-        resolved = facts[Issue.resolved.key].values
+        resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
         is_bug = facts[Issue.type.key].str.lower().values == "bug"
         not_resolved = resolved != resolved
         resolved_later = resolved >= max_times[:, None]
@@ -167,7 +167,7 @@ class MeanTimeToRestoreCalculator(AverageMetricCalculator[timedelta]):
         result = np.full((len(min_times), len(facts)), None, object)
         created = facts[Issue.created.key].values
         work_began = facts[ISSUE_WORK_BEGAN].values
-        resolved = facts[Issue.resolved.key].values
+        resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
         released = facts[ISSUE_RELEASED].values
         is_bug = facts[Issue.type.key].str.lower().values == "bug"
         focus_mask = (min_times[:, None] <= resolved) & (resolved < max_times[:, None]) & is_bug
