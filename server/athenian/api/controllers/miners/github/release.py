@@ -16,6 +16,7 @@ import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, desc, false, func, insert, join, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression, ClauseElement
 
 from athenian.api import metadata
@@ -1394,10 +1395,10 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda repos, participants, time_from, time_to, settings, **_: (
+    key=lambda repos, participants, time_from, time_to, jira, settings, **_: (
         ",".join(sorted(repos)),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
-        time_from, time_to, settings),
+        time_from, time_to, jira, settings),
 )
 async def mine_releases(repos: Iterable[str],
                         participants: ReleaseParticipants,
@@ -1405,6 +1406,7 @@ async def mine_releases(repos: Iterable[str],
                         default_branches: Dict[str, str],
                         time_from: datetime,
                         time_to: datetime,
+                        jira: JIRAFilter,
                         settings: Dict[str, ReleaseMatchSetting],
                         mdb: databases.Database,
                         pdb: databases.Database,
@@ -1442,7 +1444,13 @@ async def mine_releases(repos: Iterable[str],
         np.where(~has_precomputed_facts)[0]).unique()
     missed_releases_count = len(releases_in_time_range) - len(precomputed_facts)
     add_pdb_misses(pdb, "release_facts", missed_releases_count)
+    unfiltered_precomputed_facts = precomputed_facts
 
+    if jira:
+        precomputed_facts = await _filter_precomputed_release_facts_by_jira(
+            precomputed_facts, jira, mdb)
+        has_precomputed_facts = \
+            releases_in_time_range[Release.id.key].isin(precomputed_facts).values
     result = [
         ({Release.id.key: my_id,
           Release.name.key: my_name or my_tag,
@@ -1494,7 +1502,8 @@ async def mine_releases(repos: Iterable[str],
             release_timestamps = repo_releases[Release.published_at.key].values
             parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_timestamps)
             ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
-            precomputed_mask = repo_releases[Release.id.key].isin(precomputed_facts).values
+            precomputed_mask = \
+                repo_releases[Release.id.key].isin(unfiltered_precomputed_facts).values
             out_of_range_mask = release_timestamps < np.array(time_from.replace(tzinfo=None),
                                                               dtype=release_timestamps.dtype)
             relevant = np.nonzero(~(precomputed_mask | out_of_range_mask))[0]
@@ -1558,22 +1567,18 @@ async def mine_releases(repos: Iterable[str],
         commits_authors = commits_df[PushCommit.author_login.key].values
         commits_authors_nz = commits_authors.nonzero()[0]
         commits_authors[commits_authors_nz] = prefix + commits_authors[commits_authors_nz]
-        prs_columns = [
-            PullRequest.merge_commit_id,
-            PullRequest.node_id,
-            PullRequest.number,
-            PullRequest.title,
-            PullRequest.additions,
-            PullRequest.deletions,
-            PullRequest.user_login,
-        ]
-        with sentry_sdk.start_span(op="mine_releases/fetch_pull_requests",
-                                   description=str(len(commit_ids))):
-            prs_df = await read_sql_query(
-                select(prs_columns)
-                .where(PullRequest.merge_commit_id.in_(commit_ids))
-                .order_by(PullRequest.merge_commit_id),
-                mdb, prs_columns)
+
+        tasks = [_load_prs_by_merge_commit_ids(commit_ids, mdb)]
+        if jira:
+            query = await generate_jira_prs_query([PullRequest.merge_commit_id.in_(commit_ids)],
+                                                  jira, mdb, columns=[PullRequest.merge_commit_id])
+            tasks.append(mdb.fetch_all(query))
+        results = await gather(*tasks,
+                               op="mine_releases/fetch_pull_requests",
+                               description=str(len(commit_ids)))
+        prs_df, prs_columns = results[0]
+        if jira:
+            filtered_prs_commit_ids = np.unique(np.array([r[0] for r in results[1]], dtype="U"))
         prs_commit_ids = prs_df[PullRequest.merge_commit_id.key].values.astype("U")
         prs_authors = prs_df[PullRequest.user_login.key].values
         prs_authors_nz = prs_authors.nonzero()[0]
@@ -1599,7 +1604,7 @@ async def mine_releases(repos: Iterable[str],
                                   repo_releases[Release.published_at.key],  # no values
                                   repo_releases[matched_by_column].values,
                                   repo_releases[Release.commit_id.key].values)):
-                if my_published_at < time_from or my_id in precomputed_facts:
+                if my_published_at < time_from or my_id in unfiltered_precomputed_facts:
                     continue
                 dupe = computed_release_info_by_commit.get(my_commit)
                 if dupe is None:
@@ -1609,11 +1614,10 @@ async def mine_releases(repos: Iterable[str],
                             found_indexes[commits_index[found_indexes] == owned_hashes[i]]
                     else:
                         found_indexes = np.array([], dtype=int)
-                    commits_count = len(found_indexes)
-                    my_additions = commits_additions[found_indexes].sum()
-                    my_deletions = commits_deletions[found_indexes].sum()
-                    my_commit_authors = commits_authors[found_indexes]
                     my_commit_ids = commit_ids[found_indexes]
+                    if jira and not len(np.intersect1d(
+                            filtered_prs_commit_ids, my_commit_ids, assume_unique=True)):
+                        continue
                     if len(prs_commit_ids):
                         my_prs_indexes = searchsorted_inrange(prs_commit_ids, my_commit_ids)
                         if len(my_prs_indexes):
@@ -1621,6 +1625,10 @@ async def mine_releases(repos: Iterable[str],
                                 my_prs_indexes[prs_commit_ids[my_prs_indexes] == my_commit_ids]
                     else:
                         my_prs_indexes = np.array([], dtype=int)
+                    commits_count = len(found_indexes)
+                    my_additions = commits_additions[found_indexes].sum()
+                    my_deletions = commits_deletions[found_indexes].sum()
+                    my_commit_authors = commits_authors[found_indexes]
                     my_prs_authors = prs_authors[my_prs_indexes]
                     mentioned_authors.update(my_prs_authors[my_prs_authors.nonzero()[0]])
                     my_prs = dict(zip(
@@ -1631,6 +1639,7 @@ async def mine_releases(repos: Iterable[str],
                          prs_additions[my_prs_indexes],
                          prs_deletions[my_prs_indexes],
                          my_prs_authors]))
+
                     my_commit_authors = \
                         np.unique(my_commit_authors[my_commit_authors.nonzero()[0]]).tolist()
                     mentioned_authors.update(my_commit_authors)
@@ -1737,3 +1746,51 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
     mask = np.full(len(releases), True)
     mask[missing_indexes] = False
     return [releases[i] for i in np.nonzero(mask)[0]]
+
+
+@sentry_span
+async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str, ReleaseFacts],
+                                                    jira: JIRAFilter,
+                                                    mdb: databases.Database,
+                                                    ) -> Dict[str, ReleaseFacts]:
+    assert jira
+    pr_ids = [f.prs[PullRequest.node_id.key] for f in precomputed_facts.values()]
+    if not pr_ids:
+        return {}
+    lengths = [len(ids) for ids in pr_ids]
+    pr_ids = np.concatenate(pr_ids)
+    if len(pr_ids) == 0:
+        return {}
+    # we could run the following in parallel with the rest, but
+    # "the rest" is a no-op in most of the cases thanks to preheating
+    query = await generate_jira_prs_query(
+        [PullRequest.node_id.in_(pr_ids)], jira, mdb, columns=[PullRequest.node_id])
+    pr_ids = pr_ids.astype("U")
+    release_ids = np.repeat(list(precomputed_facts), lengths)
+    order = np.argsort(pr_ids)
+    pr_ids = pr_ids[order]
+    release_ids = release_ids[order]
+    matching_pr_ids = np.sort(np.array([r[0] for r in await mdb.fetch_all(query)], dtype="U"))
+    release_ids = np.unique(release_ids[np.searchsorted(pr_ids, matching_pr_ids)])
+    return {k: precomputed_facts[k] for k in release_ids}
+
+
+@sentry_span
+async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
+                                        mdb: databases.Database,
+                                        ) -> Tuple[pd.DataFrame, List[InstrumentedAttribute]]:
+    prs_columns = [
+        PullRequest.merge_commit_id,
+        PullRequest.node_id,
+        PullRequest.number,
+        PullRequest.title,
+        PullRequest.additions,
+        PullRequest.deletions,
+        PullRequest.user_login,
+    ]
+    df = await read_sql_query(
+        select(prs_columns)
+        .where(PullRequest.merge_commit_id.in_(commit_ids))
+        .order_by(PullRequest.merge_commit_id),
+        mdb, prs_columns)
+    return df, prs_columns

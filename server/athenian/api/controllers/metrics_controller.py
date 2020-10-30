@@ -10,7 +10,8 @@ from athenian.api.async_utils import gather
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
-from athenian.api.controllers.jira_controller import get_jira_installation
+from athenian.api.controllers.jira_controller import get_jira_installation, \
+    get_jira_installation_or_none
 from athenian.api.controllers.miners.access_classes import access_classes, AccessChecker
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
@@ -366,8 +367,11 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
     del filters
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
-    release_settings = \
-        await Settings.from_request(request, filt.account).list_release_matches(all_repos)
+    tasks = [
+        Settings.from_request(request, filt.account).list_release_matches(all_repos),
+        get_jira_installation_or_none(filt.account, request.sdb, request.cache),
+    ]
+    release_settings, jira_id = await gather(*tasks)
     met = []
 
     @sentry_span
@@ -380,7 +384,8 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
         } if filt.with_ is not None else {}
         ti_mvs, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
-            release_settings, request.mdb, request.pdb, request.cache)
+            JIRAFilter.from_web(filt.jira, jira_id), release_settings,
+            request.mdb, request.pdb, request.cache)
         release_matches = {k: v.name for k, v in release_matches.items()}
         mrange = range(len(filt.metrics))
         assert len(ti_mvs) == len(time_intervals)

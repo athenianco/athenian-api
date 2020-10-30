@@ -1121,6 +1121,25 @@ async def test_filter_releases_nasty_input(client, headers, account, date_to, co
     assert response.status == code
 
 
+@pytest.mark.filter_releases
+async def test_filter_releases_by_jira(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-01",
+        "date_to": "2020-10-22",
+        "in": ["{1}"],
+        "jira": {
+            "labels_include": ["Bug", "onBoarding", "Performance"],
+        },
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/releases", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+    releases = FilteredReleases.from_dict(json.loads(response_text))
+    assert len(releases.data) == 8
+
+
 async def test_get_prs_smoke(client, headers):
     body = {
         "account": 1,
