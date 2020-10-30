@@ -19,7 +19,6 @@ class JIRAMetricsRequest(Model):
         "assignees": List[str],
         "reporters": List[str],
         "commenters": List[str],
-        "stakeholders": List[str],
         "metrics": List[str],
         "quantiles": List[float],
         "granularities": List[str],
@@ -35,7 +34,6 @@ class JIRAMetricsRequest(Model):
         "assignees": "assignees",
         "reporters": "reporters",
         "commenters": "commenters",
-        "stakeholders": "stakeholders",
         "metrics": "metrics",
         "quantiles": "quantiles",
         "granularities": "granularities",
@@ -52,7 +50,6 @@ class JIRAMetricsRequest(Model):
         assignees: Optional[List[str]] = None,
         reporters: Optional[List[str]] = None,
         commenters: Optional[List[str]] = None,
-        stakeholders: Optional[List[str]] = None,
         metrics: Optional[List[str]] = None,
         quantiles: Optional[List[float]] = None,
         granularities: Optional[List[str]] = None,
@@ -68,7 +65,6 @@ class JIRAMetricsRequest(Model):
         :param assignees: The assignees of this JIRAMetricsRequest.
         :param reporters: The reporters of this JIRAMetricsRequest.
         :param commenters: The commenters of this JIRAMetricsRequest.
-        :param stakeholders: The stakeholders of this JIRAMetricsRequest.
         :param metrics: The metrics of this JIRAMetricsRequest.
         :param quantiles: The quantiles of this JIRAMetricsRequest.
         :param granularities: The granularities of this JIRAMetricsRequest.
@@ -81,7 +77,6 @@ class JIRAMetricsRequest(Model):
         self._assignees = assignees
         self._reporters = reporters
         self._commenters = commenters
-        self._stakeholders = stakeholders
         self._metrics = metrics
         self._quantiles = quantiles
         self._granularities = granularities
@@ -262,26 +257,6 @@ class JIRAMetricsRequest(Model):
         :param commenters: The commenters of this JIRAMetricsRequest.
         """
         self._commenters = commenters
-
-    @property
-    def stakeholders(self) -> List[str]:
-        """Gets the stakeholders of this JIRAMetricsRequest.
-
-        Selected issue stakeholder users.
-
-        :return: The stakeholders of this JIRAMetricsRequest.
-        """
-        return self._stakeholders
-
-    @stakeholders.setter
-    def stakeholders(self, stakeholders: List[str]):
-        """Sets the stakeholders of this JIRAMetricsRequest.
-
-        Selected issue stakeholder users.
-
-        :param stakeholders: The stakeholders of this JIRAMetricsRequest.
-        """
-        self._stakeholders = stakeholders
 
     @property
     def metrics(self) -> List[str]:

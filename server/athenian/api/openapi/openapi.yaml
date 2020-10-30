@@ -5315,11 +5315,6 @@ components:
           items:
             $ref: '#/components/schemas/DeveloperID'
           type: array
-        stakeholders:
-          description: Selected issue stakeholder users.
-          items:
-            $ref: '#/components/schemas/DeveloperID'
-          type: array
         metrics:
           description: List of measured metrics.
           items:
