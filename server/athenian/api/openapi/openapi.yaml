@@ -5305,6 +5305,18 @@ components:
           items:
             type: string
           type: array
+        labels_include:
+          description: PRs must relate to at least one JIRA issue label from the list.
+            Several labels may be concatenated by a comma `,` so that all of them
+            are required.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: PRs cannot relate to JIRA issue labels from the list.
+          items:
+            type: string
+          type: array
         assignees:
           description: Selected issue assignee users.
           items:

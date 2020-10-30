@@ -241,6 +241,30 @@ async def test_jira_metrics_types(client, headers):
     assert items[0].values[0].values == [686]
 
 
+async def test_jira_metrics_labels(client, headers):
+    body = {
+        "date_from": "2020-01-01",
+        "date_to": "2020-10-20",
+        "timezone": 0,
+        "account": 1,
+        "metrics": [JIRAMetricID.JIRA_RAISED],
+        "exclude_inactive": True,
+        "granularities": ["all"],
+        "labels_include": ["PERFORmance"],
+        "labels_exclude": ["buG"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = json.loads(body)
+    assert len(body) == 1
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
+    assert items[0].granularity == "all"
+    assert items[0].values[0].values == [147]  # it is 148 without labels_exclude
+
+
 @pytest.mark.parametrize("assignees, reporters, commenters, count", [
     (["Vadim markovtsev"], ["waren long"], ["lou Marvin caraig"], 1177),
     (["Vadim markovtsev"], [], [], 536),

@@ -436,6 +436,7 @@ async def _fetch_developer_timestamp_prs(attr_filter: InstrumentedAttribute,
                                          time_from: datetime,
                                          time_to: datetime,
                                          mdb: databases.Database,
+                                         cache: Optional[aiomcache.Client],
                                          ) -> pd.DataFrame:
     selected = [attr_user, func.count(PullRequest.node_id).label("count")]
     group_by = [attr_user]
@@ -459,11 +460,12 @@ async def _fetch_developer_timestamp_prs(attr_filter: InstrumentedAttribute,
             isouter=not labels.include,
         )
         if jira:
-            query = await generate_jira_prs_query(filters, jira, mdb, columns=selected, seed=seed)
+            query = await generate_jira_prs_query(
+                filters, jira, mdb, cache, columns=selected, seed=seed)
         else:
             query = select(selected).select_from(seed).where(and_(*filters))
     elif jira:
-        query = await generate_jira_prs_query(filters, jira, mdb, columns=selected)
+        query = await generate_jira_prs_query(filters, jira, mdb, cache, columns=selected)
     else:
         query = select(selected).where(and_(*filters))
     df = await read_sql_query(
@@ -493,7 +495,7 @@ async def _fetch_developer_created_prs(devs: Iterable[str],
                                        ) -> pd.DataFrame:
     return await _fetch_developer_timestamp_prs(
         PullRequest.created_at, PullRequest.user_node_id,
-        devs, repos, repogroups, labels, jira, time_from, time_to, mdb,
+        devs, repos, repogroups, labels, jira, time_from, time_to, mdb, cache,
     )
 
 
@@ -518,7 +520,7 @@ async def _fetch_developer_merged_prs(devs: Iterable[str],
                                       ) -> pd.DataFrame:
     return await _fetch_developer_timestamp_prs(
         PullRequest.merged_at, PullRequest.merged_by,
-        devs, repos, repogroups, labels, jira, time_from, time_to, mdb,
+        devs, repos, repogroups, labels, jira, time_from, time_to, mdb, cache,
     )
 
 
@@ -532,6 +534,7 @@ async def _fetch_developer_review_common(selected: List[InstrumentedAttribute],
                                          time_from: datetime,
                                          time_to: datetime,
                                          mdb: databases.Database,
+                                         cache: Optional[aiomcache.Client],
                                          ) -> pd.DataFrame:
     if repogroups:
         selected.insert(0, PullRequestReview.repository_node_id)
@@ -554,13 +557,13 @@ async def _fetch_developer_review_common(selected: List[InstrumentedAttribute],
         )
         if jira:
             query = await generate_jira_prs_query(
-                filters, jira, mdb, columns=selected, seed=seed,
+                filters, jira, mdb, cache, columns=selected, seed=seed,
                 on=PullRequestReview.pull_request_node_id)
         else:
             query = select(selected).select_from(seed).where(and_(*filters))
     elif jira:
         query = await generate_jira_prs_query(
-            filters, jira, mdb, columns=selected, seed=PullRequestReview,
+            filters, jira, mdb, cache, columns=selected, seed=PullRequestReview,
             on=PullRequestReview.pull_request_node_id)
     else:
         query = select(selected).where(and_(*filters))
@@ -593,7 +596,7 @@ async def _fetch_developer_reviewed_prs(devs: Iterable[str],
                 func.count(distinct(PullRequestReview.pull_request_node_id)).label("count")]
     group_by = [PullRequestReview.user_node_id]
     return await _fetch_developer_review_common(
-        selected, group_by, devs, repos, repogroups, labels, jira, time_from, time_to, mdb)
+        selected, group_by, devs, repos, repogroups, labels, jira, time_from, time_to, mdb, cache)
 
 
 @cached(
@@ -619,7 +622,7 @@ async def _fetch_developer_reviews(devs: Iterable[str],
                 func.count(PullRequestReview.node_id).label("count")]
     group_by = [PullRequestReview.user_node_id, PullRequestReview.state]
     return await _fetch_developer_review_common(
-        selected, group_by, devs, repos, repogroups, labels, jira, time_from, time_to, mdb)
+        selected, group_by, devs, repos, repogroups, labels, jira, time_from, time_to, mdb, cache)
 
 
 @cached(
@@ -665,13 +668,13 @@ async def _fetch_developer_review_comments(devs: Iterable[str],
         )
         if jira:
             query = await generate_jira_prs_query(
-                filters, jira, mdb, columns=selected, seed=seed,
+                filters, jira, mdb, cache, columns=selected, seed=seed,
                 on=PullRequestReviewComment.pull_request_node_id)
         else:
             query = select(selected).select_from(seed).where(and_(*filters))
     elif jira:
         query = await generate_jira_prs_query(
-            filters, jira, mdb, columns=selected, seed=PullRequestReviewComment,
+            filters, jira, mdb, cache, columns=selected, seed=PullRequestReviewComment,
             on=PullRequestReviewComment.pull_request_node_id)
     else:
         query = select(selected).where(and_(*filters))
@@ -724,13 +727,13 @@ async def _fetch_developer_regular_pr_comments(devs: Iterable[str],
         )
         if jira:
             query = await generate_jira_prs_query(
-                filters, jira, mdb, columns=selected, seed=seed,
+                filters, jira, mdb, cache, columns=selected, seed=seed,
                 on=PullRequestComment.pull_request_node_id)
         else:
             query = select(selected).select_from(seed).where(and_(*filters))
     elif jira:
         query = await generate_jira_prs_query(
-            filters, jira, mdb, columns=selected, seed=PullRequestComment,
+            filters, jira, mdb, cache, columns=selected, seed=PullRequestComment,
             on=PullRequestComment.pull_request_node_id)
     else:
         query = select(selected).where(and_(*filters))
