@@ -5252,18 +5252,18 @@ components:
     JIRAMetricID:
       description: |-
         Currently supported JIRA activity metrics.
-        * `jira-bug-open` - number of bug-like issues active by the end of the time interval.
-        * `jira-bug-resolved` - number of bug-like issues closed in the given time range.
-        * `jira-bug-raised` - number of bug-like issues reported in the given time range.
-        * `jira-mtt-restore` - Mean Time to Restore for bugs - the time between min(issue creation, work began) and max(issue resolution, fixes released).
-        * `jira-mtt-repair` - Mean Time to Repair for bugs - the time between when the work began and max(issue resolution, fixes released).
+        * `jira-open` - number of issues active by the end of the time interval.
+        * `jira-resolved` - number of issues closed in the given time range.
+        * `jira-raised` - number of issues reported in the given time range.
+        * `jira-mtt-restore` - Mean Time to Restore - the time between min(issue creation, work began) and max(issue resolution, fixes released).
+        * `jira-mtt-repair` - Mean Time to Repair - the time between when the work began and max(issue resolution, fixes released).
       enum:
-      - jira-bug-open
-      - jira-bug-resolved
-      - jira-bug-raised
+      - jira-open
+      - jira-resolved
+      - jira-raised
       - jira-mtt-restore
       - jira-mtt-repair
-      example: jira-bug-resolved
+      example: jira-resolved
       type: string
     JIRAMetricsRequest:
       additionalProperties: false
@@ -5275,9 +5275,9 @@ components:
         priorities:
         - High
         metrics:
-        - jira-bug-open
-        - jira-bug-resolved
-        - jira-bug-raised
+        - jira-open
+        - jira-resolved
+        - jira-raised
         granularities:
         - all
         exclude_inactive: true
@@ -5297,6 +5297,11 @@ components:
           $ref: '#/components/schemas/TimeZone'
         priorities:
           description: Selected issue priorities.
+          items:
+            type: string
+          type: array
+        types:
+          description: Selected issue types.
           items:
             type: string
           type: array

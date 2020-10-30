@@ -242,6 +242,7 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
         jira_id,
         time_intervals[0][0], time_intervals[0][-1], filt.exclude_inactive,
         [p.lower() for p in (filt.priorities or [])],
+        [p.lower() for p in (filt.types or [])],
         [p.lower() for p in (filt.reporters or [])],
         [p.lower() for p in (filt.assignees or [])],
         [p.lower() for p in (filt.commenters or [])],
