@@ -332,7 +332,7 @@ async def test_jira_metrics_bugs_restore(client, headers):
         "date_to": "2020-10-23",
         "timezone": 120,
         "account": 1,
-        "metrics": [JIRAMetricID.JIRA_MTT_RESTORE],
+        "metrics": [JIRAMetricID.JIRA_LIFE_TIME],
         "types": ["BUG"],
         "exclude_inactive": False,
         "granularities": ["all", "1 year"],

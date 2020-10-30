@@ -139,13 +139,12 @@ class OpenCounter(SumMetricCalculator[int]):
         return result
 
 
-@register_metric(JIRAMetricID.JIRA_MTT_RESTORE)
-class MeanTimeToRestoreCalculator(AverageMetricCalculator[timedelta]):
+@register_metric(JIRAMetricID.JIRA_LIFE_TIME)
+class LifeTimeCalculator(AverageMetricCalculator[timedelta]):
     """
-    Mean Time to Restore calculator.
+    Issue Life Time calculator.
 
-    Mean Time To Restore is the time it takes for a ticket to go from the ticket creation to \
-    release.
+    Life Time is the time it takes for a ticket to go from the ticket creation to release.
 
     * If an issue is linked to PRs, the MTTR ends at the last PR release.
     * If an issue is not linked to any PR, the MTTR ends when the issue transition to the Done \
@@ -182,13 +181,12 @@ class MeanTimeToRestoreCalculator(AverageMetricCalculator[timedelta]):
         return result
 
 
-@register_metric(JIRAMetricID.JIRA_MTT_REPAIR)
-class MeanTimeToRepairCalculator(AverageMetricCalculator[timedelta]):
+@register_metric(JIRAMetricID.JIRA_LEAD_TIME)
+class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
     """
-    Mean Time to Repair calculator.
+    Issue Lead Time calculator.
 
-    Mean Time To Repair is the time it takes for the changes to be released since the work on \
-    them started.
+    Lead time is the time it takes for the changes to be released since the work on them started.
 
     * If an issue is linked to PRs, the MTTR ends at the last PR release.
     * If an issue is not linked to any PR, the MTTR ends when the issue transition to the Done
