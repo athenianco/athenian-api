@@ -321,7 +321,8 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     repos = [r.split("/", 1)[1] for r in repos]
     branches, default_branches = await extract_branches(repos, request.mdb, request.cache)
     releases, avatars, _ = await mine_releases(
-        repos, participants, branches, default_branches, filt.date_from, filt.date_to, settings,
+        repos, participants, branches, default_branches, filt.date_from, filt.date_to,
+        JIRAFilter.from_web(filt.jira, jira_id), settings,
         request.mdb, request.pdb, request.cache)
     issues = await _load_jira_issues(jira_id, releases, request.mdb)
     data = [FilteredRelease(name=details[Release.name.key],

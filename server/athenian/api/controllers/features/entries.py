@@ -321,6 +321,7 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            quantiles: Sequence[float],
                                            repositories: Sequence[Collection[str]],
                                            participants: ReleaseParticipants,
+                                           jira: JIRAFilter,
                                            release_settings: Dict[str, ReleaseMatchSetting],
                                            mdb: Database,
                                            pdb: Database,
@@ -333,7 +334,7 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
     calc = ReleaseBinnedMetricCalculator(metrics, quantiles)
     branches, default_branches = await extract_branches(all_repositories, mdb, cache)
     releases, _, matched_bys = await mine_releases(
-        all_repositories, participants, branches, default_branches, time_from, time_to,
+        all_repositories, participants, branches, default_branches, time_from, time_to, jira,
         release_settings, mdb, pdb, cache)
     mined_facts = defaultdict(list)
     for i, f in releases:
