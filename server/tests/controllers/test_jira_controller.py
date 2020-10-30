@@ -129,7 +129,7 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
         "date_to": "2020-10-23",
         "timezone": 120,
         "account": 1,
-        "metrics": [JIRAMetricID.JIRA_BUG_RAISED, JIRAMetricID.JIRA_BUG_RESOLVED],
+        "metrics": [JIRAMetricID.JIRA_RAISED, JIRAMetricID.JIRA_RESOLVED],
         "exclude_inactive": exclude_inactive,
         "granularities": ["all", "2 month"],
     }
@@ -144,7 +144,7 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     assert items[0].granularity == "all"
     assert items[0].values == [CalculatedLinearMetricValues(
         date=date(2019, 12, 31),
-        values=[432, 172],
+        values=[1765, 826],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
@@ -153,14 +153,14 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     assert len(items[1].values) == 5
     assert items[1].values[0] == CalculatedLinearMetricValues(
         date=date(2019, 12, 31),
-        values=[2, 0],
+        values=[160, 39],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
     )
     assert items[1].values[-1] == CalculatedLinearMetricValues(
         date=date(2020, 8, 31),
-        values=[84, 0],
+        values=[266, 1],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
@@ -168,14 +168,14 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
 
 
 @pytest.mark.parametrize("account, metrics, date_from, date_to, timezone, granularities, status", [
-    (1, [JIRAMetricID.JIRA_BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 200),
-    (2, [JIRAMetricID.JIRA_BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 422),
-    (3, [JIRAMetricID.JIRA_BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 404),
+    (1, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 200),
+    (2, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 422),
+    (3, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 404),
     (1, [], "2020-01-01", "2020-04-01", 120, ["all"], 200),
     (1, None, "2020-01-01", "2020-04-01", 120, ["all"], 400),
-    (1, [JIRAMetricID.JIRA_BUG_RAISED], "2020-05-01", "2020-04-01", 120, ["all"], 400),
-    (1, [JIRAMetricID.JIRA_BUG_RAISED], "2020-01-01", "2020-04-01", 100500, ["all"], 400),
-    (1, [JIRAMetricID.JIRA_BUG_RAISED], "2020-01-01", "2020-04-01", 120, ["whatever"], 400),
+    (1, [JIRAMetricID.JIRA_RAISED], "2020-05-01", "2020-04-01", 120, ["all"], 400),
+    (1, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 100500, ["all"], 400),
+    (1, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["whatever"], 400),
 ])
 async def test_jira_metrics_nasty_input1(
         client, headers, account, metrics, date_from, date_to, timezone, granularities, status):
@@ -201,7 +201,7 @@ async def test_jira_metrics_priorities(client, headers):
         "date_to": "2020-10-20",
         "timezone": 0,
         "account": 1,
-        "metrics": [JIRAMetricID.JIRA_BUG_RAISED],
+        "metrics": [JIRAMetricID.JIRA_RAISED],
         "exclude_inactive": True,
         "granularities": ["all"],
         "priorities": ["high"],
@@ -215,14 +215,37 @@ async def test_jira_metrics_priorities(client, headers):
     assert len(body) == 1
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
     assert items[0].granularity == "all"
-    assert items[0].values[0].values == [139]
+    assert items[0].values[0].values == [410]
+
+
+async def test_jira_metrics_types(client, headers):
+    body = {
+        "date_from": "2020-01-01",
+        "date_to": "2020-10-20",
+        "timezone": 0,
+        "account": 1,
+        "metrics": [JIRAMetricID.JIRA_RAISED],
+        "exclude_inactive": True,
+        "granularities": ["all"],
+        "types": ["tASK"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = json.loads(body)
+    assert len(body) == 1
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
+    assert items[0].granularity == "all"
+    assert items[0].values[0].values == [686]
 
 
 @pytest.mark.parametrize("assignees, reporters, commenters, count", [
-    (["Vadim markovtsev"], ["waren long"], ["lou Marvin caraig"], 336),
-    (["Vadim markovtsev"], [], [], 206),
-    ([], ["waren long"], [], 158),
-    ([], [], ["lou Marvin caraig"], 37),
+    (["Vadim markovtsev"], ["waren long"], ["lou Marvin caraig"], 1177),
+    (["Vadim markovtsev"], [], [], 536),
+    ([], ["waren long"], [], 567),
+    ([], [], ["lou Marvin caraig"], 252),
 ])
 async def test_jira_metrics_people(client, headers, assignees, reporters, commenters, count):
     body = {
@@ -230,7 +253,7 @@ async def test_jira_metrics_people(client, headers, assignees, reporters, commen
         "date_to": "2020-10-20",
         "timezone": 0,
         "account": 1,
-        "metrics": [JIRAMetricID.JIRA_BUG_RAISED],
+        "metrics": [JIRAMetricID.JIRA_RAISED],
         "exclude_inactive": True,
         "granularities": ["all"],
         "assignees": assignees,
@@ -249,14 +272,14 @@ async def test_jira_metrics_people(client, headers, assignees, reporters, commen
     assert items[0].values[0].values == [count]
 
 
-@pytest.mark.parametrize("exclude_inactive, n", [(False, 260), (True, 258)])
-async def test_jira_metrics_bugs_open(client, headers, exclude_inactive, n):
+@pytest.mark.parametrize("exclude_inactive, n", [(False, 1005), (True, 993)])
+async def test_jira_metrics_open(client, headers, exclude_inactive, n):
     body = {
         "date_from": "2020-06-01",
         "date_to": "2020-10-23",
         "timezone": 120,
         "account": 1,
-        "metrics": [JIRAMetricID.JIRA_BUG_OPEN],
+        "metrics": [JIRAMetricID.JIRA_OPEN],
         "exclude_inactive": exclude_inactive,
         "granularities": ["all"],
     }
@@ -286,6 +309,7 @@ async def test_jira_metrics_bugs_restore(client, headers):
         "timezone": 120,
         "account": 1,
         "metrics": [JIRAMetricID.JIRA_MTT_RESTORE],
+        "types": ["BUG"],
         "exclude_inactive": False,
         "granularities": ["all", "1 year"],
     }

@@ -84,7 +84,7 @@ class JIRABinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
         return result
 
 
-@register_metric(JIRAMetricID.JIRA_BUG_RAISED)
+@register_metric(JIRAMetricID.JIRA_RAISED)
 class RaisedCounter(SumMetricCalculator[int]):
     """Number of created issues metric."""
 
@@ -97,12 +97,11 @@ class RaisedCounter(SumMetricCalculator[int]):
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
         created = facts[Issue.created.key].values
-        is_bug = facts[Issue.type.key].str.lower().values == "bug"
-        result[(min_times[:, None] <= created) & (created < max_times[:, None]) & is_bug] = 1
+        result[(min_times[:, None] <= created) & (created < max_times[:, None])] = 1
         return result
 
 
-@register_metric(JIRAMetricID.JIRA_BUG_RESOLVED)
+@register_metric(JIRAMetricID.JIRA_RESOLVED)
 class ResolvedCounter(SumMetricCalculator[int]):
     """Number of resolved issues metric."""
 
@@ -115,12 +114,11 @@ class ResolvedCounter(SumMetricCalculator[int]):
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
         resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
-        is_bug = facts[Issue.type.key].str.lower().values == "bug"
-        result[(min_times[:, None] <= resolved) & (resolved < max_times[:, None]) & is_bug] = 1
+        result[(min_times[:, None] <= resolved) & (resolved < max_times[:, None])] = 1
         return result
 
 
-@register_metric(JIRAMetricID.JIRA_BUG_OPEN)
+@register_metric(JIRAMetricID.JIRA_OPEN)
 class OpenCounter(SumMetricCalculator[int]):
     """Number of created issues metric."""
 
@@ -134,11 +132,10 @@ class OpenCounter(SumMetricCalculator[int]):
         result = np.full((len(min_times), len(facts)), None, object)
         created = facts[Issue.created.key].values
         resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
-        is_bug = facts[Issue.type.key].str.lower().values == "bug"
         not_resolved = resolved != resolved
         resolved_later = resolved >= max_times[:, None]
         created_earlier = created < max_times[:, None]
-        result[is_bug & (resolved_later | not_resolved) & created_earlier] = 1
+        result[(resolved_later | not_resolved) & created_earlier] = 1
         return result
 
 
@@ -147,13 +144,14 @@ class MeanTimeToRestoreCalculator(AverageMetricCalculator[timedelta]):
     """
     Mean Time to Restore calculator.
 
-    Mean Time To Restore is the time it takes for a bug ticket to go from the ticket creation to \
+    Mean Time To Restore is the time it takes for a ticket to go from the ticket creation to \
     release.
 
-    * If a bug is linked to PRs, the MTTR ends at the last PR release.
-    * If a bug is not linked to any PR, the MTTR ends when the bug transition to the Done status \
-    category.
-    * If a bug is created after the work began, we consider the latter as the real ticket creation.
+    * If an issue is linked to PRs, the MTTR ends at the last PR release.
+    * If an issue is not linked to any PR, the MTTR ends when the issue transition to the Done \
+    status category.
+    * If an issue is created after the work began, we consider the latter as the real ticket \
+    creation.
     """
 
     may_have_negative_values = False
@@ -169,8 +167,7 @@ class MeanTimeToRestoreCalculator(AverageMetricCalculator[timedelta]):
         work_began = facts[ISSUE_WORK_BEGAN].values
         resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
         released = facts[ISSUE_RELEASED].values
-        is_bug = facts[Issue.type.key].str.lower().values == "bug"
-        focus_mask = (min_times[:, None] <= resolved) & (resolved < max_times[:, None]) & is_bug
+        focus_mask = (min_times[:, None] <= resolved) & (resolved < max_times[:, None])
         mttr = np.maximum(released, resolved) - np.minimum(created, work_began)
         nat = np.datetime64("nat")
         mttr[released != released] = nat
@@ -190,12 +187,12 @@ class MeanTimeToRepairCalculator(AverageMetricCalculator[timedelta]):
     """
     Mean Time to Repair calculator.
 
-    Mean Time To Repair is the time it takes for the fixes to be released since the work on them \
-    started.
+    Mean Time To Repair is the time it takes for the changes to be released since the work on \
+    them started.
 
-    * If a bug is linked to PRs, the MTTR ends at the last PR release.
-    * If a bug is not linked to any PR, the MTTR ends when the bug transition to the Done status \
-    category.
+    * If an issue is linked to PRs, the MTTR ends at the last PR release.
+    * If an issue is not linked to any PR, the MTTR ends when the issue transition to the Done
+    status category.
     * The timestamp of work_began is min(issue became in progress, PR created).
     """
 

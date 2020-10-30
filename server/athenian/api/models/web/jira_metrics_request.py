@@ -16,6 +16,7 @@ class JIRAMetricsRequest(Model):
         "date_to": date,
         "timezone": int,
         "priorities": List[str],
+        "types": List[str],
         "assignees": List[str],
         "reporters": List[str],
         "commenters": List[str],
@@ -31,6 +32,7 @@ class JIRAMetricsRequest(Model):
         "date_to": "date_to",
         "timezone": "timezone",
         "priorities": "priorities",
+        "types": "types",
         "assignees": "assignees",
         "reporters": "reporters",
         "commenters": "commenters",
@@ -47,6 +49,7 @@ class JIRAMetricsRequest(Model):
         date_to: Optional[date] = None,
         timezone: Optional[int] = None,
         priorities: Optional[List[str]] = None,
+        types: Optional[List[str]] = None,
         assignees: Optional[List[str]] = None,
         reporters: Optional[List[str]] = None,
         commenters: Optional[List[str]] = None,
@@ -62,6 +65,7 @@ class JIRAMetricsRequest(Model):
         :param date_to: The date_to of this JIRAMetricsRequest.
         :param timezone: The timezone of this JIRAMetricsRequest.
         :param priorities: The priorities of this JIRAMetricsRequest.
+        :param types: The types of this JIRAMetricsRequest.
         :param assignees: The assignees of this JIRAMetricsRequest.
         :param reporters: The reporters of this JIRAMetricsRequest.
         :param commenters: The commenters of this JIRAMetricsRequest.
@@ -74,6 +78,7 @@ class JIRAMetricsRequest(Model):
         self._date_to = date_to
         self._timezone = timezone
         self._priorities = priorities
+        self._types = types
         self._assignees = assignees
         self._reporters = reporters
         self._commenters = commenters
@@ -197,6 +202,26 @@ class JIRAMetricsRequest(Model):
         :param priorities: The priorities of this JIRAMetricsRequest.
         """
         self._priorities = priorities
+
+    @property
+    def types(self) -> List[str]:
+        """Gets the types of this JIRAMetricsRequest.
+
+        Selected issue types.
+
+        :return: The types of this JIRAMetricsRequest.
+        """
+        return self._types
+
+    @types.setter
+    def types(self, types: List[str]):
+        """Sets the types of this JIRAMetricsRequest.
+
+        Selected issue types.
+
+        :param types: The types of this JIRAMetricsRequest.
+        """
+        self._types = types
 
     @property
     def assignees(self) -> List[str]:

@@ -125,11 +125,12 @@ ISSUE_RELEASED = "released"
     exptime=5 * 60,  # 5 minutes
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda account, time_from, time_to, exclude_inactive, priorities, reporters, assignees, commenters, **_: (  # noqa
+    key=lambda account, time_from, time_to, exclude_inactive, priorities, types, reporters, assignees, commenters, **_: (  # noqa
         account,
         time_from.timestamp(), time_to.timestamp(),
         exclude_inactive,
         ",".join(sorted(priorities)),
+        ",".join(sorted(types)),
         ",".join(sorted(reporters)),
         ",".join(sorted(assignees)),
         ",".join(sorted(commenters)),
@@ -140,6 +141,7 @@ async def fetch_jira_issues(account: int,
                             time_to: datetime,
                             exclude_inactive: bool,
                             priorities: Collection[str],
+                            types: Collection[str],
                             reporters: Collection[str],
                             assignees: Collection[str],
                             commenters: Collection[str],
@@ -159,12 +161,13 @@ async def fetch_jira_issues(account: int,
     :param time_to: Issues should be opened before this timestamp.
     :param exclude_inactive: Issues must be updated after `time_from`.
     :param priorities: List of lower-case priorities.
+    :param types: List of lower-case types.
     :param reporters: List of lower-case issue reporters.
     :param assignees: List of lower-case issue assignees.
     :param commenters: List of lower-case issue commenters.
     """
     issues = await _fetch_issues(account, time_from, time_to, exclude_inactive, priorities,
-                                 reporters, assignees, commenters, mdb)
+                                 types, reporters, assignees, commenters, mdb)
     pr_rows = await mdb.fetch_all(
         sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
         .where(sql.and_(NodePullRequestJiraIssues.jira_acc == account,
@@ -267,6 +270,7 @@ async def _fetch_issues(account: int,
                         time_to: datetime,
                         exclude_inactive: bool,
                         priorities: Collection[str],
+                        types: Collection[str],
                         reporters: Collection[str],
                         assignees: Collection[str],
                         commenters: Collection[str],
@@ -286,6 +290,8 @@ async def _fetch_issues(account: int,
         and_filters.append(Issue.updated >= time_from)
     if priorities:
         and_filters.append(sql.func.lower(Issue.priority_name).in_(priorities))
+    if types:
+        and_filters.append(sql.func.lower(Issue.type).in_(types))
     or_filters = []
     if reporters and (postgres or not commenters):
         or_filters.append(sql.func.lower(Issue.reporter_display_name).in_(reporters))
