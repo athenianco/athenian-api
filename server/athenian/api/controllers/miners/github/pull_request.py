@@ -212,7 +212,7 @@ class PullRequestMiner:
                 mdb, pdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
                 time_from, time_to, repositories, participants, labels, jira, limit,
-                exclude_inactive, pr_blacklist, mdb,
+                exclude_inactive, pr_blacklist, mdb, cache,
                 updated_min=updated_min, updated_max=updated_max),
         ]
         # the following is a very rough approximation regarding updated_min/max:
@@ -573,6 +573,7 @@ class PullRequestMiner:
                         exclude_inactive: bool,
                         pr_blacklist: Optional[BinaryExpression],
                         mdb: databases.Database,
+                        cache: Optional[aiomcache.Client],
                         columns=PullRequest,
                         updated_min: Optional[datetime] = None,
                         updated_max: Optional[datetime] = None,
@@ -616,7 +617,8 @@ class PullRequestMiner:
         if not jira:
             query = sql.select(selected_columns).where(sql.and_(*filters))
         else:
-            query = await generate_jira_prs_query(filters, jira, mdb, columns=selected_columns)
+            query = await generate_jira_prs_query(
+                filters, jira, mdb, cache, columns=selected_columns)
         if (embedded_labels_query := labels and labels.include and not labels.exclude and
                 mdb.url.dialect in ("postgres", "postgresql")):
             singles, multiples = LabelFilter.split(labels.include)
@@ -683,7 +685,7 @@ class PullRequestMiner:
             return await read_sql_query(sql.select([PullRequest])
                                         .where(PullRequest.node_id.in_(node_ids)),
                                         mdb, PullRequest, index=PullRequest.node_id.key)
-        return await cls.filter_jira(node_ids, jira, mdb)
+        return await cls.filter_jira(node_ids, jira, mdb, cache)
 
     @classmethod
     @sentry_span
@@ -691,11 +693,12 @@ class PullRequestMiner:
                           pr_node_ids: Iterable[str],
                           jira: JIRAFilter,
                           mdb: databases.Database,
+                          cache: Optional[aiomcache.Client],
                           columns=PullRequest) -> pd.DataFrame:
         """Filter PRs by JIRA properties."""
         assert jira
         filters = [PullRequest.node_id.in_(pr_node_ids)]
-        query = await generate_jira_prs_query(filters, jira, mdb, columns=columns)
+        query = await generate_jira_prs_query(filters, jira, mdb, cache, columns=columns)
         return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
 
     @staticmethod

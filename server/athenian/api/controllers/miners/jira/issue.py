@@ -27,6 +27,7 @@ from athenian.api.tracing import sentry_span
 async def generate_jira_prs_query(filters: List[ClauseElement],
                                   jira: JIRAFilter,
                                   mdb: databases.Database,
+                                  cache: Optional[aiomcache.Client],
                                   columns=PullRequest,
                                   seed=PullRequest,
                                   on=PullRequest.node_id) -> sql.Select:
@@ -43,62 +44,10 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
     _map = aliased(NodePullRequestJiraIssues, name="m")
     _issue = aliased(Issue, name="j")
     if jira.labels:
-        all_labels = set()
-        for label in chain(jira.labels.include, jira.labels.exclude):
-            for part in label.split(","):
-                all_labels.add(part.strip())
-        rows = await mdb.fetch_all(sql.select([Component.id, Component.name]).where(sql.and_(
-            sql.func.lower(Component.name).in_(all_labels),
-            Component.acc_id == jira.account,
-        )))
-        components = {r[1].lower(): r[0] for r in rows}
-    if mdb.url.dialect in ("postgres", "postgresql"):
-        if jira.labels.include:
-            singles, multiples = LabelFilter.split(jira.labels.include)
-            or_items = []
-            if singles:
-                or_items.append(_issue.labels.overlap(singles))
-            or_items.extend(_issue.labels.contains(m) for m in multiples)
-            if components:
-                if singles:
-                    cinc = [components[s] for s in singles if s in components]
-                    if cinc:
-                        or_items.append(_issue.components.overlap(cinc))
-                if multiples:
-                    cinc = [[components[c] for c in g if c in components] for g in multiples]
-                    or_items.extend(_issue.components.contains(g) for g in cinc if g)
-            filters.append(sql.or_(*or_items))
-        if jira.labels.exclude:
-            filters.append(sql.not_(_issue.labels.overlap(jira.labels.exclude)))
-            if components:
-                filters.append(sql.not_(_issue.components.overlap(
-                    [components[s] for s in jira.labels.exclude if s in components])))
-    else:
-        # neither 100% correct nor efficient, but enough for local development
-        if jira.labels.include:
-            or_items = []
-            singles, multiples = LabelFilter.split(jira.labels.include)
-            or_items.extend(_issue.labels.like("%%%s%%" % s) for s in singles)
-            or_items.extend(
-                sql.and_(*(_issue.labels.like("%%%s%%" % s) for s in g)) for g in multiples)
-            if components:
-                if singles:
-                    or_items.extend(
-                        _issue.components.like("%%%s%%" % components[s])
-                        for s in singles if s in components)
-                if multiples:
-                    or_items.extend(
-                        sql.and_(*(_issue.components.like("%%%s%%" % components[s]) for s in g
-                                   if s in components))
-                        for g in multiples)
-            filters.append(sql.or_(*or_items))
-        if jira.labels.exclude:
-            filters.append(sql.not_(sql.or_(*(
-                _issue.labels.like("%%%s%%" % s) for s in jira.labels.exclude))))
-            if components:
-                filters.append(sql.not_(sql.or_(*(
-                    _issue.components.like("%%%s%%" % components[s])
-                    for s in jira.labels.exclude if s in components))))
+        components = await _load_components(jira.labels, jira.account, mdb, cache)
+        _append_label_filters(
+            jira.labels, components, mdb.url.dialect in ("postgres", "postgresql"), filters,
+            model=_issue)
     if jira.issue_types:
         filters.append(sql.func.lower(_issue.type).in_(jira.issue_types))
     if not jira.epics:
@@ -114,6 +63,84 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
             _map.jira_id == _issue.id),
         on == _map.node_id,
     )).where(sql.and_(*filters))
+
+
+@sentry_span
+@cached(
+    exptime=60 * 60,  # 1 hour
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda labels, account, **_: (labels, account),
+    refresh_on_access=True,
+)
+async def _load_components(labels: LabelFilter,
+                           account: int,
+                           mdb: databases.Database,
+                           cache: Optional[aiomcache.Client],
+                           ) -> Dict[str, str]:
+    all_labels = set()
+    for label in chain(labels.include, labels.exclude):
+        for part in label.split(","):
+            all_labels.add(part.strip())
+    rows = await mdb.fetch_all(sql.select([Component.id, Component.name]).where(sql.and_(
+        sql.func.lower(Component.name).in_(all_labels),
+        Component.acc_id == account,
+    )))
+    return {r[1].lower(): r[0] for r in rows}
+
+
+def _append_label_filters(labels: LabelFilter,
+                          components: Dict[str, str],
+                          postgres: bool,
+                          filters: List[ClauseElement],
+                          model=Issue):
+    if postgres:
+        if labels.include:
+            singles, multiples = LabelFilter.split(labels.include)
+            or_items = []
+            if singles:
+                or_items.append(model.labels.overlap(singles))
+            or_items.extend(model.labels.contains(m) for m in multiples)
+            if components:
+                if singles:
+                    cinc = [components[s] for s in singles if s in components]
+                    if cinc:
+                        or_items.append(model.components.overlap(cinc))
+                if multiples:
+                    cinc = [[components[c] for c in g if c in components] for g in multiples]
+                    or_items.extend(model.components.contains(g) for g in cinc if g)
+            filters.append(sql.or_(*or_items))
+        if labels.exclude:
+            filters.append(sql.not_(model.labels.overlap(labels.exclude)))
+            if components:
+                filters.append(sql.not_(model.components.overlap(
+                    [components[s] for s in labels.exclude if s in components])))
+    else:
+        # neither 100% correct nor efficient, but enough for local development
+        if labels.include:
+            or_items = []
+            singles, multiples = LabelFilter.split(labels.include)
+            or_items.extend(model.labels.like("%%%s%%" % s) for s in singles)
+            or_items.extend(
+                sql.and_(*(model.labels.like("%%%s%%" % s) for s in g)) for g in multiples)
+            if components:
+                if singles:
+                    or_items.extend(
+                        model.components.like("%%%s%%" % components[s])
+                        for s in singles if s in components)
+                if multiples:
+                    or_items.extend(
+                        sql.and_(*(model.components.like("%%%s%%" % components[s]) for s in g
+                                   if s in components))
+                        for g in multiples)
+            filters.append(sql.or_(*or_items))
+        if labels.exclude:
+            filters.append(sql.not_(sql.or_(*(
+                model.labels.like("%%%s%%" % s) for s in labels.exclude))))
+            if components:
+                filters.append(sql.not_(sql.or_(*(
+                    model.components.like("%%%s%%" % components[s])
+                    for s in labels.exclude if s in components))))
 
 
 ISSUE_WORK_BEGAN = "work_began"
@@ -140,6 +167,7 @@ async def fetch_jira_issues(account: int,
                             time_from: datetime,
                             time_to: datetime,
                             exclude_inactive: bool,
+                            labels: LabelFilter,
                             priorities: Collection[str],
                             types: Collection[str],
                             reporters: Collection[str],
@@ -160,14 +188,15 @@ async def fetch_jira_issues(account: int,
     :param time_from: Issues should not be resolved before this timestamp.
     :param time_to: Issues should be opened before this timestamp.
     :param exclude_inactive: Issues must be updated after `time_from`.
+    :param labels: Issues must satisfy these label conditions.
     :param priorities: List of lower-case priorities.
     :param types: List of lower-case types.
     :param reporters: List of lower-case issue reporters.
     :param assignees: List of lower-case issue assignees.
     :param commenters: List of lower-case issue commenters.
     """
-    issues = await _fetch_issues(account, time_from, time_to, exclude_inactive, priorities,
-                                 types, reporters, assignees, commenters, mdb)
+    issues = await _fetch_issues(account, time_from, time_to, exclude_inactive, labels, priorities,
+                                 types, reporters, assignees, commenters, mdb, cache)
     pr_rows = await mdb.fetch_all(
         sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
         .where(sql.and_(NodePullRequestJiraIssues.jira_acc == account,
@@ -269,12 +298,14 @@ async def _fetch_issues(account: int,
                         time_from: datetime,
                         time_to: datetime,
                         exclude_inactive: bool,
+                        labels: LabelFilter,
                         priorities: Collection[str],
                         types: Collection[str],
                         reporters: Collection[str],
                         assignees: Collection[str],
                         commenters: Collection[str],
                         mdb: databases.Database,
+                        cache: Optional[aiomcache.Client],
                         ) -> pd.DataFrame:
     postgres = mdb.url.dialect in ("postgres", "postgresql")
     columns = [
@@ -293,6 +324,10 @@ async def _fetch_issues(account: int,
     if types:
         and_filters.append(sql.func.lower(Issue.type).in_(types))
     or_filters = []
+    if labels:
+        components = await _load_components(labels, account, mdb, cache)
+        _append_label_filters(
+            labels, components, mdb.url.dialect in ("postgres", "postgresql"), and_filters)
     if reporters and (postgres or not commenters):
         or_filters.append(sql.func.lower(Issue.reporter_display_name).in_(reporters))
     if assignees and (postgres or not commenters):

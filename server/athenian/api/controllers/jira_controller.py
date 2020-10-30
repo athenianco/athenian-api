@@ -17,6 +17,7 @@ from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_account_repositories, get_user_account_status
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedMetricCalculator
+from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
 from athenian.api.controllers.settings import Settings
@@ -241,6 +242,7 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
     issues = await fetch_jira_issues(
         jira_id,
         time_intervals[0][0], time_intervals[0][-1], filt.exclude_inactive,
+        LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
         [p.lower() for p in (filt.priorities or [])],
         [p.lower() for p in (filt.types or [])],
         [p.lower() for p in (filt.reporters or [])],

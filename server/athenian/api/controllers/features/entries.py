@@ -123,7 +123,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
     ]
     if jira and precomputed_facts:
         tasks.append(PullRequestMiner.filter_jira(
-            precomputed_facts, jira, mdb, columns=[PullRequest.node_id]))
+            precomputed_facts, jira, mdb, cache, columns=[PullRequest.node_id]))
         (miner, unreleased_facts, matched_bys, unreleased_prs_event), filtered = \
             await gather(*tasks)
         precomputed_facts = {k: precomputed_facts[k] for k in filtered.index.values}

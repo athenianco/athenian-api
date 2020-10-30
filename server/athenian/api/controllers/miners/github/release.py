@@ -1075,6 +1075,7 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
                                  limit: int,
                                  pr_blacklist: Optional[BinaryExpression],
                                  mdb: databases.Database,
+                                 cache: Optional[aiomcache.Client],
                                  ) -> pd.DataFrame:
     if not repo_clauses:
         return pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
@@ -1100,7 +1101,7 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
     if not jira:
         query = select([PullRequest]).where(and_(*filters))
     else:
-        query = await generate_jira_prs_query(filters, jira, mdb)
+        query = await generate_jira_prs_query(filters, jira, mdb, cache)
     if limit > 0:
         query = query.order_by(desc(PullRequest.updated_at)).limit(limit)
     return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
@@ -1200,7 +1201,7 @@ async def map_releases_to_prs(repos: Collection[str],
                     ))
     prs = await _find_old_released_prs(
         clauses, time_from, authors, mergers, jira, updated_min, updated_max, limit,
-        pr_blacklist, mdb)
+        pr_blacklist, mdb, cache)
     return prs, releases_in_time_range, matched_bys, dags
 
 
@@ -1448,7 +1449,7 @@ async def mine_releases(repos: Iterable[str],
 
     if jira:
         precomputed_facts = await _filter_precomputed_release_facts_by_jira(
-            precomputed_facts, jira, mdb)
+            precomputed_facts, jira, mdb, cache)
         has_precomputed_facts = \
             releases_in_time_range[Release.id.key].isin(precomputed_facts).values
     result = [
@@ -1570,8 +1571,9 @@ async def mine_releases(repos: Iterable[str],
 
         tasks = [_load_prs_by_merge_commit_ids(commit_ids, mdb)]
         if jira:
-            query = await generate_jira_prs_query([PullRequest.merge_commit_id.in_(commit_ids)],
-                                                  jira, mdb, columns=[PullRequest.merge_commit_id])
+            query = await generate_jira_prs_query(
+                [PullRequest.merge_commit_id.in_(commit_ids)], jira, mdb, cache,
+                columns=[PullRequest.merge_commit_id])
             tasks.append(mdb.fetch_all(query))
         results = await gather(*tasks,
                                op="mine_releases/fetch_pull_requests",
@@ -1752,6 +1754,7 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
 async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str, ReleaseFacts],
                                                     jira: JIRAFilter,
                                                     mdb: databases.Database,
+                                                    cache: Optional[aiomcache.Client],
                                                     ) -> Dict[str, ReleaseFacts]:
     assert jira
     pr_ids = [f.prs[PullRequest.node_id.key] for f in precomputed_facts.values()]
@@ -1764,7 +1767,7 @@ async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str,
     # we could run the following in parallel with the rest, but
     # "the rest" is a no-op in most of the cases thanks to preheating
     query = await generate_jira_prs_query(
-        [PullRequest.node_id.in_(pr_ids)], jira, mdb, columns=[PullRequest.node_id])
+        [PullRequest.node_id.in_(pr_ids)], jira, mdb, cache, columns=[PullRequest.node_id])
     pr_ids = pr_ids.astype("U")
     release_ids = np.repeat(list(precomputed_facts), lengths)
     order = np.argsort(pr_ids)

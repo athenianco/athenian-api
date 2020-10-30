@@ -53,12 +53,12 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
             mdb, pdb, cache),
         PullRequestMiner.fetch_prs(
             time_from, time_to, repositories, participants, labels, jira, 0, exclude_inactive,
-            blacklist, mdb, columns=[
+            blacklist, mdb, cache, columns=[
                 PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
             ]),
     ]
     if jira and done_facts:
-        tasks.append(_filter_done_facts_jira(done_facts, jira, mdb))
+        tasks.append(_filter_done_facts_jira(done_facts, jira, mdb, cache))
     else:
         async def identity():
             return done_facts
@@ -103,9 +103,11 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
 @sentry_span
 async def _filter_done_facts_jira(done_facts: Dict[str, PullRequestFacts],
                                   jira: JIRAFilter,
-                                  mdb: databases.Database) -> Dict[str, PullRequestFacts]:
+                                  mdb: databases.Database,
+                                  cache: Optional[aiomcache.Client],
+                                  ) -> Dict[str, PullRequestFacts]:
     filtered = await PullRequestMiner.filter_jira(
-        done_facts, jira, mdb, columns=[PullRequest.node_id])
+        done_facts, jira, mdb, cache, columns=[PullRequest.node_id])
     return {k: done_facts[k] for k in filtered.index.values}
 
 
@@ -131,5 +133,5 @@ async def _fetch_inactive_merged_unreleased_prs(time_from: datetime,
         return df
     columns = [PullRequest.node_id, PullRequest.repository_full_name]
     query = await generate_jira_prs_query(
-        [PullRequest.node_id.in_(node_ids)], jira, mdb, columns=columns)
+        [PullRequest.node_id.in_(node_ids)], jira, mdb, cache, columns=columns)
     return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)

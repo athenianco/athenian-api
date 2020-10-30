@@ -5255,14 +5255,14 @@ components:
         * `jira-open` - number of issues active by the end of the time interval.
         * `jira-resolved` - number of issues closed in the given time range.
         * `jira-raised` - number of issues reported in the given time range.
-        * `jira-mtt-restore` - Mean Time to Restore - the time between min(issue creation, work began) and max(issue resolution, fixes released).
-        * `jira-mtt-repair` - Mean Time to Repair - the time between when the work began and max(issue resolution, fixes released).
+        * `jira-life-time` - Mean Life Time - the time between min(issue creation, work began) and max(issue resolution, fixes released).
+        * `jira-lead-time` - Mean Lead Time - the time between when the work began and max(issue resolution, fixes released).
       enum:
       - jira-open
       - jira-resolved
       - jira-raised
-      - jira-mtt-restore
-      - jira-mtt-repair
+      - jira-life-time
+      - jira-lead-time
       example: jira-resolved
       type: string
     JIRAMetricsRequest:
@@ -5302,6 +5302,18 @@ components:
           type: array
         types:
           description: Selected issue types.
+          items:
+            type: string
+          type: array
+        labels_include:
+          description: PRs must relate to at least one JIRA issue label from the list.
+            Several labels may be concatenated by a comma `,` so that all of them
+            are required.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: PRs cannot relate to JIRA issue labels from the list.
           items:
             type: string
           type: array

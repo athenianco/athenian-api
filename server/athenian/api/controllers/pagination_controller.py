@@ -35,11 +35,11 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         PullRequestMiner.fetch_prs(
             filt.request.date_from, filt.request.date_to, repos, participants, labels, jira, 0,
             filt.request.exclude_inactive, PullRequest.node_id.notin_(done_ats), request.mdb,
-            columns=[PullRequest.node_id, PullRequest.updated_at]),
+            request.cache, columns=[PullRequest.node_id, PullRequest.updated_at]),
     ]
     if filt.request.jira:
         tasks.append(PullRequestMiner.filter_jira(
-            done_ats, jira, request.mdb, columns=[PullRequest.node_id]))
+            done_ats, jira, request.mdb, request.cache, columns=[PullRequest.node_id]))
         other_prs, passed_jira = await gather(*tasks)
         done_ats = {k: done_ats[k] for k in passed_jira.index.values}
     else:
