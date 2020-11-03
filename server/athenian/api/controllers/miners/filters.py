@@ -67,28 +67,35 @@ class JIRAFilter:
     labels: LabelFilter
     epics: Set[str]
     issue_types: Set[str]
+    unmapped: bool
 
     @classmethod
     def empty(cls) -> "JIRAFilter":
         """Initialize an empty JIRAFilter."""
-        return cls(0, LabelFilter.empty(), set(), set())
+        return cls(0, LabelFilter.empty(), set(), set(), False)
 
     def __bool__(self) -> bool:
         """Return value indicating whether this filter is not an identity."""
         return self.account > 0 and (
-            bool(self.labels) or bool(self.epics) or bool(self.issue_types))
+            bool(self.labels) or bool(self.epics) or bool(self.issue_types) or self.unmapped)
 
     def __str__(self) -> str:
         """Implement str()."""
-        return "[%s, %s, %s]" % (self.labels, sorted(self.epics), sorted(self.issue_types))
+        if not self.unmapped:
+            return "[%s, %s, %s]" % (self.labels, sorted(self.epics), sorted(self.issue_types))
+        return "<unmapped>"
 
     def __repr__(self) -> str:
         """Implement repr()."""
-        return "JIRAFilter(%r, %r, %r, %r)" % (
-            self.account, self.labels, self.epics, self.issue_types)
+        return "JIRAFilter(%r, %r, %r, %r, %r)" % (
+            self.account, self.labels, self.epics, self.issue_types, self.unmapped)
 
     def compatible_with(self, other: "JIRAFilter") -> bool:
         """Check whether the `other` filter can be applied to the items filtered by `self`."""
+        if self.unmapped != other.unmapped:
+            return False
+        elif self.unmapped:
+            return True
         if not self.labels.compatible_with(other.labels):
             return False
         if self.epics and (not other.epics or
@@ -108,4 +115,5 @@ class JIRAFilter:
         return JIRAFilter(account=account,
                           labels=labels,
                           epics={s.upper() for s in (model.epics or [])},
-                          issue_types={s.lower() for s in (model.issue_types or [])})
+                          issue_types={s.lower() for s in (model.issue_types or [])},
+                          unmapped=bool(model.unmapped))

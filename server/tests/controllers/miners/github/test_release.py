@@ -343,7 +343,7 @@ async def test_map_releases_to_prs_jira_limit(
         branches, default_branches,
         datetime(year=2018, month=3, day=30, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
-        [], [], JIRAFilter(1, LabelFilter.empty(), set(), {"task"}),
+        [], [], JIRAFilter(1, LabelFilter.empty(), set(), {"task"}, False),
         release_match_setting_tag, None, None, 1, mdb, pdb, cache,
     ]
     prs, _, _, _ = await map_releases_to_prs(*args)
@@ -1147,7 +1147,8 @@ async def test_mine_releases_jira(mdb, pdb, release_match_setting_tag, cache):
     time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to,
-        JIRAFilter(1, LabelFilter({"bug", "onboarding", "performance"}, set()), set(), set()),
+        JIRAFilter(
+            1, LabelFilter({"bug", "onboarding", "performance"}, set()), set(), set(), False),
         release_match_setting_tag, mdb, pdb, None)
     await wait_deferred()
     assert len(releases) == 8
@@ -1159,7 +1160,8 @@ async def test_mine_releases_jira(mdb, pdb, release_match_setting_tag, cache):
     assert len(releases) == 22
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to,
-        JIRAFilter(1, LabelFilter({"bug", "onboarding", "performance"}, set()), set(), set()),
+        JIRAFilter(
+            1, LabelFilter({"bug", "onboarding", "performance"}, set()), set(), set(), False),
         release_match_setting_tag, mdb, pdb, cache)
     assert len(releases) == 8
     await wait_deferred()
@@ -1168,6 +1170,11 @@ async def test_mine_releases_jira(mdb, pdb, release_match_setting_tag, cache):
         JIRAFilter.empty(),
         release_match_setting_tag, mdb, pdb, cache)
     assert len(releases) == 22
+    releases, avatars, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        JIRAFilter(1, LabelFilter.empty(), set(), set(), True),
+        release_match_setting_tag, mdb, pdb, cache)
+    assert len(releases) == 15
 
 
 @pytest.mark.parametrize("settings_index", [0, 1])

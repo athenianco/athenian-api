@@ -349,6 +349,6 @@ METRIC_ENTRIES = {
         "prs_histogram": calc_pull_request_histogram_github,
         "code": calc_code_metrics,
         "developers": calc_developer_metrics,
-        "releases_linear": calc_release_metrics_line_github,  # noqa
+        "releases_linear": calc_release_metrics_line_github,
     },
 }
