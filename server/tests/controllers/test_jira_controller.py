@@ -7,6 +7,7 @@ import pytest
 
 from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinearMetricValues, \
     FoundJIRAStuff, JIRAEpic, JIRALabel, JIRAMetricID, JIRAPriority, JIRAUser
+from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 
 
 async def test_filter_jira_smoke(client, headers):
@@ -60,7 +61,11 @@ async def test_filter_jira_smoke(client, headers):
     assert model.epics == [
         JIRAEpic(id="DEV-70", title="Show the installation progress in the waiting page",
                  updated=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
-                 children=["DEV-365", "DEV-183", "DEV-315", "DEV-228", "DEV-364"]),
+                 children=[JIRAEpicChild("DEV-365", "Story"),
+                           JIRAEpicChild("DEV-183", "Task"),
+                           JIRAEpicChild("DEV-315", "Story"),
+                           JIRAEpicChild("DEV-228", "Task"),
+                           JIRAEpicChild("DEV-364", "Story")]),
         JIRAEpic(id="ENG-1", title="Evaluate our product and process internally",
                  updated=datetime(2020, 6, 1, 7, 19, tzinfo=tzutc()), children=[]),
     ]

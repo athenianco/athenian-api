@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 
 
 class JIRAEpic(Model):
@@ -11,7 +12,7 @@ class JIRAEpic(Model):
         "id": str,
         "title": str,
         "updated": datetime,
-        "children": List[str],
+        "children": List[JIRAEpicChild],
     }
 
     attribute_map = {
@@ -26,7 +27,7 @@ class JIRAEpic(Model):
         id: Optional[str] = None,
         title: Optional[str] = None,
         updated: Optional[datetime] = None,
-        children: Optional[List[str]] = None,
+        children: Optional[List[JIRAEpicChild]] = None,
     ):
         """JIRAEpic - a model defined in OpenAPI
 
@@ -106,7 +107,7 @@ class JIRAEpic(Model):
         self._updated = updated
 
     @property
-    def children(self) -> List[str]:
+    def children(self) -> List[JIRAEpicChild]:
         """Gets the children of this JIRAEpic.
 
         IDs of the owned sub-issues.
@@ -116,7 +117,7 @@ class JIRAEpic(Model):
         return self._children
 
     @children.setter
-    def children(self, children: List[str]):
+    def children(self, children: List[JIRAEpicChild]):
         """Sets the children of this JIRAEpic.
 
         IDs of the owned sub-issues.
