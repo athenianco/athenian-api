@@ -42,6 +42,10 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
     if columns is PullRequest:
         columns = [PullRequest]
     _map = aliased(NodePullRequestJiraIssues, name="m")
+    if jira.unmapped:
+        return sql.select(columns).select_from(sql.outerjoin(
+            seed, _map, on == _map.node_id,
+        )).where(sql.and_(*filters, _map.node_id.is_(None)))
     _issue = aliased(Issue, name="j")
     if jira.labels:
         components = await _load_components(jira.labels, jira.account, mdb, cache)

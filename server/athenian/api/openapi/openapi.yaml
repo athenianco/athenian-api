@@ -4412,6 +4412,10 @@ components:
           items:
             type: string
           type: array
+        unmapped:
+          description: Select PRs that are not mapped to any JIRA issue. May not be
+            specified with anything else.
+          type: boolean
       type: object
     JIRAIssue:
       additionalProperties: false
