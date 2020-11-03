@@ -27,6 +27,7 @@ from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinear
     FilterJIRAStuff, FoundJIRAStuff, \
     InvalidRequestError, \
     JIRAEpic, JIRALabel, JIRAMetricsRequest, JIRAPriority, JIRAUser, NoSourceDataError
+from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -99,15 +100,16 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                         )))
         epic_ids = [r[Issue.id.key] for r in epic_rows]
         children_rows = await mdb.fetch_all(
-            select([Issue.epic_id, Issue.key])
+            select([Issue.epic_id, Issue.key, Issue.type])
             .where(Issue.epic_id.in_(epic_ids))
             .order_by(Issue.epic_id))
         children = {k: [i[1] for i in g] for k, g in groupby(
-            ((r[0], r[1]) for r in children_rows), key=itemgetter(0))}
+            ((r[0], (r[1], r[2])) for r in children_rows), key=itemgetter(0))}
         epics = sorted(JIRAEpic(id=r[Issue.key.key],
                                 title=r[Issue.title.key],
                                 updated=r[Issue.updated.key],
-                                children=children.get(r[Issue.id.key], []))
+                                children=[JIRAEpicChild(*c) for c in children.get(
+                                    r[Issue.id.key], [])])
                        for r in epic_rows)
         if mdb.url.dialect == "sqlite":
             for epic in epics:

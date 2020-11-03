@@ -2628,7 +2628,8 @@ components:
       type: object
     Quantiles:
       description: |-
-        Cut the distributions at certain quantiles. The default is [0, 1].
+        Cut the distributions at certain quantiles.
+        The default values are [0, 1] which means no cutting.
       example:
       - 0
       - 0.95
@@ -4009,7 +4010,7 @@ components:
           users:
             github.com/gkwillie:
               avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
-          jira:
+          jira: null
         data:
         - added_lines: 1000
           commits: 20
@@ -4785,24 +4786,38 @@ components:
           title: Precomputed DB - stage 2
           updated: 2020-08-03T23:47:00Z
           children:
-          - DEV-157
-          - DEV-156
-          - DEV-533
-          - DEV-536
-          - DEV-538
-          - DEV-539
-          - DEV-620
+          - id: DEV-157
+            type: Task
+          - id: DEV-156
+            type: Task
+          - id: DEV-533
+            type: Task
+          - id: DEV-536
+            type: Bug
+          - id: DEV-538
+            type: Bug
+          - id: DEV-539
+            type: Bug
+          - id: DEV-620
+            type: Bug
         - id: DEV-158
           title: Precomputed DB - stage 2
           updated: 2020-08-03T23:47:00Z
           children:
-          - DEV-157
-          - DEV-156
-          - DEV-533
-          - DEV-536
-          - DEV-538
-          - DEV-539
-          - DEV-620
+          - id: DEV-157
+            type: Task
+          - id: DEV-156
+            type: Task
+          - id: DEV-533
+            type: Task
+          - id: DEV-536
+            type: Bug
+          - id: DEV-538
+            type: Bug
+          - id: DEV-539
+            type: Bug
+          - id: DEV-620
+            type: Bug
         labels:
         - title: performance
           last_used: 2020-08-10T12:47:00Z
@@ -4868,13 +4883,20 @@ components:
         title: Precomputed DB - stage 2
         updated: 2020-08-03T23:47:00Z
         children:
-        - DEV-157
-        - DEV-156
-        - DEV-533
-        - DEV-536
-        - DEV-538
-        - DEV-539
-        - DEV-620
+        - id: DEV-157
+          type: Task
+        - id: DEV-156
+          type: Task
+        - id: DEV-533
+          type: Task
+        - id: DEV-536
+          type: Bug
+        - id: DEV-538
+          type: Bug
+        - id: DEV-539
+          type: Bug
+        - id: DEV-620
+          type: Bug
       properties:
         id:
           type: string
@@ -4885,15 +4907,30 @@ components:
           format: date-time
           type: string
         children:
-          description: IDs of the owned sub-issues.
+          description: Details about the contained sub-issues.
           items:
-            type: string
+            $ref: '#/components/schemas/JIRAEpicChild'
           type: array
       required:
       - children
       - id
       - title
       - updated
+      type: object
+    JIRAEpicChild:
+      additionalProperties: false
+      description: Brief details about a JIRA issue in an epic.
+      example:
+        id: DEV-157
+        type: Task
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+      required:
+      - id
+      - type
       type: object
     JIRALabel:
       additionalProperties: false
@@ -5368,6 +5405,35 @@ components:
     CalculatedJIRAMetricValues:
       additionalProperties: false
       description: Calculated JIRA metrics for a specific granularity.
+      example:
+        granularity: 2 week
+        values:
+        - date: 2020-01-23
+          values:
+          - 0.8008282
+          - 0.8008282
+          confidence_mins:
+          - 0.5
+          - 0.5
+          confidence_maxs:
+          - 1.0
+          - 1.0
+          confidence_scores:
+          - 75
+          - 75
+        - date: 2020-01-23
+          values:
+          - 0.8008282
+          - 0.8008282
+          confidence_mins:
+          - 0.5
+          - 0.5
+          confidence_maxs:
+          - 1.0
+          - 1.0
+          confidence_scores:
+          - 75
+          - 75
       properties:
         granularity:
           $ref: '#/components/schemas/Granularity'
