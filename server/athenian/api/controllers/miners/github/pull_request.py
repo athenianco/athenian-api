@@ -1130,6 +1130,7 @@ class PullRequestFactsMiner:
                 reviews_before_merge = pr.reviews
             else:
                 reviews_before_merge = pr.reviews.take(np.where(reviews_before_merge)[0])
+                reviews_before_merge.reset_index(drop=True, inplace=True)
         else:
             reviews_before_merge = pr.reviews
         # the most recent review for each reviewer
