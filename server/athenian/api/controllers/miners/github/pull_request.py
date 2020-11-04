@@ -1142,15 +1142,16 @@ class PullRequestFactsMiner:
                 reviews_before_merge[PullRequestReview.submitted_at.key].values.argmax())
         else:
             # the most recent review for each reviewer
-            latest_review_ixs = np.where(
+            latest_review_ixs = [
+                ixs[0] for ixs in
                 reviews_before_merge[[PullRequestReview.user_login.key,
                                       PullRequestReview.submitted_at.key]]
                 .take(np.where(reviews_before_merge[PullRequestReview.state.key] !=
                                ReviewResolution.COMMENTED.value)[0])
-                .sort_values([PullRequestReview.submitted_at.key],
-                             ascending=False, ignore_index=True)
-                .groupby(PullRequestReview.user_login.key, sort=False, as_index=False)
-                ._cumcount_array())[0]
+                .sort_values([PullRequestReview.submitted_at.key], ascending=False)
+                .groupby(PullRequestReview.user_login.key, sort=False)
+                .grouper.groups.values()
+            ]
             grouped_reviews = {
                 k: reviews_before_merge[k].take(latest_review_ixs)
                 for k in (PullRequestReview.state.key, PullRequestReview.submitted_at.key)}

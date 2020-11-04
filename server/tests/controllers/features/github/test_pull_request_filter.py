@@ -26,8 +26,8 @@ def time_from_to():
 
 @pytest.mark.parametrize("stage, n", [
     (PullRequestStage.WIP, 6),
-    (PullRequestStage.REVIEWING, 8),
-    (PullRequestStage.MERGING, 3),
+    (PullRequestStage.REVIEWING, 7),
+    (PullRequestStage.MERGING, 4),
     (PullRequestStage.RELEASING, 130),
     (PullRequestStage.DONE, 529),
     (PullRequestStage.FORCE_PUSH_DROPPED, 40),

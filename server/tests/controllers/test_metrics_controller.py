@@ -329,8 +329,8 @@ async def test_calc_metrics_prs_reposet(client, headers):
     (PullRequestMetricID.PR_REJECTED, 51),
     (PullRequestMetricID.PR_DONE, 467),
     (PullRequestMetricID.PR_WIP_PENDING_COUNT, 0),
-    (PullRequestMetricID.PR_REVIEW_PENDING_COUNT, 95),
-    (PullRequestMetricID.PR_MERGING_PENDING_COUNT, 12),
+    (PullRequestMetricID.PR_REVIEW_PENDING_COUNT, 86),
+    (PullRequestMetricID.PR_MERGING_PENDING_COUNT, 21),
     (PullRequestMetricID.PR_RELEASE_PENDING_COUNT, 4395),
 ])
 async def test_calc_metrics_prs_counts_sums(client, headers, metric, count):
