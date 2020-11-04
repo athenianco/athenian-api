@@ -27,7 +27,7 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
-from athenian.api.controllers.miners.github.developer import calc_developer_metrics
+from athenian.api.controllers.miners.github.developer import calc_developer_metrics_github
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
@@ -232,14 +232,14 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
 
 
 @sentry_span
-async def calc_code_metrics(prop: FilterCommitsProperty,
-                            time_intervals: Sequence[datetime],
-                            repos: Collection[str],
-                            with_author: Optional[Collection[str]],
-                            with_committer: Optional[Collection[str]],
-                            db: Database,
-                            cache: Optional[aiomcache.Client],
-                            ) -> List[CodeStats]:
+async def calc_code_metrics_github(prop: FilterCommitsProperty,
+                                   time_intervals: Sequence[datetime],
+                                   repos: Collection[str],
+                                   with_author: Optional[Collection[str]],
+                                   with_committer: Optional[Collection[str]],
+                                   db: Database,
+                                   cache: Optional[aiomcache.Client],
+                                   ) -> List[CodeStats]:
     """Filter code pushed on GitHub according to the specified criteria."""
     time_from, time_to = time_intervals[0], time_intervals[-1]
     x_commits = await extract_commits(
@@ -347,8 +347,8 @@ METRIC_ENTRIES = {
     "github": {
         "prs_linear": calc_pull_request_metrics_line_github,
         "prs_histogram": calc_pull_request_histogram_github,
-        "code": calc_code_metrics,
-        "developers": calc_developer_metrics,
+        "code": calc_code_metrics_github,
+        "developers": calc_developer_metrics_github,
         "releases_linear": calc_release_metrics_line_github,
     },
 }

@@ -50,10 +50,13 @@ def calculate_histogram(samples: np.ndarray,
     :param ticks: Fixed bin borders.
     """
     assert isinstance(samples, np.ndarray)
-    if len(samples) == 0:
-        return Histogram(scale=scale, bins=0, ticks=[], frequencies=[], interquartile=(0, 0))
     if scale is None:
         scale = Scale.LINEAR
+    if len(samples) == 0:
+        if ticks is not None:
+            return Histogram(scale=scale, bins=bins, ticks=ticks,
+                             frequencies=[0] * (len(ticks) - 1), interquartile=(0, 0))
+        return Histogram(scale=scale, bins=bins, ticks=[], frequencies=[], interquartile=(0, 0))
     assert samples.dtype != np.dtype(object)
     try:
         unit, _ = np.datetime_data(samples.dtype)
