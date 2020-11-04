@@ -646,16 +646,11 @@ async def _fetch_commits(commit_shas: Sequence[str],
             .order_by(desc(PushCommit.committed_date))
     else:
         # Postgres planner sucks in this case and we have to be inventive
-        rows = await db.fetch_all(
-            select([NodeCommit.id])
-            .where(and_(NodeCommit.oid.in_any_values(commit_shas),
-                        NodeCommit.committed_date.between(time_from, time_to))))
-        if not rows:
-            return pd.DataFrame(columns=[c.key for c in PushCommit.__table__.columns])
-        ids = [r[0] for r in rows]
-        assert len(ids) <= len(commit_shas), len(ids)
         query = select([PushCommit]) \
-            .where(PushCommit.node_id.in_(ids)) \
+            .where(PushCommit.node_id.in_(
+                select([NodeCommit.id])
+                .where(and_(NodeCommit.oid.in_any_values(commit_shas),
+                            NodeCommit.committed_date.between(time_from, time_to))))) \
             .order_by(desc(PushCommit.committed_date))
     return await read_sql_query(query, db, PushCommit)
 
