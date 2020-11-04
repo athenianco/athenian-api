@@ -8,8 +8,8 @@ from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedEnsemblesCalculator, \
     MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
-from athenian.api.controllers.miners.jira.issue import ISSUE_RELEASED, ISSUE_WORK_BEGAN
-from athenian.api.models.metadata.jira import Issue
+from athenian.api.controllers.miners.jira.issue import ISSUE_PRS_BEGAN, ISSUE_PRS_RELEASED
+from athenian.api.models.metadata.jira import AthenianIssue, Issue
 from athenian.api.models.web import JIRAMetricID
 from athenian.api.tracing import sentry_span
 
@@ -113,7 +113,10 @@ class ResolvedCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
-        resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
+        resolved = facts[AthenianIssue.resolved.key].values.astype(min_times.dtype)
+        prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
+        released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)[prs_began == prs_began]
+        resolved[prs_began == prs_began][released != released] = np.datetime64("nat")
         result[(min_times[:, None] <= resolved) & (resolved < max_times[:, None])] = 1
         return result
 
@@ -131,7 +134,10 @@ class OpenCounter(SumMetricCalculator[int]):
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
         created = facts[Issue.created.key].values
-        resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
+        resolved = facts[AthenianIssue.resolved.key].values.astype(min_times.dtype)
+        prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
+        released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)[prs_began == prs_began]
+        resolved[prs_began == prs_began][released != released] = np.datetime64("nat")
         not_resolved = resolved != resolved
         resolved_later = resolved >= max_times[:, None]
         created_earlier = created < max_times[:, None]
@@ -163,20 +169,20 @@ class LifeTimeCalculator(AverageMetricCalculator[timedelta]):
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
         created = facts[Issue.created.key].values
-        work_began = facts[ISSUE_WORK_BEGAN].values
+        prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
-        released = facts[ISSUE_RELEASED].values
+        released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)
         focus_mask = (min_times[:, None] <= resolved) & (resolved < max_times[:, None])
-        mttr = np.maximum(released, resolved) - np.minimum(created, work_began)
+        life_times = np.maximum(released, resolved) - np.minimum(created, prs_began)
         nat = np.datetime64("nat")
-        mttr[released != released] = nat
-        mttr[resolved != resolved] = nat
-        unmapped_mask = work_began != work_began
-        mttr[unmapped_mask] = resolved[unmapped_mask] - created[unmapped_mask]
-        empty_mttr_mask = mttr != mttr
-        mttr = mttr.astype(self.dtype).view(int)
-        result[:] = mttr
-        result[:, empty_mttr_mask] = None
+        life_times[released != released] = nat
+        life_times[resolved != resolved] = nat
+        unmapped_mask = prs_began != prs_began
+        life_times[unmapped_mask] = resolved[unmapped_mask] - created[unmapped_mask]
+        empty_life_time_mask = life_times != life_times
+        life_times = life_times.astype(self.dtype).view(int)
+        result[:] = life_times
+        result[:, empty_life_time_mask] = None
         result[~focus_mask] = None
         return result
 
@@ -202,4 +208,21 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        raise NotImplementedError
+        result = np.full((len(min_times), len(facts)), None, object)
+        work_began = facts[AthenianIssue.work_began.key].values
+        prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
+        resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
+        released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)
+        focus_mask = (min_times[:, None] <= resolved) & (resolved < max_times[:, None])
+        lead_times = np.maximum(released, resolved) - np.minimum(work_began, prs_began)
+        nat = np.datetime64("nat")
+        lead_times[released != released] = nat
+        lead_times[resolved != resolved] = nat
+        unmapped_mask = prs_began != prs_began
+        lead_times[unmapped_mask] = resolved[unmapped_mask] - work_began[unmapped_mask]
+        empty_lead_time_mask = lead_times != lead_times
+        lead_times = lead_times.astype(self.dtype).view(int)
+        result[:] = lead_times
+        result[:, empty_lead_time_mask] = None
+        result[~focus_mask] = None
+        return result

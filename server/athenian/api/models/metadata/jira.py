@@ -74,3 +74,12 @@ class Priority(Base):
     rank = Column(SmallInteger, nullable=False)
     status_color = Column(Text, nullable=False)
     icon_url = Column(Text)
+
+
+class AthenianIssue(Base):
+    __tablename__ = "athenian_issue"
+
+    acc_id = Column(BigInteger, primary_key=True)
+    id = Column(Text, primary_key=True)
+    work_began = Column(TIMESTAMP(timezone=True))
+    resolved = Column(TIMESTAMP(timezone=True))

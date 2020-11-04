@@ -19,7 +19,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import triage_by_rel
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
-from athenian.api.models.metadata.jira import Component, Issue
+from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.tracing import sentry_span
 
@@ -147,8 +147,8 @@ def _append_label_filters(labels: LabelFilter,
                     for s in labels.exclude if s in components))))
 
 
-ISSUE_WORK_BEGAN = "work_began"
-ISSUE_RELEASED = "released"
+ISSUE_PRS_BEGAN = "prs_began"
+ISSUE_PRS_RELEASED = "prs_released"
 
 
 @sentry_span
@@ -247,8 +247,8 @@ async def fetch_jira_issues(account: int,
                 work_began[i] = min(dt, np.datetime64(pr_created_at))
             released[i] = nat
 
-    issues[ISSUE_WORK_BEGAN] = work_began
-    issues[ISSUE_RELEASED] = released
+    issues[ISSUE_PRS_BEGAN] = work_began
+    issues[ISSUE_PRS_RELEASED] = released
     return issues
 
 
@@ -313,8 +313,8 @@ async def _fetch_issues(account: int,
                         ) -> pd.DataFrame:
     postgres = mdb.url.dialect in ("postgres", "postgresql")
     columns = [
-        Issue.created, Issue.resolved, Issue.updated, Issue.priority_name, Issue.epic_id,
-        Issue.status, Issue.type, Issue.id,
+        Issue.created, AthenianIssue.work_began, AthenianIssue.resolved, Issue.updated,
+        Issue.priority_name, Issue.epic_id, Issue.status, Issue.type, Issue.id,
     ]
     and_filters = [
         Issue.acc_id == account,
@@ -345,11 +345,17 @@ async def _fetch_issues(account: int,
             if assignees:
                 columns.append(Issue.assignee_display_name)
             columns.append(Issue.commenters_display_names)
+
+    def query_start():
+        return sql.select(columns).select_from(sql.outerjoin(
+            Issue, AthenianIssue, sql.and_(Issue.acc_id == AthenianIssue.acc_id,
+                                           Issue.id == AthenianIssue.id)))
+
     if or_filters:
-        query = sql.union(*(sql.select(columns).where(sql.and_(or_filter, *and_filters))
+        query = sql.union(*(query_start().where(sql.and_(or_filter, *and_filters))
                             for or_filter in or_filters))
     else:
-        query = sql.select(columns).where(sql.and_(*and_filters))
+        query = query_start().where(sql.and_(*and_filters))
     df = await read_sql_query(query, mdb, columns, index=Issue.id.key)
     df.sort_index(inplace=True)
     if postgres or not commenters:
