@@ -149,7 +149,7 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     assert items[0].granularity == "all"
     assert items[0].values == [CalculatedLinearMetricValues(
         date=date(2019, 12, 31),
-        values=[1765, 826],
+        values=[1765, 1623],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
@@ -165,7 +165,7 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     )
     assert items[1].values[-1] == CalculatedLinearMetricValues(
         date=date(2020, 8, 31),
-        values=[266, 1],
+        values=[266, 243],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
@@ -301,14 +301,19 @@ async def test_jira_metrics_people(client, headers, assignees, reporters, commen
     assert items[0].values[0].values == [count]
 
 
-@pytest.mark.parametrize("exclude_inactive, n", [(False, 1005), (True, 993)])
-async def test_jira_metrics_open(client, headers, exclude_inactive, n):
+@pytest.mark.parametrize("metric, exclude_inactive, n", [
+    (JIRAMetricID.JIRA_OPEN, False, 208),
+    (JIRAMetricID.JIRA_OPEN, True, 196),
+    (JIRAMetricID.JIRA_RESOLVED, False, 850),
+    (JIRAMetricID.JIRA_RESOLVED, True, 850),
+])
+async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n):
     body = {
         "date_from": "2020-06-01",
         "date_to": "2020-10-23",
         "timezone": 120,
         "account": 1,
-        "metrics": [JIRAMetricID.JIRA_OPEN],
+        "metrics": [metric],
         "exclude_inactive": exclude_inactive,
         "granularities": ["all"],
     }
@@ -330,14 +335,18 @@ async def test_jira_metrics_open(client, headers, exclude_inactive, n):
     )]
 
 
-async def test_jira_metrics_bugs_restore(client, headers):
+@pytest.mark.parametrize("metric, value, score, cmin, cmax", [
+    (JIRAMetricID.JIRA_LIFE_TIME, "758190s", 72, "654210s", "868531s"),
+    (JIRAMetricID.JIRA_LEAD_TIME, "304289s", 51, "226105s", "375748s"),
+])
+async def test_jira_metrics_bug_times(client, headers, metric, value, score, cmin, cmax):
     np.random.seed(7)
     body = {
         "date_from": "2016-01-01",
         "date_to": "2020-10-23",
         "timezone": 120,
         "account": 1,
-        "metrics": [JIRAMetricID.JIRA_LIFE_TIME],
+        "metrics": [metric],
         "types": ["BUG"],
         "exclude_inactive": False,
         "granularities": ["all", "1 year"],
@@ -353,8 +362,8 @@ async def test_jira_metrics_bugs_restore(client, headers):
     assert items[0].granularity == "all"
     assert items[0].values == [CalculatedLinearMetricValues(
         date=date(2015, 12, 31),
-        values=["560503s"],
-        confidence_mins=["461188s"],
-        confidence_maxs=["657270s"],
-        confidence_scores=[66],
+        values=[value],
+        confidence_mins=[cmin],
+        confidence_maxs=[cmax],
+        confidence_scores=[score],
     )]
