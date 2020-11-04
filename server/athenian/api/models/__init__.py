@@ -108,7 +108,7 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
         right_len = len(binary.right)
     except TypeError:
         if isinstance(binary.right, Grouping):
-            right_len = len(binary.right.element.clauses)
+            right_len = len(getattr(binary.right.element, "clauses", []))
         else:
             right_len = 0
     if (operator is in_op or operator is notin_op) and right_len >= 10:
