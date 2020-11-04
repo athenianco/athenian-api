@@ -6,12 +6,21 @@ import pytest
 from athenian.api.controllers.features.histogram import calculate_histogram, Scale
 
 
-def test_calculate_histogram_empty():
+def test_calculate_histogram_empty_log():
     h = calculate_histogram(np.array([]), Scale.LOG, 10, None)
-    assert h.bins == 0
+    assert h.bins == 10
     assert h.scale == Scale.LOG
     assert h.ticks == []
     assert h.frequencies == []
+    assert h.interquartile == (0, 0)
+
+
+def test_calculate_histogram_empty_ticks():
+    h = calculate_histogram(np.array([]), None, None, [1, 2, 3])
+    assert h.bins is None
+    assert h.scale == Scale.LINEAR
+    assert h.ticks == [1, 2, 3]
+    assert h.frequencies == [0, 0]
     assert h.interquartile == (0, 0)
 
 

@@ -313,18 +313,18 @@ processors = [
 
 
 @sentry_span
-async def calc_developer_metrics(devs: Sequence[str],
-                                 repos: Sequence[Collection[str]],
-                                 time_from: datetime,
-                                 time_to: datetime,
-                                 topics: Set[DeveloperTopic],
-                                 labels: LabelFilter,
-                                 jira: JIRAFilter,
-                                 release_settings: Dict[str, ReleaseMatchSetting],
-                                 mdb: databases.Database,
-                                 pdb: databases.Database,
-                                 cache: Optional[aiomcache.Client],
-                                 ) -> List[List[DeveloperStats]]:
+async def calc_developer_metrics_github(devs: Sequence[str],
+                                        repos: Sequence[Collection[str]],
+                                        time_from: datetime,
+                                        time_to: datetime,
+                                        topics: Set[DeveloperTopic],
+                                        labels: LabelFilter,
+                                        jira: JIRAFilter,
+                                        release_settings: Dict[str, ReleaseMatchSetting],
+                                        mdb: databases.Database,
+                                        pdb: databases.Database,
+                                        cache: Optional[aiomcache.Client],
+                                        ) -> List[List[DeveloperStats]]:
     """Calculate various statistics about developer activities.
 
     :return: List with calculated stats, the order matches `devs`.
