@@ -14,7 +14,7 @@ import lz4.frame
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, false, func, insert, join, or_, select
+from sqlalchemy import and_, desc, func, insert, join, or_, select, union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression, ClauseElement
@@ -322,7 +322,7 @@ def _group_repos_by_release_match(repos: Iterable[str],
 
 
 def _match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
-                         model) -> ClauseElement:
+                         model) -> List[ClauseElement]:
     or_items = []
     tags, branches = match_groups.get(ReleaseMatch.tag), match_groups.get(ReleaseMatch.branch)
     if tags:
@@ -333,9 +333,7 @@ def _match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
         or_items.extend(and_(model.release_match == "branch|" + m,
                              model.repository_full_name.in_(r))
                         for m, r in match_groups.get(ReleaseMatch.branch, {}).items())
-    if or_items:
-        return or_(*or_items)
-    return false()
+    return or_items
 
 
 def remove_ambigous_precomputed_releases(df: pd.DataFrame, repo_column: str) -> pd.DataFrame:
@@ -363,13 +361,20 @@ async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str,
                                       index: Optional[Union[str, Sequence[str]]] = None,
                                       ) -> pd.DataFrame:
     prel = PrecomputedRelease
-    df = await read_sql_query(
-        select([prel])
-        .where(and_(_match_groups_to_sql(match_groups, prel),
-                    prel.published_at.between(time_from, time_to)))
-        .order_by(desc(prel.published_at)),
-        pdb, prel,
-    )
+    or_items = _match_groups_to_sql(match_groups, prel)
+    if pdb.url.dialect == "sqlite":
+        query = (
+            select([prel])
+            .where(and_(or_(*or_items), prel.published_at.between(time_from, time_to)))
+            .order_by(desc(prel.published_at))
+        )
+    else:
+        query = union_all(*(
+            select([prel])
+            .where(and_(item, prel.published_at.between(time_from, time_to)))
+            .order_by(desc(prel.published_at))
+            for item in or_items))
+    df = await read_sql_query(query, pdb, prel)
     df = remove_ambigous_precomputed_releases(df, prel.repository_full_name.key)
     if index is not None:
         df.set_index(index, inplace=True)
@@ -384,9 +389,20 @@ async def _fetch_precomputed_release_match_spans(
         pdb: databases.Database) -> Dict[str, Dict[str, Tuple[datetime, datetime]]]:
     ghrts = GitHubReleaseMatchTimespan
     sqlite = pdb.url.dialect == "sqlite"
-    rows = await pdb.fetch_all(
-        select([ghrts.repository_full_name, ghrts.release_match, ghrts.time_from, ghrts.time_to])
-        .where(_match_groups_to_sql(match_groups, ghrts)))
+    or_items = _match_groups_to_sql(match_groups, ghrts)
+    if pdb.url.dialect == "sqlite":
+        query = (
+            select([ghrts.repository_full_name, ghrts.release_match,
+                    ghrts.time_from, ghrts.time_to])
+            .where(or_(*or_items))
+        )
+    else:
+        query = union_all(*(
+            select([ghrts.repository_full_name, ghrts.release_match,
+                    ghrts.time_from, ghrts.time_to])
+            .where(item)
+            for item in or_items))
+    rows = await pdb.fetch_all(query)
     spans = {}
     for row in rows:
         if row[ghrts.release_match.key].startswith("tag|"):
