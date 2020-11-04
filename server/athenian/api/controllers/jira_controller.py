@@ -129,7 +129,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             (r[Issue.components.key] or ()) for r in property_rows))
         people = set(r[Issue.reporter_id.key] for r in property_rows)
         people.update(r[Issue.assignee_id.key] for r in property_rows)
-        people.update(chain.from_iterable(r[Issue.commenters_ids.key] for r in property_rows))
+        people.update(chain.from_iterable(
+            (r[Issue.commenters_ids.key] or []) for r in property_rows))
         priorities = set(r[Issue.priority_id.key] for r in property_rows)
 
         @sentry_span
