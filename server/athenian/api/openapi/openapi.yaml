@@ -5015,7 +5015,8 @@ components:
       type: object
     FilterJIRAStuff:
       additionalProperties: false
-      description: Request of `/filter/jira` to retrieve epics and labels.
+      description: Request of `/filter/jira` to retrieve epics, labels, types, priorities,
+        users, etc.
       example:
         account: 1
         date_from: 2020-01-01
@@ -5315,6 +5316,8 @@ components:
         date_to: 2020-10-30
         priorities:
         - High
+        types:
+        - Bug
         metrics:
         - jira-open
         - jira-resolved
@@ -5358,20 +5361,11 @@ components:
           items:
             type: string
           type: array
-        assignees:
-          description: Selected issue assignee users.
+        with:
+          description: Groups of issue participants. The metrics will be calculated
+            for each group.
           items:
-            $ref: '#/components/schemas/DeveloperID'
-          type: array
-        reporters:
-          description: Selected issue reporter users.
-          items:
-            $ref: '#/components/schemas/DeveloperID'
-          type: array
-        commenters:
-          description: Selected issue commenter users.
-          items:
-            $ref: '#/components/schemas/DeveloperID'
+            $ref: '#/components/schemas/JIRAMetricsRequestWith'
           type: array
         metrics:
           description: List of measured metrics.
@@ -5396,6 +5390,29 @@ components:
       - exclude_inactive
       - granularities
       - metrics
+      type: object
+    JIRAMetricsRequestWith:
+      additionalProperties: false
+      description: Group of JIRA issue participant names split by role.
+      example:
+        assignees:
+        - Vadim Markovtsev
+      properties:
+        assignees:
+          description: Selected issue assignee users.
+          items:
+            type: string
+          type: array
+        reporters:
+          description: Selected issue reporter users.
+          items:
+            type: string
+          type: array
+        commenters:
+          description: Selected issue commenter users.
+          items:
+            type: string
+          type: array
       type: object
     CalculatedJIRAMetrics:
       description: Response from `/metrics/jira`.

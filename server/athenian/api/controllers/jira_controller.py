@@ -247,15 +247,19 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
     ]
     (_, default_branches), release_settings = await gather(
         *tasks, op="branches and release settings")
+    reporters = list(set(chain.from_iterable(
+        ([p.lower() for p in (g.reporters or [])]) for g in (filt.with_ or []))))
+    assignees = list(set(chain.from_iterable(
+        ([p.lower() for p in (g.assignees or [])]) for g in (filt.with_ or []))))
+    commenters = list(set(chain.from_iterable(
+        ([p.lower() for p in (g.commenters or [])]) for g in (filt.with_ or []))))
     issues = await fetch_jira_issues(
         jira_id,
         time_intervals[0][0], time_intervals[0][-1], filt.exclude_inactive,
         LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
         [p.lower() for p in (filt.priorities or [])],
         [p.lower() for p in (filt.types or [])],
-        [p.lower() for p in (filt.reporters or [])],
-        [p.lower() for p in (filt.assignees or [])],
-        [p.lower() for p in (filt.commenters or [])],
+        reporters, assignees, commenters,
         default_branches, release_settings,
         request.mdb, request.pdb, request.cache,
     )

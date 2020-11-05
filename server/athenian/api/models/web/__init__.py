@@ -63,6 +63,7 @@ from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
 from athenian.api.models.web.jira_metrics_request import JIRAMetricsRequest
+from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
 from athenian.api.models.web.jira_priority import JIRAPriority
 from athenian.api.models.web.jira_user import JIRAUser
 from athenian.api.models.web.listed_token import ListedToken
