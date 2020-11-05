@@ -16,7 +16,8 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.types import Property
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, Release
-from athenian.api.models.state.models import AccountJiraInstallation
+from athenian.api.models.precomputed.models import GitHubRelease
+from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
 from athenian.api.models.web import CommitsList, PullRequestSet
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_releases import FilteredReleases
@@ -84,6 +85,38 @@ async def test_filter_repositories_exclude_inactive(
         "account": 1,
         "in": ["github.com/src-d/go-git"],
         "exclude_inactive": True,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/repositories", headers=headers, json=body)
+    repos = json.loads((await response.read()).decode("utf-8"))
+    assert repos == []
+
+
+@pytest.mark.filter_repositories
+async def test_filter_repositories_fuck_up(client, headers, sdb, pdb):
+    await sdb.execute(insert(ReleaseSetting).values(
+        ReleaseSetting(repository="github.com/src-d/go-git",
+                       account_id=1,
+                       branches="master",
+                       tags=".*",
+                       match=0).create_defaults().explode(with_primary_keys=True)))
+    await pdb.execute(insert(GitHubRelease).values(
+        GitHubRelease(id="1",
+                      release_match="branch|whatever",
+                      repository_full_name="src-d/go-git",
+                      repository_node_id="repository_node_id",
+                      name="release",
+                      published_at=datetime(2017, 1, 1, hour=12, tzinfo=timezone.utc),
+                      url="url",
+                      sha="sha",
+                      commit_id="commit_id").create_defaults().explode(with_primary_keys=True)))
+    body = {
+        "date_from": "2017-01-01",
+        "date_to": "2017-01-01",
+        "timezone": 60,
+        "account": 1,
+        "in": ["github.com/src-d/go-git"],
+        "exclude_inactive": False,
     }
     response = await client.request(
         method="POST", path="/v1/filter/repositories", headers=headers, json=body)

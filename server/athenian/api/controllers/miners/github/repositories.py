@@ -117,6 +117,9 @@ async def mine_repositories(repos: Collection[str],
             rms = release_settings[prefix + repo]
             if rms.match in (ReleaseMatch.tag, ReleaseMatch.tag_or_branch):
                 match_groups.setdefault(rms.tags, []).append(repo)
+        if not match_groups:
+            # We experienced a huge fuck-up without this condition.
+            return []
         or_items = or_(*(and_(GitHubRelease.release_match == "tag|" + m,
                               GitHubRelease.repository_full_name.in_(r))
                          for m, r in match_groups.items()))
