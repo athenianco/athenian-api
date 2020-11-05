@@ -285,9 +285,11 @@ async def test_jira_metrics_people(client, headers, assignees, reporters, commen
         "metrics": [JIRAMetricID.JIRA_RAISED],
         "exclude_inactive": True,
         "granularities": ["all"],
-        "assignees": assignees,
-        "reporters": reporters,
-        "commenters": commenters,
+        "with": [{
+            "assignees": assignees,
+            "reporters": reporters,
+            "commenters": commenters,
+        }],
     }
     response = await client.request(
         method="POST", path="/v1/metrics/jira", headers=headers, json=body,

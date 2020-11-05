@@ -4,6 +4,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
+from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
 from athenian.api.models.web.quantiles import validate_quantiles
 
 
@@ -17,9 +18,7 @@ class JIRAMetricsRequest(Model):
         "timezone": int,
         "priorities": List[str],
         "types": List[str],
-        "assignees": List[str],
-        "reporters": List[str],
-        "commenters": List[str],
+        "with_": List[JIRAMetricsRequestWith],
         "metrics": List[str],
         "quantiles": List[float],
         "granularities": List[str],
@@ -35,9 +34,7 @@ class JIRAMetricsRequest(Model):
         "timezone": "timezone",
         "priorities": "priorities",
         "types": "types",
-        "assignees": "assignees",
-        "reporters": "reporters",
-        "commenters": "commenters",
+        "with_": "with",
         "metrics": "metrics",
         "quantiles": "quantiles",
         "granularities": "granularities",
@@ -54,9 +51,7 @@ class JIRAMetricsRequest(Model):
         timezone: Optional[int] = None,
         priorities: Optional[List[str]] = None,
         types: Optional[List[str]] = None,
-        assignees: Optional[List[str]] = None,
-        reporters: Optional[List[str]] = None,
-        commenters: Optional[List[str]] = None,
+        with_: Optional[List[JIRAMetricsRequestWith]] = None,
         metrics: Optional[List[str]] = None,
         quantiles: Optional[List[float]] = None,
         granularities: Optional[List[str]] = None,
@@ -72,9 +67,7 @@ class JIRAMetricsRequest(Model):
         :param timezone: The timezone of this JIRAMetricsRequest.
         :param priorities: The priorities of this JIRAMetricsRequest.
         :param types: The types of this JIRAMetricsRequest.
-        :param assignees: The assignees of this JIRAMetricsRequest.
-        :param reporters: The reporters of this JIRAMetricsRequest.
-        :param commenters: The commenters of this JIRAMetricsRequest.
+        :param with_: The with of this JIRAMetricsRequest.
         :param metrics: The metrics of this JIRAMetricsRequest.
         :param quantiles: The quantiles of this JIRAMetricsRequest.
         :param granularities: The granularities of this JIRAMetricsRequest.
@@ -85,9 +78,7 @@ class JIRAMetricsRequest(Model):
         self._timezone = timezone
         self._priorities = priorities
         self._types = types
-        self._assignees = assignees
-        self._reporters = reporters
-        self._commenters = commenters
+        self._with_ = with_
         self._metrics = metrics
         self._quantiles = quantiles
         self._granularities = granularities
@@ -232,64 +223,24 @@ class JIRAMetricsRequest(Model):
         self._types = types
 
     @property
-    def assignees(self) -> List[str]:
-        """Gets the assignees of this JIRAMetricsRequest.
+    def with_(self) -> List[JIRAMetricsRequestWith]:
+        """Gets the with of this JIRAMetricsRequest.
 
-        Selected issue assignee users.
+        Groups of issue participants. The metrics will be calculated for each group.
 
-        :return: The assignees of this JIRAMetricsRequest.
+        :return: The with of this JIRAMetricsRequest.
         """
-        return self._assignees
+        return self._with_
 
-    @assignees.setter
-    def assignees(self, assignees: List[str]):
-        """Sets the assignees of this JIRAMetricsRequest.
+    @with_.setter
+    def with_(self, with_: List[JIRAMetricsRequestWith]):
+        """Sets the with of this JIRAMetricsRequest.
 
-        Selected issue assignee users.
+        Groups of issue participants. The metrics will be calculated for each group.
 
-        :param assignees: The assignees of this JIRAMetricsRequest.
+        :param with_: The with of this JIRAMetricsRequest.
         """
-        self._assignees = assignees
-
-    @property
-    def reporters(self) -> List[str]:
-        """Gets the reporters of this JIRAMetricsRequest.
-
-        Selected issue reporter users.
-
-        :return: The reporters of this JIRAMetricsRequest.
-        """
-        return self._reporters
-
-    @reporters.setter
-    def reporters(self, reporters: List[str]):
-        """Sets the reporters of this JIRAMetricsRequest.
-
-        Selected issue reporter users.
-
-        :param reporters: The reporters of this JIRAMetricsRequest.
-        """
-        self._reporters = reporters
-
-    @property
-    def commenters(self) -> List[str]:
-        """Gets the commenters of this JIRAMetricsRequest.
-
-        Selected issue commenter users.
-
-        :return: The commenters of this JIRAMetricsRequest.
-        """
-        return self._commenters
-
-    @commenters.setter
-    def commenters(self, commenters: List[str]):
-        """Sets the commenters of this JIRAMetricsRequest.
-
-        Selected issue commenter users.
-
-        :param commenters: The commenters of this JIRAMetricsRequest.
-        """
-        self._commenters = commenters
+        self._with_ = with_
 
     @property
     def metrics(self) -> List[str]:
