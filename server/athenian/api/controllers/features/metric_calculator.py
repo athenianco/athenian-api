@@ -517,3 +517,35 @@ class BinnedMetricsCalculator(BinnedEnsemblesCalculator[Metric]):
     def _aggregate_ensembles(self, kwargs: Iterable[Dict[str, Any]],
                              ) -> List[Dict[str, List[List[Metric]]]]:
         return [self.ensembles[0].values()]
+
+
+class FlowRatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
+    """Calculate the items flow ratio = opened / closed."""
+
+    dtype = float
+
+    def __init__(self, *deps: MetricCalculator, quantiles: Sequence[float]):
+        """Initialize a new instance of FlowRatioCalculator."""
+        super().__init__(*deps, quantiles=quantiles)
+        if isinstance(self._calcs[1], self.deps[0]):
+            self._calcs = list(reversed(self._calcs))
+        self._opened, self._closed = self._calcs
+
+    def _values(self) -> List[List[Metric[float]]]:
+        metrics = [[Metric(False, None, None, None)] * len(samples) for samples in self.samples]
+        for i, (opened_group, closed_group) in enumerate(zip(
+                self._opened.values, self._closed.values)):
+            for j, (opened, closed) in enumerate(zip(opened_group, closed_group)):
+                if not closed.exists and not opened.exists:
+                    continue
+                # Why +1? See ENG-866
+                val = ((opened.value or 0) + 1) / ((closed.value or 0) + 1)
+                metrics[i][j] = Metric(True, val, None, None)
+        return metrics
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        return np.full((len(min_times), len(facts)), None, object)

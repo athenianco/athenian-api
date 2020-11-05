@@ -8,9 +8,9 @@ import pandas as pd
 from athenian.api.controllers.features.histogram import Histogram
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedEnsemblesCalculator, BinnedMetricsCalculator, Counter, HistogramCalculator, \
-    HistogramCalculatorEnsemble, \
-    M, MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator, WithoutQuantilesMixin
+    BinnedEnsemblesCalculator, BinnedMetricsCalculator, Counter, FlowRatioCalculator, \
+    HistogramCalculator, HistogramCalculatorEnsemble, M, MetricCalculator, \
+    MetricCalculatorEnsemble, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.models.web import PullRequestMetricID
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
@@ -692,38 +692,10 @@ class ReleasedCalculator(SumMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_FLOW_RATIO)
-class FlowRatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
-    """PR flow ratio - opened / closed - calculator."""
+class PRFlowRatioCalculator(FlowRatioCalculator):
+    """Calculate PR flow ratio = opened / closed."""
 
     deps = (OpenedCalculator, ClosedCalculator)
-    dtype = float
-
-    def __init__(self, *deps: MetricCalculator, quantiles: Sequence[float]):
-        """Initialize a new instance of FlowRatioCalculator."""
-        super().__init__(*deps, quantiles=quantiles)
-        if isinstance(self._calcs[1], OpenedCalculator):
-            self._calcs = list(reversed(self._calcs))
-        self._opened, self._closed = self._calcs
-
-    def _values(self) -> List[List[Metric[float]]]:
-        """Calculate the current metric value."""
-        metrics = [[Metric(False, None, None, None)] * len(samples) for samples in self.samples]
-        for i, (opened_group, closed_group) in enumerate(zip(
-                self._opened.values, self._closed.values)):
-            for j, (opened, closed) in enumerate(zip(opened_group, closed_group)):
-                if not closed.exists and not opened.exists:
-                    continue
-                # Why +1? See ENG-866
-                val = ((opened.value or 0) + 1) / ((closed.value or 0) + 1)
-                metrics[i][j] = Metric(True, val, None, None)
-        return metrics
-
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
-        return np.full((len(min_times), len(facts)), None, object)
 
 
 @register_metric(PullRequestMetricID.PR_SIZE)

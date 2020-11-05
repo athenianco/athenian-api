@@ -5310,6 +5310,7 @@ components:
       - jira-raised
       - jira-life-time
       - jira-lead-time
+      - jira-flow-ratio
       example: jira-resolved
       type: string
     JIRAMetricsRequest:

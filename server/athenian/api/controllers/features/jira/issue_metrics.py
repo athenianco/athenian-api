@@ -6,8 +6,8 @@ import pandas as pd
 
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedEnsemblesCalculator, \
-    MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
+    BinnedEnsemblesCalculator, FlowRatioCalculator, MetricCalculator, MetricCalculatorEnsemble, \
+    SumMetricCalculator
 from athenian.api.controllers.miners.jira.issue import ISSUE_PRS_BEGAN, ISSUE_PRS_RELEASED
 from athenian.api.models.metadata.jira import AthenianIssue, Issue
 from athenian.api.models.web import JIRAMetricID
@@ -148,6 +148,13 @@ class OpenCounter(SumMetricCalculator[int]):
         created_earlier = created < max_times[:, None]
         result[(resolved_later | not_resolved) & created_earlier] = 1
         return result
+
+
+@register_metric(JIRAMetricID.JIRA_FLOW_RATIO)
+class IssueFlowRatioCalculator(FlowRatioCalculator):
+    """Calculate JIRA issues flow ratio = raised / resolved."""
+
+    deps = (OpenCounter, ResolvedCounter)
 
 
 @register_metric(JIRAMetricID.JIRA_LIFE_TIME)

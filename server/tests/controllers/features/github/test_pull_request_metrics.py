@@ -11,9 +11,9 @@ from athenian.api.controllers.features.entries import calc_pull_request_facts_gi
     calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
     ClosedCalculator, CycleCounter, CycleCounterWithQuantiles, CycleTimeCalculator, \
-    FlowRatioCalculator, histogram_calculators, LeadCounter, LeadCounterWithQuantiles, \
+    histogram_calculators, LeadCounter, LeadCounterWithQuantiles, \
     LeadTimeCalculator, MergingCounter, MergingCounterWithQuantiles, MergingTimeCalculator, \
-    OpenedCalculator, PullRequestBinnedMetricCalculator, \
+    OpenedCalculator, PRFlowRatioCalculator, PullRequestBinnedMetricCalculator, \
     PullRequestMetricCalculatorEnsemble, register_metric, ReleaseCounter, \
     ReleaseCounterWithQuantiles, ReleasedCalculator, ReleaseTimeCalculator, ReviewCounter, \
     ReviewCounterWithQuantiles, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
@@ -192,9 +192,9 @@ def test_pull_request_closed_no(pr_samples):  # noqa: F811
 
 
 def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
-                               ClosedCalculator(quantiles=(0, 1)),
-                               quantiles=(0, 1))
+    calc = PRFlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
+                                 ClosedCalculator(quantiles=(0, 1)),
+                                 quantiles=(0, 1))
     open_calc = OpenedCalculator(quantiles=(0, 1))
     closed_calc = ClosedCalculator(quantiles=(0, 1))
     time_from = datetime.utcnow() - timedelta(days=365)
@@ -215,16 +215,16 @@ def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
 
 
 def test_pull_request_flow_ratio_zeros(pr_samples):
-    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
-                               ClosedCalculator(quantiles=(0, 1)),
-                               quantiles=(0, 1))
+    calc = PRFlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
+                                 ClosedCalculator(quantiles=(0, 1)),
+                                 quantiles=(0, 1))
     assert len(calc.values) == 0
 
 
 def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
-                               ClosedCalculator(quantiles=(0, 1)),
-                               quantiles=(0, 1))
+    calc = PRFlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
+                                 ClosedCalculator(quantiles=(0, 1)),
+                                 quantiles=(0, 1))
     time_to = datetime.utcnow()
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
@@ -242,9 +242,9 @@ def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
 
 
 def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
-                               ClosedCalculator(quantiles=(0, 1)),
-                               quantiles=(0, 1))
+    calc = PRFlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
+                                 ClosedCalculator(quantiles=(0, 1)),
+                                 quantiles=(0, 1))
     time_to = datetime.utcnow() - timedelta(days=180)
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
