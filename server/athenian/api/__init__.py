@@ -8,6 +8,7 @@ from http import HTTPStatus
 import logging
 import os
 from pathlib import Path
+import re
 import signal
 import socket
 import sys
@@ -481,31 +482,33 @@ def setup_context(log: logging.Logger) -> None:
         return
     sentry_env = os.getenv("SENTRY_ENV", "development")
     log.info("Sentry: https://[secure]@sentry.io/%s#%s" % (sentry_project, sentry_env))
-    disabled_transactions = {
-        "athenian.api.controllers.status_controller.StatusRenderer.__call__",
-    }
-
-    def filter_sentry_events(event: dict, hint) -> Optional[dict]:
-        if event.get("type", "") == "transaction":
-            t = event["transaction"]
-            if not t.startswith(metadata.__package__) or t in disabled_transactions:
-                event.clear()
-                event.update({"type": "transaction", "transaction": "disabled"})
-                return None
-        return event
 
     traces_sample_rate = float(os.getenv(
         "SENTRY_SAMPLING_RATE", "0.2" if sentry_env != "development" else "0"))
     if traces_sample_rate > 0:
         log.info("Sentry tracing is ON: sampling rate %.2f", traces_sample_rate)
+    disabled_transactions_re = re.compile("|".join([
+        "openapi.json", "ui(/|$)",
+    ]))
+    api_path_re = re.compile(r"/v\d+/")
+
+    def sample_trace(context) -> float:
+        path = context["aiohttp_request"].path
+        if not (match := api_path_re.match(path)):
+            return 0
+        path = path[match.end():]
+        if disabled_transactions_re.match(path):
+            return 0
+        return traces_sample_rate
+
     sentry_log = logging.getLogger("sentry_sdk.errors")
     sentry_log.handlers.clear()
     sentry_sdk.init(
         environment=sentry_env,
         dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),
-        integrations=[AioHttpIntegration(), SqlalchemyIntegration(),
+        integrations=[AioHttpIntegration(transaction_style="method_and_path_pattern"),
                       LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
-                      PureEvalIntegration(), ExecutingIntegration()],
+                      SqlalchemyIntegration(), PureEvalIntegration(), ExecutingIntegration()],
         auto_enabling_integrations=False,
         send_default_pii=True,
         debug=sentry_env != "production",
@@ -513,9 +516,8 @@ def setup_context(log: logging.Logger) -> None:
         attach_stacktrace=True,
         request_bodies="always",
         release="%s@%s" % (metadata.__package__, metadata.__version__),
-        traces_sample_rate=traces_sample_rate,
+        traces_sampler=sample_trace,
     )
-    sentry_sdk.scope.add_global_event_processor(filter_sentry_events)
     sentry_sdk.utils.MAX_STRING_LENGTH = MAX_SENTRY_STRING_LENGTH
     sentry_sdk.serializer.MAX_DATABAG_BREADTH = 16  # e.g., max number of locals in a stack frame
     with sentry_sdk.configure_scope() as scope:
