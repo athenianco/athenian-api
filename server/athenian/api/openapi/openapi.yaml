@@ -4965,7 +4965,8 @@ components:
       example:
         name: High
         image: https://athenianco.atlassian.net/images/icons/priorities/high.svg
-        value: 5
+        rank: 2
+        color: EA4444
       properties:
         name:
           description: Name of the priority.
@@ -4978,7 +4979,11 @@ components:
           description: Measure of importance (smaller is more important).
           minimum: 1
           type: integer
+        color:
+          description: 24-bit hex RGB.
+          type: string
       required:
+      - color
       - image
       - name
       - rank

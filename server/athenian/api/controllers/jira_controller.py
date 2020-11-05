@@ -160,7 +160,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         @sentry_span
         async def fetch_priorities():
             return await mdb.fetch_all(
-                select([Priority.name, Priority.icon_url, Priority.rank])
+                select([Priority.name, Priority.icon_url, Priority.rank, Priority.status_color])
                 .where(and_(
                     Priority.id.in_(priorities),
                     Priority.acc_id == jira_id,
@@ -197,7 +197,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                  for row in users]
         priorities = [JIRAPriority(name=row[Priority.name.key],
                                    image=row[Priority.icon_url.key],
-                                   rank=row[Priority.rank.key])
+                                   rank=row[Priority.rank.key],
+                                   color=row[Priority.status_color.key])
                       for row in priorities]
         for row in property_rows:
             updated = row[Issue.updated.key]

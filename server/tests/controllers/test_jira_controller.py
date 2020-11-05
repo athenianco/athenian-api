@@ -98,13 +98,16 @@ async def test_filter_jira_smoke(client, headers):
     assert model.priorities == [
         JIRAPriority(name="Medium",
                      image="https://athenianco.atlassian.net/images/icons/priorities/medium.svg",
-                     rank=3),
+                     rank=3,
+                     color="EA7D24"),
         JIRAPriority(name="Low",
                      image="https://athenianco.atlassian.net/images/icons/priorities/low.svg",
-                     rank=4),
+                     rank=4,
+                     color="2A8735"),
         JIRAPriority(name="None",
                      image="https://athenianco.atlassian.net/images/icons/priorities/trivial.svg",
-                     rank=6)]
+                     rank=6,
+                     color="9AA1B2")]
 
 
 @pytest.mark.parametrize("account, date_to, timezone, status", [
