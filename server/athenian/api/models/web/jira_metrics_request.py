@@ -223,7 +223,7 @@ class JIRAMetricsRequest(Model):
         self._types = types
 
     @property
-    def with_(self) -> List[JIRAMetricsRequestWith]:
+    def with_(self) -> Optional[List[JIRAMetricsRequestWith]]:
         """Gets the with of this JIRAMetricsRequest.
 
         Groups of issue participants. The metrics will be calculated for each group.
@@ -233,7 +233,7 @@ class JIRAMetricsRequest(Model):
         return self._with_
 
     @with_.setter
-    def with_(self, with_: List[JIRAMetricsRequestWith]):
+    def with_(self, with_: Optional[List[JIRAMetricsRequestWith]]):
         """Sets the with of this JIRAMetricsRequest.
 
         Groups of issue participants. The metrics will be calculated for each group.

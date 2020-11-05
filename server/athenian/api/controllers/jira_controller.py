@@ -4,10 +4,12 @@ from itertools import chain, groupby
 import logging
 import marshal
 from operator import itemgetter
-from typing import Optional
+from typing import List, Optional
 
 from aiohttp import web
 import aiomcache
+import numpy as np
+import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, outerjoin, select, true
 from sqlalchemy.sql.functions import coalesce
@@ -29,6 +31,7 @@ from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinear
     InvalidRequestError, \
     JIRAEpic, JIRALabel, JIRAMetricsRequest, JIRAPriority, JIRAUser, NoSourceDataError
 from athenian.api.models.web.jira_epic_child import JIRAEpicChild
+from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -260,14 +263,15 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
         LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
         [p.lower() for p in (filt.priorities or [])],
         [p.lower() for p in (filt.types or [])],
-        reporters, assignees, commenters,
+        reporters, assignees, commenters, len(filt.with_ or []) > 1,
         default_branches, release_settings,
         request.mdb, request.pdb, request.cache,
     )
     calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1])
-    metric_values = calc(issues, time_intervals)
-    mets = [
-        CalculatedJIRAMetricValues(granularity=granularity, values=[
+    with_groups = _split_issues_by_with(issues, filt.with_)
+    metric_values = calc(issues, time_intervals, with_groups)
+    mets = list(chain.from_iterable((
+        CalculatedJIRAMetricValues(granularity=granularity, with_=group, values=[
             CalculatedLinearMetricValues(date=dt.date(),
                                          values=[v.value for v in vals],
                                          confidence_mins=[v.confidence_min for v in vals],
@@ -275,6 +279,35 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
                                          confidence_scores=[v.confidence_score() for v in vals])
             for dt, vals in zip(ts, ts_values)
         ])
-        for granularity, ts, ts_values in zip(filt.granularities, time_intervals, metric_values)
-    ]
+        for granularity, ts, ts_values in zip(filt.granularities, time_intervals,
+                                              group_metric_values)
+    ) for group, group_metric_values in zip(filt.with_ or [None], metric_values)))
     return model_response(mets)
+
+
+def _split_issues_by_with(issues: pd.DataFrame,
+                          with_: Optional[List[JIRAMetricsRequestWith]],
+                          ) -> List[np.ndarray]:
+    result = []
+    if len(with_ or []) < 2:
+        return [np.arange(len(issues))]
+    for group in with_:
+        mask = np.full(len(issues), False)
+        if group.assignees:
+            assignees = np.char.lower(np.array(group.assignees, dtype="U"))
+            mask |= np.in1d(issues["assignee"].values.astype("U"), assignees)
+        if group.reporters:
+            reporters = np.char.lower(np.array(group.reporters, dtype="U"))
+            mask |= np.in1d(issues["reporter"].values.astype("U"), reporters)
+        if group.commenters:
+            commenters = np.char.lower(np.array(group.commenters, dtype="U"))
+            issue_commenters = issues["commenters"]
+            merged_issue_commenters = np.concatenate(issue_commenters).astype("U")
+            offsets = np.zeros(len(issue_commenters) + 1, dtype=int)
+            np.cumsum(issue_commenters.apply(len).values, out=offsets[1:])
+            indexes = np.unique(np.searchsorted(
+                offsets, np.nonzero(np.in1d(merged_issue_commenters, commenters))[0],
+                side="right") - 1)
+            mask[indexes] = True
+        result.append(np.nonzero(mask)[0])
+    return result

@@ -60,7 +60,8 @@ class JIRABinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
     def __call__(self,
                  items: pd.DataFrame,
                  time_intervals: Sequence[Sequence[datetime]],
-                 ) -> List[List[List[Metric]]]:
+                 groups: Sequence[np.ndarray],
+                 ) -> List[List[List[List[Metric]]]]:
         """
         Calculate the binned aggregations on a series of mined issues.
 
@@ -68,19 +69,23 @@ class JIRABinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
         :param time_intervals: Time interval borders in UTC. Each interval spans \
                                `[time_intervals[i], time_intervals[i + 1]]`, the ending \
                                not included.
-        :return: time intervals primary x time intervals secondary x metrics.
+        :param groups: Various issue groups, the metrics will be calculated independently \
+                       for each group.
+        :return: groups x time intervals primary x time intervals secondary x metrics.
         """
         min_times, max_times, ts_index_map = self._make_min_max_times(time_intervals)
         assert len(self.ensembles) == 1
         ensemble = self.ensembles[0]
-        ensemble(items, min_times, max_times, [np.arange(len(items))])
+        ensemble(items, min_times, max_times, groups)
         values_dict = ensemble.values()
-        result = [[[None] * len(self.metrics[0])
-                   for _ in range(len(ts) - 1)]
-                  for ts in time_intervals]
+        result = [[[[None] * len(self.metrics[0])
+                    for _ in range(len(ts) - 1)]
+                   for ts in time_intervals]
+                  for _ in groups]
         for mix, metric in enumerate(self.metrics[0]):
-            for (primary, secondary), value in zip(ts_index_map, values_dict[metric][0]):
-                result[primary][secondary][mix] = value
+            for gi in range(len(groups)):
+                for (primary, secondary), value in zip(ts_index_map, values_dict[metric][gi]):
+                    result[gi][primary][secondary][mix] = value
         return result
 
 

@@ -156,7 +156,7 @@ ISSUE_PRS_RELEASED = "prs_released"
     exptime=5 * 60,  # 5 minutes
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda account, time_from, time_to, exclude_inactive, priorities, types, reporters, assignees, commenters, **_: (  # noqa
+    key=lambda account, time_from, time_to, exclude_inactive, priorities, types, reporters, assignees, commenters, load_participants, **_: (  # noqa
         account,
         time_from.timestamp(), time_to.timestamp(),
         exclude_inactive,
@@ -165,6 +165,7 @@ ISSUE_PRS_RELEASED = "prs_released"
         ",".join(sorted(reporters)),
         ",".join(sorted(assignees)),
         ",".join(sorted(commenters)),
+        load_participants,
     ),
 )
 async def fetch_jira_issues(account: int,
@@ -177,6 +178,7 @@ async def fetch_jira_issues(account: int,
                             reporters: Collection[str],
                             assignees: Collection[str],
                             commenters: Collection[str],
+                            load_participants: bool,
                             default_branches: Dict[str, str],
                             release_settings: Dict[str, ReleaseMatchSetting],
                             mdb: databases.Database,
@@ -199,8 +201,9 @@ async def fetch_jira_issues(account: int,
     :param assignees: List of lower-case issue assignees.
     :param commenters: List of lower-case issue commenters.
     """
-    issues = await _fetch_issues(account, time_from, time_to, exclude_inactive, labels, priorities,
-                                 types, reporters, assignees, commenters, mdb, cache)
+    issues = await _fetch_issues(
+        account, time_from, time_to, exclude_inactive, labels, priorities, types,
+        reporters, assignees, commenters, load_participants, mdb, cache)
     pr_rows = await mdb.fetch_all(
         sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
         .where(sql.and_(NodePullRequestJiraIssues.jira_acc == account,
@@ -308,6 +311,7 @@ async def _fetch_issues(account: int,
                         reporters: Collection[str],
                         assignees: Collection[str],
                         commenters: Collection[str],
+                        load_participants: bool,
                         mdb: databases.Database,
                         cache: Optional[aiomcache.Client],
                         ) -> pd.DataFrame:
@@ -316,6 +320,10 @@ async def _fetch_issues(account: int,
         Issue.created, AthenianIssue.work_began, AthenianIssue.resolved, Issue.updated,
         Issue.priority_name, Issue.epic_id, Issue.status, Issue.type, Issue.id,
     ]
+    if load_participants:
+        columns.extend([sql.func.lower(Issue.reporter_display_name).label("reporter"),
+                        sql.func.lower(Issue.assignee_display_name).label("assignee"),
+                        Issue.commenters_display_names.label("commenters")])
     and_filters = [
         Issue.acc_id == account,
         sql.func.coalesce(Issue.resolved >= time_from, sql.true()),
@@ -339,12 +347,12 @@ async def _fetch_issues(account: int,
     if commenters:
         if postgres:
             or_filters.append(Issue.commenters_display_names.overlap(commenters))
-        else:
+        elif not load_participants:
             if reporters:
-                columns.append(Issue.reporter_display_name)
+                columns.append(sql.func.lower(Issue.reporter_display_name).label("reporter"))
             if assignees:
-                columns.append(Issue.assignee_display_name)
-            columns.append(Issue.commenters_display_names)
+                columns.append(sql.func.lower(Issue.assignee_display_name).label("assignee"))
+            columns.append(Issue.commenters_display_names.label("commenters"))
 
     def query_start():
         return sql.select(columns).select_from(sql.outerjoin(
@@ -352,8 +360,11 @@ async def _fetch_issues(account: int,
                                            Issue.id == AthenianIssue.id)))
 
     if or_filters:
-        query = sql.union(*(query_start().where(sql.and_(or_filter, *and_filters))
-                            for or_filter in or_filters))
+        if postgres:
+            query = sql.union(*(query_start().where(sql.and_(or_filter, *and_filters))
+                                for or_filter in or_filters))
+        else:
+            query = query_start().where(sql.and_(sql.or_(*or_filters), *and_filters))
     else:
         query = query_start().where(sql.and_(*and_filters))
     df = await read_sql_query(query, mdb, columns, index=Issue.id.key)
@@ -362,11 +373,11 @@ async def _fetch_issues(account: int,
         return df
     passed = np.full(len(df), False)
     if reporters:
-        passed |= df[Issue.reporter_display_name.key].str.lower().isin(reporters).values
+        passed |= df["reporter"].isin(reporters).values
     if assignees:
-        passed |= df[Issue.assignee_display_name.key].str.lower().isin(assignees).values
+        passed |= df["assignee"].isin(assignees).values
     # don't go hardcore vectorized here, we don't have to with SQLite
-    for i, issue_commenters in enumerate(df[Issue.commenters_display_names.key].values):
+    for i, issue_commenters in enumerate(df["commenters"].values):
         if len(np.intersect1d(issue_commenters, commenters)):
             passed[i] = True
     return df.take(np.nonzero(passed)[0])

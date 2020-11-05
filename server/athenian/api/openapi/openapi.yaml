@@ -5459,6 +5459,8 @@ components:
       properties:
         granularity:
           $ref: '#/components/schemas/Granularity'
+        with:
+          $ref: '#/components/schemas/JIRAMetricsRequestWith'
         values:
           items:
             $ref: '#/components/schemas/CalculatedLinearMetricValues'

@@ -110,19 +110,19 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
         no_last_review = facts["last_review"].isnull().values
         has_last_review = ~no_last_review
         wip_end[has_last_review] = facts["first_review_request"].take(
-            np.where(has_last_review)[0])
+            np.nonzero(has_last_review)[0])
 
         # review was probably requested but never happened
         no_last_commit = facts["last_commit"].isnull().values
         has_last_commit = ~no_last_commit & no_last_review
-        wip_end[has_last_commit] = facts["last_commit"].take(np.where(has_last_commit)[0])
+        wip_end[has_last_commit] = facts["last_commit"].take(np.nonzero(has_last_commit)[0])
 
         # 0 commits in the PR, no reviews and review requests
         # => review time = 0
         # => merge time = 0 (you cannot merge an empty PR)
         # => release time = 0
         # This PR is 100% closed.
-        remaining = np.where(wip_end == np.array(None))[0]
+        remaining = np.nonzero(wip_end == np.array(None))[0]
         closed = facts["closed"].take(remaining)
         wip_end[remaining] = closed
         wip_end[remaining[closed != closed]] = None  # deal with NaNs
@@ -130,7 +130,7 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
         if override_event_time is not None:
             wip_end[override_event_indexes] = override_event_time
 
-        wip_end_indexes = np.where(wip_end != np.array(None))[0]
+        wip_end_indexes = np.nonzero(wip_end != np.array(None))[0]
         dtype = facts["created"].dtype
         wip_end = wip_end[wip_end_indexes].astype(dtype)
         wip_end_in_range = (min_times[:, None] <= wip_end) & (wip_end < max_times[:, None])
@@ -182,11 +182,11 @@ class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
             closed_mask = has_first_review_request
         else:
             closed_mask = facts["closed"].notnull().values & has_first_review_request
-        not_approved_mask = facts["approved"].isnull()
+        not_approved_mask = facts["approved"].isnull().values
         approved_mask = ~not_approved_mask & closed_mask
-        last_review_mask = not_approved_mask & facts["last_review"].notnull() & closed_mask
-        review_end[approved_mask] = facts["approved"].take(np.where(approved_mask)[0])
-        review_end[last_review_mask] = facts["last_review"].take(np.where(last_review_mask)[0])
+        last_review_mask = not_approved_mask & facts["last_review"].notnull().values & closed_mask
+        review_end[approved_mask] = facts["approved"].take(np.nonzero(approved_mask)[0])
+        review_end[last_review_mask] = facts["last_review"].take(np.nonzero(last_review_mask)[0])
 
         if override_event_time is not None:
             review_end[override_event_indexes] = override_event_time
@@ -242,7 +242,7 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
                  ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
         merge_end = result.copy()
-        closed_indexes = np.where(facts["closed"].notnull())[0]
+        closed_indexes = np.nonzero(facts["closed"].notnull().values)[0]
         closed = facts["closed"].take(closed_indexes).values
         closed_in_range = (min_times[:, None] <= closed) & (closed < max_times[:, None])
         closed_indexes = np.repeat(closed_indexes[None, :], len(min_times), axis=0)
@@ -364,7 +364,7 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
-        released_indexes = np.where(facts["released"].notnull())[0]
+        released_indexes = np.nonzero(facts["released"].notnull().values)[0]
         released = facts["released"].take(released_indexes).values
         released_in_range = (min_times[:, None] <= released) & (released < max_times[:, None])
         work_began = facts["work_began"].values
@@ -501,7 +501,7 @@ class AllCounter(SumMetricCalculator[int]):
             for activity_mask_dim, activities_in_range_dim in \
                     zip(activity_mask, activities_in_range):
                 activity_indexes = np.unique(np.searchsorted(
-                    activity_offsets, np.where(activities_in_range_dim)[0], side="right") - 1)
+                    activity_offsets, np.nonzero(activities_in_range_dim)[0], side="right") - 1)
                 activity_mask_dim[activity_indexes] = 1
 
         in_range_mask = created_in_range_mask & (
@@ -529,9 +529,9 @@ class WaitFirstReviewTimeCalculator(AverageMetricCalculator[timedelta]):
         result = np.full((len(min_times), len(facts)), None, object)
         result_mask = facts["first_comment_on_first_review"].notnull().values & \
             facts["first_review_request"].notnull().values
-        fc_on_fr = facts["first_comment_on_first_review"].take(np.where(result_mask)[0]).values
+        fc_on_fr = facts["first_comment_on_first_review"].take(np.nonzero(result_mask)[0]).values
         fc_on_fr_in_range_mask = (min_times[:, None] <= fc_on_fr) & (fc_on_fr < max_times[:, None])
-        result_indexes = np.where(result_mask)[0]
+        result_indexes = np.nonzero(result_mask)[0]
         first_review_request = facts["first_review_request"].values
         for result_dim, fc_on_fr_in_range_mask_dim in zip(result, fc_on_fr_in_range_mask):
             result_indexes_dim = result_indexes[fc_on_fr_in_range_mask_dim]
@@ -596,7 +596,7 @@ class ReviewedCalculator(SumMetricCalculator[int]):
             # `review_offsets` interval
             # np.unique collapses duplicate indexes
             reviewed_indexes = np.unique(np.searchsorted(
-                review_offsets, np.where(reviews_in_range_dim)[0], side="right") - 1)
+                review_offsets, np.nonzero(reviews_in_range_dim)[0], side="right") - 1)
             result_dim[reviewed_indexes] = 1
         return result
 

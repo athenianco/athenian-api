@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 
@@ -7,9 +7,9 @@ class JIRAMetricsRequestWith(Model):
     """Group of JIRA issue participant names split by role."""
 
     openapi_types = {
-        "assignees": List[str],
-        "reporters": List[str],
-        "commenters": List[str],
+        "assignees": Optional[List[str]],
+        "reporters": Optional[List[str]],
+        "commenters": Optional[List[str]],
     }
     attribute_map = {
         "assignees": "assignees",
@@ -19,9 +19,9 @@ class JIRAMetricsRequestWith(Model):
 
     def __init__(
         self,
-        assignees: List[str] = None,
-        reporters: List[str] = None,
-        commenters: List[str] = None,
+        assignees: Optional[List[str]] = None,
+        reporters: Optional[List[str]] = None,
+        commenters: Optional[List[str]] = None,
     ):
         """JIRAMetricsRequestWith - a model defined in OpenAPI
 
@@ -34,7 +34,7 @@ class JIRAMetricsRequestWith(Model):
         self._commenters = commenters
 
     @property
-    def assignees(self) -> List[str]:
+    def assignees(self) -> Optional[List[str]]:
         """Gets the assignees of this JIRAMetricsRequestWith.
 
         Selected issue assignee users.
@@ -44,7 +44,7 @@ class JIRAMetricsRequestWith(Model):
         return self._assignees
 
     @assignees.setter
-    def assignees(self, assignees: List[str]):
+    def assignees(self, assignees: Optional[List[str]]):
         """Sets the assignees of this JIRAMetricsRequestWith.
 
         Selected issue assignee users.
@@ -54,7 +54,7 @@ class JIRAMetricsRequestWith(Model):
         self._assignees = assignees
 
     @property
-    def reporters(self) -> List[str]:
+    def reporters(self) -> Optional[List[str]]:
         """Gets the reporters of this JIRAMetricsRequestWith.
 
         Selected issue reporter users.
@@ -64,7 +64,7 @@ class JIRAMetricsRequestWith(Model):
         return self._reporters
 
     @reporters.setter
-    def reporters(self, reporters: List[str]):
+    def reporters(self, reporters: Optional[List[str]]):
         """Sets the reporters of this JIRAMetricsRequestWith.
 
         Selected issue reporter users.
@@ -74,7 +74,7 @@ class JIRAMetricsRequestWith(Model):
         self._reporters = reporters
 
     @property
-    def commenters(self) -> List[str]:
+    def commenters(self) -> Optional[List[str]]:
         """Gets the commenters of this JIRAMetricsRequestWith.
 
         Selected issue commenter users.
@@ -84,7 +84,7 @@ class JIRAMetricsRequestWith(Model):
         return self._commenters
 
     @commenters.setter
-    def commenters(self, commenters: List[str]):
+    def commenters(self, commenters: Optional[List[str]]):
         """Sets the commenters of this JIRAMetricsRequestWith.
 
         Selected issue commenter users.

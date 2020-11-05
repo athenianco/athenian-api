@@ -150,6 +150,7 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     assert len(body) == 2
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
     assert items[0].granularity == "all"
+    assert items[0].with_ is None
     assert items[0].values == [CalculatedLinearMetricValues(
         date=date(2019, 12, 31),
         values=[1765, 1623],
@@ -158,6 +159,7 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
         confidence_scores=[None] * 2,
     )]
     assert items[1].granularity == "2 month"
+    assert items[1].with_ is None
     assert len(items[1].values) == 5
     assert items[1].values[0] == CalculatedLinearMetricValues(
         date=date(2019, 12, 31),
@@ -193,6 +195,7 @@ async def test_jira_metrics_nasty_input1(
         "timezone": timezone,
         "account": account,
         "metrics": metrics,
+        "with": [],
         "exclude_inactive": True,
         "granularities": granularities,
     }
@@ -303,7 +306,42 @@ async def test_jira_metrics_people(client, headers, assignees, reporters, commen
     assert len(body) == 1
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
     assert items[0].granularity == "all"
+    assert items[0].with_.to_dict() == {
+        "assignees": assignees,
+        "reporters": reporters,
+        "commenters": commenters,
+    }
     assert items[0].values[0].values == [count]
+
+
+async def test_jira_metrics_teams(client, headers):
+    body = {
+        "date_from": "2020-01-01",
+        "date_to": "2020-10-20",
+        "timezone": 0,
+        "account": 1,
+        "metrics": [JIRAMetricID.JIRA_RAISED],
+        "exclude_inactive": True,
+        "granularities": ["all"],
+        "with": [{
+            "assignees": ["vadim Markovtsev"],
+        }, {
+            "reporters": ["waren Long"],
+        }],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = json.loads(body)
+    assert len(body) == 2
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
+    assert items[0].granularity == "all"
+    assert items[0].values[0].values == [536]
+    assert items[0].with_.to_dict() == {"assignees": ["vadim Markovtsev"]}
+    assert items[1].values[0].values == [567]
+    assert items[1].with_.to_dict() == {"reporters": ["waren Long"]}
 
 
 @pytest.mark.parametrize("metric, exclude_inactive, n", [
