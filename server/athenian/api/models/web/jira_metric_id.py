@@ -9,3 +9,4 @@ class JIRAMetricID(Model, metaclass=Enum):
     JIRA_RAISED = "jira-raised"
     JIRA_LIFE_TIME = "jira-life-time"
     JIRA_LEAD_TIME = "jira-lead-time"
+    JIRA_FLOW_RATIO = "jira-flow-ratio"
