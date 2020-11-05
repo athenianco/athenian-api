@@ -156,10 +156,11 @@ ISSUE_PRS_RELEASED = "prs_released"
     exptime=5 * 60,  # 5 minutes
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda account, time_from, time_to, exclude_inactive, priorities, types, reporters, assignees, commenters, load_participants, **_: (  # noqa
+    key=lambda account, time_from, time_to, exclude_inactive, labels, priorities, types, reporters, assignees, commenters, load_participants, **_: (  # noqa
         account,
         time_from.timestamp(), time_to.timestamp(),
         exclude_inactive,
+        labels,
         ",".join(sorted(priorities)),
         ",".join(sorted(types)),
         ",".join(sorted(reporters)),
