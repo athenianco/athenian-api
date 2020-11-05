@@ -9,7 +9,8 @@ from typing import Optional
 from aiohttp import web
 import aiomcache
 import sentry_sdk
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, outerjoin, select, true
+from sqlalchemy.sql.functions import coalesce
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
@@ -21,7 +22,7 @@ from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
 from athenian.api.controllers.settings import Settings
-from athenian.api.models.metadata.jira import Component, Issue, Priority, User
+from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, Priority, User
 from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinearMetricValues, \
     FilterJIRAStuff, FoundJIRAStuff, \
@@ -93,10 +94,12 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     async def epic_flow():
         epic_rows = await mdb.fetch_all(
             select([Issue.id, Issue.key, Issue.title, Issue.updated])
+            .select_from(outerjoin(Issue, AthenianIssue, and_(Issue.acc_id == AthenianIssue.acc_id,
+                                                              Issue.id == AthenianIssue.id)))
             .where(and_(Issue.acc_id == jira_id,
                         Issue.type == "Epic",
                         Issue.created < time_to,
-                        or_(Issue.resolved.is_(None), Issue.resolved >= time_from),
+                        coalesce(AthenianIssue.resolved >= time_from, true()),
                         )))
         epic_ids = [r[Issue.id.key] for r in epic_rows]
         children_rows = await mdb.fetch_all(
@@ -121,9 +124,11 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         property_rows = await mdb.fetch_all(
             select([Issue.id, Issue.labels, Issue.components, Issue.type, Issue.updated,
                     Issue.assignee_id, Issue.reporter_id, Issue.commenters_ids, Issue.priority_id])
+            .select_from(outerjoin(Issue, AthenianIssue, and_(Issue.acc_id == AthenianIssue.acc_id,
+                                                              Issue.id == AthenianIssue.id)))
             .where(and_(Issue.acc_id == jira_id,
                         Issue.created < time_to,
-                        or_(Issue.resolved.is_(None), Issue.resolved >= time_from),
+                        coalesce(AthenianIssue.resolved >= time_from, true()),
                         )))
         components = Counter(chain.from_iterable(
             (r[Issue.components.key] or ()) for r in property_rows))
