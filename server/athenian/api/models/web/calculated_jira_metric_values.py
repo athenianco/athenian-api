@@ -3,6 +3,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_linear_metric_values import \
     CalculatedLinearMetricValues
+from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
 
 
 class CalculatedJIRAMetricValues(Model):
@@ -10,20 +11,28 @@ class CalculatedJIRAMetricValues(Model):
 
     openapi_types = {
         "granularity": str,
+        "with_": Optional[JIRAMetricsRequestWith],
         "values": List[CalculatedLinearMetricValues],
     }
 
-    attribute_map = {"granularity": "granularity", "values": "values"}
+    attribute_map = {
+        "granularity": "granularity",
+        "with_": "with",
+        "values": "values",
+    }
 
     def __init__(self,
                  granularity: Optional[str] = None,
+                 with_: Optional[JIRAMetricsRequestWith] = None,
                  values: Optional[List[CalculatedLinearMetricValues]] = None):
         """CalculatedJIRAMetricValues - a model defined in OpenAPI
 
         :param granularity: The granularity of this CalculatedJIRAMetricValues.
+        :param with_: The with of this CalculatedJIRAMetricValues.
         :param values: The values of this CalculatedJIRAMetricValues.
         """
         self._granularity = granularity
+        self._with_ = with_
         self._values = values
 
     @property
@@ -52,6 +61,26 @@ class CalculatedJIRAMetricValues(Model):
             raise ValueError("Invalid value for `granularity`, must not be `None`")
 
         self._granularity = granularity
+
+    @property
+    def with_(self) -> Optional[List[JIRAMetricsRequestWith]]:
+        """Gets the with of this CalculatedJIRAMetricValues.
+
+        Groups of issue participants. The metrics will be calculated for each group.
+
+        :return: The with of this CalculatedJIRAMetricValues.
+        """
+        return self._with_
+
+    @with_.setter
+    def with_(self, with_: Optional[List[JIRAMetricsRequestWith]]):
+        """Sets the with of this CalculatedJIRAMetricValues.
+
+        Groups of issue participants. The metrics will be calculated for each group.
+
+        :param with_: The with of this CalculatedJIRAMetricValues.
+        """
+        self._with_ = with_
 
     @property
     def values(self) -> List[CalculatedLinearMetricValues]:
