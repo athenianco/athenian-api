@@ -493,7 +493,10 @@ def setup_context(log: logging.Logger) -> None:
     api_path_re = re.compile(r"/v\d+/")
 
     def sample_trace(context) -> float:
-        path = context["aiohttp_request"].path
+        request: aiohttp.web.Request = context["aiohttp_request"]
+        if request.method == "OPTIONS":
+            return 0
+        path = request.path
         if not (match := api_path_re.match(path)):
             return 0
         path = path[match.end():]
