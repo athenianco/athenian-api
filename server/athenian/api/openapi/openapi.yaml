@@ -540,6 +540,48 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
+  /histograms/jira:
+    post:
+      operationId: calc_histogram_jira
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JIRAHistogramsRequest'
+        description: Query for selecting JIRA issues and binned activities.
+        required: true
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculatedJIRAHistograms'
+          description: Calculated histograms.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to access the specified repositories
+            on behalf of the specified account.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: Calculate histograms over JIRA issue activities.
+      tags:
+      - histograms
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.jira_controller
+      x-codegen-request-body-name: body
   /histograms/prs:
     post:
       operationId: calc_histogram_prs
@@ -4565,8 +4607,6 @@ components:
       additionalProperties: false
       description: Request of `/histograms/prs`.
       example:
-        bins: 20
-        timezone: 120
         for:
         - repositories:
           - github.com/athenianco/athenian-webapp
@@ -4577,13 +4617,13 @@ components:
             - github.com/dpordomingo
           labels_include:
           - bug
-        scale: log
-        metrics:
-        - pr-lead-time
-        - pr-cycle-time
-        date_to: 2000-01-23
+        histograms:
+        - scale: log
+          metric: pr-lead-time
         account: 1
-        date_from: 2000-01-23
+        date_to: 2020-11-23
+        date_from: 2020-01-23
+        timezone: 120
         exclude_inactive: true
       properties:
         for:
@@ -4597,7 +4637,7 @@ components:
         histograms:
           description: Histogram parameters for each wanted topic.
           items:
-            $ref: '#/components/schemas/HistogramDefinition'
+            $ref: '#/components/schemas/PullRequestHistogramDefinition'
           type: array
         metrics:
           description: DEPRECATED List of desired histogram topics.
@@ -4641,7 +4681,7 @@ components:
       - exclude_inactive
       - for
       type: object
-    HistogramDefinition:
+    PullRequestHistogramDefinition:
       additionalProperties: false
       description: 'Histogram parameters: topic, bins.'
       example:
@@ -4693,7 +4733,7 @@ components:
       type: array
     CalculatedPullRequestHistogram:
       additionalProperties: false
-      description: Calculated histogram definition.
+      description: Calculated histogram over PR activities.
       example:
         for:
           repositories:
@@ -5469,4 +5509,176 @@ components:
       required:
       - granularity
       - values
+      type: object
+    JIRAHistogramsRequest:
+      additionalProperties: false
+      description: Request of `/histograms/jira`.
+      example:
+        types:
+        - Bug
+        histograms:
+        - metric: jira-raised
+        account: 1
+        date_to: 2020-11-23
+        date_from: 2020-01-23
+        timezone: 120
+        exclude_inactive: true
+      properties:
+        priorities:
+          description: Selected issue priorities.
+          items:
+            type: string
+          type: array
+        types:
+          description: Selected issue types.
+          items:
+            type: string
+          type: array
+        labels_include:
+          description: PRs must relate to at least one JIRA issue label from the list.
+            Several labels may be concatenated by a comma `,` so that all of them
+            are required.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: PRs cannot relate to JIRA issue labels from the list.
+          items:
+            type: string
+          type: array
+        with:
+          description: Groups of issue participants. The histograms will be calculated
+            for each group.
+          items:
+            $ref: '#/components/schemas/JIRAMetricsRequestWith'
+          type: array
+        histograms:
+          description: Histogram parameters for each wanted topic.
+          items:
+            $ref: '#/components/schemas/JIRAHistogramDefinition'
+          type: array
+        date_from:
+          description: Date from when to start measuring the distribution.
+          format: date
+          type: string
+        date_to:
+          description: Date up to which to measure the distribution.
+          format: date
+          type: string
+        timezone:
+          $ref: '#/components/schemas/TimeZone'
+        exclude_inactive:
+          description: Value indicating whether issues with the last update older
+            than `date_from` should be ignored.
+          type: boolean
+        quantiles:
+          $ref: '#/components/schemas/Quantiles'
+        account:
+          description: Session account ID.
+          type: integer
+      required:
+      - account
+      - date_from
+      - date_to
+      - exclude_inactive
+      - histograms
+      type: object
+    JIRAHistogramDefinition:
+      additionalProperties: false
+      description: 'Histogram parameters: topic, bins.'
+      example:
+        metric: jira-raised
+        ticks:
+        - 1
+        - 10
+        - 50
+        - 100
+        - 500
+      properties:
+        metric:
+          $ref: '#/components/schemas/JIRAMetricID'
+        scale:
+          allOf:
+          - $ref: '#/components/schemas/HistogramScale'
+          - description: Histogram's X axis scale.
+        bins:
+          description: Number of bars in the histogram. 0 or null means automatic.
+          minimum: 0
+          type: integer
+        ticks:
+          description: |-
+            Alternatively to `bins` and `scale`, set the X axis bar borders manually.
+            Only one of two may be specified. The ticks are automatically prepended
+            the distribution minimum and appended the distribution maximum.
+          items:
+# {% if False %}
+            allOf:
+# {% else %}{{ "\n" }}            oneOf:{% endif %}
+            - type: number
+            - $ref: '#/components/schemas/TimeDuration'
+          minItems: 1
+          type: array
+      required:
+      - metric
+      type: object
+    CalculatedJIRAHistograms:
+      description: Response from `/histograms/jira`.
+      items:
+        $ref: '#/components/schemas/CalculatedJIRAHistogram'
+      type: array
+    CalculatedJIRAHistogram:
+      additionalProperties: false
+      description: Calculated histogram over JIRA issue activities.
+      example:
+        metric: jira-raised
+        scale: linear
+        ticks:
+        - 0
+        - 1
+        - 10
+        - 50
+        - 100
+        - 500
+        - 10000
+        frequencies:
+        - 0
+        - 38
+        - 28
+        - 13
+        - 12
+        - 8
+        interquartile:
+          left: 3
+          right: 76
+      properties:
+        with:
+          $ref: '#/components/schemas/JIRAMetricsRequestWith'
+        metric:
+          $ref: '#/components/schemas/JIRAMetricID'
+        scale:
+          $ref: '#/components/schemas/HistogramScale'
+        ticks:
+          description: Series of horizontal bar borders aka X axis. Their count is
+            `len(y) + 1` because there are `N` intervals between `(N + 1)` ticks.
+          items:
+# {% if False %}
+            allOf:
+# {% else %}{{ "\n" }}            oneOf:{% endif %}
+            - type: number
+            - $ref: '#/components/schemas/TimeDuration'
+          type: array
+        frequencies:
+          description: Series of histogram bar heights aka Y axis.
+          items:
+            minimum: 0
+            type: integer
+          type: array
+        interquartile:
+          $ref: '#/components/schemas/Interquartile'
+      required:
+      - frequencies
+      - interquartile
+      - metric
+      - scale
+      - ticks
       type: object

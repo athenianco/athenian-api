@@ -22,6 +22,8 @@ def main():
             if getattr(v, "__module__", None) == ip and not isinstance(v, TypeVar) and \
                     not v.__name__.startswith("_"):
                 imports.append(k)
+        if not imports:
+            continue
         imports.sort()
         line = "from %s import %s" % (ip, ", ".join(imports))
         lines = textwrap.wrap(line, width=97, subsequent_indent="    ", break_long_words=False)
