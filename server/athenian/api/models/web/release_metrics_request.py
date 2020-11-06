@@ -15,7 +15,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
 
     openapi_types = {
         "for_": List[List[str]],
-        "with_": Optional[ReleaseWith],
+        "with_": Optional[List[ReleaseWith]],
         "metrics": List[str],
         "date_from": date,
         "date_to": date,
@@ -42,7 +42,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
     def __init__(
         self,
         for_: Optional[List[List[str]]] = None,
-        with_: Optional[ReleaseWith] = None,
+        with_: Optional[List[ReleaseWith]] = None,
         metrics: Optional[List[str]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
@@ -99,7 +99,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         self._for_ = for_
 
     @property
-    def with_(self) -> Optional[ReleaseWith]:
+    def with_(self) -> Optional[List[ReleaseWith]]:
         """Gets the with_ of this ReleaseMetricsRequest.
 
         Release contribution roles.
@@ -109,7 +109,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         return self._with_
 
     @with_.setter
-    def with_(self, with_: Optional[ReleaseWith]):
+    def with_(self, with_: Optional[List[ReleaseWith]]):
         """Sets the with_ of this ReleaseMetricsRequest.
 
         Release contribution roles.

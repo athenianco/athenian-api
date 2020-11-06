@@ -17,6 +17,8 @@ from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request_metrics import \
     PullRequestBinnedHistogramCalculator, PullRequestBinnedMetricCalculator
+from athenian.api.controllers.features.github.release import make_release_participants_grouper, \
+    merge_release_participants
 from athenian.api.controllers.features.github.release_metrics import \
     ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
@@ -312,7 +314,8 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
         ",".join(str(q) for q in quantiles),
         ",".join(str(sorted(r)) for r in repositories),
-        ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+        ";".join(",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items()))
+                 for p in participants),
         release_settings,
     ),
 )
@@ -320,7 +323,7 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            time_intervals: Sequence[Sequence[datetime]],
                                            quantiles: Sequence[float],
                                            repositories: Sequence[Collection[str]],
-                                           participants: ReleaseParticipants,
+                                           participants: List[ReleaseParticipants],
                                            jira: JIRAFilter,
                                            release_settings: Dict[str, ReleaseMatchSetting],
                                            mdb: Database,
@@ -333,13 +336,15 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
     all_repositories = set(chain.from_iterable(repositories))
     calc = ReleaseBinnedMetricCalculator(metrics, quantiles)
     branches, default_branches = await extract_branches(all_repositories, mdb, cache)
+    all_participants = merge_release_participants(participants)
     releases, _, matched_bys = await mine_releases(
-        all_repositories, participants, branches, default_branches, time_from, time_to, jira,
+        all_repositories, all_participants, branches, default_branches, time_from, time_to, jira,
         release_settings, mdb, pdb, cache)
     mined_facts = defaultdict(list)
     for i, f in releases:
         mined_facts[i[Release.repository_full_name.key].split("/", 1)[1]].append(f)
-    values = calc(mined_facts, time_intervals, repositories)
+    participants_grouper = make_release_participants_grouper(participants)
+    values = calc(mined_facts, time_intervals, repositories, extra_grouper=participants_grouper)
     return values, matched_bys
 
 

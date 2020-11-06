@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from itertools import chain
-from typing import Any, Collection, Dict, Generic, Iterable, List, Optional, Sequence, \
+from typing import Any, Callable, Collection, Dict, Generic, Iterable, List, Optional, Sequence, \
     Tuple, Type, TypeVar
 
 import networkx as nx
@@ -389,7 +389,8 @@ class BinnedEnsemblesCalculator(Generic[M]):
                  items: Dict[str, Iterable[Any]],
                  time_intervals: Sequence[Sequence[datetime]],
                  groups: Sequence[Collection[str]],
-                 kwargs: Iterable[Dict[str, Any]],
+                 agg_kwargs: Iterable[Dict[str, Any]],
+                 extra_grouper: Optional[Callable[[pd.DataFrame], List[np.ndarray]]] = None,
                  ) -> List[List[List[List[List[M]]]]]:
         """
         Calculate the binned aggregations on a series of mined facts.
@@ -399,6 +400,14 @@ class BinnedEnsemblesCalculator(Generic[M]):
                                `[time_intervals[i], time_intervals[i + 1]]`, the ending \
                                not included.
         :param groups: Repositories within the same group share the metrics scope.
+        :param agg_kwargs: Keyword arguments to be passed to the ensemble aggregation.
+        :param extra_grouper: Compute the cartesian product of the groups with the index arrays \
+                              calculated by this callable. The effective `groups` are unfolded \
+                              row-wise, that is, the sequence is: \
+                              1. extra group 1 in the major group 1. \
+                              2. extra group 2 in the major group 1. \
+                              3. extra group 1 of the major group 2. \
+                              4. extra group 2 of the major group 2.
         :return:   ensembles \
                  x time intervals primary \
                  x splitted groups (groups x splits) \
@@ -436,15 +445,25 @@ class BinnedEnsemblesCalculator(Generic[M]):
             for sx in range(max_splits):
                 group_indexes.append(indexes.get(sx, []))
 
+        group_count = len(groups)
+        if extra_grouper is not None:
+            extra_groups = extra_grouper(df_items)
+            group_count *= len(extra_groups)
+            # unfold row-wise, the extras are interleaved and the majors are sequential
+            group_indexes = [
+                np.intersect1d(major_group, extra_group, assume_unique=True)
+                for extra_group in extra_groups for major_group in group_indexes
+            ]
+
         min_times, max_times, ts_index_map = self._make_min_max_times(time_intervals)
 
         for ensemble in self.ensembles:
             ensemble(df_items, min_times, max_times, group_indexes)
 
-        values_dicts = self._aggregate_ensembles(kwargs)
+        values_dicts = self._aggregate_ensembles(agg_kwargs)
         result = [[[[[None] * len(metrics)
                      for _ in range(len(ts) - 1)]
-                    for _ in range(len(groups) * max_splits)]
+                    for _ in range(group_count * max_splits)]
                    for ts in time_intervals]
                   for metrics in self.metrics]
         for eix, (metrics, values_dict) in enumerate(zip(self.metrics, values_dicts)):
@@ -510,9 +529,11 @@ class BinnedMetricsCalculator(BinnedEnsemblesCalculator[Metric]):
                  items: Dict[str, Iterable[Any]],
                  time_intervals: Sequence[Sequence[datetime]],
                  groups: Sequence[Collection[str]],
+                 extra_grouper: Optional[Callable[[pd.DataFrame], List[np.ndarray]]] = None,
                  ) -> List[List[List[List[Metric]]]]:
         """Override the parent's method to reduce the number of nested lists."""
-        return super().__call__(items, time_intervals, groups, [{}])[0]
+        return super().__call__(
+            items, time_intervals, groups, [{}], extra_grouper=extra_grouper)[0]
 
     def _aggregate_ensembles(self, kwargs: Iterable[Dict[str, Any]],
                              ) -> List[Dict[str, List[List[Metric]]]]:

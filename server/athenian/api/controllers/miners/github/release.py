@@ -1686,9 +1686,9 @@ async def mine_releases(repos: Iterable[str],
                 data.append(({Release.id.key: my_id,
                               Release.name.key: my_name or my_tag,
                               Release.repository_full_name.key: prefix + repo,
-                              Release.url.key: my_url,
-                              Release.author.key: my_author},
+                              Release.url.key: my_url},
                              ReleaseFacts(published=my_published_at,
+                                          publisher=my_author,
                                           matched_by=ReleaseMatch(my_matched_by),
                                           age=my_age,
                                           additions=my_additions,
@@ -1742,9 +1742,8 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
     if len(missing_indexes) == 0:
         return releases
     if ReleaseParticipationKind.RELEASER in participants:
-        key = Release.author.key
         still_missing = np.in1d(
-            np.array([releases[i][0][key] for i in missing_indexes], dtype="U"),
+            np.array([releases[i][1].publisher for i in missing_indexes], dtype="U"),
             participants[ReleaseParticipationKind.RELEASER],
             invert=True)
         missing_indexes = missing_indexes[still_missing]

@@ -328,7 +328,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     data = [FilteredRelease(name=details[Release.name.key],
                             repository=details[Release.repository_full_name.key],
                             url=details[Release.url.key],
-                            publisher=details[Release.author.key],
+                            publisher=facts.publisher,
                             published=facts.published,
                             age=facts.age,
                             added_lines=facts.additions,
