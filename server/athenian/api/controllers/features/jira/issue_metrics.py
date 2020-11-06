@@ -154,7 +154,7 @@ class OpenCounter(SumMetricCalculator[int]):
 class IssueFlowRatioCalculator(FlowRatioCalculator):
     """Calculate JIRA issues flow ratio = raised / resolved."""
 
-    deps = (OpenCounter, ResolvedCounter)
+    deps = (RaisedCounter, ResolvedCounter)
 
 
 @register_metric(JIRAMetricID.JIRA_LIFE_TIME)
