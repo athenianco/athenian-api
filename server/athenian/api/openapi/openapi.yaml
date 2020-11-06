@@ -5109,7 +5109,10 @@ components:
             $ref: '#/components/schemas/RepositorySet'
           type: array
         with:
-          $ref: '#/components/schemas/ReleaseWith'
+          description: List of developer groups for which to calculate the metrics.
+          items:
+            $ref: '#/components/schemas/ReleaseWith'
+          type: array
         jira:
           $ref: '#/components/schemas/JIRAFilter'
         metrics:
@@ -5229,6 +5232,8 @@ components:
       properties:
         for:
           $ref: '#/components/schemas/RepositorySet'
+        with:
+          $ref: '#/components/schemas/ReleaseWith'
         matches:
           additionalProperties:
             $ref: '#/components/schemas/ReleaseMatchStrategy'

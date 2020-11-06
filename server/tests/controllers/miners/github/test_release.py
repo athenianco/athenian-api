@@ -1052,10 +1052,10 @@ async def test_mine_releases_full_span(mdb, pdb, release_match_setting_tag):
     for details, facts in releases:
         assert details[Release.name.key]
         assert details[Release.url.key]
-        assert details[Release.author.key]
         assert details[Release.repository_full_name.key] == "github.com/src-d/go-git"
         assert len(facts.commit_authors) > 0
         assert facts.age
+        assert facts.publisher
         assert facts.additions > 0
         assert facts.deletions > 0
         assert facts.commits_count > 0

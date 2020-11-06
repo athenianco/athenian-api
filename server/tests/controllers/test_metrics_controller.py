@@ -1144,7 +1144,7 @@ async def test_release_metrics_participants_single(client, headers, role, n):
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "for": [["github.com/src-d/go-git"]],
-        "with": {role: ["github.com/mcuadros"]},
+        "with": [{role: ["github.com/mcuadros"]}],
         "metrics": [ReleaseMetricID.RELEASE_COUNT],
         "granularities": ["all"],
     }
@@ -1165,9 +1165,9 @@ async def test_release_metrics_participants_multiple(client, headers):
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "for": [["github.com/src-d/go-git"]],
-        "with": {"releaser": ["github.com/smola"],
-                 "pr_author": ["github.com/mcuadros"],
-                 "commit_author": ["github.com/smola"]},
+        "with": [{"releaser": ["github.com/smola"],
+                  "pr_author": ["github.com/mcuadros"],
+                  "commit_author": ["github.com/smola"]}],
         "metrics": [ReleaseMetricID.RELEASE_COUNT],
         "granularities": ["all"],
     }
@@ -1268,3 +1268,28 @@ async def test_release_metrics_jira(client, headers):
     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
     assert len(models) == 1
     assert models[0].values[0].values == [22, 234]
+
+
+async def test_release_metrics_participants_many_participants(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [["github.com/src-d/go-git"]],
+        "with": [{"releaser": ["github.com/smola"],
+                  "pr_author": ["github.com/mcuadros"],
+                  "commit_author": ["github.com/smola"]},
+                 {"releaser": ["github.com/mcuadros"]}],
+        "metrics": [ReleaseMetricID.RELEASE_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+    assert len(models) == 2
+    assert models[0].values[0].values[0] == 12
+    assert models[1].values[0].values[0] == 21

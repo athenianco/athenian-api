@@ -307,6 +307,7 @@ class ReleaseFacts:
     """Various release properties and statistics."""
 
     published: datetime
+    publisher: str
     matched_by: ReleaseMatch
     age: timedelta
     additions: int

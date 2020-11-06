@@ -376,12 +376,12 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
 
     @sentry_span
     async def calculate_for_set_metrics(service, repos, for_sets):
-        participants = {
-            rpk: getattr(filt.with_, attr) or []
+        participants = [{
+            rpk: getattr(with_, attr) or []
             for attr, rpk in (("releaser", ReleaseParticipationKind.RELEASER),
                               ("pr_author", ReleaseParticipationKind.PR_AUTHOR),
                               ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
-        } if filt.with_ is not None else {}
+        } for with_ in (filt.with_ or [])]
         ti_mvs, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
             JIRAFilter.from_web(filt.jira, jira_id), release_settings,
@@ -390,33 +390,38 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
         mrange = range(len(filt.metrics))
         assert len(ti_mvs) == len(time_intervals)
         for granularity, ts, group_mvs in zip(filt.granularities, time_intervals, ti_mvs):
-            assert len(group_mvs) == len(for_sets)
-            for mvs, for_set, my_repos in zip(group_mvs, for_sets, repos):
-                my_release_matches = {}
-                for r in my_repos:
-                    r = PREFIXES[service] + r
-                    try:
-                        my_release_matches[r] = release_matches[r]
-                    except KeyError:
-                        continue
-                cm = CalculatedReleaseMetric(
-                    for_=for_set,
-                    matches=my_release_matches,
-                    metrics=filt.metrics,
-                    granularity=granularity,
-                    values=[CalculatedLinearMetricValues(
-                        date=(d - tzoffset).date(),
-                        values=[mvs[i][m].value for m in mrange],
-                        confidence_mins=[mvs[i][m].confidence_min for m in mrange],
-                        confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
-                        confidence_scores=[mvs[i][m].confidence_score() for m in mrange],
-                    ) for i, d in enumerate(ts[:-1])])
-                for v in cm.values:
-                    if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                        v.confidence_mins = None
-                        v.confidence_maxs = None
-                        v.confidence_scores = None
-                met.append(cm)
+            assert len(group_mvs) == len(for_sets) * len(participants or [None])
+            pos = 0
+            for for_set, my_repos in zip(for_sets, repos):
+                for with_ in (filt.with_ or [None]):
+                    mvs = group_mvs[pos]
+                    pos += 1
+                    my_release_matches = {}
+                    for r in my_repos:
+                        r = PREFIXES[service] + r
+                        try:
+                            my_release_matches[r] = release_matches[r]
+                        except KeyError:
+                            continue
+                    cm = CalculatedReleaseMetric(
+                        for_=for_set,
+                        with_=with_,
+                        matches=my_release_matches,
+                        metrics=filt.metrics,
+                        granularity=granularity,
+                        values=[CalculatedLinearMetricValues(
+                            date=(d - tzoffset).date(),
+                            values=[mvs[i][m].value for m in mrange],
+                            confidence_mins=[mvs[i][m].confidence_min for m in mrange],
+                            confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
+                            confidence_scores=[mvs[i][m].confidence_score() for m in mrange],
+                        ) for i, d in enumerate(ts[:-1])])
+                    for v in cm.values:
+                        if sum(1 for c in v.confidence_scores if c is not None) == 0:
+                            v.confidence_mins = None
+                            v.confidence_maxs = None
+                            v.confidence_scores = None
+                    met.append(cm)
 
     tasks = []
     for service, repos in grouped_repos.items():
