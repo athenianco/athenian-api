@@ -4,8 +4,9 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
 from athenian.api.models.web.for_set import ForSet
-from athenian.api.models.web.histogram_definition import HistogramDefinition
 from athenian.api.models.web.histogram_scale import HistogramScale
+from athenian.api.models.web.pull_request_histogram_definition import \
+    PullRequestHistogramDefinition
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 from athenian.api.models.web.quantiles import validate_quantiles
 
@@ -15,7 +16,7 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
 
     openapi_types = {
         "for_": List[ForSet],
-        "histograms": List[HistogramDefinition],
+        "histograms": List[PullRequestHistogramDefinition],
         "metrics": List[str],
         "scale": Optional[str],
         "bins": Optional[int],
@@ -46,7 +47,7 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
     def __init__(
         self,
         for_: Optional[List[ForSet]] = None,
-        histograms: Optional[List[HistogramDefinition]] = None,
+        histograms: Optional[List[PullRequestHistogramDefinition]] = None,
         metrics: Optional[List[str]] = None,
         scale: Optional[str] = None,
         bins: Optional[int] = None,
@@ -114,7 +115,7 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
         self._for_ = for_
 
     @property
-    def histograms(self) -> List[HistogramDefinition]:
+    def histograms(self) -> List[PullRequestHistogramDefinition]:
         """Gets the histograms of this PullRequestHistogramsRequest.
 
         Histogram parameters for each wanted topic.
@@ -124,7 +125,7 @@ class PullRequestHistogramsRequest(Model, CommonFilterPropertiesMixin):
         return self._histograms
 
     @histograms.setter
-    def histograms(self, histograms: List[HistogramDefinition]):
+    def histograms(self, histograms: List[PullRequestHistogramDefinition]):
         """Sets the histograms of this PullRequestHistogramsRequest.
 
         Histogram parameters for each wanted topic.

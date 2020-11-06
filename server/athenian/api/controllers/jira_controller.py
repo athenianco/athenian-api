@@ -311,3 +311,8 @@ def _split_issues_by_with(issues: pd.DataFrame,
             mask[indexes] = True
         result.append(np.nonzero(mask)[0])
     return result
+
+
+async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Calculate histograms over JIRA issue activities."""
+    raise NotImplementedError

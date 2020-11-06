@@ -5,6 +5,7 @@ from athenian.api.models.web.base_model_ import AllOf, Enum, Model, Slots
 from athenian.api.models.web.calculated_developer_metrics import CalculatedDeveloperMetrics
 from athenian.api.models.web.calculated_developer_metrics_item import \
     CalculatedDeveloperMetricsItem
+from athenian.api.models.web.calculated_jira_histogram import CalculatedJIRAHistogram
 from athenian.api.models.web.calculated_jira_metric_values import CalculatedJIRAMetricValues
 from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues
 from athenian.api.models.web.calculated_pull_request_histogram import \
@@ -59,6 +60,8 @@ from athenian.api.models.web.invited_user import InvitedUser
 from athenian.api.models.web.jira_epic import JIRAEpic
 from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 from athenian.api.models.web.jira_filter import JIRAFilter
+from athenian.api.models.web.jira_histogram_definition import JIRAHistogramDefinition
+from athenian.api.models.web.jira_histograms_request import JIRAHistogramsRequest
 from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
@@ -73,6 +76,8 @@ from athenian.api.models.web.patch_token_request import PatchTokenRequest
 from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.models.web.pull_request import PullRequest
 from athenian.api.models.web.pull_request_event import PullRequestEvent
+from athenian.api.models.web.pull_request_histogram_definition import \
+    PullRequestHistogramDefinition
 from athenian.api.models.web.pull_request_histograms_request import PullRequestHistogramsRequest
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
