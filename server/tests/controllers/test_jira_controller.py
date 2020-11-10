@@ -349,7 +349,7 @@ async def test_jira_metrics_teams(client, headers):
     (JIRAMetricID.JIRA_OPEN, True, 196),
     (JIRAMetricID.JIRA_RESOLVED, False, 850),
     (JIRAMetricID.JIRA_RESOLVED, True, 850),
-    (JIRAMetricID.JIRA_FLOW_RATIO, False, 1.0423031727379553),
+    (JIRAMetricID.JIRA_RESOLUTION_RATE, False, 0.9594137542277339),
 ])
 async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n):
     body = {

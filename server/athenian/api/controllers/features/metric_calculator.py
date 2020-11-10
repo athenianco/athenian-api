@@ -540,13 +540,13 @@ class BinnedMetricsCalculator(BinnedEnsemblesCalculator[Metric]):
         return [self.ensembles[0].values()]
 
 
-class FlowRatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
-    """Calculate the items flow ratio = opened / closed."""
+class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
+    """Calculate the ratio of two counts from the dependencies."""
 
     dtype = float
 
     def __init__(self, *deps: MetricCalculator, quantiles: Sequence[float]):
-        """Initialize a new instance of FlowRatioCalculator."""
+        """Initialize a new instance of RatioCalculator."""
         super().__init__(*deps, quantiles=quantiles)
         if isinstance(self._calcs[1], self.deps[0]):
             self._calcs = list(reversed(self._calcs))

@@ -8,9 +8,9 @@ import pandas as pd
 from athenian.api.controllers.features.histogram import Histogram
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedEnsemblesCalculator, BinnedMetricsCalculator, Counter, FlowRatioCalculator, \
-    HistogramCalculator, HistogramCalculatorEnsemble, M, MetricCalculator, \
-    MetricCalculatorEnsemble, SumMetricCalculator, WithoutQuantilesMixin
+    BinnedEnsemblesCalculator, BinnedMetricsCalculator, Counter, HistogramCalculator, \
+    HistogramCalculatorEnsemble, M, MetricCalculator, MetricCalculatorEnsemble, \
+    RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.models.web import PullRequestMetricID
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
@@ -692,7 +692,7 @@ class ReleasedCalculator(SumMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_FLOW_RATIO)
-class PRFlowRatioCalculator(FlowRatioCalculator):
+class FlowRatioCalculator(RatioCalculator):
     """Calculate PR flow ratio = opened / closed."""
 
     deps = (OpenedCalculator, ClosedCalculator)
