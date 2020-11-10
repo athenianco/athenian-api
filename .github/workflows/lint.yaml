@@ -18,7 +18,6 @@ jobs:
     - name: actions/checkout
       uses: actions/checkout@v2
     - name: actions/cache
-      id: cache
       uses: actions/cache@v2
       with:
         path: ${{ env.PIP_CACHE }}
@@ -26,7 +25,7 @@ jobs:
         restore-keys: ubuntu-20.04-pip-lint-
     - name: pip
       run: |
-        pip3 install -r server/lint-requirements.txt
+        pip3 install -r server/lint-requirements.txt --no-warn-script-location
         echo "~/.local/bin" >> $GITHUB_PATH
     - name: flake8
       working-directory: server
@@ -38,14 +37,13 @@ jobs:
     - name: actions/checkout
       uses: actions/checkout@v2
     - name: actions/cache
-      id: cache
       uses: actions/cache@v2
       with:
         path: ${{ env.PIP_CACHE }}
         key: ubuntu-20.04-pip-main-${{ hashFiles('server/requirements.txt') }}
         restore-keys: ubuntu-20.04-pip-main-
     - name: pip
-      run: pip3 install -r server/requirements.txt
+      run: pip3 install -r server/requirements.txt --no-warn-script-location
     - name: web models
       working-directory: server
       run: |
