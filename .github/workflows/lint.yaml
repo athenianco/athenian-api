@@ -1,0 +1,61 @@
+name: Lint
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+env:
+  PIP_CACHE: |
+    ~/.cache/pip
+    ~/.local/bin
+    ~/.local/lib/python3.*/site-packages
+
+jobs:
+  flake8:
+    name: flake8
+    runs-on: ubuntu-20.04
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v2
+    - name: actions/cache
+      id: cache
+      uses: actions/cache@v2
+      with:
+        path: ${{ env.PIP_CACHE }}
+        key: ubuntu-20.04-pip-lint-${{ hashFiles('server/lint-requirements.txt') }}
+        restore-keys: ubuntu-20.04-pip-lint-
+    - name: pip
+      run: |
+        pip3 install -r server/lint-requirements.txt
+        echo "~/.local/bin" >> $GITHUB_PATH
+    - name: flake8
+      working-directory: server
+      run: flake8
+  custom:
+    name: custom checks
+    runs-on: ubuntu-20.04
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v2
+    - name: actions/cache
+      id: cache
+      uses: actions/cache@v2
+      with:
+        path: ${{ env.PIP_CACHE }}
+        key: ubuntu-20.04-pip-main-${{ hashFiles('server/requirements.txt') }}
+        restore-keys: ubuntu-20.04-pip-main-
+    - name: pip
+      run: pip3 install -r server/requirements.txt
+    - name: web models
+      working-directory: server
+      run: |
+        python3 -m athenian.api.models.web
+        git status --porcelain
+        test -z "$(git status --porcelain)"
+    - name: migrations
+      working-directory: server
+      run: |
+        (! grep -R 'athenian\.api\.models' athenian/api/models/state/versions)
+        (! grep -R 'athenian\.api\.models' athenian/api/models/precomputed/versions)
+
+
