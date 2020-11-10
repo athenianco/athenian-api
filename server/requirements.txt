@@ -31,3 +31,4 @@ backoff==1.10.0
 pympler==0.9
 objgraph==3.5.0
 lz4==3.1.0
+jinja2==2.11.2

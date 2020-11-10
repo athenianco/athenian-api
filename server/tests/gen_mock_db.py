@@ -35,7 +35,7 @@ def main():
         db_path = db_dir / ("%sdb.sqlite" % letter)
         if db_path.exists():
             db_path.unlink()
-        conn_str = "sqlite:///%s" % db_path
+        conn_str = os.getenv("OVERRIDE_%sDB" % letter.upper(), "sqlite:///%s" % db_path)
         migrate(name, conn_str, exec=False)
 
         if letter == "s" and not args.no_state_samples:
@@ -46,7 +46,8 @@ def main():
                 session.commit()
             finally:
                 session.close()
-        os.chmod(db_path, 0o666)
+        if db_path.exists():
+            os.chmod(db_path, 0o666)
 
 
 if __name__ == "__main__":

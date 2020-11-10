@@ -1,0 +1,197 @@
+name: Test
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+env:
+  GOOGLE_DOCKER_IMAGE: gcr.io/athenian-1/api
+  AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
+  AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
+  AUTH0_CLIENT_SECRET: ${{ secrets.AUTH0_CLIENT_SECRET }}
+  AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
+  CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+  GKWILLIE_TOKEN: ${{ secrets.GKWILLIE_TOKEN }}
+  GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+  GOOGLE_KMS_KEYNAME: ${{ secrets.GOOGLE_KMS_KEYNAME }}
+  GOOGLE_KMS_KEYRING: ${{ secrets.GOOGLE_KMS_KEYRING }}
+  GOOGLE_KMS_PROJECT: ${{ secrets.GOOGLE_KMS_PROJECT }}
+  GOOGLE_KMS_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_KMS_SERVICE_ACCOUNT_B64 }}
+  GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
+  GOOGLE_PUBSUB_TOPIC: ${{ secrets.GOOGLE_PUBSUB_TOPIC }}
+  K8S_DEPLOYMENT: ${{ secrets.K8S_DEPLOYMENT }}
+  K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
+  SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+  SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+  SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+  SLACK_API_TOKEN: ${{ secrets.SLACK_API_TOKEN }}
+  SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        db: [sqlite, postgres]
+        type: [heater, slim, fat]
+      fail-fast: false
+    services:
+      memcached:
+        image: bitnami/memcached:latest
+        ports:
+        - 11211:11211
+        env:
+          MEMCACHED_EXTRA_FLAGS: -m 128 -I 64m
+      postgres:
+        image: postgres:11.8
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+        - 5432:5432
+        options: >-
+          --mount type=tmpfs,destination=/var/lib/postgresql/data
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 1s
+          --health-retries 10
+          --health-start-period 2s
+    env:
+      SDB: sqlite:///tests/sdb.sqlite
+      MDB: sqlite:///tests/mdb.sqlite
+      PDB: sqlite:///tests/pdb.sqlite
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v2
+    - name: actions/cache pip
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cache/pip
+          ~/.local/bin
+          ~/.local/lib/python3.*/site-packages
+        key: ubuntu-20.04-pip-main-${{ hashFiles('server/requirements.txt') }}
+        restore-keys: ubuntu-20.04-pip-main-
+    - name: pip
+      run: |
+        pip3 install -r server/requirements.txt --no-warn-script-location
+        pip3 install -r server/test-requirements.txt --no-warn-script-location
+        sudo pip3 install -e server/
+        patch ~/.local/lib/python3.*/site-packages/aiomcache/client.py patches/aiomcache_version.patch
+        echo "~/.local/bin" >> $GITHUB_PATH
+    - name: setup postgres
+      if: matrix.db == 'postgres'
+      env:
+        PGPASSWORD: postgres
+        SDB: postgresql://postgres:postgres@0.0.0.0:5432/state
+        MDB: postgresql://postgres:postgres@0.0.0.0:5432/metadata
+        PDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed
+      run: |
+        psql -c "create database state template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database metadata template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database precomputed template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        echo "SDB=$SDB" >> $GITHUB_ENV
+        echo "MDB=$MDB" >> $GITHUB_ENV
+        echo "PDB=$PDB" >> $GITHUB_ENV
+        echo "OVERRIDE_SDB=$SDB" >> $GITHUB_ENV
+        echo "OVERRIDE_MDB=$MDB" >> $GITHUB_ENV
+        echo "OVERRIDE_PDB=$PDB" >> $GITHUB_ENV
+    - name: setup Google KMS
+      run: |
+        echo $GOOGLE_KMS_SERVICE_ACCOUNT_B64 | base64 -d > google_service.json
+        echo "GOOGLE_KMS_SERVICE_ACCOUNT_JSON=`pwd`/google_service.json" >> $GITHUB_ENV
+    - name: test slim
+      if: matrix.type == 'slim'
+      working-directory: server
+      run: |
+        if [ ${{ matrix.db }} = 'postgres' ]; then
+          export SLACK_API_TOKEN=xxx
+        fi
+        pytest --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py --ignore=tests/controllers/test_histograms_controller.py --ignore=tests/controllers/test_pagination_controller.py
+    - name: test fat
+      if: matrix.type == 'fat'
+      working-directory: server
+      run: |
+        if [ ${{ matrix.db }} = 'sqlite' ]; then
+          export LIMIT="--limit 0.66"
+        fi
+        if [ ${{ matrix.db }} = 'postgres' ]; then
+          export SLACK_API_TOKEN=
+        fi
+        pytest $LIMIT --log-level=info --cov-report=xml --cov=athenian.api tests/controllers/test_filter_controller.py tests/controllers/test_metrics_controller.py tests/controllers/test_histograms_controller.py tests/controllers/test_pagination_controller.py
+    - name: test heater
+      if: matrix.type == 'heater'
+      working-directory: server
+      run: |
+        PYTHONPATH=. PRECOMPUTED=0 ATHENIAN_INVITATION_KEY=whatever python3 tests/gen_mock_db.py
+        coverage run --source athenian.api -m athenian.api.hacks.heat_cache --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --memcached=0.0.0.0:11211
+        # the second run should not crash
+        python3 -m athenian.api.hacks.heat_cache --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --memcached=0.0.0.0:11211
+        coverage xml
+    - uses: codecov/codecov-action@v1
+      name: codecov
+      with:
+        token: ${{ env.CODECOV_TOKEN }}
+  spec:
+    name: OpenAPI in JS
+    runs-on: ubuntu-20.04
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v2
+    - name: openapitools/openapi-generator-cli
+      run: |
+        docker run --rm -v `pwd`:/local --user `id -u`:`id -g` openapitools/openapi-generator-cli generate --input-spec=/local/spec/openapi.yaml --generator-name=javascript --output=/local/js-client
+        npm --prefix js-client install
+        npm --prefix js-client test
+  docker:
+    name: docker
+    runs-on: ubuntu-20.04
+    services:
+      postgres:
+        image: postgres:11.8
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+        - 5432:5432
+        options: >-
+          --mount type=tmpfs,destination=/var/lib/postgresql/data
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 1s
+          --health-retries 10
+          --health-start-period 2s
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v2
+    - uses: satackey/action-docker-layer-caching@v0.0.8
+      continue-on-error: true
+    - name: setup postgres
+      env:
+        PGPASSWORD: postgres
+      run: |
+        psql -c "create database state template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database metadata template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database precomputed template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+    - name: docker build
+      run: |
+        docker build --cache-from $GOOGLE_DOCKER_IMAGE:latest --build-arg COMMIT=$GITHUB_SHA -t $GOOGLE_DOCKER_IMAGE .
+        docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
+        docker build -t test --build-arg base=${GOOGLE_DOCKER_IMAGE} server/tests
+        run="docker run --network=host --rm -v $(pwd):/io -w /io --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ -e ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE=https://installation.athenian.co/jira/%s/atlassian-connect.json test -m coverage"
+        $run run -a -m athenian.api.models.state postgres://postgres:postgres@0.0.0.0:5432/state
+        $run run -a -m athenian.api.invite_admin postgres://postgres:postgres@0.0.0.0:5432/state
+        $run run -a /usr/local/bin/alembic downgrade 34eafe9e7cd9
+        $run run -a -m athenian.api.models.precomputed postgres://postgres:postgres@0.0.0.0:5432/precomputed
+        $run run -a /usr/local/bin/alembic downgrade c863ffad47fb
+        $run combine
+        $run xml
+        docker rmi test
+        sed -i 's/[\./]server[\./]//g' coverage.xml
+    - uses: codecov/codecov-action@v1
+      name: codecov
+      with:
+        token: ${{ env.CODECOV_TOKEN }}
