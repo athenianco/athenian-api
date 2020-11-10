@@ -5349,13 +5349,14 @@ components:
         * `jira-raised` - number of issues reported in the given time range.
         * `jira-life-time` - Mean Life Time - the time between min(issue creation, work began) and max(issue resolution, fixes released).
         * `jira-lead-time` - Mean Lead Time - the time between when the work began and max(issue resolution, fixes released).
+        * `jira-resolution-rate` - ratio between the number of resolved issues to the number of raised issues.
       enum:
       - jira-open
       - jira-resolved
       - jira-raised
       - jira-life-time
       - jira-lead-time
-      - jira-flow-ratio
+      - jira-resolution-rate
       example: jira-resolved
       type: string
     JIRAMetricsRequest:
