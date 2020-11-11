@@ -1,9 +1,11 @@
-name: Test
+name: Push
+
 on:
   push:
     branches:
     - master
   pull_request:
+
 env:
   GOOGLE_DOCKER_IMAGE: gcr.io/athenian-1/api
   AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
@@ -26,10 +28,61 @@ env:
   SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
   SLACK_API_TOKEN: ${{ secrets.SLACK_API_TOKEN }}
   SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+  PIP_CACHE: |
+    ~/.cache/pip
+    ~/.local/bin
+    ~/.local/lib/python3.*/site-packages
 
 jobs:
+  flake8:
+    name: flake8
+    if: "!contains(github.event.head_commit.message, 'Bump version')"
+    runs-on: ubuntu-20.04
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v2
+    - name: actions/cache
+      uses: actions/cache@v2
+      with:
+        path: ${{ env.PIP_CACHE }}
+        key: ubuntu-20.04-pip-lint-${{ hashFiles('server/lint-requirements.txt') }}
+        restore-keys: ubuntu-20.04-pip-lint-
+    - name: pip
+      run: |
+        pip3 install -r server/lint-requirements.txt --no-warn-script-location
+        echo "~/.local/bin" >> $GITHUB_PATH
+    - name: flake8
+      working-directory: server
+      run: flake8
+  custom_checks:
+    name: custom checks
+    if: "!contains(github.event.head_commit.message, 'Bump version')"
+    runs-on: ubuntu-20.04
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v2
+    - name: actions/cache
+      uses: actions/cache@v2
+      with:
+        path: ${{ env.PIP_CACHE }}
+        key: ubuntu-20.04-pip-main-${{ hashFiles('server/requirements.txt') }}
+        restore-keys: ubuntu-20.04-pip-main-
+    - name: pip
+      run: pip3 install -r server/requirements.txt --no-warn-script-location
+    - name: web models
+      working-directory: server
+      run: |
+        python3 -m athenian.api.models.web
+        git status --porcelain
+        test -z "$(git status --porcelain)"
+    - name: migrations
+      working-directory: server
+      run: |
+        (! grep -R 'athenian\.api\.models' athenian/api/models/state/versions)
+        (! grep -R 'athenian\.api\.models' athenian/api/models/precomputed/versions)
   test:
     name: test
+    if: "!contains(github.event.head_commit.message, 'Bump version')"
     runs-on: ubuntu-20.04
     strategy:
       matrix:
@@ -68,10 +121,7 @@ jobs:
     - name: actions/cache pip
       uses: actions/cache@v2
       with:
-        path: |
-          ~/.cache/pip
-          ~/.local/bin
-          ~/.local/lib/python3.*/site-packages
+        path: ${{ env.PIP_CACHE }}
         key: ubuntu-20.04-pip-main-${{ hashFiles('server/requirements.txt') }}
         restore-keys: ubuntu-20.04-pip-main-
     - name: pip
@@ -106,7 +156,7 @@ jobs:
       if: matrix.type == 'slim'
       working-directory: server
       run: |
-        if [ ${{ matrix.db }} = 'postgres' ]; then
+        if [ ${{ matrix.db }} = "postgres" ]; then
           export SLACK_API_TOKEN=xxx
         fi
         pytest --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py --ignore=tests/controllers/test_histograms_controller.py --ignore=tests/controllers/test_pagination_controller.py
@@ -114,10 +164,10 @@ jobs:
       if: matrix.type == 'fat'
       working-directory: server
       run: |
-        if [ ${{ matrix.db }} = 'sqlite' ]; then
+        if [ ${{ matrix.db }} = "sqlite" ]; then
           export LIMIT="--limit 0.66"
         fi
-        if [ ${{ matrix.db }} = 'postgres' ]; then
+        if [ ${{ matrix.db }} = "postgres" ]; then
           export SLACK_API_TOKEN=
         fi
         pytest $LIMIT --log-level=info --cov-report=xml --cov=athenian.api tests/controllers/test_filter_controller.py tests/controllers/test_metrics_controller.py tests/controllers/test_histograms_controller.py tests/controllers/test_pagination_controller.py
@@ -136,6 +186,7 @@ jobs:
         token: ${{ env.CODECOV_TOKEN }}
   spec:
     name: OpenAPI in JS
+    if: "!contains(github.event.head_commit.message, 'Bump version')"
     runs-on: ubuntu-20.04
     steps:
     - name: actions/checkout
@@ -147,6 +198,7 @@ jobs:
         npm --prefix js-client test
   docker:
     name: docker
+    if: "!contains(github.event.head_commit.message, 'Bump version')"
     runs-on: ubuntu-20.04
     services:
       postgres:
@@ -195,3 +247,34 @@ jobs:
       name: codecov
       with:
         token: ${{ env.CODECOV_TOKEN }}
+  bump_version:
+    name: Bump the version
+    needs: [flake8, custom_checks, test, docker, spec]
+    if: "!contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master'"
+    runs-on: ubuntu-20.04
+    steps:
+    - name: actions/checkout
+      uses: actions/checkout@v2
+    - name: setup
+      run: |
+        git config --global user.name "Groundskeeper Willie"
+        git config --global user.email "bot@athenian.co"
+        sudo pip3 install bump2version
+    - name: bump
+      run: |
+        echo bump
+        exit 0
+        if git diff --name-only HEAD^...HEAD | grep openapi.yaml; then spec_bump=required; fi
+        git pull --no-edit --merge origin master
+        if [ "$spec_bump" = "required" ]; then
+          version_file=spec/openapi.yaml;
+          current_version=$(grep -m1 '^  version:' $version_file | cut -d" " -f4);
+          bumpversion --current-version $current_version patch $version_file;
+          spec_bump=$(grep -m1 '^  version:' $version_file | cut -d" " -f4);
+        fi
+        version_file=server/athenian/api/metadata.py
+        current_version=$(grep __version__ $version_file | cut -d\" -f2)
+        bumpversion --tag --current-version $current_version --commit --allow-dirty --commit-args="-a" patch $version_file
+        if [ ! -z "$spec_bump" ]; then git tag "spec-$spec_bump"; fi
+        git remote add gkwillie https://gkwillie:$GKWILLIE_TOKEN@github.com/$GITHUB_REPOSITORY
+        git push --tags gkwillie HEAD:master
