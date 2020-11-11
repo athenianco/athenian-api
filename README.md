@@ -1,4 +1,4 @@
-# athenian-api [![Build Status](https://travis-ci.com/athenianco/athenian-api.svg?branch=master)](https://travis-ci.com/athenianco/athenian-api) [![codecov](https://codecov.io/gh/athenianco/athenian-api/branch/master/graph/badge.svg)](https://codecov.io/gh/athenianco/athenian-api)
+# athenian-api [![Build Status](https://travis-ci.com/athenianco/athenian-api.svg?branch=master)](https://travis-ci.com/athenianco/athenian-api) [![codecov](https://codecov.io/gh/athenianco/athenian-api/branch/master/graph/badge.svg?token=0TLLvxAh5n)](https://codecov.io/gh/athenianco/athenian-api)
 API layer to glue them all.
 
 Athenian API server follows the [OpenAPI 3 standard](https://github.com/OAI/OpenAPI-Specification/blob/master/versions/3.0.2.md)
