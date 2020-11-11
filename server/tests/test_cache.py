@@ -45,6 +45,7 @@ async def add_one(eval_notify: callable, number: int, cache: Optional[aiomcache.
     return number + 1
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=1)
 @pytest.mark.skipif(not has_memcached, reason="memcached is unavailable")
 @with_defer
 async def test_cached(memcached):
