@@ -25,6 +25,7 @@ class JIRAMetricsRequest(Model):
         "exclude_inactive": bool,
         "labels_include": List[str],
         "labels_exclude": List[str],
+        "epics": List[str],
     }
 
     attribute_map = {
@@ -41,6 +42,7 @@ class JIRAMetricsRequest(Model):
         "exclude_inactive": "exclude_inactive",
         "labels_include": "labels_include",
         "labels_exclude": "labels_exclude",
+        "epics": "epics",
     }
 
     def __init__(
@@ -58,6 +60,7 @@ class JIRAMetricsRequest(Model):
         exclude_inactive: Optional[bool] = None,
         labels_include: Optional[List[str]] = None,
         labels_exclude: Optional[List[str]] = None,
+        epics: Optional[List[str]] = None,
     ):
         """JIRAMetricsRequest - a model defined in OpenAPI
 
@@ -71,6 +74,9 @@ class JIRAMetricsRequest(Model):
         :param metrics: The metrics of this JIRAMetricsRequest.
         :param quantiles: The quantiles of this JIRAMetricsRequest.
         :param granularities: The granularities of this JIRAMetricsRequest.
+        :param labels_include: The labels_include of this JIRAMetricsRequest.
+        :param labels_exclude: The labels_exclude of this JIRAMetricsRequest.
+        :param epics: The epics of this JIRAMetricsRequest.
         """
         self._account = account
         self._date_from = date_from
@@ -85,6 +91,7 @@ class JIRAMetricsRequest(Model):
         self._exclude_inactive = exclude_inactive
         self._labels_include = labels_include
         self._labels_exclude = labels_exclude
+        self._epics = epics
 
     @property
     def account(self) -> int:
@@ -342,43 +349,65 @@ class JIRAMetricsRequest(Model):
         self._exclude_inactive = exclude_inactive
 
     @property
-    def labels_include(self) -> List[str]:
+    def labels_include(self) -> Optional[List[str]]:
         """Gets the labels_include of this JIRAMetricsRequest.
 
-        PRs must relate to at least one JIRA issue label from the list. Several labels may be
-        concatenated by a comma `,` so that all of them are required.
+        JIRA issues must contain at least one label from the list.
+        Several labels may be concatenated by a comma `,` so that all of them
+        are required.
 
         :return: The labels_include of this JIRAMetricsRequest.
         """
         return self._labels_include
 
     @labels_include.setter
-    def labels_include(self, labels_include: List[str]):
+    def labels_include(self, labels_include: Optional[List[str]]):
         """Sets the labels_include of this JIRAMetricsRequest.
 
-        PRs must relate to at least one JIRA issue label from the list. Several labels may be
-        concatenated by a comma `,` so that all of them are required.
+        JIRA issues must contain at least one label from the list.
+        Several labels may be concatenated by a comma `,` so that all of them
+        are required.
 
         :param labels_include: The labels_include of this JIRAMetricsRequest.
         """
         self._labels_include = labels_include
 
     @property
-    def labels_exclude(self) -> List[str]:
+    def labels_exclude(self) -> Optional[List[str]]:
         """Gets the labels_exclude of this JIRAMetricsRequest.
 
-        PRs cannot relate to JIRA issue labels from the list.
+        JIRA issues may not contain labels from this list.
 
         :return: The labels_exclude of this JIRAMetricsRequest.
         """
         return self._labels_exclude
 
     @labels_exclude.setter
-    def labels_exclude(self, labels_exclude: List[str]):
+    def labels_exclude(self, labels_exclude: Optional[List[str]]):
         """Sets the labels_exclude of this JIRAMetricsRequest.
 
-        PRs cannot relate to JIRA issue labels from the list.
+        JIRA issues may not contain labels from this list.
 
         :param labels_exclude: The labels_exclude of this JIRAMetricsRequest.
         """
         self._labels_exclude = labels_exclude
+
+    @property
+    def epics(self) -> Optional[List[str]]:
+        """Gets the epics of this JIRAMetricsRequest.
+
+        JIRA issues must be attached to any of the epic IDs from this list.
+
+        :return: The epics of this JIRAMetricsRequest.
+        """
+        return self._epics
+
+    @epics.setter
+    def epics(self, epics: Optional[List[str]]):
+        """Sets the epics of this JIRAMetricsRequest.
+
+        JIRA issues must be attached to any of the epic IDs from this list.
+
+        :param epics: The epics of this JIRAMetricsRequest.
+        """
+        self._epics = epics

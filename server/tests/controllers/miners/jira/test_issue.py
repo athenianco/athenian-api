@@ -17,7 +17,7 @@ async def test_fetch_jira_issues_releases(mdb, pdb, default_branches, release_ma
     await wait_deferred()
     issues = await fetch_jira_issues(1,
                                      time_from, time_to, False,
-                                     LabelFilter.empty(), [], [], [], [], [], False,
+                                     LabelFilter.empty(), [], [], [], [], [], [], False,
                                      default_branches, release_match_setting_tag,
                                      mdb, pdb, None)
     assert issues[ISSUE_PRS_BEGAN].notnull().sum() == 56

@@ -263,6 +263,7 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
         LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
         [p.lower() for p in (filt.priorities or [])],
         [p.lower() for p in (filt.types or [])],
+        filt.epics or [],
         reporters, assignees, commenters, len(filt.with_ or []) > 1,
         default_branches, release_settings,
         request.mdb, request.pdb, request.cache,

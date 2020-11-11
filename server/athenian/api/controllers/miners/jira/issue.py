@@ -19,7 +19,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import triage_by_rel
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
-from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue
+from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.tracing import sentry_span
 
@@ -156,13 +156,14 @@ ISSUE_PRS_RELEASED = "prs_released"
     exptime=5 * 60,  # 5 minutes
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda account, time_from, time_to, exclude_inactive, labels, priorities, types, reporters, assignees, commenters, load_participants, **_: (  # noqa
+    key=lambda account, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, load_participants, **_: (  # noqa
         account,
         time_from.timestamp(), time_to.timestamp(),
         exclude_inactive,
         labels,
         ",".join(sorted(priorities)),
         ",".join(sorted(types)),
+        ",".join(sorted(epics)),
         ",".join(sorted(reporters)),
         ",".join(sorted(assignees)),
         ",".join(sorted(commenters)),
@@ -176,6 +177,7 @@ async def fetch_jira_issues(account: int,
                             labels: LabelFilter,
                             priorities: Collection[str],
                             types: Collection[str],
+                            epics: Collection[str],
                             reporters: Collection[str],
                             assignees: Collection[str],
                             commenters: Collection[str],
@@ -198,12 +200,13 @@ async def fetch_jira_issues(account: int,
     :param labels: Issues must satisfy these label conditions.
     :param priorities: List of lower-case priorities.
     :param types: List of lower-case types.
+    :param epics: List of required parent epic keys.
     :param reporters: List of lower-case issue reporters.
     :param assignees: List of lower-case issue assignees.
     :param commenters: List of lower-case issue commenters.
     """
     issues = await _fetch_issues(
-        account, time_from, time_to, exclude_inactive, labels, priorities, types,
+        account, time_from, time_to, exclude_inactive, labels, priorities, types, epics,
         reporters, assignees, commenters, load_participants, mdb, cache)
     pr_rows = await mdb.fetch_all(
         sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
@@ -309,6 +312,7 @@ async def _fetch_issues(account: int,
                         labels: LabelFilter,
                         priorities: Collection[str],
                         types: Collection[str],
+                        epics: Collection[str],
                         reporters: Collection[str],
                         assignees: Collection[str],
                         commenters: Collection[str],
@@ -336,6 +340,8 @@ async def _fetch_issues(account: int,
         and_filters.append(sql.func.lower(Issue.priority_name).in_(priorities))
     if types:
         and_filters.append(sql.func.lower(Issue.type).in_(types))
+    if epics:
+        and_filters.append(Epic.key.in_(epics))
     or_filters = []
     if labels:
         components = await _load_components(labels, account, mdb, cache)
@@ -356,9 +362,13 @@ async def _fetch_issues(account: int,
             columns.append(Issue.commenters_display_names.label("commenters"))
 
     def query_start():
+        seed = Issue
+        if epics:
+            seed = sql.join(Issue, Epic, sql.and_(Issue.epic_id == Epic.id,
+                                                  Issue.acc_id == Epic.acc_id))
         return sql.select(columns).select_from(sql.outerjoin(
-            Issue, AthenianIssue, sql.and_(Issue.acc_id == AthenianIssue.acc_id,
-                                           Issue.id == AthenianIssue.id)))
+            seed, AthenianIssue, sql.and_(Issue.acc_id == AthenianIssue.acc_id,
+                                          Issue.id == AthenianIssue.id)))
 
     if or_filters:
         if postgres:
