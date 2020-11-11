@@ -110,7 +110,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             .where(Issue.epic_id.in_(epic_ids))
             .order_by(Issue.epic_id))
         children = {k: [i[1] for i in g] for k, g in groupby(
-            ((r[0], r[1:]) for r in children_rows), key=itemgetter(0))}
+            ((r[0], [r[i] for i in range(1, 4)]) for r in children_rows), key=itemgetter(0))}
         epics = sorted(JIRAEpic(id=r[Issue.key.key],
                                 title=r[Issue.title.key],
                                 updated=r[Issue.updated.key],
