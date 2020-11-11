@@ -4827,36 +4827,50 @@ components:
           updated: 2020-08-03T23:47:00Z
           children:
           - id: DEV-157
+            status: Done
             type: Task
           - id: DEV-156
+            status: Done
             type: Task
           - id: DEV-533
+            status: Done
             type: Task
           - id: DEV-536
+            status: Done
             type: Bug
           - id: DEV-538
+            status: ToDo
             type: Bug
           - id: DEV-539
+            status: In Progress
             type: Bug
           - id: DEV-620
+            status: Done
             type: Bug
         - id: DEV-158
           title: Precomputed DB - stage 2
           updated: 2020-08-03T23:47:00Z
           children:
           - id: DEV-157
+            status: Done
             type: Task
           - id: DEV-156
+            status: Done
             type: Task
           - id: DEV-533
+            status: Done
             type: Task
           - id: DEV-536
+            status: Done
             type: Bug
           - id: DEV-538
+            status: ToDo
             type: Bug
           - id: DEV-539
+            status: In Progress
             type: Bug
           - id: DEV-620
+            status: Done
             type: Bug
         labels:
         - title: performance
@@ -4924,18 +4938,25 @@ components:
         updated: 2020-08-03T23:47:00Z
         children:
         - id: DEV-157
+          status: Done
           type: Task
         - id: DEV-156
+          status: Done
           type: Task
         - id: DEV-533
+          status: Done
           type: Task
         - id: DEV-536
+          status: Done
           type: Bug
         - id: DEV-538
+          status: ToDo
           type: Bug
         - id: DEV-539
+          status: In Progress
           type: Bug
         - id: DEV-620
+          status: Done
           type: Bug
       properties:
         id:
@@ -4962,14 +4983,18 @@ components:
       description: Brief details about a JIRA issue in an epic.
       example:
         id: DEV-157
+        status: Done
         type: Task
       properties:
         id:
+          type: string
+        status:
           type: string
         type:
           type: string
       required:
       - id
+      - status
       - type
       type: object
     JIRALabel:
