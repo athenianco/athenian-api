@@ -308,7 +308,7 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
     exptime=5 * 60,  # 5 min
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda metrics, time_intervals, quantiles, repositories, participants, release_settings, **_:  # noqa
+    key=lambda metrics, time_intervals, quantiles, repositories, participants, jira, release_settings, **_:  # noqa
     (
         ",".join(sorted(metrics)),
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
@@ -316,6 +316,7 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
         ",".join(str(sorted(r)) for r in repositories),
         ";".join(",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items()))
                  for p in participants),
+        jira,
         release_settings,
     ),
 )
