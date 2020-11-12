@@ -28,12 +28,13 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     repos, _, _, participants, labels, jira, settings = \
         await resolve_filter_prs_parameters(filt.request, request)
     branches, default_branches = await extract_branches(repos, request.mdb, request.cache)
-    done_ats = await load_precomputed_done_timestamp_filters(
+    # we ignore the ambiguous PRs, thus producing a pessimistic prediction (that's OK)
+    done_ats, _ = await load_precomputed_done_timestamp_filters(
         filt.request.date_from, filt.request.date_to, repos, participants, labels,
         default_branches, filt.request.exclude_inactive, settings, request.pdb)
     tasks = [
         PullRequestMiner.fetch_prs(
-            filt.request.date_from, filt.request.date_to, repos, participants, labels, jira, 0,
+            filt.request.date_from, filt.request.date_to, repos, participants, labels, jira,
             filt.request.exclude_inactive, PullRequest.node_id.notin_(done_ats), request.mdb,
             request.cache, columns=[PullRequest.node_id, PullRequest.updated_at]),
     ]

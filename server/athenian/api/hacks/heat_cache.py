@@ -23,7 +23,7 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.contributors import mine_contributors
-from athenian.api.controllers.miners.github.release import mine_releases
+from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 import athenian.api.db
 from athenian.api.models.metadata import dereference_schemas, PREFIXES

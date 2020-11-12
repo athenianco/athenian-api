@@ -12,7 +12,7 @@ from sqlalchemy import and_, func, or_, select
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.github.release import load_releases
+from athenian.api.controllers.miners.github.release_load import load_releases
 from athenian.api.controllers.settings import ReleaseMatchSetting
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
     PullRequestComment, PullRequestReview, Release, User

@@ -25,13 +25,14 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
     load_open_pull_request_facts, update_unreleased_prs
-from athenian.api.controllers.miners.github.release import map_prs_to_releases, \
+from athenian.api.controllers.miners.github.release_match import map_prs_to_releases, \
     map_releases_to_prs
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import MinedPullRequest, nonemax, nonemin, \
     PRParticipants, PRParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.db import add_pdb_misses
 from athenian.api.defer import AllEvents, defer
 from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, PullRequest, \
     PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
@@ -157,11 +158,11 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=lambda r: pickle.dumps(r[:-1]),
         deserialize=_deserialize_mine_cache,
-        key=lambda date_from, date_to, exclude_inactive, release_settings, updated_min, updated_max, limit, pr_blacklist, truncate, **_: (  # noqa
+        key=lambda date_from, date_to, exclude_inactive, release_settings, updated_min, updated_max, pr_blacklist, truncate, **_: (  # noqa
             date_from.toordinal(), date_to.toordinal(), exclude_inactive, release_settings,
             updated_min.timestamp() if updated_min is not None else None,
             updated_max.timestamp() if updated_max is not None else None,
-            limit, ",".join(sorted(pr_blacklist) if pr_blacklist is not None else []), truncate,
+            ",".join(sorted(pr_blacklist[0]) if pr_blacklist is not None else []), truncate,
         ),
         postprocess=_postprocess_cached_prs,
     )
@@ -178,8 +179,7 @@ class PullRequestMiner:
                     release_settings: Dict[str, ReleaseMatchSetting],
                     updated_min: Optional[datetime],
                     updated_max: Optional[datetime],
-                    limit: int,
-                    pr_blacklist: Optional[Collection[str]],
+                    pr_blacklist: Optional[Tuple[Collection[str], Dict[str, List[str]]]],
                     truncate: bool,
                     mdb: databases.Database,
                     pdb: databases.Database,
@@ -198,6 +198,7 @@ class PullRequestMiner:
         assert (updated_min is None) == (updated_max is None)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
         if pr_blacklist is not None:
+            pr_blacklist, ambiguous = pr_blacklist
             if len(pr_blacklist) > 0:
                 pr_blacklist = PullRequest.node_id.notin_any_values(pr_blacklist)
             else:
@@ -208,10 +209,10 @@ class PullRequestMiner:
                 repositories, branches, default_branches, time_from, time_to,
                 participants.get(PRParticipationKind.AUTHOR, []),
                 participants.get(PRParticipationKind.MERGER, []),
-                jira, release_settings, updated_min, updated_max, limit,
+                jira, release_settings, updated_min, updated_max,
                 mdb, pdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
-                time_from, time_to, repositories, participants, labels, jira, limit,
+                time_from, time_to, repositories, participants, labels, jira,
                 exclude_inactive, pr_blacklist, mdb, cache,
                 updated_min=updated_min, updated_max=updated_max),
         ]
@@ -220,17 +221,42 @@ class PullRequestMiner:
         if not exclude_inactive and (updated_min is None or updated_min <= time_from):
             tasks.append(cls._fetch_inactive_merged_unreleased_prs(
                 time_from, time_to, repositories, participants, labels, jira, default_branches,
-                release_settings, limit, mdb, pdb, cache))
+                release_settings, mdb, pdb, cache))
         else:
             async def dummy_unreleased():
                 return pd.DataFrame()
             tasks.append(dummy_unreleased())
         (released_prs, releases, matched_bys, dags), prs, unreleased = await gather(*tasks)
-        prs = pd.concat([prs, released_prs, unreleased], copy=False)
+        concatenated = [prs, released_prs, unreleased]
+        missed_prs = {}
+        if pr_blacklist is not None:
+            for repo, pr_node_ids in ambiguous.items():
+                if matched_bys[repo] == ReleaseMatch.tag:
+                    missed_prs[repo] = pr_node_ids
+        if missed_prs:
+            add_pdb_misses(pdb, "PullRequestMiner.mine/blacklist",
+                           sum(len(v) for v in missed_prs.values()))
+            # These PRs are released by branch and not by tag, and we require by tag.
+            # Now fetch only them, respecting the filters.
+            # TODO(vmarkovtsev): do not load the releases from scratch in map_releases_to_prs()
+            inverse_pr_blacklist = PullRequest.node_id.in_(
+                list(chain.from_iterable(missed_prs.values())))
+            tasks = [
+                map_releases_to_prs(
+                    missed_prs, branches, default_branches, time_from, time_to,
+                    participants.get(PRParticipationKind.AUTHOR, []),
+                    participants.get(PRParticipationKind.MERGER, []),
+                    jira, release_settings, updated_min, updated_max,
+                    mdb, pdb, cache, inverse_pr_blacklist, truncate),
+                cls.fetch_prs(
+                    time_from, time_to, missed_prs, participants, labels, jira,
+                    exclude_inactive, inverse_pr_blacklist, mdb, cache,
+                    updated_min=updated_min, updated_max=updated_max),
+            ]
+            (missed_released_prs, _, _, _), missed_prs = await gather(*tasks)
+            concatenated.extend([missed_released_prs, missed_prs])
+        prs = pd.concat(concatenated, copy=False)
         prs = prs[~prs.index.duplicated()]
-        if 0 < limit < len(prs):
-            prs = prs.take(np.argpartition(
-                prs[PullRequest.updated_at.key].values, len(prs) - limit)[len(prs) - limit:])
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
 
         tasks = [
@@ -510,8 +536,7 @@ class PullRequestMiner:
                    cache: Optional[aiomcache.Client],
                    updated_min: Optional[datetime] = None,
                    updated_max: Optional[datetime] = None,
-                   limit: int = 0,
-                   pr_blacklist: Optional[Collection[str]] = None,
+                   pr_blacklist: Optional[Tuple[Collection[str], Dict[str, List[str]]]] = None,
                    truncate: bool = True,
                    ) -> Tuple["PullRequestMiner",
                               Dict[str, Tuple[str, PullRequestFacts]],
@@ -535,12 +560,12 @@ class PullRequestMiner:
         :param release_settings: Release match settings of the account.
         :param updated_min: PRs must have the last update timestamp not older than it.
         :param updated_max: PRs must have the last update timestamp not newer than or equal to it.
-        :param limit: Maximum number of PRs to return. The list is sorted by the last update \
-                      timestamp. 0 means no limit.
         :param mdb: Metadata db instance.
         :param pdb: Precomputed db instance.
         :param cache: memcached client to cache the collected data.
-        :param pr_blacklist: completely ignore the existence of these PR node IDs.
+        :param pr_blacklist: completely ignore the existence of these PR node IDs. \
+                             The second tuple element is the ambiguous PRs: released by branch \
+                             while there were no tag releases and the strategy is `tag_or_branch`.
         :param truncate: activate the "time machine" and erase everything after `time_to`.
         :return: 1. New `PullRequestMiner` with the PRs satisfying to the specified filters. \
                  2. Precomputed facts about unreleased pull requests. \
@@ -556,7 +581,7 @@ class PullRequestMiner:
         dfs, facts, _, _, _, _, matched_bys, event = await cls._mine(
             date_from, date_to, repositories, participants, labels, jira, branches,
             default_branches, exclude_inactive, release_settings, updated_min, updated_max,
-            limit, pr_blacklist, truncate, mdb, pdb, cache)
+            pr_blacklist, truncate, mdb, pdb, cache)
         cls._truncate_prs(dfs, time_from, time_to)
         return cls(dfs), facts, matched_bys, event
 
@@ -569,7 +594,6 @@ class PullRequestMiner:
                         participants: PRParticipants,
                         labels: LabelFilter,
                         jira: JIRAFilter,
-                        limit: int,
                         exclude_inactive: bool,
                         pr_blacklist: Optional[BinaryExpression],
                         mdb: databases.Database,
@@ -636,10 +660,6 @@ class PullRequestMiner:
                     query.alias("m"), PullRequestLabel,
                     pr_node_id == PullRequestLabel.pull_request_node_id)) \
                 .where(sql.func.lower(PullRequestLabel.name).in_(in_items))
-        if limit > 0:
-            query = query.order_by(sql.desc(PullRequest.updated_at))
-            if not labels:
-                query = query.limit(limit)
         prs = await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
         if not labels or embedded_labels_query:
             return prs
@@ -654,10 +674,7 @@ class PullRequestMiner:
             mdb, lcols, index=PullRequestLabel.pull_request_node_id.key)
         left = cls._find_left_by_labels(
             df_labels.index, df_labels[PullRequestLabel.name.key].values, labels)
-        left_indexes = np.where(prs.index.isin(left))[0]
-        if limit > 0:
-            left_indexes = left_indexes[:limit]
-        prs = prs.take(left_indexes)
+        prs = prs.take(np.where(prs.index.isin(left))[0])
         return prs
 
     @classmethod
@@ -672,15 +689,12 @@ class PullRequestMiner:
             jira: JIRAFilter,
             default_branches: Dict[str, str],
             release_settings: Dict[str, ReleaseMatchSetting],
-            limit: int,
             mdb: databases.Database,
             pdb: databases.Database,
             cache: Optional[aiomcache.Client]) -> pd.DataFrame:
         node_ids, _ = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, participants, labels, default_branches, release_settings,
             pdb, cache)
-        if limit > 0:
-            node_ids = node_ids[:limit]
         if not jira:
             return await read_sql_query(sql.select([PullRequest])
                                         .where(PullRequest.node_id.in_(node_ids)),

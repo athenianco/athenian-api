@@ -8,8 +8,8 @@ import pandas as pd
 import pytest
 
 from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.github.release import _empty_dag, _fetch_commit_history_edges
-from athenian.api.controllers.miners.github.release_accelerated import join_dags
+from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_edges
+from athenian.api.controllers.miners.github.dag_accelerated import join_dags
 from athenian.api.controllers.miners.types import nonemin, PullRequestFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
@@ -18,6 +18,14 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
 @pytest.fixture(scope="function")
 def no_deprecation_warnings():
     warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
+
+
+@pytest.fixture(scope="module")
+def release_match_setting_tag_or_branch():
+    return {
+        "github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="master", tags=".*", match=ReleaseMatch.tag_or_branch),
+    }
 
 
 @pytest.fixture(scope="module")

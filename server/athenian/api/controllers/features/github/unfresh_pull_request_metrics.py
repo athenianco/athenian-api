@@ -11,19 +11,20 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
-    load_open_pull_request_facts_unfresh
+    load_open_pull_request_facts_unfresh, remove_ambiguous_prs
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
-from athenian.api.controllers.miners.github.release import load_releases
+from athenian.api.controllers.miners.github.release_load import load_releases
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import PRParticipants, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatchSetting
-from athenian.api.db import add_pdb_hits
+from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.tracing import sentry_span
 
 
 @sentry_span
 async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFacts],
+                                           ambiguous: Dict[str, List[str]],
                                            time_from: datetime,
                                            time_to: datetime,
                                            repositories: Set[str],
@@ -52,7 +53,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
             repositories, branches, default_branches, time_from, time_to, release_settings,
             mdb, pdb, cache),
         PullRequestMiner.fetch_prs(
-            time_from, time_to, repositories, participants, labels, jira, 0, exclude_inactive,
+            time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
             blacklist, mdb, cache, columns=[
                 PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
             ]),
@@ -73,8 +74,10 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
             return pd.DataFrame()
 
         tasks.append(dummy_inactive_prs())
-    releases, unreleased_prs, done_facts, inactive_merged_prs = await gather(
+    (releases, matched_bys), unreleased_prs, done_facts, inactive_merged_prs = await gather(
         *tasks, op="discover PRs")
+    add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
+                   remove_ambiguous_prs(done_facts, ambiguous, matched_bys))
     unreleased_pr_node_ids = unreleased_prs.index.values
     merged_mask = unreleased_prs[PullRequest.merged_at.key].notnull()
     open_prs = unreleased_pr_node_ids[~merged_mask]
@@ -85,7 +88,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
     tasks = [
         load_open_pull_request_facts_unfresh(open_prs, time_from, time_to, exclude_inactive, pdb),
         load_merged_unreleased_pull_request_facts(
-            merged_prs, time_to, LabelFilter.empty(), releases[1],
+            merged_prs, time_to, LabelFilter.empty(), matched_bys,
             default_branches, release_settings, pdb,
             time_from=time_from, exclude_inactive=exclude_inactive),
     ]

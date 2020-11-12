@@ -32,11 +32,12 @@ from athenian.api.controllers.miners.github.commit import extract_commits, Filte
 from athenian.api.controllers.miners.github.developer import calc_developer_metrics_github
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
-    store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
+    remove_ambiguous_prs, store_merged_unreleased_pull_request_facts, \
+    store_open_pull_request_facts, \
     store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner
-from athenian.api.controllers.miners.github.release import mine_releases
+from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestFacts, ReleaseParticipants
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
@@ -99,9 +100,10 @@ async def calc_pull_request_facts_github(time_from: datetime,
     if exclude_inactive:
         precomputed_tasks.append(load_precomputed_done_candidates(
             time_from, time_to, repositories, default_branches, release_settings, pdb))
-        precomputed_facts, blacklist = await gather(*precomputed_tasks)
+        (precomputed_facts, _), blacklist = await gather(*precomputed_tasks)
     else:
-        precomputed_facts = blacklist = await precomputed_tasks[0]
+        (precomputed_facts, _) = blacklist = await precomputed_tasks[0]
+    ambiguous = blacklist[1]
     add_pdb_hits(pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
 
     prpk = PRParticipationKind
@@ -110,8 +112,8 @@ async def calc_pull_request_facts_github(time_from: datetime,
             len(participants.get(prpk.AUTHOR, [])) > unfresh_participants_threshold) and \
             not fresh and not (participants.keys() - {prpk.AUTHOR, prpk.MERGER}):
         return await fetch_pull_request_facts_unfresh(
-            precomputed_facts, time_from, time_to, repositories, participants, labels, jira,
-            exclude_inactive, branches, default_branches, release_settings, mdb, pdb, cache)
+            precomputed_facts, ambiguous, time_from, time_to, repositories, participants, labels,
+            jira, exclude_inactive, branches, default_branches, release_settings, mdb, pdb, cache)
 
     add_pdb_misses(pdb, "fresh", 1)
     date_from, date_to = coarsen_time_interval(time_from, time_to)
@@ -132,6 +134,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
     else:
         miner, unreleased_facts, matched_bys, unreleased_prs_event = await tasks[0]
     precomputed_unreleased_prs = miner.drop(unreleased_facts)
+    remove_ambiguous_prs(precomputed_facts, ambiguous, matched_bys)
     add_pdb_hits(pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
     for node_id in precomputed_unreleased_prs.values:
         precomputed_facts[node_id] = unreleased_facts[node_id]

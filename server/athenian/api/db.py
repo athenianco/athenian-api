@@ -95,13 +95,13 @@ pdb_metrics_logger = logging.getLogger("%s.pdb" % metadata.__package__)
 def set_pdb_hits(pdb: databases.Database, topic: str, value: int) -> None:
     """Assign the `topic` precomputed DB hits to `value`."""
     pdb.metrics["hits"].get()[topic] = value
-    pdb_metrics_logger.info("hits/%s: %d", topic, value)
+    pdb_metrics_logger.info("hits/%s: %d", topic, value, stacklevel=2)
 
 
 def set_pdb_misses(pdb: databases.Database, topic: str, value: int) -> None:
     """Assign the `topic` precomputed DB misses to `value`."""
     pdb.metrics["misses"].get()[topic] = value
-    pdb_metrics_logger.info("misses/%s: %d", topic, value)
+    pdb_metrics_logger.info("misses/%s: %d", topic, value, stacklevel=2)
 
 
 def add_pdb_hits(pdb: databases.Database, topic: str, value: int) -> None:
@@ -109,7 +109,7 @@ def add_pdb_hits(pdb: databases.Database, topic: str, value: int) -> None:
     if value < 0:
         pdb_metrics_logger.error('negative add_pdb_hits("%s", %d)', topic, value)
     pdb.metrics["hits"].get()[topic] += value
-    pdb_metrics_logger.info("hits/%s: +%d", topic, value)
+    pdb_metrics_logger.info("hits/%s: +%d", topic, value, stacklevel=2)
 
 
 def add_pdb_misses(pdb: databases.Database, topic: str, value: int) -> None:
@@ -117,7 +117,7 @@ def add_pdb_misses(pdb: databases.Database, topic: str, value: int) -> None:
     if value < 0:
         pdb_metrics_logger.error('negative add_pdb_misses("%s", %d)', topic, value)
     pdb.metrics["misses"].get()[topic] += value
-    pdb_metrics_logger.info("misses/%s: +%d", topic, value)
+    pdb_metrics_logger.info("misses/%s: +%d", topic, value, stacklevel=2)
 
 
 class ParallelDatabase(databases.Database):

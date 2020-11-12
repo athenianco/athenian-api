@@ -341,30 +341,6 @@ async def test_filter_prs_all_properties(client, headers, mdb):
 
 @pytest.mark.filter_pull_requests
 @with_only_master_branch
-async def test_filter_prs_shot_limit(client, headers, mdb):
-    body = {
-        "date_from": "2016-10-13",
-        "date_to": "2018-01-23",
-        "timezone": 60,
-        "account": 1,
-        "in": [],
-        "properties": [PullRequestProperty.MERGE_HAPPENED],
-        "with": {
-            "author": ["github.com/mcuadros"],
-        },
-        "limit": 70,
-        "exclude_inactive": False,
-    }
-    time_to = datetime(year=2018, month=1, day=24, tzinfo=timezone.utc)
-    response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    n = await validate_prs_response(response, {PullRequestProperty.MERGE_HAPPENED},
-                                    {"author": ["github.com/mcuadros"]}, time_to)
-    assert n == 69  # it is 75 without the limit
-
-
-@pytest.mark.filter_pull_requests
-@with_only_master_branch
 async def test_filter_prs_shot_updated(client, headers, mdb):
     body = {
         "date_from": "2016-10-13",

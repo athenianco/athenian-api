@@ -25,19 +25,21 @@ from athenian.api.controllers.features.metric_calculator import df_from_dataclas
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_merged_unreleased_pull_request_facts, load_precomputed_done_facts_filters, \
-    load_precomputed_done_facts_reponums, store_merged_unreleased_pull_request_facts, \
-    store_open_pull_request_facts, store_precomputed_done_facts
+    load_precomputed_done_facts_reponums, remove_ambiguous_prs, \
+    store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
+    store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PRDataFrames, PullRequestFactsMiner, PullRequestMiner, ReviewResolution
-from athenian.api.controllers.miners.github.release import dummy_releases_df, \
-    fetch_precomputed_commit_history_dags, load_commit_dags, load_releases
+from athenian.api.controllers.miners.github.release_load import dummy_releases_df, load_releases
+from athenian.api.controllers.miners.github.release_match import load_commit_dags
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, PRParticipants, \
     PullRequestEvent, PullRequestFacts, PullRequestJIRAIssueItem, PullRequestListItem, \
     PullRequestStage
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
-from athenian.api.db import set_pdb_hits, set_pdb_misses
+from athenian.api.db import add_pdb_misses, set_pdb_hits, set_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, PullRequestLabel, \
@@ -365,7 +367,6 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
                                release_settings: Dict[str, ReleaseMatchSetting],
                                updated_min: Optional[datetime],
                                updated_max: Optional[datetime],
-                               limit: int,
                                mdb: databases.Database,
                                pdb: databases.Database,
                                cache: Optional[aiomcache.Client],
@@ -380,7 +381,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
     """
     prs, _, _ = await _filter_pull_requests(
         events, stages, time_from, time_to, repos, participants, labels, jira, exclude_inactive,
-        release_settings, updated_min, updated_max, limit, mdb, pdb, cache)
+        release_settings, updated_min, updated_max, mdb, pdb, cache)
     return prs
 
 
@@ -481,7 +482,7 @@ def _filter_by_jira_issue_types(prs: List[PullRequestListItem],
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, events, stages, participants, exclude_inactive, release_settings, updated_min, updated_max, limit, **_: (  # noqa
+    key=lambda time_from, time_to, repos, events, stages, participants, exclude_inactive, release_settings, updated_min, updated_max, **_: (  # noqa
         time_from.timestamp(),
         time_to.timestamp(),
         ",".join(sorted(repos)),
@@ -491,7 +492,6 @@ def _filter_by_jira_issue_types(prs: List[PullRequestListItem],
         exclude_inactive,
         updated_min.timestamp() if updated_min is not None else None,
         updated_max.timestamp() if updated_max is not None else None,
-        limit,
         release_settings,
     ),
     postprocess=_postprocess_filtered_prs,
@@ -508,7 +508,6 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                                 release_settings: Dict[str, ReleaseMatchSetting],
                                 updated_min: Optional[datetime],
                                 updated_max: Optional[datetime],
-                                limit: int,
                                 mdb: databases.Database,
                                 pdb: databases.Database,
                                 cache: Optional[aiomcache.Client],
@@ -527,12 +526,15 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
         PullRequestMiner.mine(
             date_from, date_to, time_from, time_to, repos, participants, labels, jira, branches,
             default_branches, exclude_inactive, release_settings, mdb, pdb, cache,
-            truncate=False, updated_min=updated_min, updated_max=updated_max, limit=limit),
+            truncate=False, updated_min=updated_min, updated_max=updated_max),
         load_precomputed_done_facts_filters(
             time_from, time_to, repos, participants, labels, default_branches,
             exclude_inactive, release_settings, pdb),
     )
-    (pr_miner, unreleased_facts, matched_bys, unreleased_prs_event), facts = await gather(*tasks)
+    (pr_miner, unreleased_facts, matched_bys, unreleased_prs_event), (facts, ambiguous) = \
+        await gather(*tasks)
+    add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
+                   remove_ambiguous_prs(facts, ambiguous, matched_bys))
     # we want the released PR facts to overwrite the others
     facts, unreleased_facts = unreleased_facts, facts
     facts.update(unreleased_facts)
@@ -678,7 +680,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                        mdb, PullRequest, index=PullRequest.node_id.key),
         load_precomputed_done_facts_reponums(prs, default_branches, release_settings, pdb),
     ]
-    prs_df, facts = await gather(*tasks)
+    prs_df, (facts, ambiguous) = await gather(*tasks)
     if prs_df.empty:
         return [], PRDataFrames(*(pd.DataFrame() for _ in range(9))), {}, {}
     now = datetime.now(timezone.utc)
@@ -696,6 +698,8 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
             milestone_releases[Release.sha.key].notnull())[0])
         releases, matched_bys = await load_releases(
             prs, branches, default_branches, rel_time_from, now, release_settings, mdb, pdb, cache)
+        add_pdb_misses(pdb, "load_precomputed_done_facts_reponums/ambiguous",
+                       remove_ambiguous_prs(facts, ambiguous, matched_bys))
         tasks = [
             load_commit_dags(releases.append(milestone_releases), mdb, pdb, cache),
             # not nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
