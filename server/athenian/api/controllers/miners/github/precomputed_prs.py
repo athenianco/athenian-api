@@ -20,6 +20,8 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
+from athenian.api.controllers.miners.github.release_load import group_repos_by_release_match, \
+    match_groups_to_sql
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
@@ -37,16 +39,18 @@ from athenian.api.tracing import sentry_span
 
 def _create_common_filters(time_from: datetime,
                            time_to: datetime,
-                           repos: Collection[str]) -> List[ClauseElement]:
+                           repos: Optional[Collection[str]]) -> List[ClauseElement]:
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
     ghprt = GitHubDonePullRequestFacts
-    return [
+    items = [
         ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
-        ghprt.repository_full_name.in_(repos),
         ghprt.pr_created_at < time_to,
         ghprt.pr_done_at >= time_from,
     ]
+    if repos is not None:
+        items.append(ghprt.repository_full_name.in_(repos))
+    return items
 
 
 def triage_by_release_match(repo: str,
@@ -88,11 +92,15 @@ async def load_precomputed_done_candidates(time_from: datetime,
                                            default_branches: Dict[str, str],
                                            release_settings: Dict[str, ReleaseMatchSetting],
                                            pdb: databases.Database,
-                                           ) -> Set[str]:
+                                           ) -> Tuple[Set[str], Dict[str, List[str]]]:
     """
     Load the set of released PR identifiers.
 
     We find all the released PRs for a given time frame, repositories, and release match settings.
+
+    :return: 1. Released PR node IDs. \
+             2. Map from repository name to ambiguous PR node IDs which are released by \
+             branch with tag_or_branch strategy and without tags on the time interval.
     """
     ghprt = GitHubDonePullRequestFacts
     selected = [ghprt.pr_node_id,
@@ -102,17 +110,17 @@ async def load_precomputed_done_candidates(time_from: datetime,
     with sentry_sdk.start_span(op="load_precomputed_done_candidates/fetch"):
         rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
-    result = set()
-    ambiguous = {ReleaseMatch.tag.name: set(), ReleaseMatch.branch.name: set()}
+    result = {}
+    ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     for row in rows:
         dump = triage_by_release_match(
-            row[1], row[2], release_settings, default_branches, prefix, result, ambiguous)
+            row[ghprt.repository_full_name.key], row[ghprt.release_match.key],
+            release_settings, default_branches, prefix, result, ambiguous)
         if dump is None:
             continue
-        dump.add(row[0])
-    result.update(ambiguous[ReleaseMatch.tag.name])
-    result.update(ambiguous[ReleaseMatch.branch.name])
-    return result
+        dump[row[ghprt.pr_node_id.key]] = row[ghprt.repository_full_name.key], None
+    result, ambiguous = _post_process_ambiguous_done_prs(result, ambiguous)
+    return set(result), ambiguous
 
 
 def _build_participants_filters(participants: PRParticipants,
@@ -212,18 +220,21 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
                                               exclude_inactive: bool,
                                               release_settings: Dict[str, ReleaseMatchSetting],
                                               pdb: databases.Database,
-                                              ) -> Dict[str, Tuple[str, PullRequestFacts]]:
+                                              ) -> Tuple[Dict[str, Tuple[str, PullRequestFacts]],
+                                                         Dict[str, List[str]]]:
     """
     Fetch precomputed done PR facts.
 
-    :return: map from node IDs to repo name and facts.
+    :return: 1. map from PR node IDs to repo names and facts. \
+             2. Map from repository name to ambiguous PR node IDs which are released by \
+             branch with tag_or_branch strategy and without tags on the time interval.
     """
-    result = await _load_precomputed_done_filters(
+    result, ambiguous = await _load_precomputed_done_filters(
         GitHubDonePullRequestFacts.data, time_from, time_to, repos, participants, labels,
         default_branches, exclude_inactive, release_settings, pdb)
     for node_id, (repo, data) in result.items():
         result[node_id] = repo, pickle.loads(data)
-    return result
+    return result, ambiguous
 
 
 @sentry_span
@@ -236,9 +247,16 @@ async def load_precomputed_done_timestamp_filters(time_from: datetime,
                                                   exclude_inactive: bool,
                                                   release_settings: Dict[str, ReleaseMatchSetting],
                                                   pdb: databases.Database,
-                                                  ) -> Dict[str, datetime]:
-    """Fetch precomputed done PR "pr_done_at" timestamps."""
-    result = await _load_precomputed_done_filters(
+                                                  ) -> Tuple[Dict[str, datetime],
+                                                             Dict[str, List[str]]]:
+    """
+    Fetch precomputed done PR "pr_done_at" timestamps.
+
+    :return: 1. map from PR node IDs to their release timestamps. \
+             2. Map from repository name to ambiguous PR node IDs which are released by \
+             branch with tag_or_branch strategy and without tags on the time interval.
+    """
+    result, ambiguous = await _load_precomputed_done_filters(
         GitHubDonePullRequestFacts.pr_done_at, time_from, time_to, repos, participants, labels,
         default_branches, exclude_inactive, release_settings, pdb)
     sqlite = pdb.url.dialect == "sqlite"
@@ -246,7 +264,27 @@ async def load_precomputed_done_timestamp_filters(time_from: datetime,
         if sqlite:
             dt = dt.replace(tzinfo=timezone.utc)
         result[node_id] = dt
-    return result
+    return result, ambiguous
+
+
+def remove_ambiguous_prs(prs: Dict[str, Any],
+                         ambiguous: Dict[str, List[str]],
+                         matched_bys: Dict[str, ReleaseMatch]) -> int:
+    """
+    Delete PRs from `prs` which are released by branch while the effective match is by tag.
+
+    :return: Number of removed PRs.
+    """
+    missed = 0
+    for repo, pr_node_ids in ambiguous.items():
+        if matched_bys[repo] == ReleaseMatch.tag:
+            for node_id in pr_node_ids:
+                try:
+                    del prs[node_id]
+                    missed += 1
+                except KeyError:
+                    continue
+    return missed
 
 
 @sentry_span
@@ -260,12 +298,15 @@ async def _load_precomputed_done_filters(column: InstrumentedAttribute,
                                          exclude_inactive: bool,
                                          release_settings: Dict[str, ReleaseMatchSetting],
                                          pdb: databases.Database,
-                                         ) -> Dict[str, Tuple[str, Any]]:
+                                         ) -> Tuple[Dict[str, Tuple[str, Any]],
+                                                    Dict[str, List[str]]]:
     """
     Load some data belonging to released or rejected PRs from the precomputed DB.
 
     Query version. JIRA must be filtered separately.
-    :return: Map PR node ID -> repository name & specified column value.
+    :return: 1. Map PR node ID -> repository name & specified column value. \
+             2. Map from repository name to ambiguous PR node IDs which are released by \
+             branch with tag_or_branch strategy and without tags on the time interval.
     """
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     ghprt = GitHubDonePullRequestFacts
@@ -273,8 +314,10 @@ async def _load_precomputed_done_filters(column: InstrumentedAttribute,
                 ghprt.repository_full_name,
                 ghprt.release_match,
                 column]
-    # FIXME(vmarkovtsev): rewrite the releases matching to cluster by value and exec on the server
-    filters = _create_common_filters(time_from, time_to, repos)
+    match_groups, _ = group_repos_by_release_match(repos, default_branches, release_settings)
+    match_groups[ReleaseMatch.rejected] = match_groups[ReleaseMatch.force_push_drop] = {"": repos}
+    or_items, _ = match_groups_to_sql(match_groups, ghprt)
+    filters = _create_common_filters(time_from, time_to, None)
     if len(participants) > 0:
         _build_participants_filters(participants, filters, selected, postgres)
     if labels:
@@ -282,8 +325,12 @@ async def _load_precomputed_done_filters(column: InstrumentedAttribute,
     if exclude_inactive:
         date_range = _append_activity_days_filter(
             time_from, time_to, selected, filters, ghprt.activity_days, postgres)
+    if pdb.url.dialect == "sqlite":
+        query = select(selected).where(and_(or_(*or_items), *filters))
+    else:
+        query = union_all(*(select(selected).where(and_(item, *filters)) for item in or_items))
     with sentry_sdk.start_span(op="_load_precomputed_done_filters/fetch"):
-        rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
+        rows = await pdb.fetch_all(query)
     prefix = PREFIXES["github"]
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
@@ -309,11 +356,24 @@ async def _load_precomputed_done_filters(column: InstrumentedAttribute,
                 if not activity_days.intersection(date_range):
                     continue
         dump[row[ghprt.pr_node_id.key]] = repo, row[column.key]
+    return _post_process_ambiguous_done_prs(result, ambiguous)
+
+
+def _post_process_ambiguous_done_prs(result: Dict[str, Tuple[str, Any]],
+                                     ambiguous: Dict[ReleaseMatch, Dict[str, Tuple[str, Any]]],
+                                     ) -> Tuple[Dict[str, Tuple[str, Any]],
+                                                Dict[str, List[str]]]:
+    """Figure out what to do with uncertain `tag_or_branch` release matches."""
     result.update(ambiguous[ReleaseMatch.tag.name])
-    for node_id, smth in ambiguous[ReleaseMatch.branch.name].items():
-        if node_id not in result:
-            result[node_id] = smth
-    return result
+    # We've found PRs released by tag belonging to these repos.
+    # This means that we are going to load tags in load_releases().
+    confirmed_tag_repos = {p[0] for p in ambiguous[ReleaseMatch.tag.name].values()}
+    ambiguous_prs = defaultdict(list)
+    for node_id, (repo, whatever) in ambiguous[ReleaseMatch.branch.name].items():
+        if repo not in confirmed_tag_repos:
+            result[node_id] = repo, whatever
+            ambiguous_prs[repo].append(node_id)
+    return result, ambiguous_prs
 
 
 def _append_activity_days_filter(time_from: datetime, time_to: datetime,
@@ -337,28 +397,49 @@ def _append_activity_days_filter(time_from: datetime, time_to: datetime,
 
 
 @sentry_span
-async def load_precomputed_done_facts_reponums(prs: Dict[str, Set[int]],
+async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
                                                default_branches: Dict[str, str],
                                                release_settings: Dict[str, ReleaseMatchSetting],
                                                pdb: databases.Database,
-                                               ) -> Dict[str, Tuple[str, PullRequestFacts]]:
+                                               ) -> Tuple[Dict[str, Tuple[str, PullRequestFacts]],
+                                                          Dict[str, List[str]]]:
     """
     Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
 
     repo + numbers version.
+
+    :return: 1. Map PR node ID -> repository name & specified column value. \
+             2. Map from repository name to ambiguous PR node IDs which are released by \
+             branch with tag_or_branch strategy and without tags on the time interval.
     """
     ghprt = GitHubDonePullRequestFacts
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match,
                 ghprt.data]
-    filters = [
-        ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
-        or_(*[and_(ghprt.repository_full_name == repo, ghprt.number.in_(numbers))
-              for repo, numbers in prs.items()]),
-    ]
+    format_version_filter = \
+        ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg
+    if pdb.url.dialect == "sqlite":
+        filters = [
+            format_version_filter,
+            or_(*[and_(ghprt.repository_full_name == repo, ghprt.number.in_(numbers))
+                  for repo, numbers in repos.items()]),
+        ]
+        query = select(selected).where(and_(*filters))
+    else:
+        match_groups, _ = group_repos_by_release_match(repos, default_branches, release_settings)
+        match_groups[ReleaseMatch.rejected] = match_groups[ReleaseMatch.force_push_drop] = \
+            {"": repos}
+        or_items, or_repos = match_groups_to_sql(match_groups, ghprt)
+        query = union_all(*(
+            select(selected).where(and_(item, format_version_filter, or_(
+                *[and_(ghprt.repository_full_name == repo, ghprt.number.in_(repos[repo]))
+                  for repo in item_repos],
+            )))
+            for item, item_repos in zip(or_items, or_repos)))
+
     with sentry_sdk.start_span(op="load_precomputed_done_facts_reponums/fetch"):
-        rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
+        rows = await pdb.fetch_all(query)
     prefix = PREFIXES["github"]
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
@@ -370,11 +451,7 @@ async def load_precomputed_done_facts_reponums(prs: Dict[str, Set[int]],
         if dump is None:
             continue
         dump[row[ghprt.pr_node_id.key]] = repo, pickle.loads(row[ghprt.data.key])
-    result.update(ambiguous[ReleaseMatch.tag.name])
-    for node_id, facts in ambiguous[ReleaseMatch.branch.name].items():
-        if node_id not in result:
-            result[node_id] = facts
-    return result
+    return _post_process_ambiguous_done_prs(result, ambiguous)
 
 
 @sentry_span

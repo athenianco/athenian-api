@@ -18,7 +18,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     store_open_pull_request_facts
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
-from athenian.api.controllers.miners.github.release import load_releases
+from athenian.api.controllers.miners.github.release_load import load_releases
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipationKind, \
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
@@ -109,7 +109,7 @@ async def test_pr_miner_blacklist(branches, default_branches, mdb, pdb, release_
         mdb,
         pdb,
         None,
-        pr_blacklist=node_ids,
+        pr_blacklist=(node_ids, {}),
     )
     node_ids = [pr.pr[PullRequest.node_id.key] for pr in miner]
     assert len(node_ids) == 0
@@ -289,12 +289,12 @@ async def test_pr_miner_cache_pr_blacklist(
         "MDExOlB1bGxSZXF1ZXN0MTYyNDM2MzEx",
     """
     prs = list((await PullRequestMiner.mine(
-        *args, pr_blacklist=["MDExOlB1bGxSZXF1ZXN0MTYyNDM2MzEx"]))[0])
+        *args, pr_blacklist=(["MDExOlB1bGxSZXF1ZXN0MTYyNDM2MzEx"], {})))[0])
     assert {pr.pr[PullRequest.node_id.key] for pr in prs} == {
         "MDExOlB1bGxSZXF1ZXN0MTM4MzExODAx", "MDExOlB1bGxSZXF1ZXN0MTU1NDg2ODkz",
         "MDExOlB1bGxSZXF1ZXN0MTYwODI1NTE4", "MDExOlB1bGxSZXF1ZXN0MTYyMDE1NTI4"}
     prs = list((await PullRequestMiner.mine(
-        *args, pr_blacklist=["MDExOlB1bGxSZXF1ZXN0MTM4MzExODAx"]))[0])
+        *args, pr_blacklist=(["MDExOlB1bGxSZXF1ZXN0MTM4MzExODAx"], {})))[0])
     assert {pr.pr[PullRequest.node_id.key] for pr in prs} == {
         "MDExOlB1bGxSZXF1ZXN0MTYyNDM2MzEx", "MDExOlB1bGxSZXF1ZXN0MTU1NDg2ODkz",
         "MDExOlB1bGxSZXF1ZXN0MTYwODI1NTE4", "MDExOlB1bGxSZXF1ZXN0MTYyMDE1NTI4"}
@@ -757,9 +757,9 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, release_match_setting_tag):
         {"src-d/go-git"}, {}, LabelFilter({"bug"}, set()), JIRAFilter.empty(),
         pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
         release_match_setting_tag, mdb, pdb, None,
-        pr_blacklist=["MDExOlB1bGxSZXF1ZXN0MjA5MjA0MDQz",
-                      "MDExOlB1bGxSZXF1ZXN0MjE2MTA0NzY1",
-                      "MDExOlB1bGxSZXF1ZXN0MjEzODQ1NDUx"])
+        pr_blacklist=(["MDExOlB1bGxSZXF1ZXN0MjA5MjA0MDQz",
+                       "MDExOlB1bGxSZXF1ZXN0MjE2MTA0NzY1",
+                       "MDExOlB1bGxSZXF1ZXN0MjEzODQ1NDUx"], {}))
     await wait_deferred()
     assert len(miner_complete._dfs.prs) == 3
     miner_complete, _, _, _ = await PullRequestMiner.mine(
@@ -767,9 +767,9 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, release_match_setting_tag):
         {"src-d/go-git"}, {}, LabelFilter({"bug"}, {"ssh"}), JIRAFilter.empty(),
         pd.DataFrame(columns=[Branch.commit_id.key]), {}, False,
         release_match_setting_tag, mdb, pdb, None,
-        pr_blacklist=["MDExOlB1bGxSZXF1ZXN0MjA5MjA0MDQz",
-                      "MDExOlB1bGxSZXF1ZXN0MjE2MTA0NzY1",
-                      "MDExOlB1bGxSZXF1ZXN0MjEzODQ1NDUx"])
+        pr_blacklist=(["MDExOlB1bGxSZXF1ZXN0MjA5MjA0MDQz",
+                       "MDExOlB1bGxSZXF1ZXN0MjE2MTA0NzY1",
+                       "MDExOlB1bGxSZXF1ZXN0MjEzODQ1NDUx"], {}))
     await wait_deferred()
     assert len(miner_complete._dfs.prs) == 2
     miner_complete, _, _, _ = await PullRequestMiner.mine(

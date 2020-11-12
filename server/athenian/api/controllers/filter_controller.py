@@ -24,7 +24,7 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.label import mine_labels
-from athenian.api.controllers.miners.github.release import mine_releases
+from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.miners.types import Property, PRParticipants, PRParticipationKind, \
@@ -181,7 +181,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     updated_min, updated_max = _bake_updated_min_max(filt)
     prs = await filter_pull_requests(
         events, stages, filt.date_from, filt.date_to, repos, participants, labels, jira,
-        filt.exclude_inactive, settings, updated_min, updated_max, filt.limit or 0,
+        filt.exclude_inactive, settings, updated_min, updated_max,
         request.mdb, request.pdb, request.cache)
     return await _build_github_prs_response(prs, request.mdb, request.cache)
 

@@ -68,7 +68,9 @@ jobs:
         key: ubuntu-20.04-pip-main-${{ hashFiles('server/requirements.txt') }}
         restore-keys: ubuntu-20.04-pip-main-
     - name: pip
-      run: pip3 install -r server/requirements.txt --no-warn-script-location
+      run: |
+        pip3 install -r server/requirements.txt --no-warn-script-location
+        sudo pip3 install -e server/
     - name: web models
       working-directory: server
       run: |
@@ -123,7 +125,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{ env.PIP_CACHE }}
-        key: ubuntu-20.04-pip-main-${{ hashFiles('server/requirements.txt') }}
+        key: ubuntu-20.04-pip-main-${{ hashFiles('server/requirements.txt', 'test-requirements.txt') }}
         restore-keys: ubuntu-20.04-pip-main-
     - name: pip
       run: |

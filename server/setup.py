@@ -30,7 +30,7 @@ setup(
     download_url="https://github.com/athenian/athenian-api",
     packages=find_packages(exclude=["tests"]),
     ext_modules=cythonize(str(
-        code_root / "controllers" / "miners" / "github" / "release_accelerated.pyx")),
+        code_root / "controllers" / "miners" / "github" / "dag_accelerated.pyx")),
     namespace_packages=["athenian"],
     keywords=[],
     install_requires=[],
