@@ -7,7 +7,7 @@ on:
   pull_request:
 
 env:
-  GOOGLE_DOCKER_IMAGE: gcr.io/athenian-1/api
+  GOOGLE_DOCKER_IMAGE: gcr.io/${{ secrets.GOOGLE_PROJECT }}/api
   AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
   AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
   AUTH0_CLIENT_SECRET: ${{ secrets.AUTH0_CLIENT_SECRET }}

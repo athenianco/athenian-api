@@ -6,11 +6,10 @@ from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from itertools import chain
 import logging
-from typing import Collection, List, Set
+from typing import Collection, Set
 
 import sentry_sdk
-from sqlalchemy import and_, create_engine, func, insert, select, update
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import and_, func, insert, select, update
 from tqdm import tqdm
 
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
@@ -30,7 +29,7 @@ from athenian.api.models.metadata import dereference_schemas, PREFIXES
 from athenian.api.models.metadata.github import PullRequestLabel, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts
-from athenian.api.models.state.models import RepositorySet, Team
+from athenian.api.models.state.models import Account, RepositorySet, Team
 
 
 def _parse_args():
@@ -60,12 +59,6 @@ def main():
     if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):
         return 1
     slack = create_slack(log)
-    engine = create_engine(args.state_db)
-    session = sessionmaker(bind=engine)()  # type: Session
-    reposets = session.query(RepositorySet).all()  # type: List[RepositorySet]
-    session.close()
-    engine.dispose()
-    account_progress_settings = {}
     time_to = datetime.combine(date.today() + timedelta(days=1),
                                datetime.min.time(),
                                tzinfo=timezone.utc)
@@ -92,33 +85,42 @@ def main():
         if mdb.url.dialect == "sqlite":
             dereference_schemas()
 
+        account_progress_settings = {}
+        accounts = [r[0] for r in await sdb.fetch_all(select([Account.id]))]
+        log.info("Checking progress of %d accounts", len(accounts))
+        for account in tqdm(accounts):
+            try:
+                progress = await fetch_github_installation_progress(
+                    account, sdb, mdb, cache)
+                settings = await Settings.from_account(
+                    account, sdb, mdb, cache, None).list_release_matches()
+            except ResponseError as e:
+                if e.response.status != HTTPStatus.UNPROCESSABLE_ENTITY:
+                    sentry_sdk.capture_exception(e)
+                log.warning("account %d: ResponseError: %s", account, e.response)
+                continue
+            except Exception as e:
+                sentry_sdk.capture_exception(e)
+                log.warning("account %d: %s: %s", account, type(e).__name__, e)
+                continue
+            account_progress_settings[account] = progress, settings
+
         nonlocal return_code
         return_code = await sync_labels(log, mdb, pdb)
         bots = await Bots()(mdb)
         log.info("Loaded %d bots", len(bots))
 
-        log.info("Heating")
+        reposets = await sdb.fetch_all(select([RepositorySet])
+                                       .where(RepositorySet.name == RepositorySet.ALL))
+        reposets = [RepositorySet(**r) for r in reposets]
+        log.info("Heating %d reposets", len(reposets))
         for reposet in tqdm(reposets):
-            if reposet.name != RepositorySet.ALL:
-                continue
             try:
                 progress, settings = account_progress_settings[reposet.owner_id]
             except KeyError:
-                try:
-                    progress = await fetch_github_installation_progress(
-                        reposet.owner_id, sdb, mdb, cache)
-                    settings = await Settings.from_account(
-                        reposet.owner_id, sdb, mdb, cache, None).list_release_matches()
-                except ResponseError as e:
-                    if e.response.status != HTTPStatus.UNPROCESSABLE_ENTITY:
-                        sentry_sdk.capture_exception(e)
-                    log.warning("account %d: ResponseError: %s", reposet.owner_id, e.response)
-                    continue
-                except Exception as e:
-                    sentry_sdk.capture_exception(e)
-                    log.warning("account %d: %s: %s", reposet.owner_id, type(e).__name__, e)
-                    continue
-                account_progress_settings[reposet.owner_id] = progress, settings
+                log.warning("Skipped account %d / reposet %d because the progress does not exist",
+                            reposet.owner_id, reposet.id)
+                continue
             if progress.finished_date is None:
                 log.warning("Skipped account %d / reposet %d because the progress is not 100%%",
                             reposet.owner_id, reposet.id)
