@@ -1,6 +1,10 @@
 comment: false
+fixes:
+  - "server/::"
 ignore:
-  - server/athenian/api/hacks/reproduce_bug.py
+  - athenian/api/hacks/show_body.py
+  - athenian/api/hacks/show_sql.py
+  - athenian/api/hacks/webapp.py
 coverage:
   status:
     patch: off
