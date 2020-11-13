@@ -1,4 +1,5 @@
-from typing import List, Optional
+from datetime import timedelta
+from typing import List, Optional, Union
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set import ForSet
@@ -14,7 +15,7 @@ class CalculatedPullRequestHistogram(Model):
         "for_": ForSet,
         "metric": str,
         "scale": str,
-        "ticks": List[object],
+        "ticks": List[Union[float, timedelta]],
         "frequencies": List[int],
         "interquartile": Interquartile,
     }
@@ -33,7 +34,7 @@ class CalculatedPullRequestHistogram(Model):
         for_: Optional[ForSet] = None,
         metric: Optional[str] = None,
         scale: Optional[str] = None,
-        ticks: Optional[List[float]] = None,
+        ticks: Optional[List[Union[float, timedelta]]] = None,
         frequencies: Optional[List[int]] = None,
         interquartile: Optional[Interquartile] = None,
     ):
@@ -115,7 +116,7 @@ class CalculatedPullRequestHistogram(Model):
         self._scale = scale
 
     @property
-    def ticks(self) -> List[object]:
+    def ticks(self) -> List[Union[float, timedelta]]:
         """Gets the ticks of this CalculatedPullRequestHistogram.
 
         Series of horizontal bar borders aka X axis. Their count is `len(y) + 1` because there are
@@ -126,7 +127,7 @@ class CalculatedPullRequestHistogram(Model):
         return self._ticks
 
     @ticks.setter
-    def ticks(self, ticks: List[object]):
+    def ticks(self, ticks: List[Union[float, timedelta]]):
         """Sets the ticks of this CalculatedPullRequestHistogram.
 
         Series of horizontal bar borders aka X axis. Their count is `len(y) + 1` because there are

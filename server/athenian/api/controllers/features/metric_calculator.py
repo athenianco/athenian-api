@@ -369,7 +369,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
     ensemble_class: Type[MetricCalculatorEnsemble]
 
     def __init__(self,
-                 metrics: Sequence[Sequence[str]],
+                 metrics: Iterable[Sequence[str]],
                  quantiles: Sequence[float],
                  **kwargs):
         """
@@ -510,7 +510,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
         raise NotImplementedError
 
 
-class BinnedMetricsCalculator(BinnedEnsemblesCalculator[Metric]):
+class BinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
     """Batched metrics calculation on sequential time intervals with always one set of metrics."""
 
     def __init__(self,
@@ -538,6 +538,15 @@ class BinnedMetricsCalculator(BinnedEnsemblesCalculator[Metric]):
     def _aggregate_ensembles(self, kwargs: Iterable[Dict[str, Any]],
                              ) -> List[Dict[str, List[List[Metric]]]]:
         return [self.ensembles[0].values()]
+
+
+class BinnedHistogramCalculator(BinnedEnsemblesCalculator[Histogram]):
+    """Batched histograms calculation on sequential time intervals."""
+
+    def _aggregate_ensembles(self, kwargs: Iterable[Dict[str, Any]],
+                             ) -> List[Dict[str, List[List[Histogram]]]]:
+        return [{k: v for k, v in ensemble.histograms(**ekw).items()}
+                for ensemble, ekw in zip(self.ensembles, kwargs)]
 
 
 class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
@@ -570,3 +579,20 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         return np.full((len(min_times), len(facts)), None, object)
+
+
+def make_register_metric(metric_calculators: Dict[str, Type[MetricCalculator]],
+                         histogram_calculators: Dict[str, Type[HistogramCalculator]]):
+    """Create the decorator to keep track of the metric and histogram calculators."""
+    def register_metric(name: str):
+        assert isinstance(name, str)
+
+        def register_with_name(cls: Type[MetricCalculator]):
+            metric_calculators[name] = cls
+            if not issubclass(cls, SumMetricCalculator):
+                histogram_calculators[name] = \
+                    type("HistogramOf" + cls.__name__, (cls, HistogramCalculator), {})
+            return cls
+
+        return register_with_name
+    return register_metric

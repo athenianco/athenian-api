@@ -1,4 +1,5 @@
-from typing import List, Optional
+from datetime import timedelta
+from typing import List, Optional, Union
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.histogram_scale import HistogramScale
@@ -14,7 +15,7 @@ class CalculatedJIRAHistogram(Model):
         "with_": Optional[JIRAMetricsRequestWith],
         "metric": str,
         "scale": str,
-        "ticks": List[float],
+        "ticks": List[Union[float, timedelta]],
         "frequencies": List[int],
         "interquartile": Interquartile,
     }
@@ -33,7 +34,7 @@ class CalculatedJIRAHistogram(Model):
         with_: Optional[JIRAMetricsRequestWith] = None,
         metric: Optional[str] = None,
         scale: Optional[str] = None,
-        ticks: Optional[List[float]] = None,
+        ticks: Optional[List[Union[float, timedelta]]] = None,
         frequencies: Optional[List[int]] = None,
         interquartile: Optional[Interquartile] = None,
     ):

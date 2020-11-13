@@ -5571,6 +5571,10 @@ components:
           items:
             type: string
           type: array
+        epics:
+          items:
+            $ref: '#/components/schemas/JIRAEpic'
+          type: array
         labels_include:
           description: PRs must relate to at least one JIRA issue label from the list.
             Several labels may be concatenated by a comma `,` so that all of them

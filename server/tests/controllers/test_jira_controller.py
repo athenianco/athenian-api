@@ -5,7 +5,9 @@ from dateutil.tz import tzutc
 import numpy as np
 import pytest
 
-from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinearMetricValues, \
+from athenian.api import FriendlyJson
+from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
+    CalculatedLinearMetricValues, \
     FoundJIRAStuff, JIRAEpic, JIRALabel, JIRAMetricID, JIRAPriority, JIRAUser
 from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 
@@ -434,3 +436,90 @@ async def test_jira_metrics_bug_times(client, headers, metric, value, score, cmi
         confidence_maxs=[cmax],
         confidence_scores=[score],
     )]
+
+
+@pytest.mark.parametrize("with_, ticks, frequencies, interquartile", [
+    [None,
+     [["60s", "122s", "249s", "507s", "1033s", "2105s", "4288s", "8737s", "17799s", "36261s",
+       "73870s", "150489s", "306576s", "624554s", "1272338s", "2591999s"]],
+     [[351, 7, 12, 27, 38, 70, 95, 103, 68, 76, 120, 116, 132, 114, 285]],
+     [{"left": "1255s", "right": "618082s"}],
+     ],
+    [[{"assignees": ["Vadim Markovtsev"]}, {"reporters": ["Waren Long"]}],
+     [["60s", "158s", "417s", "1102s", "2909s", "7676s", "20258s", "53456s", "141062s", "372237s",
+       "982262s", "2591999s"],
+      ["60s", "136s", "309s", "704s", "1601s", "3639s", "8271s", "18801s", "42732s", "97125s",
+       "220753s", "501745s", "1140405s", "2591999s"]],
+     [[60, 4, 18, 36, 76, 88, 42, 33, 31, 19, 81],
+      [129, 3, 6, 9, 18, 23, 21, 32, 56, 43, 57, 46, 59]],
+     [{"left": "3062s", "right": "194589s"}, {"left": "60s", "right": "364828s"}],
+     ],
+])
+async def test_jira_histograms_smoke(client, headers, with_, ticks, frequencies, interquartile):
+    for _ in range(2):
+        body = {
+            "histograms": [{
+                "metric": JIRAMetricID.JIRA_LEAD_TIME,
+                "scale": "log",
+            }],
+            **({"with": with_} if with_ is not None else {}),
+            "date_from": "2015-10-13",
+            "date_to": "2020-11-01",
+            "exclude_inactive": False,
+            "account": 1,
+        }
+        response = await client.request(
+            method="POST", path="/v1/histograms/jira", headers=headers, json=body,
+        )
+        body = (await response.read()).decode("utf-8")
+        assert response.status == 200, "Response body is : " + body
+        body = FriendlyJson.loads(body)
+        for item in body:
+            CalculatedJIRAHistogram.from_dict(item)
+        for histogram, hticks, hfrequencies, hinterquartile, hwith_ in zip(
+                body, ticks, frequencies, interquartile, with_ or [None]):
+            print(histogram)
+            assert histogram == {
+                "metric": JIRAMetricID.JIRA_LEAD_TIME,
+                "scale": "log",
+                "ticks": hticks,
+                "frequencies": hfrequencies,
+                "interquartile": hinterquartile,
+                **({"with": hwith_} if hwith_ is not None else {}),
+            }
+
+
+@pytest.mark.parametrize(
+    "metric, date_to, bins, scale, ticks, quantiles, account, status",
+    [
+        (JIRAMetricID.JIRA_RAISED, "2020-01-23", 10, "log", None, [0, 1], 1, 400),
+        (JIRAMetricID.JIRA_LEAD_TIME, "2020-01-23", -1, "log", None, [0, 1], 1, 400),
+        (JIRAMetricID.JIRA_LEAD_TIME, "2020-01-23", 10, "xxx", None, [0, 1], 1, 400),
+        (JIRAMetricID.JIRA_LEAD_TIME, "2015-01-23", 10, "linear", None, [0, 1], 1, 400),
+        (JIRAMetricID.JIRA_LEAD_TIME, "2020-01-23", 10, "linear", None, [0, 1], 2, 422),
+        (JIRAMetricID.JIRA_LEAD_TIME, "2020-01-23", 10, "linear", None, [0, 1], 4, 404),
+        (JIRAMetricID.JIRA_LEAD_TIME, "2015-11-23", 10, "linear", None, [-1, 1], 1, 400),
+        (JIRAMetricID.JIRA_LEAD_TIME, "2015-11-23", None, None, None, [0, 1], 1, 200),
+        (JIRAMetricID.JIRA_LEAD_TIME, "2015-11-23", None, None, [], [0, 1], 1, 400),
+    ],
+)
+async def test_jira_histograms_nasty_input(
+        client, headers, metric, date_to, bins, scale, ticks, quantiles, account, status):
+    body = {
+        "histograms": [{
+            "metric": metric,
+            **({"scale": scale} if scale is not None else {}),
+            **({"bins": bins} if bins is not None else {}),
+            **({"ticks": ticks} if ticks is not None else {}),
+        }],
+        "date_from": "2015-10-13",
+        "date_to": date_to,
+        "quantiles": quantiles,
+        "exclude_inactive": False,
+        "account": account,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == status, "Response body is : " + body
