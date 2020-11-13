@@ -121,7 +121,7 @@ class PullRequestMiner:
             participants: PRParticipants,
             labels: LabelFilter,
             jira: JIRAFilter,
-            pr_blacklist: Optional[Collection[str]],
+            pr_blacklist: Optional[Tuple[Collection[str], Dict[str, List[str]]]],
             truncate: bool,
             **_) -> Tuple[PRDataFrames,
                           Dict[str, Tuple[str, PullRequestFacts]],
@@ -139,8 +139,8 @@ class PullRequestMiner:
                 not cached_jira.compatible_with(jira)):
             raise CancelCache()
         to_remove = set()
-        if pr_blacklist:
-            to_remove.update(pr_blacklist)
+        if pr_blacklist is not None:
+            to_remove.update(pr_blacklist[0])
         to_remove.update(dfs.prs.index.take(np.where(
             np.in1d(dfs.prs[PullRequest.repository_full_name.key].values,
                     list(repositories), assume_unique=True, invert=True),
