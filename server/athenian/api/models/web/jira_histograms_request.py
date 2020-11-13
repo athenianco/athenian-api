@@ -11,10 +11,11 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
     """Request of `/histograms/jira`."""
 
     openapi_types = {
-        "priorities": List[str],
-        "types": List[str],
-        "labels_include": List[str],
-        "labels_exclude": List[str],
+        "priorities": Optional[List[str]],
+        "types": Optional[List[str]],
+        "epics": Optional[List[str]],
+        "labels_include": Optional[List[str]],
+        "labels_exclude": Optional[List[str]],
         "with_": Optional[List[JIRAMetricsRequestWith]],
         "histograms": List[JIRAHistogramDefinition],
         "date_from": date,
@@ -28,6 +29,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
     attribute_map = {
         "priorities": "priorities",
         "types": "types",
+        "epics": "epics",
         "labels_include": "labels_include",
         "labels_exclude": "labels_exclude",
         "with_": "with",
@@ -44,6 +46,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         self,
         priorities: Optional[List[str]] = None,
         types: Optional[List[str]] = None,
+        epics: Optional[List[str]] = None,
         labels_include: Optional[List[str]] = None,
         labels_exclude: Optional[List[str]] = None,
         with_: Optional[List[JIRAMetricsRequestWith]] = None,
@@ -59,6 +62,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
 
         :param priorities: The priorities of this JIRAHistogramsRequest.
         :param types: The types of this JIRAHistogramsRequest.
+        :param epics: The epics of this JIRAHistogramsRequest.
         :param labels_include: The labels_include of this JIRAHistogramsRequest.
         :param labels_exclude: The labels_exclude of this JIRAHistogramsRequest.
         :param with_: The with of this JIRAHistogramsRequest.
@@ -72,6 +76,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         """
         self._priorities = priorities
         self._types = types
+        self._epics = epics
         self._labels_include = labels_include
         self._labels_exclude = labels_exclude
         self._with_ = with_
@@ -84,7 +89,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         self._account = account
 
     @property
-    def priorities(self) -> List[str]:
+    def priorities(self) -> Optional[List[str]]:
         """Gets the priorities of this JIRAHistogramsRequest.
 
         Selected issue priorities.
@@ -94,7 +99,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         return self._priorities
 
     @priorities.setter
-    def priorities(self, priorities: List[str]):
+    def priorities(self, priorities: Optional[List[str]]):
         """Sets the priorities of this JIRAHistogramsRequest.
 
         Selected issue priorities.
@@ -104,7 +109,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         self._priorities = priorities
 
     @property
-    def types(self) -> List[str]:
+    def types(self) -> Optional[List[str]]:
         """Gets the types of this JIRAHistogramsRequest.
 
         Selected issue types.
@@ -114,7 +119,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         return self._types
 
     @types.setter
-    def types(self, types: List[str]):
+    def types(self, types: Optional[List[str]]):
         """Sets the types of this JIRAHistogramsRequest.
 
         Selected issue types.
@@ -124,7 +129,27 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         self._types = types
 
     @property
-    def labels_include(self) -> List[str]:
+    def epics(self) -> Optional[List[str]]:
+        """Gets the epics of this JIRAHistogramsRequest.
+
+        Selected issue epics.
+
+        :return: The epics of this JIRAHistogramsRequest.
+        """
+        return self._epics
+
+    @epics.setter
+    def epics(self, epics: Optional[List[str]]):
+        """Sets the epics of this JIRAHistogramsRequest.
+
+        Selected issue epics.
+
+        :param epics: The epics of this JIRAHistogramsRequest.
+        """
+        self._epics = epics
+
+    @property
+    def labels_include(self) -> Optional[List[str]]:
         """Gets the labels_include of this JIRAHistogramsRequest.
 
         PRs must relate to at least one JIRA issue label from the list. Several labels may be
@@ -135,7 +160,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         return self._labels_include
 
     @labels_include.setter
-    def labels_include(self, labels_include: List[str]):
+    def labels_include(self, labels_include: Optional[List[str]]):
         """Sets the labels_include of this JIRAHistogramsRequest.
 
         PRs must relate to at least one JIRA issue label from the list. Several labels may be
@@ -146,7 +171,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         self._labels_include = labels_include
 
     @property
-    def labels_exclude(self) -> List[str]:
+    def labels_exclude(self) -> Optional[List[str]]:
         """Gets the labels_exclude of this JIRAHistogramsRequest.
 
         PRs cannot relate to JIRA issue labels from the list.
@@ -156,7 +181,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         return self._labels_exclude
 
     @labels_exclude.setter
-    def labels_exclude(self, labels_exclude: List[str]):
+    def labels_exclude(self, labels_exclude: Optional[List[str]]):
         """Sets the labels_exclude of this JIRAHistogramsRequest.
 
         PRs cannot relate to JIRA issue labels from the list.

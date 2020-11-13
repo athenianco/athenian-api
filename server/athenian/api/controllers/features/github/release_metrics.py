@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedMetricsCalculator, MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
+    BinnedMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import T
 from athenian.api.controllers.settings import ReleaseMatch
@@ -34,7 +34,7 @@ class ReleaseMetricCalculatorEnsemble(MetricCalculatorEnsemble):
         super().__init__(*metrics, quantiles=quantiles, class_mapping=metric_calculators)
 
 
-class ReleaseBinnedMetricCalculator(BinnedMetricsCalculator):
+class ReleaseBinnedMetricCalculator(BinnedMetricCalculator):
     """BinnedMetricCalculator adapted for releases."""
 
     ensemble_class = ReleaseMetricCalculatorEnsemble

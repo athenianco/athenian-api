@@ -1,10 +1,10 @@
-from collections import Counter
-from datetime import timezone
+from collections import Counter, defaultdict
+from datetime import datetime, timezone
 from itertools import chain, groupby
 import logging
 import marshal
 from operator import itemgetter
-from typing import List, Optional
+from typing import List, Optional, Tuple, Type, Union
 
 from aiohttp import web
 import aiomcache
@@ -19,17 +19,21 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_account_repositories, get_user_account_status
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
-from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedMetricCalculator
+from athenian.api.controllers.features.histogram import HistogramParameters, Scale
+from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHistogramCalculator, \
+    JIRABinnedMetricCalculator
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, Priority, User
 from athenian.api.models.state.models import AccountJiraInstallation
-from athenian.api.models.web import CalculatedJIRAMetricValues, CalculatedLinearMetricValues, \
+from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
+    CalculatedLinearMetricValues, \
     FilterJIRAStuff, FoundJIRAStuff, \
-    InvalidRequestError, \
-    JIRAEpic, JIRALabel, JIRAMetricsRequest, JIRAPriority, JIRAUser, NoSourceDataError
+    Interquartile, InvalidRequestError, \
+    JIRAEpic, JIRAHistogramsRequest, JIRALabel, JIRAMetricsRequest, JIRAPriority, JIRAUser, \
+    NoSourceDataError
 from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
 from athenian.api.request import AthenianWebRequest
@@ -230,21 +234,25 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     ))
 
 
-async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
-    """Calculate metrics over JIRA issue activities."""
+async def _calc_jira_entry(request: AthenianWebRequest,
+                           body: dict,
+                           model: Union[Type[JIRAMetricsRequest], Type[JIRAHistogramsRequest]],
+                           ) -> Tuple[Union[JIRAMetricsRequest, JIRAHistogramsRequest],
+                                      List[List[datetime]],
+                                      pd.DataFrame]:
     try:
-        filt = JIRAMetricsRequest.from_dict(body)
+        filt = model.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+        raise ResponseError(InvalidRequestError("?", detail=str(e))) from None
     tasks = [
         get_user_account_status(request.uid, filt.account, request.sdb, request.cache),
         get_account_repositories(filt.account, request.sdb),
         get_jira_installation(filt.account, request.sdb, request.cache),
     ]
     status, repos, jira_id = await gather(*tasks, op="sdb")
-    time_intervals, tzoffset = split_to_time_intervals(
-        filt.date_from, filt.date_to, filt.granularities, filt.timezone)
+    time_intervals, _ = split_to_time_intervals(
+        filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone)
     tasks = [
         extract_branches([r.split("/", 1)[1] for r in repos], request.mdb, request.cache),
         Settings.from_request(request, filt.account).list_release_matches(repos),
@@ -268,6 +276,12 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
         default_branches, release_settings,
         request.mdb, request.pdb, request.cache,
     )
+    return filt, time_intervals, issues
+
+
+async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Calculate metrics over JIRA issue activities."""
+    filt, time_intervals, issues = await _calc_jira_entry(request, body, JIRAMetricsRequest)
     calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1])
     with_groups = _split_issues_by_with(issues, filt.with_)
     metric_values = calc(issues, time_intervals, with_groups)
@@ -316,4 +330,30 @@ def _split_issues_by_with(issues: pd.DataFrame,
 
 async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms over JIRA issue activities."""
-    raise NotImplementedError
+    filt, time_intervals, issues = await _calc_jira_entry(request, body, JIRAHistogramsRequest)
+    defs = defaultdict(list)
+    for h in (filt.histograms or []):
+        defs[HistogramParameters(
+            scale=Scale[h.scale.upper()] if h.scale is not None else None,
+            bins=h.bins,
+            ticks=tuple(h.ticks) if h.ticks is not None else None,
+        )].append(h.metric)
+    try:
+        calc = JIRABinnedHistogramCalculator(defs.values(), filt.quantiles or [0, 1])
+    except KeyError as e:
+        raise ResponseError(InvalidRequestError("Unsupported metric: %s" % e)) from None
+    with_groups = _split_issues_by_with(issues, filt.with_)
+    histograms = calc(issues, time_intervals, with_groups, [k.__dict__ for k in defs])
+    result = []
+    for metrics, def_hists in zip(defs.values(), histograms):
+        for with_, with_hists in zip(filt.with_ or [None], def_hists):
+            for metric, histogram in zip(metrics, with_hists[0][0]):
+                result.append(CalculatedJIRAHistogram(
+                    with_=with_,
+                    metric=metric,
+                    scale=histogram.scale.name.lower(),
+                    ticks=histogram.ticks,
+                    frequencies=histogram.frequencies,
+                    interquartile=Interquartile(*histogram.interquartile),
+                ))
+    return model_response(result)

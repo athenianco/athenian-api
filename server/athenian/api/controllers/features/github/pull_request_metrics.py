@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from enum import IntEnum
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Type
 
 import numpy as np
 import pandas as pd
@@ -8,13 +8,15 @@ import pandas as pd
 from athenian.api.controllers.features.histogram import Histogram
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedEnsemblesCalculator, BinnedMetricsCalculator, Counter, HistogramCalculator, \
-    HistogramCalculatorEnsemble, M, MetricCalculator, MetricCalculatorEnsemble, \
-    RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
+    BinnedEnsemblesCalculator, BinnedHistogramCalculator, BinnedMetricCalculator, Counter, \
+    HistogramCalculator, HistogramCalculatorEnsemble, M, make_register_metric, MetricCalculator, \
+    MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.models.web import PullRequestMetricID
+
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[HistogramCalculator]] = {}
+register_metric = make_register_metric(metric_calculators, histogram_calculators)
 
 
 class PullRequestMetricCalculatorEnsemble(MetricCalculatorEnsemble):
@@ -60,36 +62,17 @@ class PullRequestBinnedSplitter(BinnedEnsemblesCalculator[M]):
 
 
 class PullRequestBinnedMetricCalculator(PullRequestBinnedSplitter[Metric],
-                                        BinnedMetricsCalculator):
+                                        BinnedMetricCalculator):
     """BinnedMetricCalculator adapted for pull requests."""
 
     ensemble_class = PullRequestMetricCalculatorEnsemble
 
 
 class PullRequestBinnedHistogramCalculator(PullRequestBinnedSplitter[Histogram],
-                                           BinnedEnsemblesCalculator[Histogram]):
-    """BinnedEnsemblesCalculator adapted for pull request histograms."""
+                                           BinnedHistogramCalculator):
+    """BinnedHistogramCalculator adapted for pull request histograms."""
 
     ensemble_class = PullRequestHistogramCalculatorEnsemble
-
-    def _aggregate_ensembles(self, kwargs: Iterable[Dict[str, Any]],
-                             ) -> List[Dict[str, List[List[Metric]]]]:
-        return [{k: v for k, v in ensemble.histograms(**ekw).items()}
-                for ensemble, ekw in zip(self.ensembles, kwargs)]
-
-
-def register_metric(name: str):
-    """Keep track of the PR metric calculators and generate the histogram calculator."""
-    assert isinstance(name, str)
-
-    def register_with_name(cls: Type[MetricCalculator]):
-        metric_calculators[name] = cls
-        if not issubclass(cls, SumMetricCalculator):
-            histogram_calculators[name] = \
-                type("HistogramOf" + cls.__name__, (cls, HistogramCalculator), {})
-        return cls
-
-    return register_with_name
 
 
 @register_metric(PullRequestMetricID.PR_WIP_TIME)
