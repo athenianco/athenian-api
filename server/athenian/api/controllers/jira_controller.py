@@ -110,15 +110,17 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                         )))
         epic_ids = [r[Issue.id.key] for r in epic_rows]
         children_rows = await mdb.fetch_all(
-            select([Issue.epic_id, Issue.key, Issue.status, Issue.type])
+            select([Issue.epic_id, Issue.key, Issue.status, Issue.type, Issue.updated])
             .where(Issue.epic_id.in_(epic_ids))
             .order_by(Issue.epic_id))
         children = {k: [i[1] for i in g] for k, g in groupby(
-            ((r[0], [r[i] for i in range(1, 4)]) for r in children_rows), key=itemgetter(0))}
+            ((r[0], [r[i] for i in range(1, 5)]) for r in children_rows), key=itemgetter(0))}
         epics = sorted(JIRAEpic(id=r[Issue.key.key],
                                 title=r[Issue.title.key],
-                                updated=r[Issue.updated.key],
-                                children=[JIRAEpicChild(*c) for c in children.get(
+                                updated=max(chain(
+                                    (r[Issue.updated.key],),
+                                    (c[-1] for c in children.get(r[Issue.id.key], [])))),
+                                children=[JIRAEpicChild(*c[:-1]) for c in children.get(
                                     r[Issue.id.key], [])])
                        for r in epic_rows)
         if mdb.url.dialect == "sqlite":

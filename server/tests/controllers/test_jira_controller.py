@@ -62,7 +62,7 @@ async def test_filter_jira_smoke(client, headers):
     ]
     assert model.epics == [
         JIRAEpic(id="DEV-70", title="Show the installation progress in the waiting page",
-                 updated=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                 updated=datetime(2020, 7, 27, 16, 56, 22, tzinfo=tzutc()),
                  children=[JIRAEpicChild("DEV-365", "Released", "Story"),
                            JIRAEpicChild("DEV-183", "Closed", "Task"),
                            JIRAEpicChild("DEV-315", "Released", "Story"),
