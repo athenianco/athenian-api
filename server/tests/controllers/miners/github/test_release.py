@@ -816,11 +816,11 @@ async def test__fetch_repository_commits_full(mdb, pdb, dag, cache):
     await wait_deferred()
     assert len(commits) == 1
     assert len(commits["src-d/go-git"][0]) == 1919
-    branches = branches.iloc[:1]
+    branches = branches[branches[Branch.branch_name.key] == "master"]
     commits = await fetch_repository_commits(commits, branches, cols, False, mdb, pdb, cache)
     await wait_deferred()
     assert len(commits) == 1
-    assert len(commits["src-d/go-git"][0]) == 1919  # without force-pushed commits
+    assert len(commits["src-d/go-git"][0]) == 1919  # with force-pushed commits
     commits = await fetch_repository_commits(commits, branches, cols, True, mdb, pdb, cache)
     await wait_deferred()
     assert len(commits) == 1
@@ -833,7 +833,7 @@ async def test__find_dead_merged_prs_smoke(mdb, pdb, dag):
         select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
         mdb, PullRequest, index=PullRequest.node_id.key)
     branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
-    branches = branches.iloc[:1]
+    branches = branches[branches[Branch.branch_name.key] == "master"]
     branches[Branch.commit_date] = [datetime.now(timezone.utc)]
     dead_prs = await _find_dead_merged_prs(prs, dag, branches, mdb, pdb, None)
     assert len(dead_prs) == 159
@@ -850,7 +850,7 @@ async def test__find_dead_merged_prs_no_branches(mdb, pdb, dag):
         select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
         mdb, PullRequest, index=PullRequest.node_id.key)
     branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
-    branches = branches.iloc[:1]
+    branches = branches[branches[Branch.branch_name.key] == "master"]
     branches[Branch.repository_full_name.key] = "xxx"
     branches[Branch.commit_date] = [datetime.now(timezone.utc)]
     dags = dag.copy()
