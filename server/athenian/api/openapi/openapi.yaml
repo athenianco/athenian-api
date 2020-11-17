@@ -5103,10 +5103,15 @@ components:
           type: string
         timezone:
           $ref: '#/components/schemas/TimeZone'
+        exclude_inactive:
+          description: Value indicating whether issues with the last update older
+            than `date_from` should be ignored.
+          type: boolean
       required:
       - account
       - date_from
       - date_to
+      - exclude_inactive
       type: object
     ReleaseMetricsRequest:
       additionalProperties: false
