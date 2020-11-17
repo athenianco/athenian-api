@@ -1,7 +1,9 @@
 import pytest
+from sqlalchemy import delete, insert, select, update
 
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.models.metadata.github import Branch
 
 
 async def test_extract_branches_zero(mdb):
@@ -32,3 +34,54 @@ async def test_extract_branches_cache(mdb, cache):
     assert defaults == {"src-d/go-git": "master"}
     with pytest.raises(AttributeError):
         await extract_branches(["src-d/go-git", "src-d/gitbase"], None, cache)
+
+
+async def test_extract_branches_main(mdb):
+    await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
+        Branch.is_default: False,
+        Branch.branch_name: "main",
+    }))
+    try:
+        _, defaults = await extract_branches(["src-d/go-git"], mdb, None)
+        assert defaults == {"src-d/go-git": "main"}
+    finally:
+        await mdb.execute(update(Branch).where(Branch.branch_name == "main").values({
+            Branch.is_default: True,
+            Branch.branch_name: "master",
+        }))
+
+
+async def test_extract_branches_max_date(mdb):
+    await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
+        Branch.is_default: False,
+        Branch.branch_name: "whatever_it_takes",
+    }))
+    try:
+        _, defaults = await extract_branches(["src-d/go-git"], mdb, None)
+        assert defaults == {"src-d/go-git": "whatever_it_takes"}
+    finally:
+        await mdb.execute(update(Branch).where(Branch.branch_name == "whatever_it_takes").values({
+            Branch.is_default: True,
+            Branch.branch_name: "master",
+        }))
+
+
+async def test_extract_branches_only_one(mdb):
+    branches = await mdb.fetch_all(select([Branch]).where(Branch.branch_name != "master"))
+    await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
+        Branch.is_default: False,
+        Branch.branch_name: "whatever_it_takes",
+    }))
+    try:
+        await mdb.execute(delete(Branch).where(Branch.branch_name != "whatever_it_takes"))
+        try:
+            _, defaults = await extract_branches(["src-d/go-git"], mdb, None)
+            assert defaults == {"src-d/go-git": "whatever_it_takes"}
+        finally:
+            for branch in branches:
+                await mdb.execute(insert(Branch).values(branch))
+    finally:
+        await mdb.execute(update(Branch).where(Branch.branch_name == "whatever_it_takes").values({
+            Branch.is_default: True,
+            Branch.branch_name: "master",
+        }))
