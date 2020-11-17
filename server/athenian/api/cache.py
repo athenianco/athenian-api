@@ -12,6 +12,7 @@ import aiomcache
 import lz4.frame
 from prometheus_client import CollectorRegistry, Counter, Histogram
 from prometheus_client.utils import INF
+import sentry_sdk
 from xxhash import xxh64_hexdigest
 
 from athenian.api import metadata
@@ -99,10 +100,10 @@ def cached(exptime: Union[int, Callable[..., int]],
             client = discover_cache(**args_dict)
             cache_key = None
             if client is not None:
-                cache_key = _gen_cache_key(args_dict)
-                if cache_key is not None:
+                if (cache_key := _gen_cache_key(args_dict)) is not None:
                     try:
-                        buffer = await client.get(cache_key)
+                        with sentry_sdk.start_span(op="get " + cache_key.hex()):
+                            buffer = await client.get(cache_key)
                     except (aiomcache.exceptions.ClientException, IncompleteReadError) as e:
                         log.exception("Failed to fetch cached %s/%s: %s: %s",
                                       full_name, cache_key.decode(), type(e).__name__, e)
@@ -111,7 +112,8 @@ def cached(exptime: Union[int, Callable[..., int]],
                     buffer = None
                 if buffer is not None:
                     try:
-                        result = deserialize(lz4.frame.decompress(buffer))
+                        with sentry_sdk.start_span(op="deserialize", description=str(len(buffer))):
+                            result = deserialize(lz4.frame.decompress(buffer))
                     except Exception as e:
                         log.error("Failed to deserialize cached %s/%s: %s: %s",
                                   full_name, cache_key.decode(), type(e).__name__, e)
@@ -122,7 +124,8 @@ def cached(exptime: Union[int, Callable[..., int]],
                         ignore = False
                         if postprocess is not None:
                             try:
-                                result = postprocess(result=result, **args_dict)
+                                with sentry_sdk.start_span(op="postprocess"):
+                                    result = postprocess(result=result, **args_dict)
                             except CancelCache:
                                 log.info("%s/%s was ignored", full_name, cache_key.decode())
                                 client.metrics["ignored"].labels(
@@ -146,9 +149,11 @@ def cached(exptime: Union[int, Callable[..., int]],
             if cache_key is not None:
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
                 try:
-                    payload = lz4.frame.compress(serialize(result),
-                                                 block_size=lz4.frame.BLOCKSIZE_MAX1MB,
-                                                 compression_level=6)
+                    with sentry_sdk.start_span(op="serialize") as span:
+                        payload = lz4.frame.compress(serialize(result),
+                                                     block_size=lz4.frame.BLOCKSIZE_MAX1MB,
+                                                     compression_level=6)
+                        span.description = str(len(payload))
                 except Exception as e:
                     log.error("Failed to serialize %s/%s: %s: %s",
                               full_name, cache_key.decode(), type(e).__name__, e)
@@ -170,7 +175,8 @@ def cached(exptime: Union[int, Callable[..., int]],
                                 .labels(__package__, __version__, full_name) \
                                 .observe(len(payload))
                             client.metrics["context"]["misses"].get()[full_name] += 1
-                    await defer(set_cache_item(), "set_cache_items(%s)" % func.__qualname__)
+                    await defer(set_cache_item(), "set_cache_items(%s, %d)" % (
+                        func.__qualname__, len(payload)))
             return result
 
         async def reset_cache(*args, **kwargs) -> bool:
