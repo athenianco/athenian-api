@@ -192,8 +192,7 @@ async def fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarray
     if tasks:
         new_dags = await gather(*tasks, op="fetch_repository_commits/mdb")
         sql_values = []
-        for nd in new_dags:
-            repo, hashes, vertexes, edges = nd
+        for repo, hashes, vertexes, edges in new_dags:
             assert (hashes[1:] > hashes[:-1]).all(), repo
             sql_values.append(GitHubCommitHistory(
                 repository_full_name=repo,
@@ -213,9 +212,9 @@ async def fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarray
         else:
             raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
         await defer(pdb.execute_many(sql, sql_values), "fetch_repository_commits/pdb")
-    for repo in repos:
+    for repo, pdag in repos.items():
         if repo not in result:
-            result[repo] = _empty_dag()
+            result[repo] = _empty_dag() if prune else pdag
     return result
 
 
