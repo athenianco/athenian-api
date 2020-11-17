@@ -99,15 +99,19 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
     @sentry_span
     async def epic_flow():
+        filters = [
+            Issue.acc_id == jira_id,
+            Issue.type == "Epic",
+            Issue.created < time_to,
+            coalesce(AthenianIssue.resolved >= time_from, true()),
+        ]
+        if filt.exclude_inactive:
+            filters.append(Issue.updated >= time_from)
         epic_rows = await mdb.fetch_all(
             select([Issue.id, Issue.key, Issue.title, Issue.updated])
             .select_from(outerjoin(Issue, AthenianIssue, and_(Issue.acc_id == AthenianIssue.acc_id,
                                                               Issue.id == AthenianIssue.id)))
-            .where(and_(Issue.acc_id == jira_id,
-                        Issue.type == "Epic",
-                        Issue.created < time_to,
-                        coalesce(AthenianIssue.resolved >= time_from, true()),
-                        )))
+            .where(and_(*filters)))
         epic_ids = [r[Issue.id.key] for r in epic_rows]
         children_rows = await mdb.fetch_all(
             select([Issue.epic_id, Issue.key, Issue.status, Issue.type, Issue.updated])
@@ -130,15 +134,19 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
     @sentry_span
     async def issue_flow():
+        filters = [
+            Issue.acc_id == jira_id,
+            Issue.created < time_to,
+            coalesce(AthenianIssue.resolved >= time_from, true()),
+        ]
+        if filt.exclude_inactive:
+            filters.append(Issue.updated >= time_from)
         property_rows = await mdb.fetch_all(
             select([Issue.id, Issue.labels, Issue.components, Issue.type, Issue.updated,
                     Issue.assignee_id, Issue.reporter_id, Issue.commenters_ids, Issue.priority_id])
             .select_from(outerjoin(Issue, AthenianIssue, and_(Issue.acc_id == AthenianIssue.acc_id,
                                                               Issue.id == AthenianIssue.id)))
-            .where(and_(Issue.acc_id == jira_id,
-                        Issue.created < time_to,
-                        coalesce(AthenianIssue.resolved >= time_from, true()),
-                        )))
+            .where(and_(*filters)))
         components = Counter(chain.from_iterable(
             (r[Issue.components.key] or ()) for r in property_rows))
         people = set(r[Issue.reporter_id.key] for r in property_rows)

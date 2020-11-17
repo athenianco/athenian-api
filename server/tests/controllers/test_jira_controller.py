@@ -7,8 +7,8 @@ import pytest
 
 from athenian.api import FriendlyJson
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
-    CalculatedLinearMetricValues, \
-    FoundJIRAStuff, JIRAEpic, JIRALabel, JIRAMetricID, JIRAPriority, JIRAUser
+    CalculatedLinearMetricValues, FoundJIRAStuff, JIRAEpic, JIRALabel, JIRAMetricID, \
+    JIRAPriority, JIRAUser
 from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 
 
@@ -18,6 +18,7 @@ async def test_filter_jira_smoke(client, headers):
         "date_to": "2020-01-23",
         "timezone": 120,
         "account": 1,
+        "exclude_inactive": False,
     }
     response = await client.request(
         method="POST", path="/v1/filter/jira", headers=headers, json=body,
@@ -112,6 +113,36 @@ async def test_filter_jira_smoke(client, headers):
                      color="9AA1B2")]
 
 
+@pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [
+    [False, 33, 34,
+     ["Bug", "Design Document", "Epic", "Incident", "Story", "Sub-task", "Subtask", "Task"],
+     15, 6],
+    [True, 29, 13,
+     ["Bug", "Epic", "Incident", "Story", "Sub-task", "Task"],
+     11, 6],
+])
+async def test_filter_jira_exclude_inactive(
+        client, headers, exclude_inactive, labels, epics, types, users, priorities):
+    body = {
+        "date_from": "2020-09-13",
+        "date_to": "2020-10-23",
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": exclude_inactive,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FoundJIRAStuff.from_dict(json.loads(body))
+    assert len(model.labels) == labels
+    assert len(model.epics) == epics
+    assert model.issue_types == types
+    assert len(model.users) == users
+    assert len(model.priorities) == priorities
+
+
 @pytest.mark.parametrize("account, date_to, timezone, status", [
     (1, "2015-10-12", 0, 400),
     (2, "2020-10-12", 0, 422),
@@ -124,6 +155,7 @@ async def test_filter_jira_nasty_input(client, headers, account, date_to, timezo
         "date_to": date_to,
         "timezone": timezone,
         "account": account,
+        "exclude_inactive": True,
     }
     response = await client.request(
         method="POST", path="/v1/filter/jira", headers=headers, json=body,
