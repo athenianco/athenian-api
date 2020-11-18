@@ -19,8 +19,8 @@ class User(Model):
         "name": Optional[str],
         "email": Optional[str],
         "picture": Optional[str],
-        "updated": str,
-        "accounts": object,
+        "updated": Optional[str],
+        "accounts": Optional[object],
     }
 
     attribute_map = {
@@ -244,7 +244,7 @@ class User(Model):
         self._picture = picture
 
     @property
-    def updated(self) -> datetime:
+    def updated(self) -> Optional[datetime]:
         """Gets the updated of this User.
 
         Date and time of the last profile update.
@@ -254,20 +254,17 @@ class User(Model):
         return self._updated
 
     @updated.setter
-    def updated(self, updated: datetime):
+    def updated(self, updated: Optional[datetime]):
         """Sets the updated of this User.
 
         Date and time of the last profile update.
 
         :param updated: The updated of this User.
         """
-        if updated is None:
-            raise ValueError("Invalid value for `updated`, must not be `None`")
-
         self._updated = updated
 
     @property
-    def accounts(self) -> dict:
+    def accounts(self) -> Optional[dict]:
         """Gets the accounts of this User.
 
         Mapping between account IDs the user is a member of and is_admin flags.
@@ -278,14 +275,11 @@ class User(Model):
         return self._accounts
 
     @accounts.setter
-    def accounts(self, accounts: dict):
+    def accounts(self, accounts: Optional[dict]):
         """Sets the accounts of this User.
 
         Mapping between account IDs the user is a member of and is_admin flags.
 
         :param accounts: The accounts of this User.
         """
-        if accounts is None:
-            raise ValueError("Invalid value for `accounts`, must not be `None`")
-
         self._accounts = accounts

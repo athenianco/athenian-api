@@ -3,14 +3,17 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.ext.declarative import declarative_base
 
 
-Base = declarative_base()
+class AccountIDMixin:
+    acc_id = Column(BigInteger, primary_key=True)
+
+
+Base = declarative_base(cls=AccountIDMixin)
 Base.__table_args__ = {"schema": "jira"}
 
 
 class Epic(Base):
     __tablename__ = "epic"
 
-    acc_id = Column(BigInteger, primary_key=True)
     id = Column(Text, primary_key=True)
     key = Column(Text, nullable=False)
     name = Column(Text, nullable=False)
@@ -21,7 +24,6 @@ class Epic(Base):
 class Issue(Base):
     __tablename__ = "issue"
 
-    acc_id = Column(BigInteger, primary_key=True)
     id = Column(Text, primary_key=True)
     project_id = Column(Text, nullable=False)
     parent_id = Column(Text)
@@ -50,7 +52,6 @@ class Issue(Base):
 class Component(Base):
     __tablename__ = "component"
 
-    acc_id = Column(BigInteger, primary_key=True)
     id = Column(Text, primary_key=True)
     name = Column(Text, nullable=False)
 
@@ -58,7 +59,6 @@ class Component(Base):
 class User(Base):
     __tablename__ = "user"
 
-    acc_id = Column(BigInteger, primary_key=True)
     id = Column(Text, primary_key=True)
     type = Column(Text, nullable=False)
     display_name = Column(Text, nullable=False)
@@ -68,7 +68,6 @@ class User(Base):
 class Priority(Base):
     __tablename__ = "priority"
 
-    acc_id = Column(BigInteger, primary_key=True)
     id = Column(Text, primary_key=True)
     name = Column(Text, nullable=False)
     rank = Column(SmallInteger, nullable=False)
@@ -79,7 +78,20 @@ class Priority(Base):
 class AthenianIssue(Base):
     __tablename__ = "athenian_issue"
 
-    acc_id = Column(BigInteger, primary_key=True)
     id = Column(Text, primary_key=True)
     work_began = Column(TIMESTAMP(timezone=True))
     resolved = Column(TIMESTAMP(timezone=True))
+
+
+class Installation(Base):
+    __tablename__ = "installation"
+
+    base_url = Column(Text)
+
+
+class Project(Base):
+    __tablename__ = "project"
+
+    id = Column(Text, primary_key=True)
+    key = Column(Text)
+    name = Column(Text)

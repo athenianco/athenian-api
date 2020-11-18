@@ -1,3 +1,4 @@
+import pickle
 import struct
 from typing import List, Optional, Tuple
 
@@ -5,6 +6,7 @@ import aiomcache
 from sqlalchemy import and_, select
 
 from athenian.api.cache import cached, max_exptime
+from athenian.api.models.metadata.github import Organization
 from athenian.api.models.state.models import Account, AccountGitHubAccount, RepositorySet, \
     UserAccount
 from athenian.api.models.web import NoSourceDataError, NotFoundError
@@ -21,14 +23,14 @@ from athenian.api.typing_utils import DatabaseLike
     refresh_on_access=True,
 )
 async def get_metadata_account_ids(account: int,
-                                   sdb_conn: DatabaseLike,
+                                   sdb: DatabaseLike,
                                    cache: Optional[aiomcache.Client],
                                    ) -> Tuple[int, ...]:
     """Fetch the metadata account IDs for the given API account ID."""
-    ids = await sdb_conn.fetch_all(select([AccountGitHubAccount.id])
-                                   .where(AccountGitHubAccount.account_id == account))
+    ids = await sdb.fetch_all(select([AccountGitHubAccount.id])
+                              .where(AccountGitHubAccount.account_id == account))
     if len(ids) == 0:
-        acc_exists = await sdb_conn.fetch_val(select([Account.id]).where(Account.id == account))
+        acc_exists = await sdb.fetch_val(select([Account.id]).where(Account.id == account))
         if not acc_exists:
             raise ResponseError(NotFoundError(detail="Account %d does not exist" % account))
         raise ResponseError(NoSourceDataError(
@@ -58,10 +60,10 @@ async def get_user_account_status(user: str,
 
 
 async def get_account_repositories(account: int,
-                                   sdb_conn: DatabaseLike,
+                                   sdb: DatabaseLike,
                                    with_prefix=True) -> List[str]:
     """Fetch all the repositories belonging to the account."""
-    repos = await sdb_conn.fetch_one(select([RepositorySet.items]).where(and_(
+    repos = await sdb.fetch_one(select([RepositorySet.items]).where(and_(
         RepositorySet.owner_id == account,
         RepositorySet.name == RepositorySet.ALL,
     )))
@@ -72,3 +74,20 @@ async def get_account_repositories(account: int,
     if not with_prefix:
         repos = [r.split("/", 1)[1] for r in repos]
     return repos
+
+
+@cached(
+    exptime=24 * 60 * 60,  # 1 day
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda account, **_: (account,),
+)
+async def get_account_organizations(account: int,
+                                    sdb: DatabaseLike,
+                                    mdb: DatabaseLike,
+                                    cache: Optional[aiomcache.Client],
+                                    ) -> List[Organization]:
+    """Fetch the list of GitHub organizations installed for the account."""
+    ghids = await get_metadata_account_ids(account, sdb, cache)
+    rows = await mdb.fetch_all(select([Organization]).where(Organization.acc_id.in_(ghids)))
+    return [Organization(**r) for r in rows]

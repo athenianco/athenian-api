@@ -247,14 +247,15 @@ async def load_account_state(account: int,
                 return login
 
             try:
-                await load_account_reposets(
+                reposets = await load_account_reposets(
                     account, load_login, [RepositorySet.name], sdb, mdb, cache, slack)
             except ResponseError as e2:
                 log.warning("account %d: ResponseError: %s", account, e2.response)
             except Exception as e:
                 sentry_sdk.capture_exception(e)
             else:
-                return await load_account_state(account, log, sdb, mdb, cache, slack, True)
+                if reposets:
+                    return await load_account_state(account, log, sdb, mdb, cache, slack, True)
         log.warning("account %d: ResponseError: %s", account, e1.response)
         return None
     except Exception as e:

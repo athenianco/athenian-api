@@ -30,6 +30,7 @@ from athenian.api.models.web import GenericError
 from athenian.api.models.web.user import User
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
+from athenian.api.tracing import sentry_span
 
 
 class Auth0:
@@ -215,6 +216,7 @@ class Auth0:
             return None
         return next(iter(users.values()))
 
+    @sentry_span
     async def get_users(self, users: Sequence[str]) -> Dict[str, User]:
         """
         Retrieve several users using Auth0 mgmt API by ID.

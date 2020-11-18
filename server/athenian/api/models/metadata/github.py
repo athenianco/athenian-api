@@ -23,6 +23,10 @@ class IDMixinNG:
         return synonym("id")
 
 
+class AccountMixin:
+    acc_id = Column(BigInteger, primary_key=True)
+
+
 class BodyMixin:
     body = Column(Text)
 
@@ -361,10 +365,9 @@ class NodePullRequestJiraIssues(Base, IDMixin):
     jira_id = Column(Text, nullable=False)
 
 
-class NodeUser(Base):
+class NodeUser(Base, IDMixinNG):
     __tablename__ = "github_node_user"
 
-    id = Column(Text, primary_key=True)
     database_id = Column(BigInteger, unique=True)
     login = Column(Text, nullable=False)
 
@@ -374,3 +377,11 @@ class SchemaMigration(Base):
 
     version = Column(BigInteger, primary_key=True)
     dirty = Column(Boolean, nullable=False)
+
+
+class Organization(Base, IDMixinNG, AccountMixin):
+    __tablename__ = "github_node_organization"
+
+    login = Column(Text, nullable=False)
+    name = Column(Text)
+    avatar_url = Column(Text)

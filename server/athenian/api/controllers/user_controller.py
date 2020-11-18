@@ -1,16 +1,26 @@
+import asyncio
+import pickle
+from typing import Optional
+
 from aiohttp import web
+import aiomcache
+import sentry_sdk
 from sqlalchemy import and_, delete, select, update
 
-from athenian.api.controllers.account import get_user_account_status
+from athenian.api.async_utils import gather
+from athenian.api.cache import cached, max_exptime
+from athenian.api.controllers.account import get_account_organizations, get_user_account_status
+from athenian.api.controllers.jira import get_jira_installation
+from athenian.api.models.metadata.jira import Installation as JIRAInstallation, \
+    Project as JIRAProject
 from athenian.api.models.state.models import AccountFeature, Feature, FeatureComponent, God, \
     UserAccount
-from athenian.api.models.web import ForbiddenError, NotFoundError
-from athenian.api.models.web.account import Account
-from athenian.api.models.web.account_user_change_request import AccountUserChangeRequest, \
+from athenian.api.models.web import Account, AccountUserChangeRequest, ForbiddenError, \
+    JIRAInstallation as WebJIRAInstallation, NotFoundError, Organization, ProductFeature, \
     UserChangeStatus
-from athenian.api.models.web.product_feature import ProductFeature
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
+from athenian.api.typing_utils import DatabaseLike
 
 
 async def get_user(request: AthenianWebRequest) -> web.Response:
@@ -19,8 +29,8 @@ async def get_user(request: AthenianWebRequest) -> web.Response:
     return model_response(user)
 
 
-async def get_account_members(request: AthenianWebRequest, id: int) -> web.Response:
-    """Return the members of the account."""
+async def get_account_details(request: AthenianWebRequest, id: int) -> web.Response:
+    """Return the members and installed GitHub and JIRA organizations of the account."""
     user_id = request.uid
     users = await request.sdb.fetch_all(select([UserAccount]).where(UserAccount.account_id == id))
     if len(users) == 0:
@@ -36,10 +46,56 @@ async def get_account_members(request: AthenianWebRequest, id: int) -> web.Respo
     for user in users:
         role = admins if user[UserAccount.is_admin.key] else regulars
         role.append(user[UserAccount.user_id.key])
-    users = await request.app["auth"].get_users(regulars + admins)
+    tasks = [
+        request.app["auth"].get_users(regulars + admins),
+        get_account_organizations(id, request.sdb, request.mdb, request.cache),
+        _get_account_jira(id, request.sdb, request.mdb, request.cache),
+    ]
+    with sentry_sdk.start_span(op="fetch"):
+        users, orgs, jira = await asyncio.gather(*tasks, return_exceptions=True)
+    # not orgs! The account is probably being installed.
+    # not jira! It raises ResponseError if no JIRA installation exists.
+    if isinstance(users, Exception):
+        raise users from None
+    if isinstance(orgs, ResponseError):
+        orgs = []
+    elif isinstance(orgs, Exception):
+        raise orgs from None
+    if isinstance(jira, ResponseError):
+        jira = None
+    elif isinstance(jira, Exception):
+        raise jira from None
     account = Account(regulars=[users[k] for k in regulars if k in users],
-                      admins=[users[k] for k in admins if k in users])
+                      admins=[users[k] for k in admins if k in users],
+                      organizations=[Organization(name=org.name,
+                                                  avatar_url=org.avatar_url,
+                                                  login=org.login)
+                                     for org in orgs],
+                      jira=jira)
     return model_response(account)
+
+
+@cached(
+    exptime=max_exptime,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda account, **_: (account,),
+    refresh_on_access=True,
+)
+async def _get_account_jira(account: int,
+                            sdb: DatabaseLike,
+                            mdb: DatabaseLike,
+                            cache: Optional[aiomcache.Client]) -> WebJIRAInstallation:
+    jira_id = await get_jira_installation(account, sdb, cache)
+    tasks = [
+        mdb.fetch_all(select([JIRAProject.key])
+                      .where(JIRAProject.acc_id == jira_id)
+                      .order_by(JIRAProject.key)),
+        mdb.fetch_val(select([JIRAInstallation.base_url])
+                      .where(JIRAInstallation.acc_id == jira_id)),
+    ]
+    projects, base_url = await gather(*tasks)
+    return WebJIRAInstallation(url=base_url, projects=[r[0] for r in projects])
 
 
 async def get_account_features(request: AthenianWebRequest, id: int) -> web.Response:
@@ -135,4 +191,4 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
             await conn.execute(delete(UserAccount)
                                .where(and_(UserAccount.user_id == aucr.user,
                                            UserAccount.account_id == aucr.account)))
-    return await get_account_members(request, aucr.account)
+    return await get_account_details(request, aucr.account)

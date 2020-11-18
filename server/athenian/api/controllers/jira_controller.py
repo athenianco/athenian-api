@@ -2,12 +2,10 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from itertools import chain, groupby
 import logging
-import marshal
 from operator import itemgetter
 from typing import List, Optional, Tuple, Type, Union
 
 from aiohttp import web
-import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
@@ -16,70 +14,26 @@ from sqlalchemy.sql.functions import coalesce
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_account_repositories, get_user_account_status
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHistogramCalculator, \
     JIRABinnedMetricCalculator
+from athenian.api.controllers.jira import get_jira_installation
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, Priority, User
-from athenian.api.models.state.models import AccountJiraInstallation
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
-    CalculatedLinearMetricValues, \
-    FilterJIRAStuff, FoundJIRAStuff, \
-    Interquartile, InvalidRequestError, \
-    JIRAEpic, JIRAHistogramsRequest, JIRALabel, JIRAMetricsRequest, JIRAPriority, JIRAUser, \
-    NoSourceDataError
+    CalculatedLinearMetricValues, FilterJIRAStuff, FoundJIRAStuff, Interquartile, \
+    InvalidRequestError, JIRAEpic, JIRAHistogramsRequest, JIRALabel, JIRAMetricsRequest, \
+    JIRAPriority, JIRAUser
 from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike
-
-
-@sentry_span
-@cached(
-    exptime=max_exptime,
-    serialize=marshal.dumps,
-    deserialize=marshal.loads,
-    key=lambda account, **_: (account,),
-    refresh_on_access=True,
-)
-async def get_jira_installation(account: int,
-                                sdb: DatabaseLike,
-                                cache: Optional[aiomcache.Client],
-                                ) -> int:
-    """
-    Retrieve the JIRA installation ID belonging to the account or raise an exception.
-
-    Raise ResponseError if no installation exists.
-    """
-    jira_id = await sdb.fetch_val(select([AccountJiraInstallation.id])
-                                  .where(AccountJiraInstallation.account_id == account))
-    if jira_id is None:
-        raise ResponseError(NoSourceDataError(
-            detail="JIRA has not been installed to the metadata yet."))
-    return jira_id
-
-
-async def get_jira_installation_or_none(account: int,
-                                        sdb: DatabaseLike,
-                                        cache: Optional[aiomcache.Client],
-                                        ) -> Optional[int]:
-    """
-    Retrieve the JIRA installation ID belonging to the account or raise an exception.
-
-    Return None if no installation exists.
-    """
-    try:
-        return await get_jira_installation(account, sdb, cache)
-    except ResponseError:
-        return None
 
 
 async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Response:

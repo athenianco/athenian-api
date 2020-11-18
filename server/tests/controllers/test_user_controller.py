@@ -9,7 +9,7 @@ from sqlalchemy import insert, update
 from athenian.api.async_utils import gather
 from athenian.api.controllers.user_controller import get_user
 from athenian.api.models.state.models import AccountFeature, Feature, God
-from athenian.api.models.web.product_feature import ProductFeature
+from athenian.api.models.web import Account, ProductFeature
 from athenian.api.request import AthenianWebRequest
 from tests.conftest import disable_default_user
 
@@ -79,26 +79,36 @@ async def test_get_default_user(client, headers, lazy_gkwillie):
     }
 
 
-async def test_get_account_members_smoke(client, headers):
+async def test_get_account_details_smoke(client, headers):
     response = await client.request(
-        method="GET", path="/v1/account/1/members", headers=headers, json={},
+        method="GET", path="/v1/account/1/details", headers=headers, json={},
     )
-    body = json.loads((await response.read()).decode("utf-8"))
-    assert len(body["admins"]) == 1
-    assert body["admins"][0]["name"] == "Vadim Markovtsev"
-    assert body["admins"][0]["email"] == "<classified>"  # "vadim@athenian.co"
-    assert len(body["regulars"]) == 1
-    assert body["regulars"][0]["name"] == "Eiso Kant"
-    assert body["regulars"][0]["email"] == "<classified>"  # "eiso@athenian.co"
+    body = Account.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert len(body.admins) == 1
+    assert body.admins[0].name == "Vadim Markovtsev"
+    assert body.admins[0].email == "<classified>"  # "vadim@athenian.co"
+    assert len(body.regulars) == 1
+    assert body.regulars[0].name == "Eiso Kant"
+    assert body.regulars[0].email == "<classified>"  # "eiso@athenian.co"
+    assert len(body.organizations) == 1
+    assert body.organizations[0].login == "src-d"
+    assert body.organizations[0].name == "source{d}"
+    assert body.organizations[0].avatar_url == \
+           "https://avatars3.githubusercontent.com/u/15128793?s=200&v=4"
+    assert body.jira is not None
+    assert body.jira.url == "https://athenianco.atlassian.net"
+    assert body.jira.projects == ["CON", "CS", "DEV", "ENG", "GRW", "OPS", "PRO"]
 
 
-@pytest.mark.parametrize("account, code", [[3, 403], [4, 404]])
-async def test_get_account_members_nasty_input(client, headers, account, code):
+@pytest.mark.parametrize("account, code", [[2, 200], [3, 403], [4, 404]])
+async def test_get_account_details_nasty_input(client, headers, account, code):
     response = await client.request(
-        method="GET", path="/v1/account/%d/members" % account, headers=headers, json={},
+        method="GET", path="/v1/account/%d/details" % account, headers=headers, json={},
     )
     body = json.loads((await response.read()).decode("utf-8"))
     assert response.status == code, body
+    if code == 200:
+        assert "jira" not in body
 
 
 async def test_get_account_features_smoke(client, headers):

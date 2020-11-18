@@ -10,8 +10,7 @@ from athenian.api.async_utils import gather
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
-from athenian.api.controllers.jira_controller import get_jira_installation, \
-    get_jira_installation_or_none
+from athenian.api.controllers.jira import get_jira_installation, get_jira_installation_or_none
 from athenian.api.controllers.miners.access_classes import access_classes, AccessChecker
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
