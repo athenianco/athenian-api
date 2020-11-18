@@ -62,6 +62,7 @@ from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.jira_histogram_definition import JIRAHistogramDefinition
 from athenian.api.models.web.jira_histograms_request import JIRAHistogramsRequest
+from athenian.api.models.web.jira_installation import JIRAInstallation
 from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
@@ -71,6 +72,7 @@ from athenian.api.models.web.jira_priority import JIRAPriority
 from athenian.api.models.web.jira_user import JIRAUser
 from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
+from athenian.api.models.web.organization import Organization
 from athenian.api.models.web.paginate_pull_requests_request import PaginatePullRequestsRequest
 from athenian.api.models.web.patch_token_request import PatchTokenRequest
 from athenian.api.models.web.product_feature import ProductFeature

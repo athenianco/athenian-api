@@ -16,8 +16,7 @@ from sqlalchemy.orm import aliased
 from athenian.api.async_utils import gather
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
-from athenian.api.controllers.jira_controller import get_jira_installation, \
-    get_jira_installation_or_none
+from athenian.api.controllers.jira import get_jira_installation, get_jira_installation_or_none
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
