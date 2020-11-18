@@ -361,6 +361,14 @@ class NodePullRequestJiraIssues(Base, IDMixin):
     jira_id = Column(Text, nullable=False)
 
 
+class NodeUser(Base):
+    __tablename__ = "github_node_user"
+
+    id = Column(Text, primary_key=True)
+    database_id = Column(BigInteger, unique=True)
+    login = Column(Text, nullable=False)
+
+
 class SchemaMigration(Base):
     __tablename__ = "schema_migrations"
 

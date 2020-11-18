@@ -6,10 +6,12 @@ from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from itertools import chain
 import logging
-from typing import Collection, Set
+from typing import Collection, Dict, Optional, Set, Tuple
 
+import aiomcache
 import sentry_sdk
-from sqlalchemy import and_, func, insert, select, update
+import slack
+from sqlalchemy import and_, desc, func, insert, select, update
 from tqdm import tqdm
 
 from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
@@ -23,13 +25,15 @@ from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.release_mine import mine_releases
-from athenian.api.controllers.settings import ReleaseMatch, Settings
+from athenian.api.controllers.reposet import load_account_reposets
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, Settings
 import athenian.api.db
 from athenian.api.models.metadata import dereference_schemas, PREFIXES
-from athenian.api.models.metadata.github import PullRequestLabel, User
+from athenian.api.models.metadata.github import NodeUser, PullRequestLabel, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts
-from athenian.api.models.state.models import Account, RepositorySet, Team
+from athenian.api.models.state.models import Account, RepositorySet, Team, UserAccount
+from athenian.api.models.web import InstallationProgress, NoSourceDataError, NotFoundError
 
 
 def _parse_args():
@@ -89,21 +93,9 @@ def main():
         accounts = [r[0] for r in await sdb.fetch_all(select([Account.id]))]
         log.info("Checking progress of %d accounts", len(accounts))
         for account in tqdm(accounts):
-            try:
-                progress = await fetch_github_installation_progress(
-                    account, sdb, mdb, cache)
-                settings = await Settings.from_account(
-                    account, sdb, mdb, cache, None).list_release_matches()
-            except ResponseError as e:
-                if e.response.status != HTTPStatus.UNPROCESSABLE_ENTITY:
-                    sentry_sdk.capture_exception(e)
-                log.warning("account %d: ResponseError: %s", account, e.response)
-                continue
-            except Exception as e:
-                sentry_sdk.capture_exception(e)
-                log.warning("account %d: %s: %s", account, type(e).__name__, e)
-                continue
-            account_progress_settings[account] = progress, settings
+            state = await load_account_state(account, log, sdb, mdb, cache, slack)
+            if state is not None:
+                account_progress_settings[account] = state
 
         nonlocal return_code
         return_code = await sync_labels(log, mdb, pdb)
@@ -216,6 +208,60 @@ def main():
 
     asyncio.run(sentry_wrapper())
     return return_code
+
+
+async def load_account_state(account: int,
+                             log: logging.Logger,
+                             sdb: ParallelDatabase,
+                             mdb: ParallelDatabase,
+                             cache: aiomcache.Client,
+                             slack: Optional[slack.WebClient],
+                             recursive: bool = False,
+                             ) -> Optional[Tuple[InstallationProgress,
+                                                 Dict[str, ReleaseMatchSetting]]]:
+    """Load the account's installation progress and the release settings."""
+    try:
+        progress = await fetch_github_installation_progress(
+            account, sdb, mdb, cache)
+        settings = await Settings.from_account(
+            account, sdb, mdb, cache, None).list_release_matches()
+    except ResponseError as e1:
+        if e1.response.status != HTTPStatus.UNPROCESSABLE_ENTITY:
+            sentry_sdk.capture_exception(e1)
+        elif recursive:
+            log.error("Recursive load_account_state() in account %d", account)
+        else:
+            async def load_login() -> str:
+                auth0_id = await sdb.fetch_val(select([UserAccount.user_id]).where(and_(
+                    UserAccount.account_id == account,
+                )).order_by(desc(UserAccount.is_admin)))
+                if auth0_id is None:
+                    raise ResponseError(NotFoundError(
+                        detail="There are no users in the account."))
+                db_id = int(auth0_id.split("|")[-1])
+                login = await mdb.fetch_val(select([NodeUser.login])
+                                            .where(NodeUser.database_id == db_id))
+                if login is None:
+                    raise ResponseError(NoSourceDataError(
+                        detail="Could not find the user login of %s." % auth0_id))
+                return login
+
+            try:
+                await load_account_reposets(
+                    account, load_login, [RepositorySet.name], sdb, mdb, cache, slack)
+            except ResponseError as e2:
+                log.warning("account %d: ResponseError: %s", account, e2.response)
+            except Exception as e:
+                sentry_sdk.capture_exception(e)
+            else:
+                return await load_account_state(account, log, sdb, mdb, cache, slack, True)
+        log.warning("account %d: ResponseError: %s", account, e1.response)
+        return None
+    except Exception as e:
+        sentry_sdk.capture_exception(e)
+        log.warning("account %d: %s: %s", account, type(e).__name__, e)
+        return None
+    return progress, settings
 
 
 async def create_bots_team(account: int,
