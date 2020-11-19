@@ -1325,6 +1325,99 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
+  /settings/jira/projects:
+    put:
+      operationId: set_jira_projects
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JIRAProjectsRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JIRAProjects'
+          description: Current JIRA project settings.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is not an admin of this account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user or the account was not found.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The JIRA installation does not exist.
+      security:
+      - bearerAuth: []
+      summary: Set the enabled JIRA projects.
+      tags:
+      - settings
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.settings_controller
+      x-codegen-request-body-name: body
+  /settings/jira/projects/{id}:
+    get:
+      operationId: get_jira_projects
+      parameters:
+      - description: Numeric identifier of the account.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JIRAProjects'
+          description: Current JIRA project settings.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account or account
+            not found.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The JIRA installation does not exist.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: List the current enabled JIRA project settings.
+      tags:
+      - settings
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.settings_controller
+      x-codegen-request-body-name: body
   /settings/release_match:
     put:
       operationId: set_release_match
@@ -5789,4 +5882,58 @@ components:
       - metric
       - scale
       - ticks
+      type: object
+    JIRAProjects:
+      description: List of JIRA project activity settings.
+      items:
+        $ref: '#/components/schemas/JIRAProject'
+      type: array
+    JIRAProject:
+      additionalProperties: false
+      description: JIRA project setting.
+      example:
+        name: Product Development
+        key: DEV
+        avatar_url: https://athenianco.atlassian.net/secure/projectavatar?pid=10009&avatarId=10551
+        enabled: true
+      properties:
+        name:
+          description: Long name of the project.
+          type: string
+        key:
+          description: Short prefix of the project.
+          type: string
+        avatar_url:
+          description: Avatar URL of the project.
+          format: url
+          type: string
+        enabled:
+          description: Indicates whether this project is enabled for analysis.
+          type: boolean
+      required:
+      - avatar_url
+      - enabled
+      - key
+      - name
+      type: object
+    JIRAProjectsRequest:
+      additionalProperties: false
+      description: Enable or disable a JIRA project.
+      example:
+        account: 1
+        projects:
+          ENG: false
+          DEV: true
+      properties:
+        account:
+          description: Changed account ID.
+          type: integer
+        projects:
+          additionalProperties:
+            type: boolean
+          description: Map from project keys to their enabled/disabled flags.
+          type: object
+      required:
+      - account
+      - projects
       type: object
