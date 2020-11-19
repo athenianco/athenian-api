@@ -95,3 +95,4 @@ class Project(Base):
     id = Column(Text, primary_key=True)
     key = Column(Text)
     name = Column(Text)
+    avatar_url = Column(Text)

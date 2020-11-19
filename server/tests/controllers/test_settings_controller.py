@@ -234,6 +234,24 @@ async def test_get_release_match_settings_nasty_input(client, headers, sdb, acco
     assert response.status == code
 
 
+JIRA_PROJECTS = [
+    JIRAProject(name="Content", key="CON", enabled=True,
+                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10013&avatarId=10424"),  # noqa
+    JIRAProject(name="Customer Success", key="CS", enabled=True,
+                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10012&avatarId=10419"),  # noqa
+    JIRAProject(name="Product Development", key="DEV", enabled=False,
+                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10009&avatarId=10551"),  # noqa
+    JIRAProject(name="Engineering", key="ENG", enabled=True,
+                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10003&avatarId=10404"),  # noqa
+    JIRAProject(name="Growth", key="GRW", enabled=True,
+                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10008&avatarId=10419"),  # noqa
+    JIRAProject(name="Operations", key="OPS", enabled=True,
+                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10002&avatarId=10421"),  # noqa
+    JIRAProject(name="Product", key="PRO", enabled=True,
+                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10001&avatarId=10414"),  # noqa
+]
+
+
 async def test_get_jira_projects_smoke(client, headers, sdb):
     await sdb.execute(insert(JIRAProjectSetting).values(
         JIRAProjectSetting(account_id=1, key="DEV", enabled=False)
@@ -242,22 +260,7 @@ async def test_get_jira_projects_smoke(client, headers, sdb):
         method="GET", path="/v1/settings/jira/projects/1", headers=headers)
     assert response.status == 200
     body = [JIRAProject.from_dict(i) for i in json.loads((await response.read()).decode("utf-8"))]
-    assert body == [
-        JIRAProject(name="Content", key="CON", enabled=True,
-                    avatar_url="N/A"),
-        JIRAProject(name="Customer Success", key="CS", enabled=True,
-                    avatar_url="N/A"),
-        JIRAProject(name="Product Development", key="DEV", enabled=False,
-                    avatar_url="N/A"),
-        JIRAProject(name="Engineering", key="ENG", enabled=True,
-                    avatar_url="N/A"),
-        JIRAProject(name="Growth", key="GRW", enabled=True,
-                    avatar_url="N/A"),
-        JIRAProject(name="Operations", key="OPS", enabled=True,
-                    avatar_url="N/A"),
-        JIRAProject(name="Product", key="PRO", enabled=True,
-                    avatar_url="N/A"),
-    ]
+    assert body == JIRA_PROJECTS
 
 
 @pytest.mark.parametrize("account, code", [[2, 422], [3, 404], [4, 404]])
@@ -278,22 +281,7 @@ async def test_set_jira_projects_smoke(client, headers):
         method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers)
     assert response.status == 200
     body = [JIRAProject.from_dict(i) for i in json.loads((await response.read()).decode("utf-8"))]
-    assert body == [
-        JIRAProject(name="Content", key="CON", enabled=True,
-                    avatar_url="N/A"),
-        JIRAProject(name="Customer Success", key="CS", enabled=True,
-                    avatar_url="N/A"),
-        JIRAProject(name="Product Development", key="DEV", enabled=False,
-                    avatar_url="N/A"),
-        JIRAProject(name="Engineering", key="ENG", enabled=True,
-                    avatar_url="N/A"),
-        JIRAProject(name="Growth", key="GRW", enabled=True,
-                    avatar_url="N/A"),
-        JIRAProject(name="Operations", key="OPS", enabled=True,
-                    avatar_url="N/A"),
-        JIRAProject(name="Product", key="PRO", enabled=True,
-                    avatar_url="N/A"),
-    ]
+    assert body == JIRA_PROJECTS
 
 
 @pytest.mark.parametrize("account, key, code", [[2, "DEV", 403], [3, "DEV", 404], [1, "XXX", 400]])

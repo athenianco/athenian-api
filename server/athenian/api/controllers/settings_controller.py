@@ -49,7 +49,7 @@ async def get_jira_projects(request: AthenianWebRequest,
     if jira_id is None:
         await get_user_account_status(request.uid, id, request.sdb, request.cache)
         jira_id = await get_jira_installation(id, request.sdb, request.cache)
-    projects = await request.mdb.fetch_all(select([Project.key, Project.name])
+    projects = await request.mdb.fetch_all(select([Project.key, Project.name, Project.avatar_url])
                                            .where(Project.acc_id == jira_id)
                                            .order_by(Project.key))
     keys = [r[Project.key.key] for r in projects]
@@ -60,7 +60,7 @@ async def get_jira_projects(request: AthenianWebRequest,
     settings = {r[0]: r[1] for r in settings}
     models = [JIRAProject(name=r[Project.name.key],
                           key=r[Project.key.key],
-                          avatar_url="N/A",
+                          avatar_url=r[Project.avatar_url.key],
                           enabled=settings.get(r[Project.key.key], True))
               for r in projects]
     return model_response(models)
