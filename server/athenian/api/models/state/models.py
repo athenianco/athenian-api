@@ -225,3 +225,14 @@ class UserToken(create_time_mixin(updated_at=True), Base):
     name = Column(String(256), nullable=False)
     last_used_at = Column(TIMESTAMP(timezone=True), nullable=False,
                           default=lambda: datetime.now(timezone.utc), server_default=func.now())
+
+
+class JIRAProjectSetting(create_time_mixin(updated_at=True), Base):
+    """JIRA projects enabled/disabled."""
+
+    __tablename__ = "jira_projects"
+
+    account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_jira_projects_account"),
+                        primary_key=True)
+    key = Column(Text(), primary_key=True)
+    enabled = Column(Boolean(), nullable=False)

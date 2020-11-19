@@ -6,9 +6,11 @@ from sqlalchemy import delete, insert, select, update
 
 from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
-from athenian.api.models.state.models import AccountGitHubAccount, ReleaseSetting, \
+from athenian.api.models.state.models import AccountGitHubAccount, JIRAProjectSetting, \
+    ReleaseSetting, \
     RepositorySet, UserAccount
 from athenian.api.models.web import ReleaseMatchSetting, ReleaseMatchStrategy
+from athenian.api.models.web.jira_project import JIRAProject
 
 
 async def validate_settings(body, response, sdb, exhaustive: bool):
@@ -229,4 +231,79 @@ async def test_get_release_match_settings_nasty_input(client, headers, sdb, acco
     await sdb.execute(delete(RepositorySet))
     response = await client.request(
         method="GET", path="/v1/settings/release_match/%d" % account, headers=headers)
+    assert response.status == code
+
+
+async def test_get_jira_projects_smoke(client, headers, sdb):
+    await sdb.execute(insert(JIRAProjectSetting).values(
+        JIRAProjectSetting(account_id=1, key="DEV", enabled=False)
+        .create_defaults().explode(with_primary_keys=True)))
+    response = await client.request(
+        method="GET", path="/v1/settings/jira/projects/1", headers=headers)
+    assert response.status == 200
+    body = [JIRAProject.from_dict(i) for i in json.loads((await response.read()).decode("utf-8"))]
+    assert body == [
+        JIRAProject(name="Content", key="CON", enabled=True,
+                    avatar_url="N/A"),
+        JIRAProject(name="Customer Success", key="CS", enabled=True,
+                    avatar_url="N/A"),
+        JIRAProject(name="Product Development", key="DEV", enabled=False,
+                    avatar_url="N/A"),
+        JIRAProject(name="Engineering", key="ENG", enabled=True,
+                    avatar_url="N/A"),
+        JIRAProject(name="Growth", key="GRW", enabled=True,
+                    avatar_url="N/A"),
+        JIRAProject(name="Operations", key="OPS", enabled=True,
+                    avatar_url="N/A"),
+        JIRAProject(name="Product", key="PRO", enabled=True,
+                    avatar_url="N/A"),
+    ]
+
+
+@pytest.mark.parametrize("account, code", [[2, 422], [3, 404], [4, 404]])
+async def test_get_jira_projects_nasty_input(client, headers, account, code):
+    response = await client.request(
+        method="GET", path="/v1/settings/jira/projects/%d" % account, headers=headers)
+    assert response.status == code
+
+
+async def test_set_jira_projects_smoke(client, headers):
+    body = {
+        "account": 1,
+        "projects": {
+            "DEV": False,
+        },
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers)
+    assert response.status == 200
+    body = [JIRAProject.from_dict(i) for i in json.loads((await response.read()).decode("utf-8"))]
+    assert body == [
+        JIRAProject(name="Content", key="CON", enabled=True,
+                    avatar_url="N/A"),
+        JIRAProject(name="Customer Success", key="CS", enabled=True,
+                    avatar_url="N/A"),
+        JIRAProject(name="Product Development", key="DEV", enabled=False,
+                    avatar_url="N/A"),
+        JIRAProject(name="Engineering", key="ENG", enabled=True,
+                    avatar_url="N/A"),
+        JIRAProject(name="Growth", key="GRW", enabled=True,
+                    avatar_url="N/A"),
+        JIRAProject(name="Operations", key="OPS", enabled=True,
+                    avatar_url="N/A"),
+        JIRAProject(name="Product", key="PRO", enabled=True,
+                    avatar_url="N/A"),
+    ]
+
+
+@pytest.mark.parametrize("account, key, code", [[2, "DEV", 403], [3, "DEV", 404], [1, "XXX", 400]])
+async def test_set_jira_projects_nasty_input(client, headers, account, key, code):
+    body = {
+        "account": account,
+        "projects": {
+            key: False,
+        },
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers)
     assert response.status == code
