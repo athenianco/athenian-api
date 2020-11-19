@@ -127,7 +127,7 @@ class MetricCalculator(Generic[T]):
         """Cut from the left and the right of the distribution by quantiles."""
         if len(samples) == 0 or self._quantiles[0] == 0 and self._quantiles[1] == 1:
             return samples
-        cut_values = np.quantile(samples, self._quantiles)
+        cut_values = np.quantile(samples, self._quantiles, interpolation="nearest")
         if self._quantiles[0] != 0:
             samples = np.delete(samples, np.where(samples < cut_values[0])[0])
         samples = np.delete(samples, np.where(samples > cut_values[1])[0])

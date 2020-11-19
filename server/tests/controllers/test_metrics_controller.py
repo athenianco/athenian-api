@@ -549,7 +549,7 @@ async def test_calc_metrics_prs_quantiles(client, headers):
     assert response.status == 200, "Response body is : " + rbody
     cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(rbody))
     wip1 = cm.calculated[0].values[0].values[0]
-    body["quantiles"] = [0.05, 0.95]
+    body["quantiles"] = [0, 0.9]
     response = await client.request(
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
