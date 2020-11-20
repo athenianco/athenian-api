@@ -616,7 +616,7 @@ class PullRequestMiner:
         """
         assert (updated_min is None) == (updated_max is None)
         filters = [
-            sql.func.coalesce(PullRequest.closed_at >= time_from, sql.true()),
+            sql.case([(PullRequest.closed, PullRequest.closed_at >= time_from)], else_=sql.true()),
             PullRequest.created_at < time_to,
             PullRequest.hidden.is_(False),
             PullRequest.repository_full_name.in_(repositories),
@@ -666,6 +666,8 @@ class PullRequestMiner:
                     pr_node_id == PullRequestLabel.pull_request_node_id)) \
                 .where(sql.func.lower(PullRequestLabel.name).in_(in_items))
         prs = await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
+        if PullRequest.closed.key in prs:
+            cls.adjust_pr_closed_merged_timestamps(prs)
         if not labels or embedded_labels_query:
             return prs
         lcols = [
@@ -681,6 +683,14 @@ class PullRequestMiner:
             df_labels.index, df_labels[PullRequestLabel.name.key].values, labels)
         prs = prs.take(np.where(prs.index.isin(left))[0])
         return prs
+
+    @staticmethod
+    def adjust_pr_closed_merged_timestamps(prs_df: pd.DataFrame) -> None:
+        """Force set `closed_at` and `merged_at` to NULL if not `closed`. Remove `closed`."""
+        not_closed = ~prs_df[PullRequest.closed.key].values
+        prs_df.loc[not_closed, PullRequest.closed_at.key] = pd.NaT
+        prs_df.loc[not_closed, PullRequest.merged_at.key] = pd.NaT
+        prs_df.drop(columns=PullRequest.closed.key, inplace=True)
 
     @classmethod
     @sentry_span

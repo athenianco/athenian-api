@@ -7,7 +7,8 @@ from typing import Any, Collection, Dict, List, Optional, Tuple
 import aiomcache
 import databases
 import sentry_sdk
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, not_, select, union
+from sqlalchemy.sql.functions import coalesce
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
@@ -52,14 +53,10 @@ async def mine_contributors(accounts: Tuple[int, ...],
         assert isinstance(time_to, datetime)
         assert time_to.tzinfo is not None
 
-    common_prs_where = and_(
+    common_prs_where = lambda: [  # noqa(E731)
         PullRequest.repository_full_name.in_(repos),
         PullRequest.hidden.is_(False),
-        or_(PullRequest.created_at.between(time_from, time_to),
-            and_(PullRequest.created_at < time_to,
-                 PullRequest.closed_at.is_(None)),
-            PullRequest.closed_at.between(time_from, time_to)) if has_times else True,
-    )
+    ]
     tasks = [
         extract_branches(repos, mdb, cache),
         mdb.fetch_all(select([NodeRepository.node_id])
@@ -72,6 +69,15 @@ async def mine_contributors(accounts: Tuple[int, ...],
     async def fetch_author():
         ghdprf = GitHubDonePullRequestFacts
         format_version = ghdprf.__table__.columns[ghdprf.format_version.key].default.arg
+        if has_times:
+            prs_opts = [
+                PullRequest.created_at.between(time_from, time_to),
+                and_(PullRequest.created_at < time_to,
+                     not_(coalesce(PullRequest.closed, False))),
+                PullRequest.closed_at.between(time_from, time_to),
+            ]
+        else:
+            prs_opts = [True]
         tasks = [
             pdb.fetch_all(select([ghdprf.author, ghdprf.pr_node_id])
                           .where(and_(ghdprf.format_version == format_version,
@@ -79,8 +85,9 @@ async def mine_contributors(accounts: Tuple[int, ...],
                                       ghdprf.pr_done_at.between(time_from, time_to)
                                       if has_times else True))
                           .distinct()),
-            mdb.fetch_all(select([PullRequest.user_login, PullRequest.node_id])
-                          .where(common_prs_where)),
+            mdb.fetch_all(union(*(select([PullRequest.user_login, PullRequest.node_id])
+                                  .where(and_(*common_prs_where(), prs_opt))
+                                  for prs_opt in prs_opts))),
         ]
         released, main = await gather(*tasks)
         return {
@@ -146,7 +153,11 @@ async def mine_contributors(accounts: Tuple[int, ...],
         return {
             "merger": await mdb.fetch_all(
                 select([PullRequest.merged_by_login, func.count(PullRequest.merged_by_login)])
-                .where(common_prs_where)
+                .where(and_(*common_prs_where(),
+                            PullRequest.closed,
+                            PullRequest.merged_at.between(time_from, time_to)
+                            if has_times else PullRequest.merged,
+                            ))
                 .group_by(PullRequest.merged_by_login)),
         }
 

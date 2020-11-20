@@ -202,6 +202,7 @@ class PullRequest(Base,
     base_ref = Column(Text, nullable=False)
     changed_files = Column(BigInteger)
     closed_at = Column(TIMESTAMP(timezone=True))
+    closed = Column(Boolean)
     deletions = Column(BigInteger)
     head_ref = Column(Text, nullable=False)
     hidden = Column(Boolean)
