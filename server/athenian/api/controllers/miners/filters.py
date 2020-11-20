@@ -64,6 +64,7 @@ class JIRAFilter:
     """JIRA traits to select assigned PRs."""
 
     account: int
+    projects: List[str]
     labels: LabelFilter
     epics: Set[str]
     issue_types: Set[str]
@@ -72,7 +73,7 @@ class JIRAFilter:
     @classmethod
     def empty(cls) -> "JIRAFilter":
         """Initialize an empty JIRAFilter."""
-        return cls(0, LabelFilter.empty(), set(), set(), False)
+        return cls(0, [], LabelFilter.empty(), set(), set(), False)
 
     def __bool__(self) -> bool:
         """Return value indicating whether this filter is not an identity."""
@@ -107,12 +108,13 @@ class JIRAFilter:
         return True
 
     @classmethod
-    def from_web(cls, model: Optional[WebJIRAFilter], account: int) -> "JIRAFilter":
+    def from_web(cls, model: Optional[WebJIRAFilter], ids: Tuple[int, List[str]]) -> "JIRAFilter":
         """Initialize a new JIRAFilter from the corresponding web model."""
         if model is None:
             return cls.empty()
         labels = LabelFilter.from_iterables(model.labels_include, model.labels_exclude)
-        return JIRAFilter(account=account,
+        return JIRAFilter(account=ids[0],
+                          projects=ids[1],
                           labels=labels,
                           epics={s.upper() for s in (model.epics or [])},
                           issue_types={s.lower() for s in (model.issue_types or [])},

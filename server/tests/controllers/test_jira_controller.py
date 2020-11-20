@@ -143,6 +143,48 @@ async def test_filter_jira_exclude_inactive(
     assert len(model.priorities) == priorities
 
 
+async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
+    body = {
+        "date_from": "2019-10-13",
+        "date_to": "2020-01-23",
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FoundJIRAStuff.from_dict(json.loads(body))
+    assert model.labels == [
+        JIRALabel(title="accounts", last_used=datetime(2020, 4, 3, 18, 47, 43, tzinfo=tzutc()),
+                  issues_count=1, kind="regular"),
+        JIRALabel(title="bug", last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
+                  issues_count=16, kind="regular"),
+        JIRALabel(title="discarded", last_used=datetime(2020, 6, 1, 1, 27, 23, tzinfo=tzutc()),
+                  issues_count=4, kind="regular"),
+        JIRALabel(title="discussion", last_used=datetime(2020, 3, 31, 21, 16, 11, tzinfo=tzutc()),
+                  issues_count=3, kind="regular"),
+        JIRALabel(title="feature", last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
+                  issues_count=6, kind="regular"),
+        JIRALabel(title="internal-story", last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
+                  issues_count=11, kind="regular"),
+        JIRALabel(title="needs-specs", last_used=datetime(2020, 4, 6, 13, 25, 2, tzinfo=tzutc()),
+                  issues_count=4, kind="regular"),
+        JIRALabel(title="performance", last_used=datetime(2020, 3, 31, 21, 16, 5, tzinfo=tzutc()),
+                  issues_count=1, kind="regular"),
+        JIRALabel(title="user-story", last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
+                  issues_count=5, kind="regular"),
+        JIRALabel(title="webapp", last_used=datetime(2020, 4, 3, 18, 47, 6, tzinfo=tzutc()),
+                  issues_count=1, kind="regular")]
+    assert model.epics == [
+        JIRAEpic(id="ENG-1", title="Evaluate our product and process internally",
+                 updated=datetime(2020, 6, 1, 7, 19, tzinfo=tzutc()), children=[]),
+    ]
+    assert model.issue_types == ["Design document", "Epic", "Story", "Subtask", "Task"]
+
+
 @pytest.mark.parametrize("account, date_to, timezone, status", [
     (1, "2015-10-12", 0, 400),
     (2, "2020-10-12", 0, 422),
@@ -470,6 +512,31 @@ async def test_jira_metrics_bug_times(client, headers, metric, value, score, cmi
     )]
 
 
+async def test_jira_metrics_disabled_projects(client, headers, disabled_dev):
+    body = {
+        "date_from": "2020-01-01",
+        "date_to": "2020-10-23",
+        "timezone": 120,
+        "account": 1,
+        "metrics": [JIRAMetricID.JIRA_RAISED, JIRAMetricID.JIRA_RESOLVED],
+        "exclude_inactive": False,
+        "granularities": ["all", "2 month"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in json.loads(body)]
+    assert items[0].values == [CalculatedLinearMetricValues(
+        date=date(2019, 12, 31),
+        values=[768, 824],
+        confidence_mins=[None] * 2,
+        confidence_maxs=[None] * 2,
+        confidence_scores=[None] * 2,
+    )]
+
+
 @pytest.mark.parametrize("with_, ticks, frequencies, interquartile", [
     [None,
      [["60s", "122s", "249s", "507s", "1033s", "2105s", "4288s", "8737s", "17799s", "36261s",
@@ -510,7 +577,6 @@ async def test_jira_histograms_smoke(client, headers, with_, ticks, frequencies,
             CalculatedJIRAHistogram.from_dict(item)
         for histogram, hticks, hfrequencies, hinterquartile, hwith_ in zip(
                 body, ticks, frequencies, interquartile, with_ or [None]):
-            print(histogram)
             assert histogram == {
                 "metric": JIRAMetricID.JIRA_LEAD_TIME,
                 "scale": "log",
@@ -519,6 +585,33 @@ async def test_jira_histograms_smoke(client, headers, with_, ticks, frequencies,
                 "interquartile": hinterquartile,
                 **({"with": hwith_} if hwith_ is not None else {}),
             }
+
+
+async def test_jira_histogram_disabled_projects(client, headers, disabled_dev):
+    body = {
+        "histograms": [{
+            "metric": JIRAMetricID.JIRA_LEAD_TIME,
+            "scale": "log",
+        }],
+        "date_from": "2015-10-13",
+        "date_to": "2020-11-01",
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    histogram = FriendlyJson.loads(body)[0]
+    assert histogram == {
+        "metric": JIRAMetricID.JIRA_LEAD_TIME,
+        "scale": "log",
+        "ticks": ["60s", "128s", "275s", "590s", "1266s", "2714s", "5818s", "12470s", "26730s",
+                  "57293s", "122803s", "263218s", "564186s", "1209285s", "2591999s"],
+        "frequencies": [214, 3, 6, 20, 25, 31, 33, 33, 31, 55, 54, 55, 74, 222],
+        "interquartile": {"left": "149s", "right": "1273387s"},
+    }
 
 
 @pytest.mark.parametrize(

@@ -6,6 +6,7 @@ import faker
 import numpy as np
 import pandas as pd
 import pytest
+from sqlalchemy import insert
 
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_edges
@@ -13,6 +14,7 @@ from athenian.api.controllers.miners.github.dag_accelerated import join_dags
 from athenian.api.controllers.miners.types import nonemin, PullRequestFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
+from athenian.api.models.state.models import JIRAProjectSetting
 
 
 @pytest.fixture(scope="function")
@@ -59,6 +61,13 @@ async def branches(mdb):
     if _branches is None:
         _branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
     return _branches
+
+
+@pytest.fixture(scope="function")
+async def disabled_dev(sdb):
+    await sdb.execute(insert(JIRAProjectSetting).values(
+        JIRAProjectSetting(account_id=1, key="DEV", enabled=False)
+        .create_defaults().explode(with_primary_keys=True)))
 
 
 @pytest.fixture

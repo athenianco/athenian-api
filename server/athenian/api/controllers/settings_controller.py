@@ -5,7 +5,7 @@ from sqlalchemy import and_, delete, insert, select
 
 from athenian.api import ResponseError
 from athenian.api.controllers.account import get_user_account_status
-from athenian.api.controllers.jira import get_jira_installation
+from athenian.api.controllers.jira import get_jira_id
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata import PREFIXES
@@ -48,7 +48,7 @@ async def get_jira_projects(request: AthenianWebRequest,
     """List the current enabled JIRA project settings."""
     if jira_id is None:
         await get_user_account_status(request.uid, id, request.sdb, request.cache)
-        jira_id = await get_jira_installation(id, request.sdb, request.cache)
+        jira_id = await get_jira_id(id, request.sdb, request.cache)
     projects = await request.mdb.fetch_all(select([Project.key, Project.name, Project.avatar_url])
                                            .where(Project.acc_id == jira_id)
                                            .order_by(Project.key))
@@ -74,7 +74,7 @@ async def set_jira_projects(request: AthenianWebRequest, body: dict) -> web.Resp
     if not is_admin:
         raise ResponseError(ForbiddenError(
             detail="User %s is not an admin of account %d" % (request.uid, model.account)))
-    jira_id = await get_jira_installation(model.account, request.sdb, request.cache)
+    jira_id = await get_jira_id(model.account, request.sdb, request.cache)
     projects = await request.mdb.fetch_all(select([Project.key]).where(Project.acc_id == jira_id))
     projects = {r[0] for r in projects}
     if diff := (model.projects.keys() - projects):

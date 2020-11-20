@@ -15,7 +15,7 @@ async def test_fetch_jira_issues_releases(mdb, pdb, default_branches, release_ma
         time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         False, release_match_setting_tag, False, mdb, pdb, None)
     await wait_deferred()
-    issues = await fetch_jira_issues(1,
+    issues = await fetch_jira_issues((1, ["10003", "10009"]),
                                      time_from, time_to, False,
                                      LabelFilter.empty(), [], [], [], [], [], [], False,
                                      default_branches, release_match_setting_tag,

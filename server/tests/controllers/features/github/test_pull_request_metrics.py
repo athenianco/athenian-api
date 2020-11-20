@@ -533,7 +533,8 @@ async def test_calc_pull_request_facts_github_jira(
     facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
     await wait_deferred()
     assert sum(1 for f in facts if f.released) == 233
-    args[5] = JIRAFilter(1, LabelFilter({"performance", "task"}, set()), set(), set(), False)
+    args[5] = JIRAFilter(1, ["10003", "10009"], LabelFilter({"performance", "task"}, set()),
+                         set(), set(), False)
     facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
     assert sum(1 for f in facts if f.released) == 16
 

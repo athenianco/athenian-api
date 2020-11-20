@@ -471,6 +471,26 @@ async def test_filter_prs_jira(client, headers, app, filter_prs_single_prop_cach
     assert data1 == data2
 
 
+async def test_filter_prs_jira_disabled_projects(client, headers, disabled_dev):
+    body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-04-23",
+        "account": 1,
+        "in": [],
+        "properties": [PullRequestProperty.MERGE_HAPPENED],
+        "exclude_inactive": False,
+        "jira": {
+            "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
+        },
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    prs = PullRequestSet.from_dict(json.loads(text))
+    assert len(prs.data) == 0
+
+
 open_go_git_pr_numbers = {
     570, 816, 970, 1273, 1069, 1086, 1098, 1139, 1152, 1153, 1173, 1238, 1243, 1246, 1254, 1270,
     1269, 1272, 1286, 1291, 1285,
