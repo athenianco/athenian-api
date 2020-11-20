@@ -66,7 +66,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         release_match_setting_tag, mdb, pdb):
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
-    jira_filter = JIRAFilter(1, LabelFilter.empty(), set(), {"task"}, False)
+    jira_filter = JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), {"task"}, False)
     facts_fresh = await calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter.empty(), jira_filter,

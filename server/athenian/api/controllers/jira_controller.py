@@ -47,14 +47,16 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     with sentry_sdk.start_span(op="sdb"):
         async with request.sdb.connection() as conn:
             await get_user_account_status(request.uid, filt.account, conn, request.cache)
-            jira_id = await get_jira_installation(filt.account, request.sdb, request.cache)
+            jira_ids = await get_jira_installation(
+                filt.account, request.sdb, request.mdb, request.cache)
     mdb = request.mdb
     log = logging.getLogger("%s.filter_jira_stuff" % metadata.__package__)
 
     @sentry_span
     async def epic_flow():
         filters = [
-            Issue.acc_id == jira_id,
+            Issue.acc_id == jira_ids[0],
+            Issue.project_id.in_(jira_ids[1]),
             Issue.type == "Epic",
             Issue.created < time_to,
             coalesce(AthenianIssue.resolved >= time_from, true()),
@@ -89,7 +91,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     @sentry_span
     async def issue_flow():
         filters = [
-            Issue.acc_id == jira_id,
+            Issue.acc_id == jira_ids[0],
+            Issue.project_id.in_(jira_ids[1]),
             Issue.created < time_to,
             coalesce(AthenianIssue.resolved >= time_from, true()),
         ]
@@ -115,7 +118,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                 select([Component.id, Component.name])
                 .where(and_(
                     Component.id.in_(components),
-                    Component.acc_id == jira_id,
+                    Component.acc_id == jira_ids[0],
                 )))
 
         @sentry_span
@@ -124,7 +127,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                 select([User.display_name, User.avatar_url, User.type])
                 .where(and_(
                     User.id.in_(people),
-                    User.acc_id == jira_id,
+                    User.acc_id == jira_ids[0],
                 ))
                 .order_by(User.display_name))
 
@@ -134,7 +137,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                 select([Priority.name, Priority.icon_url, Priority.rank, Priority.status_color])
                 .where(and_(
                     Priority.id.in_(priorities),
-                    Priority.acc_id == jira_id,
+                    Priority.acc_id == jira_ids[0],
                 ))
                 .order_by(Priority.rank))
 
@@ -212,9 +215,9 @@ async def _calc_jira_entry(request: AthenianWebRequest,
     tasks = [
         get_user_account_status(request.uid, filt.account, request.sdb, request.cache),
         get_account_repositories(filt.account, request.sdb),
-        get_jira_installation(filt.account, request.sdb, request.cache),
+        get_jira_installation(filt.account, request.sdb, request.mdb, request.cache),
     ]
-    status, repos, jira_id = await gather(*tasks, op="sdb")
+    status, repos, jira_ids = await gather(*tasks, op="sdb")
     time_intervals, _ = split_to_time_intervals(
         filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone)
     tasks = [
@@ -230,7 +233,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
     commenters = list(set(chain.from_iterable(
         ([p.lower() for p in (g.commenters or [])]) for g in (filt.with_ or []))))
     issues = await fetch_jira_issues(
-        jira_id,
+        jira_ids,
         time_intervals[0][0], time_intervals[0][-1], filt.exclude_inactive,
         LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
         [p.lower() for p in (filt.priorities or [])],

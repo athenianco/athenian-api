@@ -6,8 +6,7 @@ from sqlalchemy import delete, insert, select, update
 
 from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
-from athenian.api.models.state.models import AccountGitHubAccount, JIRAProjectSetting, \
-    ReleaseSetting, \
+from athenian.api.models.state.models import AccountGitHubAccount, ReleaseSetting, \
     RepositorySet, UserAccount
 from athenian.api.models.web import ReleaseMatchSetting, ReleaseMatchStrategy
 from athenian.api.models.web.jira_project import JIRAProject
@@ -252,10 +251,7 @@ JIRA_PROJECTS = [
 ]
 
 
-async def test_get_jira_projects_smoke(client, headers, sdb):
-    await sdb.execute(insert(JIRAProjectSetting).values(
-        JIRAProjectSetting(account_id=1, key="DEV", enabled=False)
-        .create_defaults().explode(with_primary_keys=True)))
+async def test_get_jira_projects_smoke(client, headers, disabled_dev):
     response = await client.request(
         method="GET", path="/v1/settings/jira/projects/1", headers=headers)
     assert response.status == 200

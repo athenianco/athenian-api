@@ -10,7 +10,7 @@ from sqlalchemy import and_, delete, select, update
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_account_organizations, get_user_account_status
-from athenian.api.controllers.jira import get_jira_installation
+from athenian.api.controllers.jira import get_jira_id
 from athenian.api.models.metadata.jira import Installation as JIRAInstallation, \
     Project as JIRAProject
 from athenian.api.models.state.models import AccountFeature, Feature, FeatureComponent, God, \
@@ -86,7 +86,7 @@ async def _get_account_jira(account: int,
                             sdb: DatabaseLike,
                             mdb: DatabaseLike,
                             cache: Optional[aiomcache.Client]) -> WebJIRAInstallation:
-    jira_id = await get_jira_installation(account, sdb, cache)
+    jira_id = await get_jira_id(account, sdb, cache)
     tasks = [
         mdb.fetch_all(select([JIRAProject.key])
                       .where(JIRAProject.acc_id == jira_id)

@@ -164,7 +164,8 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
             try:
                 jira = JIRAFilter.from_web(
-                    for_set.jira, await get_jira_installation(account, request.sdb, request.cache))
+                    for_set.jira,
+                    await get_jira_installation(account, request.sdb, request.mdb, request.cache))
             except ResponseError:
                 jira = JIRAFilter.empty()
             filters.append((service, (repogroups, devs, labels, jira, for_set)))
@@ -210,7 +211,8 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
             try:
                 jira = JIRAFilter.from_web(
-                    for_set.jira, await get_jira_installation(account, request.sdb, request.cache))
+                    for_set.jira,
+                    await get_jira_installation(account, request.sdb, request.mdb, request.cache))
             except ResponseError:
                 jira = JIRAFilter.empty()
             filters.append((service, (repogroups, devs, labels, jira, for_set)))
@@ -368,9 +370,9 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     tasks = [
         Settings.from_request(request, filt.account).list_release_matches(all_repos),
-        get_jira_installation_or_none(filt.account, request.sdb, request.cache),
+        get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     ]
-    release_settings, jira_id = await gather(*tasks)
+    release_settings, jira_ids = await gather(*tasks)
     met = []
 
     @sentry_span
@@ -383,7 +385,7 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
         } for with_ in (filt.with_ or [])]
         ti_mvs, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
-            JIRAFilter.from_web(filt.jira, jira_id), release_settings,
+            JIRAFilter.from_web(filt.jira, jira_ids), release_settings,
             request.mdb, request.pdb, request.cache)
         release_matches = {k: v.name for k, v in release_matches.items()}
         mrange = range(len(filt.metrics))

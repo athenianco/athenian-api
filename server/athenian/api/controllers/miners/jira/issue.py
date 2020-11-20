@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import datetime
 from itertools import chain
 import pickle
-from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Union
+from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import aiomcache
 import databases
@@ -47,6 +47,8 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
             seed, _map, on == _map.node_id,
         )).where(sql.and_(*filters, _map.node_id.is_(None)))
     _issue = aliased(Issue, name="j")
+    filters.append(_issue.acc_id == jira.account)
+    filters.append(_issue.project_id.in_(jira.projects))
     if jira.labels:
         components = await _load_components(jira.labels, jira.account, mdb, cache)
         _append_label_filters(
@@ -156,8 +158,9 @@ ISSUE_PRS_RELEASED = "prs_released"
     exptime=5 * 60,  # 5 minutes
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda account, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, load_participants, **_: (  # noqa
-        account,
+    key=lambda ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, load_participants, **_: (  # noqa
+        ids[0],
+        ",".join(ids[1]),
         time_from.timestamp(), time_to.timestamp(),
         exclude_inactive,
         labels,
@@ -170,7 +173,7 @@ ISSUE_PRS_RELEASED = "prs_released"
         load_participants,
     ),
 )
-async def fetch_jira_issues(account: int,
+async def fetch_jira_issues(ids: Tuple[int, List[str]],
                             time_from: datetime,
                             time_to: datetime,
                             exclude_inactive: bool,
@@ -193,7 +196,7 @@ async def fetch_jira_issues(account: int,
 
     The aggregation is OR between the participation roles.
 
-    :param account: JIRA installation ID.
+    :param ids: JIRA installation ID and the enabled project IDs.
     :param time_from: Issues should not be resolved before this timestamp.
     :param time_to: Issues should be opened before this timestamp.
     :param exclude_inactive: Issues must be updated after `time_from`.
@@ -206,11 +209,11 @@ async def fetch_jira_issues(account: int,
     :param commenters: List of lower-case issue commenters.
     """
     issues = await _fetch_issues(
-        account, time_from, time_to, exclude_inactive, labels, priorities, types, epics,
+        ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics,
         reporters, assignees, commenters, load_participants, mdb, cache)
     pr_rows = await mdb.fetch_all(
         sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
-        .where(sql.and_(NodePullRequestJiraIssues.jira_acc == account,
+        .where(sql.and_(NodePullRequestJiraIssues.jira_acc == ids[0],
                         NodePullRequestJiraIssues.jira_id.in_(issues.index))))
     pr_to_issue = {r[0]: r[1] for r in pr_rows}
     # TODO(vmarkovtsev): load the "fresh" released PRs
@@ -305,7 +308,7 @@ async def _fetch_released_prs(pr_node_ids: Iterable[str],
 
 
 @sentry_span
-async def _fetch_issues(account: int,
+async def _fetch_issues(ids: Tuple[int, List[str]],
                         time_from: datetime,
                         time_to: datetime,
                         exclude_inactive: bool,
@@ -330,7 +333,8 @@ async def _fetch_issues(account: int,
                         sql.func.lower(Issue.assignee_display_name).label("assignee"),
                         Issue.commenters_display_names.label("commenters")])
     and_filters = [
-        Issue.acc_id == account,
+        Issue.acc_id == ids[0],
+        Issue.project_id.in_(ids[1]),
         sql.func.coalesce(Issue.resolved >= time_from, sql.true()),
         Issue.created < time_to,
     ]
@@ -344,7 +348,7 @@ async def _fetch_issues(account: int,
         and_filters.append(Epic.key.in_(epics))
     or_filters = []
     if labels:
-        components = await _load_components(labels, account, mdb, cache)
+        components = await _load_components(labels, ids[0], mdb, cache)
         _append_label_filters(
             labels, components, mdb.url.dialect in ("postgres", "postgresql"), and_filters)
     if reporters and (postgres or not commenters):
