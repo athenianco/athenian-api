@@ -7,7 +7,7 @@ from typing import Callable, Coroutine, List, Mapping, Optional, Sequence, Set, 
 import aiomcache
 from asyncpg import UniqueViolationError
 import databases.core
-import slack
+from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, insert, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
@@ -99,7 +99,7 @@ async def resolve_repos(repositories: List[str],
                         sdb_conn: Union[databases.core.Connection, databases.Database],
                         mdb_conn: Union[databases.core.Connection, databases.Database],
                         cache: Optional[aiomcache.Client],
-                        slack: Optional[slack.WebClient],
+                        slack: Optional[SlackWebClient],
                         strip_prefix=True,
                         ) -> Set[str]:
     """Dereference all the reposets and produce the joint list of all mentioned repos."""
@@ -137,7 +137,7 @@ async def load_account_reposets(account: int,
                                 sdb_conn: DatabaseLike,
                                 mdb_conn: DatabaseLike,
                                 cache: Optional[aiomcache.Client],
-                                slack: Optional[slack.WebClient],
+                                slack: Optional[SlackWebClient],
                                 ) -> List[Mapping]:
     """
     Load the account's repository sets and create one if no exists.
@@ -170,7 +170,7 @@ async def _load_account_reposets(account: int,
                                  sdb_conn: databases.core.Connection,
                                  mdb_conn: databases.core.Connection,
                                  cache: Optional[aiomcache.Client],
-                                 slack: Optional[slack.WebClient],
+                                 slack: Optional[SlackWebClient],
                                  ) -> List[Mapping]:
     assert isinstance(sdb_conn, databases.core.Connection)
     assert isinstance(mdb_conn, databases.core.Connection)

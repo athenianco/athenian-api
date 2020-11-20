@@ -6,7 +6,7 @@ from typing import Any, Callable, Collection, Coroutine, Dict, List, Optional, S
 
 import aiomcache
 import databases
-import slack
+from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, insert, select
 from sqlalchemy.sql import Select
 
@@ -67,7 +67,7 @@ class Settings:
                  sdb: databases.Database,
                  mdb: databases.Database,
                  cache: Optional[aiomcache.Client],
-                 slack: Optional[slack.WebClient]):
+                 slack: Optional[SlackWebClient]):
         """Initialize a new instance of Settings class."""
         self._account = account
         self._user_id = user_id
@@ -85,7 +85,7 @@ class Settings:
                      sdb: databases.Database,
                      mdb: databases.Database,
                      cache: Optional[aiomcache.Client],
-                     slack: Optional[slack.WebClient]):
+                     slack: Optional[SlackWebClient]):
         """Create a new Settings class instance in readonly mode given the account ID."""
         return Settings(None,
                         account=account,

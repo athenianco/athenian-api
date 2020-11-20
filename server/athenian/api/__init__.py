@@ -35,7 +35,7 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.pure_eval import PureEvalIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 import sentry_sdk.utils
-import slack
+from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 import uvloop
 
 from athenian.api import metadata
@@ -568,13 +568,13 @@ def create_auth0_factory(force_user: str) -> Callable[[], Auth0]:
     return factory
 
 
-def create_slack(log: logging.Logger) -> Optional[slack.WebClient]:
+def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     """Initialize the Slack client to post notifications about new accounts, user, and \
     installations."""
     slack_token = os.getenv("SLACK_API_TOKEN")
     if not slack_token:
         return None
-    slack_client = slack.WebClient(token=slack_token, run_async=True)
+    slack_client = SlackWebClient(token=slack_token)
     slack_client.channel = os.getenv("SLACK_CHANNEL", "#updates-installations")
     slack_client.jinja2 = jinja2.Environment(
         loader=jinja2.FileSystemLoader(Path(__file__).parent / "slack"),
