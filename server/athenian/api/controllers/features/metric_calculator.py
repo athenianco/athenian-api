@@ -128,9 +128,11 @@ class MetricCalculator(Generic[T]):
 
     def _calc_quantile_cut_values(self, as_dtype=None) -> Optional[np.ndarray]:
         """Calculate the quantile cut values."""
-        if len(self._peek) == 0 or (self._quantiles[0] == 0 and self._quantiles[1] == 1):
+        if self._quantiles[0] == 0 and self._quantiles[1] == 1:
             return None
         peek = self._peek[self._peek != np.array(None)].astype(as_dtype or self.dtype)
+        if len(peek) == 0:
+            return None
         return np.quantile(peek, self._quantiles, interpolation="nearest")
 
     def _cut_by_quantiles(self,
