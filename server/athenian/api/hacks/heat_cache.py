@@ -10,7 +10,7 @@ from typing import Collection, Dict, Optional, Set, Tuple
 
 import aiomcache
 import sentry_sdk
-import slack
+from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, desc, func, insert, select, update
 from tqdm import tqdm
 
@@ -215,7 +215,7 @@ async def load_account_state(account: int,
                              sdb: ParallelDatabase,
                              mdb: ParallelDatabase,
                              cache: aiomcache.Client,
-                             slack: Optional[slack.WebClient],
+                             slack: Optional[SlackWebClient],
                              recursive: bool = False,
                              ) -> Optional[Tuple[InstallationProgress,
                                                  Dict[str, ReleaseMatchSetting]]]:

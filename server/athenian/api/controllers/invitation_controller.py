@@ -17,7 +17,7 @@ import aiosqlite.core
 from asyncpg import IntegrityConstraintViolationError
 import databases.core
 import pyffx
-import slack
+from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, func, insert, select, update
 
 from athenian.api import metadata
@@ -157,7 +157,7 @@ async def _accept_invitation(iid, salt, request, conn):
         raise ResponseError(ForbiddenError(detail="This invitation is disabled."))
     acc_id = inv[Invitation.account_id.key]
     is_admin = acc_id == admin_backdoor
-    slack = request.app["slack"]  # type: slack.WebClient
+    slack = request.app["slack"]  # type: SlackWebClient
     if is_admin:
         timestamp = await conn.fetch_val(
             select([UserAccount.created_at]).where(and_(UserAccount.user_id == request.uid,
@@ -411,7 +411,7 @@ async def _append_precomputed_progress(model: InstallationProgress,
                                        sdb: DatabaseLike,
                                        mdb: databases.Database,
                                        cache: Optional[aiomcache.Client],
-                                       slack: Optional[slack.WebClient]) -> None:
+                                       slack: Optional[SlackWebClient]) -> None:
     reposets = await load_account_reposets(
         account, login,
         [RepositorySet.name, RepositorySet.precomputed, RepositorySet.created_at],
@@ -440,7 +440,7 @@ async def _append_precomputed_progress(model: InstallationProgress,
     key=lambda account, **_: (account,),
     refresh_on_access=True,
 )
-async def _notify_precomputed_failure(slack: Optional[slack.WebClient],
+async def _notify_precomputed_failure(slack: Optional[SlackWebClient],
                                       uid: str,
                                       account: int,
                                       model: InstallationProgress,
