@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 import enum
 import json
 
-from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, ForeignKeyConstraint, func, \
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Enum, ForeignKey, \
+    ForeignKeyConstraint, func, \
     Integer, JSON, SmallInteger, String, Text, TIMESTAMP, UniqueConstraint
 import xxhash
 
@@ -110,12 +111,14 @@ class Team(create_time_mixin(created_at=True, updated_at=True),
     __tablename__ = "teams"
     __table_args__ = (UniqueConstraint("owner_id", "members_checksum", name="uc_owner_members"),
                       UniqueConstraint("owner_id", "name", name="uc_owner_name"),
+                      CheckConstraint("id != parent_id", name="cc_parent_self_reference"),
                       {"sqlite_autoincrement": True})
     BOTS = "Bots"  # the name of the special team which contains bots
 
     id = Column(Integer(), primary_key=True)
     owner_id = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"),
                       nullable=False)
+    parent_id = Column(Integer(), ForeignKey("teams.id", name="fk_team_parent"))
 
 
 class AccountGitHubAccount(Base):

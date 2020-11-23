@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from itertools import chain
 from sqlite3 import IntegrityError, OperationalError
 from typing import Dict, Iterable, List, Mapping, Optional, Union
@@ -21,22 +22,24 @@ from athenian.api.models.web.team_create_request import TeamCreateRequest
 from athenian.api.models.web.team_update_request import TeamUpdateRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
+from athenian.api.typing_utils import DatabaseLike
 
 
 async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
     """Create a team.
 
     :param body: Team creation request body.
-
     """
     body = TeamCreateRequest.from_dict(body)
     user = request.uid
     account = body.account
+    parent = body.parent
     name = _check_name(body.name)
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status(user, account, sdb_conn, request.cache)
         members = _check_members(body.members)
-        t = Team(owner_id=account, name=name, members=members).create_defaults()
+        await _check_parent(account, parent, sdb_conn)
+        t = Team(owner_id=account, name=name, members=members, parent_id=parent).create_defaults()
         try:
             tid = await sdb_conn.execute(insert(Team).values(t.explode()))
         except (UniqueViolationError, IntegrityError, OperationalError) as err:
@@ -57,6 +60,12 @@ async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
         if account is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
         await get_user_account_status(user, account, sdb_conn, request.cache)
+        await sdb_conn.execute(update(Team)
+                               .where(Team.parent_id == id)
+                               .values({Team.parent_id: None,
+                                        Team.updated_at: datetime.now(timezone.utc),
+                                        Team.members_count: Team.members_count,
+                                        Team.members_checksum: Team.members_checksum}))
         await sdb_conn.execute(delete(Team).where(Team.id == id))
     return web.Response()
 
@@ -75,6 +84,7 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
     members = await _get_all_members([team], request.mdb, request.cache)
     model = TeamListItem(id=team[Team.id.key],
                          name=team[Team.name.key],
+                         parent=team[Team.parent_id.key],
                          members=sorted((members[m] for m in team[Team.members.key]),
                                         key=lambda u: u.login))
     return model_response(model)
@@ -95,6 +105,7 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
     all_members = await _get_all_members(teams, request.mdb, request.cache)
     items = [TeamListItem(id=t[Team.id.key],
                           name=t[Team.name.key],
+                          parent=t[Team.parent_id.key],
                           members=[all_members[m] for m in t[Team.members.key]])
              for t in teams]
     return model_response(items)
@@ -115,8 +126,17 @@ async def update_team(request: AthenianWebRequest, id: int,
         if account is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
         await get_user_account_status(user, account, sdb_conn, request.cache)
+        if id == body.parent:
+            raise ResponseError(BadRequestError(detail="Team cannot be a the parent of itself."))
         members = _check_members(body.members)
-        t = Team(owner_id=account, name=name, members=members).create_defaults()
+        await _check_parent(account, body.parent, sdb_conn)
+        await _check_parent_cycle(id, body.parent, sdb_conn)
+        t = Team(
+            owner_id=account,
+            name=name,
+            members=members,
+            parent_id=body.parent,
+        ).create_defaults()
         try:
             await sdb_conn.execute(update(Team).where(Team.id == id).values(t.explode()))
         except (UniqueViolationError, IntegrityError, OperationalError) as err:
@@ -149,6 +169,23 @@ def _check_members(members: List[str]) -> List[str]:
             detail="Invalid members of the team: %s" % ", ".join(invalid_members)))
 
     return sorted(set(members))
+
+
+async def _check_parent(account: int, parent_id: Optional[int], sdb: DatabaseLike) -> None:
+    if parent_id is None:
+        return
+    parent_owner = await sdb.fetch_val(select([Team.owner_id]).where(Team.id == parent_id))
+    if parent_owner != account:  # including None
+        raise ResponseError(BadRequestError(detail="Team's parent does not exist."))
+
+
+async def _check_parent_cycle(team_id: int, parent_id: Optional[int], sdb: DatabaseLike) -> None:
+    while parent_id not in (visited := {None, team_id}):
+        visited.add(parent_id := await sdb.fetch_val(
+            select([Team.parent_id]).where(Team.id == parent_id)))
+    if parent_id is not None:
+        visited.remove(None)
+        raise ResponseError(BadRequestError(detail="Detected a team parent cycle: %s." % visited))
 
 
 async def _get_all_members(teams: Iterable[Mapping],
