@@ -281,7 +281,7 @@ async def create_bots_team(account: int,
         account, sdb, mdb, None, None).list_release_matches(repos)
     contributors = await mine_contributors(
         {r.split("/", 1)[1] for r in repos}, None, None, False, [],
-        release_settings, mdb, pdb, None)
+        release_settings, mdb, pdb, None, force_fresh_releases=True)
     bots = {u[User.login.key] for u in contributors}.intersection(all_bots)
     if bots:
         bots = [PREFIXES["github"] + login for login in bots]
