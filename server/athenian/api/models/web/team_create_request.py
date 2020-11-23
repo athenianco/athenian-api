@@ -6,12 +6,18 @@ from athenian.api.models.web.base_model_ import Model
 class TeamCreateRequest(Model):
     """Team creation request."""
 
-    openapi_types = {"account": int, "name": str, "members": List[str]}
+    openapi_types = {
+        "account": int,
+        "name": str,
+        "members": List[str],
+        "parent": int,
+    }
 
     attribute_map = {
         "account": "account",
         "name": "name",
         "members": "members",
+        "parent": "parent",
     }
 
     def __init__(
@@ -19,16 +25,19 @@ class TeamCreateRequest(Model):
             account: Optional[int] = None,
             name: Optional[str] = None,
             members: Optional[List[str]] = None,
+            parent: Optional[int] = None,
     ):
         """TeamCreateRequest - a model defined in OpenAPI
 
         :param account: The account of this TeamCreateRequest.
         :param name: The name of this TeamCreateRequest.
         :param members: The members of this TeamCreateRequest.
+        :param parent: The parent of this TeamCreateRequest.
         """
         self._account = account
         self._name = name
         self._members = members
+        self._parent = parent
 
     @property
     def account(self) -> int:
@@ -100,3 +109,23 @@ class TeamCreateRequest(Model):
             raise ValueError("Invalid value for `members`, must not be `None`")
 
         self._members = members
+
+    @property
+    def parent(self) -> Optional[int]:
+        """Gets the parent of this TeamCreateRequest.
+
+        Identifier of the higher level team.
+
+        :return: The parent of this TeamCreateRequest.
+        """
+        return self._parent
+
+    @parent.setter
+    def parent(self, parent: Optional[int]):
+        """Sets the parent of this TeamCreateRequest.
+
+        Identifier of the higher level team.
+
+        :param parent: The parent of this TeamCreateRequest.
+        """
+        self._parent = parent

@@ -332,7 +332,7 @@ async def test_get_team_smoke(client, headers, sdb):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     body = json.loads(body)
-    assert body == {"id": 1, "name": "Engineering", "members": [
+    assert body == {"id": 1, "name": "Engineering", "parent": None, "members": [
         {"login": "github.com/mcuadros",
          "name": "Máximo Cuadros",
          "email": "mcuadros@gmail.com",
