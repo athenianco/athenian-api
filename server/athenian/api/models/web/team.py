@@ -5,26 +5,39 @@ from athenian.api.models.web.contributor import Contributor
 
 
 class Team(Model):
-    """List of team members."""
+    """Definition of a team of several developers."""
 
-    openapi_types = {"id": int, "name": str, "members": List[Contributor]}
-    attribute_map = {"id": "id", "name": "name", "members": "members"}
+    openapi_types = {
+        "id": int,
+        "name": str,
+        "members": List[Contributor],
+        "parent": int,
+    }
+    attribute_map = {
+        "id": "id",
+        "name": "name",
+        "members": "members",
+        "parent": "parent",
+    }
 
     def __init__(
             self,
             id: Optional[int] = None,
             name: Optional[str] = None,
             members: Optional[List[Contributor]] = None,
+            parent: Optional[int] = None,
     ):
         """Team - a model defined in OpenAPI
 
         :param id: The id of this Team.
         :param name: The name of this Team.
         :param members: The members of this Team.
+        :param parent: The parent of this Team.
         """
         self._id = id
         self._name = name
         self._members = members
+        self._parent = parent
 
     @property
     def id(self) -> int:
@@ -94,3 +107,23 @@ class Team(Model):
             raise ValueError("Invalid value for `members`, must not be `None`")
 
         self._members = members
+
+    @property
+    def parent(self) -> Optional[int]:
+        """Gets the parent of this Team.
+
+        Identifier of the higher level team.
+
+        :return: The parent of this Team.
+        """
+        return self._parent
+
+    @parent.setter
+    def parent(self, parent: Optional[int]):
+        """Sets the parent of this Team.
+
+        Identifier of the higher level team.
+
+        :param parent: The parent of this Team.
+        """
+        self._parent = parent

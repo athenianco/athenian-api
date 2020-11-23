@@ -2157,10 +2157,15 @@ components:
           type: string
         members:
           $ref: '#/components/schemas/DeveloperSet'
+        parent:
+          description: Identifier of the higher level team.
+          nullable: true
+          type: integer
       required:
       - account
       - members
       - name
+      - parent
       type: object
     TeamUpdateRequest:
       additionalProperties: false
@@ -2172,19 +2177,25 @@ components:
         - github.com/se7entyse7en
       properties:
         name:
-          description: Name of the team.
+          description: New name of the team.
           type: string
         members:
           $ref: '#/components/schemas/DeveloperSet'
+        parent:
+          description: New identifier of the higher level team.
+          nullable: true
+          type: integer
       required:
       - members
       - name
+      - parent
       type: object
     Team:
-      description: List of team members.
+      description: Definition of a team of several developers.
       example:
         id: 1
         name: Engineering
+        parent: 3
         members:
         - login: github.com/gkwillie
           name: Groundskeeper Willie
@@ -2203,16 +2214,22 @@ components:
           type: string
         members:
           $ref: '#/components/schemas/Contributors'
+        parent:
+          description: Identifier of the higher level team.
+          nullable: true
+          type: integer
       required:
       - id
       - members
       - name
+      - parent
       type: object
     TeamList:
       description: List of teams of an account.
       example:
       - id: 1
         name: Engineering
+        parent: 3
         members:
         - login: github.com/vmarkovtsev
           name: Vadim Markovtsev
@@ -2224,11 +2241,19 @@ components:
           picture: https://avatars1.githubusercontent.com/u/5599208?v=4
       - id: 2
         name: Product
+        parent: 3
         members:
         - login: github.com/warenlg
           name: Waren Long
           email: waren@athenian.co
           picture: https://avatars2.githubusercontent.com/u/24694845?v=4
+      - id: 3
+        name: Management
+        members:
+        - login: github.com/eiso
+          name: Eiso Kant
+          email: eiso@athenian.co
+          picture: https://avatars2.githubusercontent.com/u/1247608?v=4
       items:
         $ref: '#/components/schemas/Team'
       type: array
