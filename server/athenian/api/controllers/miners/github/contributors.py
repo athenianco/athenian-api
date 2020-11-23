@@ -40,7 +40,8 @@ async def mine_contributors(repos: Collection[str],
                             release_settings: Dict[str, ReleaseMatchSetting],
                             mdb: databases.Database,
                             pdb: databases.Database,
-                            cache: Optional[aiomcache.Client]) -> List[Dict[str, Any]]:
+                            cache: Optional[aiomcache.Client],
+                            force_fresh_releases: bool = False) -> List[Dict[str, Any]]:
     """Discover developers who made any important action in the given repositories and \
     in the given time frame."""
     assert (time_from is None) == (time_to is None)
@@ -156,8 +157,9 @@ async def mine_contributors(repos: Collection[str],
             rt_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
             now = datetime.now(timezone.utc) + timedelta(days=1)
             rt_to = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-        releases, _ = await load_releases(repos, branches, default_branches, rt_from, rt_to,
-                                          release_settings, mdb, pdb, cache)
+        releases, _ = await load_releases(
+            repos, branches, default_branches, rt_from, rt_to, release_settings, mdb, pdb, cache,
+            force_fresh=force_fresh_releases)
         counts = releases[Release.author.key].value_counts()
         return {
             "releaser": zip(counts.index.values, counts.values),
