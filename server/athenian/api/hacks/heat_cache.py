@@ -18,6 +18,7 @@ from athenian.api import add_logging_args, check_schema_versions, create_memcach
     create_slack, enable_defer, ParallelDatabase, patch_pandas, ResponseError, \
     setup_cache_metrics, setup_context, setup_defer, wait_deferred
 from athenian.api.async_utils import gather
+from athenian.api.controllers.account import copy_teams_as_needed
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -121,13 +122,13 @@ def main():
                 log.info("Considering account %d as brand new, creating the Bots team",
                          reposet.owner_id)
                 try:
-                    ntbots = await create_bots_team(
-                        reposet.owner_id, reposet.items, bots, sdb, mdb, pdb)
+                    num_teams, num_bots = await create_teams(
+                        reposet.owner_id, reposet.items, bots, sdb, mdb, pdb, cache)
                 except Exception as e:
                     log.warning("bots %d: %s: %s", reposet.owner_id, type(e).__name__, e)
                     sentry_sdk.capture_exception(e)
                     return_code = 1
-                    ntbots = 0
+                    num_teams = num_bots = 0
             repos = {r.split("/", 1)[1] for r in reposet.items}
             log.info("Heating reposet %d of account %d (%d repos)",
                      reposet.id, reposet.owner_id, len(repos))
@@ -180,7 +181,8 @@ def main():
                                      branches=branches_count,
                                      repositories=len(repos),
                                      bots_team_name=Team.BOTS,
-                                     bots=ntbots)
+                                     bots=num_bots,
+                                     teams=num_teams)
             except Exception as e:
                 log.warning("reposet %d: %s: %s", reposet.id, type(e).__name__, e)
                 sentry_sdk.capture_exception(e)
@@ -265,30 +267,35 @@ async def load_account_state(account: int,
     return progress, settings
 
 
-async def create_bots_team(account: int,
-                           repos: Collection[str],
-                           all_bots: Set[str],
-                           sdb: ParallelDatabase,
-                           mdb: ParallelDatabase,
-                           pdb: ParallelDatabase) -> int:
-    """Create a new team for the specified accoutn which contains all the involved bots."""
+async def create_teams(account: int,
+                       repos: Collection[str],
+                       all_bots: Set[str],
+                       sdb: ParallelDatabase,
+                       mdb: ParallelDatabase,
+                       pdb: ParallelDatabase,
+                       cache: Optional[aiomcache.Client]) -> Tuple[int, int]:
+    """Copy the existing teams from GitHub and create a new team with all the involved bots \
+    for the specified account.
+
+    :return: Number of copied teams and the number of noticed bots.
+    """
+    num_teams = len(await copy_teams_as_needed(account, sdb, mdb, cache))
     team = await sdb.fetch_one(select([Team.id, Team.members_count])
                                .where(and_(Team.name == Team.BOTS,
                                            Team.owner_id == account)))
     if team is not None:
-        return team[Team.members_count.key]
+        return num_teams, team[Team.members_count.key]
     release_settings = await Settings.from_account(
         account, sdb, mdb, None, None).list_release_matches(repos)
     contributors = await mine_contributors(
         {r.split("/", 1)[1] for r in repos}, None, None, False, [],
         release_settings, mdb, pdb, None, force_fresh_releases=True)
-    bots = {u[User.login.key] for u in contributors}.intersection(all_bots)
-    if bots:
+    if (bots := {u[User.login.key] for u in contributors}.intersection(all_bots)):
         bots = [PREFIXES["github"] + login for login in bots]
         await sdb.execute(insert(Team).values(
             Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
             .create_defaults().explode()))
-    return len(bots)
+    return num_teams, len(bots)
 
 
 async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelDatabase) -> int:

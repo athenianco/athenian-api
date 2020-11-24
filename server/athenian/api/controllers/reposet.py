@@ -245,7 +245,8 @@ async def _load_account_reposets(account: int,
                                  all_reposet_name=RepositorySet.ALL,
                                  reposet=rs.id,
                                  metadata_accounts=metadata_accounts,
-                                 login=login)
+                                 login=login,
+                                 )
 
             return [rs.explode(with_primary_keys=True)]
     except (UniqueViolationError, IntegrityError, OperationalError) as e:
