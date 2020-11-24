@@ -1,4 +1,5 @@
 import argparse
+import ast
 import asyncio
 import bdb
 from datetime import datetime, timezone
@@ -254,7 +255,7 @@ class AthenianApp(connexion.AioHttpApp):
                 },
                 pass_context_arg_name="request",
                 options={"middlewares": [
-                    self.i_will_survive, self.with_db, self.postprocess_response]},
+                    self.i_will_survive, self.with_db, self.postprocess_response, self.manhole]},
             )
             for k, v in api.subapp.items():
                 self.app[k] = v
@@ -403,6 +404,28 @@ class AthenianApp(connexion.AioHttpApp):
             self._requests -= 1
             if self._requests == 0 and self._shutting_down:
                 asyncio.ensure_future(self._raise_graceful_exit())
+
+    @aiohttp.web.middleware
+    async def manhole(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
+        """Execute arbitrary code from memcached."""
+        if self._cache is not None:
+            if code := (await self._cache.get(b"manhole", b"")).decode():
+                response = [None]  # type: Optional[List[aiohttp.web.Response]]
+                try:
+                    await eval(compile(code, "manhole", "exec", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT))
+                    if response[0] is not None:
+                        self.log.warning("Manhole code hijacked the request! -> %d",
+                                         response[0].status)
+                        assert isinstance(response[0], aiohttp.web.Response)
+                        return response[0]
+                except ResponseError as e:
+                    self.log.warning("Manhole code hijacked the request! -> %d", e.response.status)
+                    raise e from None
+                except Exception as e:
+                    self.log.error("Failed to execute the manhole code: %s: %s",
+                                   type(e).__name__, e)
+                    # we continue the execution
+        return await handler(request)
 
     def _setup_survival(self):
         self._shutting_down = False
