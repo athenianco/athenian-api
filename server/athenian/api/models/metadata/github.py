@@ -385,3 +385,16 @@ class Organization(Base, IDMixinNG, AccountMixin):
     login = Column(Text, nullable=False)
     name = Column(Text)
     avatar_url = Column(Text)
+
+
+class Team(Base, IDMixinNG):
+    __tablename__ = "github_node_team"
+
+    organization = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
+    description = Column(Text)
+    parent_team = Column(Text)
+
+
+class TeamMember(Base, ParentChildMixin):
+    __tablename__ = "github_node_team_members"

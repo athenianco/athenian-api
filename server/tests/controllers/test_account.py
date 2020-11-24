@@ -1,8 +1,10 @@
 import pytest
+from sqlalchemy import select
 
 from athenian.api import ResponseError
-from athenian.api.controllers.account import get_metadata_account_ids
+from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.models.state.models import Team
 
 
 @with_defer
@@ -28,3 +30,12 @@ async def test_get_metadata_account_id_no_cache(sdb):
 async def test_get_metadata_account_id_error(sdb):
     with pytest.raises(ResponseError):
         await get_metadata_account_ids(2, sdb, None)
+
+
+async def test_copy_teams_as_needed(sdb, mdb):
+    await copy_teams_as_needed(1, sdb, mdb, None)
+    teams = {t[Team.name.key]: t for t in await sdb.fetch_all(select([Team]))}
+    assert teams.keys() == {"team", "engineering", "business", "operations", "product", "admin"}
+    assert teams["product"][Team.members.key] == ["github.com/eiso", "github.com/warenlg"]
+    assert teams["product"][Team.members_count.key] == 2
+    assert teams["product"][Team.parent_id.key] == 1
