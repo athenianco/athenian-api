@@ -72,6 +72,9 @@ pytz.UTC = pytz.utc = timezone.utc
 # Allow other coroutines to execute every Nth iteration in long loops
 COROUTINE_YIELD_EVERY_ITER = 250
 
+# Global Sentry tracing sample rate override
+trace_sample_rate_manhole = lambda request: None  # noqa(E731)
+
 
 async def list_with_yield(iterable: Iterable[Any], sentry_op: str) -> List[Any]:
     """Drain an iterable to a list, tracing the loop in Sentry and respecting other coroutines."""
@@ -517,6 +520,8 @@ def setup_context(log: logging.Logger) -> None:
 
     def sample_trace(context) -> float:
         request: aiohttp.web.Request = context["aiohttp_request"]
+        if (override_sample_rate := trace_sample_rate_manhole(request)) is not None:
+            return override_sample_rate
         if request.method == "OPTIONS":
             return 0
         path = request.path
