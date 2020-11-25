@@ -10,8 +10,8 @@ from athenian.api.models.state.models import Account
 global trace_sample_rate_manhole
 trace_sample_rate_manhole = lambda request: 0
 accounts = await request.sdb.fetch_val(select([func.count(Account.id)]))
-response[0] = await handler(request)
-response[0].headers.add("X-Accounts", str(accounts))"""
+response = await handler(request)
+response.headers.add("X-Accounts", str(accounts))"""
     await client_cache.set(b"manhole", code.encode())
     response = await client.request(
         method="GET", path="/v1/versions", headers=headers, json={},
