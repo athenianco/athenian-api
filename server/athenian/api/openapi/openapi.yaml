@@ -2390,6 +2390,9 @@ components:
             1: true
             2: false
           type: object
+        impersonated_by:
+          description: Identifier of the god user who is acting on behalf of.
+          type: string
       required:
       - id
       - login
