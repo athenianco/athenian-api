@@ -43,7 +43,7 @@ from athenian.api.models.web.for_set import ForSet, RepositoryGroupsMixin
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
 from athenian.api.models.web.found_jira_stuff import FoundJIRAStuff
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, \
-    ForbiddenError, GenericError, NotFoundError, ServerNotImplementedError
+    ForbiddenError, GenericError, NotFoundError, ServerNotImplementedError, TooManyRequestsError
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.histogram_definition import HistogramDefinition

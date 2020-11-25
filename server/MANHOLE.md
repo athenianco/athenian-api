@@ -14,7 +14,7 @@ See [tests/test_manhole.py](tests/test_manhole.py) for the examples.
 - `await handler(request)` produces the original response.
 - Assign to `response` to override the response. If the value is not `None`, the regular handler
 will not be executed.
-- Assign to `global trace_sample_rate_manhole` to change the traces sampling rate in Sentry.
+- Assign to `athenian.api.trace_sample_rate_manhole` to change the traces sampling rate in Sentry.
 - The user is resolved inside the `handler`, so it is not possible to check them before calling
 `await handler(request)`. Thus `request.uid` emerges after the call.
 

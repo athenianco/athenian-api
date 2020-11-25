@@ -46,7 +46,8 @@ class FilterCommitsProperty(Enum):
          ",".join(sorted(with_committer)) if with_committer else "",
          "" if kwargs.get("columns") is None else ",".join(c.key for c in kwargs["columns"])),
 )
-async def extract_commits(prop: FilterCommitsProperty,
+async def extract_commits(accounts: Tuple[int, ...],
+                          prop: FilterCommitsProperty,
                           date_from: datetime,
                           date_to: datetime,
                           repos: Collection[str],

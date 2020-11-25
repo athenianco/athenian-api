@@ -70,7 +70,8 @@ unfresh_participants_threshold = 50
     ),
     version=2,
 )
-async def calc_pull_request_facts_github(time_from: datetime,
+async def calc_pull_request_facts_github(accounts: Tuple[int, ...],
+                                         time_from: datetime,
                                          time_to: datetime,
                                          repositories: Set[str],
                                          participants: PRParticipants,
@@ -86,6 +87,8 @@ async def calc_pull_request_facts_github(time_from: datetime,
     """
     Calculate facts about pull request on GitHub.
 
+    :param account: Metadata (GitHub) account IDs (*not the state DB account*) that own the repos.
+    :param exclude_inactive: Do not load PRs without events between `time_from` and `time_to`.
     :param fresh: If the number of done PRs for the time period and filters exceeds \
                   `unfresh_mode_threshold`, force querying mdb instead of pdb only.
     :return: Map repository name -> list of PR facts.
@@ -205,7 +208,8 @@ async def calc_pull_request_facts_github(time_from: datetime,
         release_settings,
     ),
 )
-async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
+async def calc_pull_request_metrics_line_github(accounts: Tuple[int, ...],
+                                                metrics: Sequence[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
                                                 quantiles: Sequence[float],
                                                 lines: Sequence[int],
@@ -231,13 +235,14 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
         metrics, quantiles, lines, exclude_inactive=exclude_inactive)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
-        time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
-        release_settings, fresh, mdb, pdb, cache)
+        accounts, time_from, time_to, all_repositories, participants, labels, jira,
+        exclude_inactive, release_settings, fresh, mdb, pdb, cache)
     return calc(mined_facts, time_intervals, repositories)
 
 
 @sentry_span
-async def calc_code_metrics_github(prop: FilterCommitsProperty,
+async def calc_code_metrics_github(accounts: Tuple[int, ...],
+                                   prop: FilterCommitsProperty,
                                    time_intervals: Sequence[datetime],
                                    repos: Collection[str],
                                    with_author: Optional[Collection[str]],
@@ -248,10 +253,11 @@ async def calc_code_metrics_github(prop: FilterCommitsProperty,
     """Filter code pushed on GitHub according to the specified criteria."""
     time_from, time_to = time_intervals[0], time_intervals[-1]
     x_commits = await extract_commits(
-        prop, time_from, time_to, repos, with_author, with_committer, db, cache)
+        accounts, prop, time_from, time_to, repos, with_author, with_committer, db, cache)
     all_commits = await extract_commits(
-        FilterCommitsProperty.NO_PR_MERGES, time_from, time_to, repos, with_author, with_committer,
-        db, cache, columns=[PushCommit.committed_date, PushCommit.additions, PushCommit.deletions])
+        accounts, FilterCommitsProperty.NO_PR_MERGES, time_from, time_to, repos,
+        with_author, with_committer, db, cache,
+        columns=[PushCommit.committed_date, PushCommit.additions, PushCommit.deletions])
     return calc_code_stats(x_commits, all_commits, time_intervals)
 
 
@@ -272,7 +278,8 @@ async def calc_code_metrics_github(prop: FilterCommitsProperty,
         release_settings,
     ),
 )
-async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, List[str]],
+async def calc_pull_request_histogram_github(accounts: Tuple[int, ...],
+                                             defs: Dict[HistogramParameters, List[str]],
                                              time_from: datetime,
                                              time_to: datetime,
                                              quantiles: Sequence[float],
@@ -288,15 +295,19 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
                                              pdb: Database,
                                              cache: Optional[aiomcache.Client],
                                              ) -> List[List[Tuple[str, Histogram]]]:
-    """Calculate the pull request histograms on GitHub."""
+    """
+    Calculate the pull request histograms on GitHub.
+
+    :return: len(defs) x len(repositories) x (metric ID, Histogram).
+    """
     all_repositories = set(chain.from_iterable(repositories))
     try:
         calc = PullRequestBinnedHistogramCalculator(defs.values(), quantiles, lines)
     except KeyError as e:
         raise ValueError("Unsupported metric: %s" % e)
     mined_facts = await calc_pull_request_facts_github(
-        time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
-        release_settings, fresh, mdb, pdb, cache)
+        accounts, time_from, time_to, all_repositories, participants, labels, jira,
+        exclude_inactive, release_settings, fresh, mdb, pdb, cache)
     hists = calc(mined_facts, [[time_from, time_to]], repositories, [k.__dict__ for k in defs])
     result = [[] for _ in range(len(repositories) * (len(lines or [None] * 2) - 1))]
     for defs_hists, metrics in zip(hists, defs.values()):
@@ -323,7 +334,8 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
         release_settings,
     ),
 )
-async def calc_release_metrics_line_github(metrics: Sequence[str],
+async def calc_release_metrics_line_github(accounts: Tuple[int, ...],
+                                           metrics: Sequence[str],
                                            time_intervals: Sequence[Sequence[datetime]],
                                            quantiles: Sequence[float],
                                            repositories: Sequence[Collection[str]],
@@ -342,8 +354,8 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
     branches, default_branches = await extract_branches(all_repositories, mdb, cache)
     all_participants = merge_release_participants(participants)
     releases, _, matched_bys = await mine_releases(
-        all_repositories, all_participants, branches, default_branches, time_from, time_to, jira,
-        release_settings, mdb, pdb, cache)
+        accounts, all_repositories, all_participants, branches, default_branches,
+        time_from, time_to, jira, release_settings, mdb, pdb, cache)
     mined_facts = defaultdict(list)
     for i, f in releases:
         mined_facts[i[Release.repository_full_name.key].split("/", 1)[1]].append(f)

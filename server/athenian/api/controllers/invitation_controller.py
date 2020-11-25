@@ -29,7 +29,7 @@ from athenian.api.models.metadata.github import Account as MetadataAccount, Acco
 from athenian.api.models.state.models import Account, Invitation, RepositorySet, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
     NoSourceDataError, NotFoundError
-from athenian.api.models.web.generic_error import DatabaseConflict
+from athenian.api.models.web.generic_error import DatabaseConflict, TooManyRequestsError
 from athenian.api.models.web.installation_progress import InstallationProgress
 from athenian.api.models.web.invitation_check_result import InvitationCheckResult
 from athenian.api.models.web.invitation_link import InvitationLink
@@ -168,10 +168,8 @@ async def _accept_invitation(iid, salt, request, conn):
             else:
                 now = datetime.now(tz=timestamp.tzinfo)
             if now - timestamp < accept_admin_cooldown:
-                raise ResponseError(GenericError(
+                raise ResponseError(TooManyRequestsError(
                     type="/errors/AdminCooldownError",
-                    title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
-                    status=HTTPStatus.TOO_MANY_REQUESTS,
                     detail="You accepted an admin invitation less than %s ago." %
                            accept_admin_cooldown))
         # create a new account for the admin user

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from athenian.api import FriendlyJson
+from athenian.api.serialization import FriendlyJson
 
 
 def test_serialize_datetime():

@@ -1,7 +1,7 @@
 import aiohttp
 import pytest
 
-from athenian.api import AthenianKMS
+from athenian.api.kms import AthenianKMS
 
 
 async def test_kms_roundtrip_correct():

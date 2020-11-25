@@ -249,7 +249,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified account.
+          description: Current user is not allowed to access the specified repositories.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
       - apiKeyAuth: []
@@ -288,7 +300,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified account.
+          description: Current user is not allowed to access the specified repositories.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
       - apiKeyAuth: []
@@ -365,7 +389,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified account.
+          description: Current user is not allowed to access the specified repositories.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
       - apiKeyAuth: []
@@ -404,8 +440,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified account
-            or reposets.
+          description: Current user is not allowed to access the specified repositories.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
         422:
           content:
             application/json:
@@ -449,7 +490,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified account.
+          description: Current user is not allowed to access the specified repositories.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
       - apiKeyAuth: []
@@ -489,8 +542,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified account
-            or reposets.
+          description: Current user is not allowed to access the specified repositories.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
       - apiKeyAuth: []
@@ -529,8 +593,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified account
-            or reposets.
+          description: Current user is not allowed to access the specified pull requests.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
       - apiKeyAuth: []
@@ -572,6 +647,18 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: The user is forbidden to access the specified repositories
             on behalf of the specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
       - apiKeyAuth: []
@@ -614,6 +701,12 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: The user is forbidden to calculate metrics on behalf of the
             specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
         422:
           content:
             application/json:
@@ -871,6 +964,18 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: The user is forbidden to access the specified repositories
             on behalf of the specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
       - apiKeyAuth: []
@@ -913,6 +1018,18 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: The user is forbidden to access the specified repositories
             on behalf of the specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
       - apiKeyAuth: []
@@ -955,6 +1072,18 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: The user is forbidden to access the specified repositories
             on behalf of the specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
       - apiKeyAuth: []
@@ -997,6 +1126,12 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: The user is forbidden to calculate metrics on behalf of the
             specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
         422:
           content:
             application/json:
@@ -1045,6 +1180,12 @@ paths:
                 $ref: '#/components/schemas/GenericError'
           description: The user is forbidden to calculate metrics on behalf of the
             specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
         422:
           content:
             application/json:
@@ -1089,8 +1230,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified account
-            or reposets.
+          description: Current user is not allowed to access the specified repositories.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
         422:
           content:
             application/json:

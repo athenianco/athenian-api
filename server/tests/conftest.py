@@ -36,11 +36,14 @@ from sqlalchemy.ext.declarative import DeclarativeMeta
 from sqlalchemy.orm import sessionmaker
 import uvloop
 
-from athenian.api import AthenianApp, check_collation, create_memcached, ParallelDatabase, \
-    patch_pandas, setup_cache_metrics, setup_defer
+from athenian.api import create_memcached, create_slack, patch_pandas
 from athenian.api.auth import Auth0, User
+from athenian.api.cache import setup_cache_metrics
+from athenian.api.connexion import AthenianApp
 from athenian.api.controllers import invitation_controller
-from athenian.api.models import metadata
+from athenian.api.db import ParallelDatabase
+from athenian.api.defer import setup_defer
+from athenian.api.models import check_collation, metadata
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.precomputed.models import Base as PrecomputedBase
@@ -262,11 +265,17 @@ def headers() -> Dict[str, str]:
     }
 
 
+@pytest.fixture(scope="module")
+def slack():
+    return create_slack(logging.getLogger("pytest"))
+
+
 @pytest.fixture(scope="function")
-async def app(metadata_db, state_db, precomputed_db) -> AthenianApp:
+async def app(metadata_db, state_db, precomputed_db, slack) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
     return AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, pdb_conn=precomputed_db,
-                       ui=False, auth0_cls=TestAuth0, kms_cls=FakeKMS)
+                       ui=False, auth0_cls=TestAuth0, kms_cls=FakeKMS, slack=slack,
+                       client_max_size=256 * 1024)
 
 
 @pytest.fixture(scope="function")

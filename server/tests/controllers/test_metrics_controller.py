@@ -5,10 +5,10 @@ import json
 import pandas as pd
 import pytest
 
-from athenian.api import FriendlyJson
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRequestMetrics, \
     CalculatedReleaseMetric, CodeBypassingPRsMeasurement, DeveloperMetricID, PullRequestMetricID, \
     PullRequestWith, ReleaseMetricID
+from athenian.api.serialization import FriendlyJson
 
 
 @pytest.mark.parametrize(
@@ -237,33 +237,33 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
     assert len(cm.calculated[0].values) > 0
 
 
-@pytest.mark.parametrize("account, date_to, quantiles, lines, code",
-                         [(3, "2020-02-22", [0, 1], None, 403),
-                          (10, "2020-02-22", [0, 1], None, 403),
-                          (1, "2015-10-13", [0, 1], None, 200),
-                          (1, "2010-01-11", [0, 1], None, 400),
-                          (1, "2020-01-32", [0, 1], None, 400),
-                          (1, "2020-01-01", [-1, 0.5], None, 400),
-                          (1, "2020-01-01", [0, -1], None, 400),
-                          (1, "2020-01-01", [10, 20], None, 400),
-                          (1, "2020-01-01", [0.5, 0.25], None, 400),
-                          (1, "2020-01-01", [0.5, 0.5], None, 400),
-                          (1, "2015-10-13", [0, 1], [], 400),
-                          (1, "2015-10-13", [0, 1], [1], 400),
-                          (1, "2015-10-13", [0, 1], [1, 1], 400),
-                          (1, "2015-10-13", [0, 1], [-1, 1], 400),
-                          (1, "2015-10-13", [0, 1], [1, 0], 400),
+@pytest.mark.parametrize("account, date_to, quantiles, lines, in_, code",
+                         [(3, "2020-02-22", [0, 1], None, "{1}", 404),
+                          (2, "2020-02-22", [0, 1], None, "{1}", 422),
+                          (10, "2020-02-22", [0, 1], None, "{1}", 404),
+                          (1, "2015-10-13", [0, 1], None, "{1}", 200),
+                          (1, "2010-01-11", [0, 1], None, "{1}", 400),
+                          (1, "2020-01-32", [0, 1], None, "{1}", 400),
+                          (1, "2020-01-01", [-1, 0.5], None, "{1}", 400),
+                          (1, "2020-01-01", [0, -1], None, "{1}", 400),
+                          (1, "2020-01-01", [10, 20], None, "{1}", 400),
+                          (1, "2020-01-01", [0.5, 0.25], None, "{1}", 400),
+                          (1, "2020-01-01", [0.5, 0.5], None, "{1}", 400),
+                          (1, "2015-10-13", [0, 1], [], "{1}", 400),
+                          (1, "2015-10-13", [0, 1], [1], "{1}", 400),
+                          (1, "2015-10-13", [0, 1], [1, 1], "{1}", 400),
+                          (1, "2015-10-13", [0, 1], [-1, 1], "{1}", 400),
+                          (1, "2015-10-13", [0, 1], [1, 0], "{1}", 400),
+                          (1, "2015-10-13", [0, 1], None, "github.com/athenianco/api", 403),
                           ])
 async def test_calc_metrics_prs_nasty_input(
-        client, headers, account, date_to, quantiles, lines, code):
+        client, headers, account, date_to, quantiles, lines, in_, code, mdb):
     """What if we specify a date that does not exist?"""
     body = {
         "for": [
             {
                 "with": {"merger": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
-                "repositories": [
-                    "{1}",
-                ],
+                "repositories": [in_],
                 **({"lines": lines} if lines is not None else {}),
             },
             {
@@ -724,15 +724,21 @@ async def test_code_bypassing_prs_smoke(client, headers):
         assert ms[i].date < ms[i + 1].date
 
 
-@pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2019-01-12", 200),
-                          (1, "2019-01-11", 400), (1, "2019-01-32", 400)])
-async def test_code_bypassing_prs_nasty_input(client, headers, account, date_to, code):
+@pytest.mark.parametrize("account, date_to, in_, code",
+                         [(3, "2020-02-22", "{1}", 404),
+                          (2, "2020-02-22", "github.com/src-d/go-git", 422),
+                          (10, "2020-02-22", "{1}", 404),
+                          (1, "2019-01-12", "{1}", 200),
+                          (1, "2019-01-11", "{1}", 400),
+                          (1, "2019-01-32", "{1}", 400),
+                          (1, "2019-01-12", "github.com/athenianco/athenian-api", 403),
+                          ])
+async def test_code_bypassing_prs_nasty_input(client, headers, account, date_to, in_, code):
     body = {
         "account": account,
         "date_from": "2019-01-12",
         "date_to": date_to,
-        "in": ["{1}"],
+        "in": [in_],
         "granularity": "month",
     }
     response = await client.request(
@@ -1068,16 +1074,22 @@ async def test_developer_metrics_labels_contradiction(client, headers):
     assert result.calculated[0].values == [[0], [0], [0], [0]]
 
 
-@pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2018-01-12", 200),
-                          (1, "2018-01-11", 400), (1, "2019-01-32", 400)])
-async def test_developer_metrics_nasty_input(client, headers, account, date_to, code):
+@pytest.mark.parametrize("account, date_to, in_, code",
+                         [(3, "2020-02-22", "{1}", 404),
+                          (2, "2020-02-22", "github.com/src-d/go-git", 422),
+                          (10, "2020-02-22", "{1}", 404),
+                          (1, "2018-01-12", "{1}", 200),
+                          (1, "2018-01-11", "{1}", 400),
+                          (1, "2019-01-32", "{1}", 400),
+                          (1, "2018-01-12", "github.com/athenianco/athenian-api", 403),
+                          ])
+async def test_developer_metrics_nasty_input(client, headers, account, date_to, in_, code):
     body = {
         "account": account,
         "date_from": "2018-01-12",
         "date_to": date_to,
         "for": [
-            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"]},
+            {"repositories": [in_], "developers": ["github.com/mcuadros"]},
         ],
         "metrics": sorted(DeveloperMetricID),
     }
@@ -1207,22 +1219,25 @@ async def test_release_metrics_participants_multiple(client, headers):
     assert models[0].values[0].values[0] == 12
 
 
-@pytest.mark.parametrize("account, date_to, quantiles, extra_metrics, code",
-                         [(3, "2020-02-22", [0, 1], [], 403),
-                          (10, "2020-02-22", [0, 1], [], 403),
-                          (1, "2015-10-13", [0, 1], [], 200),
-                          (1, "2015-10-13", [0, 1], ["whatever"], 400),
-                          (1, "2010-01-11", [0, 1], [], 400),
-                          (1, "2020-01-32", [0, 1], [], 400),
-                          (1, "2020-01-01", [-1, 0.5], [], 400),
-                          (1, "2020-01-01", [0, -1], [], 400),
-                          (1, "2020-01-01", [10, 20], [], 400),
-                          (1, "2020-01-01", [0.5, 0.25], [], 400),
-                          (1, "2020-01-01", [0.5, 0.5], [], 400)])
+@pytest.mark.parametrize("account, date_to, quantiles, extra_metrics, in_, code",
+                         [(3, "2020-02-22", [0, 1], [], "{1}", 404),
+                          (2, "2020-02-22", [0, 1], [], "github.com/src-d/go-git", 422),
+                          (10, "2020-02-22", [0, 1], [], "{1}", 404),
+                          (1, "2015-10-13", [0, 1], [], "{1}", 200),
+                          (1, "2015-10-13", [0, 1], ["whatever"], "{1}", 400),
+                          (1, "2010-01-11", [0, 1], [], "{1}", 400),
+                          (1, "2020-01-32", [0, 1], [], "{1}", 400),
+                          (1, "2020-01-01", [-1, 0.5], [], "{1}", 400),
+                          (1, "2020-01-01", [0, -1], [], "{1}", 400),
+                          (1, "2020-01-01", [10, 20], [], "{1}", 400),
+                          (1, "2020-01-01", [0.5, 0.25], [], "{1}", 400),
+                          (1, "2020-01-01", [0.5, 0.5], [], "{1}", 400),
+                          (1, "2015-10-13", [0, 1], [], "github.com/athenianco/athenian-api", 403),
+                          ])
 async def test_release_metrics_nasty_input(
-        client, headers, account, date_to, quantiles, extra_metrics, code):
+        client, headers, account, date_to, quantiles, extra_metrics, in_, code):
     body = {
-        "for": [["{1}"], ["{1}"]],
+        "for": [[in_], [in_]],
         "metrics": [ReleaseMetricID.TAG_RELEASE_AGE] + extra_metrics,
         "date_from": "2015-10-13",
         "date_to": date_to,

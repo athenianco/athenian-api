@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import pickle
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 import aiomcache
 from sqlalchemy import func, select
@@ -26,7 +26,8 @@ class LabelDetails(Label):
     deserialize=pickle.loads,
     key=lambda repos, **_: (",".join(sorted(repos)),),
 )
-async def mine_labels(repos: Set[str],
+async def mine_labels(accounts: Tuple[int, ...],
+                      repos: Set[str],
                       mdb: DatabaseLike,
                       cache: Optional[aiomcache.Client],
                       ) -> List[LabelDetails]:

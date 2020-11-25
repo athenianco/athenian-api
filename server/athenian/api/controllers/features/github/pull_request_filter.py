@@ -355,7 +355,8 @@ class PullRequestListMiner:
 
 
 @sentry_span
-async def filter_pull_requests(events: Set[PullRequestEvent],
+async def filter_pull_requests(accounts: Tuple[int, ...],
+                               events: Set[PullRequestEvent],
                                stages: Set[PullRequestStage],
                                time_from: datetime,
                                time_to: datetime,

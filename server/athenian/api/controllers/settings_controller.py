@@ -3,7 +3,6 @@ from typing import Optional
 from aiohttp import web
 from sqlalchemy import and_, delete, insert, select
 
-from athenian.api import ResponseError
 from athenian.api.controllers.account import get_user_account_status
 from athenian.api.controllers.jira import get_jira_id
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -16,11 +15,12 @@ from athenian.api.models.web.jira_project import JIRAProject
 from athenian.api.models.web.jira_projects_request import JIRAProjectsRequest
 from athenian.api.models.web.release_match_request import ReleaseMatchRequest
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import model_response
+from athenian.api.response import model_response, ResponseError
 
 
 async def list_release_match_settings(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current release matching settings."""
+    await get_user_account_status(request.uid, id, request.sdb, request.cache)
     settings = await Settings.from_request(request, id).list_release_matches()
     model = {k: ReleaseMatchSetting.from_dataclass(m).to_dict() for k, m in settings.items()}
     repos = [r.split("/", 1)[1] for r in settings]

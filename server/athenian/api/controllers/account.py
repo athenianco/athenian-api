@@ -54,11 +54,11 @@ async def get_metadata_account_ids(account: int,
 )
 async def get_user_account_status(user: str,
                                   account: int,
-                                  sdb_conn: DatabaseLike,
+                                  sdb: DatabaseLike,
                                   cache: Optional[aiomcache.Client],
                                   ) -> bool:
     """Return the value indicating whether the given user is an admin of the given account."""
-    status = await sdb_conn.fetch_val(
+    status = await sdb.fetch_val(
         select([UserAccount.is_admin])
         .where(and_(UserAccount.user_id == user, UserAccount.account_id == account)))
     if status is None:

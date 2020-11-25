@@ -3,9 +3,9 @@ from contextvars import ContextVar
 
 from sqlalchemy import delete
 
-from athenian.api import ResponseError
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.models.state.models import RepositorySet
+from athenian.api.response import ResponseError
 
 
 async def test_load_account_reposets_transaction(sdb, mdb):

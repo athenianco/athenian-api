@@ -2,7 +2,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import marshal
-from typing import Any, Collection, Dict, List, Optional
+from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import aiomcache
 import databases
@@ -32,7 +32,8 @@ from athenian.api.tracing import sentry_span
         with_stats, sorted(user_roles), release_settings,
     ),
 )
-async def mine_contributors(repos: Collection[str],
+async def mine_contributors(accounts: Tuple[int, ...],
+                            repos: Collection[str],
                             time_from: Optional[datetime],
                             time_to: Optional[datetime],
                             with_stats: bool,

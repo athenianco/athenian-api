@@ -14,8 +14,6 @@ class InvalidRequestError(GenericError):
     def __init__(
         self,
         pointer: str,
-        title: str = HTTPStatus.BAD_REQUEST.phrase,
-        status: int = HTTPStatus.BAD_REQUEST,
         detail: str = None,
         instance: str = None,
     ):
@@ -27,29 +25,29 @@ class InvalidRequestError(GenericError):
         :param instance: The instance of this InvalidRequestError.
         :param pointer: The pointer of this InvalidRequestError.
         """
-        super().__init__(type="/errors/InvalidRequestError", title=title, status=status,
+        super().__init__(type="/errors/InvalidRequestError",
+                         title=HTTPStatus.BAD_REQUEST.phrase,
+                         status=HTTPStatus.BAD_REQUEST,
                          detail=detail, instance=instance)
         self._pointer = pointer
 
     @property
-    def pointer(self):
+    def pointer(self) -> str:
         """Gets the pointer of this InvalidRequestError.
 
         Path to the offending request item.
 
         :return: The pointer of this InvalidRequestError.
-        :rtype: str
         """
         return self._pointer
 
     @pointer.setter
-    def pointer(self, pointer):
+    def pointer(self, pointer: str):
         """Sets the pointer of this InvalidRequestError.
 
         Path to the offending request item.
 
         :param pointer: The pointer of this InvalidRequestError.
-        :type pointer: str
         """
         if pointer is None:
             raise ValueError("Invalid value for `pointer`, must not be `None`")

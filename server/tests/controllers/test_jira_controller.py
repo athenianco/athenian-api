@@ -5,11 +5,11 @@ from dateutil.tz import tzutc
 import numpy as np
 import pytest
 
-from athenian.api import FriendlyJson
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
     CalculatedLinearMetricValues, FoundJIRAStuff, JIRAEpic, JIRALabel, JIRAMetricID, \
     JIRAPriority, JIRAUser
 from athenian.api.models.web.jira_epic_child import JIRAEpicChild
+from athenian.api.serialization import FriendlyJson
 
 
 async def test_filter_jira_smoke(client, headers):

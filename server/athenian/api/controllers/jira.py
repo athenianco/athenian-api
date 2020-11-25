@@ -4,12 +4,12 @@ from typing import List, Optional, Tuple
 import aiomcache
 from sqlalchemy import and_, select
 
-from athenian.api import ResponseError
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.models.metadata.jira import Project
 from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting
 from athenian.api.models.web import NoSourceDataError
+from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
 

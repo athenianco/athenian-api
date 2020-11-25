@@ -17,6 +17,7 @@ docker run -it --rm --entrypoint python3 athenian/api -m athenian.api.models.sta
 The server requires:
 
 - (optional) `SENTRY_KEY`, `SENTRY_PROJECT` and `SENTRY_ENV` environment variables to enable error logging.
+- (optional) `ATHENIAN_MAX_CLIENT_SIZE` to limit the maximum request body size (256KB by default).
 - `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` environment variables to enable authorization.
 - `ATHENIAN_DEFAULT_USER` environment variable that points to the Auth0 user ID used for unauthorized public requests.
 - `ATHENIAN_INVITATION_KEY` environment variable with the passphrase for encrypting invitation URLs.

@@ -10,7 +10,7 @@ from prometheus_client import CollectorRegistry
 import pytest
 from sqlalchemy import delete, insert, select
 
-from athenian.api import setup_cache_metrics
+from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.types import Property
@@ -46,7 +46,8 @@ async def test_filter_repositories_no_repos(client, headers):
 async def test_filter_repositories_smoke(client, headers, mdb, pdb, release_match_setting_tag):
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
-    args = (time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+    args = ((6366825,), time_from, time_to, {"src-d/go-git"}, {},
+            LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, False, mdb, pdb, None)
     await calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -74,7 +75,8 @@ async def test_filter_repositories_exclude_inactive(
         client, headers, mdb, pdb, release_match_setting_tag):
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
-    args = (time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+    args = ((6366825,), time_from, time_to, {"src-d/go-git"}, {},
+            LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, False, mdb, pdb, None)
     await calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -125,15 +127,23 @@ async def test_filter_repositories_fuck_up(client, headers, sdb, pdb):
 
 
 @pytest.mark.filter_repositories
-@pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403), (1, "2015-10-13", 200),
-                          (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
-async def test_filter_repositories_nasty_input(client, headers, account, date_to, code):
+@pytest.mark.parametrize("account, date_to, in_, code",
+                         [(3, "2020-01-23", None, 404),
+                          (2, "2020-01-23", None, 422),
+                          (10, "2020-01-23", None, 404),
+                          (1, "2015-10-13", None, 200),
+                          (1, "2010-01-11", None, 400),
+                          (1, "2020-01-32", None, 400),
+                          (1, "2015-10-13", ["github.com/athenianco/athenian-api"], 403),
+                          ])
+async def test_filter_repositories_nasty_input(client, headers, account, date_to, in_, code):
     body = {
         "date_from": "2015-10-13",
         "date_to": date_to,
         "account": account,
     }
+    if in_ is not None:
+        body["in"] = in_
     response = await client.request(
         method="POST", path="/v1/filter/repositories", headers=headers, json=body)
     assert response.status == code
@@ -257,15 +267,23 @@ async def test_filter_contributors_with_empty_and_full_roles(client, headers):
 
 
 @pytest.mark.filter_contributors
-@pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-01-23", 403), (10, "2020-01-23", 403), (1, "2015-10-13", 200),
-                          (1, "2010-01-11", 400), (1, "2020-01-32", 400)])
-async def test_filter_contributors_nasty_input(client, headers, account, date_to, code):
+@pytest.mark.parametrize("account, date_to, in_, code",
+                         [(3, "2020-01-23", None, 404),
+                          (2, "2020-01-23", None, 422),
+                          (10, "2020-01-23", None, 404),
+                          (1, "2015-10-13", None, 200),
+                          (1, "2010-01-11", None, 400),
+                          (1, "2020-01-32", None, 400),
+                          (1, "2015-10-13", ["github.com/athenianco/athenian-api"], 403),
+                          ])
+async def test_filter_contributors_nasty_input(client, headers, account, date_to, in_, code):
     body = {
         "date_from": "2015-10-13",
         "date_to": date_to,
         "account": account,
     }
+    if in_ is not None:
+        body["in"] = in_
     response = await client.request(
         method="POST", path="/v1/filter/contributors", headers=headers, json=body)
     assert response.status == code
@@ -761,19 +779,22 @@ async def validate_prs_response(response: ClientResponse,
 
 
 @pytest.mark.filter_pull_requests
-@pytest.mark.parametrize("account, date_to, updated_from, code",
-                         [(3, "2020-01-23", None, 403),
-                          (10, "2020-01-23", None, 403),
-                          (1, "2015-10-13", None, 200),
-                          (1, "2010-01-11", None, 400),
-                          (1, "2020-01-32", None, 400),
-                          (1, "2015-10-13", "2015-10-15", 400)])
-async def test_filter_prs_nasty_input(client, headers, account, date_to, updated_from, code):
+@pytest.mark.parametrize("account, date_to, updated_from, in_, code",
+                         [(3, "2020-01-23", None, [], 404),
+                          (2, "2020-01-23", None, [], 422),
+                          (10, "2020-01-23", None, [], 404),
+                          (1, "2015-10-13", None, [], 200),
+                          (1, "2010-01-11", None, [], 400),
+                          (1, "2020-01-32", None, [], 400),
+                          (1, "2015-10-13", "2015-10-15", [], 400),
+                          (1, "2015-10-13", None, ["github.com/athenianco/athenian-api"], 403),
+                          ])
+async def test_filter_prs_nasty_input(client, headers, account, date_to, updated_from, in_, code):
     body = {
         "date_from": "2015-10-13",
         "date_to": date_to,
         "account": account,
-        "in": [],
+        "in": in_,
         "properties": [],
         "exclude_inactive": False,
     }
@@ -1004,17 +1025,23 @@ async def test_filter_commits_bypassing_prs_no_with(client, cached, headers, app
 
 @pytest.mark.filter_commits
 @pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
-@pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2020-01-12", 200),
-                          (1, "2010-01-11", 400), (1, "2020-02-32", 400)])
+@pytest.mark.parametrize("account, date_to, in_, code",
+                         [(3, "2020-02-22", "{1}", 404),
+                          (2, "2020-02-22", "github.com/src-d/go-git", 422),
+                          (10, "2020-02-22", "{1}", 404),
+                          (1, "2020-01-12", "{1}", 200),
+                          (1, "2010-01-11", "{1}", 400),
+                          (1, "2020-02-32", "{1}", 400),
+                          (1, "2020-01-12", "github.com/athenianco/athenian-api", 403),
+                          ])
 @skip_if_no_memcached
 async def test_filter_commits_bypassing_prs_nasty_input(client, cached, headers, app, client_cache,
-                                                        account, date_to, code):
+                                                        account, date_to, in_, code):
     body = {
         "account": account,
         "date_from": "2020-01-12",
         "date_to": date_to,
-        "in": ["{1}"],
+        "in": [in_],
         "property": "bypassing_prs",
     }
     response = await client.request(
@@ -1135,15 +1162,21 @@ async def test_filter_releases_by_participants(client, headers):
 
 
 @pytest.mark.filter_releases
-@pytest.mark.parametrize("account, date_to, code",
-                         [(3, "2020-02-22", 403), (10, "2020-02-22", 403), (1, "2020-01-12", 200),
-                          (1, "2010-01-11", 400), (1, "2020-02-32", 400)])
-async def test_filter_releases_nasty_input(client, headers, account, date_to, code):
+@pytest.mark.parametrize("account, date_to, in_, code",
+                         [(3, "2020-02-22", "{1}", 404),
+                          (2, "2020-02-22", "github.com/src-d/go-git", 422),
+                          (10, "2020-02-22", "{1}", 404),
+                          (1, "2020-01-12", "{1}", 200),
+                          (1, "2010-01-11", "{1}", 400),
+                          (1, "2020-02-32", "{1}", 400),
+                          (1, "2020-01-12", "github.com/athenianco/athenian-api", 403),
+                          ])
+async def test_filter_releases_nasty_input(client, headers, account, date_to, in_, code):
     body = {
         "account": account,
         "date_from": "2020-01-12",
         "date_to": date_to,
-        "in": ["{1}"],
+        "in": [in_],
     }
     response = await client.request(
         method="POST", path="/v1/filter/releases", headers=headers, json=body)
@@ -1189,7 +1222,8 @@ async def test_get_prs_smoke(client, headers):
 
 @pytest.mark.parametrize("account, repo, numbers, status",
                          [(1, "bitbucket.org/whatever", [1, 2, 3], 400),
-                          (3, "github.com/src-d/go-git", [1, 2, 3], 422),
+                          (2, "github.com/src-d/go-git", [1, 2, 3], 422),
+                          (3, "github.com/src-d/go-git", [1, 2, 3], 404),
                           (4, "github.com/src-d/go-git", [1, 2, 3], 404),
                           (1, "github.com/whatever/else", [1, 2, 3], 403)])
 async def test_get_prs_nasty_input(client, headers, account, repo, numbers, status):
@@ -1229,8 +1263,9 @@ async def test_filter_labels_smoke(client, headers):
 @pytest.mark.filter_labels
 @pytest.mark.parametrize("account, repos, status",
                          [(1, ["github.com/whatever/else"], 403),
-                          (3, ["github.com/src-d/go-git"], 403),
-                          (4, ["github.com/src-d/go-git"], 403),
+                          (2, ["github.com/src-d/go-git"], 422),
+                          (3, ["github.com/src-d/go-git"], 404),
+                          (4, ["github.com/src-d/go-git"], 404),
                           (1, [], 200)])
 async def test_filter_labels_nasty_input(client, headers, account, repos, status):
     body = {

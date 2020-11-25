@@ -31,12 +31,10 @@ async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
     :param body: Team creation request body.
     """
     body = TeamCreateRequest.from_dict(body)
-    user = request.uid
     account = body.account
     parent = body.parent
     name = _check_name(body.name)
     async with request.sdb.connection() as sdb_conn:
-        await get_user_account_status(user, account, sdb_conn, request.cache)
         members = _check_members(body.members)
         await _check_parent(account, parent, sdb_conn)
         t = Team(owner_id=account, name=name, members=members, parent_id=parent).create_defaults()

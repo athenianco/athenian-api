@@ -10,12 +10,12 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, insert, select
 from sqlalchemy.sql import Select
 
-from athenian.api import ResponseError
-from athenian.api.controllers.account import get_account_repositories, get_user_account_status
+from athenian.api.controllers.account import get_account_repositories
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.models.state.models import ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
+from athenian.api.response import ResponseError
 
 # rejected: PR was closed without merging.
 # force_push_drop: commit history was overwritten and the PR's merge commit no longer exists.
@@ -126,8 +126,6 @@ class Settings:
         Repository names must be prefixed!
         """
         async with self._sdb.connection() as conn:
-            if self._user_id is not None:
-                await get_user_account_status(self._user_id, self._account, conn, self._cache)
             if repos is None:
                 repos = await get_account_repositories(self._account, conn)
             repos = frozenset(repos)
@@ -183,9 +181,7 @@ class Settings:
         if not tags:
             tags = ".*"
         async with self._sdb.connection() as conn:
-            # check that the user belongs to the account
-            await get_user_account_status(self._user_id, self._account, conn, self._cache)
-            repos = await resolve_repos(
+            repos, _ = await resolve_repos(
                 repos, self._account, self._user_id, self._login,
                 conn, self._mdb, self._cache, self._slack, strip_prefix=False)
             values = [ReleaseSetting(repository=r,
