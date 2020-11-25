@@ -181,6 +181,8 @@ async def test_become_db(client, headers, sdb):
         method="GET", path="/v1/user", headers=headers, json={},
     )
     body2 = json.loads((await response.read()).decode("utf-8"))
+    assert body2["impersonated_by"] == "auth0|5e1f6dfb57bc640ea390557b"
+    del body2["impersonated_by"]
     assert body1 == body2
     del body1["updated"]
     assert body1 == {
@@ -227,6 +229,7 @@ async def test_become_header(client, headers, sdb):
         "native_id": "5e1f6e2e8bfa520ea5290741",
         "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
         "accounts": {"1": False, "3": True},
+        "impersonated_by": "auth0|5e1f6dfb57bc640ea390557b",
     }
 
 

@@ -21,6 +21,7 @@ class User(Model):
         "picture": Optional[str],
         "updated": Optional[str],
         "accounts": Optional[object],
+        "impersonated_by": Optional[str],
     }
 
     attribute_map = {
@@ -32,6 +33,7 @@ class User(Model):
         "picture": "picture",
         "updated": "updated",
         "accounts": "accounts",
+        "impersonated_by": "impersonated_by",
     }
 
     def __init__(
@@ -44,6 +46,7 @@ class User(Model):
         picture: Optional[str] = None,
         updated: Optional[datetime] = None,
         accounts: Optional[dict] = None,
+        impersonated_by: Optional[str] = None,
     ):
         """User - a model defined in OpenAPI
 
@@ -55,6 +58,7 @@ class User(Model):
         :param picture: The picture of this User.
         :param updated: The updated of this User.
         :param accounts: The accounts of this User.
+        :param impersonated_by: The impersonated_by of this User.
         """
         self._id = id
         self._native_id = native_id
@@ -64,6 +68,7 @@ class User(Model):
         self._picture = picture
         self._updated = updated
         self._accounts = accounts
+        self._impersonated_by = impersonated_by
 
     @classmethod
     def from_auth0(cls, name: str, nickname: str, picture: str, updated_at: str,
@@ -270,7 +275,6 @@ class User(Model):
         Mapping between account IDs the user is a member of and is_admin flags.
 
         :return: The accounts of this User.
-        :rtype: object
         """
         return self._accounts
 
@@ -283,3 +287,23 @@ class User(Model):
         :param accounts: The accounts of this User.
         """
         self._accounts = accounts
+
+    @property
+    def impersonated_by(self) -> Optional[str]:
+        """Gets the impersonated_by of this User.
+
+        Identifier of the god user who is acting on behalf of.
+
+        :return: The impersonated_by of this User.
+        """
+        return self._impersonated_by
+
+    @impersonated_by.setter
+    def impersonated_by(self, impersonated_by: Optional[str]):
+        """Sets the impersonated_by of this User.
+
+        Identifier of the god user who is acting on behalf of.
+
+        :param impersonated_by: The impersonated_by of this User.
+        """
+        self._impersonated_by = impersonated_by

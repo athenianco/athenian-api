@@ -26,6 +26,8 @@ from athenian.api.typing_utils import DatabaseLike
 async def get_user(request: AthenianWebRequest) -> web.Response:
     """Return details about the current user."""
     user = await (await request.user()).load_accounts(request.sdb)
+    if (god_id := getattr(request, "god_id", None)) is not None:
+        user.impersonated_by = god_id
     return model_response(user)
 
 
