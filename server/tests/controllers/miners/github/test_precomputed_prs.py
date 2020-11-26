@@ -728,7 +728,8 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
 async def test_store_merged_unreleased_pull_request_facts_smoke(
         mdb, pdb, default_branches, release_match_setting_tag):
     prs, dfs, facts, matched_bys = await _fetch_pull_requests(
-        {"src-d/go-git": set(range(1000, 1010))}, release_match_setting_tag, mdb, pdb, None)
+        (6366825,), {"src-d/go-git": set(range(1000, 1010))},
+        release_match_setting_tag, mdb, pdb, None)
     for pr in prs:
         if pr.pr[PullRequest.merged_at.key] is None:
             pr.pr[PullRequest.merged_at.key] = datetime.now(tz=timezone.utc)
@@ -769,7 +770,8 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
 async def test_store_open_pull_request_facts_smoke(
         mdb, pdb, release_match_setting_tag):
     prs, dfs, facts, _ = await _fetch_pull_requests(
-        {"src-d/go-git": set(range(1000, 1010))}, release_match_setting_tag, mdb, pdb, None)
+        (6366825,), {"src-d/go-git": set(range(1000, 1010))},
+        release_match_setting_tag, mdb, pdb, None)
     with pytest.raises(AssertionError):
         await store_open_pull_request_facts(
             zip(prs, (facts[pr.pr[PullRequest.node_id.key]] for pr in prs)), pdb)

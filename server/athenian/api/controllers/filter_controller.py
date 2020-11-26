@@ -444,7 +444,7 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         return model_response(PullRequestSet())
     settings = await Settings.from_request(request, body.account).list_release_matches(repos)
     prs = await fetch_pull_requests(
-        github_repos, settings, request.mdb, request.pdb, request.cache)
+        meta_ids, github_repos, settings, request.mdb, request.pdb, request.cache)
     return await _build_github_prs_response(prs, request.mdb, request.cache)
 
 

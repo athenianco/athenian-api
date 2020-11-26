@@ -14,6 +14,7 @@ from sqlalchemy import and_, create_engine, extract, func, insert, or_, select, 
 
 from athenian.api import create_memcached, ParallelDatabase, patch_pandas
 from athenian.api.async_utils import gather, read_sql_query
+from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests
 from athenian.api.controllers.miners.types import PRParticipationKind, PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
@@ -66,8 +67,9 @@ async def refresh_aggregates(
 
                 checkpoint_timestamp = datetime.now(timezone.utc)
 
+                meta_ids = await get_metadata_account_ids(account, sdb, cache)
                 prs_data, releases_match_settings = await _fetch_prs_data(
-                    account, prs_collection, sdb, mdb, pdb, cache=cache)
+                    account, meta_ids, prs_collection, sdb, mdb, pdb, cache=cache)
                 prs_events = _eventify_prs(account, prs_data, releases_match_settings)
                 await _ingest_events(adb, prs_events)
 
@@ -300,7 +302,7 @@ async def _get_outdated_aggregation_prs(
 
 
 async def _fetch_prs_data(
-        account: int, prs_collection: PullRequestsCollection,
+        account: int, meta_ids: Tuple[int, ...], prs_collection: PullRequestsCollection,
         sdb: ParallelDatabase, mdb: ParallelDatabase, pdb: ParallelDatabase,
         cache: Optional[aiomcache.Client] = None,
 ) -> Tuple[List[PullRequestListItem], ReleaseMatchSetting]:
@@ -321,7 +323,7 @@ async def _fetch_prs_data(
 
     # TODO: add first commit to PullRequestListItem
     prs_data = await fetch_pull_requests(
-        prs_collection, releases_match_settings, mdb_, pdb_, cache=cache)
+        meta_ids, prs_collection, releases_match_settings, mdb_, pdb_, cache=cache)
     log.info("%d PRs data retrieved!", len(prs_data))
     return prs_data, releases_match_settings
 

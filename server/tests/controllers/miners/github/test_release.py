@@ -145,6 +145,7 @@ async def test_map_prs_to_releases_precomputed_released(
     time_from = time_to - timedelta(days=2)
 
     miner, _, _, _ = await PullRequestMiner.mine(
+        (6366825,),
         time_from.date(),
         time_to.date(),
         time_from,
