@@ -1,7 +1,7 @@
 from datetime import datetime
 from itertools import chain
 import marshal
-from typing import Collection, Dict, List, Optional
+from typing import Collection, Dict, List, Optional, Tuple
 
 import aiomcache
 import databases
@@ -31,7 +31,8 @@ from athenian.api.tracing import sentry_span
     key=lambda repos, time_from, time_to, **_: (
         ",".join(sorted(repos)), time_from.timestamp(), time_to.timestamp()),
 )
-async def mine_repositories(repos: Collection[str],
+async def mine_repositories(accounts: Tuple[int, ...],
+                            repos: Collection[str],
                             time_from: datetime,
                             time_to: datetime,
                             exclude_inactive: bool,

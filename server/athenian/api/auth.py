@@ -24,6 +24,7 @@ from sqlalchemy import select
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
+from athenian.api.controllers.account import get_user_account_status
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.state.models import God, UserToken
 from athenian.api.models.web import GenericError
@@ -197,7 +198,12 @@ class Auth0:
                 token_info = get_authorization_info(auth_funcs, request, required_scopes)
                 # token_info = {"token": <token>, "method": "bearer" or "apikey"}
                 await self._set_user(request.context, **token_info)
-                # nothing important afterward, finish the auth processing
+                # check whether the user may access the specified account
+                if request.json and (account := request.json.get("account")) is not None:
+                    assert isinstance(account, int)
+                    await get_user_account_status(
+                        request.context.uid, account, request.context.sdb, request.context.cache)
+                # finish the auth processing and chain forward
                 return await function(request)
             return wrapper
 

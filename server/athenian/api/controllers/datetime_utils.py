@@ -1,8 +1,8 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Tuple, Union
 
-from athenian.api import ResponseError
 from athenian.api.models.web import Granularity, InvalidRequestError
+from athenian.api.response import ResponseError
 
 
 def coarsen_time_interval(time_from: datetime, time_to: datetime) -> Tuple[date, date]:

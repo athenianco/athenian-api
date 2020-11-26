@@ -212,3 +212,18 @@ class ServerNotImplementedError(GenericError):
                          title=HTTPStatus.NOT_IMPLEMENTED.phrase,
                          status=HTTPStatus.NOT_IMPLEMENTED,
                          detail=detail)
+
+
+class TooManyRequestsError(GenericError):
+    """HTTP 429."""
+
+    def __init__(self,
+                 detail: Optional[str] = None,
+                 type="/errors/TooManyRequestsError"):
+        """Initialize a new instance of TooManyRequestsError.
+
+        :param detail: The details about this error.
+        :param type: The type identifier of this error.
+        """
+        super().__init__(type=type, title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
+                         status=HTTPStatus.TOO_MANY_REQUESTS, detail=detail)

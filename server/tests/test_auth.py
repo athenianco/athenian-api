@@ -4,7 +4,7 @@ from aiohttp.web_runner import GracefulExit
 import lz4.frame
 import pytest
 
-from athenian.api import Auth0
+from athenian.api.auth import Auth0
 from athenian.api.cache import gen_cache_key
 from athenian.api.models.web import User
 

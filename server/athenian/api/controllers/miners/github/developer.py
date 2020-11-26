@@ -313,7 +313,8 @@ processors = [
 
 
 @sentry_span
-async def calc_developer_metrics_github(devs: Sequence[str],
+async def calc_developer_metrics_github(account: int,
+                                        devs: Sequence[str],
                                         repos: Sequence[Collection[str]],
                                         time_from: datetime,
                                         time_to: datetime,

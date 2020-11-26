@@ -54,7 +54,6 @@ async def create_token(request: AthenianWebRequest, body: dict) -> web.Response:
     model = CreateTokenRequest.from_dict(body)
     _check_token_name(model.name)
     async with request.sdb.connection() as conn:
-        await get_user_account_status(request.uid, model.account, conn, request.cache)
         try:
             token = await conn.execute(insert(UserToken).values(UserToken(
                 name=model.name, account_id=model.account, user_id=request.uid,

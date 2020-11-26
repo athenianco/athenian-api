@@ -46,7 +46,8 @@ from athenian.api.tracing import sentry_span
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
         time_from, time_to, jira, settings),
 )
-async def mine_releases(repos: Iterable[str],
+async def mine_releases(accounts: Tuple[int, ...],
+                        repos: Iterable[str],
                         participants: ReleaseParticipants,
                         branches: pd.DataFrame,
                         default_branches: Dict[str, str],

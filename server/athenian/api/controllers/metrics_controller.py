@@ -1,5 +1,4 @@
 from collections import defaultdict
-from http import HTTPStatus
 from itertools import chain
 from typing import Dict, List, Sequence, Set, Tuple
 
@@ -7,6 +6,7 @@ from aiohttp import web
 import databases.core
 
 from athenian.api.async_utils import gather
+from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
@@ -23,7 +23,7 @@ from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
     CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, \
-    ForSet, ForSetDevelopers, ReleaseMetricsRequest
+    ForbiddenError, ForSet, ForSetDevelopers, ReleaseMetricsRequest
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.request import AthenianWebRequest
@@ -51,7 +51,9 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    filters, repos = await compile_repos_and_devs_prs(filt.for_, request, filt.account)
+    meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    filters, repos = await compile_repos_and_devs_prs(
+        filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 
@@ -83,7 +85,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     @sentry_span
     async def calculate_for_set_metrics(service, repos, devs, labels, jira, for_set):
         ti_mvs = await METRIC_ENTRIES[service]["prs_linear"](
-            filt.metrics, time_intervals, filt.quantiles or (0, 1),
+            meta_ids, filt.metrics, time_intervals, filt.quantiles or (0, 1),
             for_set.lines or [], repos, devs, labels, jira,
             filt.exclude_inactive, release_settings, filt.fresh,
             request.mdb, request.pdb, request.cache)
@@ -124,6 +126,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
 async def compile_repos_and_devs_prs(for_sets: List[ForSet],
                                      request: AthenianWebRequest,
                                      account: int,
+                                     meta_ids: Tuple[int, ...],
                                      ) -> Tuple[List[FilterPRs], Set[str]]:
     """
     Build the list of filters for a given list of ForSet-s.
@@ -133,8 +136,8 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
     :param for_sets: Paired lists of repositories, developers, and PR labels.
     :param request: Our incoming request to take the metadata DB, the user ID, the cache.
     :param account: Account ID on behalf of which we are loading reposets.
-    :return: Resulting list of filters and the set of all repositories after dereferencing, \
-             with service prefixes.
+    :return: 1. Resulting list of filters; \
+             2. The set of all repositories after dereferencing, with service prefixes.
     """
     filters = []
     checkers = {}
@@ -142,7 +145,7 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
     async with request.sdb.connection() as sdb_conn:
         for i, for_set in enumerate(for_sets):
             repos, service = await _extract_repos(
-                request, account, for_set.repositories, i, all_repos, checkers, sdb_conn)
+                request, account, meta_ids, for_set.repositories, i, all_repos, checkers, sdb_conn)
             if for_set.repogroups is not None:
                 repogroups = [set(chain.from_iterable(repos[i] for i in group))
                               for group in for_set.repogroups]
@@ -175,6 +178,7 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
 async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
                                        request: AthenianWebRequest,
                                        account: int,
+                                       meta_ids: Tuple[int, ...],
                                        ) -> (List[FilterDevs], List[str]):
     """
     Build the list of filters for a given list of ForSetDevelopers'.
@@ -184,6 +188,7 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
     :param for_sets: Paired lists of repositories and developers.
     :param request: Our incoming request to take the metadata DB, the user ID, the cache.
     :param account: Account ID on behalf of which we are loading reposets.
+    :param meta_ids: Metadata (GitHub) account IDs.
     :return: Resulting list of filters and the list of all repositories after dereferencing, \
              with service prefixes.
     """
@@ -193,7 +198,7 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
     async with request.sdb.connection() as sdb_conn:
         for i, for_set in enumerate(for_sets):
             repos, service = await _extract_repos(
-                request, account, for_set.repositories, i, all_repos, checkers, sdb_conn)
+                request, account, meta_ids, for_set.repositories, i, all_repos, checkers, sdb_conn)
             if for_set.repogroups is not None:
                 repogroups = [set(chain.from_iterable(repos[i] for i in group))
                               for group in for_set.repogroups]
@@ -221,6 +226,7 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
 
 async def _extract_repos(request: AthenianWebRequest,
                          account: int,
+                         meta_ids: Tuple[int, ...],
                          for_set: List[str],
                          for_set_index: int,
                          all_repos: Set[str],
@@ -251,13 +257,13 @@ async def _extract_repos(request: AthenianWebRequest,
             pointer=".for[%d].repositories" % for_set_index,
         ))
     if (checker := checkers.get(service)) is None:
-        checker = await access_classes[service](account, sdb, request.mdb, request.cache).load()
-        checkers[service] = checker
+        checkers[service] = (checker := await access_classes[service](
+            account, meta_ids, sdb, request.mdb, request.cache,
+        ).load())
     if denied := await checker.check(set(chain.from_iterable(resolved))):
-        raise ResponseError(InvalidRequestError(
-            detail="the following repositories are access denied for %s: %s" % (service, denied),
-            pointer=".for[%d].repositories" % for_set_index,
-            status=HTTPStatus.FORBIDDEN,
+        raise ResponseError(ForbiddenError(
+            detail="some repositories in .for[%d].repositories are access denied on %s: %s" % (
+                for_set_index, service, denied),
         ))
     return resolved, service
 
@@ -273,7 +279,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     async def login_loader() -> str:
         return (await request.user()).login
 
-    repos = await resolve_repos(
+    repos, meta_ids = await resolve_repos(
         filt.in_, filt.account, request.uid, login_loader,
         request.sdb, request.mdb, request.cache, request.app["slack"])
     time_intervals, tzoffset = split_to_time_intervals(
@@ -281,8 +287,8 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
     stats = await METRIC_ENTRIES["github"]["code"](
-        FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author, with_committer,
-        request.mdb, request.cache)  # type: List[CodeStats]
+        meta_ids, FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
+        with_committer, request.mdb, request.cache)  # type: List[CodeStats]
     model = [
         CodeBypassingPRsMeasurement(
             date=(d - tzoffset).date(),
@@ -302,7 +308,9 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    filters, all_repos = await _compile_repos_and_devs_devs(filt.for_, request, filt.account)
+    meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    filters, all_repos = await _compile_repos_and_devs_devs(
+        filt.for_, request, filt.account, meta_ids)
     if filt.date_to < filt.date_from:
         raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
@@ -323,7 +331,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     for_sets = []
     for service, (repos, devs, labels, jira, for_set) in filters:
         tasks.append(METRIC_ENTRIES[service]["developers"](
-            devs, repos, time_from, time_to, topics, labels, jira, release_settings,
+            meta_ids, devs, repos, time_from, time_to, topics, labels, jira, release_settings,
             request.mdb, request.pdb, request.cache))
         for_sets.append(for_set)
     all_stats = await gather(*tasks)
@@ -339,6 +347,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
 async def _compile_repos_releases(request: AthenianWebRequest,
                                   for_sets: List[List[str]],
                                   account: int,
+                                  meta_ids: Tuple[int, ...],
                                   ) -> Tuple[List[Tuple[str, Tuple[Set[str], List[str]]]],
                                              Set[str]]:
     filters = []
@@ -347,7 +356,7 @@ async def _compile_repos_releases(request: AthenianWebRequest,
     async with request.sdb.connection() as sdb_conn:
         for i, for_set in enumerate(for_sets):
             repos, service = await _extract_repos(
-                request, account, for_set, i, all_repos, checkers, sdb_conn)
+                request, account, meta_ids, for_set, i, all_repos, checkers, sdb_conn)
             filters.append((service, (set(chain.from_iterable(repos)), for_set)))
     return filters, all_repos
 
@@ -359,17 +368,18 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    filters, all_repos = await _compile_repos_releases(request, filt.for_, filt.account)
+    meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    filters, repos = await _compile_repos_releases(request, filt.for_, filt.account, meta_ids)
     grouped_for_sets = defaultdict(list)
     grouped_repos = defaultdict(list)
-    for service, (repos, for_set) in filters:
+    for service, (for_set_repos, for_set) in filters:
         grouped_for_sets[service].append(for_set)
-        grouped_repos[service].append(repos)
+        grouped_repos[service].append(for_set_repos)
     del filters
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     tasks = [
-        Settings.from_request(request, filt.account).list_release_matches(all_repos),
+        Settings.from_request(request, filt.account).list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     ]
     release_settings, jira_ids = await gather(*tasks)
@@ -384,7 +394,7 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
                               ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
         } for with_ in (filt.with_ or [])]
         ti_mvs, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
-            filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
+            meta_ids, filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
             JIRAFilter.from_web(filt.jira, jira_ids), release_settings,
             request.mdb, request.pdb, request.cache)
         release_matches = {k: v.name for k, v in release_matches.items()}

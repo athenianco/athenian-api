@@ -14,6 +14,7 @@ from sqlalchemy import and_, join, outerjoin, select
 from sqlalchemy.orm import aliased
 
 from athenian.api.async_utils import gather
+from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
 from athenian.api.controllers.jira import get_jira_installation, get_jira_installation_or_none
@@ -68,12 +69,12 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
+    repos, meta_ids = await _common_filter_preprocess(filt, request, strip_prefix=False)
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     users = await mine_contributors(
-        repos, filt.date_from, filt.date_to, True, filt.as_ or [], release_settings,
+        meta_ids, repos, filt.date_from, filt.date_to, True, filt.as_ or [], release_settings,
         request.mdb, request.pdb, request.cache)
     model = [
         DeveloperSummary(
@@ -96,12 +97,12 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
+    repos, meta_ids = await _common_filter_preprocess(filt, request, strip_prefix=False)
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     repos = await mine_repositories(
-        repos, filt.date_from, filt.date_to, filt.exclude_inactive, release_settings,
+        meta_ids, repos, filt.date_from, filt.date_to, filt.exclude_inactive, release_settings,
         request.mdb, request.pdb, request.cache)
     return web.json_response(repos)
 
@@ -111,7 +112,7 @@ async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
                                                 FilterPullRequestsRequest,
                                                 FilterCommitsRequest],
                                     request: AthenianWebRequest,
-                                    strip_prefix=True) -> Set[str]:
+                                    strip_prefix=True) -> Tuple[Set[str], Tuple[int, ...]]:
     if filt.date_to < filt.date_from:
         raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
@@ -138,9 +139,10 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
                                         request: AthenianWebRequest,
                                         ) -> Tuple[Set[str], Set[str], Set[str], PRParticipants,
                                                    LabelFilter, JIRAFilter,
-                                                   Dict[str, ReleaseMatchSetting]]:
+                                                   Dict[str, ReleaseMatchSetting],
+                                                   Tuple[int, ...]]:
     """Infer all the required PR filters from the request."""
-    repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
+    repos, meta_ids = await _common_filter_preprocess(filt, request, strip_prefix=False)
     if not filt.properties:
         events = set(getattr(PullRequestEvent, e.upper()) for e in (filt.events or []))
         stages = set(getattr(PullRequestStage, s.upper()) for s in (filt.stages or []))
@@ -166,7 +168,7 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
             await get_jira_installation(filt.account, request.sdb, request.mdb, request.cache))
     except ResponseError:
         jira = JIRAFilter.empty()
-    return repos, events, stages, participants, labels, jira, settings
+    return repos, events, stages, participants, labels, jira, settings, meta_ids
 
 
 async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -176,11 +178,11 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
-    repos, events, stages, participants, labels, jira, settings = \
+    repos, events, stages, participants, labels, jira, settings, meta_ids = \
         await resolve_filter_prs_parameters(filt, request)
     updated_min, updated_max = _bake_updated_min_max(filt)
     prs = await filter_pull_requests(
-        events, stages, filt.date_from, filt.date_to, repos, participants, labels, jira,
+        meta_ids, events, stages, filt.date_from, filt.date_to, repos, participants, labels, jira,
         filt.exclude_inactive, settings, updated_min, updated_max,
         request.mdb, request.pdb, request.cache)
     return await _build_github_prs_response(prs, request.mdb, request.cache)
@@ -245,12 +247,12 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    repos = await _common_filter_preprocess(filt, request)
+    repos, meta_ids = await _common_filter_preprocess(filt, request)
     with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
     log = logging.getLogger("filter_commits")
     commits = await extract_commits(
-        FilterCommitsProperty(filt.property), filt.date_from, filt.date_to, repos,
+        meta_ids, FilterCommitsProperty(filt.property), filt.date_from, filt.date_to, repos,
         with_author, with_committer, request.mdb, request.cache)
     model = CommitsList(data=[], include=IncludedNativeUsers(users={}))
     users = model.include.users
@@ -306,7 +308,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     except ValueError as e:
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    repos = await _common_filter_preprocess(filt, request, strip_prefix=False)
+    repos, meta_ids = await _common_filter_preprocess(filt, request, strip_prefix=False)
     participants = {
         rpk: getattr(filt.with_, attr) or []
         for attr, rpk in (("releaser", ReleaseParticipationKind.RELEASER),
@@ -321,7 +323,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     repos = [r.split("/", 1)[1] for r in repos]
     branches, default_branches = await extract_branches(repos, request.mdb, request.cache)
     releases, avatars, _ = await mine_releases(
-        repos, participants, branches, default_branches, filt.date_from, filt.date_to,
+        meta_ids, repos, participants, branches, default_branches, filt.date_from, filt.date_to,
         JIRAFilter.from_web(filt.jira, jira_ids), settings,
         request.mdb, request.pdb, request.cache)
     issues = await _load_jira_issues(jira_ids, releases, request.mdb)
@@ -416,6 +418,7 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     repos_by_service = {}
     reverse_prefixes = {v: k for k, v in PREFIXES.items()}
     async with request.sdb.connection() as sdb_conn:
+        meta_ids = await get_metadata_account_ids(body.account, sdb_conn, request.cache)
         async with request.mdb.connection() as mdb_conn:
             for repo in repos:
                 for prefix, service in reverse_prefixes.items():  # noqa: B007
@@ -428,7 +431,7 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
                     checker = checkers[service]
                 except KeyError:
                     checker = checkers[service] = access_classes[service](
-                        body.account, sdb_conn, mdb_conn, request.cache)
+                        body.account, meta_ids, sdb_conn, mdb_conn, request.cache)
                     await checker.load()
                 repo = repo[len(prefix):]
                 if await checker.check({repo}):
@@ -466,8 +469,9 @@ async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response
     async def login_loader() -> str:
         return (await request.user()).login
 
-    repos = await resolve_repos(body.repositories, body.account, request.uid, login_loader,
-                                request.sdb, request.mdb, request.cache, request.app["slack"])
-    labels = await mine_labels(repos, request.mdb, request.cache)
+    repos, meta_ids = await resolve_repos(
+        body.repositories, body.account, request.uid, login_loader,
+        request.sdb, request.mdb, request.cache, request.app["slack"])
+    labels = await mine_labels(meta_ids, repos, request.mdb, request.cache)
     labels = [FilteredLabel(**label.__dict__) for label in labels]
     return model_response(labels)

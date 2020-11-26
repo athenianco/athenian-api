@@ -14,11 +14,11 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, desc, func, insert, select, update
 from tqdm import tqdm
 
-from athenian.api import add_logging_args, check_schema_versions, create_memcached, \
-    create_slack, enable_defer, ParallelDatabase, patch_pandas, ResponseError, \
-    setup_cache_metrics, setup_context, setup_defer, wait_deferred
+from athenian.api import add_logging_args, check_schema_versions, create_memcached, create_slack, \
+    patch_pandas, setup_context
 from athenian.api.async_utils import gather
-from athenian.api.controllers.account import copy_teams_as_needed
+from athenian.api.cache import setup_cache_metrics
+from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -29,12 +29,15 @@ from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, Settings
 import athenian.api.db
+from athenian.api.db import ParallelDatabase
+from athenian.api.defer import enable_defer, setup_defer, wait_deferred
 from athenian.api.models.metadata import dereference_schemas, PREFIXES
 from athenian.api.models.metadata.github import NodeUser, PullRequestLabel, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts
 from athenian.api.models.state.models import Account, RepositorySet, Team, UserAccount
 from athenian.api.models.web import InstallationProgress, NoSourceDataError, NotFoundError
+from athenian.api.response import ResponseError
 
 
 def _parse_args():
@@ -118,12 +121,13 @@ def main():
                 log.warning("Skipped account %d / reposet %d because the progress is not 100%%",
                             reposet.owner_id, reposet.id)
                 continue
+            meta_ids = await get_metadata_account_ids(reposet.owner_id, sdb, cache)
             if not reposet.precomputed:
                 log.info("Considering account %d as brand new, creating the Bots team",
                          reposet.owner_id)
                 try:
                     num_teams, num_bots = await create_teams(
-                        reposet.owner_id, reposet.items, bots, sdb, mdb, pdb, cache)
+                        reposet.owner_id, meta_ids, reposet.items, bots, sdb, mdb, pdb, cache)
                 except Exception as e:
                     log.warning("bots %d: %s: %s", reposet.owner_id, type(e).__name__, e)
                     sentry_sdk.capture_exception(e)
@@ -136,7 +140,7 @@ def main():
                 log.info("Mining all the releases")
                 branches, default_branches = await extract_branches(repos, mdb, None)
                 releases, _, _ = await mine_releases(
-                    repos, {}, branches, default_branches, no_time_from, time_to,
+                    meta_ids, repos, {}, branches, default_branches, no_time_from, time_to,
                     JIRAFilter.empty(), settings, mdb, pdb, None, force_fresh=True)
                 branches_count = len(branches)
                 del branches
@@ -148,6 +152,7 @@ def main():
                 del releases
                 log.info("Extracting PR facts")
                 facts = await calc_pull_request_facts_github(
+                    meta_ids,
                     time_from,
                     time_to,
                     repos,
@@ -268,6 +273,7 @@ async def load_account_state(account: int,
 
 
 async def create_teams(account: int,
+                       meta_ids: Tuple[int, ...],
                        repos: Collection[str],
                        all_bots: Set[str],
                        sdb: ParallelDatabase,
@@ -288,7 +294,7 @@ async def create_teams(account: int,
     release_settings = await Settings.from_account(
         account, sdb, mdb, None, None).list_release_matches(repos)
     contributors = await mine_contributors(
-        {r.split("/", 1)[1] for r in repos}, None, None, False, [],
+        meta_ids, {r.split("/", 1)[1] for r in repos}, None, None, False, [],
         release_settings, mdb, pdb, None, force_fresh_releases=True)
     if (bots := {u[User.login.key] for u in contributors}.intersection(all_bots)):
         bots = [PREFIXES["github"] + login for login in bots]

@@ -7,7 +7,7 @@ from asyncpg import UniqueViolationError
 import databases.core
 from sqlalchemy import and_, delete, insert, select, update
 
-from athenian.api.controllers.account import get_user_account_status
+from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
 from athenian.api.models.metadata import PREFIXES
@@ -29,8 +29,7 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
     user = request.uid
     account = body.account
     async with request.sdb.connection() as sdb_conn:
-        adm = await get_user_account_status(user, account, sdb_conn, request.cache)
-        if not adm:
+        if not await get_user_account_status(user, account, sdb_conn, request.cache):
             raise ResponseError(ForbiddenError(
                 detail="User %s is not an admin of the account %d" % (user, account)))
         dupe_id = await sdb_conn.fetch_val(select([RepositorySet.id])
@@ -98,7 +97,10 @@ async def _check_reposet(request: AthenianWebRequest,
         raise ResponseError(BadRequestError(
             detail="repository prefixes do not match to any supported service",
         ))
-    checker = await access_classes[service](account, sdb_conn, request.mdb, request.cache).load()
+    meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
+    checker = await access_classes[service](
+        account, meta_ids, sdb_conn, request.mdb, request.cache,
+    ).load()
     denied = await checker.check(repos)
     if denied:
         raise ResponseError(ForbiddenError(

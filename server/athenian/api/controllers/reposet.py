@@ -101,8 +101,12 @@ async def resolve_repos(repositories: List[str],
                         cache: Optional[aiomcache.Client],
                         slack: Optional[SlackWebClient],
                         strip_prefix=True,
-                        ) -> Set[str]:
-    """Dereference all the reposets and produce the joint list of all mentioned repos."""
+                        ) -> Tuple[Set[str], Tuple[int, ...]]:
+    """
+    Dereference all the reposets and produce the joint list of all mentioned repos.
+
+    :return: (Union of all the mentioned repo names, metadata (GitHub) account IDs).
+    """
     status = await sdb_conn.fetch_one(
         select([UserAccount.is_admin]).where(and_(UserAccount.user_id == uid,
                                                   UserAccount.account_id == account)))
@@ -119,7 +123,8 @@ async def resolve_repos(repositories: List[str],
             for i, r in enumerate(repositories)], op="resolve_reposet-s")))
     prefix = PREFIXES["github"]
     checked_repos = {r[r.startswith(prefix) and len(prefix):] for r in repos}
-    checker = await access_classes["github"](account, sdb_conn, mdb_conn, cache).load()
+    meta_ids = await get_metadata_account_ids(account, sdb_conn, cache)
+    checker = await access_classes["github"](account, meta_ids, sdb_conn, mdb_conn, cache).load()
     denied = await checker.check(checked_repos)
     if denied:
         raise ResponseError(ForbiddenError(
@@ -127,7 +132,7 @@ async def resolve_repos(repositories: List[str],
         ))
     if strip_prefix:
         repos = checked_repos
-    return repos
+    return repos, meta_ids
 
 
 @sentry_span

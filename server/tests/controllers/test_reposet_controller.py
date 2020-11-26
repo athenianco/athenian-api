@@ -3,10 +3,10 @@ import json
 import pytest
 from sqlalchemy import select
 
-from athenian.api import ResponseError
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import RepositorySetCreateRequest, RepositorySetWithName
+from athenian.api.response import ResponseError
 
 
 async def test_delete_repository_set(client, app, headers):

@@ -617,7 +617,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     metrics_time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
     await calc_pull_request_facts_github(
-        metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
+        (6366825,), metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
         JIRAFilter.empty(), False, release_match_setting_tag, False, mdb, pdb, cache,
     )
     await wait_deferred()
@@ -666,7 +666,7 @@ async def test_discover_old_merged_unreleased_prs_labels(
     metrics_time_from = datetime(2018, 5, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2019, 1, 1, tzinfo=timezone.utc)
     await calc_pull_request_facts_github(
-        metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
+        (6366825,), metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
         JIRAFilter.empty(), False, release_match_setting_tag, False, mdb, pdb, cache,
     )
     await wait_deferred()

@@ -1,10 +1,10 @@
 import pytest
 from sqlalchemy import select
 
-from athenian.api import ResponseError
 from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.state.models import Team
+from athenian.api.response import ResponseError
 
 
 @with_defer

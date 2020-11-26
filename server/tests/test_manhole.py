@@ -6,9 +6,9 @@ async def test_manhole_smoke(client, headers, app, client_cache):
     app._cache = client_cache
     code = """from sqlalchemy import select, func
 from athenian.api.models.state.models import Account
+import athenian.api
 
-global trace_sample_rate_manhole
-trace_sample_rate_manhole = lambda request: 0
+athenian.api.trace_sample_rate_manhole = lambda request: 0
 accounts = await request.sdb.fetch_val(select([func.count(Account.id)]))
 response = await handler(request)
 response.headers.add("X-Accounts", str(accounts))"""

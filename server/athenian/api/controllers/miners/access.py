@@ -1,4 +1,4 @@
-from typing import Optional, Set
+from typing import Optional, Set, Tuple
 
 import aiomcache
 
@@ -14,6 +14,7 @@ class AccessChecker:
 
     def __init__(self,
                  account: int,
+                 metadata_ids: Tuple[int, ...],
                  sdb_conn: DatabaseLike,
                  mdb_conn: DatabaseLike,
                  cache: Optional[aiomcache.Client],
@@ -23,7 +24,9 @@ class AccessChecker:
 
         You need to await load() to prepare for check()-ing.
         """
+        assert len(metadata_ids) > 0
         self.account = account
+        self.metadata_ids = metadata_ids
         self.sdb = sdb_conn
         self.mdb = mdb_conn
         self.cache = cache

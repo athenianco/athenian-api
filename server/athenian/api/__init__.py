@@ -1,31 +1,19 @@
 import argparse
-import ast
 import asyncio
-import bdb
 from datetime import datetime, timezone
-from functools import partial
 import getpass
-from http import HTTPStatus
 import logging
 import os
 from pathlib import Path
 import re
-import signal
 import socket
 import sys
 import threading
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import aiohttp.web
-from aiohttp.web_exceptions import HTTPFound
 from aiohttp.web_runner import GracefulExit
-import aiohttp_cors
 import aiomcache
-from asyncpg import ConnectionDoesNotExistError, InterfaceError
-from connexion.apis import aiohttp_api
-from connexion.exceptions import OAuthProblem
-import connexion.lifecycle
-from connexion.spec import OpenAPISpecification
 import databases
 import jinja2
 import numpy
@@ -42,30 +30,20 @@ import uvloop
 
 from athenian.api import metadata
 from athenian.api.auth import Auth0
-from athenian.api.cache import setup_cache_metrics
-from athenian.api.controllers import invitation_controller
-from athenian.api.controllers.status_controller import setup_status
-from athenian.api.db import add_pdb_metrics_context, measure_db_overhead_and_retry, \
-    ParallelDatabase
-from athenian.api.defer import enable_defer, setup_defer, wait_deferred
+from athenian.api.connexion import AthenianApp
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
-from athenian.api.metadata import __package__
 from athenian.api.models import check_alembic_schema_version, check_collation, \
     DBSchemaMismatchError
-from athenian.api.models.metadata import check_schema_version as check_mdb_schema_version, \
-    dereference_schemas
-from athenian.api.models.web import GenericError
-from athenian.api.response import ResponseError
-from athenian.api.serialization import FriendlyJson
-from athenian.api.slogging import add_logging_args, log_multipart, trailing_dot_exceptions
+from athenian.api.models.metadata import check_schema_version as check_mdb_schema_version
+from athenian.api.slogging import add_logging_args, trailing_dot_exceptions
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
+
 
 trailing_dot_exceptions.update((
     "connexion.api.security",
     "connexion.apis.aiohttp_api",
 ))
-
 
 # Workaround https://github.com/pandas-dev/pandas/issues/32619
 pytz.UTC = pytz.utc = timezone.utc
@@ -98,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     class Formatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawTextHelpFormatter):
         pass
 
-    parser = argparse.ArgumentParser(__package__, epilog="""environment variables:
+    parser = argparse.ArgumentParser(metadata.__package__, epilog="""environment variables:
   SENTRY_KEY               Sentry token: ???@sentry.io
   SENTRY_PROJECT           Sentry project name.
   AUTH0_DOMAIN             Auth0 domain, usually *.auth0.com
@@ -145,338 +123,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-class AthenianAioHttpApi(connexion.AioHttpApi):
-    """
-    Hack connexion internals to solve our problems.
-
-    - Provide the server description from the original spec.
-    - Log big request bodies so that we don't fear truncation in Sentry.
-    """
-
-    def _spec_for_prefix(self, request) -> OpenAPISpecification:
-        spec = super()._spec_for_prefix(request)
-        spec["servers"][0]["description"] = self.specification["servers"][0]["description"]
-        return spec
-
-    def _set_base_path(self, base_path):
-        if base_path is not None:
-            self.base_path = base_path
-        else:
-            self.base_path = self.specification.base_path
-        self._api_name = connexion.AioHttpApi.normalize_string(self.base_path)
-
-    async def get_request(self, req: aiohttp.web.Request) -> connexion.lifecycle.ConnexionRequest:
-        """Override the parent's method to ensure that we can access the full request body in \
-        Sentry."""
-        api_req = await super().get_request(req)
-
-        if sentry_sdk.Hub.current.scope.transaction is not None:
-            body = req._read_bytes
-            if body is not None and len(body) > MAX_SENTRY_STRING_LENGTH:
-                body_id = log_multipart(aiohttp_api.logger, body)
-                req._read_bytes = ('"%s"' % body_id).encode()
-
-        return api_req
-
-
-class ShuttingDownError(GenericError):
-    """HTTP 503."""
-
-    def __init__(self):
-        """Initialize a new instance of ShuttingDownError.
-
-        :param detail: The details about this error.
-        """
-        super().__init__(type="/errors/ShuttingDownError",
-                         title=HTTPStatus.SERVICE_UNAVAILABLE.phrase,
-                         status=HTTPStatus.SERVICE_UNAVAILABLE,
-                         detail="This server is shutting down, please repeat your request.")
-
-
-class AthenianApp(connexion.AioHttpApp):
-    """
-    Athenian API application.
-
-    We need to override create_app() so that we can inject arbitrary middleware.
-    Besides, we simplify the class construction, especially the DB connection.
-    """
-
-    log = logging.getLogger(__package__)
-
-    def __init__(self,
-                 mdb_conn: str,
-                 sdb_conn: str,
-                 pdb_conn: str,
-                 ui: bool,
-                 mdb_options: Optional[dict] = None,
-                 sdb_options: Optional[dict] = None,
-                 pdb_options: Optional[dict] = None,
-                 auth0_cls: Callable[[], Auth0] = Auth0,
-                 kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
-                 cache: Optional[aiomcache.Client] = None):
-        """
-        Initialize the underlying connexion -> aiohttp application.
-
-        :param mdb_conn: SQLAlchemy connection string for the readonly metadata DB.
-        :param sdb_conn: SQLAlchemy connection string for the writeable server state DB.
-        :param pdb_conn: SQLAlchemy connection string for the writeable precomputed objects DB.
-        :param ui: Value indicating whether to enable the Swagger/OpenAPI UI at host:port/v*/ui.
-        :param mdb_options: Extra databases.Database() kwargs for the metadata DB.
-        :param sdb_options: Extra databases.Database() kwargs for the state DB.
-        :param pdb_options: Extra databases.Database() kwargs for the precomputed objects DB.
-        :param auth0_cls: Injected authorization class, simplifies unit testing.
-        :param kms_cls: Injected Google Key Management Service class, simplifies unit testing. \
-                        `None` disables KMS and, effectively, API Key authentication.
-        :param cache: memcached client for caching auxiliary data.
-        """
-        options = {"swagger_ui": ui}
-        specification_dir = str(Path(__file__).parent / "openapi")
-        super().__init__(__package__, specification_dir=specification_dir, options=options,
-                         server_args={"client_max_size": 256 * 1024})
-        self.api_cls = AthenianAioHttpApi
-        self._devenv = os.getenv("SENTRY_ENV", "development") == "development"
-        setup_defer(not self._devenv)
-        invitation_controller.validate_env()
-        self.app["auth"] = self._auth0 = auth0_cls(whitelist=[
-            r"/v1/openapi.json$",
-            r"/v1/ui(/|$)",
-            r"/v1/invite/check/?$",
-            r"/status/?$",
-            r"/memory/?$",
-            r"/objgraph/?$",
-        ], cache=cache)
-        with self._auth0:
-            api = self.add_api(
-                "openapi.yaml",
-                base_path="/v1",
-                arguments={
-                    "title": metadata.__description__,
-                    "server_url": self._auth0.audience.rstrip("/"),
-                    "server_description": os.getenv("SENTRY_ENV", "development"),
-                    "server_version": metadata.__version__,
-                    "commit": getattr(metadata, "__commit__", "N/A"),
-                    "build_date": getattr(metadata, "__date__", "N/A"),
-                },
-                pass_context_arg_name="request",
-                options={"middlewares": [
-                    self.i_will_survive, self.with_db, self.postprocess_response, self.manhole]},
-            )
-            for k, v in api.subapp.items():
-                self.app[k] = v
-            api.subapp._state = self.app._state
-            components = api.specification.raw["components"]
-            components["schemas"] = dict(sorted(components["schemas"].items()))
-        if kms_cls is not None:
-            self.app["kms"] = self._kms = kms_cls()
-        else:
-            self.log.warning("Google Key Management Service is disabled, PATs will not work")
-            self.app["kms"] = self._kms = None
-        api.jsonifier.json = FriendlyJson
-        prometheus_registry = setup_status(self.app)
-        self._setup_survival()
-        setup_cache_metrics(cache, self.app, prometheus_registry)
-        if ui:
-            def index_redirect(_):
-                raise HTTPFound("/v1/ui/")
-
-            self.app.router.add_get("/", index_redirect)
-        self._enable_cors()
-        self._cache = cache
-        self.mdb = self.sdb = self.pdb = None  # type: Optional[databases.Database]
-        pdbctx = add_pdb_metrics_context(self.app)
-
-        async def connect_to_db(name: str, shortcut: str, db_conn: str, db_options: dict):
-            try:
-                db = ParallelDatabase(db_conn, **(db_options or {}))
-                await db.connect()
-            except Exception as e:
-                if isinstance(e, asyncio.CancelledError):
-                    return
-                self.log.exception("Failed to connect to the %s DB at %s", name, db_conn)
-                raise GracefulExit() from None
-            self.log.info("Connected to the %s DB on %s", name, db_conn)
-            setattr(self, shortcut, measure_db_overhead_and_retry(db, shortcut, self.app))
-            if shortcut == "pdb":
-                self.pdb.metrics = pdbctx
-            elif shortcut == "mdb" and db.url.dialect == "sqlite":
-                dereference_schemas()
-
-        self.app.on_shutdown.append(self.shutdown)
-        # schedule the DB connections when the server starts
-        self._db_futures = {
-            args[1]: asyncio.ensure_future(connect_to_db(*args))
-            for args in (
-                ("metadata", "mdb", mdb_conn, mdb_options),
-                ("state", "sdb", sdb_conn, sdb_options),
-                ("precomputed", "pdb", pdb_conn, pdb_options),
-            )
-        }
-        self.server_name = socket.getfqdn()
-        node_name = os.getenv("NODE_NAME")
-        if node_name is not None:
-            self.server_name = node_name + "/" + self.server_name
-        self._slack = self.app["slack"] = create_slack(self.log)
-
-    async def shutdown(self, app: aiohttp.web.Application) -> None:
-        """Free resources associated with the object."""
-        if not self._shutting_down:
-            self.log.warning("Shutting down disgracefully")
-        await self._auth0.close()
-        if self._kms is not None:
-            await self._kms.close()
-        for f in self._db_futures.values():
-            f.cancel()
-        for db in (self.mdb, self.sdb, self.pdb):
-            if db is not None:
-                await db.disconnect()
-        if self._cache is not None:
-            if (f := getattr(self._cache, "version_future", None)) is not None:
-                f.cancel()
-            await self._cache.close()
-
-    @property
-    def auth0(self):
-        """Return the own Auth0 class instance."""
-        return self._auth0
-
-    @aiohttp.web.middleware
-    async def with_db(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
-        """Add "mdb", "pdb", "sdb", and "cache" attributes to every incoming request."""
-        for db in ("mdb", "sdb", "pdb"):
-            if getattr(self, db) is None:
-                await self._db_futures[db]
-                del self._db_futures[db]
-                assert getattr(self, db) is not None
-            # we can access them through `request.app.*db` but these are shorter to write
-            setattr(request, db, getattr(self, db))
-        if request.headers.get("Cache-Control") != "no-cache":
-            request.cache = self._cache
-        else:
-            request.cache = None
-        try:
-            return await handler(request)
-        except (ConnectionError, ConnectionDoesNotExistError, InterfaceError) as e:
-            sentry_sdk.capture_exception(e)
-            return ResponseError(GenericError(
-                type="/errors/InternalConnectivityError",
-                title=HTTPStatus.SERVICE_UNAVAILABLE.phrase,
-                status=HTTPStatus.SERVICE_UNAVAILABLE,
-                detail="%s: %s" % (type(e).__name__, e),
-            )).response
-
-    @aiohttp.web.middleware
-    async def postprocess_response(self, request: aiohttp.web.Request, handler,
-                                   ) -> aiohttp.web.Response:
-        """Append X-Backend-Server HTTP header."""
-        with sentry_sdk.start_span(op=handler.__qualname__):
-            response = await handler(request)  # type: aiohttp.web.Response
-        response.headers.add("X-Backend-Server", self.server_name)
-        try:
-            if len(response.body) > 1000:
-                response.enable_compression()
-        except (AttributeError, TypeError):
-            # static files
-            pass
-        return response
-
-    @aiohttp.web.middleware
-    async def i_will_survive(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
-        """Return HTTP 503 Service Unavailable if the server is shutting down, also track \
-        the number of active connections and handle ResponseError-s.
-
-        We prevent aiohttp from cancelling the handlers with _setup_survival() but there can still
-        happen unexpected intrusions by some "clever" author of the upstream code.
-        """
-        if self._shutting_down:
-            return ResponseError(ShuttingDownError()).response
-
-        return await asyncio.shield(self._shielded(request, handler))
-
-    async def _shielded(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
-        self._requests += 1
-        enable_defer()
-        try:
-            return await handler(request)
-        except bdb.BdbQuit:
-            # breakpoint() helper
-            raise GracefulExit() from None
-        except ResponseError as e:
-            return e.response
-        finally:
-            if self._devenv:
-                await wait_deferred()
-            self._requests -= 1
-            if self._requests == 0 and self._shutting_down:
-                asyncio.ensure_future(self._raise_graceful_exit())
-
-    @aiohttp.web.middleware
-    async def manhole(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
-        """Execute arbitrary code from memcached."""
-        if self._cache is not None:
-            if code := (await self._cache.get(b"manhole", b"")).decode():
-                _locals = locals().copy()
-                try:
-                    await eval(compile(code, "manhole", "exec", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT),
-                               globals(), _locals)
-                    if (response := _locals.get("response")) is not None:
-                        assert isinstance(response, aiohttp.web.Response)
-                        self.log.warning("Manhole code hijacked the request! -> %d",
-                                         response.status)
-                        return response
-                except (ResponseError, OAuthProblem) as e:
-                    self.log.warning("Manhole code hijacked the request! -> %d", e.response.status)
-                    raise e from None
-                except Exception as e:
-                    self.log.error("Failed to execute the manhole code: %s: %s",
-                                   type(e).__name__, e)
-                    # we continue the execution
-        return await handler(request)
-
-    def _setup_survival(self):
-        self._shutting_down = False
-        self._requests = 0
-
-        def initiate_graceful_shutdown(signame: str):
-            self.log.warning("Received %s, waiting for pending %d requests to finish...",
-                             signame, self._requests)
-            sentry_sdk.add_breadcrumb(category="signal", message=signame, level="warning")
-            self._shutting_down = True
-            if self._requests == 0:
-                asyncio.ensure_future(self._raise_graceful_exit())
-
-        loop = asyncio.get_event_loop()
-        loop.add_signal_handler(signal.SIGINT, partial(initiate_graceful_shutdown, "SIGINT"))
-        loop.add_signal_handler(signal.SIGTERM, partial(initiate_graceful_shutdown, "SIGTERM"))
-
-    def _enable_cors(self) -> None:
-        cors = aiohttp_cors.setup(self.app, defaults={
-            "*": aiohttp_cors.ResourceOptions(
-                allow_credentials=True,
-                expose_headers="*",
-                allow_headers="*",
-                max_age=3600,
-                allow_methods="*",
-            )})
-        for route in self.app.router.routes():
-            cors.add(route)
-
-    async def _raise_graceful_exit(self):
-        await asyncio.sleep(0)
-        self.log.info("Finished serving all the pending requests, now shutting down")
-        if not self._devenv:
-            await wait_deferred()
-
-        def raise_graceful_exit():
-            loop.remove_signal_handler(signal.SIGTERM)
-            raise GracefulExit()
-
-        loop = asyncio.get_event_loop()
-        loop.remove_signal_handler(signal.SIGINT)
-        loop.remove_signal_handler(signal.SIGTERM)
-        loop.add_signal_handler(signal.SIGTERM, raise_graceful_exit)
-        os.kill(os.getpid(), signal.SIGTERM)
-
-
 def setup_context(log: logging.Logger) -> None:
     """Log general info about the running process and configure Sentry."""
     log.info("%s", sys.argv)
@@ -499,7 +145,7 @@ def setup_context(log: logging.Logger) -> None:
     sentry_key, sentry_project = os.getenv("SENTRY_KEY"), os.getenv("SENTRY_PROJECT")
 
     def warn(env_name):
-        logging.getLogger(__package__).warning(
+        logging.getLogger(metadata.__package__).warning(
             "Skipped Sentry initialization: %s envvar is missing", env_name)
 
     if not sentry_key:
@@ -694,7 +340,7 @@ def main() -> Optional[AthenianApp]:
     """Server entry point."""
     uvloop.install()
     args = parse_args()
-    log = logging.getLogger(__package__)
+    log = logging.getLogger(metadata.__package__)
     setup_context(log)
     if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):
         return None
@@ -702,10 +348,12 @@ def main() -> Optional[AthenianApp]:
     cache = create_memcached(args.memcached, log)
     auth0_cls = create_auth0_factory(args.force_user)
     kms_cls = None if args.no_google_kms else AthenianKMS
+    slack = create_slack(log)
     app = AthenianApp(
         mdb_conn=args.metadata_db, sdb_conn=args.state_db, pdb_conn=args.precomputed_db,
         **compose_db_options(args.metadata_db, args.state_db, args.precomputed_db),
-        ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache)
+        ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache, slack=slack,
+        client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)))
     app.run(host=args.host, port=args.port, use_default_access_log=True, handle_signals=False,
             print=lambda s: log.info("\n" + s))
     return app

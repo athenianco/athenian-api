@@ -8,13 +8,12 @@ from typing import List, Optional, Tuple, Type, Union
 from aiohttp import web
 import numpy as np
 import pandas as pd
-import sentry_sdk
 from sqlalchemy import and_, outerjoin, select, true
 from sqlalchemy.sql.functions import coalesce
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.controllers.account import get_account_repositories, get_user_account_status
+from athenian.api.controllers.account import get_account_repositories
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHistogramCalculator, \
@@ -44,11 +43,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     time_from, time_to = filt.resolve_time_from_and_to()
-    with sentry_sdk.start_span(op="sdb"):
-        async with request.sdb.connection() as conn:
-            await get_user_account_status(request.uid, filt.account, conn, request.cache)
-            jira_ids = await get_jira_installation(
-                filt.account, request.sdb, request.mdb, request.cache)
+    jira_ids = await get_jira_installation(filt.account, request.sdb, request.mdb, request.cache)
     mdb = request.mdb
     log = logging.getLogger("%s.filter_jira_stuff" % metadata.__package__)
 
@@ -213,11 +208,10 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e))) from None
     tasks = [
-        get_user_account_status(request.uid, filt.account, request.sdb, request.cache),
         get_account_repositories(filt.account, request.sdb),
         get_jira_installation(filt.account, request.sdb, request.mdb, request.cache),
     ]
-    status, repos, jira_ids = await gather(*tasks, op="sdb")
+    repos, jira_ids = await gather(*tasks, op="sdb")
     time_intervals, _ = split_to_time_intervals(
         filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone)
     tasks = [

@@ -3,7 +3,6 @@ from datetime import timedelta
 from aiohttp import web
 import numpy as np
 
-from athenian.api import ResponseError
 from athenian.api.async_utils import gather
 from athenian.api.controllers.filter_controller import resolve_filter_prs_parameters
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -14,7 +13,7 @@ from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.web import InvalidRequestError, PaginatePullRequestsRequest, \
     PullRequestPaginationPlan
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import model_response
+from athenian.api.response import model_response, ResponseError
 
 
 async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -25,7 +24,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     # we ignore events and stages because we cannot do anything with them
-    repos, _, _, participants, labels, jira, settings = \
+    repos, _, _, participants, labels, jira, settings, meta_ids = \
         await resolve_filter_prs_parameters(filt.request, request)
     branches, default_branches = await extract_branches(repos, request.mdb, request.cache)
     # we ignore the ambiguous PRs, thus producing a pessimistic prediction (that's OK)

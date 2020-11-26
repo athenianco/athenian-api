@@ -2,8 +2,8 @@ import itertools
 
 import pytest
 
-from athenian.api import FriendlyJson
 from athenian.api.models.web import CalculatedPullRequestHistogram, PullRequestMetricID
+from athenian.api.serialization import FriendlyJson
 
 
 @pytest.mark.parametrize(
