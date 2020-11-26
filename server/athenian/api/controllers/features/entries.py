@@ -70,7 +70,7 @@ unfresh_participants_threshold = 50
     ),
     version=2,
 )
-async def calc_pull_request_facts_github(accounts: Tuple[int, ...],
+async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
                                          time_from: datetime,
                                          time_to: datetime,
                                          repositories: Set[str],
@@ -87,7 +87,7 @@ async def calc_pull_request_facts_github(accounts: Tuple[int, ...],
     """
     Calculate facts about pull request on GitHub.
 
-    :param account: Metadata (GitHub) account IDs (*not the state DB account*) that own the repos.
+    :param meta_ids: Metadata (GitHub) account IDs (*not the state DB account*) that own the repos.
     :param exclude_inactive: Do not load PRs without events between `time_from` and `time_to`.
     :param fresh: If the number of done PRs for the time period and filters exceeds \
                   `unfresh_mode_threshold`, force querying mdb instead of pdb only.
@@ -124,8 +124,8 @@ async def calc_pull_request_facts_github(accounts: Tuple[int, ...],
     # are effectively discarded later in BinnedMetricCalculator
     tasks = [
         PullRequestMiner.mine(
-            date_from, date_to, time_from, time_to, repositories, participants, labels, jira,
-            branches, default_branches, exclude_inactive, release_settings,
+            meta_ids, date_from, date_to, time_from, time_to, repositories, participants,
+            labels, jira, branches, default_branches, exclude_inactive, release_settings,
             mdb, pdb, cache, pr_blacklist=blacklist),
     ]
     if jira and precomputed_facts:
@@ -208,7 +208,7 @@ async def calc_pull_request_facts_github(accounts: Tuple[int, ...],
         release_settings,
     ),
 )
-async def calc_pull_request_metrics_line_github(accounts: Tuple[int, ...],
+async def calc_pull_request_metrics_line_github(meta_ids: Tuple[int, ...],
                                                 metrics: Sequence[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
                                                 quantiles: Sequence[float],
@@ -235,13 +235,13 @@ async def calc_pull_request_metrics_line_github(accounts: Tuple[int, ...],
         metrics, quantiles, lines, exclude_inactive=exclude_inactive)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
-        accounts, time_from, time_to, all_repositories, participants, labels, jira,
+        meta_ids, time_from, time_to, all_repositories, participants, labels, jira,
         exclude_inactive, release_settings, fresh, mdb, pdb, cache)
     return calc(mined_facts, time_intervals, repositories)
 
 
 @sentry_span
-async def calc_code_metrics_github(accounts: Tuple[int, ...],
+async def calc_code_metrics_github(meta_ids: Tuple[int, ...],
                                    prop: FilterCommitsProperty,
                                    time_intervals: Sequence[datetime],
                                    repos: Collection[str],
@@ -253,9 +253,9 @@ async def calc_code_metrics_github(accounts: Tuple[int, ...],
     """Filter code pushed on GitHub according to the specified criteria."""
     time_from, time_to = time_intervals[0], time_intervals[-1]
     x_commits = await extract_commits(
-        accounts, prop, time_from, time_to, repos, with_author, with_committer, db, cache)
+        meta_ids, prop, time_from, time_to, repos, with_author, with_committer, db, cache)
     all_commits = await extract_commits(
-        accounts, FilterCommitsProperty.NO_PR_MERGES, time_from, time_to, repos,
+        meta_ids, FilterCommitsProperty.NO_PR_MERGES, time_from, time_to, repos,
         with_author, with_committer, db, cache,
         columns=[PushCommit.committed_date, PushCommit.additions, PushCommit.deletions])
     return calc_code_stats(x_commits, all_commits, time_intervals)
@@ -278,7 +278,7 @@ async def calc_code_metrics_github(accounts: Tuple[int, ...],
         release_settings,
     ),
 )
-async def calc_pull_request_histogram_github(accounts: Tuple[int, ...],
+async def calc_pull_request_histogram_github(meta_ids: Tuple[int, ...],
                                              defs: Dict[HistogramParameters, List[str]],
                                              time_from: datetime,
                                              time_to: datetime,
@@ -306,7 +306,7 @@ async def calc_pull_request_histogram_github(accounts: Tuple[int, ...],
     except KeyError as e:
         raise ValueError("Unsupported metric: %s" % e)
     mined_facts = await calc_pull_request_facts_github(
-        accounts, time_from, time_to, all_repositories, participants, labels, jira,
+        meta_ids, time_from, time_to, all_repositories, participants, labels, jira,
         exclude_inactive, release_settings, fresh, mdb, pdb, cache)
     hists = calc(mined_facts, [[time_from, time_to]], repositories, [k.__dict__ for k in defs])
     result = [[] for _ in range(len(repositories) * (len(lines or [None] * 2) - 1))]
@@ -334,7 +334,7 @@ async def calc_pull_request_histogram_github(accounts: Tuple[int, ...],
         release_settings,
     ),
 )
-async def calc_release_metrics_line_github(accounts: Tuple[int, ...],
+async def calc_release_metrics_line_github(meta_ids: Tuple[int, ...],
                                            metrics: Sequence[str],
                                            time_intervals: Sequence[Sequence[datetime]],
                                            quantiles: Sequence[float],
@@ -354,7 +354,7 @@ async def calc_release_metrics_line_github(accounts: Tuple[int, ...],
     branches, default_branches = await extract_branches(all_repositories, mdb, cache)
     all_participants = merge_release_participants(participants)
     releases, _, matched_bys = await mine_releases(
-        accounts, all_repositories, all_participants, branches, default_branches,
+        meta_ids, all_repositories, all_participants, branches, default_branches,
         time_from, time_to, jira, release_settings, mdb, pdb, cache)
     mined_facts = defaultdict(list)
     for i, f in releases:

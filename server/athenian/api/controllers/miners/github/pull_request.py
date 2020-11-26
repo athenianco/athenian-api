@@ -167,6 +167,7 @@ class PullRequestMiner:
         postprocess=_postprocess_cached_prs,
     )
     async def _mine(cls,
+                    meta_ids: Tuple[int, ...],
                     date_from: date,
                     date_to: date,
                     repositories: Set[str],
@@ -262,8 +263,8 @@ class PullRequestMiner:
         tasks = [
             # bypass the useless inner caching by calling _mine_by_ids directly
             cls._mine_by_ids(
-                prs, unreleased.index, time_to, releases, matched_bys, branches, default_branches,
-                dags, release_settings, mdb, pdb, cache, truncate=truncate),
+                meta_ids, prs, unreleased.index, time_to, releases, matched_bys, branches,
+                default_branches, dags, release_settings, mdb, pdb, cache, truncate=truncate),
             load_open_pull_request_facts(prs, pdb),
         ]
         (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
@@ -308,6 +309,7 @@ class PullRequestMiner:
         ),
     )
     async def mine_by_ids(cls,
+                          meta_ids: Tuple[int, ...],
                           prs: pd.DataFrame,
                           unreleased: Collection[str],
                           time_to: datetime,
@@ -335,14 +337,15 @@ class PullRequestMiner:
                  3. Synchronization for updating the pdb table with merged unreleased PRs.
         """
         return await cls._mine_by_ids(
-            prs, unreleased, time_to, releases, matched_bys, branches, default_branches, dags,
-            release_settings, mdb, pdb, cache, truncate=truncate)
+            meta_ids, prs, unreleased, time_to, releases, matched_bys, branches, default_branches,
+            dags, release_settings, mdb, pdb, cache, truncate=truncate)
 
     _deserialize_mine_by_ids_cache = staticmethod(_deserialize_mine_by_ids_cache)
 
     @classmethod
     @sentry_span
     async def _mine_by_ids(cls,
+                           meta_ids: Tuple[int, ...],
                            prs: pd.DataFrame,
                            unreleased: Collection[str],
                            time_to: datetime,
@@ -519,6 +522,7 @@ class PullRequestMiner:
     @classmethod
     @sentry_span
     async def mine(cls,
+                   meta_ids: Tuple[int, ...],
                    date_from: date,
                    date_to: date,
                    time_from: datetime,
@@ -545,6 +549,7 @@ class PullRequestMiner:
         """
         Mine metadata about pull requests according to the numerous filters.
 
+        :param meta_ids: Metadata (GitHub) account IDs.
         :param date_from: Fetch PRs created starting from this date, inclusive.
         :param date_to: Fetch PRs created ending with this date, inclusive.
         :param time_from: Precise timestamp of since when PR events are allowed to happen.
@@ -579,7 +584,7 @@ class PullRequestMiner:
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
         dfs, facts, _, _, _, _, matched_bys, event = await cls._mine(
-            date_from, date_to, repositories, participants, labels, jira, branches,
+            meta_ids, date_from, date_to, repositories, participants, labels, jira, branches,
             default_branches, exclude_inactive, release_settings, updated_min, updated_max,
             pr_blacklist, truncate, mdb, pdb, cache)
         cls._truncate_prs(dfs, time_from, time_to)

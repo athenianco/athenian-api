@@ -355,7 +355,7 @@ class PullRequestListMiner:
 
 
 @sentry_span
-async def filter_pull_requests(accounts: Tuple[int, ...],
+async def filter_pull_requests(meta_ids: Tuple[int, ...],
                                events: Set[PullRequestEvent],
                                stages: Set[PullRequestStage],
                                time_from: datetime,
@@ -381,8 +381,8 @@ async def filter_pull_requests(accounts: Tuple[int, ...],
     :param repos: List of repository names without the service prefix.
     """
     prs, _, _ = await _filter_pull_requests(
-        events, stages, time_from, time_to, repos, participants, labels, jira, exclude_inactive,
-        release_settings, updated_min, updated_max, mdb, pdb, cache)
+        meta_ids, events, stages, time_from, time_to, repos, participants, labels, jira,
+        exclude_inactive, release_settings, updated_min, updated_max, mdb, pdb, cache)
     return prs
 
 
@@ -497,7 +497,8 @@ def _filter_by_jira_issue_types(prs: List[PullRequestListItem],
     ),
     postprocess=_postprocess_filtered_prs,
 )
-async def _filter_pull_requests(events: Set[PullRequestEvent],
+async def _filter_pull_requests(meta_ids: Tuple[int, ...],
+                                events: Set[PullRequestEvent],
                                 stages: Set[PullRequestStage],
                                 time_from: datetime,
                                 time_to: datetime,
@@ -525,9 +526,9 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     branches, default_branches = await extract_branches(repos, mdb, cache)
     tasks = (
         PullRequestMiner.mine(
-            date_from, date_to, time_from, time_to, repos, participants, labels, jira, branches,
-            default_branches, exclude_inactive, release_settings, mdb, pdb, cache,
-            truncate=False, updated_min=updated_min, updated_max=updated_max),
+            meta_ids, date_from, date_to, time_from, time_to, repos, participants,
+            labels, jira, branches, default_branches, exclude_inactive, release_settings,
+            mdb, pdb, cache, truncate=False, updated_min=updated_min, updated_max=updated_max),
         load_precomputed_done_facts_filters(
             time_from, time_to, repos, participants, labels, default_branches,
             exclude_inactive, release_settings, pdb),
@@ -642,7 +643,8 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
         release_settings,
     ),
 )
-async def fetch_pull_requests(prs: Dict[str, Set[int]],
+async def fetch_pull_requests(meta_ids: Tuple[int, ...],
+                              prs: Dict[str, Set[int]],
                               release_settings: Dict[str, ReleaseMatchSetting],
                               mdb: databases.Database,
                               pdb: databases.Database,
@@ -653,7 +655,8 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
 
     :params prs: For each repository name without the prefix, there is a set of PR numbers to list.
     """
-    mined_prs, dfs, facts, _ = await _fetch_pull_requests(prs, release_settings, mdb, pdb, cache)
+    mined_prs, dfs, facts, _ = await _fetch_pull_requests(
+        meta_ids, prs, release_settings, mdb, pdb, cache)
     if not mined_prs:
         return []
     miner = PullRequestListMiner(
@@ -662,7 +665,8 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
     return await list_with_yield(miner, "PullRequestListMiner.__iter__")
 
 
-async def _fetch_pull_requests(prs: Dict[str, Set[int]],
+async def _fetch_pull_requests(meta_ids: Tuple[int, ...],
+                               prs: Dict[str, Set[int]],
                                release_settings: Dict[str, ReleaseMatchSetting],
                                mdb: databases.Database,
                                pdb: databases.Database,
@@ -714,7 +718,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
         dags = await fetch_precomputed_commit_history_dags(
             prs_df[PullRequest.repository_full_name.key].unique(), pdb, cache)
     dfs, _, _ = await PullRequestMiner.mine_by_ids(
-        prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
+        meta_ids, prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
         release_settings, mdb, pdb, cache)
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
     for k, v in unreleased.items():

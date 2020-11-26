@@ -343,7 +343,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
     assert await calc_pull_request_metrics_line_github.reset_cache(*args)
     if with_mine_cache_wipe:
         assert await PullRequestMiner._mine.reset_cache(
-            None, date_from, date_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
+            (6366825,), None, date_from, date_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
             JIRAFilter.empty(), branches, default_branches,
             False, release_match_setting_tag, None, None, None, True, mdb, pdb, cache)
     metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]

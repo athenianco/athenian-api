@@ -272,11 +272,13 @@ async def test_fetch_pull_requests_smoke(mdb, pdb, release_match_setting_tag, ca
     await wait_deferred()
     prs1 = {pr.number: pr for pr in prs1}
     # 921 is needed to check done_times
-    prs2 = await fetch_pull_requests({"src-d/go-git": set(list(range(1000, 1011)) + [921])},
-                                     release_match_setting_tag, mdb, pdb, cache)
+    prs2 = await fetch_pull_requests(
+        (6366825,), {"src-d/go-git": set(list(range(1000, 1011)) + [921])},
+        release_match_setting_tag, mdb, pdb, cache)
     await wait_deferred()
-    prs3 = await fetch_pull_requests({"src-d/go-git": set(list(range(1000, 1011)) + [921])},
-                                     release_match_setting_tag, None, None, cache)
+    prs3 = await fetch_pull_requests(
+        (6366825,), {"src-d/go-git": set(list(range(1000, 1011)) + [921])},
+        release_match_setting_tag, None, None, cache)
     assert prs2 == prs3
     del prs3
     assert len(prs2) == 12
@@ -287,14 +289,15 @@ async def test_fetch_pull_requests_smoke(mdb, pdb, release_match_setting_tag, ca
         pr1.__dict__["events_time_machine"] = None
         assert pr1 == pr2, pr1.number
     with pytest.raises(Exception):
-        await fetch_pull_requests({"src-d/go-git": set(list(range(1000, 1011)) + [922])},
-                                  release_match_setting_tag, None, None, cache)
+        await fetch_pull_requests(
+            (6366825,), {"src-d/go-git": set(list(range(1000, 1011)) + [922])},
+            release_match_setting_tag, None, None, cache)
 
 
 @with_defer
 async def test_fetch_pull_requests_no_merged(mdb, pdb, release_match_setting_tag, cache):
-    prs = await fetch_pull_requests({"src-d/go-git": {1069}},
-                                    release_match_setting_tag, mdb, pdb, cache)
+    prs = await fetch_pull_requests(
+        (6366825,), {"src-d/go-git": {1069}}, release_match_setting_tag, mdb, pdb, cache)
     assert len(prs) == 1
     assert prs[0].number == 1069
     assert PullRequestStage.WIP in prs[0].stages_now
@@ -306,8 +309,8 @@ async def test_fetch_pull_requests_no_merged(mdb, pdb, release_match_setting_tag
 
 @with_defer
 async def test_fetch_pull_requests_empty(mdb, pdb, release_match_setting_tag, cache):
-    prs = await fetch_pull_requests({"src-d/go-git": {0}},
-                                    release_match_setting_tag, mdb, pdb, cache)
+    prs = await fetch_pull_requests(
+        (6366825,), {"src-d/go-git": {0}}, release_match_setting_tag, mdb, pdb, cache)
     assert len(prs) == 0
 
 
