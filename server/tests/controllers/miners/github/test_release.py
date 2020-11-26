@@ -102,15 +102,19 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
     dummy_mdb = Database("sqlite://", force_rollback=True)
     await dummy_mdb.connect()
     try:
-        # https://github.com/encode/databases/issues/40
+        prlt = PullRequestLabel.__table__
+        if prlt.schema:
+            prlt.name = "%s.%s" % (prlt.schema, prlt.name)
+            prlt.schema = None
         for table in (PullRequestLabel, NodeCommit):
-            await dummy_mdb.execute(CreateTable(table.__table__).compile(
-                dialect=dummy_mdb._backend._dialect).string)
+            await dummy_mdb.execute(CreateTable(table.__table__))
         released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
             dummy_mdb, pdb, None)
         assert len(released_prs) == 1
     finally:
+        if "." in prlt.name:
+            prlt.schema, prlt.name = prlt.name.split(".")
         await dummy_mdb.disconnect()
 
 
@@ -173,10 +177,12 @@ async def test_map_prs_to_releases_precomputed_released(
     dummy_mdb = Database("sqlite://", force_rollback=True)
     await dummy_mdb.connect()
     try:
-        # https://github.com/encode/databases/issues/40
+        prlt = PullRequestLabel.__table__
+        if prlt.schema:
+            prlt.name = "%s.%s" % (prlt.schema, prlt.name)
+            prlt.schema = None
         for table in (PullRequestLabel, NodeCommit):
-            await dummy_mdb.execute(CreateTable(table.__table__).compile(
-                dialect=dummy_mdb._backend._dialect).string)
+            await dummy_mdb.execute(CreateTable(table.__table__))
         with pytest.raises(Exception):
             await map_prs_to_releases(
                 prs, releases, matched_bys, branches, default_branches, time_to, dag,
@@ -190,6 +196,8 @@ async def test_map_prs_to_releases_precomputed_released(
             release_match_setting_tag, dummy_mdb, pdb, None)
         assert len(released_prs) == len(prs)
     finally:
+        if "." in prlt.name:
+            prlt.schema, prlt.name = prlt.name.split(".")
         await dummy_mdb.disconnect()
 
 
