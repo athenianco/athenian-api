@@ -7,6 +7,7 @@ import aiomcache
 import databases
 import sentry_sdk
 from sqlalchemy import and_, distinct, join, or_, select, union
+from sqlalchemy.sql.functions import coalesce
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
@@ -77,7 +78,7 @@ async def mine_repositories(accounts: Tuple[int, ...],
             .where(and_(PullRequest.repository_node_id.in_(repo_ids),
                         PullRequest.hidden.is_(False),
                         PullRequest.created_at < time_from,
-                        PullRequest.closed_at.is_(None))))
+                        coalesce(PullRequest.closed, False).is_(False))))
 
     @sentry_span
     async def fetch_inactive_merged_prs():

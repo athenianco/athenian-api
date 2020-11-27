@@ -978,7 +978,7 @@ async def load_open_pull_request_facts(prs: pd.DataFrame,
 
     We filter open PRs inplace so the user does not have to worry about that.
     """
-    open_indexes = np.where(prs[PullRequest.closed_at.key].isnull())[0]
+    open_indexes = np.nonzero(prs[PullRequest.closed_at.key].isnull().values)[0]
     node_ids = prs.index.take(open_indexes)
     ghoprf = GitHubOpenPullRequestFacts
     default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg

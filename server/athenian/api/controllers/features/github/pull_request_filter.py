@@ -9,7 +9,7 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, select, union_all
 
 from athenian.api import COROUTINE_YIELD_EVERY_ITER, list_with_yield, metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -678,16 +678,16 @@ async def _fetch_pull_requests(meta_ids: Tuple[int, ...],
     branches, default_branches = await extract_branches(prs, mdb, cache)
     filters = [and_(PullRequest.repository_full_name == repo, PullRequest.number.in_(numbers))
                for repo, numbers in prs.items()]
+    queries = [select([PullRequest]).where(f).order_by(PullRequest.node_id) for f in filters]
     tasks = [
-        read_sql_query(select([PullRequest])
-                       .where(or_(*filters))
-                       .order_by(PullRequest.node_id),
+        read_sql_query(union_all(*queries) if len(queries) > 1 else queries[0],  # sqlite sucks
                        mdb, PullRequest, index=PullRequest.node_id.key),
         load_precomputed_done_facts_reponums(prs, default_branches, release_settings, pdb),
     ]
     prs_df, (facts, ambiguous) = await gather(*tasks)
     if prs_df.empty:
         return [], PRDataFrames(*(pd.DataFrame() for _ in range(9))), {}, {}
+    PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
     now = datetime.now(timezone.utc)
     if rel_time_from := prs_df[PullRequest.merged_at.key].nonemin():
         milestone_prs = prs_df[[PullRequest.merge_commit_sha.key,

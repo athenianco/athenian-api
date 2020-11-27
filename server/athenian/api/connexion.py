@@ -17,7 +17,7 @@ import aiohttp_cors
 import aiomcache
 from asyncpg import ConnectionDoesNotExistError, InterfaceError
 from connexion.apis import aiohttp_api
-from connexion.exceptions import OAuthProblem
+from connexion.exceptions import ConnexionException, OAuthProblem
 import connexion.lifecycle
 from connexion.spec import OpenAPISpecification
 import sentry_sdk
@@ -336,6 +336,8 @@ class AthenianApp(connexion.AioHttpApp):
             raise GracefulExit() from None
         except ResponseError as e:
             return e.response
+        except ConnexionException as e:
+            raise e from None
         except Exception as e:
             if self._devenv:
                 raise e from None
