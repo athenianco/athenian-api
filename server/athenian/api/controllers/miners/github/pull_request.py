@@ -616,7 +616,10 @@ class PullRequestMiner:
         """
         assert (updated_min is None) == (updated_max is None)
         filters = [
-            sql.case([(PullRequest.closed, PullRequest.closed_at >= time_from)], else_=sql.true()),
+            sql.case(
+                [(PullRequest.closed, PullRequest.closed_at)],
+                else_=sql.text("'3000-01-01'"),
+            ) >= time_from,
             PullRequest.created_at < time_to,
             PullRequest.hidden.is_(False),
             PullRequest.repository_full_name.in_(repositories),
