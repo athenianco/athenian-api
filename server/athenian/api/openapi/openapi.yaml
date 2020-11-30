@@ -4968,19 +4968,6 @@ components:
           items:
             $ref: '#/components/schemas/PullRequestHistogramDefinition'
           type: array
-        metrics:
-          description: DEPRECATED List of desired histogram topics.
-          items:
-            $ref: '#/components/schemas/PullRequestMetricID'
-          type: array
-        scale:
-          # DEPRECATED
-          $ref: '#/components/schemas/HistogramScale'
-        bins:
-          description: DEPRECATED Number of bars in the histogram. 0 or null means
-            automatic.
-          minimum: 0
-          type: integer
         date_from:
           description: Date from when to start measuring the distribution.
           format: date
@@ -5009,6 +4996,7 @@ components:
       - date_to
       - exclude_inactive
       - for
+      - histograms
       type: object
     PullRequestHistogramDefinition:
       additionalProperties: false

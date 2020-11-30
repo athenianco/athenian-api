@@ -119,6 +119,29 @@ async def test_calc_histogram_prs_nasty_input(
     assert response.status == status, "Response body is : " + body
 
 
+async def test_calc_histogram_prs_no_histograms(client, headers):
+    body = {
+        "for": [
+            {
+                "with": {},
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+            },
+        ],
+        "date_from": "2015-10-13",
+        "date_to": "2015-11-23",
+        "quantiles": [0, 1],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 400, "Response body is : " + body
+
+
 async def test_calc_histogram_prs_multiple(client, headers):
     body = {
         "for": [
