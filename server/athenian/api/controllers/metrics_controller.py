@@ -52,8 +52,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, repos = await compile_repos_and_devs_prs(
-        filt.for_, request, filt.account, meta_ids)
+    filters, repos = await compile_repos_and_devs_prs(filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 

@@ -193,6 +193,7 @@ class MinedPullRequest:
 
 
 T = TypeVar("T")
+pr_jira_map_column = "jira_id"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -217,6 +218,8 @@ class PullRequestFacts:
     activity_days: np.ndarray
     size: int
     force_push_dropped: bool
+    # + pr_jira_map_column that is always set fresh
+    # We don't list it explicitly here because it will appear in pdb.
 
     def max_timestamp(self) -> pd.Timestamp:
         """Find the maximum timestamp contained in the struct."""
@@ -286,6 +289,10 @@ class PullRequestFacts:
     def __hash__(self) -> int:
         """Implement hash()."""
         return hash(str(self))
+
+
+# Hack the annotations so that `df_from_dataclasses()` works correctly.
+PullRequestFacts.__annotations__[pr_jira_map_column] = object
 
 
 def nonemin(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:

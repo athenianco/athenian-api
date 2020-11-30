@@ -11,12 +11,12 @@ import sentry_sdk
 
 from athenian.api import COROUTINE_YIELD_EVERY_ITER
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached
+from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request_metrics import \
-    PullRequestBinnedHistogramCalculator, PullRequestBinnedMetricCalculator
+    need_jira_mapping, PullRequestBinnedHistogramCalculator, PullRequestBinnedMetricCalculator
 from athenian.api.controllers.features.github.release import make_release_participants_grouper, \
     merge_release_participants
 from athenian.api.controllers.features.github.release_metrics import \
@@ -33,13 +33,14 @@ from athenian.api.controllers.miners.github.developer import calc_developer_metr
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
     remove_ambiguous_prs, store_merged_unreleased_pull_request_facts, \
-    store_open_pull_request_facts, \
-    store_precomputed_done_facts
+    store_open_pull_request_facts, store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner
 from athenian.api.controllers.miners.github.release_mine import mine_releases
-from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
-    PullRequestFacts, ReleaseParticipants
+from athenian.api.controllers.miners.jira.issue import append_pr_jira_mapping, \
+    load_pr_jira_mapping
+from athenian.api.controllers.miners.types import pr_jira_map_column, PRParticipants, \
+    PRParticipationKind, PullRequestFacts, ReleaseParticipants
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
@@ -49,6 +50,14 @@ from athenian.api.tracing import sentry_span
 
 unfresh_prs_threshold = 1000
 unfresh_participants_threshold = 50
+
+
+def _postprocess_cached_facts(result: Tuple[Dict[str, List[PullRequestFacts]], bool],
+                              with_jira_map: bool, **_,
+                              ) -> Tuple[Dict[str, List[PullRequestFacts]], bool]:
+    if with_jira_map and not result[1]:
+        raise CancelCache()
+    return result
 
 
 @sentry_span
@@ -68,31 +77,23 @@ unfresh_participants_threshold = 50
         release_settings,
         fresh,
     ),
-    version=2,
+    postprocess=_postprocess_cached_facts,
 )
-async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
-                                         time_from: datetime,
-                                         time_to: datetime,
-                                         repositories: Set[str],
-                                         participants: PRParticipants,
-                                         labels: LabelFilter,
-                                         jira: JIRAFilter,
-                                         exclude_inactive: bool,
-                                         release_settings: Dict[str, ReleaseMatchSetting],
-                                         fresh: bool,
-                                         mdb: Database,
-                                         pdb: Database,
-                                         cache: Optional[aiomcache.Client],
-                                         ) -> Dict[str, List[PullRequestFacts]]:
-    """
-    Calculate facts about pull request on GitHub.
-
-    :param meta_ids: Metadata (GitHub) account IDs (*not the state DB account*) that own the repos.
-    :param exclude_inactive: Do not load PRs without events between `time_from` and `time_to`.
-    :param fresh: If the number of done PRs for the time period and filters exceeds \
-                  `unfresh_mode_threshold`, force querying mdb instead of pdb only.
-    :return: Map repository name -> list of PR facts.
-    """
+async def _calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
+                                          time_from: datetime,
+                                          time_to: datetime,
+                                          repositories: Set[str],
+                                          participants: PRParticipants,
+                                          labels: LabelFilter,
+                                          jira: JIRAFilter,
+                                          exclude_inactive: bool,
+                                          release_settings: Dict[str, ReleaseMatchSetting],
+                                          fresh: bool,
+                                          with_jira_map: bool,
+                                          mdb: Database,
+                                          pdb: Database,
+                                          cache: Optional[aiomcache.Client],
+                                          ) -> Tuple[Dict[str, List[PullRequestFacts]], bool]:
     assert isinstance(repositories, set)
     branches, default_branches = await extract_branches(repositories, mdb, cache)
     precomputed_tasks = [
@@ -106,6 +107,10 @@ async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
         (precomputed_facts, _), blacklist = await gather(*precomputed_tasks)
     else:
         (precomputed_facts, _) = blacklist = await precomputed_tasks[0]
+    if with_jira_map:
+        # schedule loading the PR->JIRA mapping
+        done_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
+            precomputed_facts, meta_ids, mdb))
     ambiguous = blacklist[1]
     add_pdb_hits(pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
 
@@ -114,9 +119,18 @@ async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
             or
             len(participants.get(prpk.AUTHOR, [])) > unfresh_participants_threshold) and \
             not fresh and not (participants.keys() - {prpk.AUTHOR, prpk.MERGER}):
-        return await fetch_pull_request_facts_unfresh(
+        facts = await fetch_pull_request_facts_unfresh(
             precomputed_facts, ambiguous, time_from, time_to, repositories, participants, labels,
             jira, exclude_inactive, branches, default_branches, release_settings, mdb, pdb, cache)
+        if with_jira_map:
+            undone_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
+                {k: v for k, v in facts.items() if k not in precomputed_facts}, meta_ids, mdb))
+        by_repo = defaultdict(list)
+        for repo, f in facts.values():
+            by_repo[repo].append(f)
+        if with_jira_map:
+            await gather(done_jira_map_task, undone_jira_map_task)
+        return by_repo, with_jira_map
 
     add_pdb_misses(pdb, "fresh", 1)
     date_from, date_to = coarsen_time_interval(time_from, time_to)
@@ -137,6 +151,11 @@ async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
     else:
         miner, unreleased_facts, matched_bys, unreleased_prs_event = await tasks[0]
     precomputed_unreleased_prs = miner.drop(unreleased_facts)
+    if with_jira_map:
+        precomputed_unreleased_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
+            unreleased_facts, meta_ids, mdb))
+        new_jira_map_task = load_pr_jira_mapping(miner.dfs.prs.index, meta_ids, mdb)
+    await asyncio.sleep(0)
     remove_ambiguous_prs(precomputed_facts, ambiguous, matched_bys)
     add_pdb_hits(pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
     for node_id in precomputed_unreleased_prs.values:
@@ -188,7 +207,54 @@ async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
             by_repo[repo].append(f)
         except KeyError:
             by_repo[repo] = [f]
-    return by_repo
+    if with_jira_map:
+        _, _, new_jira_map = await gather(
+            done_jira_map_task, precomputed_unreleased_jira_map_task, new_jira_map_task)
+        for pr, (_, facts) in zip(mined_prs, mined_facts):
+            facts.__dict__[pr_jira_map_column] = new_jira_map.get(pr.pr[PullRequest.node_id.key])
+    return by_repo, with_jira_map
+
+
+async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
+                                         time_from: datetime,
+                                         time_to: datetime,
+                                         repositories: Set[str],
+                                         participants: PRParticipants,
+                                         labels: LabelFilter,
+                                         jira: JIRAFilter,
+                                         exclude_inactive: bool,
+                                         release_settings: Dict[str, ReleaseMatchSetting],
+                                         fresh: bool,
+                                         with_jira_map: bool,
+                                         mdb: Database,
+                                         pdb: Database,
+                                         cache: Optional[aiomcache.Client],
+                                         ) -> Dict[str, List[PullRequestFacts]]:
+    """
+    Calculate facts about pull request on GitHub.
+
+    :param meta_ids: Metadata (GitHub) account IDs (*not the state DB account*) that own the repos.
+    :param exclude_inactive: Do not load PRs without events between `time_from` and `time_to`.
+    :param fresh: If the number of done PRs for the time period and filters exceeds \
+                  `unfresh_mode_threshold`, force querying mdb instead of pdb only.
+    :return: Map repository name -> list of PR facts.
+    """
+    return (await _calc_pull_request_facts_github(
+        meta_ids,
+        time_from,
+        time_to,
+        repositories,
+        participants,
+        labels,
+        jira,
+        exclude_inactive,
+        release_settings,
+        fresh,
+        with_jira_map,
+        mdb,
+        pdb,
+        cache,
+    ))[0]
 
 
 @sentry_span
@@ -236,7 +302,7 @@ async def calc_pull_request_metrics_line_github(meta_ids: Tuple[int, ...],
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
         meta_ids, time_from, time_to, all_repositories, participants, labels, jira,
-        exclude_inactive, release_settings, fresh, mdb, pdb, cache)
+        exclude_inactive, release_settings, fresh, need_jira_mapping(metrics), mdb, pdb, cache)
     return calc(mined_facts, time_intervals, repositories)
 
 
@@ -307,7 +373,7 @@ async def calc_pull_request_histogram_github(meta_ids: Tuple[int, ...],
         raise ValueError("Unsupported metric: %s" % e)
     mined_facts = await calc_pull_request_facts_github(
         meta_ids, time_from, time_to, all_repositories, participants, labels, jira,
-        exclude_inactive, release_settings, fresh, mdb, pdb, cache)
+        exclude_inactive, release_settings, fresh, False, mdb, pdb, cache)
     hists = calc(mined_facts, [[time_from, time_to]], repositories, [k.__dict__ for k in defs])
     result = [[] for _ in range(len(repositories) * (len(lines or [None] * 2) - 1))]
     for defs_hists, metrics in zip(hists, defs.values()):

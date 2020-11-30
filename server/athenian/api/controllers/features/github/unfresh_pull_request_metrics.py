@@ -1,6 +1,5 @@
-from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 import aiomcache
 import databases
@@ -23,7 +22,7 @@ from athenian.api.tracing import sentry_span
 
 
 @sentry_span
-async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFacts],
+async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, Tuple[str, PullRequestFacts]],
                                            ambiguous: Dict[str, List[str]],
                                            time_from: datetime,
                                            time_to: datetime,
@@ -38,7 +37,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
                                            mdb: databases.Database,
                                            pdb: databases.Database,
                                            cache: Optional[aiomcache.Client],
-                                           ) -> Dict[str, List[PullRequestFacts]]:
+                                           ) -> Dict[str, Tuple[str, PullRequestFacts]]:
     """
     Load the missing facts about merged unreleased and open PRs from pdb instead of querying \
     the most up to date information from mdb.
@@ -96,19 +95,15 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
     add_pdb_hits(pdb, "precomputed_open_facts", len(open_facts))
     add_pdb_hits(pdb, "precomputed_merged_unreleased_facts", len(merged_facts))
     # ensure the priority order
-    facts = {**open_facts, **merged_facts, **done_facts}
-    by_repo = defaultdict(list)
-    for repo, f in facts.values():
-        by_repo[repo].append(f)
-    return by_repo
+    return {**open_facts, **merged_facts, **done_facts}
 
 
 @sentry_span
-async def _filter_done_facts_jira(done_facts: Dict[str, PullRequestFacts],
+async def _filter_done_facts_jira(done_facts: Dict[str, Tuple[str, PullRequestFacts]],
                                   jira: JIRAFilter,
                                   mdb: databases.Database,
                                   cache: Optional[aiomcache.Client],
-                                  ) -> Dict[str, PullRequestFacts]:
+                                  ) -> Dict[str, Tuple[str, PullRequestFacts]]:
     filtered = await PullRequestMiner.filter_jira(
         done_facts, jira, mdb, cache, columns=[PullRequest.node_id])
     return {k: done_facts[k] for k in filtered.index.values}

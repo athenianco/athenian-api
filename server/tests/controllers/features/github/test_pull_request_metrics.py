@@ -11,13 +11,13 @@ from athenian.api.controllers.features.entries import calc_pull_request_facts_gi
     calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
     ClosedCalculator, CycleCounter, CycleCounterWithQuantiles, CycleTimeCalculator, \
-    FlowRatioCalculator, histogram_calculators, LeadCounter, LeadCounterWithQuantiles, \
-    LeadTimeCalculator, MergingCounter, MergingCounterWithQuantiles, MergingTimeCalculator, \
-    OpenedCalculator, PullRequestBinnedMetricCalculator, PullRequestMetricCalculatorEnsemble, \
-    register_metric, ReleaseCounter, ReleaseCounterWithQuantiles, ReleasedCalculator, \
-    ReleaseTimeCalculator, ReviewCounter, ReviewCounterWithQuantiles, ReviewTimeCalculator, \
-    WaitFirstReviewTimeCalculator, WorkInProgressCounter, WorkInProgressCounterWithQuantiles, \
-    WorkInProgressTimeCalculator
+    DoneCalculator, FlowRatioCalculator, histogram_calculators, LeadCounter, \
+    LeadCounterWithQuantiles, LeadTimeCalculator, MergingCounter, MergingCounterWithQuantiles, \
+    MergingTimeCalculator, OpenedCalculator, PullRequestBinnedMetricCalculator, \
+    PullRequestMetricCalculatorEnsemble, register_metric, ReleaseCounter, \
+    ReleaseCounterWithQuantiles, ReleaseTimeCalculator, ReviewCounter, \
+    ReviewCounterWithQuantiles, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
+    WorkInProgressCounter, WorkInProgressCounterWithQuantiles, WorkInProgressTimeCalculator
 from athenian.api.controllers.features.histogram import Scale
 from athenian.api.controllers.features.metric_calculator import df_from_dataclasses, \
     MetricCalculator
@@ -178,7 +178,7 @@ def test_pull_request_opened_no(pr_samples):  # noqa: F811
 
 def test_pull_request_closed_no(pr_samples):  # noqa: F811
     calc_closed = ClosedCalculator(quantiles=(0, 1))
-    calc_released = ReleasedCalculator(quantiles=(0, 1))
+    calc_released = DoneCalculator(quantiles=(0, 1))
     time_from = datetime.utcnow() - timedelta(days=365 * 3)
     time_to = time_from + timedelta(days=7)
     prs = df_from_dataclasses(pr_samples(100))
@@ -446,6 +446,26 @@ async def test_calc_pull_request_metrics_line_github_tag_after_branch(
     assert metrics.value == timedelta(days=41, seconds=19129)
 
 
+@with_defer
+async def test_calc_pull_request_metrics_line_jira_map(
+        mdb, pdb, cache, release_match_setting_tag_or_branch):
+    date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
+    date_to = datetime(year=2018, month=1, day=12, tzinfo=timezone.utc)
+    metrics = [
+        PullRequestMetricID.PR_OPENED_MAPPED_TO_JIRA,
+        PullRequestMetricID.PR_DONE_MAPPED_TO_JIRA,
+        PullRequestMetricID.PR_ALL_MAPPED_TO_JIRA,
+    ]
+    args = [(6366825,), metrics, [[date_from, date_to]], [0, 1], [],
+            [{"src-d/go-git"}], {}, LabelFilter.empty(), JIRAFilter.empty(),
+            False, release_match_setting_tag_or_branch, False, mdb, pdb, cache]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0]
+    await wait_deferred()
+    assert metrics[0].value == 0.02527075812274368
+    assert metrics[1].value == 0.01195219123505976
+    assert metrics[2].value == 0.025
+
+
 def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
     ensemble = PullRequestMetricCalculatorEnsemble(PullRequestMetricID.PR_CYCLE_TIME,
                                                    PullRequestMetricID.PR_WIP_COUNT,
@@ -497,7 +517,7 @@ async def test_calc_pull_request_facts_github_open_precomputed(
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = ((6366825,), time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, mdb, pdb, None)
+            False, release_match_setting_tag, False, False, mdb, pdb, None)
     facts1 = await calc_pull_request_facts_github(*args)
     await wait_deferred()
     open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
@@ -513,7 +533,7 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
     time_to = datetime(year=2019, month=11, day=2, tzinfo=timezone.utc)
     args = ((6366825,), time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, mdb, pdb, None)
+            False, release_match_setting_tag, False, False, mdb, pdb, None)
     facts1 = await calc_pull_request_facts_github(*args)
     await wait_deferred()
     unreleased_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
@@ -527,12 +547,12 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
 
 @with_defer
 async def test_calc_pull_request_facts_github_jira(
-        mdb, pdb, release_match_setting_tag):
+        mdb, pdb, release_match_setting_tag, cache):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = [(6366825,), time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, mdb, pdb, None]
+            False, release_match_setting_tag, False, False, mdb, pdb, cache]
     facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
     await wait_deferred()
     assert sum(1 for f in facts if f.released) == 233
@@ -540,6 +560,15 @@ async def test_calc_pull_request_facts_github_jira(
                          set(), set(), False)
     facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
     assert sum(1 for f in facts if f.released) == 16
+
+    args[6] = JIRAFilter.empty()
+    args[-4] = True
+    facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
+    assert sum(1 for f in facts if f.jira_id) == 60
+    await wait_deferred()
+    args[-3] = args[-2] = None
+    facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
+    assert sum(1 for f in facts if f.jira_id) == 60
 
 
 def test_size_calculator_shift_log():

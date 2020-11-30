@@ -16,12 +16,14 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import triage_by_release_match
+from athenian.api.controllers.miners.types import pr_jira_map_column, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import DatabaseLike
 
 
 async def generate_jira_prs_query(filters: List[ClauseElement],
@@ -396,3 +398,24 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
         if len(np.intersect1d(issue_commenters, commenters)):
             passed[i] = True
     return df.take(np.nonzero(passed)[0])
+
+
+async def append_pr_jira_mapping(prs: Dict[str, Tuple[str, PullRequestFacts]],
+                                 meta_ids: Tuple[int, ...],
+                                 mdb: DatabaseLike) -> None:
+    """Load and insert "jira_id" to the PR facts."""
+    jira_map = await load_pr_jira_mapping(prs, meta_ids, mdb)
+    for pr, (_, facts) in prs.items():
+        facts.__dict__[pr_jira_map_column] = jira_map.get(pr)
+
+
+@sentry_span
+async def load_pr_jira_mapping(prs: Iterable[str],
+                               meta_ids: Tuple[int, ...],
+                               mdb: DatabaseLike) -> Dict[str, str]:
+    """Fetch the mapping from PR node IDs to JIRA issue IDs."""
+    nprji = NodePullRequestJiraIssues
+    # TODO(vmarkovtsev): update NodePullRequestJiraIssues to carry the account ID and check it
+    rows = await mdb.fetch_all(sql.select([nprji.node_id, nprji.jira_id])
+                               .where(nprji.node_id.in_(prs)))
+    return {r[0]: r[1] for r in rows}
