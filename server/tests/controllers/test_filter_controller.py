@@ -13,12 +13,11 @@ from sqlalchemy import delete, insert, select
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.types import Property
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, Release
 from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
-from athenian.api.models.web import CommitsList, PullRequestSet
+from athenian.api.models.web import CommitsList, PullRequestEvent, PullRequestSet, PullRequestStage
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
@@ -290,7 +289,7 @@ async def test_filter_contributors_nasty_input(client, headers, account, date_to
 
 
 @pytest.fixture(scope="module")
-def filter_prs_single_prop_cache():
+def filter_prs_single_cache():
     fc = FakeCache()
     setup_cache_metrics(fc, {}, CollectorRegistry(auto_describe=True))
     for v in fc.metrics["context"].values():
@@ -313,29 +312,50 @@ def with_only_master_branch(func):
 
 
 @pytest.mark.filter_pull_requests
-@pytest.mark.parametrize("prop", [k.name.lower() for k in Property])
+@pytest.mark.parametrize("stage", PullRequestStage)
 @with_only_master_branch
-async def test_filter_prs_single_prop(
+async def test_filter_prs_single_stage(
         # do not remove "mdb", it is required by the decorators
-        client, headers, mdb, prop, app, filter_prs_single_prop_cache):
-    app._cache = filter_prs_single_prop_cache
+        client, headers, mdb, stage, app, filter_prs_single_cache):
+    app._cache = filter_prs_single_cache
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-04-23",
         "account": 1,
         "in": [],
-        "properties": [prop],
+        "stages": [stage],
         "exclude_inactive": False,
     }
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, {prop}, {},
+    await validate_prs_response(response, {stage}, set(), {},
+                                datetime(year=2020, month=4, day=23, tzinfo=timezone.utc))
+
+
+@pytest.mark.filter_pull_requests
+@pytest.mark.parametrize("event", PullRequestEvent)
+@with_only_master_branch
+async def test_filter_prs_single_event(
+        # do not remove "mdb", it is required by the decorators
+        client, headers, mdb, event, app, filter_prs_single_cache):
+    app._cache = filter_prs_single_cache
+    body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-04-23",
+        "account": 1,
+        "in": [],
+        "events": [event],
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    await validate_prs_response(response, set(), {event}, {},
                                 datetime(year=2020, month=4, day=23, tzinfo=timezone.utc))
 
 
 @pytest.mark.filter_pull_requests
 @with_only_master_branch
-async def test_filter_prs_all_properties(client, headers, mdb):
+async def test_filter_prs_no_stages(client, headers, mdb):
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-04-23",
@@ -344,17 +364,21 @@ async def test_filter_prs_all_properties(client, headers, mdb):
         "timezone": 60,
         "account": 1,
         "in": [],
-        "properties": [],
+        "stages": list(PullRequestStage),
         "exclude_inactive": False,
     }
     time_to = datetime(year=2020, month=4, day=23, tzinfo=timezone.utc)
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    await validate_prs_response(response, set(PullRequestProperty), {}, time_to, 682)
-    del body["properties"]
+    await validate_prs_response(response, set(PullRequestStage), set(), {}, time_to, 682)
+    body["stages"] = []
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    assert response.status == 200
+    assert response.status == 400
+    del body["stages"]
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    assert response.status == 400
 
 
 @pytest.mark.filter_pull_requests
@@ -366,7 +390,7 @@ async def test_filter_prs_shot_updated(client, headers, mdb):
         "timezone": 60,
         "account": 1,
         "in": [],
-        "properties": [PullRequestProperty.MERGE_HAPPENED],
+        "events": [PullRequestEvent.MERGED],
         "with": {
             "author": ["github.com/mcuadros"],
         },
@@ -377,9 +401,9 @@ async def test_filter_prs_shot_updated(client, headers, mdb):
     time_to = datetime(year=2018, month=1, day=24, tzinfo=timezone.utc)
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    n = await validate_prs_response(response, {PullRequestProperty.MERGE_HAPPENED},
-                                    {"author": ["github.com/mcuadros"]}, time_to)
-    assert n == 52  # it is 75 without the constraints
+    await validate_prs_response(response, set(), {PullRequestEvent.MERGED},
+                                {"author": ["github.com/mcuadros"]}, time_to, 52)
+    # it is 75 without the constraints
 
 
 @pytest.mark.filter_pull_requests
@@ -390,7 +414,7 @@ async def test_filter_prs_labels_include(client, headers):
         "timezone": 0,
         "account": 1,
         "in": [],
-        "properties": [PullRequestProperty.MERGE_HAPPENED],
+        "events": [PullRequestEvent.MERGED],
         "labels_include": ["bug"],
         "exclude_inactive": False,
     }
@@ -412,7 +436,7 @@ async def test_filter_prs_merged_timezone(client, headers, timezone, must_match)
         "timezone": timezone,
         "account": 1,
         "in": [],
-        "properties": [PullRequestProperty.MERGE_HAPPENED],
+        "events": [PullRequestEvent.MERGED],
         "exclude_inactive": False,
     }
     response = await client.request(
@@ -436,7 +460,7 @@ async def test_filter_prs_created_timezone(client, headers, timezone, must_match
         "timezone": timezone,
         "account": 1,
         "in": [],
-        "properties": [],
+        "stages": list(PullRequestStage),
         "exclude_inactive": False,
     }
     response = await client.request(
@@ -451,17 +475,17 @@ async def test_filter_prs_created_timezone(client, headers, timezone, must_match
     assert matched == must_match
 
 
-async def test_filter_prs_jira(client, headers, app, filter_prs_single_prop_cache):
-    app._cache = filter_prs_single_prop_cache
+async def test_filter_prs_jira(client, headers, app, filter_prs_single_cache):
+    app._cache = filter_prs_single_cache
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-04-23",
         "account": 1,
         "in": [],
-        "properties": [PullRequestProperty.MERGE_HAPPENED],
+        "events": [PullRequestEvent.MERGED],
         "exclude_inactive": False,
     }
-    if len(filter_prs_single_prop_cache.mem) == 0:
+    if len(filter_prs_single_cache.mem) == 0:
         response = await client.request(
             method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
         text = (await response.read()).decode("utf-8")
@@ -479,7 +503,7 @@ async def test_filter_prs_jira(client, headers, app, filter_prs_single_prop_cach
     prs = PullRequestSet.from_dict(json.loads(text))
     data1 = prs.data
     assert len(prs.data) == 2
-    filter_prs_single_prop_cache.mem.clear()
+    filter_prs_single_cache.mem.clear()
     response = await client.request(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     text = (await response.read()).decode("utf-8")
@@ -495,7 +519,7 @@ async def test_filter_prs_jira_disabled_projects(client, headers, disabled_dev):
         "date_to": "2020-04-23",
         "account": 1,
         "in": [],
-        "properties": [PullRequestProperty.MERGE_HAPPENED],
+        "events": [PullRequestEvent.MERGED],
         "exclude_inactive": False,
         "jira": {
             "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
@@ -541,7 +565,8 @@ will_never_be_released_go_git_pr_numbers = {
 
 
 async def validate_prs_response(response: ClientResponse,
-                                props: Set[str],
+                                stages: Set[str],
+                                events: Set[str],
                                 parts: Dict[str, Collection[str]],
                                 time_to: datetime,
                                 count: Optional[int] = None) -> int:
@@ -608,7 +633,8 @@ async def validate_prs_response(response: ClientResponse,
         if pr.approved is not None:
             assert pr.first_review <= pr.approved, str(pr)
 
-        assert props.intersection(set(pr.properties)), str(pr)
+        assert stages.intersection(set(pr.stages_time_machine)) or \
+               events.intersection(set(pr.events_time_machine)), str(pr)
         assert PullRequestProperty.CREATED in pr.properties, str(pr)
         if pr.number not in open_go_git_pr_numbers:
             assert pr.closed is not None
@@ -748,30 +774,31 @@ async def validate_prs_response(response: ClientResponse,
 
     assert total_comments > 0
     assert total_commits > 0
-    if props not in ({PullRequestProperty.WIP}, {PullRequestProperty.MERGING}):
+    if stages not in ({PullRequestStage.WIP}, {PullRequestStage.MERGING}):
         assert total_review_comments > 0
     else:
         assert total_review_comments == 0
-    if props != {PullRequestProperty.WIP}:
+    if stages != {PullRequestProperty.WIP}:
         assert total_reviews > 0
-    if props not in ({PullRequestProperty.RELEASE_HAPPENED}, {PullRequestProperty.MERGE_HAPPENED},
-                     {PullRequestProperty.RELEASING}, {PullRequestProperty.MERGING},
-                     {PullRequestProperty.REVIEWING}, {PullRequestProperty.WIP},
-                     {PullRequestProperty.FORCE_PUSH_DROPPED}):
+    if stages not in ({PullRequestStage.RELEASING}, {PullRequestStage.MERGING},
+                      {PullRequestStage.REVIEWING}, {PullRequestStage.WIP},
+                      {PullRequestStage.FORCE_PUSH_DROPPED}) and \
+            events not in ({PullRequestEvent.RELEASED}, {PullRequestEvent.MERGED}):
         assert total_rejected > 0
     else:
         assert total_rejected == 0
-    if props not in ({PullRequestProperty.RELEASING}, {PullRequestProperty.MERGING},
-                     {PullRequestProperty.REJECTION_HAPPENED}, {PullRequestProperty.REVIEWING},
-                     {PullRequestProperty.WIP}, {PullRequestProperty.FORCE_PUSH_DROPPED}):
+    if stages not in ({PullRequestStage.RELEASING}, {PullRequestStage.MERGING},
+                      {PullRequestStage.REVIEWING}, {PullRequestStage.WIP},
+                      {PullRequestStage.FORCE_PUSH_DROPPED}) and \
+            events not in ({PullRequestEvent.REJECTED},):
         assert total_released > 0
     else:
         assert total_released == 0
-    if {PullRequestProperty.REVIEWING, PullRequestProperty.CHANGES_REQUEST_HAPPENED,
-            PullRequestProperty.REVIEW_HAPPENED, PullRequestProperty.APPROVE_HAPPENED,
-            PullRequestProperty.CHANGES_REQUEST_HAPPENED}.intersection(props):
+    if {PullRequestStage.REVIEWING}.intersection(stages) or \
+            {PullRequestEvent.CHANGES_REQUESTED, PullRequestEvent.REVIEWED,
+             PullRequestEvent.APPROVED, PullRequestEvent.CHANGES_REQUESTED}.intersection(events):
         assert total_review_requests > 0
-    if PullRequestProperty.FORCE_PUSH_DROPPED in props:
+    if PullRequestStage.FORCE_PUSH_DROPPED in stages:
         assert total_force_push_dropped > 0
     for k, v in timings.items():
         assert v > tdz, k
@@ -795,7 +822,7 @@ async def test_filter_prs_nasty_input(client, headers, account, date_to, updated
         "date_to": date_to,
         "account": account,
         "in": in_,
-        "properties": [],
+        "stages": list(PullRequestStage),
         "exclude_inactive": False,
     }
     if updated_from is not None:
@@ -812,7 +839,8 @@ async def test_filter_prs_david_bug(client, headers):
         "date_from": "2019-02-22",
         "date_to": "2020-02-22",
         "in": ["github.com/src-d/go-git"],
-        "properties": ["wip", "reviewing", "merging", "releasing"],
+        "stages": [PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING,
+                   PullRequestStage.RELEASING],
         "with": {
             "author": ["github.com/Junnplus"],
             "reviewer": ["github.com/Junnplus"],
@@ -835,7 +863,7 @@ async def test_filter_prs_developer_filter(client, headers):
         "date_to": "2017-12-16",
         "account": 1,
         "in": [],
-        "properties": [],
+        "stages": list(PullRequestStage),
         "with": {
             "author": ["github.com/mcuadros"],
         },
@@ -863,7 +891,7 @@ async def test_filter_prs_exclude_inactive(client, headers):
         "date_to": "2017-01-11",
         "account": 1,
         "in": [],
-        "properties": [],
+        "stages": list(PullRequestStage),
         "exclude_inactive": True,
     }
     response = await client.request(
