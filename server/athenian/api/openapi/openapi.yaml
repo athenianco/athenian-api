@@ -3331,7 +3331,7 @@ components:
         date_to: 2020-05-23
         in:
         - '{1}'
-        properties:
+        stages:
         - wip
         with:
           author:
@@ -3353,10 +3353,6 @@ components:
           $ref: '#/components/schemas/TimeZone'
         in:
           $ref: '#/components/schemas/RepositorySet'
-        properties:
-          items:
-            $ref: '#/components/schemas/PullRequestProperty'
-          type: array
         events:
           description: Allowed PR events that happened between `date_from` and `date_to`.
           items:

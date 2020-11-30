@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from athenian.api.models.web import PullRequestPaginationPlan
+from athenian.api.models.web import PullRequestPaginationPlan, PullRequestStage
 
 
 @pytest.mark.filter_pull_requests
@@ -17,6 +17,7 @@ async def test_paginate_prs_smoke(client, headers, batch, count):
         "date_to": "2020-04-01",
         "account": 1,
         "in": [],
+        "stages": list(PullRequestStage),
         "exclude_inactive": True,
     }
     # populate pdb
@@ -48,18 +49,20 @@ async def test_paginate_prs_smoke(client, headers, batch, count):
 
 
 @pytest.mark.filter_pull_requests
-@pytest.mark.parametrize("account, batch, code",
-                         [(1, 0, 400),
-                          (1, -10, 400),
-                          (1, None, 400),
-                          (3, 1, 403)])
-async def test_paginate_prs_nasty_input(client, headers, account, batch, code):
+@pytest.mark.parametrize("account, batch, stages, code",
+                         [(1, 0, list(PullRequestStage), 400),
+                          (1, -10, list(PullRequestStage), 400),
+                          (1, None, list(PullRequestStage), 400),
+                          (3, 1, list(PullRequestStage), 403),
+                          (3, 1, None, 400)])
+async def test_paginate_prs_nasty_input(client, headers, account, batch, stages, code):
     body = {
         "request": {
             "date_from": "2015-10-13",
             "date_to": "2020-04-01",
             "account": account,
             "in": [],
+            "stages": stages,
             "exclude_inactive": True,
         },
         "batch": batch,
@@ -80,6 +83,7 @@ async def test_paginate_prs_jira(client, headers):
         "jira": {
             "labels_include": ["bug", "enhancement"],
         },
+        "stages": list(PullRequestStage),
         "exclude_inactive": True,
     }
     # populate pdb
@@ -122,6 +126,7 @@ async def test_paginate_prs_no_done(client, headers):
         "date_to": "2020-03-01",
         "account": 1,
         "in": [],
+        "stages": list(PullRequestStage),
         "exclude_inactive": True,
     }
     # populate pdb

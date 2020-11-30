@@ -143,20 +143,12 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
                                                    Tuple[int, ...]]:
     """Infer all the required PR filters from the request."""
     repos, meta_ids = await _common_filter_preprocess(filt, request, strip_prefix=False)
-    if not filt.properties:
-        events = set(getattr(PullRequestEvent, e.upper()) for e in (filt.events or []))
-        stages = set(getattr(PullRequestStage, s.upper()) for s in (filt.stages or []))
-    else:
-        events = set()
-        stages = set()
-        props = set(getattr(Property, p.upper()) for p in (filt.properties or []))
-        if props:
-            for s in range(Property.WIP, Property.DONE + 1):
-                if Property(s) in props:
-                    stages.add(PullRequestStage(s))
-            for e in range(Property.CREATED, Property.RELEASE_HAPPENED + 1):
-                if Property(e) in props:
-                    events.add(PullRequestEvent(e - Property.CREATED + 1))
+    events = set(getattr(PullRequestEvent, e.upper()) for e in (filt.events or []))
+    stages = set(getattr(PullRequestStage, s.upper()) for s in (filt.stages or []))
+    if not events and not stages:
+        raise ResponseError(InvalidRequestError(
+            detail="Either `events` or `stages` must be specified and be not empty.",
+            pointer=".stages"))
     participants = {PRParticipationKind[k.upper()]: {d.split("/", 1)[1] for d in v}
                     for k, v in (filt.with_ or {}).items() if v}
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)

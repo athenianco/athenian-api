@@ -5,7 +5,6 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
 from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.pull_request_event import PullRequestEvent
-from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.pull_request_stage import PullRequestStage
 from athenian.api.models.web.pull_request_with import PullRequestWith
 
@@ -19,7 +18,6 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         "date_to": date,
         "timezone": int,
         "in_": List[str],
-        "properties": List[str],
         "events": List[str],
         "stages": List[str],
         "with_": PullRequestWith,
@@ -38,7 +36,6 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         "date_to": "date_to",
         "timezone": "timezone",
         "in_": "in",
-        "properties": "properties",
         "events": "events",
         "stages": "stages",
         "with_": "with",
@@ -58,7 +55,6 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         date_to: Optional[date] = None,
         timezone: Optional[int] = None,
         in_: Optional[List[str]] = None,
-        properties: Optional[List[str]] = None,
         events: Optional[List[str]] = None,
         stages: Optional[List[str]] = None,
         with_: Optional[PullRequestWith] = None,
@@ -77,7 +73,6 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         :param date_to: The date_to of this FilterPullRequestsRequest.
         :param timezone: The timezone of this FilterPullRequestsRequest.
         :param in_: The in_ of this FilterPullRequestsRequest.
-        :param properties: The properties of this FilterPullRequestsRequest.
         :param events: The events of this FilterPullRequestsRequest.
         :param stages: The stages of this FilterPullRequestsRequest.
         :param with_: The with_ of this FilterPullRequestsRequest.
@@ -94,7 +89,6 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         self._date_to = date_to
         self._timezone = timezone
         self._in_ = in_
-        self._properties = properties
         self._events = events
         self._stages = stages
         self._with_ = with_
@@ -124,29 +118,6 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
             raise ValueError("Invalid value for `in`, must not be `None`")
 
         self._in_ = in_
-
-    @property
-    def properties(self) -> List[str]:
-        """Gets the properties of this FilterPullRequestsRequest.
-
-        :return: The properties of this FilterPullRequestsRequest.
-        """
-        return self._properties
-
-    @properties.setter
-    def properties(self, properties: List[str]):
-        """Sets the properties of this FilterPullRequestsRequest.
-
-        :param properties: The properties of this FilterPullRequestsRequest.
-        """
-        if properties is None:
-            raise ValueError("Invalid value for `properties`, must not be `None`")
-
-        for stage in properties:
-            if stage not in PullRequestProperty:
-                raise ValueError("Invalid property: %s" % stage)
-
-        self._properties = properties
 
     @property
     def events(self) -> List[str]:
