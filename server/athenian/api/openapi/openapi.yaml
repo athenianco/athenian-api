@@ -2186,6 +2186,9 @@ components:
         * `pr-review-pending-count`: number of PRs currently in Review stage.
         * `pr-merging-pending-count`: number of PRs currently in Merge stage.
         * `pr-release-pending-count`: number of PRs currently in Release stage.
+        * `pr-opened-mapped-to-jira`: ratio of created PRs that are mapped to JIRA issues.
+        * `pr-done-mapped-to-jira`: ratio of rejected or released PRs that are mapped to JIRA issues.
+        * `pr-all-mapped-to-jira`: ratio of all observed PRs that are mapped to JIRA issues.
       enum:
       - pr-wip-time
       - pr-wip-count
@@ -2222,6 +2225,9 @@ components:
       - pr-review-pending-count
       - pr-merging-pending-count
       - pr-release-pending-count
+      - pr-opened-mapped-to-jira
+      - pr-done-mapped-to-jira
+      - pr-all-mapped-to-jira
       example: pr-lead-time
       type: string
     DeveloperID:

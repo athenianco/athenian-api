@@ -11,6 +11,7 @@ from athenian.api.controllers.features.metric_calculator import AverageMetricCal
     BinnedEnsemblesCalculator, BinnedHistogramCalculator, BinnedMetricCalculator, Counter, \
     HistogramCalculator, HistogramCalculatorEnsemble, M, make_register_metric, MetricCalculator, \
     MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
+from athenian.api.controllers.miners.types import pr_jira_map_column
 from athenian.api.models.web import PullRequestMetricID
 
 
@@ -654,8 +655,8 @@ class NotReviewedCalculator(SumMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_DONE)
-class ReleasedCalculator(SumMetricCalculator[int]):
-    """Number of released PRs."""
+class DoneCalculator(SumMetricCalculator[int]):
+    """Number of rejected or released PRs."""
 
     dtype = int
 
@@ -781,3 +782,66 @@ class ReleasePendingCounter(BaseStagePendingCounter):
     """Number of PRs currently in release stage."""
 
     stage = PendingStage.RELEASE
+
+
+class JIRAMappingCalculator(SumMetricCalculator[int]):
+    """Count PRs mapped to JIRA issues."""
+
+    dtype = int
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        result = self._calcs[0].peek.copy()
+        result[:, facts[pr_jira_map_column].isnull().values] = None
+        return result
+
+
+class OpenedJIRACalculator(JIRAMappingCalculator):
+    """Count PRs mapped to JIRA issues."""
+
+    deps = (OpenedCalculator,)
+
+
+class DoneJIRACalculator(JIRAMappingCalculator):
+    """Count PRs mapped to JIRA issues."""
+
+    deps = (DoneCalculator,)
+
+
+class AllJIRACalculator(JIRAMappingCalculator):
+    """Count PRs mapped to JIRA issues."""
+
+    deps = (AllCounter,)
+
+
+@register_metric(PullRequestMetricID.PR_OPENED_MAPPED_TO_JIRA)
+class OpenedJIRARatioCalculator(RatioCalculator):
+    """Calculate opened PRs JIRA mapping ratio = opened and mapped / opened."""
+
+    deps = (OpenedJIRACalculator, OpenedCalculator)
+
+
+@register_metric(PullRequestMetricID.PR_DONE_MAPPED_TO_JIRA)
+class DoneJIRARatioCalculator(RatioCalculator):
+    """Calculate done PRs JIRA mapping ratio = done and mapped / done."""
+
+    deps = (DoneJIRACalculator, DoneCalculator)
+
+
+@register_metric(PullRequestMetricID.PR_ALL_MAPPED_TO_JIRA)
+class AllJIRARatioCalculator(RatioCalculator):
+    """Calculate all observed PRs JIRA mapping ratio = mapped / all."""
+
+    deps = (AllJIRACalculator, AllCounter)
+
+
+def need_jira_mapping(metrics: Iterable[str]) -> bool:
+    """Check whether some of the metrics require loading the JIRA issue mapping."""
+    return bool(set(metrics).intersection({
+        PullRequestMetricID.PR_OPENED_MAPPED_TO_JIRA,
+        PullRequestMetricID.PR_DONE_MAPPED_TO_JIRA,
+        PullRequestMetricID.PR_ALL_MAPPED_TO_JIRA,
+    }))
