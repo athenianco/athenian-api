@@ -33,19 +33,12 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     async def calculate_for_set_histograms(service, repos, devs, labels, jira, for_set):
         # for each filter, we find the functions to calculate the histograms
         defs = defaultdict(list)
-        for h in (filt.histograms or []):
+        for h in filt.histograms:
             defs[HistogramParameters(
                 scale=Scale[h.scale.upper()] if h.scale is not None else None,
                 bins=h.bins,
                 ticks=tuple(h.ticks) if h.ticks is not None else None,
             )].append(h.metric)
-        # FIXME(vmarkovtsev): this is deprecated and should be removed
-        for m in (filt.metrics or []):
-            defs[HistogramParameters(
-                scale=Scale[filt.scale.upper()] if filt.scale is not None else Scale.LINEAR,
-                bins=filt.bins or 0,
-                ticks=None,
-            )].append(m)
         try:
             group_histograms = await METRIC_ENTRIES[service]["prs_histogram"](
                 meta_ids, defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
