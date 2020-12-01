@@ -1,8 +1,6 @@
-import dataclasses
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import auto, IntEnum
-from typing import Any, Dict, List, Mapping, Optional, Set, TypeVar, Union
+from typing import Any, Dict, List, Mapping, Optional, Set, Union
 
 import numpy as np
 import pandas as pd
@@ -10,6 +8,7 @@ import pandas as pd
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, Release
+from athenian.api.typing_utils import dataclass
 
 
 class PRParticipationKind(IntEnum):
@@ -90,7 +89,7 @@ class PullRequestStage(IntEnum):
     DONE = auto()
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class Label:
     """Pull request label."""
 
@@ -99,7 +98,7 @@ class Label:
     color: str
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class PullRequestJIRAIssueItem:
     """JIRA PR properties."""
 
@@ -110,7 +109,7 @@ class PullRequestJIRAIssueItem:
     type: str
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class PullRequestListItem:
     """General PR properties used to list PRs on the frontend."""
 
@@ -143,7 +142,7 @@ class PullRequestListItem:
     jira: Optional[List[PullRequestJIRAIssueItem]]
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class MinedPullRequest:
     """All the relevant information we are able to load from the metadata DB about a PR.
 
@@ -192,12 +191,8 @@ class MinedPullRequest:
         return set(values[np.where(values)[0]])
 
 
-T = TypeVar("T")
-pr_jira_map_column = "jira_id"
-
-
-@dataclasses.dataclass(frozen=True)
-class PullRequestFacts:
+@dataclass(slots=True, frozen=True, eq=False, first_mutable="jira_id")
+class PullRequestFacts(Mapping):
     """Various PR event timestamps and other properties."""
 
     created: pd.Timestamp
@@ -218,8 +213,8 @@ class PullRequestFacts:
     activity_days: np.ndarray
     size: int
     force_push_dropped: bool
-    # + pr_jira_map_column that is always set fresh
-    # We don't list it explicitly here because it will appear in pdb.
+    # Mutable optional fields go below.
+    jira_id: Optional[str] = None
 
     def max_timestamp(self) -> pd.Timestamp:
         """Find the maximum timestamp contained in the struct."""
@@ -234,12 +229,12 @@ class PullRequestFacts:
     def truncate(self, dt: Union[pd.Timestamp, datetime]) -> "PullRequestFacts":
         """Create a copy of the facts without timestamps bigger than or equal to `dt`."""
         changed = []
-        for k, v in vars(self).items():  # do not use dataclasses.asdict() - very slow
+        for k, v in self.items():  # do not use dataclasses.asdict() - very slow
             if isinstance(v, pd.Timestamp) and v >= dt:
                 changed.append(k)
         if not changed:
             return self
-        dikt = vars(self).copy()
+        dikt = dict(self)
         for k in changed:
             dikt[k] = None
         dikt["done"] = dikt["released"] or dikt["force_push_dropped"] or (
@@ -248,7 +243,7 @@ class PullRequestFacts:
 
     def validate(self) -> None:
         """Ensure that there are no NaNs."""
-        for k, v in vars(self).items():  # do not use dataclasses.asdict() - very slow
+        for k, v in self.items():  # do not use dataclasses.asdict() - very slow
             if isinstance(v, np.ndarray):
                 assert (v == v).all(), k
             else:
@@ -263,7 +258,7 @@ class PullRequestFacts:
             raise NotImplementedError(
                 f"Cannot compare {self.__class__} and {other.__class__}")
 
-        for k, v in vars(self).items():
+        for k, v in self.items():
             v_other = getattr(other, k)
             if v is v_other:
                 continue
@@ -278,21 +273,12 @@ class PullRequestFacts:
 
     def __str__(self) -> str:
         """Format for human-readability."""
-        return "{\n\t%s\n}" % ",\n\t".join(
-            "%s: %s" % (k, v)
-            for k, v in vars(self).items())  # do not use dataclasses.asdict() - very slow
+        # do not use dataclasses.asdict() - very slow
+        return "{\n\t%s\n}" % ",\n\t".join("%s: %s" % (k, v) for k, v in self.items())
 
     def __lt__(self, other: "PullRequestFacts") -> bool:
         """Order by `work_began`."""
         return self.work_began < other.work_began
-
-    def __hash__(self) -> int:
-        """Implement hash()."""
-        return hash(str(self))
-
-
-# Hack the annotations so that `df_from_dataclasses()` works correctly.
-PullRequestFacts.__annotations__[pr_jira_map_column] = object
 
 
 def nonemin(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
@@ -309,7 +295,7 @@ def nonemax(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
     return max(arg for arg in args if arg)
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class ReleaseFacts:
     """Various release properties and statistics."""
 

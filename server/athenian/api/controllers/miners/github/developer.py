@@ -1,5 +1,4 @@
 from collections import defaultdict
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from itertools import chain
@@ -25,6 +24,7 @@ from athenian.api.models.metadata.github import PullRequest, PullRequestComment,
     PullRequestLabel, PullRequestReview, PullRequestReviewComment, PushCommit, Release, \
     Repository, User
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import dataclass
 
 
 class DeveloperTopic(Enum):
@@ -45,7 +45,7 @@ class DeveloperTopic(Enum):
     review_pr_comments = "dev-review-pr-comments"
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class DeveloperStats:
     """Calculated statistics about developer activities."""
 

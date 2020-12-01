@@ -1,9 +1,11 @@
-from dataclasses import dataclass
 from datetime import timedelta
 from enum import IntEnum
 from typing import Generic, List, Optional, Tuple, TypeVar
 
 import numpy as np
+
+from athenian.api.typing_utils import dataclass
+
 
 T = TypeVar("T", float, int, timedelta)
 
@@ -15,7 +17,7 @@ class Scale(IntEnum):
     LOG = 2
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class Histogram(Generic[T]):
     """Definition of a histogram: X axis is `ticks` and Y axis is `bars`."""
 
@@ -26,7 +28,7 @@ class Histogram(Generic[T]):
     interquartile: Tuple[T, T]
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class HistogramParameters(Generic[T]):
     """Histogram attributes that define its shape."""
 

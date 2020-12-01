@@ -1,7 +1,7 @@
-from dataclasses import dataclass
+from athenian.api.typing_utils import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class CodeStats:
     """
     Statistics about a certain group of commits: counted "special" commits and LoC which that \

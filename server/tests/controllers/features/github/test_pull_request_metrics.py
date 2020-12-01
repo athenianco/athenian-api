@@ -47,7 +47,7 @@ def random_dropout(pr, prob):
     if "first_review_request" in killed and "first_review_request_exact" not in killed:
         killed.append("first_review_request_exact")
         killed.append("last_review")
-    kwargs = pr.__dict__.copy()
+    kwargs = dict(pr)
     for k in killed:
         kwargs[k] = None
     if "first_commit" in killed:
@@ -151,7 +151,7 @@ def test_pull_request_metrics_float_binned(pr_samples, metric):  # noqa: F811
     samples = pr_samples(1000)
     if metric == PullRequestMetricID.PR_REJECTED:
         for i, s in enumerate(samples):
-            data = vars(s)
+            data = dict(s)
             data["merged"] = None
             samples[i] = PullRequestFacts(**data)
     result = binned({"x": samples}, time_intervals, [["x"]])

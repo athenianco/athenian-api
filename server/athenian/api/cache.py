@@ -18,7 +18,7 @@ from xxhash import xxh64_hexdigest
 from athenian.api import metadata
 from athenian.api.defer import defer
 from athenian.api.metadata import __package__, __version__
-from athenian.api.typing_utils import wraps
+from athenian.api.typing_utils import serialize_mutable_fields_in_dataclasses, wraps
 
 pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
 max_exptime = 30 * 24 * 3600  # 30 days according to the docs
@@ -150,9 +150,10 @@ def cached(exptime: Union[int, Callable[..., int]],
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
                 try:
                     with sentry_sdk.start_span(op="serialize") as span:
-                        payload = lz4.frame.compress(serialize(result),
-                                                     block_size=lz4.frame.BLOCKSIZE_MAX1MB,
-                                                     compression_level=6)
+                        with serialize_mutable_fields_in_dataclasses():
+                            payload = lz4.frame.compress(serialize(result),
+                                                         block_size=lz4.frame.BLOCKSIZE_MAX1MB,
+                                                         compression_level=6)
                         span.description = str(len(payload))
                 except Exception as e:
                     log.error("Failed to serialize %s/%s: %s: %s",

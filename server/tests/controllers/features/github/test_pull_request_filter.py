@@ -285,8 +285,8 @@ async def test_fetch_pull_requests_smoke(mdb, pdb, release_match_setting_tag, ca
     for pr2 in prs2:
         assert 1000 <= pr2.number <= 1010 or pr2.number == 921
         pr1 = prs1[pr2.number]
-        pr1.__dict__["stages_time_machine"] = None
-        pr1.__dict__["events_time_machine"] = None
+        object.__setattr__(pr1, "stages_time_machine", None)
+        object.__setattr__(pr1, "events_time_machine", None)
         assert pr1 == pr2, pr1.number
     with pytest.raises(Exception):
         await fetch_pull_requests(

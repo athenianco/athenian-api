@@ -352,7 +352,7 @@ async def test_pr_miner_participant_filters(
 def validate_pull_request_facts(prmeta: Dict[str, Any], prt: PullRequestFacts):
     assert prmeta[PullRequest.node_id.key]
     assert prmeta[PullRequest.repository_full_name.key] == "src-d/go-git"
-    for k, v in vars(prt).items():
+    for k, v in prt.items():
         if not isinstance(v, pd.Timestamp) or not v:
             continue
         if k not in ("first_commit", "last_commit", "last_commit_before_first_review",

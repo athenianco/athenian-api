@@ -16,7 +16,7 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import triage_by_release_match
-from athenian.api.controllers.miners.types import pr_jira_map_column, PullRequestFacts
+from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
@@ -406,7 +406,7 @@ async def append_pr_jira_mapping(prs: Dict[str, Tuple[str, PullRequestFacts]],
     """Load and insert "jira_id" to the PR facts."""
     jira_map = await load_pr_jira_mapping(prs, meta_ids, mdb)
     for pr, (_, facts) in prs.items():
-        facts.__dict__[pr_jira_map_column] = jira_map.get(pr)
+        facts.jira_id = jira_map.get(pr)
 
 
 @sentry_span

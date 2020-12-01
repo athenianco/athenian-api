@@ -1,10 +1,10 @@
-from dataclasses import dataclass
 from typing import Iterable, List, Optional, Set, Tuple
 
 from athenian.api.models.web.jira_filter import JIRAFilter as WebJIRAFilter
+from athenian.api.typing_utils import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class LabelFilter:
     """Pull Request labels: must/must not contain."""
 
