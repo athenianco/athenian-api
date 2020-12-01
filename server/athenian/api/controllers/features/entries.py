@@ -39,8 +39,8 @@ from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRe
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.jira.issue import append_pr_jira_mapping, \
     load_pr_jira_mapping
-from athenian.api.controllers.miners.types import pr_jira_map_column, PRParticipants, \
-    PRParticipationKind, PullRequestFacts, ReleaseParticipants
+from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
+    PullRequestFacts, ReleaseParticipants
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
@@ -78,6 +78,7 @@ def _postprocess_cached_facts(result: Tuple[Dict[str, List[PullRequestFacts]], b
         fresh,
     ),
     postprocess=_postprocess_cached_facts,
+    version=2,
 )
 async def _calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
                                           time_from: datetime,
@@ -211,7 +212,7 @@ async def _calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
         _, _, new_jira_map = await gather(
             done_jira_map_task, precomputed_unreleased_jira_map_task, new_jira_map_task)
         for pr, (_, facts) in zip(mined_prs, mined_facts):
-            facts.__dict__[pr_jira_map_column] = new_jira_map.get(pr.pr[PullRequest.node_id.key])
+            facts.jira_id = new_jira_map.get(pr.pr[PullRequest.node_id.key])
     return by_repo, with_jira_map
 
 
@@ -273,6 +274,7 @@ async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
         exclude_inactive,
         release_settings,
     ),
+    version=2,
 )
 async def calc_pull_request_metrics_line_github(meta_ids: Tuple[int, ...],
                                                 metrics: Sequence[str],
@@ -343,6 +345,7 @@ async def calc_code_metrics_github(meta_ids: Tuple[int, ...],
         exclude_inactive,
         release_settings,
     ),
+    version=2,
 )
 async def calc_pull_request_histogram_github(meta_ids: Tuple[int, ...],
                                              defs: Dict[HistogramParameters, List[str]],
@@ -374,7 +377,7 @@ async def calc_pull_request_histogram_github(meta_ids: Tuple[int, ...],
     mined_facts = await calc_pull_request_facts_github(
         meta_ids, time_from, time_to, all_repositories, participants, labels, jira,
         exclude_inactive, release_settings, fresh, False, mdb, pdb, cache)
-    hists = calc(mined_facts, [[time_from, time_to]], repositories, [k.__dict__ for k in defs])
+    hists = calc(mined_facts, [[time_from, time_to]], repositories, defs)
     result = [[] for _ in range(len(repositories) * (len(lines or [None] * 2) - 1))]
     for defs_hists, metrics in zip(hists, defs.values()):
         for group_result, group_hists in zip(result, defs_hists[0]):
@@ -399,6 +402,7 @@ async def calc_pull_request_histogram_github(meta_ids: Tuple[int, ...],
         jira,
         release_settings,
     ),
+    version=2,
 )
 async def calc_release_metrics_line_github(meta_ids: Tuple[int, ...],
                                            metrics: Sequence[str],

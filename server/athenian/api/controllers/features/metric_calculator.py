@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from itertools import chain
-from typing import Any, Callable, Collection, Dict, Generic, Iterable, List, Optional, Sequence, \
+from typing import Any, Callable, Collection, Dict, Generic, Iterable, List, Mapping, Optional, \
+    Sequence, \
     Tuple, Type, TypeVar
 
 import networkx as nx
@@ -325,8 +326,14 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
 
 
 @sentry_span
-def df_from_dataclasses(items: Iterable[Any], length: Optional[int] = None) -> pd.DataFrame:
-    """Combine several dataclasses to a Pandas DataFrame."""
+def df_from_dataclasses(items: Iterable[Mapping[str, Any]],
+                        length: Optional[int] = None,
+                        ) -> pd.DataFrame:
+    """
+    Combine several dataclasses to a Pandas DataFrame.
+
+    The dataclass type must be a Mapping. Pass `(i.__dict__ for i in items)` if it isn't.
+    """
     columns = {}
     first_item = None
     try:
@@ -337,25 +344,30 @@ def df_from_dataclasses(items: Iterable[Any], length: Optional[int] = None) -> p
         for i, item in enumerate(items):
             if i == 0:
                 first_item = item
-                for k in item.__dict__:
+                assert isinstance(first_item, Mapping)
+                for k in item:
                     columns[k] = []
-            for k, v in item.__dict__.items():
-                columns[k].append(v)
+            for k in item:
+                columns[k].append(item[k])
     else:
         for i, item in enumerate(items):
             if i == 0:
                 first_item = item
-                for k in item.__dict__:
+                assert isinstance(first_item, Mapping)
+                for k in item:
                     columns[k] = [None] * length
-            # dataclasses.asdict() creates a new dict and is too slow
-            for k, v in item.__dict__.items():
-                columns[k][i] = v
+            for k in item:
+                columns[k][i] = item[k]
     if first_item is None:
         return pd.DataFrame()
     column_types = {}
     for k, v in type(first_item).__annotations__.items():
         if typing_utils.is_optional(v):
-            v = v.__args__[0]
+            if issubclass(unboxed := v.__args__[0], (datetime, np.datetime64, float)):
+                # we can only unbox types that have a "NaN" value
+                v = unboxed
+            else:
+                v = object
         elif typing_utils.is_generic(v):
             v = object
         column_types[k] = v

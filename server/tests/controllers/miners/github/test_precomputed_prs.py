@@ -742,7 +742,7 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
     samples_good, samples_bad = [], []
     for pr in prs:
         f = facts[pr.pr[PullRequest.node_id.key]]
-        fields = f.__dict__.copy()
+        fields = dict(f)
         if f.merged is None:
             fields["merged"] = datetime.now(tz=timezone.utc)
         fields["released"] = None
@@ -779,7 +779,7 @@ async def test_store_open_pull_request_facts_smoke(
     true_dict = {}
     for pr in prs:
         f = facts[pr.pr[PullRequest.node_id.key]]
-        fields = f.__dict__
+        fields = dict(f)
         fields["closed"] = None
         f = PullRequestFacts(**fields)
         samples.append(f)

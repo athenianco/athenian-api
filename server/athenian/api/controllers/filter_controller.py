@@ -194,7 +194,7 @@ def _bake_updated_min_max(filt: FilterPullRequestsRequest) -> Tuple[datetime, da
 
 
 def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
-    props = vars(pr).copy()
+    props = dict(pr)
     if pr.events_time_machine is not None:
         props["events_time_machine"] = sorted(p.name.lower() for p in pr.events_time_machine)
     if pr.stages_time_machine is not None:
@@ -216,9 +216,9 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
             participants[prefix + pid].append(pkweb)
     props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
     if pr.labels is not None:
-        props["labels"] = [PullRequestLabel(**label.__dict__) for label in pr.labels]
+        props["labels"] = [PullRequestLabel(**label) for label in pr.labels]
     if pr.jira is not None:
-        props["jira"] = jira = [JIRAIssue(**issue.__dict__) for issue in pr.jira]
+        props["jira"] = jira = [JIRAIssue(**issue) for issue in pr.jira]
         for issue in jira:
             if issue.labels is not None:
                 # it is a set, must be a list
@@ -465,5 +465,5 @@ async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response
         body.repositories, body.account, request.uid, login_loader,
         request.sdb, request.mdb, request.cache, request.app["slack"])
     labels = await mine_labels(meta_ids, repos, request.mdb, request.cache)
-    labels = [FilteredLabel(**label.__dict__) for label in labels]
+    labels = [FilteredLabel(**label) for label in labels]
     return model_response(labels)

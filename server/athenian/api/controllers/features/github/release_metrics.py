@@ -1,5 +1,5 @@
 from datetime import timedelta
-from typing import Dict, Generic, Sequence, Type
+from typing import Dict, Generic, Sequence, Type, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -7,12 +7,14 @@ import pandas as pd
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
-from athenian.api.controllers.miners.types import T
+from athenian.api.controllers.miners.types import ReleaseFacts
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.web import ReleaseMetricID
 
+
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
+T = TypeVar("T")
 
 
 def register_metric(name: str):
@@ -62,7 +64,7 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
                facts: pd.DataFrame,
                min_times: np.ndarray,
                max_times: np.ndarray) -> np.ndarray:
-        published = facts["published"].values
+        published = facts[ReleaseFacts.published.__name__].values
         return (min_times[:, None] <= published) & (published < max_times[:, None])
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
@@ -108,7 +110,8 @@ class ReleasePRsMixin:
     dtype = int
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return np.array([len(prs[PullRequest.number.key]) for prs in facts["prs"].values])
+        return np.array([len(prs[PullRequest.number.key])
+                         for prs in facts[ReleaseFacts.prs.__name__].values])
 
 
 class ReleaseCommitsMixin:
@@ -118,7 +121,7 @@ class ReleaseCommitsMixin:
     dtype = int
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return facts["commits_count"].values
+        return facts[ReleaseFacts.commits_count.__name__].values
 
 
 class ReleaseLinesMixin:
@@ -128,7 +131,8 @@ class ReleaseLinesMixin:
     dtype = int
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return facts["additions"].values + facts["deletions"].values
+        return (facts[ReleaseFacts.additions.__name__].values +
+                facts[ReleaseFacts.deletions.__name__].values)
 
 
 class ReleaseAgeMixin:
@@ -138,7 +142,7 @@ class ReleaseAgeMixin:
     dtype = "timedelta64[s]"
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return facts["age"].values.astype(self.dtype).view(int)
+        return facts[ReleaseFacts.age.__name__].values.astype(self.dtype).view(int)
 
 
 @register_metric(ReleaseMetricID.RELEASE_COUNT)

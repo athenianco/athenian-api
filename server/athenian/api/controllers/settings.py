@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from enum import IntEnum
 from functools import lru_cache
 import re
@@ -16,6 +15,7 @@ from athenian.api.models.state.models import ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
+from athenian.api.typing_utils import dataclass
 
 # rejected: PR was closed without merging.
 # force_push_drop: commit history was overwritten and the PR's merge commit no longer exists.
@@ -29,7 +29,7 @@ ReleaseMatch.__doc__ = """Enumeration of supported release matching strategies."
 default_branch_alias = "{{default}}"
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, repr=False, frozen=True)
 class ReleaseMatchSetting:
     """Internal representation of the repository release match setting."""
 

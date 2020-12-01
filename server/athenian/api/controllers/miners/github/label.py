@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 import pickle
 from typing import List, Optional, Set, Tuple
 
@@ -6,16 +5,18 @@ import aiomcache
 from sqlalchemy import func, select
 
 from athenian.api.cache import cached
-from athenian.api.controllers.miners.types import Label
 from athenian.api.models.metadata.github import PullRequestLabel
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike
+from athenian.api.typing_utils import DatabaseLike, dataclass
 
 
-@dataclass(frozen=True)
-class LabelDetails(Label):
+@dataclass(slots=True, frozen=True)
+class LabelDetails:
     """Name, description, color, and used_prs - number of times the labels was used in PRs."""
 
+    name: str
+    description: Optional[str]
+    color: str
     used_prs: int
 
 

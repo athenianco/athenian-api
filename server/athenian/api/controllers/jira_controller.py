@@ -304,7 +304,7 @@ async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Re
     except KeyError as e:
         raise ResponseError(InvalidRequestError("Unsupported metric: %s" % e)) from None
     with_groups = _split_issues_by_with(issues, filt.with_)
-    histograms = calc(issues, time_intervals, with_groups, [k.__dict__ for k in defs])
+    histograms = calc(issues, time_intervals, with_groups, defs)
     result = []
     for metrics, def_hists in zip(defs.values(), histograms):
         for with_, with_hists in zip(filt.with_ or [None], def_hists):
