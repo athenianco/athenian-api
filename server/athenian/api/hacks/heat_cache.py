@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from itertools import chain
 import logging
-from typing import Collection, Dict, Optional, Set, Tuple
+from typing import Collection, Optional, Set, Tuple
 
 import aiomcache
 import sentry_sdk
@@ -27,7 +27,7 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.reposet import load_account_reposets
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, Settings
+from athenian.api.controllers.settings import ReleaseMatch, Settings
 import athenian.api.db
 from athenian.api.db import ParallelDatabase
 from athenian.api.defer import enable_defer, setup_defer, wait_deferred
@@ -112,7 +112,7 @@ def main():
         log.info("Heating %d reposets", len(reposets))
         for reposet in tqdm(reposets):
             try:
-                progress, settings = account_progress_settings[reposet.owner_id]
+                progress = account_progress_settings[reposet.owner_id]
             except KeyError:
                 log.warning("Skipped account %d / reposet %d because the progress does not exist",
                             reposet.owner_id, reposet.id)
@@ -134,6 +134,8 @@ def main():
                     return_code = 1
                     num_teams = num_bots = 0
             repos = {r.split("/", 1)[1] for r in reposet.items}
+            settings = await Settings.from_account(
+                reposet.owner_id, sdb, mdb, cache, None).list_release_matches(reposet.items)
             log.info("Heating reposet %d of account %d (%d repos)",
                      reposet.id, reposet.owner_id, len(repos))
             try:
@@ -225,14 +227,12 @@ async def load_account_state(account: int,
                              cache: aiomcache.Client,
                              slack: Optional[SlackWebClient],
                              recursive: bool = False,
-                             ) -> Optional[Tuple[InstallationProgress,
-                                                 Dict[str, ReleaseMatchSetting]]]:
+                             ) -> Optional[InstallationProgress]:
     """Load the account's installation progress and the release settings."""
     try:
         progress = await fetch_github_installation_progress(
             account, sdb, mdb, cache)
-        settings = await Settings.from_account(
-            account, sdb, mdb, cache, None).list_release_matches()
+        await Settings.from_account(account, sdb, mdb, cache, None).list_release_matches()
     except ResponseError as e1:
         if e1.response.status != HTTPStatus.UNPROCESSABLE_ENTITY:
             sentry_sdk.capture_exception(e1)
@@ -270,7 +270,7 @@ async def load_account_state(account: int,
         sentry_sdk.capture_exception(e)
         log.warning("account %d: %s: %s", account, type(e).__name__, e)
         return None
-    return progress, settings
+    return progress
 
 
 async def create_teams(account: int,
