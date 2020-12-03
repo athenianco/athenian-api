@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import CHAR, Column, func, Integer, JSON, LargeBinary, String, Text, TIMESTAMP
+from sqlalchemy import Column, func, Integer, JSON, LargeBinary, String, Text, TIMESTAMP
 from sqlalchemy.dialects import postgresql, sqlite
 
 from athenian.api.models import create_base
@@ -10,7 +10,6 @@ Base = create_base()
 
 TSARRAY = postgresql.ARRAY(TIMESTAMP(timezone=True)).with_variant(JSON(), sqlite.dialect.name)
 HSTORE = postgresql.HSTORE().with_variant(JSON(), sqlite.dialect.name)
-RepositoryFullName = String(39 + 1 + 100)  # user / project taken from the factual GitHub limits
 
 
 class UpdatedMixin:
@@ -37,16 +36,16 @@ class GitHubDonePullRequestFacts(Base, UpdatedMixin):
 
     __tablename__ = "github_done_pull_request_facts"
 
-    pr_node_id = Column(CHAR(32), primary_key=True)
+    pr_node_id = Column(String(), primary_key=True)
     release_match = Column(Text(), primary_key=True)
     format_version = Column(Integer(), primary_key=True, default=9, server_default="9")
-    repository_full_name = Column(RepositoryFullName, nullable=False)
+    repository_full_name = Column(String(), nullable=False)
     pr_created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     pr_done_at = Column(TIMESTAMP(timezone=True))
     number = Column(Integer(), nullable=False)
-    author = Column(CHAR(100))  # can be null, see @ghost
-    merger = Column(CHAR(100))
-    releaser = Column(CHAR(100))
+    author = Column(String())  # can be null, see @ghost
+    merger = Column(String())
+    releaser = Column(String())
     release_url = Column(Text())
     release_node_id = Column(Text())
     reviewers = Column(HSTORE, nullable=False, server_default="")
@@ -63,9 +62,9 @@ class GitHubOpenPullRequestFacts(Base, UpdatedMixin):
 
     __tablename__ = "github_open_pull_request_facts"
 
-    pr_node_id = Column(CHAR(32), primary_key=True)
+    pr_node_id = Column(String(), primary_key=True)
     format_version = Column(Integer(), primary_key=True, default=6, server_default="6")
-    repository_full_name = Column(RepositoryFullName, nullable=False)
+    repository_full_name = Column(String(), nullable=False)
     pr_created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     number = Column(Integer(), nullable=False)
     pr_updated_at = Column(TIMESTAMP(timezone=True), nullable=False)
@@ -86,14 +85,14 @@ class GitHubMergedPullRequestFacts(Base, UpdatedMixin):
 
     __tablename__ = "github_merged_pull_request_facts"
 
-    pr_node_id = Column(CHAR(32), primary_key=True)
+    pr_node_id = Column(String(), primary_key=True)
     release_match = Column(Text(), primary_key=True)
     format_version = Column(Integer(), primary_key=True, default=6, server_default="6")
     merged_at = Column(TIMESTAMP(timezone=True), nullable=False)
-    repository_full_name = Column(RepositoryFullName, nullable=False)
+    repository_full_name = Column(String(), nullable=False)
     checked_until = Column(TIMESTAMP(timezone=True), nullable=False)
-    author = Column(CHAR(100))  # can be null, see @ghost
-    merger = Column(CHAR(100))  # @ghost can merge, too
+    author = Column(String())  # can be null, see @ghost
+    merger = Column(String())  # @ghost can merge, too
     labels = Column(HSTORE, nullable=False, server_default="")
     activity_days = Column(TSARRAY, nullable=False, server_default="{}")
     data = Column(LargeBinary())  # can be null, we run a 2-step update procedure
@@ -112,7 +111,7 @@ class GitHubCommitHistory(Base, UpdatedMixin):
 
     __tablename__ = "github_commit_history"
 
-    repository_full_name = Column(RepositoryFullName, primary_key=True)
+    repository_full_name = Column(String(), primary_key=True)
     format_version = Column(Integer(), primary_key=True, default=4, server_default="4")
     dag = Column(LargeBinary(), nullable=False)
 
@@ -122,8 +121,8 @@ class GitHubRepository(Base, UpdatedMixin):
 
     __tablename__ = "github_repositories"
 
-    node_id = Column(CHAR(32), primary_key=True)
-    repository_full_name = Column(RepositoryFullName, nullable=False)
+    node_id = Column(String(), primary_key=True)
+    repository_full_name = Column(String(), nullable=False)
     first_commit = Column(TIMESTAMP(timezone=True), nullable=False)
 
 
@@ -134,7 +133,7 @@ class GitHubRelease(Base):
 
     id = Column(Text, primary_key=True)
     release_match = Column(Text(), primary_key=True)
-    repository_full_name = Column(RepositoryFullName, nullable=False)
+    repository_full_name = Column(String(), nullable=False)
     repository_node_id = Column(Text, nullable=False)
     author = Column(Text)
     name = Column(Text, nullable=False)
@@ -153,7 +152,7 @@ class GitHubReleaseFacts(Base):
     id = Column(Text, primary_key=True)
     release_match = Column(Text(), primary_key=True)
     format_version = Column(Integer(), primary_key=True, default=5, server_default="5")
-    repository_full_name = Column(RepositoryFullName, nullable=False)
+    repository_full_name = Column(String(), nullable=False)
     published_at = Column(TIMESTAMP(timezone=True), nullable=False)
     data = Column(LargeBinary(), nullable=False)
 
@@ -163,7 +162,7 @@ class GitHubReleaseMatchTimespan(Base):
 
     __tablename__ = "github_release_match_spans"
 
-    repository_full_name = Column(RepositoryFullName, primary_key=True)
+    repository_full_name = Column(String(), primary_key=True)
     release_match = Column(Text(), primary_key=True)
     time_from = Column(TIMESTAMP(timezone=True), nullable=False)
     time_to = Column(TIMESTAMP(timezone=True), nullable=False)
