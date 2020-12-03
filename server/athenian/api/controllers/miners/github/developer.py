@@ -81,7 +81,8 @@ def _set_stats(topic: DeveloperTopic, stats: pd.Series, repogroups: bool,
 
 
 @sentry_span
-async def _set_commits(stats_by_repo_by_dev: StatsByRepoByDev,
+async def _set_commits(meta_ids: Tuple[int, ...],
+                       stats_by_repo_by_dev: StatsByRepoByDev,
                        topics: Set[str],
                        time_from: datetime,
                        time_to: datetime,
@@ -117,7 +118,8 @@ async def _set_commits(stats_by_repo_by_dev: StatsByRepoByDev,
 
 
 @sentry_span
-async def _set_prs_created(stats_by_repo_by_dev: StatsByRepoByDev,
+async def _set_prs_created(meta_ids: Tuple[int, ...],
+                           stats_by_repo_by_dev: StatsByRepoByDev,
                            topics: Set[str],
                            time_from: datetime,
                            time_to: datetime,
@@ -137,7 +139,8 @@ async def _set_prs_created(stats_by_repo_by_dev: StatsByRepoByDev,
 
 
 @sentry_span
-async def _set_prs_reviewed(stats_by_repo_by_dev: StatsByRepoByDev,
+async def _set_prs_reviewed(meta_ids: Tuple[int, ...],
+                            stats_by_repo_by_dev: StatsByRepoByDev,
                             topics: Set[str],
                             time_from: datetime,
                             time_to: datetime,
@@ -157,7 +160,8 @@ async def _set_prs_reviewed(stats_by_repo_by_dev: StatsByRepoByDev,
 
 
 @sentry_span
-async def _set_prs_merged(stats_by_repo_by_dev: StatsByRepoByDev,
+async def _set_prs_merged(meta_ids: Tuple[int, ...],
+                          stats_by_repo_by_dev: StatsByRepoByDev,
                           topics: Set[str],
                           time_from: datetime,
                           time_to: datetime,
@@ -177,7 +181,8 @@ async def _set_prs_merged(stats_by_repo_by_dev: StatsByRepoByDev,
 
 
 @sentry_span
-async def _set_releases(stats_by_repo_by_dev: StatsByRepoByDev,
+async def _set_releases(meta_ids: Tuple[int, ...],
+                        stats_by_repo_by_dev: StatsByRepoByDev,
                         topics: Set[str],
                         time_from: datetime,
                         time_to: datetime,
@@ -191,8 +196,9 @@ async def _set_releases(stats_by_repo_by_dev: StatsByRepoByDev,
                         pdb: databases.Database,
                         cache: Optional[aiomcache.Client]) -> None:
     branches, default_branches = await extract_branches(repo_ids, mdb, cache)
-    releases, _ = await load_releases(repo_ids, branches, default_branches, time_from, time_to,
-                                      release_settings, mdb, pdb, cache)
+    releases, _ = await load_releases(
+        meta_ids, repo_ids, branches, default_branches, time_from, time_to,
+        release_settings, mdb, pdb, cache)
     topic = DeveloperTopic.releases.name
     included_releases = np.nonzero(np.in1d(releases[Release.author.key].values, list(dev_ids)))[0]
     if not repogroups:
@@ -208,7 +214,8 @@ async def _set_releases(stats_by_repo_by_dev: StatsByRepoByDev,
 
 
 @sentry_span
-async def _set_reviews(stats_by_repo_by_dev: StatsByRepoByDev,
+async def _set_reviews(meta_ids: Tuple[int, ...],
+                       stats_by_repo_by_dev: StatsByRepoByDev,
                        topics: Set[str],
                        time_from: datetime,
                        time_to: datetime,
@@ -259,7 +266,8 @@ async def _set_reviews(stats_by_repo_by_dev: StatsByRepoByDev,
 
 
 @sentry_span
-async def _set_pr_comments(stats_by_repo_by_dev: StatsByRepoByDev,
+async def _set_pr_comments(meta_ids: Tuple[int, ...],
+                           stats_by_repo_by_dev: StatsByRepoByDev,
                            topics: Set[str],
                            time_from: datetime,
                            time_to: datetime,
@@ -313,7 +321,7 @@ processors = [
 
 
 @sentry_span
-async def calc_developer_metrics_github(account: int,
+async def calc_developer_metrics_github(meta_ids: Tuple[int, ...],
                                         devs: Sequence[str],
                                         repos: Sequence[Collection[str]],
                                         time_from: datetime,
@@ -338,7 +346,7 @@ async def calc_developer_metrics_github(account: int,
     tasks = []
     for key, setter in processors:
         if key.intersection(topics):
-            tasks.append(setter(stats_by_repo_by_dev, topics, time_from, time_to,
+            tasks.append(setter(meta_ids, stats_by_repo_by_dev, topics, time_from, time_to,
                                 dev_ids_map, repo_ids_map, len(repos) > 1,
                                 labels, jira, release_settings, mdb, pdb, cache))
     await gather(*tasks)
