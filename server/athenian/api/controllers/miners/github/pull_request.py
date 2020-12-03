@@ -207,7 +207,7 @@ class PullRequestMiner:
         # the heaviest task should always go first
         tasks = [
             map_releases_to_prs(
-                repositories, branches, default_branches, time_from, time_to,
+                meta_ids, repositories, branches, default_branches, time_from, time_to,
                 participants.get(PRParticipationKind.AUTHOR, []),
                 participants.get(PRParticipationKind.MERGER, []),
                 jira, release_settings, updated_min, updated_max,
@@ -244,7 +244,7 @@ class PullRequestMiner:
                 list(chain.from_iterable(missed_prs.values())))
             tasks = [
                 map_releases_to_prs(
-                    missed_prs, branches, default_branches, time_from, time_to,
+                    meta_ids, missed_prs, branches, default_branches, time_from, time_to,
                     participants.get(PRParticipationKind.AUTHOR, []),
                     participants.get(PRParticipationKind.MERGER, []),
                     jira, release_settings, updated_min, updated_max,

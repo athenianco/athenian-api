@@ -47,7 +47,7 @@ from athenian.api.tracing import sentry_span
         time_from, time_to, jira, settings),
     version=2,
 )
-async def mine_releases(accounts: Tuple[int, ...],
+async def mine_releases(meta_ids: Tuple[int, ...],
                         repos: Iterable[str],
                         participants: ReleaseParticipants,
                         branches: pd.DataFrame,
@@ -68,8 +68,8 @@ async def mine_releases(accounts: Tuple[int, ...],
     prefix = PREFIXES["github"]
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
     releases_in_time_range, matched_bys = await load_releases(
-        repos, branches, default_branches, time_from, time_to, settings, mdb, pdb, cache,
-        force_fresh=force_fresh)
+        meta_ids, repos, branches, default_branches, time_from, time_to,
+        settings, mdb, pdb, cache, force_fresh=force_fresh)
     # resolve ambiguous release match settings
     settings = settings.copy()
     for repo in repos:
@@ -135,7 +135,7 @@ async def mine_releases(accounts: Tuple[int, ...],
             releases_in_time_range[Release.repository_full_name.key].isin(missing_repos).values,
         )[0])
         _, releases, _, _ = await _find_releases_for_matching_prs(
-            missing_repos, branches, default_branches, time_from, time_to, False,
+            meta_ids, missing_repos, branches, default_branches, time_from, time_to, False,
             settings, mdb, pdb, cache, releases_in_time_range=releases_in_time_range)
         tasks = [
             load_commit_dags(releases, mdb, pdb, cache),

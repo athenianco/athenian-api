@@ -467,7 +467,7 @@ async def test_discover_update_unreleased_prs_smoke(
     prs[prs[PullRequest.merged_at.key].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
     releases, matched_bys = await load_releases(
-        ["src-d/go-git"], None, default_branches,
+        (6366825,), ["src-d/go-git"], None, default_branches,
         datetime(2018, 9, 1, tzinfo=utc),
         datetime(2018, 11, 1, tzinfo=utc),
         release_match_setting_tag,
@@ -479,7 +479,7 @@ async def test_discover_update_unreleased_prs_smoke(
         prs, empty_rdf, datetime(2018, 11, 1, tzinfo=utc), {},
         matched_bys, default_branches, release_match_setting_tag, pdb, asyncio.Event())
     releases, matched_bys = await load_releases(
-        ["src-d/go-git"], None, default_branches,
+        (6366825,), ["src-d/go-git"], None, default_branches,
         datetime(2018, 11, 1, tzinfo=utc),
         datetime(2018, 11, 20, tzinfo=utc),
         release_match_setting_tag,
@@ -502,7 +502,7 @@ async def test_discover_update_unreleased_prs_smoke(
         default_branches, release_match_setting_tag, pdb)
     assert set(prs.index) == set(unreleased_prs)
     releases, matched_bys = await load_releases(
-        ["src-d/go-git"], None, default_branches,
+        (6366825,), ["src-d/go-git"], None, default_branches,
         datetime(2018, 9, 1, tzinfo=utc),
         datetime(2018, 11, 1, tzinfo=utc),
         release_match_setting_tag,
@@ -515,7 +515,7 @@ async def test_discover_update_unreleased_prs_smoke(
         pdb)
     assert len(unreleased_prs) == 0
     releases, matched_bys = await load_releases(
-        ["src-d/go-git"], None, default_branches,
+        (6366825,), ["src-d/go-git"], None, default_branches,
         datetime(2019, 1, 29, tzinfo=utc),
         datetime(2019, 2, 1, tzinfo=utc),
         release_match_setting_tag,
@@ -540,7 +540,7 @@ async def test_discover_update_unreleased_prs_released(
     time_from = datetime(2018, 10, 1, tzinfo=utc)
     time_to = datetime(2018, 12, 1, tzinfo=utc)
     releases, matched_bys = await load_releases(
-        ["src-d/go-git"], None, default_branches,
+        (6366825,), ["src-d/go-git"], None, default_branches,
         time_from,
         time_to,
         release_match_setting_tag,
@@ -580,7 +580,7 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
     time_from = datetime(2018, 10, 1, tzinfo=utc)
     time_to = datetime(2018, 12, 1, tzinfo=utc)
     releases, matched_bys = await load_releases(
-        ["src-d/go-git"], None, default_branches,
+        (6366825,), ["src-d/go-git"], None, default_branches,
         time_from,
         time_to,
         release_match_setting_tag,
@@ -643,7 +643,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
         select([PullRequest]).where(PullRequest.node_id.in_(unreleased_prs)),
         mdb, PullRequest, index=PullRequest.node_id.key)
     releases, matched_bys = await load_releases(
-        ["src-d/go-git"], None, None, metrics_time_from, unreleased_time_to,
+        (6366825,), ["src-d/go-git"], None, None, metrics_time_from, unreleased_time_to,
         release_match_setting_tag, mdb, pdb, cache)
     await wait_deferred()
     released_prs, _, _ = await map_prs_to_releases(

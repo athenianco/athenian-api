@@ -297,7 +297,8 @@ def _extract_released_commits(releases: pd.DataFrame,
 
 
 @sentry_span
-async def map_releases_to_prs(repos: Collection[str],
+async def map_releases_to_prs(meta_ids: Tuple[int, ...],
+                              repos: Collection[str],
                               branches: pd.DataFrame,
                               default_branches: Dict[str, str],
                               time_from: datetime,
@@ -337,8 +338,9 @@ async def map_releases_to_prs(repos: Collection[str],
     assert (updated_min is None) == (updated_max is None)
 
     tasks = [
-        _find_releases_for_matching_prs(repos, branches, default_branches, time_from, time_to,
-                                        not truncate, release_settings, mdb, pdb, cache),
+        _find_releases_for_matching_prs(
+            meta_ids, repos, branches, default_branches, time_from, time_to,
+            not truncate, release_settings, mdb, pdb, cache),
         fetch_precomputed_commit_history_dags(repos, pdb, cache),
     ]
     (matched_bys, releases, releases_in_time_range, release_settings), pdags = await gather(*tasks)
@@ -367,7 +369,8 @@ async def map_releases_to_prs(repos: Collection[str],
 
 
 @sentry_span
-async def _find_releases_for_matching_prs(repos: Iterable[str],
+async def _find_releases_for_matching_prs(meta_ids: Tuple[int, ...],
+                                          repos: Iterable[str],
                                           branches: pd.DataFrame,
                                           default_branches: Dict[str, str],
                                           time_from: datetime,
@@ -396,7 +399,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
         # that's because the release strategy can change depending on the time range
         # see ENG-710 and ENG-725
         releases_in_time_range, matched_bys = await load_releases(
-            repos, branches, default_branches, time_from, time_to,
+            meta_ids, repos, branches, default_branches, time_from, time_to,
             release_settings, mdb, pdb, cache)
     else:
         matched_bys = {}
@@ -427,8 +430,8 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                                  datetime.min.time(), tzinfo=timezone.utc)
         if today > time_to:
             until_today_task = load_releases(
-                repos, branches, default_branches, time_to, today, consistent_release_settings,
-                mdb, pdb, cache)
+                meta_ids, repos, branches, default_branches, time_to, today,
+                consistent_release_settings, mdb, pdb, cache)
     if until_today_task is None:
         until_today_task = dummy_load_releases_until_today()
 
@@ -450,10 +453,10 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
     tag_lookbehind_time_from = time_from - timedelta(days=2 * 365)
     tasks = [
         until_today_task,
-        load_releases(repos_matched_by_branch, branches, default_branches,
+        load_releases(meta_ids, repos_matched_by_branch, branches, default_branches,
                       branch_lookbehind_time_from, time_from, consistent_release_settings,
                       mdb, pdb, cache),
-        load_releases(repos_matched_by_tag, branches, default_branches,
+        load_releases(meta_ids, repos_matched_by_tag, branches, default_branches,
                       tag_lookbehind_time_from, time_from, consistent_release_settings,
                       mdb, pdb, cache),
         _fetch_repository_first_commit_dates(repos_matched_by_branch, mdb, pdb, cache),
@@ -478,7 +481,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                 if not hard_repos:
                     break
                 extra_releases, _ = await load_releases(
-                    hard_repos, branches, default_branches,
+                    meta_ids, hard_repos, branches, default_branches,
                     branch_lookbehind_time_from - deeper_step, branch_lookbehind_time_from,
                     consistent_release_settings, mdb, pdb, cache)
                 releases_old_branches = releases_old_branches.append(extra_releases)

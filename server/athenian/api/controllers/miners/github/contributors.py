@@ -33,7 +33,7 @@ from athenian.api.tracing import sentry_span
         with_stats, sorted(user_roles), release_settings,
     ),
 )
-async def mine_contributors(accounts: Tuple[int, ...],
+async def mine_contributors(meta_ids: Tuple[int, ...],
                             repos: Collection[str],
                             time_from: Optional[datetime],
                             time_to: Optional[datetime],
@@ -170,8 +170,8 @@ async def mine_contributors(accounts: Tuple[int, ...],
             now = datetime.now(timezone.utc) + timedelta(days=1)
             rt_to = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
         releases, _ = await load_releases(
-            repos, branches, default_branches, rt_from, rt_to, release_settings, mdb, pdb, cache,
-            force_fresh=force_fresh_releases)
+            meta_ids, repos, branches, default_branches, rt_from, rt_to,
+            release_settings, mdb, pdb, cache, force_fresh=force_fresh_releases)
         counts = releases[Release.author.key].value_counts()
         return {
             "releaser": zip(counts.index.values, counts.values),
