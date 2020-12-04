@@ -89,7 +89,6 @@ from athenian.api.models.web.pull_request_metrics_request import PullRequestMetr
 from athenian.api.models.web.pull_request_numbers import PullRequestNumbers
 from athenian.api.models.web.pull_request_pagination_plan import PullRequestPaginationPlan
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
-from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.pull_request_set import PullRequestSet
 from athenian.api.models.web.pull_request_stage import PullRequestStage
 from athenian.api.models.web.pull_request_with import PullRequestWith

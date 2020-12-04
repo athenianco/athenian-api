@@ -6,7 +6,6 @@ from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.pull_request_event import PullRequestEvent
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
-from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.models.web.stage_timings import StageTimings
 
 
@@ -39,7 +38,6 @@ class PullRequest(Model):
         "released": datetime,
         "release_url": str,
         "stage_timings": StageTimings,
-        "properties": List[str],
         "events_time_machine": Optional[List[str]],
         "stages_time_machine": Optional[List[str]],
         "events_now": List[str],
@@ -70,7 +68,6 @@ class PullRequest(Model):
         "released": "released",
         "release_url": "release_url",
         "stage_timings": "stage_timings",
-        "properties": "properties",
         "events_time_machine": "events_time_machine",
         "stages_time_machine": "stages_time_machine",
         "events_now": "events_now",
@@ -102,7 +99,6 @@ class PullRequest(Model):
         released: Optional[datetime] = None,
         release_url: Optional[str] = None,
         stage_timings: Optional[StageTimings] = None,
-        properties: Optional[List[str]] = None,
         events_time_machine: Optional[List[str]] = None,
         stages_time_machine: Optional[List[str]] = None,
         events_now: Optional[List[str]] = None,
@@ -132,7 +128,6 @@ class PullRequest(Model):
         :param released: The released of this PullRequest.
         :param release_url: The release URL of this PullRequest.
         :param stage_timings: The stage timings of this PullRequest.
-        :param properties: The properties of this PullRequest.
         :param events_time_machine: The events_time_machine of this PullRequest.
         :param stages_time_machine: The stages_time_machine of this PullRequest.
         :param events_now: The events_now of this PullRequest.
@@ -161,7 +156,6 @@ class PullRequest(Model):
         self._released = released
         self._release_url = release_url
         self._stage_timings = stage_timings
-        self._properties = properties
         self._events_time_machine = events_time_machine
         self._stages_time_machine = stages_time_machine
         self._events_now = events_now
@@ -611,28 +605,6 @@ class PullRequest(Model):
             raise ValueError("Invalid value for `stage_timings`, must not be `None`")
 
         self._stage_timings = stage_timings
-
-    @property
-    def properties(self) -> List[str]:
-        """
-        Gets the modelled pipeline properties of this PullRequest.
-
-        :return: The properties of this PullRequest.
-        """
-        return self._properties
-
-    @properties.setter
-    def properties(self, properties: List[str]):
-        """
-        Sets the modelled pipeline properties of this PullRequest.
-
-        :param properties: The properties of this PullRequest.
-        """
-        for prop in properties:
-            if prop not in PullRequestProperty:
-                raise ValueError("Invalid properties: %s" % properties)
-
-        self._properties = properties
 
     @property
     def events_time_machine(self) -> Optional[List[str]]:

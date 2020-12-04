@@ -3411,42 +3411,6 @@ components:
       - exclude_inactive
       - in
       type: object
-    PullRequestProperty:
-      description: |-
-        PR's modelled lifecycle stage or various events that happened between `time_from` and `time_to`.
-        * `wip`: PRs in Work In Progress stage - that is, not yet reviewed or merged.
-        * `created`: opened PRs. Note: they were opened in the given time window.
-        * `commit_happened`: PRs with a new commit pushed. Note: the commits were pushed in the given time window.
-        * `review_request_happened`: PRs where the author requested a review. Note: the review was requested in the given time window.
-        * `reviewing`: PRs in Review stage - that is, a review was requested or at least one review happened, but not approved yet.
-        * `review_happened`: PRs with new review. Note: they were reviewed in the given time window.
-        * `approve_happened`: PRs with new review approvals. Note: they were approved in the given time window.
-        * `changes_request_happened`: PRs with new review rejections. Note: they were rejected in the given time window.
-        * `merging`: PRs in Merge stage - that is, already reviewed but not yet merged.
-        * `merge_happened`: merged PRs. Note: they were merged in the given time window.
-        * `releasing`: PRs in Release stage - that is, already merged but not yet released.
-        * `release_happened`: released PRs. Note: they were released in the given time window.
-        * `rejection_happened`: rejected PRs - closed without merge. Note: they were rejected in the given time window.
-        * `done`: either released or otherwise closed PRs - "afterlife".
-        * `force_push_dropped`: merged PR that was later discarded from the entire Git history, a subset of `done`.
-      enum:
-      - wip
-      - created
-      - commit_happened
-      - review_request_happened
-      - reviewing
-      - review_happened
-      - approve_happened
-      - changes_request_happened
-      - merging
-      - merge_happened
-      - releasing
-      - release_happened
-      - rejection_happened
-      - done
-      - force_push_dropped
-      example: wip
-      type: string
     PullRequestEvent:
       description: |-
         PR's modelled lifecycle events.
@@ -3507,8 +3471,16 @@ components:
           files_changed: 2
           created: 2019-05-17T01:14:00Z
           updated: 2019-09-18T10:49:00Z
-          properties:
+          stages_now:
           - wip
+          stages_time_machine:
+          - wip
+          events_now:
+          - created
+          - committed
+          events_time_machine:
+          - created
+          - committed
           stage_timings:
             wip: 2000s
           participants:
@@ -3575,8 +3547,16 @@ components:
         updated: 2019-09-18T10:49:00Z
         comments: 1
         commits: 2
-        properties:
+        stages_now:
         - wip
+        stages_time_machine:
+        - wip
+        events_now:
+        - created
+        - committed
+        events_time_machine:
+        - created
+        - committed
         stage_timings:
           wip: 2000s
         participants:
@@ -3666,12 +3646,6 @@ components:
           type: string
         stage_timings:
           $ref: '#/components/schemas/StageTimings'
-        properties:
-          description: DEPRECATED. List of the PR properties triggered in the given
-            time window. There may be extra properties that were not originally requested.
-          items:
-            $ref: '#/components/schemas/PullRequestProperty'
-          type: array
         events_time_machine:
           description: List of PR events which happened until `date_to`. `date_from`
             does not matter.
@@ -3710,7 +3684,6 @@ components:
       - files_changed
       - number
       - participants
-      - properties
       - repository
       - size_added
       - size_removed
@@ -5620,7 +5593,7 @@ components:
           date_to: 2020-05-23
           in:
           - '{1}'
-          properties:
+          stages:
           - wip
           with:
             author:

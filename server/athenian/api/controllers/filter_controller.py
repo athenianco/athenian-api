@@ -27,7 +27,7 @@ from athenian.api.controllers.miners.github.label import mine_labels
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
-from athenian.api.controllers.miners.types import Property, PRParticipants, PRParticipationKind, \
+from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestEvent, PullRequestListItem, PullRequestStage, ReleaseFacts, ReleaseParticipationKind
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
@@ -201,12 +201,6 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
         props["stages_time_machine"] = sorted(p.name.lower() for p in pr.stages_time_machine)
     props["events_now"] = sorted(p.name.lower() for p in pr.events_now)
     props["stages_now"] = sorted(p.name.lower() for p in pr.stages_now)
-    properties = []
-    for s in (pr.stages_time_machine or []):
-        properties.append(Property(s).name.lower())
-    for e in pr.events_now:
-        properties.append(Property(e + Property.CREATED - 1).name.lower())
-    props["properties"] = properties
     props["stage_timings"] = StageTimings(**pr.stage_timings)
     participants = defaultdict(list)
     prefix = PREFIXES["github"]
