@@ -21,7 +21,6 @@ from athenian.api.models.web import CommitsList, PullRequestEvent, PullRequestSe
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
-from athenian.api.models.web.pull_request_property import PullRequestProperty
 from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache, has_memcached
 
@@ -620,12 +619,12 @@ async def validate_prs_response(response: ClientResponse,
             assert pr.closed is not None
             assert abs(pr.merged - pr.closed) < timedelta(seconds=60)
         if pr.review_requested is not None:
-            assert PullRequestProperty.REVIEW_REQUEST_HAPPENED in pr.properties, str(pr)
-        if PullRequestProperty.REVIEW_REQUEST_HAPPENED in pr.properties:
+            assert PullRequestEvent.REVIEW_REQUESTED in pr.events_now, str(pr)
+        if PullRequestEvent.REVIEW_REQUESTED in pr.events_now:
             assert pr.review_requested is not None
             assert pr.review_requested >= pr.created, str(pr)
         if pr.first_review is not None:
-            assert PullRequestProperty.REVIEW_HAPPENED in pr.properties, str(pr)
+            assert PullRequestEvent.REVIEWED in pr.events_now, str(pr)
             assert pr.reviews > 0, str(pr)
             assert pr.first_review > pr.created, str(pr)
         if pr.reviews > 0:
@@ -635,51 +634,76 @@ async def validate_prs_response(response: ClientResponse,
 
         assert stages.intersection(set(pr.stages_time_machine)) or \
                events.intersection(set(pr.events_time_machine)), str(pr)
-        assert PullRequestProperty.CREATED in pr.properties, str(pr)
+        assert PullRequestEvent.CREATED in pr.events_now, str(pr)
         if pr.number not in open_go_git_pr_numbers:
             assert pr.closed is not None
             if pr.number not in will_never_be_released_go_git_pr_numbers:
-                assert PullRequestProperty.DONE in pr.properties, str(pr)
+                assert PullRequestStage.DONE in pr.stages_now, str(pr)
             else:
-                assert PullRequestProperty.MERGE_HAPPENED in pr.properties
+                assert PullRequestEvent.MERGED in pr.events_now
             if pr.number not in rejected_go_git_pr_numbers and \
                     pr.number not in will_never_be_released_go_git_pr_numbers and \
                     pr.number not in force_push_dropped_go_git_pr_numbers:
-                assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
+                assert PullRequestEvent.RELEASED in pr.events_now, str(pr)
             else:
-                assert PullRequestProperty.RELEASE_HAPPENED not in pr.properties
+                assert PullRequestEvent.RELEASED not in pr.events_now
+                assert PullRequestEvent.RELEASED not in pr.events_time_machine
                 if pr.number in rejected_go_git_pr_numbers:
-                    assert PullRequestProperty.MERGE_HAPPENED not in pr.properties, str(pr)
+                    assert PullRequestEvent.MERGED not in pr.events_now, str(pr)
+                    assert PullRequestEvent.MERGED not in pr.events_time_machine, str(pr)
                 if pr.number in force_push_dropped_go_git_pr_numbers:
-                    assert PullRequestProperty.FORCE_PUSH_DROPPED in pr.properties, str(pr)
-                    assert PullRequestProperty.MERGE_HAPPENED in pr.properties, str(pr)
+                    assert PullRequestStage.FORCE_PUSH_DROPPED in pr.stages_now, str(pr)
+                    assert PullRequestEvent.MERGED in pr.events_now, str(pr)
         else:
             assert pr.closed is None
 
-        if PullRequestProperty.WIP in pr.properties:
-            assert PullRequestProperty.COMMIT_HAPPENED in pr.properties, str(pr)
-        if PullRequestProperty.REVIEWING in pr.properties:
-            assert PullRequestProperty.COMMIT_HAPPENED in pr.properties, str(pr)
+        if PullRequestStage.WIP in pr.stages_now:
+            assert PullRequestEvent.COMMITTED in pr.events_now, str(pr)
+        if PullRequestStage.REVIEWING in pr.stages_now:
+            assert PullRequestEvent.COMMITTED in pr.events_now, str(pr)
             assert pr.stage_timings.review is not None
-        total_review_requests += PullRequestProperty.REVIEW_REQUEST_HAPPENED in pr.properties
-        if PullRequestProperty.MERGING in pr.properties:
-            assert PullRequestProperty.APPROVE_HAPPENED in pr.properties, str(pr)
+        total_review_requests += PullRequestEvent.REVIEW_REQUESTED in pr.events_now
+        if PullRequestStage.MERGING in pr.stages_now:
+            assert PullRequestEvent.APPROVED in pr.events_now, str(pr)
             assert pr.stage_timings.merge is not None
-        if PullRequestProperty.RELEASING in pr.properties:
-            assert PullRequestProperty.MERGE_HAPPENED in pr.properties, str(pr)
-            assert PullRequestProperty.COMMIT_HAPPENED in pr.properties, str(pr)
+        if PullRequestStage.RELEASING in pr.stages_now:
+            assert PullRequestEvent.MERGED in pr.events_now, str(pr)
+            assert PullRequestEvent.COMMITTED in pr.events_now, str(pr)
             assert pr.stage_timings.release is not None, str(pr)
-        if PullRequestProperty.DONE in pr.properties:
+        if PullRequestStage.DONE in pr.stages_now:
             assert pr.closed is not None, str(pr)
-            if PullRequestProperty.MERGE_HAPPENED in pr.properties:
+            if PullRequestEvent.MERGED in pr.events_now:
                 if pr.number not in force_push_dropped_go_git_pr_numbers:
-                    assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
+                    assert PullRequestEvent.RELEASED in pr.events_now, str(pr)
                 else:
-                    assert PullRequestProperty.FORCE_PUSH_DROPPED in pr.properties, str(pr)
+                    assert PullRequestStage.FORCE_PUSH_DROPPED in pr.stages_now, str(pr)
                     total_force_push_dropped += 1
             else:
-                assert PullRequestProperty.REJECTION_HAPPENED in pr.properties, str(pr)
+                assert PullRequestEvent.REJECTED in pr.events_now, str(pr)
                 total_rejected += 1
+
+        if PullRequestStage.WIP in pr.stages_time_machine:
+            assert PullRequestEvent.COMMITTED in pr.events_time_machine, str(pr)
+        if PullRequestStage.REVIEWING in pr.stages_time_machine:
+            assert PullRequestEvent.COMMITTED in pr.events_time_machine, str(pr)
+            assert pr.stage_timings.review is not None
+        total_review_requests += PullRequestEvent.REVIEW_REQUESTED in pr.events_time_machine
+        if PullRequestStage.MERGING in pr.stages_time_machine:
+            assert PullRequestEvent.APPROVED in pr.events_time_machine, str(pr)
+            assert pr.stage_timings.merge is not None
+        if PullRequestStage.RELEASING in pr.stages_time_machine:
+            assert PullRequestEvent.MERGED in pr.events_time_machine, str(pr)
+            assert PullRequestEvent.COMMITTED in pr.events_time_machine, str(pr)
+            assert pr.stage_timings.release is not None, str(pr)
+        if PullRequestStage.DONE in pr.stages_time_machine:
+            assert pr.closed is not None, str(pr)
+            if PullRequestEvent.MERGED in pr.events_time_machine:
+                if pr.number not in force_push_dropped_go_git_pr_numbers:
+                    assert PullRequestEvent.RELEASED in pr.events_time_machine, str(pr)
+                else:
+                    assert PullRequestStage.FORCE_PUSH_DROPPED in pr.stages_time_machine, str(pr)
+            else:
+                assert PullRequestEvent.REJECTED in pr.events_time_machine, str(pr)
 
         assert pr.stage_timings.wip is not None, str(pr)
         if pr.stage_timings.wip == tdz:
@@ -702,36 +726,66 @@ async def validate_prs_response(response: ClientResponse,
         if pr.stage_timings.release is not None:
             timings["release"] += pr.stage_timings.release
 
-        if PullRequestProperty.REVIEW_HAPPENED in pr.properties:
+        if PullRequestEvent.REVIEWED in pr.events_now:
             # pr.review_comments can be 0
             assert pr.stage_timings.review is not None
         if pr.review_comments > 0:
-            assert PullRequestProperty.REVIEW_HAPPENED in pr.properties, str(pr)
-        if PullRequestProperty.APPROVE_HAPPENED in pr.properties:
-            assert PullRequestProperty.REVIEW_HAPPENED in pr.properties, str(pr)
-        if PullRequestProperty.CHANGES_REQUEST_HAPPENED in pr.properties:
-            assert PullRequestProperty.REVIEW_HAPPENED in pr.properties, str(pr)
-        if PullRequestProperty.MERGE_HAPPENED not in pr.properties and pr.closed is not None:
-            assert PullRequestProperty.DONE in pr.properties
+            assert PullRequestEvent.REVIEWED in pr.events_now, str(pr)
+        if PullRequestEvent.APPROVED in pr.events_now:
+            assert PullRequestEvent.REVIEWED in pr.events_now, str(pr)
+        if PullRequestEvent.CHANGES_REQUESTED in pr.events_now:
+            assert PullRequestEvent.REVIEWED in pr.events_now, str(pr)
+        if PullRequestEvent.MERGED not in pr.events_now and pr.closed is not None:
+            assert PullRequestStage.DONE in pr.stages_now
             if pr.stage_timings.merge is None:
                 # https://github.com/src-d/go-git/pull/878
                 assert pr.commits == 0, str(pr)
             else:
                 assert pr.stage_timings.merge > tdz or pr.stage_timings.review > tdz, str(pr)
-        if PullRequestProperty.RELEASE_HAPPENED in pr.properties:
-            assert PullRequestProperty.DONE in pr.properties, str(pr)
+        if PullRequestEvent.RELEASED in pr.events_now:
+            assert PullRequestStage.DONE in pr.stages_now, str(pr)
             assert pr.released is not None, str(pr)
             assert pr.stage_timings.merge is not None, str(pr)
             assert pr.stage_timings.release is not None
         if pr.released is not None:
             if pr.number not in force_push_dropped_go_git_pr_numbers:
-                assert PullRequestProperty.RELEASE_HAPPENED in pr.properties, str(pr)
+                assert PullRequestEvent.RELEASED in pr.events_now, str(pr)
                 assert pr.release_url, str(pr)
             else:
-                assert PullRequestProperty.FORCE_PUSH_DROPPED in pr.properties, str(pr)
+                assert PullRequestStage.FORCE_PUSH_DROPPED in pr.stages_now, str(pr)
                 assert pr.release_url is None, str(pr)
-            assert PullRequestProperty.DONE in pr.properties, str(pr)
+            assert PullRequestStage.DONE in pr.stages_now, str(pr)
             total_released += 1
+
+        if PullRequestEvent.REVIEWED in pr.events_time_machine:
+            # pr.review_comments can be 0
+            assert pr.stage_timings.review is not None
+        if pr.review_comments > 0:
+            assert PullRequestEvent.REVIEWED in pr.events_time_machine, str(pr)
+        if PullRequestEvent.APPROVED in pr.events_time_machine:
+            assert PullRequestEvent.REVIEWED in pr.events_time_machine, str(pr)
+        if PullRequestEvent.CHANGES_REQUESTED in pr.events_time_machine:
+            assert PullRequestEvent.REVIEWED in pr.events_time_machine, str(pr)
+        if PullRequestEvent.MERGED not in pr.events_time_machine and pr.closed is not None:
+            assert PullRequestStage.DONE in pr.stages_time_machine
+            if pr.stage_timings.merge is None:
+                # https://github.com/src-d/go-git/pull/878
+                assert pr.commits == 0, str(pr)
+            else:
+                assert pr.stage_timings.merge > tdz or pr.stage_timings.review > tdz, str(pr)
+        if PullRequestEvent.RELEASED in pr.events_time_machine:
+            assert PullRequestStage.DONE in pr.stages_time_machine, str(pr)
+            assert pr.released is not None, str(pr)
+            assert pr.stage_timings.merge is not None, str(pr)
+            assert pr.stage_timings.release is not None
+        if pr.released is not None:
+            if pr.number not in force_push_dropped_go_git_pr_numbers:
+                assert PullRequestEvent.RELEASED in pr.events_time_machine, str(pr)
+                assert pr.release_url, str(pr)
+            else:
+                assert PullRequestStage.FORCE_PUSH_DROPPED in pr.stages_time_machine, str(pr)
+                assert pr.release_url is None, str(pr)
+            assert PullRequestStage.DONE in pr.stages_time_machine, str(pr)
 
         assert len(pr.participants) > 0
         authors = 0
@@ -754,17 +808,17 @@ async def validate_prs_response(response: ClientResponse,
             # the author of 749 is deleted on GitHub
             assert authors == 1
         if reviewers == 0:
-            assert PullRequestProperty.REVIEW_HAPPENED not in pr.properties
-            assert PullRequestProperty.APPROVE_HAPPENED not in pr.properties
-            assert PullRequestProperty.CHANGES_REQUEST_HAPPENED not in pr.properties
+            assert PullRequestEvent.REVIEWED not in pr.events_now
+            assert PullRequestEvent.APPROVED not in pr.events_now
+            assert PullRequestEvent.CHANGES_REQUESTED not in pr.events_now
         else:
-            assert PullRequestProperty.REVIEW_HAPPENED in pr.properties
+            assert PullRequestEvent.REVIEWED in pr.events_now
         assert mergers <= 1
         if mergers == 1:
-            assert PullRequestProperty.MERGE_HAPPENED in pr.properties
+            assert PullRequestEvent.MERGED in pr.events_now
         assert releasers <= 1
         if releasers == 1:
-            assert PullRequestProperty.RELEASE_HAPPENED in pr.properties
+            assert PullRequestEvent.RELEASED in pr.events_now
         if parts:
             passed = False
             for role, p in parts.items():
@@ -778,7 +832,7 @@ async def validate_prs_response(response: ClientResponse,
         assert total_review_comments > 0
     else:
         assert total_review_comments == 0
-    if stages != {PullRequestProperty.WIP}:
+    if stages != {PullRequestStage.WIP}:
         assert total_reviews > 0
     if stages not in ({PullRequestStage.RELEASING}, {PullRequestStage.MERGING},
                       {PullRequestStage.REVIEWING}, {PullRequestStage.WIP},
