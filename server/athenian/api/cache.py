@@ -151,33 +151,39 @@ def cached(exptime: Union[int, Callable[..., int]],
                 try:
                     with sentry_sdk.start_span(op="serialize") as span:
                         with serialize_mutable_fields_in_dataclasses():
-                            payload = lz4.frame.compress(serialize(result),
-                                                         block_size=lz4.frame.BLOCKSIZE_MAX1MB,
-                                                         compression_level=6)
-                        span.description = str(len(payload))
+                            payload = serialize(result)
+                        uncompressed_payload_size = len(payload)
+                        span.description = str(uncompressed_payload_size)
                 except Exception as e:
                     log.error("Failed to serialize %s/%s: %s: %s",
                               full_name, cache_key.decode(), type(e).__name__, e)
                 else:
                     async def set_cache_item():
+                        nonlocal payload
+                        with sentry_sdk.start_span(op="compress") as span:
+                            payload = lz4.frame.compress(
+                                payload,
+                                block_size=lz4.frame.BLOCKSIZE_MAX1MB,
+                                compression_level=9)
+                            span.description = \
+                                "%d -> %d" % (uncompressed_payload_size, len(payload))
                         try:
                             await client.set(cache_key, payload, exptime=t)
                         except aiomcache.exceptions.ClientException:
                             log.exception("Failed to put %d bytes in memcached for %s/%s",
                                           len(payload), full_name, cache_key.decode())
-                        else:
-                            client.metrics["misses"] \
-                                .labels(__package__, __version__, full_name) \
-                                .inc()
-                            client.metrics["miss_latency"] \
-                                .labels(__package__, __version__, full_name) \
-                                .observe(time.time() - start_time)
-                            client.metrics["size"] \
-                                .labels(__package__, __version__, full_name) \
-                                .observe(len(payload))
-                            client.metrics["context"]["misses"].get()[full_name] += 1
                     await defer(set_cache_item(), "set_cache_items(%s, %d)" % (
                         func.__qualname__, len(payload)))
+                    client.metrics["misses"] \
+                        .labels(__package__, __version__, full_name) \
+                        .inc()
+                    client.metrics["miss_latency"] \
+                        .labels(__package__, __version__, full_name) \
+                        .observe(time.time() - start_time)
+                    client.metrics["size"] \
+                        .labels(__package__, __version__, full_name) \
+                        .observe(uncompressed_payload_size)
+                    client.metrics["context"]["misses"].get()[full_name] += 1
             return result
 
         async def reset_cache(*args, **kwargs) -> bool:

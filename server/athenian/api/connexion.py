@@ -30,7 +30,8 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.db import add_pdb_metrics_context, measure_db_overhead_and_retry, \
     ParallelDatabase
-from athenian.api.defer import enable_defer, setup_defer, wait_deferred
+from athenian.api.defer import enable_defer, launch_defer, setup_defer, wait_all_deferred, \
+    wait_deferred
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.metadata import dereference_schemas
 from athenian.api.models.web import GenericError
@@ -328,7 +329,7 @@ class AthenianApp(connexion.AioHttpApp):
 
     async def _shielded(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
         self._requests += 1
-        enable_defer()
+        enable_defer(explicit_launch=not self._devenv)
         try:
             return await handler(request)
         except bdb.BdbQuit:
@@ -345,7 +346,12 @@ class AthenianApp(connexion.AioHttpApp):
             return ResponseError(ServerCrashedError(event_id)).response
         finally:
             if self._devenv:
+                # block the response until we execute all the deferred coroutines
                 await wait_deferred()
+            else:
+                # execute the deferred coroutines in 1 second to not interfere with serving
+                # the response, but only if not shutting down, otherwise, immediately
+                launch_defer(1 - self._shutting_down)
             self._requests -= 1
             if self._requests == 0 and self._shutting_down:
                 asyncio.ensure_future(self._raise_graceful_exit())
@@ -405,7 +411,7 @@ class AthenianApp(connexion.AioHttpApp):
         await asyncio.sleep(0)
         self.log.info("Finished serving all the pending requests, now shutting down")
         if not self._devenv:
-            await wait_deferred()
+            await wait_all_deferred()
 
         def raise_graceful_exit():
             loop.remove_signal_handler(signal.SIGTERM)

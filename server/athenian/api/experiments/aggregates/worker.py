@@ -44,7 +44,7 @@ async def refresh_aggregates(
 ) -> None:
     """Refresh aggregates metrics for the provided accounts."""
     patch_pandas()
-    enable_defer()
+    enable_defer(False)
     log.info("Starting refreshing aggregates...")
     async with _get_db_conns(sdb_conn, mdb_conn, pdb_conn, adb_conn) as conns:
         sdb, mdb, pdb, adb, cache = conns

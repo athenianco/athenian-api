@@ -75,7 +75,7 @@ def main():
     return_code = 0
 
     async def async_run():
-        enable_defer()
+        enable_defer(False)
         cache = create_memcached(args.memcached, log)
         setup_cache_metrics(cache, {}, None)
         for v in cache.metrics["context"].values():
