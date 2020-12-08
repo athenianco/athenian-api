@@ -6,6 +6,7 @@ from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.pull_request_event import PullRequestEvent
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
+from athenian.api.models.web.pull_request_stage import PullRequestStage
 from athenian.api.models.web.stage_timings import StageTimings
 
 
@@ -41,7 +42,7 @@ class PullRequest(Model):
         "events_time_machine": Optional[List[str]],
         "stages_time_machine": Optional[List[str]],
         "events_now": List[str],
-        "stages_now": str,
+        "stages_now": List[str],
         "participants": List[PullRequestParticipant],
         "labels": Optional[List[PullRequestLabel]],
         "jira": Optional[List[JIRAIssue]],
@@ -626,7 +627,7 @@ class PullRequest(Model):
 
         :param events_time_machine: The events_time_machine of this PullRequest.
         """
-        for prop in events_time_machine:
+        for prop in (events_time_machine or []):
             if prop not in PullRequestEvent:
                 raise ValueError("Invalid `events_time_machine`: %s" % events_time_machine)
 
@@ -646,6 +647,10 @@ class PullRequest(Model):
 
         :param stages_time_machine: The stages_time_machine of this PullRequest.
         """
+        for prop in (stages_time_machine or []):
+            if prop not in PullRequestStage:
+                raise ValueError("Invalid `stages_time_machine`: %s" % stages_time_machine)
+
         self._stages_time_machine = stages_time_machine
 
     @property
@@ -668,6 +673,8 @@ class PullRequest(Model):
 
         :param events_now: The events_now of this PullRequest.
         """
+        if events_now is None:
+            raise ValueError("`events_now` must not be null")
         for prop in events_now:
             if prop not in PullRequestEvent:
                 raise ValueError("Invalid `events_now`: %s" % events_now)
@@ -688,6 +695,12 @@ class PullRequest(Model):
 
         :param stages_now: The stages_now of this PullRequest.
         """
+        if stages_now is None:
+            raise ValueError("`stages_now` must not be null")
+        for prop in stages_now:
+            if prop not in PullRequestStage:
+                raise ValueError("Invalid `stages_now`: %s" % stages_now)
+
         self._stages_now = stages_now
 
     @property
