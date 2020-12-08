@@ -72,13 +72,16 @@ lapack_libs = mkl_lapack95_lp64' > /root/.numpy-site.cfg && \
 
 ADD server/requirements.txt /server/requirements.txt
 ADD patches /patches
+ARG GKWILLIE_TOKEN
 RUN apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends python3-dev gcc g++ patch && \
+    apt-get install -y --no-install-suggests --no-install-recommends python3-dev gcc g++ patch git && \
+    sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/g" server/requirements.txt && \
     pip3 install --no-cache-dir -r /server/requirements.txt && \
+    sed -i "s/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/git+ssh:\/\/git@/g" server/requirements.txt && \
     pip3 uninstall -y flask && \
     patch /usr/local/lib/python*/dist-packages/prometheus_client/exposition.py /patches/prometheus_client.patch && \
     patch /usr/local/lib/python*/dist-packages/aiomcache/client.py /patches/aiomcache_version.patch && \
-    apt-get remove -y patch && \
+    apt-get remove -y patch git && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

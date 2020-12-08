@@ -2,7 +2,7 @@
 
 [alembic]
 # path to migration scripts
-script_location = {{ path }}
+script_location = ${path}
 
 # template used to generate migration files
 # file_template = %%(rev)s_%%(slug)s
@@ -27,15 +27,15 @@ timezone = Etc/UTC
 # sourceless = false
 
 # version location specification; this defaults
-# to {{ path }}/versions.  When using multiple version
+# to ${path}/versions.  When using multiple version
 # directories, initial revisions must be specified with --version-path
-# version_locations = %(here)s/bar %(here)s/bat {{ path }}/versions
+# version_locations = %(here)s/bar %(here)s/bat ${path}/versions
 
 # the output encoding used when revision files
 # are written from script.py.mako
 output_encoding = utf-8
 
-sqlalchemy.url = {{ url }}
+sqlalchemy.url = ${url}
 
 
 [post_write_hooks]

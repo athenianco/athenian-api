@@ -1,85 +1,21 @@
+from importlib import import_module
 import logging
 import os
 import subprocess
 import sys
-from typing import Union
 
 from alembic import script
 from alembic.migration import MigrationContext
-import jinja2
+from mako.template import Template
 from sqlalchemy import any_, create_engine
 from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
 from sqlalchemy.sql import operators
 from sqlalchemy.sql.compiler import OPERATORS
 from sqlalchemy.sql.elements import BinaryExpression, ClauseList, Grouping, UnaryExpression
 from sqlalchemy.sql.operators import ColumnOperators, custom_op, in_op, notin_op
 
 from athenian.api import slogging
-
-
-def always_unequal(coltype):
-    """Mark certain attributes to be always included in the execution context."""
-    coltype.compare_values = lambda _1, _2: False
-    return coltype
-
-
-class Refreshable:
-    """Mixin to invoke default() and onupdate() on all the columns."""
-
-    class Context:
-        """Pretend to be a fully-featured SQLAlchemy execution context."""
-
-        def __init__(self, parameters: dict):
-            """init"""
-            self.current_parameters = parameters
-
-        def get_current_parameters(self):
-            """Pretend to be a fully-featured context."""
-            return self.current_parameters
-
-    def create_defaults(self) -> "Refreshable":
-        """Call default() on all the columns."""
-        ctx = self.Context(self.__dict__)
-        for k, v in self.__table__.columns.items():
-            if getattr(self, k, None) is None and v.default is not None:
-                arg = v.default.arg
-                if callable(arg):
-                    arg = arg(ctx)
-                setattr(self, k, arg)
-        return self
-
-    def refresh(self) -> "Refreshable":
-        """Call onupdate() on all the columns."""
-        ctx = self.Context(self.__dict__)
-        for k, v in self.__table__.columns.items():
-            if v.onupdate is not None:
-                setattr(self, k, v.onupdate.arg(ctx))
-        return self
-
-    def touch(self, exclude=tuple()) -> "Refreshable":
-        """Enable full onupdate() in the next session.flush()."""
-        for k in self.__table__.columns.keys():
-            if k not in exclude:
-                setattr(self, k, getattr(self, k))
-        return self
-
-
-class Explodable:
-    """Convert the model to a dict."""
-
-    def explode(self, with_primary_keys=False):
-        """Return a dict of the model data attributes."""
-        return {k: getattr(self, k) for k, v in self.__table__.columns.items()
-                if not v.primary_key or with_primary_keys}
-
-
-BaseType = Union[DeclarativeMeta, Refreshable, Explodable]
-
-
-def create_base() -> BaseType:
-    """Create the declarative base class type."""
-    return declarative_base(cls=(Refreshable, Explodable))
+from athenian.precomputer.db import always_unequal, create_base  # noqa: F401
 
 
 class values(UnaryExpression):
@@ -163,7 +99,8 @@ class DBSchemaMismatchError(Exception):
 def check_alembic_schema_version(name: str, conn_str: str, log: logging.Logger) -> None:
     """Raise DBSchemaVersionMismatchError if the real (connected) DB schema version \
     does not match the required (declared in the code) version."""
-    directory = script.ScriptDirectory(os.path.join(os.path.dirname(__file__), name))
+    template = import_module("%s.%s" % (__package__, name)).template
+    directory = script.ScriptDirectory(str(template.parent))
     engine = create_engine(conn_str.split("?", 1)[0])
     with engine.begin() as conn:
         context = MigrationContext.configure(conn)
@@ -196,12 +133,11 @@ def migrate(name: str, url=None, exec=True):
 
     As a bonus, you obtain a functional Alembic INI config for any `alembic` commands.
     """
-    root = os.path.join(os.path.dirname(__file__), name)
-    env = jinja2.Environment(loader=jinja2.FileSystemLoader(root))
-    t = env.get_template("alembic.ini.jinja2")
-    path = os.path.relpath(root)
+    root = import_module("%s.%s" % (__package__, name))
+    template_file_name = root.template
+    path = template_file_name.parent
     with open("alembic.ini", "w") as fout:
-        fout.write(t.render(url=url, path=path))
+        fout.write(Template(filename=str(template_file_name)).render(url=url, path=path))
     args = [sys.executable, sys.executable, "-m", "athenian.api.sentry_wrapper",
             "alembic.config", "upgrade", "head"]
     if os.getenv("OFFLINE"):

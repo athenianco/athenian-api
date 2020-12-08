@@ -69,7 +69,10 @@ jobs:
         restore-keys: ubuntu-20.04-pip-main-
     - name: pip
       run: |
+        set -x
+        sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/g" server/requirements.txt
         pip3 install -r server/requirements.txt --no-warn-script-location
+        git checkout -f server/requirements.txt
         sudo pip3 install -e server/
     - name: web models
       working-directory: server
@@ -82,7 +85,6 @@ jobs:
       working-directory: server
       run: |
         (! grep -R 'athenian\.api\.models' athenian/api/models/state/versions)
-        (! grep -R 'athenian\.api\.models' athenian/api/models/precomputed/versions)
   test:
     name: test
     if: "!contains(github.event.head_commit.message, 'Bump version')"
@@ -130,6 +132,7 @@ jobs:
     - name: pip
       run: |
         set -x
+        sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/g" server/requirements.txt
         pip3 install -r server/requirements.txt --no-warn-script-location
         pip3 install -r server/test-requirements.txt --no-warn-script-location
         sudo pip3 install -e server/
@@ -238,15 +241,13 @@ jobs:
     - name: docker build
       run: |
         set -x
-        docker build --cache-from $GOOGLE_DOCKER_IMAGE:latest --build-arg COMMIT=$GITHUB_SHA -t $GOOGLE_DOCKER_IMAGE .
+        docker build --cache-from $GOOGLE_DOCKER_IMAGE:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=$GKWILLIE_TOKEN -t $GOOGLE_DOCKER_IMAGE .
         docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
         docker build -t test --build-arg base=${GOOGLE_DOCKER_IMAGE} server/tests
         run="docker run --network=host --rm -v $(pwd):/io -w /io --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ -e ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE=https://installation.athenian.co/jira/%s/atlassian-connect.json test -m coverage"
         $run run -a -m athenian.api.models.state postgres://postgres:postgres@0.0.0.0:5432/state
         $run run -a -m athenian.api.invite_admin postgres://postgres:postgres@0.0.0.0:5432/state
         $run run -a /usr/local/bin/alembic downgrade 34eafe9e7cd9
-        $run run -a -m athenian.api.models.precomputed postgres://postgres:postgres@0.0.0.0:5432/precomputed
-        $run run -a /usr/local/bin/alembic downgrade c863ffad47fb
         $run combine
         $run xml
         docker rmi test
@@ -318,7 +319,7 @@ jobs:
         sentry-cli releases set-commits --auto $current_version
         export IMAGE=$GOOGLE_DOCKER_IMAGE:$current_version
         make gcloud-login
-        docker build --cache-from $GOOGLE_DOCKER_IMAGE:latest --build-arg COMMIT=$GITHUB_SHA -t $IMAGE .
+        docker build --cache-from $GOOGLE_DOCKER_IMAGE:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=$GKWILLIE_TOKEN -t $IMAGE .
         make docker-push
         make pubsub-publish
         docker tag $IMAGE $GOOGLE_DOCKER_IMAGE

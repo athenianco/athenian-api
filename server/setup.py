@@ -13,7 +13,7 @@ code_root = project_root / "athenian" / "api"
 os.chdir(str(project_root))
 version = SourceFileLoader("version", str(code_root / "metadata.py")).load_module()
 
-with open(os.path.join(os.path.dirname(__file__), "../README.md"), encoding="utf-8") as f:
+with open(project_root.parent / "README.md", encoding="utf-8") as f:
     long_description = f.read()
 
 
@@ -35,9 +35,13 @@ setup(
     keywords=[],
     install_requires=[],
     tests_require=[],
-    package_data={"": ["requirements.txt"]},
+    package_data={
+        "": ["*.md", "*.jinja2", "*.mako"],
+        "athenian": ["../requirements.txt"],
+        "athenian.api": ["openapi"],
+    },
     classifiers=[
-        "Development Status :: 4 - Beta",
+        "Development Status :: 5 - Production/Stable",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
     ],
