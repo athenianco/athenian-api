@@ -3652,15 +3652,21 @@ components:
           items:
             $ref: '#/components/schemas/PullRequestEvent'
           type: array
-        stage_time_machine:
-          $ref: '#/components/schemas/PullRequestStage'
+        stages_time_machine:
+          description: List of PR stages as of `date_to` (normally, of length 1).
+          items:
+            $ref: '#/components/schemas/PullRequestStage'
+          type: array
         events_now:
           description: List of PR events that ever happened.
           items:
             $ref: '#/components/schemas/PullRequestEvent'
           type: array
-        stage_now:
-          $ref: '#/components/schemas/PullRequestStage'
+        stages_now:
+          description: List of current PR stages (normally, of length 1).
+          items:
+            $ref: '#/components/schemas/PullRequestStage'
+          type: array
         participants:
           description: List of developers related to this PR.
           items:
@@ -3687,7 +3693,7 @@ components:
       - repository
       - size_added
       - size_removed
-      - stage_now
+      - stages_now
       - stage_timings
       - title
       - updated

@@ -18,7 +18,7 @@ with open(project_root.parent / "README.md", encoding="utf-8") as f:
 
 
 setup(
-    name=version.__package__,
+    name=version.__package__.replace(".", "-"),
     description=version.__description__,
     long_description=long_description,
     long_description_content_type="text/markdown",
