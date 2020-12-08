@@ -200,7 +200,9 @@ async def mine_contributors(meta_ids: Tuple[int, ...],
 
     cols = [User.login, User.email, User.avatar_url, User.name]
     with sentry_sdk.start_span(op="SELECT FROM github_users_v2_compat"):
-        user_details = await mdb.fetch_all(select(cols).where(User.login.in_(stats.keys())))
+        # FIXME(vmarkovtsev): filter by `meta_ids` everywhere here once ready
+        user_details = await mdb.fetch_all(
+            select(cols).where(User.login.in_(stats.keys())).distinct())
 
     contribs = []
     for ud in user_details:
