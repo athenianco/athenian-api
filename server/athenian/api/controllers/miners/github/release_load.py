@@ -218,6 +218,8 @@ async def load_releases(meta_ids: Tuple[int, ...],
             errors |= (repos_vec == repo) & (matched_by_vec != match)
     include = ~errors & published_at.between(time_from, time_to).values
     releases = releases.take(np.nonzero(include)[0])
+    if Release.acc_id.key in releases:
+        del releases[Release.acc_id.key]
     return releases, applied_matches
 
 
@@ -261,8 +263,9 @@ async def _load_releases(repos: Iterable[Tuple[str, ReleaseMatch]],
 
 def dummy_releases_df() -> pd.DataFrame:
     """Create an empty releases DataFrame."""
-    return pd.DataFrame(
-        columns=[c.name for c in Release.__table__.columns] + [matched_by_column])
+    return pd.DataFrame(columns=[
+        c.name for c in Release.__table__.columns if c.name != Release.acc_id.key
+    ] + [matched_by_column])
 
 
 def group_repos_by_release_match(repos: Iterable[str],

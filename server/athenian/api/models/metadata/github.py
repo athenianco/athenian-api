@@ -9,22 +9,25 @@ Base = declarative_base()
 
 # -- MIXINS --
 
+class GitHubSchemaMixin:
+    __table_args__ = {"schema": "github"}
 
-class IDMixin:
+
+class AccountMixin:
+    acc_id = Column(BigInteger, primary_key=True)
+
+
+class IDMixin(AccountMixin):
     node_id = Column(Text, primary_key=True)
 
 
-class IDMixinNG:
+class IDMixinNG(AccountMixin):
     id = Column(Text, primary_key=True)
 
     @declared_attr
     def node_id(self):
         """Return 'id' as 'node_id'."""
         return synonym("id")
-
-
-class AccountMixin:
-    acc_id = Column(BigInteger, primary_key=True)
 
 
 class BodyMixin:
@@ -62,20 +65,23 @@ class PullRequestPKMixin:
 # -- TABLES --
 
 
-class Account(Base, UpdatedMixin):
+class Account(Base,
+              GitHubSchemaMixin,
+              UpdatedMixin,
+              ):
     __tablename__ = "accounts"
-    __table_args__ = {"schema": "github"}
 
     id = Column(BigInteger, primary_key=True)
     owner_id = Column(BigInteger, nullable=False)
     owner_login = Column(Text, nullable=False)
 
 
-class AccountRepository(Base):
+class AccountRepository(Base,
+                        GitHubSchemaMixin,
+                        AccountMixin,
+                        ):
     __tablename__ = "account_repos_log"
-    __table_args__ = {"schema": "github"}
 
-    acc_id = Column(BigInteger, primary_key=True)
     repo_node_id = Column(Text, primary_key=True)
     repo_full_name = Column(Text, nullable=False)
     event_id = Column(Text, nullable=False)
@@ -83,14 +89,19 @@ class AccountRepository(Base):
     enabled = Column(Boolean, nullable=False)
 
 
-class OrganizationMember(Base):
+class OrganizationMember(Base,
+                         AccountMixin,
+                         ):
     __tablename__ = "github_node_organization_members_with_role"
 
     parent_id = Column(Text, primary_key=True, comment="Organization ID")
     child_id = Column(Text, primary_key=True, comment="User ID")
 
 
-class FetchProgress(Base, UpdatedMixin):
+class FetchProgress(Base,
+                    AccountMixin,
+                    UpdatedMixin,
+                    ):
     __tablename__ = "github_fetch_progress"
 
     event_id = Column(Text, primary_key=True)
@@ -100,33 +111,36 @@ class FetchProgress(Base, UpdatedMixin):
 
 
 class PullRequestComment(Base,
+                         GitHubSchemaMixin,
                          IDMixin,
                          UpdatedMixin,
                          UserMixin,
                          RepositoryMixin,
                          PullRequestMixin,
                          ):
-    __tablename__ = "github_pull_request_comments_compat"
+    __tablename__ = "api_pull_request_comments"
 
 
 class PullRequestReviewComment(Base,
+                               GitHubSchemaMixin,
                                IDMixin,
                                UpdatedMixin,
                                UserMixin,
                                RepositoryMixin,
                                PullRequestMixin,
                                ):
-    __tablename__ = "github_pull_request_review_comments_compat"
+    __tablename__ = "api_pull_request_review_comments"
 
 
 class PullRequestCommit(Base,
+                        GitHubSchemaMixin,
+                        IDMixin,
                         RepositoryMixin,
                         PullRequestPKMixin,
                         ):
-    __tablename__ = "github_pull_request_commits_compat"
+    __tablename__ = "api_pull_request_commits"
 
-    sha = Column(Text, primary_key=True)
-    node_id = Column(Text, nullable=False)
+    sha = Column(Text, nullable=False)
     commit_node_id = Column(Text, nullable=False)
     author_login = Column(Text)
     author_date = Column(Text, nullable=False)
@@ -159,12 +173,13 @@ PullRequestCommit.created_at.key = "committed_date"
 
 
 class PullRequestReview(Base,
+                        GitHubSchemaMixin,
                         IDMixin,
                         UserMixin,
                         PullRequestMixin,
                         RepositoryMixin,
                         ):
-    __tablename__ = "github_pull_request_reviews_compat"
+    __tablename__ = "api_pull_request_reviews"
 
     state = Column(Text, nullable=False)
     submitted_at = Column(TIMESTAMP(timezone=True), nullable=False)
@@ -191,12 +206,13 @@ PullRequestReviewRequest.node_id.key = "id"
 
 
 class PullRequest(Base,
+                  GitHubSchemaMixin,
                   IDMixin,
                   RepositoryMixin,
                   UpdatedMixin,
                   UserMixin,
                   ):
-    __tablename__ = "github_pull_requests_compat"
+    __tablename__ = "api_pull_requests"
 
     additions = Column(BigInteger)
     base_ref = Column(Text, nullable=False)
@@ -218,10 +234,11 @@ class PullRequest(Base,
 
 
 class PushCommit(Base,
+                 GitHubSchemaMixin,
+                 IDMixin,
                  RepositoryMixin):
-    __tablename__ = "github_push_commits_compat"
+    __tablename__ = "api_push_commits"
 
-    node_id = Column(Text, primary_key=True)
     message = Column(Text, nullable=False)
     pushed_date = Column(TIMESTAMP(timezone=True))
     author_login = Column(Text)
@@ -246,10 +263,11 @@ class PushCommit(Base,
 
 
 class Repository(Base,
+                 GitHubSchemaMixin,
                  IDMixin,
                  UpdatedMixin,
                  ):
-    __tablename__ = "github_repositories_v2_compat"
+    __tablename__ = "api_repositories"
 
     archived = Column(Boolean)
     description = Column(Text)
@@ -260,10 +278,11 @@ class Repository(Base,
 
 
 class User(Base,
+           GitHubSchemaMixin,
            IDMixin,
            UpdatedMixin,
            ):
-    __tablename__ = "github_users_v2_compat"
+    __tablename__ = "api_users"
 
     avatar_url = Column(Text, nullable=False)
     email = Column(Text)
@@ -272,11 +291,12 @@ class User(Base,
 
 
 class Release(Base,
+              GitHubSchemaMixin,
+              IDMixinNG,
               RepositoryMixin,
               ):
-    __tablename__ = "github_releases_compat"
+    __tablename__ = "api_releases"
 
-    id = Column(Text, primary_key=True)
     author = Column(Text, nullable=False)
     name = Column(Text)
     published_at = Column(TIMESTAMP(timezone=True))
@@ -286,10 +306,11 @@ class Release(Base,
     commit_id = Column(Text, nullable=False)
 
 
-class NodeCommit(Base):
+class NodeCommit(Base,
+                 IDMixinNG,
+                 ):
     __tablename__ = "github_node_commit"
 
-    id = Column(Text, primary_key=True)
     oid = Column(Text, nullable=False)
     sha = synonym(oid)
     repository = Column(Text, nullable=False)
@@ -303,29 +324,36 @@ NodeCommit.sha.key = "oid"
 
 class NodeCommitParent(Base,
                        ParentChildMixin,
+                       AccountMixin,
                        ):
     __tablename__ = "github_node_commit_parents"
 
     index = Column(Integer, nullable=False)
 
 
-class NodePullRequestCommit(Base, IDMixinNG):
+class NodePullRequestCommit(Base,
+                            IDMixinNG,
+                            ):
     __tablename__ = "github_node_pull_request_commit"
 
     commit = Column(Text, nullable=False)
     pull_request = Column(Text, nullable=False)
 
 
-class NodeRepository(Base, IDMixinNG):
+class NodeRepository(Base,
+                     IDMixinNG,
+                     ):
     __tablename__ = "github_node_repository"
 
     name_with_owner = Column(Text, nullable=False)
 
 
 class Branch(Base,
+             GitHubSchemaMixin,
+             AccountMixin,
              RepositoryMixin,
              ):
-    __tablename__ = "github_branches_compat"
+    __tablename__ = "api_branches"
 
     branch_id = Column(Text, primary_key=True)
     branch_name = Column(Text, nullable=False)
@@ -336,12 +364,13 @@ class Branch(Base,
 
 
 class PullRequestLabel(Base,
+                       GitHubSchemaMixin,
                        IDMixin,
                        UpdatedMixin,
                        RepositoryMixin,
                        PullRequestPKMixin,
                        ):
-    __tablename__ = "github_pull_request_labels_compat"
+    __tablename__ = "api_pull_request_labels"
 
     name = Column(Text, nullable=False)
     description = Column(Text)
@@ -354,19 +383,27 @@ class Bot(Base):
     login = Column(Text, primary_key=True)
 
 
-class NodeRepositoryRef(Base, ParentChildMixin):
+class NodeRepositoryRef(Base,
+                        ParentChildMixin,
+                        AccountMixin,
+                        ):
     __tablename__ = "github_node_repository_refs"
 
 
-class NodePullRequestJiraIssues(Base, IDMixin):
+class NodePullRequestJiraIssues(Base,
+                                GitHubSchemaMixin,
+                                ):
     __tablename__ = "node_pull_request_jira_issues"
-    __table_args__ = {"schema": "github"}
 
+    node_id = Column(Text, primary_key=True)
+    node_acc = Column(BigInteger, primary_key=True)
     jira_acc = Column(BigInteger, nullable=False)
     jira_id = Column(Text, nullable=False)
 
 
-class NodeUser(Base, IDMixinNG):
+class NodeUser(Base,
+               IDMixinNG,
+               ):
     __tablename__ = "github_node_user"
 
     database_id = Column(BigInteger, unique=True)
@@ -380,7 +417,9 @@ class SchemaMigration(Base):
     dirty = Column(Boolean, nullable=False)
 
 
-class Organization(Base, IDMixinNG, AccountMixin):
+class Organization(Base,
+                   IDMixinNG,
+                   ):
     __tablename__ = "github_node_organization"
 
     login = Column(Text, nullable=False)
@@ -388,7 +427,9 @@ class Organization(Base, IDMixinNG, AccountMixin):
     avatar_url = Column(Text)
 
 
-class Team(Base, IDMixinNG):
+class Team(Base,
+           IDMixinNG,
+           ):
     __tablename__ = "github_node_team"
 
     organization = Column(Text, nullable=False)
@@ -397,5 +438,8 @@ class Team(Base, IDMixinNG):
     parent_team = Column(Text)
 
 
-class TeamMember(Base, ParentChildMixin):
+class TeamMember(Base,
+                 ParentChildMixin,
+                 AccountMixin,
+                 ):
     __tablename__ = "github_node_team_members"
