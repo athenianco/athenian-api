@@ -41,23 +41,38 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         filt = FilterJIRAStuff.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    time_from, time_to = filt.resolve_time_from_and_to()
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+    if filt.date_from is None or filt.date_to is None:
+        if (filt.date_from is None) != (filt.date_to is None):
+            raise ResponseError(InvalidRequestError(
+                ".date_from",
+                detail="date_from and date_to must be either both not null or both null"))
+        time_from = time_to = None
+    else:
+        time_from, time_to = filt.resolve_time_from_and_to()
+    return_ = set(filt.return_ or FoundJIRAStuff.openapi_types)
     jira_ids = await get_jira_installation(filt.account, request.sdb, request.mdb, request.cache)
     mdb = request.mdb
     log = logging.getLogger("%s.filter_jira_stuff" % metadata.__package__)
 
+    def append_time_filters(filters: list) -> None:
+        if time_to is not None:
+            filters.append(Issue.created < time_to)
+        if time_from is not None:
+            filters.append(coalesce(AthenianIssue.resolved >= time_from, true()))
+            if filt.exclude_inactive:
+                filters.append(Issue.updated >= time_from)
+
     @sentry_span
-    async def epic_flow():
+    async def epic_flow() -> Optional[List[JIRAEpic]]:
+        if "epics" not in return_:
+            return None
         filters = [
             Issue.acc_id == jira_ids[0],
             Issue.project_id.in_(jira_ids[1]),
             Issue.type == "Epic",
-            Issue.created < time_to,
-            coalesce(AthenianIssue.resolved >= time_from, true()),
         ]
-        if filt.exclude_inactive:
-            filters.append(Issue.updated >= time_from)
+        append_time_filters(filters)
         epic_rows = await mdb.fetch_all(
             select([Issue.id, Issue.key, Issue.title, Issue.updated])
             .select_from(outerjoin(Issue, AthenianIssue, and_(Issue.acc_id == AthenianIssue.acc_id,
@@ -85,14 +100,13 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
     @sentry_span
     async def issue_flow():
+        if not {"labels", "issue_types", "priorities", "users"}.intersection(return_):
+            return None, None, None, None
         filters = [
             Issue.acc_id == jira_ids[0],
             Issue.project_id.in_(jira_ids[1]),
-            Issue.created < time_to,
-            coalesce(AthenianIssue.resolved >= time_from, true()),
         ]
-        if filt.exclude_inactive:
-            filters.append(Issue.updated >= time_from)
+        append_time_filters(filters)
         property_rows = await mdb.fetch_all(
             select([Issue.id, Issue.labels, Issue.components, Issue.type, Issue.updated,
                     Issue.assignee_id, Issue.reporter_id, Issue.commenters_ids, Issue.priority_id])
@@ -109,6 +123,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
         @sentry_span
         async def fetch_components():
+            if "labels" not in return_:
+                return []
             return await mdb.fetch_all(
                 select([Component.id, Component.name])
                 .where(and_(
@@ -118,6 +134,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
         @sentry_span
         async def fetch_users():
+            if "users" not in return_:
+                return []
             return await mdb.fetch_all(
                 select([User.display_name, User.avatar_url, User.type])
                 .where(and_(
@@ -128,6 +146,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
         @sentry_span
         async def fetch_priorities():
+            if "priorities" not in return_:
+                return []
             return await mdb.fetch_all(
                 select([Priority.name, Priority.icon_url, Priority.rank, Priority.status_color])
                 .where(and_(
@@ -138,20 +158,26 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
         @sentry_span
         async def main_flow():
-            labels = Counter(chain.from_iterable(
-                (r[Issue.labels.key] or ()) for r in property_rows))
-            labels = {k: JIRALabel(title=k, kind="regular", issues_count=v)
-                      for k, v in labels.items()}
-            for row in property_rows:
-                updated = row[Issue.updated.key]
-                for label in (row[Issue.labels.key] or ()):
-                    label = labels[label]  # type: JIRALabel
-                    if label.last_used is None or label.last_used < updated:
-                        label.last_used = updated
-            types = sorted(set(r[Issue.type.key] for r in property_rows))
-            if mdb.url.dialect == "sqlite":
-                for label in labels.values():
-                    label.last_used = label.last_used.replace(tzinfo=timezone.utc)
+            if "labels" in return_:
+                labels = Counter(chain.from_iterable(
+                    (r[Issue.labels.key] or ()) for r in property_rows))
+                labels = {k: JIRALabel(title=k, kind="regular", issues_count=v)
+                          for k, v in labels.items()}
+                for row in property_rows:
+                    updated = row[Issue.updated.key]
+                    for label in (row[Issue.labels.key] or ()):
+                        label = labels[label]  # type: JIRALabel
+                        if label.last_used is None or label.last_used < updated:
+                            label.last_used = updated
+                if mdb.url.dialect == "sqlite":
+                    for label in labels.values():
+                        label.last_used = label.last_used.replace(tzinfo=timezone.utc)
+            else:
+                labels = None
+            if "issue_types" in return_:
+                types = sorted(set(r[Issue.type.key] for r in property_rows))
+            else:
+                types = None
             return labels, types
 
         component_names, users, priorities, (labels, types) = await gather(
@@ -163,27 +189,28 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         users = [JIRAUser(avatar=row[User.avatar_url.key],
                           name=row[User.display_name.key],
                           type=row[User.type.key])
-                 for row in users]
+                 for row in users] or None
         priorities = [JIRAPriority(name=row[Priority.name.key],
                                    image=row[Priority.icon_url.key],
                                    rank=row[Priority.rank.key],
                                    color=row[Priority.status_color.key])
-                      for row in priorities]
-        for row in property_rows:
-            updated = row[Issue.updated.key]
-            for component in (row[Issue.components.key] or ()):
-                try:
-                    label = components[component]  # type: JIRALabel
-                except KeyError:
-                    log.error("Missing JIRA component: %s" % component)
-                    continue
-                if label.last_used is None or label.last_used < updated:
-                    label.last_used = updated
-        if mdb.url.dialect == "sqlite":
-            for label in components.values():
-                label.last_used = label.last_used.replace(tzinfo=timezone.utc)
+                      for row in priorities] or None
+        if "labels" in return_:
+            for row in property_rows:
+                updated = row[Issue.updated.key]
+                for component in (row[Issue.components.key] or ()):
+                    try:
+                        label = components[component]  # type: JIRALabel
+                    except KeyError:
+                        log.error("Missing JIRA component: %s" % component)
+                        continue
+                    if label.last_used is None or label.last_used < updated:
+                        label.last_used = updated
+            if mdb.url.dialect == "sqlite":
+                for label in components.values():
+                    label.last_used = label.last_used.replace(tzinfo=timezone.utc)
 
-        labels = sorted(chain(components.values(), labels.values()))
+            labels = sorted(chain(components.values(), labels.values()))
         return labels, users, types, priorities
 
     epics, (labels, users, types, priorities) = await gather(epic_flow(), issue_flow(), op="mdb")

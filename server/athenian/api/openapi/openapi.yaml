@@ -5220,12 +5220,6 @@ components:
           items:
             $ref: '#/components/schemas/JIRAUser'
           type: array
-      required:
-      - epics
-      - issue_types
-      - labels
-      - priorities
-      - users
       type: object
     JIRAEpic:
       additionalProperties: false
@@ -5394,17 +5388,36 @@ components:
         account:
           type: integer
         date_from:
+          description: '`null` disables the time filter boundary, thus everything is
+            returned. `date_from` and `date_to` must be both either `null` or not `null`.'
           format: date
+          nullable: true
           type: string
         date_to:
+          description: '`null` disables the time filter boundary, thus everything is
+            returned. `date_from` and `date_to` must be both either `null` or not `null`.'
           format: date
+          nullable: true
           type: string
         timezone:
           $ref: '#/components/schemas/TimeZone'
         exclude_inactive:
           description: Value indicating whether issues with the last update older
-            than `date_from` should be ignored.
+            than `date_from` should be ignored. If `date_from` and `date_to` are `null`,
+            does nothing.
           type: boolean
+        return:
+          description: Specifies which items are required, an empty or missing array
+            means everything.
+          items:
+            enum:
+            - epics
+            - labels
+            - issue_types
+            - priorities
+            - users
+            type: string
+          type: array
       required:
       - account
       - date_from

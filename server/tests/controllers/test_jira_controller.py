@@ -12,7 +12,11 @@ from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 from athenian.api.serialization import FriendlyJson
 
 
-async def test_filter_jira_smoke(client, headers):
+@pytest.mark.parametrize("return_, checked", [
+    (None, FoundJIRAStuff.openapi_types),
+    ([], FoundJIRAStuff.openapi_types),
+] + [([k], [k]) for k in FoundJIRAStuff.openapi_types])
+async def test_filter_jira_return(client, headers, return_, checked):
     body = {
         "date_from": "2019-10-13",
         "date_to": "2020-01-23",
@@ -20,97 +24,147 @@ async def test_filter_jira_smoke(client, headers):
         "account": 1,
         "exclude_inactive": False,
     }
+    if return_ is not None:
+        body["return"] = return_
     response = await client.request(
         method="POST", path="/v1/filter/jira", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     model = FoundJIRAStuff.from_dict(json.loads(body))
-    assert model.labels == [
-        JIRALabel(title="API",
-                  last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
-                  issues_count=4, kind="component"),
-        JIRALabel(title="Webapp",
-                  last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
-                  issues_count=1, kind="component"),
-        JIRALabel(title="accounts", last_used=datetime(2020, 4, 3, 18, 47, 43, tzinfo=tzutc()),
-                  issues_count=1, kind="regular"),
-        JIRALabel(title="bug", last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
-                  issues_count=16, kind="regular"),
-        JIRALabel(title="code-quality", last_used=datetime(2020, 6, 4, 11, 35, 12, tzinfo=tzutc()),
-                  issues_count=1, kind="regular"),
-        JIRALabel(title="discarded", last_used=datetime(2020, 6, 1, 1, 27, 23, tzinfo=tzutc()),
-                  issues_count=4, kind="regular"),
-        JIRALabel(title="discussion", last_used=datetime(2020, 3, 31, 21, 16, 11, tzinfo=tzutc()),
-                  issues_count=3, kind="regular"),
-        JIRALabel(title="feature", last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
-                  issues_count=6, kind="regular"),
-        JIRALabel(title="functionality",
-                  last_used=datetime(2020, 6, 4, 11, 35, 15, tzinfo=tzutc()), issues_count=1,
-                  kind="regular"),
-        JIRALabel(title="internal-story", last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
-                  issues_count=11, kind="regular"),
-        JIRALabel(title="needs-specs", last_used=datetime(2020, 4, 6, 13, 25, 2, tzinfo=tzutc()),
-                  issues_count=4, kind="regular"),
-        JIRALabel(title="onboarding", last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
-                  issues_count=1, kind="regular"),
-        JIRALabel(title="performance", last_used=datetime(2020, 3, 31, 21, 16, 5, tzinfo=tzutc()),
-                  issues_count=1, kind="regular"),
-        JIRALabel(title="user-story", last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
-                  issues_count=5, kind="regular"),
-        JIRALabel(title="webapp", last_used=datetime(2020, 4, 3, 18, 47, 6, tzinfo=tzutc()),
-                  issues_count=1, kind="regular"),
-    ]
-    assert model.epics == [
-        JIRAEpic(id="DEV-70", title="Show the installation progress in the waiting page",
-                 updated=datetime(2020, 7, 27, 16, 56, 22, tzinfo=tzutc()),
-                 children=[JIRAEpicChild("DEV-365", "Released", "Story"),
-                           JIRAEpicChild("DEV-183", "Closed", "Task"),
-                           JIRAEpicChild("DEV-315", "Released", "Story"),
-                           JIRAEpicChild("DEV-228", "Released", "Task"),
-                           JIRAEpicChild("DEV-364", "Released", "Story")]),
-        JIRAEpic(id="ENG-1", title="Evaluate our product and process internally",
-                 updated=datetime(2020, 6, 1, 7, 19, tzinfo=tzutc()), children=[]),
-    ]
-    assert model.issue_types == ["Design document", "Epic", "Story", "Subtask", "Task"]
-    assert model.users == [
-        JIRAUser(name="David Pordomingo",
-                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/DP-4.png",  # noqa
-                 type="atlassian"),
-        JIRAUser(name="Denys Smirnov",
-                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/DS-1.png",  # noqa
-                 type="atlassian"),
-        JIRAUser(name="Kuba Podgórski",
-                 avatar="https://secure.gravatar.com/avatar/ec2f95fe07b5ffec5cde78781f433b68?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FKP-3.png",  # noqa
-                 type="atlassian"),
-        JIRAUser(name="Lou Marvin Caraig",
-                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/LC-0.png",  # noqa
-                 type="atlassian"),
-        JIRAUser(name="Marcelo Novaes",
-                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/MN-4.png",  # noqa
-                 type="atlassian"),
-        JIRAUser(name="Oleksandr Chabaiev",
-                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/OC-5.png",  # noqa
-                 type="atlassian"),
-        JIRAUser(name="Vadim Markovtsev",
-                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/VM-6.png",  # noqa
-                 type="atlassian"),
-        JIRAUser(name="Waren Long",
-                 avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/WL-5.png",  # noqa
-                 type="atlassian")]
-    assert model.priorities == [
-        JIRAPriority(name="Medium",
-                     image="https://athenianco.atlassian.net/images/icons/priorities/medium.svg",
-                     rank=3,
-                     color="EA7D24"),
-        JIRAPriority(name="Low",
-                     image="https://athenianco.atlassian.net/images/icons/priorities/low.svg",
-                     rank=4,
-                     color="2A8735"),
-        JIRAPriority(name="None",
-                     image="https://athenianco.atlassian.net/images/icons/priorities/trivial.svg",
-                     rank=6,
-                     color="9AA1B2")]
+    if "labels" in checked:
+        assert model.labels == [
+            JIRALabel(title="API",
+                      last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                      issues_count=4, kind="component"),
+            JIRALabel(title="Webapp",
+                      last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                      issues_count=1, kind="component"),
+            JIRALabel(title="accounts",
+                      last_used=datetime(2020, 4, 3, 18, 47, 43, tzinfo=tzutc()),
+                      issues_count=1, kind="regular"),
+            JIRALabel(title="bug",
+                      last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
+                      issues_count=16, kind="regular"),
+            JIRALabel(title="code-quality",
+                      last_used=datetime(2020, 6, 4, 11, 35, 12, tzinfo=tzutc()),
+                      issues_count=1, kind="regular"),
+            JIRALabel(title="discarded",
+                      last_used=datetime(2020, 6, 1, 1, 27, 23, tzinfo=tzutc()),
+                      issues_count=4, kind="regular"),
+            JIRALabel(title="discussion",
+                      last_used=datetime(2020, 3, 31, 21, 16, 11, tzinfo=tzutc()),
+                      issues_count=3, kind="regular"),
+            JIRALabel(title="feature",
+                      last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
+                      issues_count=6, kind="regular"),
+            JIRALabel(title="functionality",
+                      last_used=datetime(2020, 6, 4, 11, 35, 15, tzinfo=tzutc()), issues_count=1,
+                      kind="regular"),
+            JIRALabel(title="internal-story",
+                      last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
+                      issues_count=11, kind="regular"),
+            JIRALabel(title="needs-specs",
+                      last_used=datetime(2020, 4, 6, 13, 25, 2, tzinfo=tzutc()),
+                      issues_count=4, kind="regular"),
+            JIRALabel(title="onboarding",
+                      last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                      issues_count=1, kind="regular"),
+            JIRALabel(title="performance",
+                      last_used=datetime(2020, 3, 31, 21, 16, 5, tzinfo=tzutc()),
+                      issues_count=1, kind="regular"),
+            JIRALabel(title="user-story",
+                      last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
+                      issues_count=5, kind="regular"),
+            JIRALabel(title="webapp",
+                      last_used=datetime(2020, 4, 3, 18, 47, 6, tzinfo=tzutc()),
+                      issues_count=1, kind="regular"),
+        ]
+    else:
+        assert model.labels is None
+    if "epics" in checked:
+        assert model.epics == [
+            JIRAEpic(id="DEV-70", title="Show the installation progress in the waiting page",
+                     updated=datetime(2020, 7, 27, 16, 56, 22, tzinfo=tzutc()),
+                     children=[JIRAEpicChild("DEV-365", "Released", "Story"),
+                               JIRAEpicChild("DEV-183", "Closed", "Task"),
+                               JIRAEpicChild("DEV-315", "Released", "Story"),
+                               JIRAEpicChild("DEV-228", "Released", "Task"),
+                               JIRAEpicChild("DEV-364", "Released", "Story")]),
+            JIRAEpic(id="ENG-1", title="Evaluate our product and process internally",
+                     updated=datetime(2020, 6, 1, 7, 19, tzinfo=tzutc()), children=[]),
+        ]
+    else:
+        assert model.epics is None
+    if "issue_types" in checked:
+        assert model.issue_types == ["Design document", "Epic", "Story", "Subtask", "Task"]
+    else:
+        assert model.issue_types is None
+    if "users" in checked:
+        assert model.users == [
+            JIRAUser(name="David Pordomingo",
+                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/DP-4.png",  # noqa
+                     type="atlassian"),
+            JIRAUser(name="Denys Smirnov",
+                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/DS-1.png",  # noqa
+                     type="atlassian"),
+            JIRAUser(name="Kuba Podgórski",
+                     avatar="https://secure.gravatar.com/avatar/ec2f95fe07b5ffec5cde78781f433b68?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FKP-3.png",  # noqa
+                     type="atlassian"),
+            JIRAUser(name="Lou Marvin Caraig",
+                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/LC-0.png",  # noqa
+                     type="atlassian"),
+            JIRAUser(name="Marcelo Novaes",
+                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/MN-4.png",  # noqa
+                     type="atlassian"),
+            JIRAUser(name="Oleksandr Chabaiev",
+                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/OC-5.png",  # noqa
+                     type="atlassian"),
+            JIRAUser(name="Vadim Markovtsev",
+                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/VM-6.png",  # noqa
+                     type="atlassian"),
+            JIRAUser(name="Waren Long",
+                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/WL-5.png",  # noqa
+                     type="atlassian"),
+        ]
+    else:
+        assert model.users is None
+    if "priorities" in checked:
+        assert model.priorities == [
+            JIRAPriority(name="Medium",
+                         image="https://athenianco.atlassian.net/images/icons/priorities/medium.svg",  # noqa
+                         rank=3,
+                         color="EA7D24"),
+            JIRAPriority(name="Low",
+                         image="https://athenianco.atlassian.net/images/icons/priorities/low.svg",
+                         rank=4,
+                         color="2A8735"),
+            JIRAPriority(name="None",
+                         image="https://athenianco.atlassian.net/images/icons/priorities/trivial.svg",  # noqa
+                         rank=6,
+                         color="9AA1B2"),
+        ]
+    else:
+        assert model.priorities is None
+
+
+async def test_filter_jira_no_time(client, headers):
+    body = {
+        "date_from": None,
+        "date_to": None,
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": True,
+        "return": ["epics", "priorities"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FoundJIRAStuff.from_dict(json.loads(body))
+    assert len(model.epics) == 81
+    assert len(model.priorities) == 6
 
 
 @pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [
@@ -187,6 +241,7 @@ async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
 
 @pytest.mark.parametrize("account, date_to, timezone, status", [
     (1, "2015-10-12", 0, 400),
+    (1, None, 0, 400),
     (2, "2020-10-12", 0, 422),
     (3, "2020-10-12", 0, 404),
     (1, "2020-10-12", 100500, 400),
