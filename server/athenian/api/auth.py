@@ -376,12 +376,15 @@ class Auth0:
                 self.log.info("God mode: %s became %s", request.god_id, mapped_id)
 
         request.is_default_user = request.uid == self._default_user_id
-        sentry_sdk.add_breadcrumb(category="user", message=request.uid, level="info")
+        sentry_sdk.set_user({"id": request.uid})
 
         async def get_user_info():
             if method != "bearer" or (god is not None and request.god_id is not None):
-                return await self.get_user(request.uid)
-            return await self._get_user_info(token)
+                user_info = await self.get_user(request.uid)
+            else:
+                user_info = await self._get_user_info(token)
+            sentry_sdk.set_user({"username": user_info.login, "email": user_info.email})
+            return user_info
 
         request.user = get_user_info
 

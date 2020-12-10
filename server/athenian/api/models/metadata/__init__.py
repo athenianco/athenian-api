@@ -15,7 +15,7 @@ PREFIXES = {
 }
 
 
-__min_version__ = 55
+__min_version__ = 84
 
 
 def dereference_schemas():
@@ -38,4 +38,4 @@ def check_schema_version(conn_str: str, log: logging.Logger) -> None:
     if version < __min_version__:
         raise DBSchemaMismatchError(
             "%s version: required: %s connected: %s" % (conn_str, __min_version__, version))
-    log.info("metadata DB schema version: %s", version)
+    log.info("metadata DB schema version: %s (required %s)", version, __min_version__)

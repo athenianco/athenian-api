@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, func, insert, join, or_, select
-from sqlalchemy.sql.elements import BinaryExpression, ClauseElement
+from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
@@ -232,7 +232,8 @@ async def load_commit_dags(releases: pd.DataFrame,
 
 
 @sentry_span
-async def _find_old_released_prs(repo_clauses: List[ClauseElement],
+async def _find_old_released_prs(commits: np.ndarray,
+                                 repos: np.ndarray,
                                  time_boundary: datetime,
                                  authors: Collection[str],
                                  mergers: Collection[str],
@@ -243,13 +244,12 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
                                  mdb: databases.Database,
                                  cache: Optional[aiomcache.Client],
                                  ) -> pd.DataFrame:
-    if not repo_clauses:
-        return pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
-                            if c.name != PullRequest.node_id.key])
+    assert len(commits) == len(repos)
+    assert len(commits) > 0
     filters = [
         PullRequest.merged_at < time_boundary,
         PullRequest.hidden.is_(False),
-        or_(*repo_clauses),
+        PullRequest.merge_commit_sha.in_(commits),
     ]
     if updated_min is not None:
         filters.append(PullRequest.updated_at.between(updated_min, updated_max))
@@ -268,7 +268,17 @@ async def _find_old_released_prs(repo_clauses: List[ClauseElement],
         query = select([PullRequest]).where(and_(*filters))
     else:
         query = await generate_jira_prs_query(filters, jira, mdb, cache)
-    return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
+    query = query.order_by(PullRequest.merge_commit_sha.key)
+    prs = await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
+    if prs.empty:
+        return prs
+    pr_commits = prs[PullRequest.merge_commit_sha.key].values
+    pr_repos = prs[PullRequest.repository_full_name.key].values
+    indexes = np.searchsorted(commits, pr_commits)
+    checked = np.nonzero(pr_repos == repos[indexes])[0]
+    if len(checked) < len(prs):
+        prs = prs.take(checked)
+    return prs
 
 
 def _extract_released_commits(releases: pd.DataFrame,
@@ -350,21 +360,29 @@ async def map_releases_to_prs(meta_ids: Tuple[int, ...],
     rrfnk = Release.repository_full_name.key
     cols = (Release.sha.key, Release.commit_id.key, rpak, rrfnk)
     dags = await fetch_repository_commits(pdags, releases, cols, False, mdb, pdb, cache)
-    clauses = []
+    all_observed_repos = []
+    all_observed_commits = []
     # find the released commit hashes by two DAG traversals
     with sentry_sdk.start_span(op="_generate_released_prs_clause"):
         for repo, repo_releases in releases.groupby(rrfnk, sort=False):
             if (repo_releases[rpak] >= time_from).any():
-                observed_commits = _extract_released_commits(
-                    repo_releases, dags[repo], time_from)
+                observed_commits = _extract_released_commits(repo_releases, dags[repo], time_from)
                 if len(observed_commits):
-                    clauses.append(and_(
-                        PullRequest.repository_full_name == repo,
-                        PullRequest.merge_commit_sha.in_any_values(observed_commits),
-                    ))
-    prs = await _find_old_released_prs(
-        clauses, time_from, authors, mergers, jira, updated_min, updated_max,
-        pr_blacklist, mdb, cache)
+                    all_observed_commits.append(observed_commits)
+                    all_observed_repos.append(np.full_like(observed_commits, repo))
+    if all_observed_commits:
+        all_observed_repos = np.concatenate(all_observed_repos)
+        all_observed_commits = np.concatenate(all_observed_commits)
+        order = np.argsort(all_observed_commits)
+        all_observed_commits = all_observed_commits[order]
+        all_observed_repos = all_observed_repos[order]
+        prs = await _find_old_released_prs(
+            all_observed_commits, all_observed_repos, time_from, authors, mergers, jira,
+            updated_min, updated_max, pr_blacklist, mdb, cache)
+    else:
+        prs = pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
+                                    if c.name != PullRequest.node_id.key])
+        prs.index = pd.Index([], name=PullRequest.node_id.key)
     return prs, releases_in_time_range, matched_bys, dags
 
 
