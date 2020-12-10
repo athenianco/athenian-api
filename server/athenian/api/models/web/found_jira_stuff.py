@@ -12,11 +12,11 @@ class FoundJIRAStuff(Model):
     mentioned users."""
 
     openapi_types = {
-        "epics": List[JIRAEpic],
-        "labels": List[JIRALabel],
-        "issue_types": List[str],
-        "priorities": List[JIRAPriority],
-        "users": List[JIRAUser],
+        "epics": Optional[List[JIRAEpic]],
+        "labels": Optional[List[JIRALabel]],
+        "issue_types": Optional[List[str]],
+        "priorities": Optional[List[JIRAPriority]],
+        "users": Optional[List[JIRAUser]],
     }
     attribute_map = {
         "epics": "epics",
