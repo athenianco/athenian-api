@@ -73,7 +73,8 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     branch_commit_ids = branches[Branch.commit_id.key].values
     tasks = [
         mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
-                      .where(NodeCommit.id.in_(branch_commit_ids))),
+                      .where(and_(NodeCommit.id.in_(branch_commit_ids),
+                                  NodeCommit.acc_id.in_(meta_ids)))),
         load_merged_unreleased_pull_request_facts(
             prs, nonemax(releases[Release.published_at.key].nonemax(), time_to),
             LabelFilter.empty(), matched_bys, default_branches, release_settings, pdb),
@@ -548,7 +549,8 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
                     func.min(NodeCommit.committed_date).label("min"),
                     NodeRepository.id])
             .select_from(join(NodeCommit, NodeRepository,
-                              NodeCommit.repository == NodeRepository.id))
+                              and_(NodeCommit.repository == NodeRepository.id,
+                                   NodeCommit.acc_id == NodeRepository.acc_id)))
             .where(NodeRepository.name_with_owner.in_(missing))
             .group_by(NodeRepository.id))
         if computed:

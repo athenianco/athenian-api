@@ -114,6 +114,7 @@ async def mine_contributors(repos: Collection[str],
             mdb.fetch_all(
                 select([NodeCommit.author_user, func.count(NodeCommit.author_user)])
                 .where(and_(NodeCommit.repository.in_(repo_nodes),
+                            NodeCommit.acc_id.in_(meta_ids),
                             NodeCommit.committed_date.between(time_from, time_to)
                             if has_times else True,
                             NodeCommit.author_user.isnot(None)))
@@ -121,6 +122,7 @@ async def mine_contributors(repos: Collection[str],
             mdb.fetch_all(
                 select([NodeCommit.committer_user, func.count(NodeCommit.committer_user)])
                 .where(and_(NodeCommit.repository.in_(repo_nodes),
+                            NodeCommit.acc_id.in_(meta_ids),
                             NodeCommit.committed_date.between(time_from, time_to)
                             if has_times else True,
                             NodeCommit.committer_user.isnot(None)))

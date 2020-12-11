@@ -238,8 +238,8 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
     log = logging.getLogger("filter_commits")
     commits = await extract_commits(
-        meta_ids, FilterCommitsProperty(filt.property), filt.date_from, filt.date_to, repos,
-        with_author, with_committer, request.mdb, request.cache)
+        FilterCommitsProperty(filt.property), filt.date_from, filt.date_to, repos,
+        with_author, with_committer, meta_ids, request.mdb, request.cache)
     model = CommitsList(data=[], include=IncludedNativeUsers(users={}))
     users = model.include.users
     utc = timezone.utc

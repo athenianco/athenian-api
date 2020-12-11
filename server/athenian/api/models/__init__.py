@@ -67,6 +67,11 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
         if negate:
             sql = "NOT (%s)" % sql
         return sql
+    elif operator is in_op and right_len == 1:
+        # IN (<value>) -> = <value>
+        left = compiler.process(binary.left, **kw)
+        right = compiler.process(binary.right.element.clauses[0], **kw)
+        return left + OPERATORS[operators.eq] + right
 
     return compiler.visit_binary(binary, override_operator=override_operator, **kw)
 

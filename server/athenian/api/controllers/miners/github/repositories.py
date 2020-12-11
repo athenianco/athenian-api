@@ -99,8 +99,10 @@ async def mine_repositories(repos: Collection[str],
             select([distinct(NodeRepository.name_with_owner)
                    .label(PushCommit.repository_full_name.key)]) \
             .select_from(join(NodeCommit, NodeRepository,
-                              NodeCommit.repository == NodeRepository.id)) \
+                              and_(NodeCommit.repository == NodeRepository.id,
+                                   NodeCommit.acc_id == NodeRepository.acc_id))) \
             .where(and_(NodeCommit.repository.in_(repo_ids),
+                        NodeCommit.acc_id.in_(meta_ids),
                         NodeCommit.committed_date.between(time_from, time_to),
                         ))
         query_reviews = \
