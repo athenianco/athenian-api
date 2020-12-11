@@ -5432,7 +5432,7 @@ components:
         - - athenianco/athenian-api
           - athenianco/athenian-webapp
         with:
-          pr_author:
+        - pr_author:
           - github.com/se7entyse7en
           releaser:
           - github.com/gkwillie
