@@ -310,22 +310,22 @@ async def calc_pull_request_metrics_line_github(meta_ids: Tuple[int, ...],
 
 
 @sentry_span
-async def calc_code_metrics_github(meta_ids: Tuple[int, ...],
-                                   prop: FilterCommitsProperty,
+async def calc_code_metrics_github(prop: FilterCommitsProperty,
                                    time_intervals: Sequence[datetime],
                                    repos: Collection[str],
                                    with_author: Optional[Collection[str]],
                                    with_committer: Optional[Collection[str]],
-                                   db: Database,
+                                   meta_ids: Tuple[int, ...],
+                                   mdb: Database,
                                    cache: Optional[aiomcache.Client],
                                    ) -> List[CodeStats]:
     """Filter code pushed on GitHub according to the specified criteria."""
     time_from, time_to = time_intervals[0], time_intervals[-1]
     x_commits = await extract_commits(
-        meta_ids, prop, time_from, time_to, repos, with_author, with_committer, db, cache)
+        prop, time_from, time_to, repos, with_author, with_committer, meta_ids, mdb, cache)
     all_commits = await extract_commits(
-        meta_ids, FilterCommitsProperty.NO_PR_MERGES, time_from, time_to, repos,
-        with_author, with_committer, db, cache,
+        FilterCommitsProperty.NO_PR_MERGES, time_from, time_to, repos,
+        with_author, with_committer, meta_ids, mdb, cache,
         columns=[PushCommit.committed_date, PushCommit.additions, PushCommit.deletions])
     return calc_code_stats(x_commits, all_commits, time_intervals)
 

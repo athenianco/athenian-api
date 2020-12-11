@@ -563,7 +563,8 @@ async def _match_releases_by_branch(repos: Iterable[str],
     commit_ids = branches[Branch.commit_id.key].values
     tasks = [
         mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
-                      .where(NodeCommit.id.in_(commit_ids))),
+                      .where(and_(NodeCommit.id.in_(commit_ids),
+                                  NodeCommit.acc_id.in_(meta_ids)))),
         fetch_precomputed_commit_history_dags(branches_matched, pdb, cache),
     ]
     commit_dates, dags = await gather(*tasks)
@@ -578,7 +579,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
     first_shas = [extract_first_parents(*dags[repo], branches[Branch.commit_sha.key].values)
                   for repo, branches in branches_matched.items()]
     first_shas = np.sort(np.concatenate(first_shas))
-    first_commits = await _fetch_commits(first_shas, time_from, time_to, mdb, cache)
+    first_commits = await _fetch_commits(first_shas, time_from, time_to, meta_ids, mdb, cache)
     pseudo_releases = []
     for repo in branches_matched:
         commits = first_commits.take(
@@ -644,7 +645,8 @@ def _match_branches_by_release_settings(branches: pd.DataFrame,
 async def _fetch_commits(commit_shas: Sequence[str],
                          time_from: datetime,
                          time_to: datetime,
-                         db: databases.Database,
+                         meta_ids: Tuple[int, ...],
+                         mdb: databases.Database,
                          cache: Optional[aiomcache.Client]) -> pd.DataFrame:
     if (min(time_to, datetime.now(timezone.utc)) - time_from) > timedelta(hours=6):
         query = \
@@ -656,9 +658,10 @@ async def _fetch_commits(commit_shas: Sequence[str],
         # Postgres planner sucks in this case and we have to be inventive.
         # Important: do not merge these two queries together using a nested JOIN or IN.
         # The planner will go crazy and you'll end up with the wrong order of the filters.
-        rows = await db.fetch_all(
+        rows = await mdb.fetch_all(
             select([NodeCommit.id])
             .where(and_(NodeCommit.oid.in_any_values(commit_shas),
+                        NodeCommit.acc_id.in_(meta_ids),
                         NodeCommit.committed_date.between(time_from, time_to))))
         if not rows:
             return pd.DataFrame(columns=[c.key for c in PushCommit.__table__.columns])
@@ -666,6 +669,7 @@ async def _fetch_commits(commit_shas: Sequence[str],
         assert len(ids) <= len(commit_shas), len(ids)
         query = \
             select([PushCommit]) \
-            .where(PushCommit.node_id.in_(ids)) \
+            .where(and_(PushCommit.node_id.in_(ids),
+                        PushCommit.acc_id.in_(meta_ids))) \
             .order_by(desc(PushCommit.committed_date))
-    return await read_sql_query(query, db, PushCommit)
+    return await read_sql_query(query, mdb, PushCommit)

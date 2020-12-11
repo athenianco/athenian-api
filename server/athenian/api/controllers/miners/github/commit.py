@@ -46,14 +46,14 @@ class FilterCommitsProperty(Enum):
          ",".join(sorted(with_committer)) if with_committer else "",
          "" if kwargs.get("columns") is None else ",".join(c.key for c in kwargs["columns"])),
 )
-async def extract_commits(accounts: Tuple[int, ...],
-                          prop: FilterCommitsProperty,
+async def extract_commits(prop: FilterCommitsProperty,
                           date_from: datetime,
                           date_to: datetime,
                           repos: Collection[str],
                           with_author: Optional[Collection[str]],
                           with_committer: Optional[Collection[str]],
-                          db: DatabaseLike,
+                          meta_ids: Tuple[int, ...],
+                          mdb: DatabaseLike,
                           cache: Optional[aiomcache.Client],
                           columns: Optional[List[InstrumentedAttribute]] = None,
                           ):
@@ -62,6 +62,7 @@ async def extract_commits(accounts: Tuple[int, ...],
     assert isinstance(date_to, datetime)
     log = logging.getLogger("%s.extract_commits" % metadata.__package__)
     sql_filters = [
+        PushCommit.acc_id.in_(meta_ids),
         PushCommit.committed_date.between(date_from, date_to),
         PushCommit.repository_full_name.in_(repos),
         PushCommit.committer_email != "noreply@github.com",
@@ -72,7 +73,7 @@ async def extract_commits(accounts: Tuple[int, ...],
     if with_committer:
         user_logins.update(with_committer)
     if user_logins:
-        rows = await db.fetch_all(
+        rows = await mdb.fetch_all(
             select([User.login, User.node_id]).where(User.login.in_(user_logins)))
         user_ids = {r[0]: r[1] for r in rows}
         del user_logins
@@ -103,7 +104,7 @@ async def extract_commits(accounts: Tuple[int, ...],
     if prop == FilterCommitsProperty.NO_PR_MERGES:
         with sentry_sdk.start_span(op="extract_commits/fetch/NO_PR_MERGES"):
             commits = await read_sql_query(
-                select(cols_query).where(and_(*sql_filters)), db, cols_df)
+                select(cols_query).where(and_(*sql_filters)), mdb, cols_df)
     elif prop == FilterCommitsProperty.BYPASSING_PRS:
         with sentry_sdk.start_span(op="extract_commits/fetch/BYPASSING_PRS"):
             commits = await read_sql_query(
@@ -111,7 +112,7 @@ async def extract_commits(accounts: Tuple[int, ...],
                 .select_from(outerjoin(PushCommit, NodePullRequestCommit,
                                        PushCommit.node_id == NodePullRequestCommit.commit))
                 .where(and_(NodePullRequestCommit.commit.is_(None), *sql_filters)),
-                db, cols_df)
+                mdb, cols_df)
     else:
         raise AssertionError('Unsupported primary commit filter "%s"' % prop)
     for number_prop in (PushCommit.additions, PushCommit.deletions, PushCommit.changed_files):

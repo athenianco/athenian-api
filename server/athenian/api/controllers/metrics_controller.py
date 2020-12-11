@@ -286,8 +286,8 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
     stats = await METRIC_ENTRIES["github"]["code"](
-        meta_ids, FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
-        with_committer, request.mdb, request.cache)  # type: List[CodeStats]
+        FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
+        with_committer, meta_ids, request.mdb, request.cache)  # type: List[CodeStats]
     model = [
         CodeBypassingPRsMeasurement(
             date=(d - tzoffset).date(),
