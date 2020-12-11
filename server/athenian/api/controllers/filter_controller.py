@@ -74,8 +74,8 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     users = await mine_contributors(
-        meta_ids, repos, filt.date_from, filt.date_to, True, filt.as_ or [], release_settings,
-        request.mdb, request.pdb, request.cache)
+        repos, filt.date_from, filt.date_to, True, filt.as_ or [], release_settings,
+        meta_ids, request.mdb, request.pdb, request.cache)
     model = [
         DeveloperSummary(
             login=f"{PREFIXES['github']}{u['login']}", avatar=u["avatar_url"],
@@ -102,8 +102,8 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     repos = await mine_repositories(
-        meta_ids, repos, filt.date_from, filt.date_to, filt.exclude_inactive, release_settings,
-        request.mdb, request.pdb, request.cache)
+        repos, filt.date_from, filt.date_to, filt.exclude_inactive, release_settings,
+        meta_ids, request.mdb, request.pdb, request.cache)
     return web.json_response(repos)
 
 
@@ -307,7 +307,8 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     ]
     settings, jira_ids = await gather(*tasks)
     repos = [r.split("/", 1)[1] for r in repos]
-    branches, default_branches = await extract_branches(repos, request.mdb, request.cache)
+    branches, default_branches = await extract_branches(
+        repos, meta_ids, request.mdb, request.cache)
     releases, avatars, _ = await mine_releases(
         meta_ids, repos, participants, branches, default_branches, filt.date_from, filt.date_to,
         JIRAFilter.from_web(filt.jira, jira_ids), settings,

@@ -3,7 +3,8 @@ from typing import Optional
 from aiohttp import web
 from sqlalchemy import and_, delete, insert, select
 
-from athenian.api.controllers.account import get_user_account_status
+from athenian.api.async_utils import gather
+from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.jira import get_jira_id
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.settings import ReleaseMatch, Settings
@@ -20,11 +21,16 @@ from athenian.api.response import model_response, ResponseError
 
 async def list_release_match_settings(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current release matching settings."""
+    # Check the user separately beforehand to avoid security problems.
     await get_user_account_status(request.uid, id, request.sdb, request.cache)
-    settings = await Settings.from_request(request, id).list_release_matches()
+    tasks = [
+        get_metadata_account_ids(id, request.sdb, request.cache),
+        Settings.from_request(request, id).list_release_matches(),
+    ]
+    meta_ids, settings = await gather(*tasks, op="sdb")
     model = {k: ReleaseMatchSetting.from_dataclass(m).to_dict() for k, m in settings.items()}
     repos = [r.split("/", 1)[1] for r in settings]
-    _, default_branches = await extract_branches(repos, request.mdb, request.cache)
+    _, default_branches = await extract_branches(repos, meta_ids, request.mdb, request.cache)
     prefix = PREFIXES["github"]
     for repo, name in default_branches.items():
         model[prefix + repo]["default_branch"] = name

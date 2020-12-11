@@ -32,12 +32,12 @@ from athenian.api.tracing import sentry_span
     key=lambda repos, time_from, time_to, **_: (
         ",".join(sorted(repos)), time_from.timestamp(), time_to.timestamp()),
 )
-async def mine_repositories(accounts: Tuple[int, ...],
-                            repos: Collection[str],
+async def mine_repositories(repos: Collection[str],
                             time_from: datetime,
                             time_to: datetime,
                             exclude_inactive: bool,
                             release_settings: Dict[str, ReleaseMatchSetting],
+                            meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
                             pdb: databases.Database,
                             cache: Optional[aiomcache.Client],
@@ -82,7 +82,7 @@ async def mine_repositories(accounts: Tuple[int, ...],
 
     @sentry_span
     async def fetch_inactive_merged_prs():
-        _, default_branches = await extract_branches(repos, mdb, cache)
+        _, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
         _, inactive_repos = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, {}, LabelFilter.empty(), default_branches,
             release_settings, pdb, cache)

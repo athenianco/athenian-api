@@ -13,7 +13,7 @@ from sqlalchemy.sql.functions import coalesce
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.controllers.account import get_account_repositories
+from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHistogramCalculator, \
@@ -237,13 +237,16 @@ async def _calc_jira_entry(request: AthenianWebRequest,
     tasks = [
         get_account_repositories(filt.account, request.sdb),
         get_jira_installation(filt.account, request.sdb, request.mdb, request.cache),
+        get_metadata_account_ids(filt.account, request.sdb, request.cache),
     ]
-    repos, jira_ids = await gather(*tasks, op="sdb")
+    repos, jira_ids, meta_ids = await gather(*tasks, op="sdb")
     time_intervals, _ = split_to_time_intervals(
         filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone)
     tasks = [
-        extract_branches([r.split("/", 1)[1] for r in repos], request.mdb, request.cache),
-        Settings.from_request(request, filt.account).list_release_matches(repos),
+        extract_branches(
+            [r.split("/", 1)[1] for r in repos], meta_ids, request.mdb, request.cache),
+        Settings.from_request(
+            request, filt.account).list_release_matches(repos),
     ]
     (_, default_branches), release_settings = await gather(
         *tasks, op="branches and release settings")

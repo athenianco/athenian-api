@@ -96,7 +96,7 @@ async def _calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
                                           cache: Optional[aiomcache.Client],
                                           ) -> Tuple[Dict[str, List[PullRequestFacts]], bool]:
     assert isinstance(repositories, set)
-    branches, default_branches = await extract_branches(repositories, mdb, cache)
+    branches, default_branches = await extract_branches(repositories, meta_ids, mdb, cache)
     precomputed_tasks = [
         load_precomputed_done_facts_filters(
             time_from, time_to, repositories, participants, labels,
@@ -405,14 +405,14 @@ async def calc_pull_request_histogram_github(meta_ids: Tuple[int, ...],
     ),
     version=2,
 )
-async def calc_release_metrics_line_github(meta_ids: Tuple[int, ...],
-                                           metrics: Sequence[str],
+async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            time_intervals: Sequence[Sequence[datetime]],
                                            quantiles: Sequence[float],
                                            repositories: Sequence[Collection[str]],
                                            participants: List[ReleaseParticipants],
                                            jira: JIRAFilter,
                                            release_settings: Dict[str, ReleaseMatchSetting],
+                                           meta_ids: Tuple[int, ...],
                                            mdb: Database,
                                            pdb: Database,
                                            cache: Optional[aiomcache.Client],
@@ -422,7 +422,7 @@ async def calc_release_metrics_line_github(meta_ids: Tuple[int, ...],
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     all_repositories = set(chain.from_iterable(repositories))
     calc = ReleaseBinnedMetricCalculator(metrics, quantiles)
-    branches, default_branches = await extract_branches(all_repositories, mdb, cache)
+    branches, default_branches = await extract_branches(all_repositories, meta_ids, mdb, cache)
     all_participants = merge_release_participants(participants)
     releases, _, matched_bys = await mine_releases(
         meta_ids, all_repositories, all_participants, branches, default_branches,
