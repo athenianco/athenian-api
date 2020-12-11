@@ -62,7 +62,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
     for i in range(2):
         released_prs, facts, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-            mdb, pdb, cache)
+            (6366825,), mdb, pdb, cache)
         await wait_deferred()
         assert isinstance(facts, dict)
         assert len(facts) == 0
@@ -74,7 +74,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
         assert released_prs.iloc[0][Release.author.key] == "mcuadros"
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        mdb, pdb, None)
+        (6366825,), mdb, pdb, None)
     # the PR was merged and released in the past, we must detect that
     assert len(released_prs) == 1
     assert released_prs.iloc[0][Release.url.key] == tag
@@ -92,7 +92,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
         mdb, pdb, None)
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        mdb, pdb, None)
+        (6366825,), mdb, pdb, None)
     await wait_deferred()
     pdb_dag = pickle.loads(lz4.frame.decompress(
         await pdb.fetch_val(select([GitHubCommitHistory.dag]))))
@@ -110,7 +110,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
             await dummy_mdb.execute(CreateTable(table.__table__))
         released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-            dummy_mdb, pdb, None)
+            (6366825,), dummy_mdb, pdb, None)
         assert len(released_prs) == 1
     finally:
         if "." in prlt.name:
@@ -131,13 +131,13 @@ async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, p
     for i in range(2):
         released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-            mdb, pdb, cache)
+            (6366825,), mdb, pdb, cache)
         assert len(cache.mem) == 2, i
         assert released_prs.empty
     prs = prs.iloc[:0]
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        mdb, pdb, cache)
+        (6366825,), mdb, pdb, cache)
     assert len(cache.mem) == 2
     assert released_prs.empty
 
@@ -186,14 +186,14 @@ async def test_map_prs_to_releases_precomputed_released(
         with pytest.raises(Exception):
             await map_prs_to_releases(
                 prs, releases, matched_bys, branches, default_branches, time_to, dag,
-                release_match_setting_tag, dummy_mdb, pdb, None)
+                release_match_setting_tag, (6366825,), dummy_mdb, pdb, None)
 
         await store_precomputed_done_facts(
             true_prs, times, default_branches, release_match_setting_tag, pdb)
 
         released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag,
-            release_match_setting_tag, dummy_mdb, pdb, None)
+            release_match_setting_tag, (6366825,), dummy_mdb, pdb, None)
         assert len(released_prs) == len(prs)
     finally:
         if "." in prlt.name:
@@ -400,7 +400,7 @@ async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag
         mdb, pdb, None)
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        mdb, pdb, None)
+        (6366825,), mdb, pdb, None)
     assert set(released_prs[Release.url.key].unique()) == {
         None,
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc10",
@@ -662,7 +662,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        prune, mdb, pdb, None)
+        prune, (6366825,), mdb, pdb, None)
     assert isinstance(dags, dict)
     assert len(dags) == 1
     hashes, vertexes, edges = dags["src-d/go-git"]
@@ -697,7 +697,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        prune, Database("sqlite://"), pdb, None)
+        prune, (6366825,), Database("sqlite://"), pdb, None)
     assert pickle.dumps(dags2) == pickle.dumps(dags)
     with pytest.raises(Exception):
         await fetch_repository_commits(
@@ -714,7 +714,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
                 columns=["1", "2", "3", "4"],
             ),
             ("1", "2", "3", "4"),
-            prune, Database("sqlite://"), pdb, None)
+            prune, (6366825,), Database("sqlite://"), pdb, None)
 
 
 @pytest.mark.parametrize("prune", [False, True])
@@ -730,7 +730,7 @@ async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        prune, mdb, pdb, None)
+        prune, (6366825,), mdb, pdb, None)
     hashes, vertexes, edges = dags["src-d/go-git"]
     assert hashes == np.array(["5d7303c49ac984a9fec60523f2d5297682e16646"], dtype="U40")
     assert (vertexes == np.array([0, 0], dtype=np.uint32)).all()
@@ -753,7 +753,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        False, mdb, pdb, cache)
+        False, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     dags2 = await fetch_repository_commits(
         {"src-d/go-git": _empty_dag()},
@@ -769,7 +769,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        False, None, None, cache)
+        False, (6366825,), None, None, cache)
     assert pickle.dumps(dags1) == pickle.dumps(dags2)
     fake_pdb = Database("sqlite://")
 
@@ -793,7 +793,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache):
                 columns=["1", "2", "3", "4"],
             ),
             ("1", "2", "3", "4"),
-            True, None, fake_pdb, cache)
+            True, (6366825,), None, fake_pdb, cache)
 
 
 @with_defer
@@ -812,7 +812,7 @@ async def test__fetch_repository_commits_many(mdb, pdb):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        False, mdb, pdb, None)
+        False, (6366825,), mdb, pdb, None)
     assert len(dags["src-d/go-git"][0]) == 9
 
 
@@ -829,16 +829,19 @@ async def test__fetch_repository_commits_full(mdb, pdb, dag, cache):
     branches[Branch.commit_date] = [commit_dates.get(commit_id, now) for commit_id in commit_ids]
     cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
             Branch.repository_full_name.key)
-    commits = await fetch_repository_commits(dag, branches, cols, False, mdb, pdb, cache)
+    commits = await fetch_repository_commits(
+        dag, branches, cols, False, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     assert len(commits) == 1
     assert len(commits["src-d/go-git"][0]) == 1919
     branches = branches[branches[Branch.branch_name.key] == "master"]
-    commits = await fetch_repository_commits(commits, branches, cols, False, mdb, pdb, cache)
+    commits = await fetch_repository_commits(
+        commits, branches, cols, False, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     assert len(commits) == 1
     assert len(commits["src-d/go-git"][0]) == 1919  # with force-pushed commits
-    commits = await fetch_repository_commits(commits, branches, cols, True, mdb, pdb, cache)
+    commits = await fetch_repository_commits(
+        commits, branches, cols, True, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     assert len(commits) == 1
     assert len(commits["src-d/go-git"][0]) == 1538  # without force-pushed commits
@@ -852,7 +855,7 @@ async def test__find_dead_merged_prs_smoke(mdb, pdb, dag):
     branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
     branches = branches[branches[Branch.branch_name.key] == "master"]
     branches[Branch.commit_date] = [datetime.now(timezone.utc)]
-    dead_prs = await _find_dead_merged_prs(prs, dag, branches, mdb, pdb, None)
+    dead_prs = await _find_dead_merged_prs(prs, dag, branches, (6366825,), mdb, pdb, None)
     assert len(dead_prs) == 159
     assert dead_prs[Release.published_at.key].isnull().all()
     assert (dead_prs[matched_by_column] == ReleaseMatch.force_push_drop).all()
@@ -872,10 +875,10 @@ async def test__find_dead_merged_prs_no_branches(mdb, pdb, dag):
     branches[Branch.commit_date] = [datetime.now(timezone.utc)]
     dags = dag.copy()
     dags["xxx"] = _empty_dag()
-    dead_prs = await _find_dead_merged_prs(prs, dags, branches, mdb, pdb, None)
+    dead_prs = await _find_dead_merged_prs(prs, dags, branches, (6366825,), mdb, pdb, None)
     assert len(dead_prs) == 0
     branches = branches.iloc[:0]
-    dead_prs = await _find_dead_merged_prs(prs, dags, branches, mdb, pdb, None)
+    dead_prs = await _find_dead_merged_prs(prs, dags, branches, (6366825,), mdb, pdb, None)
     assert len(dead_prs) == 0
 
 
@@ -1001,7 +1004,7 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
         subhashes, subvertexes, subedges,
         ["f6305131a06bd94ef39e444b60f773db75b054f6"],
         ["MDY6Q29tbWl0NDQ3MzkwNDQ6MTdkYmQ4ODY2MTZmODJiZTJhNTljMGQwMmZkOTNkM2Q2OWYyMzkyYw=="],
-        "src-d/go-git", mdb)
+        "src-d/go-git", (6366825,), mdb)
     assert (newhashes == hashes).all()
     assert (newvertexes == vertexes).all()
     assert (newedges == edges).all()
@@ -1324,6 +1327,6 @@ async def test_map_prs_to_releases_miguel(mdb, pdb, release_match_setting_tag, c
         release_match_setting_tag, mdb, pdb, cache)
     released_prs, _ = await map_prs_to_releases(
         miguel_pr, releases, matched_bys, pd.DataFrame(), {}, time_to,
-        release_match_setting_tag, mdb, pdb, cache)
+        release_match_setting_tag, (6366825,), mdb, pdb, cache)
     assert len(released_prs) == 1
 """

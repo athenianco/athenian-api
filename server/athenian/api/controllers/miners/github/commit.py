@@ -141,6 +141,7 @@ async def fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarray
                                    branches: pd.DataFrame,
                                    columns: Tuple[str, str, str, str],
                                    prune: bool,
+                                   meta_ids: Tuple[int, ...],
                                    mdb: databases.Database,
                                    pdb: databases.Database,
                                    cache: Optional[aiomcache.Client],
@@ -182,7 +183,7 @@ async def fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarray
             missed_heads = [missed_heads[i] for _, i in order]
             missed_ids = [hash_to_id[h] for h in missed_heads]
             tasks.append(_fetch_commit_history_dag(
-                hashes, vertexes, edges, missed_heads, missed_ids, repo, mdb))
+                hashes, vertexes, edges, missed_heads, missed_ids, repo, meta_ids, mdb))
         else:
             if prune:
                 hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, required_heads)
@@ -258,6 +259,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                                     head_hashes: Sequence[str],
                                     head_ids: Sequence[str],
                                     repo: str,
+                                    meta_ids: Tuple[int, ...],
                                     mdb: databases.Database,
                                     ) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
     max_stop_heads = 25
@@ -287,7 +289,8 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
         stop_hashes = []
     batch_size = 20
     while len(head_hashes) > 0:
-        new_edges = await _fetch_commit_history_edges(head_ids[:batch_size], stop_hashes, mdb)
+        new_edges = await _fetch_commit_history_edges(
+            head_ids[:batch_size], stop_hashes, meta_ids, mdb)
         if not new_edges:
             new_edges = [(h, "", 0) for h in np.sort(np.unique(head_hashes[:batch_size]))]
         hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges)
@@ -304,41 +307,48 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
 
 async def _fetch_commit_history_edges(commit_ids: Iterable[str],
                                       stop_hashes: Iterable[str],
+                                      meta_ids: Tuple[int, ...],
                                       mdb: databases.Database) -> List[Tuple]:
     # SQL credits: @dennwc
     quote = "`" if mdb.url.dialect == "sqlite" else ""
+    if len(meta_ids) == 1:
+        meta_id_sql = ("= %d" % meta_ids[0])
+    else:
+        meta_id_sql = "IN (%s)" % ", ".join(str(i) for i in meta_ids)
     query = f"""
-        WITH RECURSIVE commit_history AS (
+    WITH RECURSIVE commit_history AS (
+        SELECT
+            p.child_id AS parent,
+            p.{quote}index{quote} AS parent_index,
+            pc.oid AS child_oid,
+            cc.oid AS parent_oid,
+            p.acc_id
+        FROM
+            github_node_commit_parents p
+                LEFT JOIN github_node_commit pc ON p.parent_id = pc.id AND p.acc_id = pc.acc_id
+                LEFT JOIN github_node_commit cc ON p.child_id = cc.id AND p.acc_id = cc.acc_id
+        WHERE
+            p.parent_id IN ('{"', '".join(commit_ids)}') AND p.acc_id {meta_id_sql}
+        UNION
             SELECT
                 p.child_id AS parent,
                 p.{quote}index{quote} AS parent_index,
                 pc.oid AS child_oid,
-                cc.oid AS parent_oid
+                cc.oid AS parent_oid,
+                p.acc_id
             FROM
                 github_node_commit_parents p
-                    LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
-                    LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-            WHERE
-                p.parent_id IN ('{"', '".join(commit_ids)}')
-            UNION
-                SELECT
-                    p.child_id AS parent,
-                    p.{quote}index{quote} AS parent_index,
-                    pc.oid AS child_oid,
-                    cc.oid AS parent_oid
-                FROM
-                    github_node_commit_parents p
-                        INNER JOIN commit_history h ON h.parent = p.parent_id
-                        LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
-                        LEFT JOIN github_node_commit cc ON p.child_id = cc.id
-                WHERE     pc.oid NOT IN ('{"', '".join(stop_hashes)}')
-                      AND p.parent_id NOT IN ('{"', '".join(commit_ids)}')
-        ) SELECT
-            child_oid,
-            parent_oid,
-            parent_index
-        FROM
-            commit_history;
+                    INNER JOIN commit_history h ON h.parent = p.parent_id AND p.acc_id = h.acc_id
+                    LEFT JOIN github_node_commit pc ON p.parent_id = pc.id AND p.acc_id = pc.acc_id
+                    LEFT JOIN github_node_commit cc ON p.child_id = cc.id AND p.acc_id = cc.acc_id
+            WHERE     pc.oid NOT IN ('{"', '".join(stop_hashes)}')
+                  AND p.parent_id NOT IN ('{"', '".join(commit_ids)}')
+    ) SELECT
+        child_oid,
+        parent_oid,
+        parent_index
+    FROM
+        commit_history;
     """
     async with mdb.connection() as conn:
         if isinstance(conn.raw_connection, asyncpg.connection.Connection):

@@ -547,7 +547,7 @@ async def test_discover_update_unreleased_prs_released(
         mdb, pdb, None)
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {}, time_to, dag,
-        release_match_setting_tag, mdb, pdb, None)
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     await wait_deferred()
     await update_unreleased_prs(
         prs, released_prs, time_to, {},
@@ -587,7 +587,7 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
         mdb, pdb, None)
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {}, time_to, dag,
-        release_match_setting_tag, mdb, pdb, None)
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     await wait_deferred()
     await update_unreleased_prs(
         prs, released_prs, time_to, {},
@@ -648,7 +648,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     await wait_deferred()
     released_prs, _, _ = await map_prs_to_releases(
         unreleased_prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {},
-        unreleased_time_to, dag, release_match_setting_tag, mdb, pdb, cache)
+        unreleased_time_to, dag, release_match_setting_tag, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     assert released_prs.empty
     unreleased_time_from = datetime(2018, 11, 19, tzinfo=timezone.utc)

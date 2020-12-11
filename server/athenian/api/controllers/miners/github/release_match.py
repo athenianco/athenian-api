@@ -48,6 +48,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               time_to: datetime,
                               dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
                               release_settings: Dict[str, ReleaseMatchSetting],
+                              meta_ids: Tuple[int, ...],
                               mdb: databases.Database,
                               pdb: databases.Database,
                               cache: Optional[aiomcache.Client],
@@ -96,7 +97,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                                     for commit_id in branch_commit_ids]
     tasks = [
         _fetch_labels(merged_prs.index, mdb),
-        _find_dead_merged_prs(merged_prs, dags, branches, mdb, pdb, cache),
+        _find_dead_merged_prs(merged_prs, dags, branches, meta_ids, mdb, pdb, cache),
         _map_prs_to_releases(merged_prs, dags, releases),
     ]
     labels, dead_prs, missed_released_prs = await gather(*tasks)
@@ -173,6 +174,7 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
 async def _find_dead_merged_prs(prs: pd.DataFrame,
                                 dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
                                 branches: pd.DataFrame,
+                                meta_ids: Tuple[int, ...],
                                 mdb: databases.Database,
                                 pdb: databases.Database,
                                 cache: Optional[aiomcache.Client]) -> pd.DataFrame:
@@ -191,7 +193,7 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
     dead_prs = []
     cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
             Branch.repository_full_name.key)
-    dags = await fetch_repository_commits(dags, branches, cols, True, mdb, pdb, cache)
+    dags = await fetch_repository_commits(dags, branches, cols, True, meta_ids, mdb, pdb, cache)
     for repo, repo_prs in prs[[mchkey, rfnkey]].groupby(rfnkey, sort=False):
         hashes, _, _ = dags[repo]
         if len(hashes) == 0:
@@ -219,6 +221,7 @@ async def _fetch_labels(node_ids: Iterable[str], mdb: databases.Database) -> Dic
 
 
 async def load_commit_dags(releases: pd.DataFrame,
+                           meta_ids: Tuple[int, ...],
                            mdb: databases.Database,
                            pdb: databases.Database,
                            cache: Optional[aiomcache.Client],
@@ -228,7 +231,7 @@ async def load_commit_dags(releases: pd.DataFrame,
         releases[Release.repository_full_name.key].unique(), pdb, cache)
     cols = (Release.sha.key, Release.commit_id.key, Release.published_at.key,
             Release.repository_full_name.key)
-    return await fetch_repository_commits(pdags, releases, cols, False, mdb, pdb, cache)
+    return await fetch_repository_commits(pdags, releases, cols, False, meta_ids, mdb, pdb, cache)
 
 
 @sentry_span
@@ -359,7 +362,7 @@ async def map_releases_to_prs(meta_ids: Tuple[int, ...],
     rpak = Release.published_at.key
     rrfnk = Release.repository_full_name.key
     cols = (Release.sha.key, Release.commit_id.key, rpak, rrfnk)
-    dags = await fetch_repository_commits(pdags, releases, cols, False, mdb, pdb, cache)
+    dags = await fetch_repository_commits(pdags, releases, cols, False, meta_ids, mdb, pdb, cache)
     all_observed_repos = []
     all_observed_commits = []
     # find the released commit hashes by two DAG traversals
