@@ -416,7 +416,7 @@ class PullRequestMiner:
             merged_prs = prs.take(np.where(merged_mask)[0])
             subtasks = [map_prs_to_releases(
                 merged_prs, releases, matched_bys, branches, default_branches, time_to,
-                dags, release_settings, mdb, pdb, cache),
+                dags, release_settings, meta_ids, mdb, pdb, cache),
                 load_merged_unreleased_pull_request_facts(
                     prs.take(np.where(~merged_mask)[0]),
                     nonemax(releases[Release.published_at.key].nonemax(), time_to),

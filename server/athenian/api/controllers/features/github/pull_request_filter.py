@@ -710,7 +710,7 @@ async def _fetch_pull_requests(meta_ids: Tuple[int, ...],
         add_pdb_misses(pdb, "load_precomputed_done_facts_reponums/ambiguous",
                        remove_ambiguous_prs(facts, ambiguous, matched_bys))
         tasks = [
-            load_commit_dags(releases.append(milestone_releases), mdb, pdb, cache),
+            load_commit_dags(releases.append(milestone_releases), meta_ids, mdb, pdb, cache),
             # not nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
             load_merged_unreleased_pull_request_facts(
                 prs_df, releases[Release.published_at.key].max(), LabelFilter.empty(),

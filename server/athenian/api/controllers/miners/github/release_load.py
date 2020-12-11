@@ -160,18 +160,18 @@ async def load_releases(meta_ids: Tuple[int, ...],
         missing_high.sort()
         tasks.append(_load_releases(
             [r for _, r in missing_high], branches, default_branches, missing_high[0][0], time_to,
-            settings, mdb, pdb, cache, index=index))
+            settings, meta_ids, mdb, pdb, cache, index=index))
         add_pdb_misses(pdb, "releases/high", len(missing_high))
     if missing_low:
         missing_low.sort()
         tasks.append(_load_releases(
             [r for _, r in missing_low], branches, default_branches, time_from, missing_low[-1][0],
-            settings, mdb, pdb, cache, index=index))
+            settings, meta_ids, mdb, pdb, cache, index=index))
         add_pdb_misses(pdb, "releases/low", len(missing_low))
     if missing_all:
         tasks.append(_load_releases(
             missing_all, branches, default_branches, time_from, time_to,
-            settings, mdb, pdb, cache, index=index))
+            settings, meta_ids, mdb, pdb, cache, index=index))
         add_pdb_misses(pdb, "releases/all", len(missing_all))
     if tasks:
         missings = await gather(*tasks)
@@ -230,6 +230,7 @@ async def _load_releases(repos: Iterable[Tuple[str, ReleaseMatch]],
                          time_from: datetime,
                          time_to: datetime,
                          settings: Dict[str, ReleaseMatchSetting],
+                         meta_ids: Tuple[int, ...],
                          mdb: databases.Database,
                          pdb: databases.Database,
                          cache: Optional[aiomcache.Client],
@@ -251,7 +252,7 @@ async def _load_releases(repos: Iterable[Tuple[str, ReleaseMatch]],
     if repos_by_branch:
         result.append(_match_releases_by_branch(
             repos_by_branch, branches, default_branches, time_from, time_to, settings,
-            mdb, pdb, cache))
+            meta_ids, mdb, pdb, cache))
     result = await gather(*result)
     result = pd.concat(result) if result else dummy_releases_df()
     if index is not None:
@@ -549,6 +550,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
                                     time_from: datetime,
                                     time_to: datetime,
                                     settings: Dict[str, ReleaseMatchSetting],
+                                    meta_ids: Tuple[int, ...],
                                     mdb: databases.Database,
                                     pdb: databases.Database,
                                     cache: Optional[aiomcache.Client],
@@ -572,7 +574,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
     branches[Branch.commit_date] = [commit_dates.get(commit_id, now) for commit_id in commit_ids]
     cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
             Branch.repository_full_name.key)
-    dags = await fetch_repository_commits(dags, branches, cols, False, mdb, pdb, cache)
+    dags = await fetch_repository_commits(dags, branches, cols, False, meta_ids, mdb, pdb, cache)
     first_shas = [extract_first_parents(*dags[repo], branches[Branch.commit_sha.key].values)
                   for repo, branches in branches_matched.items()]
     first_shas = np.sort(np.concatenate(first_shas))
