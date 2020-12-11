@@ -23,6 +23,7 @@ from athenian.api.typing_utils import DatabaseLike
     key=lambda repos, **_: (",".join(sorted(repos)),),
 )
 async def extract_branches(repos: Iterable[str],
+                           meta_ids: Tuple[int, ...],
                            mdb: DatabaseLike,
                            cache: Optional[aiomcache.Client],
                            ) -> Tuple[pd.DataFrame, Dict[str, str]]:
@@ -58,7 +59,8 @@ async def extract_branches(repos: Iterable[str],
         commit_ids = np.concatenate([rb[Branch.commit_id.key].values
                                      for rb in ambiguous_defaults.values()])
         committed_dates = await mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
-                                              .where(NodeCommit.id.in_(commit_ids)))
+                                              .where(and_(NodeCommit.id.in_(commit_ids),
+                                                          NodeCommit.acc_id.in_(meta_ids))))
         committed_dates = {r[0]: r[1] for r in committed_dates}
         for repo, repo_branches in ambiguous_defaults.items():
             default_branch = max_date = None

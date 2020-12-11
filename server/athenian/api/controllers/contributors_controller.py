@@ -37,8 +37,8 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
             await Settings.from_request(request, account_id).list_release_matches(repos)
         repos = [r.split("/", 1)[1] for r in repos]
         users = await mine_contributors(
-            meta_ids, repos, None, None, False, [], release_settings,
-            request.mdb, request.pdb, request.cache)
+            repos, None, None, False, [], release_settings,
+            meta_ids, request.mdb, request.pdb, request.cache)
         prefix = PREFIXES["github"]
         contributors = [
             Contributor(login=f"{prefix}{u['login']}", name=u["name"],

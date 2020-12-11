@@ -195,7 +195,7 @@ async def _set_releases(meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
                         pdb: databases.Database,
                         cache: Optional[aiomcache.Client]) -> None:
-    branches, default_branches = await extract_branches(repo_ids, mdb, cache)
+    branches, default_branches = await extract_branches(repo_ids, meta_ids, mdb, cache)
     releases, _ = await load_releases(
         meta_ids, repo_ids, branches, default_branches, time_from, time_to,
         release_settings, mdb, pdb, cache)
@@ -321,8 +321,7 @@ processors = [
 
 
 @sentry_span
-async def calc_developer_metrics_github(meta_ids: Tuple[int, ...],
-                                        devs: Sequence[str],
+async def calc_developer_metrics_github(devs: Sequence[str],
                                         repos: Sequence[Collection[str]],
                                         time_from: datetime,
                                         time_to: datetime,
@@ -330,6 +329,7 @@ async def calc_developer_metrics_github(meta_ids: Tuple[int, ...],
                                         labels: LabelFilter,
                                         jira: JIRAFilter,
                                         release_settings: Dict[str, ReleaseMatchSetting],
+                                        meta_ids: Tuple[int, ...],
                                         mdb: databases.Database,
                                         pdb: databases.Database,
                                         cache: Optional[aiomcache.Client],

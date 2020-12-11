@@ -271,7 +271,8 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
             min_commit_time = datetime.now(timezone.utc) - timedelta(days=90)
             rows = await mdb.fetch_all(select([NodeCommit.oid])
                                        .where(and_(NodeCommit.oid.in_(stop_heads),
-                                                   NodeCommit.committed_date > min_commit_time))
+                                                   NodeCommit.committed_date > min_commit_time,
+                                                   NodeCommit.acc_id.in_(meta_ids)))
                                        .order_by(desc(NodeCommit.committed_date))
                                        .limit(max_stop_heads))
             stop_heads = np.fromiter((r[0] for r in rows), dtype="U40", count=len(rows))

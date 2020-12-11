@@ -26,7 +26,8 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     # we ignore events and stages because we cannot do anything with them
     repos, _, _, participants, labels, jira, settings, meta_ids = \
         await resolve_filter_prs_parameters(filt.request, request)
-    branches, default_branches = await extract_branches(repos, request.mdb, request.cache)
+    branches, default_branches = await extract_branches(
+        repos, meta_ids, request.mdb, request.cache)
     # we ignore the ambiguous PRs, thus producing a pessimistic prediction (that's OK)
     done_ats, _ = await load_precomputed_done_timestamp_filters(
         filt.request.date_from, filt.request.date_to, repos, participants, labels,

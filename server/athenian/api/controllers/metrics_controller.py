@@ -330,8 +330,8 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     for_sets = []
     for service, (repos, devs, labels, jira, for_set) in filters:
         tasks.append(METRIC_ENTRIES[service]["developers"](
-            meta_ids, devs, repos, time_from, time_to, topics, labels, jira, release_settings,
-            request.mdb, request.pdb, request.cache))
+            devs, repos, time_from, time_to, topics, labels, jira, release_settings,
+            meta_ids, request.mdb, request.pdb, request.cache))
         for_sets.append(for_set)
     all_stats = await gather(*tasks)
     for stats, for_set in zip(all_stats, for_sets):
@@ -393,9 +393,9 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
                               ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
         } for with_ in (filt.with_ or [])]
         ti_mvs, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
-            meta_ids, filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
+            filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
             JIRAFilter.from_web(filt.jira, jira_ids), release_settings,
-            request.mdb, request.pdb, request.cache)
+            meta_ids, request.mdb, request.pdb, request.cache)
         release_matches = {k: v.name for k, v in release_matches.items()}
         mrange = range(len(filt.metrics))
         assert len(ti_mvs) == len(time_intervals)

@@ -59,7 +59,7 @@ _branches = None
 async def branches(mdb):
     global _branches
     if _branches is None:
-        _branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
+        _branches, _ = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
     return _branches
 
 

@@ -33,13 +33,13 @@ from athenian.api.tracing import sentry_span
         with_stats, sorted(user_roles), release_settings,
     ),
 )
-async def mine_contributors(meta_ids: Tuple[int, ...],
-                            repos: Collection[str],
+async def mine_contributors(repos: Collection[str],
                             time_from: Optional[datetime],
                             time_to: Optional[datetime],
                             with_stats: bool,
                             user_roles: List[str],
                             release_settings: Dict[str, ReleaseMatchSetting],
+                            meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
                             pdb: databases.Database,
                             cache: Optional[aiomcache.Client],
@@ -58,7 +58,7 @@ async def mine_contributors(meta_ids: Tuple[int, ...],
         PullRequest.hidden.is_(False),
     ]
     tasks = [
-        extract_branches(repos, mdb, cache),
+        extract_branches(repos, meta_ids, mdb, cache),
         mdb.fetch_all(select([NodeRepository.node_id])
                       .where(NodeRepository.name_with_owner.in_(repos))),
     ]

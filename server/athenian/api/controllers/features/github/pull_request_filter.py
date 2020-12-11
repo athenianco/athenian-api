@@ -382,8 +382,8 @@ async def filter_pull_requests(meta_ids: Tuple[int, ...],
     :param repos: List of repository names without the service prefix.
     """
     prs, _, _ = await _filter_pull_requests(
-        meta_ids, events, stages, time_from, time_to, repos, participants, labels, jira,
-        exclude_inactive, release_settings, updated_min, updated_max, mdb, pdb, cache)
+        events, stages, time_from, time_to, repos, participants, labels, jira,
+        exclude_inactive, release_settings, updated_min, updated_max, meta_ids, mdb, pdb, cache)
     return prs
 
 
@@ -499,8 +499,7 @@ def _filter_by_jira_issue_types(prs: List[PullRequestListItem],
     postprocess=_postprocess_filtered_prs,
     version=2,
 )
-async def _filter_pull_requests(meta_ids: Tuple[int, ...],
-                                events: Set[PullRequestEvent],
+async def _filter_pull_requests(events: Set[PullRequestEvent],
                                 stages: Set[PullRequestStage],
                                 time_from: datetime,
                                 time_to: datetime,
@@ -512,6 +511,7 @@ async def _filter_pull_requests(meta_ids: Tuple[int, ...],
                                 release_settings: Dict[str, ReleaseMatchSetting],
                                 updated_min: Optional[datetime],
                                 updated_max: Optional[datetime],
+                                meta_ids: Tuple[int, ...],
                                 mdb: databases.Database,
                                 pdb: databases.Database,
                                 cache: Optional[aiomcache.Client],
@@ -525,7 +525,7 @@ async def _filter_pull_requests(meta_ids: Tuple[int, ...],
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     if updated_min is not None:
         coarsen_time_interval(updated_min, updated_max)
-    branches, default_branches = await extract_branches(repos, mdb, cache)
+    branches, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
     tasks = (
         PullRequestMiner.mine(
             meta_ids, date_from, date_to, time_from, time_to, repos, participants,
@@ -659,7 +659,7 @@ async def fetch_pull_requests(meta_ids: Tuple[int, ...],
     :params prs: For each repository name without the prefix, there is a set of PR numbers to list.
     """
     mined_prs, dfs, facts, _ = await _fetch_pull_requests(
-        meta_ids, prs, release_settings, mdb, pdb, cache)
+        prs, release_settings, meta_ids, mdb, pdb, cache)
     if not mined_prs:
         return []
     miner = PullRequestListMiner(
@@ -668,9 +668,9 @@ async def fetch_pull_requests(meta_ids: Tuple[int, ...],
     return await list_with_yield(miner, "PullRequestListMiner.__iter__")
 
 
-async def _fetch_pull_requests(meta_ids: Tuple[int, ...],
-                               prs: Dict[str, Set[int]],
+async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                                release_settings: Dict[str, ReleaseMatchSetting],
+                               meta_ids: Tuple[int, ...],
                                mdb: databases.Database,
                                pdb: databases.Database,
                                cache: Optional[aiomcache.Client],
@@ -678,7 +678,7 @@ async def _fetch_pull_requests(meta_ids: Tuple[int, ...],
                                           PRDataFrames,
                                           Dict[str, PullRequestFacts],
                                           Dict[str, ReleaseMatch]]:
-    branches, default_branches = await extract_branches(prs, mdb, cache)
+    branches, default_branches = await extract_branches(prs, meta_ids, mdb, cache)
     filters = [and_(PullRequest.repository_full_name == repo, PullRequest.number.in_(numbers))
                for repo, numbers in prs.items()]
     queries = [select([PullRequest]).where(f).order_by(PullRequest.node_id) for f in filters]

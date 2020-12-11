@@ -140,7 +140,7 @@ def main():
                      reposet.id, reposet.owner_id, len(repos))
             try:
                 log.info("Mining all the releases")
-                branches, default_branches = await extract_branches(repos, mdb, None)
+                branches, default_branches = await extract_branches(repos, meta_ids, mdb, None)
                 releases, _, _ = await mine_releases(
                     meta_ids, repos, {}, branches, default_branches, no_time_from, time_to,
                     JIRAFilter.empty(), settings, mdb, pdb, None, force_fresh=True)
@@ -295,8 +295,8 @@ async def create_teams(account: int,
     release_settings = await Settings.from_account(
         account, sdb, mdb, None, None).list_release_matches(repos)
     contributors = await mine_contributors(
-        meta_ids, {r.split("/", 1)[1] for r in repos}, None, None, False, [],
-        release_settings, mdb, pdb, None, force_fresh_releases=True)
+        {r.split("/", 1)[1] for r in repos}, None, None, False, [],
+        release_settings, meta_ids, mdb, pdb, None, force_fresh_releases=True)
     if (bots := {u[User.login.key] for u in contributors}.intersection(all_bots)):
         bots = [PREFIXES["github"] + login for login in bots]
         await sdb.execute(insert(Team).values(

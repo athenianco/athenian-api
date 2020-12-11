@@ -818,7 +818,7 @@ async def test__fetch_repository_commits_many(mdb, pdb):
 
 @with_defer
 async def test__fetch_repository_commits_full(mdb, pdb, dag, cache):
-    branches, _ = await extract_branches(dag, mdb, None)
+    branches, _ = await extract_branches(dag, (6366825,), mdb, None)
     commit_ids = branches[Branch.commit_id.key].values
     commit_dates = await mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
                                        .where(NodeCommit.id.in_(commit_ids)))
@@ -852,7 +852,7 @@ async def test__find_dead_merged_prs_smoke(mdb, pdb, dag):
     prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
         mdb, PullRequest, index=PullRequest.node_id.key)
-    branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
+    branches, _ = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
     branches = branches[branches[Branch.branch_name.key] == "master"]
     branches[Branch.commit_date] = [datetime.now(timezone.utc)]
     dead_prs = await _find_dead_merged_prs(prs, dag, branches, (6366825,), mdb, pdb, None)
@@ -869,7 +869,7 @@ async def test__find_dead_merged_prs_no_branches(mdb, pdb, dag):
     prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
         mdb, PullRequest, index=PullRequest.node_id.key)
-    branches, _ = await extract_branches(["src-d/go-git"], mdb, None)
+    branches, _ = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
     branches = branches[branches[Branch.branch_name.key] == "master"]
     branches[Branch.repository_full_name.key] = "xxx"
     branches[Branch.commit_date] = [datetime.now(timezone.utc)]

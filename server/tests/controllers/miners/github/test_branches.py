@@ -7,33 +7,33 @@ from athenian.api.models.metadata.github import Branch
 
 
 async def test_extract_branches_zero(mdb):
-    branches, defaults = await extract_branches(["src-d/gitbase"], mdb, None)
+    branches, defaults = await extract_branches(["src-d/gitbase"], (6366825,), mdb, None)
     assert branches.empty
     assert defaults == {"src-d/gitbase": "master"}
     async with mdb.connection() as conn:
-        branches, defaults = await extract_branches(["src-d/gitbase"], conn, None)
+        branches, defaults = await extract_branches(["src-d/gitbase"], (6366825,), conn, None)
         assert branches.empty
         assert defaults == {"src-d/gitbase": "master"}
 
 
 async def test_extract_branches_trash(mdb):
-    branches, defaults = await extract_branches(["src-d/whatever"], mdb, None)
+    branches, defaults = await extract_branches(["src-d/whatever"], (6366825,), mdb, None)
     assert branches.empty
     assert defaults == {"src-d/whatever": "master"}
 
 
 @with_defer
 async def test_extract_branches_cache(mdb, cache):
-    branches, defaults = await extract_branches(["src-d/go-git"], mdb, cache)
+    branches, defaults = await extract_branches(["src-d/go-git"], (6366825,), mdb, cache)
     await wait_deferred()
     assert not branches.empty
     assert defaults == {"src-d/go-git": "master"}
-    branches, defaults = await extract_branches(["src-d/go-git"], None, cache)
+    branches, defaults = await extract_branches(["src-d/go-git"], (6366825,), None, cache)
     await wait_deferred()
     assert not branches.empty
     assert defaults == {"src-d/go-git": "master"}
     with pytest.raises(AttributeError):
-        await extract_branches(["src-d/go-git", "src-d/gitbase"], None, cache)
+        await extract_branches(["src-d/go-git", "src-d/gitbase"], (6366825,), None, cache)
 
 
 async def test_extract_branches_main(mdb):
@@ -42,7 +42,7 @@ async def test_extract_branches_main(mdb):
         Branch.branch_name: "main",
     }))
     try:
-        _, defaults = await extract_branches(["src-d/go-git"], mdb, None)
+        _, defaults = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
         assert defaults == {"src-d/go-git": "main"}
     finally:
         await mdb.execute(update(Branch).where(Branch.branch_name == "main").values({
@@ -57,7 +57,7 @@ async def test_extract_branches_max_date(mdb):
         Branch.branch_name: "whatever_it_takes",
     }))
     try:
-        _, defaults = await extract_branches(["src-d/go-git"], mdb, None)
+        _, defaults = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
         assert defaults == {"src-d/go-git": "whatever_it_takes"}
     finally:
         await mdb.execute(update(Branch).where(Branch.branch_name == "whatever_it_takes").values({
@@ -75,7 +75,7 @@ async def test_extract_branches_only_one(mdb):
     try:
         await mdb.execute(delete(Branch).where(Branch.branch_name != "whatever_it_takes"))
         try:
-            _, defaults = await extract_branches(["src-d/go-git"], mdb, None)
+            _, defaults = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
             assert defaults == {"src-d/go-git": "whatever_it_takes"}
         finally:
             for branch in branches:
