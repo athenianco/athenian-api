@@ -11,7 +11,8 @@ import socket
 from typing import Any, Callable, Dict, Optional
 
 import aiohttp.web
-from aiohttp.web_exceptions import HTTPClientError, HTTPFound
+from aiohttp.web_exceptions import HTTPClientError, HTTPFound, HTTPNoContent, HTTPRedirection, \
+    HTTPResetContent
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
@@ -337,7 +338,12 @@ class AthenianApp(connexion.AioHttpApp):
             raise GracefulExit() from None
         except ResponseError as e:
             return e.response
-        except (ConnexionException, HTTPClientError) as e:
+        except (ConnexionException,
+                HTTPClientError,   # 4xx
+                HTTPRedirection,   # 3xx
+                HTTPNoContent,     # 204
+                HTTPResetContent,  # 205
+                ) as e:
             raise e from None
         except Exception as e:
             if self._devenv:
