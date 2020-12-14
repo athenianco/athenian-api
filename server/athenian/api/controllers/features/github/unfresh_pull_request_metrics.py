@@ -50,8 +50,8 @@ async def fetch_pull_request_facts_unfresh(meta_ids: Tuple[int, ...],
     tasks = [
         # map_releases_to_prs is not required because such PRs are already released, by definition
         load_releases(
-            meta_ids, repositories, branches, default_branches, time_from, time_to,
-            release_settings, mdb, pdb, cache),
+            repositories, branches, default_branches, time_from, time_to,
+            release_settings, meta_ids, mdb, pdb, cache),
         PullRequestMiner.fetch_prs(
             time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
             blacklist, mdb, cache, columns=[

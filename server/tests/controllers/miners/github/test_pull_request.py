@@ -573,8 +573,8 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, cache):
     prs = pd.DataFrame([pd.Series(pr.pr) for pr in mined_prs])
     prs.set_index(PullRequest.node_id.key, inplace=True)
     releases, matched_bys = await load_releases(
-        (6366825,), ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        release_settings, mdb, pdb, cache)
+        ["src-d/go-git"], branches, default_branches, time_from, time_to,
+        release_settings, (6366825,), mdb, pdb, cache)
     dfs1, _, _ = await PullRequestMiner.mine_by_ids(
         (6366825,),
         prs,

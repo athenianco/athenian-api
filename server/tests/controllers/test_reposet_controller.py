@@ -9,7 +9,7 @@ from athenian.api.models.web import RepositorySetCreateRequest, RepositorySetWit
 from athenian.api.response import ResponseError
 
 
-async def test_delete_repository_set(client, app, headers):
+async def test_delete_repository_set(client, app, headers, disable_default_user):
     body = {}
     response = await client.request(
         method="DELETE", path="/v1/reposet/1", headers=headers, json=body,
@@ -20,7 +20,7 @@ async def test_delete_repository_set(client, app, headers):
     assert rs is None
 
 
-async def test_delete_repository_set_404(client, app, headers):
+async def test_delete_repository_set_404(client, app, headers, disable_default_user):
     body = {}
     response = await client.request(
         method="DELETE", path="/v1/reposet/10", headers=headers, json=body,
@@ -29,8 +29,17 @@ async def test_delete_repository_set_404(client, app, headers):
     assert response.status == 404, "Response body is : " + body
 
 
+async def test_delete_repository_set_default_user(client, app, headers):
+    body = {}
+    response = await client.request(
+        method="DELETE", path="/v1/reposet/1", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 403, "Response body is : " + body
+
+
 @pytest.mark.parametrize("reposet", [2, 3])
-async def test_delete_repository_set_bad_account(client, reposet, headers):
+async def test_delete_repository_set_bad_account(client, reposet, headers, disable_default_user):
     body = {}
     response = await client.request(
         method="DELETE", path="/v1/reposet/%d" % reposet, headers=headers, json=body,
@@ -73,7 +82,7 @@ async def test_get_repository_set_bad_account(client, headers):
     assert response.status == 404, "Response body is : " + body
 
 
-async def test_set_repository_set_smoke(client, headers):
+async def test_set_repository_set_smoke(client, headers, disable_default_user):
     body = {"name": "xxx", "items": ["github.com/src-d/hercules"]}
     response = await client.request(
         method="PUT", path="/v1/reposet/1", headers=headers, json=body,
@@ -83,7 +92,16 @@ async def test_set_repository_set_smoke(client, headers):
     assert json.loads(body) == {"name": "xxx", "items": ["github.com/src-d/hercules"]}
 
 
-async def test_set_repository_set_404(client, headers):
+async def test_set_repository_set_default_user(client, headers):
+    body = {"name": "xxx", "items": ["github.com/src-d/hercules"]}
+    response = await client.request(
+        method="PUT", path="/v1/reposet/1", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 403, "Response body is : " + body
+
+
+async def test_set_repository_set_404(client, headers, disable_default_user):
     body = {"name": "xxx", "items": ["github.com/src-d/hercules"]}
     response = await client.request(
         method="PUT", path="/v1/reposet/10", headers=headers, json=body,
@@ -92,7 +110,7 @@ async def test_set_repository_set_404(client, headers):
     assert response.status == 404, "Response body is : " + body
 
 
-async def test_set_repository_set_same(client, headers):
+async def test_set_repository_set_same(client, headers, disable_default_user):
     body = {"name": "xxx", "items": ["github.com/src-d/go-git", "github.com/src-d/gitbase"]}
     response = await client.request(
         method="PUT", path="/v1/reposet/1", headers=headers, json=body,
@@ -100,7 +118,7 @@ async def test_set_repository_set_same(client, headers):
     assert response.status == 200, "Response body is : " + body
 
 
-async def test_set_repository_set_409(client, headers):
+async def test_set_repository_set_409(client, headers, disable_default_user):
     body = RepositorySetCreateRequest(
         1, name="xxx", items=["github.com/src-d/go-git"]).to_dict()
     await client.request(
@@ -120,7 +138,7 @@ async def test_set_repository_set_409(client, headers):
 
 
 @pytest.mark.parametrize("reposet", [2, 3])
-async def test_set_repository_set_bad_account(client, reposet, headers):
+async def test_set_repository_set_bad_account(client, reposet, headers, disable_default_user):
     body = {"name": "xxx", "items": ["github.com/src-d/hercules"]}
     response = await client.request(
         method="PUT", path="/v1/reposet/%d" % reposet, headers=headers, json=body,
@@ -129,7 +147,7 @@ async def test_set_repository_set_bad_account(client, reposet, headers):
     assert response.status == (403 if reposet == 2 else 404), "Response body is : " + body
 
 
-async def test_set_repository_set_access_denied(client, headers):
+async def test_set_repository_set_access_denied(client, headers, disable_default_user):
     body = {"name": "xxx", "items": ["github.com/athenianco/athenian-api"]}
     response = await client.request(
         method="PUT", path="/v1/reposet/1", headers=headers, json=body,
@@ -138,7 +156,7 @@ async def test_set_repository_set_access_denied(client, headers):
     assert response.status == 403, "Response body is : " + body
 
 
-async def test_create_repository_set_smoke(client, headers):
+async def test_create_repository_set_smoke(client, headers, disable_default_user):
     body = RepositorySetCreateRequest(
         1, name="xxx", items=["github.com/src-d/hercules"]).to_dict()
     response = await client.request(
@@ -150,7 +168,17 @@ async def test_create_repository_set_smoke(client, headers):
     assert body["id"] >= 4
 
 
-async def test_create_repository_set_409(client, headers):
+async def test_create_repository_set_default_user(client, headers):
+    body = RepositorySetCreateRequest(
+        1, name="xxx", items=["github.com/src-d/hercules"]).to_dict()
+    response = await client.request(
+        method="POST", path="/v1/reposet/create", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 403, "Response body is : " + body
+
+
+async def test_create_repository_set_409(client, headers, disable_default_user):
     body = RepositorySetCreateRequest(
         1, name="xxx", items=["github.com/src-d/go-git", "github.com/src-d/gitbase"]).to_dict()
     response = await client.request(
@@ -166,7 +194,7 @@ async def test_create_repository_set_409(client, headers):
 
 
 @pytest.mark.parametrize("account", [2, 3, 10])
-async def test_create_repository_set_bad_account(client, account, headers):
+async def test_create_repository_set_bad_account(client, account, headers, disable_default_user):
     body = RepositorySetCreateRequest(
         account, name="xxx", items=["github.com/src-d/hercules"]).to_dict()
     response = await client.request(
@@ -176,7 +204,7 @@ async def test_create_repository_set_bad_account(client, account, headers):
     assert response.status == (404 if account != 2 else 403), "Response body is : " + body
 
 
-async def test_create_repository_set_access_denied(client, headers):
+async def test_create_repository_set_access_denied(client, headers, disable_default_user):
     body = RepositorySetCreateRequest(
         1, name="xxx", items=["github.com/athenianco/athenian-api"]).to_dict()
     response = await client.request(
@@ -230,4 +258,5 @@ async def test_load_account_reposets_bad_installation(sdb, mdb, user_id):
         return user_id
 
     with pytest.raises(ResponseError):
-        await load_account_reposets(4, login, [RepositorySet.items], sdb, mdb, None, None)
+        await load_account_reposets(
+            4, login, [RepositorySet.items], sdb, mdb, None, None)

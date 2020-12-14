@@ -177,8 +177,8 @@ async def mine_contributors(repos: Collection[str],
             now = datetime.now(timezone.utc) + timedelta(days=1)
             rt_to = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
         releases, _ = await load_releases(
-            meta_ids, repos, branches, default_branches, rt_from, rt_to,
-            release_settings, mdb, pdb, cache, force_fresh=force_fresh_releases)
+            repos, branches, default_branches, rt_from, rt_to,
+            release_settings, meta_ids, mdb, pdb, cache, force_fresh=force_fresh_releases)
         counts = releases[Release.author.key].value_counts()
         return {
             "releaser": zip(counts.index.values, counts.values),

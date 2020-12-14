@@ -11,7 +11,6 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
     AccountJiraInstallation, God, Invitation, ReleaseSetting, RepositorySet, UserAccount, UserToken
-from athenian.api.models.web import User
 
 
 async def clean_state(sdb: databases.Database) -> int:
@@ -33,7 +32,7 @@ async def clean_state(sdb: databases.Database) -> int:
             .create_defaults().explode()))
 
 
-async def test_empty_db_account_creation(client, headers, sdb, no_default_user, eiso):
+async def test_empty_db_account_creation(client, headers, sdb, eiso, disable_default_user):
     iid = await clean_state(sdb)
     body = {
         "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
@@ -41,7 +40,7 @@ async def test_empty_db_account_creation(client, headers, sdb, no_default_user, 
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
-
+    assert response.status == 200
     body = json.loads((await response.read()).decode("utf-8"))
 
     del body["user"]["updated"]
@@ -119,22 +118,7 @@ async def test_gen_invitation_existing(client, eiso, headers):
     assert salt == 777
 
 
-@pytest.fixture(scope="function")
-async def no_default_user(app):
-    hack = True
-    original_default_user = app.app["auth"].default_user
-
-    async def default_user() -> User:
-        nonlocal hack
-        if hack:
-            hack = False
-            return User(id="hacked")
-        return await original_default_user()
-
-    app.app["auth"].default_user = default_user
-
-
-async def test_accept_invitation_smoke(client, headers, sdb, no_default_user):
+async def test_accept_invitation_smoke(client, headers, sdb, disable_default_user):
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     body = {
         "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
@@ -170,7 +154,7 @@ async def test_accept_invitation_default_user(client, headers):
     assert response.status == 403
 
 
-async def test_accept_invitation_noop(client, eiso, headers, no_default_user):
+async def test_accept_invitation_noop(client, eiso, headers, disable_default_user):
     body = {
         "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
     }
@@ -194,7 +178,7 @@ async def test_accept_invitation_noop(client, eiso, headers, no_default_user):
 
 
 @pytest.mark.parametrize("trash", ["0", "0" * 8, "a" * 8])
-async def test_accept_invitation_trash(client, trash, headers, no_default_user):
+async def test_accept_invitation_trash(client, trash, headers, disable_default_user):
     body = {
         "url": invitation_controller.url_prefix + "0" * 8,
     }
@@ -204,7 +188,7 @@ async def test_accept_invitation_trash(client, trash, headers, no_default_user):
     assert response.status == 400
 
 
-async def test_accept_invitation_inactive(client, headers, sdb, no_default_user):
+async def test_accept_invitation_inactive(client, headers, sdb, disable_default_user):
     await sdb.execute(
         update(Invitation).where(Invitation.id == 1).values({Invitation.is_active: False}))
     body = {
@@ -216,7 +200,7 @@ async def test_accept_invitation_inactive(client, headers, sdb, no_default_user)
     assert response.status == 403
 
 
-async def test_accept_invitation_admin(client, headers, sdb, no_default_user):
+async def test_accept_invitation_admin(client, headers, sdb, disable_default_user):
     # avoid 429 cooldown
     cooldowntd = invitation_controller.accept_admin_cooldown
     await sdb.execute(update(UserAccount)
@@ -259,7 +243,7 @@ async def test_accept_invitation_admin(client, headers, sdb, no_default_user):
             assert secret != Account.missing_secret
 
 
-async def test_accept_invitation_admin_cooldown(client, headers, sdb, no_default_user):
+async def test_accept_invitation_admin_cooldown(client, headers, sdb, disable_default_user):
     await sdb.execute(update(UserAccount)
                       .where(and_(UserAccount.user_id == "auth0|5e1f6dfb57bc640ea390557b",
                                   UserAccount.is_admin))

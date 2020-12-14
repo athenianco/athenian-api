@@ -9,6 +9,7 @@ from asyncpg import UniqueViolationError
 import databases
 from sqlalchemy import delete, insert, select, update
 
+from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_user_account_status
 from athenian.api.controllers.miners.github.users import mine_users
 from athenian.api.models.metadata import PREFIXES
@@ -25,6 +26,7 @@ from athenian.api.response import model_response, ResponseError
 from athenian.api.typing_utils import DatabaseLike
 
 
+@disable_default_user
 async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
     """Create a team.
 
@@ -47,6 +49,7 @@ async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
         return model_response(CreatedIdentifier(tid))
 
 
+@disable_default_user
 async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
     """Delete a team.
 
@@ -109,6 +112,7 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
     return model_response(items)
 
 
+@disable_default_user
 async def update_team(request: AthenianWebRequest, id: int,
                       body: Union[dict, bytes] = None) -> web.Response:
     """Update a team.

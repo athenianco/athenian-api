@@ -253,7 +253,6 @@ async def load_account_state(account: int,
                     raise ResponseError(NoSourceDataError(
                         detail="Could not find the user login of %s." % auth0_id))
                 return login
-
             try:
                 reposets = await load_account_reposets(
                     account, load_login, [RepositorySet.name], sdb, mdb, cache, slack)

@@ -6,6 +6,7 @@ from sqlalchemy import delete, insert, select, update
 
 from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
+from athenian.api.models.metadata.github import NodeUser
 from athenian.api.models.state.models import AccountGitHubAccount, ReleaseSetting, \
     RepositorySet, UserAccount
 from athenian.api.models.web import ReleaseMatchSetting, ReleaseMatchStrategy
@@ -109,7 +110,8 @@ async def test_set_release_match_default_user(client, headers):
     (400, 1, ["{1}"], ".*", "", ReleaseMatchStrategy.TAG),
     (400, 1, ["{1}"], ".*", "", ReleaseMatchStrategy.TAG_OR_BRANCH),
     (400, 1, ["{1}"], ".*", "(f", ReleaseMatchStrategy.TAG),
-    (403, 2, ["{1}"], ".*", ".*", ReleaseMatchStrategy.BRANCH),
+    (422, 2, ["{1}"], ".*", ".*", ReleaseMatchStrategy.BRANCH),
+    (403, 2, ["github.com/athenianco/athenian-api"], ".*", ".*", ReleaseMatchStrategy.BRANCH),
     (404, 3, ["{1}"], ".*", ".*", ReleaseMatchStrategy.BRANCH),
     (403, 1, ["{2}"], ".*", ".*", ReleaseMatchStrategy.BRANCH),
     (400, 1, ["{1}"], ".*", ".*", "whatever"),
@@ -117,7 +119,13 @@ async def test_set_release_match_default_user(client, headers):
     (400, 1, ["{1}"], ".*", ".*", ""),
 ])
 async def test_set_release_match_nasty_input(
-        client, headers, code, account, repositories, branches, tags, match, disable_default_user):
+        client, headers, sdb, code, account, repositories, branches, tags, match,
+        disable_default_user):
+    if account == 2 and code == 403:
+        await sdb.execute(insert(AccountGitHubAccount).values({
+            AccountGitHubAccount.id: 1,
+            AccountGitHubAccount.account_id: 2,
+        }))
     body = {
         "repositories": repositories,
         "account": account,
@@ -130,9 +138,10 @@ async def test_set_release_match_nasty_input(
     assert response.status == code
 
 
-async def cleanup_gkwillie(sdb):
+async def cleanup_gkwillie(sdb, with_accounts: bool):
     await sdb.execute(delete(RepositorySet))
-    await sdb.execute(delete(AccountGitHubAccount))
+    if with_accounts:
+        await sdb.execute(delete(AccountGitHubAccount))
     await sdb.execute(insert(UserAccount).values(UserAccount(
         user_id="github|60340680", account_id=1, is_admin=True,
     ).create_defaults().explode(with_primary_keys=True)))
@@ -140,7 +149,7 @@ async def cleanup_gkwillie(sdb):
 
 async def test_set_release_match_login_failure(
         client, headers, sdb, lazy_gkwillie, disable_default_user):
-    await cleanup_gkwillie(sdb)
+    await cleanup_gkwillie(sdb, False)
     body = {
         "repositories": [],
         "account": 1,
@@ -157,18 +166,30 @@ async def test_set_release_match_login_failure(
     assert response.status == 403, await response.read()
 
 
-async def test_set_release_match_422(client, headers, sdb, gkwillie, disable_default_user):
-    await cleanup_gkwillie(sdb)
-    body = {
-        "repositories": [],
-        "account": 1,
-        "branches": ".*",
-        "tags": ".*",
-        "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
-    }
-    response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
-    assert response.status == 422, await response.read()
+@pytest.mark.parametrize("code", [200, 422])
+async def test_set_release_match_422(
+        client, headers, sdb, mdb, gkwillie, disable_default_user, code):
+    await cleanup_gkwillie(sdb, True)
+    if code == 422:
+        await mdb.execute(update(NodeUser)
+                          .where(NodeUser.login == "gkwillie")
+                          .values({NodeUser.login: "gkwillie2"}))
+    try:
+        body = {
+            "repositories": [],
+            "account": 1,
+            "branches": ".*",
+            "tags": ".*",
+            "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
+        }
+        response = await client.request(
+            method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+        assert response.status == code, await response.read()
+    finally:
+        if code == 422:
+            await mdb.execute(update(NodeUser)
+                              .where(NodeUser.login == "gkwillie2")
+                              .values({NodeUser.login: "gkwillie"}))
 
 
 async def test_get_release_match_settings_defaults(client, headers):
@@ -266,7 +287,7 @@ async def test_get_jira_projects_nasty_input(client, headers, account, code):
     assert response.status == code
 
 
-async def test_set_jira_projects_smoke(client, headers):
+async def test_set_jira_projects_smoke(client, headers, disable_default_user):
     body = {
         "account": 1,
         "projects": {
@@ -280,8 +301,21 @@ async def test_set_jira_projects_smoke(client, headers):
     assert body == JIRA_PROJECTS
 
 
+async def test_set_jira_projects_default_user(client, headers):
+    body = {
+        "account": 1,
+        "projects": {
+            "DEV": False,
+        },
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers)
+    assert response.status == 403
+
+
 @pytest.mark.parametrize("account, key, code", [[2, "DEV", 403], [3, "DEV", 404], [1, "XXX", 400]])
-async def test_set_jira_projects_nasty_input(client, headers, account, key, code):
+async def test_set_jira_projects_nasty_input(
+        client, headers, disable_default_user, account, key, code):
     body = {
         "account": account,
         "projects": {

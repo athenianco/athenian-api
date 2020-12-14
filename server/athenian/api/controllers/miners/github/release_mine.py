@@ -68,8 +68,8 @@ async def mine_releases(meta_ids: Tuple[int, ...],
     prefix = PREFIXES["github"]
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
     releases_in_time_range, matched_bys = await load_releases(
-        meta_ids, repos, branches, default_branches, time_from, time_to,
-        settings, mdb, pdb, cache, force_fresh=force_fresh)
+        repos, branches, default_branches, time_from, time_to,
+        settings, meta_ids, mdb, pdb, cache, force_fresh=force_fresh)
     # resolve ambiguous release match settings
     settings = settings.copy()
     for repo in repos:

@@ -27,11 +27,12 @@ from athenian.api.cache import cached
 from athenian.api.controllers.account import get_user_account_status
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.state.models import God, UserToken
-from athenian.api.models.web import GenericError
+from athenian.api.models.web import ForbiddenError, GenericError
 from athenian.api.models.web.user import User
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import wraps
 
 
 class Auth0:
@@ -446,3 +447,15 @@ class Auth0:
             raise Unauthorized()
         uid = token_obj[UserToken.user_id.key]
         return uid
+
+
+def disable_default_user(func):
+    """Decorate an endpoint handler to raise 403 if the user is the default one."""
+    async def wrapped_disable_default_user(request: AthenianWebRequest,
+                                           *args, **kwargs) -> aiohttp.web.Response:
+        if request.is_default_user:
+            raise ResponseError(ForbiddenError("%s is the default user" % request.uid))
+        return await func(request, *args, **kwargs)
+
+    wraps(wrapped_disable_default_user, func)
+    return wrapped_disable_default_user

@@ -37,13 +37,13 @@ unfresh_releases_threshold = 50
 
 
 @sentry_span
-async def load_releases(meta_ids: Tuple[int, ...],
-                        repos: Iterable[str],
+async def load_releases(repos: Iterable[str],
                         branches: pd.DataFrame,
                         default_branches: Dict[str, str],
                         time_from: datetime,
                         time_to: datetime,
                         settings: Dict[str, ReleaseMatchSetting],
+                        meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
                         pdb: databases.Database,
                         cache: Optional[aiomcache.Client],

@@ -703,8 +703,8 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
         milestone_releases = milestone_releases.take(np.where(
             milestone_releases[Release.sha.key].notnull())[0])
         releases, matched_bys = await load_releases(
-            meta_ids, prs, branches, default_branches, rel_time_from, now,
-            release_settings, mdb, pdb, cache)
+            prs, branches, default_branches, rel_time_from, now,
+            release_settings, meta_ids, mdb, pdb, cache)
         add_pdb_misses(pdb, "load_precomputed_done_facts_reponums/ambiguous",
                        remove_ambiguous_prs(facts, ambiguous, matched_bys))
         tasks = [

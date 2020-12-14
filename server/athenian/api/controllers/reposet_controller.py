@@ -7,6 +7,7 @@ from asyncpg import UniqueViolationError
 import databases.core
 from sqlalchemy import and_, delete, insert, select, update
 
+from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
@@ -20,6 +21,7 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
 
+@disable_default_user
 async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Response:
     """Create a repository set.
 
@@ -48,6 +50,7 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
         return model_response(CreatedIdentifier(rid))
 
 
+@disable_default_user
 async def delete_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     """Delete a repository set.
 
@@ -109,6 +112,7 @@ async def _check_reposet(request: AthenianWebRequest,
     return sorted(set(body))
 
 
+@disable_default_user
 async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
     """Update a repository set.
 

@@ -21,6 +21,7 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, func, insert, select, update
 
 from athenian.api import metadata
+from athenian.api.auth import disable_default_user
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.reposet import load_account_reposets
@@ -28,7 +29,7 @@ from athenian.api.models.metadata.github import Account as MetadataAccount, Acco
     FetchProgress
 from athenian.api.models.state.models import Account, Invitation, RepositorySet, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
-    NoSourceDataError, NotFoundError
+    NoSourceDataError, NotFoundError, User
 from athenian.api.models.web.generic_error import DatabaseConflict, TooManyRequestsError
 from athenian.api.models.web.installation_progress import InstallationProgress
 from athenian.api.models.web.invitation_check_result import InvitationCheckResult
@@ -114,29 +115,27 @@ def decode_slug(slug: str) -> (int, int):
     return iid, salt
 
 
+@disable_default_user
 async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Response:
     """Accept the membership invitation."""
     if getattr(request, "god_id", request.uid) != request.uid:
-        return ResponseError(ForbiddenError(
-            detail="You must not be an active god to accept an invitation.")).response
-    if request.uid == (await request.app["auth"].default_user()).id:
-        return ResponseError(ForbiddenError(
-            detail="You must not be the default user to accept an invitation.")).response
+        raise ResponseError(ForbiddenError(
+            detail="You must not be an active god to accept an invitation."))
 
     def bad_req():
-        return ResponseError(BadRequestError(detail="Invalid invitation URL")).response
+        raise ResponseError(BadRequestError(detail="Invalid invitation URL")) from None
 
     sdb = request.sdb
     url = InvitationLink.from_dict(body).url
     if not url.startswith(url_prefix):
-        return bad_req()
+        bad_req()
     x = url[len(url_prefix):].strip("/")
     if len(x) != 8:
-        return bad_req()
+        bad_req()
     try:
         iid, salt = decode_slug(x)
     except binascii.Error:
-        return bad_req()
+        bad_req()
     async with sdb.connection() as conn:
         try:
             async with conn.transaction():
@@ -146,7 +145,11 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
     return model_response(InvitedUser(account=acc_id, user=user))
 
 
-async def _accept_invitation(iid, salt, request, conn):
+async def _accept_invitation(iid: int,
+                             salt: int,
+                             request: AthenianWebRequest,
+                             conn: databases.core.Connection,
+                             ) -> Tuple[int, User]:
     log = logging.getLogger(metadata.__package__)
     inv = await conn.fetch_one(
         select([Invitation.account_id, Invitation.accepted, Invitation.is_active])
@@ -450,17 +453,16 @@ async def _notify_precomputed_failure(slack: Optional[SlackWebClient],
 
 async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the current Athenian GitHub app installation progress."""
-    async with request.sdb.connection() as sdb_conn:
-        await get_user_account_status(request.uid, id, sdb_conn, request.cache)
-        model = await fetch_github_installation_progress(id, sdb_conn, request.mdb, request.cache)
+    await get_user_account_status(request.uid, id, request.sdb, request.cache)
+    model = await fetch_github_installation_progress(id, request.sdb, request.mdb, request.cache)
 
-        async def login_loader() -> str:
-            return (await request.user()).login
+    async def login_loader() -> str:
+        return (await request.user()).login
 
-        await _append_precomputed_progress(
-            model, id, request.uid, login_loader, sdb_conn, request.mdb,
-            request.cache, request.app["slack"])
-        return model_response(model)
+    await _append_precomputed_progress(
+        model, id, request.uid, login_loader, request.sdb, request.mdb,
+        request.cache, request.app["slack"])
+    return model_response(model)
 
 
 def _generate_account_secret(account_id: int) -> Tuple[int, str]:
