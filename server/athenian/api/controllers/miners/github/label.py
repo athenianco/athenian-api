@@ -27,8 +27,8 @@ class LabelDetails:
     deserialize=pickle.loads,
     key=lambda repos, **_: (",".join(sorted(repos)),),
 )
-async def mine_labels(accounts: Tuple[int, ...],
-                      repos: Set[str],
+async def mine_labels(repos: Set[str],
+                      meta_ids: Tuple[int, ...],
                       mdb: DatabaseLike,
                       cache: Optional[aiomcache.Client],
                       ) -> List[LabelDetails]:

@@ -154,7 +154,6 @@ def main():
                 del releases
                 log.info("Extracting PR facts")
                 facts = await calc_pull_request_facts_github(
-                    meta_ids,
                     time_from,
                     time_to,
                     repos,
@@ -165,6 +164,7 @@ def main():
                     settings,
                     True,
                     False,
+                    meta_ids,
                     mdb,
                     pdb,
                     None,  # yes, disable the cache

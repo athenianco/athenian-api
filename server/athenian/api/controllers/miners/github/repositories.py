@@ -141,7 +141,7 @@ async def mine_repositories(repos: Collection[str],
 
     results = await gather(*tasks)
     repos = set(r[0] for r in chain.from_iterable(results))
-    with sentry_sdk.start_span(op="SELECT FROM github_repositories_v2_compat"):
+    with sentry_sdk.start_span(op="SELECT FROM github.api_repositories"):
         repos = await mdb.fetch_all(select([Repository.full_name])
                                     .where(and_(Repository.archived.is_(False),
                                                 Repository.disabled.is_(False),

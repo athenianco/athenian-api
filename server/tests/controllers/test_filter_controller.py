@@ -44,9 +44,9 @@ async def test_filter_repositories_no_repos(client, headers):
 async def test_filter_repositories_smoke(client, headers, mdb, pdb, release_match_setting_tag):
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
-    args = ((6366825,), time_from, time_to, {"src-d/go-git"}, {},
+    args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False, mdb, pdb, None)
+            False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None)
     await calc_pull_request_facts_github(*args)
     await wait_deferred()
     body = {
@@ -73,9 +73,9 @@ async def test_filter_repositories_exclude_inactive(
         client, headers, mdb, pdb, release_match_setting_tag):
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
-    args = ((6366825,), time_from, time_to, {"src-d/go-git"}, {},
+    args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False, mdb, pdb, None)
+            False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None)
     await calc_pull_request_facts_github(*args)
     await wait_deferred()
     body = {

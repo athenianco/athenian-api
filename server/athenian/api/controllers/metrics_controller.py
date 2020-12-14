@@ -84,10 +84,10 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     @sentry_span
     async def calculate_for_set_metrics(service, repos, devs, labels, jira, for_set):
         ti_mvs = await METRIC_ENTRIES[service]["prs_linear"](
-            meta_ids, filt.metrics, time_intervals, filt.quantiles or (0, 1),
+            filt.metrics, time_intervals, filt.quantiles or (0, 1),
             for_set.lines or [], repos, devs, labels, jira,
             filt.exclude_inactive, release_settings, filt.fresh,
-            request.mdb, request.pdb, request.cache)
+            meta_ids, request.mdb, request.pdb, request.cache)
         assert len(ti_mvs) == len(time_intervals)
         mrange = range(len(met.metrics))
         for granularity, ts, group_mvs in zip(filt.granularities, time_intervals, ti_mvs):

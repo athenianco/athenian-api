@@ -323,7 +323,7 @@ async def _fetch_prs_data(
 
     # TODO: add first commit to PullRequestListItem
     prs_data = await fetch_pull_requests(
-        meta_ids, prs_collection, releases_match_settings, mdb_, pdb_, cache=cache)
+        prs_collection, releases_match_settings, meta_ids, mdb_, pdb_, cache=cache)
     log.info("%d PRs data retrieved!", len(prs_data))
     return prs_data, releases_match_settings
 
