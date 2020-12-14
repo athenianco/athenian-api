@@ -12,9 +12,9 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     facts_fresh = await calc_pull_request_facts_github(
-        (6366825,), time_from, time_to,
+        time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        False, release_match_setting_tag, False, False, mdb, pdb, None,
+        False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
     )
     await wait_deferred()
     assert len(facts_fresh["src-d/go-git"]) == 230
@@ -22,9 +22,9 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
     entries.unfresh_prs_threshold = 1
     try:
         facts_unfresh = await calc_pull_request_facts_github(
-            (6366825,), time_from, time_to,
+            time_from, time_to,
             {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False, mdb, pdb, None,
+            False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
         )
         assert len(facts_unfresh["src-d/go-git"]) == 230
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
@@ -40,9 +40,9 @@ async def test_fetch_pull_request_facts_unfresh_labels(
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     label_filter = LabelFilter({"enhancement", "bug"}, set())
     facts_fresh = await calc_pull_request_facts_github(
-        (6366825,), time_from, time_to,
+        time_from, time_to,
         {"src-d/go-git"}, {}, label_filter, JIRAFilter.empty(),
-        False, release_match_setting_tag, False, False, mdb, pdb, None,
+        False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
     )
     await wait_deferred()
     assert len(facts_fresh["src-d/go-git"]) == 6
@@ -50,9 +50,9 @@ async def test_fetch_pull_request_facts_unfresh_labels(
     entries.unfresh_prs_threshold = 1
     try:
         facts_unfresh = await calc_pull_request_facts_github(
-            (6366825,), time_from, time_to,
+            time_from, time_to,
             {"src-d/go-git"}, {}, label_filter, JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False, mdb, pdb, None,
+            False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
         )
         assert len(facts_unfresh["src-d/go-git"]) == 6
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
@@ -68,9 +68,9 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     jira_filter = JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), {"task"}, False)
     facts_fresh = await calc_pull_request_facts_github(
-        (6366825,), time_from, time_to,
+        time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter.empty(), jira_filter,
-        False, release_match_setting_tag, False, False, mdb, pdb, None,
+        False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
     )
     await wait_deferred()
     assert len(facts_fresh["src-d/go-git"]) == 36
@@ -78,9 +78,9 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     entries.unfresh_prs_threshold = 1
     try:
         facts_unfresh = await calc_pull_request_facts_github(
-            (6366825,), time_from, time_to,
+            time_from, time_to,
             {"src-d/go-git"}, {}, LabelFilter.empty(), jira_filter,
-            False, release_match_setting_tag, False, False, mdb, pdb, None,
+            False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
         )
         assert len(facts_unfresh["src-d/go-git"]) == 36
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):

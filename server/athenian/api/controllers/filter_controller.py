@@ -174,9 +174,9 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         await resolve_filter_prs_parameters(filt, request)
     updated_min, updated_max = _bake_updated_min_max(filt)
     prs = await filter_pull_requests(
-        meta_ids, events, stages, filt.date_from, filt.date_to, repos, participants, labels, jira,
+        events, stages, filt.date_from, filt.date_to, repos, participants, labels, jira,
         filt.exclude_inactive, settings, updated_min, updated_max,
-        request.mdb, request.pdb, request.cache)
+        meta_ids, request.mdb, request.pdb, request.cache)
     return await _build_github_prs_response(prs, request.mdb, request.cache)
 
 
@@ -431,7 +431,7 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         return model_response(PullRequestSet())
     settings = await Settings.from_request(request, body.account).list_release_matches(repos)
     prs = await fetch_pull_requests(
-        meta_ids, github_repos, settings, request.mdb, request.pdb, request.cache)
+        github_repos, settings, meta_ids, request.mdb, request.pdb, request.cache)
     return await _build_github_prs_response(prs, request.mdb, request.cache)
 
 
@@ -459,6 +459,6 @@ async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response
     repos, meta_ids = await resolve_repos(
         body.repositories, body.account, request.uid, login_loader,
         request.sdb, request.mdb, request.cache, request.app["slack"])
-    labels = await mine_labels(meta_ids, repos, request.mdb, request.cache)
+    labels = await mine_labels(repos, meta_ids, request.mdb, request.cache)
     labels = [FilteredLabel(**label) for label in labels]
     return model_response(labels)

@@ -12,9 +12,9 @@ async def test_fetch_jira_issues_releases(mdb, pdb, default_branches, release_ma
     time_from = datetime(2016, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2021, 1, 1, tzinfo=timezone.utc)
     await calc_pull_request_facts_github(
-        (6366825,), time_from, time_to, {"src-d/go-git"}, {},
+        time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(),
-        False, release_match_setting_tag, False, False, mdb, pdb, None)
+        False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None)
     await wait_deferred()
     issues = await fetch_jira_issues((1, ["10003", "10009"]),
                                      time_from, time_to, False,

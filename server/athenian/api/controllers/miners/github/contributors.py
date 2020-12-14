@@ -56,11 +56,13 @@ async def mine_contributors(repos: Collection[str],
     common_prs_where = lambda: [  # noqa(E731)
         PullRequest.repository_full_name.in_(repos),
         PullRequest.hidden.is_(False),
+        PullRequest.acc_id.in_(meta_ids),
     ]
     tasks = [
         extract_branches(repos, meta_ids, mdb, cache),
         mdb.fetch_all(select([NodeRepository.node_id])
-                      .where(NodeRepository.name_with_owner.in_(repos))),
+                      .where(and_(NodeRepository.name_with_owner.in_(repos),
+                                  NodeRepository.acc_id.in_(meta_ids)))),
     ]
     (branches, default_branches), repo_rows = await gather(*tasks)
     repo_nodes = [r[0] for r in repo_rows]
@@ -103,6 +105,7 @@ async def mine_contributors(repos: Collection[str],
             "reviewer": await mdb.fetch_all(
                 select([PullRequestReview.user_login, func.count(PullRequestReview.user_login)])
                 .where(and_(PullRequestReview.repository_full_name.in_(repos),
+                            PullRequestReview.acc_id.in_(meta_ids),
                             PullRequestReview.submitted_at.between(time_from, time_to)
                             if has_times else True))
                 .group_by(PullRequestReview.user_login)),
@@ -131,7 +134,8 @@ async def mine_contributors(repos: Collection[str],
         authors, committers = await gather(*tasks)
         user_ids = set(r[0] for r in authors).union(r[0] for r in committers)
         logins = await mdb.fetch_all(select([User.node_id, User.login])
-                                     .where(User.node_id.in_(user_ids)))
+                                     .where(and_(User.node_id.in_(user_ids),
+                                                 User.acc_id.in_(meta_ids))))
         logins = {r[0]: r[1] for r in logins}
         return {
             "commit_committer": [(logins[r[0]], r[1]) for r in committers if r[0] in logins],
@@ -144,6 +148,7 @@ async def mine_contributors(repos: Collection[str],
             "commenter": await mdb.fetch_all(
                 select([PullRequestComment.user_login, func.count(PullRequestComment.user_login)])
                 .where(and_(PullRequestComment.repository_full_name.in_(repos),
+                            PullRequestComment.acc_id.in_(meta_ids),
                             PullRequestComment.created_at.between(time_from, time_to)
                             if has_times else True,
                             ))
@@ -201,10 +206,10 @@ async def mine_contributors(repos: Collection[str],
     stats.pop(None, None)
 
     cols = [User.login, User.email, User.avatar_url, User.name]
-    with sentry_sdk.start_span(op="SELECT FROM github_users_v2_compat"):
-        # FIXME(vmarkovtsev): filter by `meta_ids` everywhere here once ready
+    with sentry_sdk.start_span(op="SELECT FROM github.api_users"):
         user_details = await mdb.fetch_all(
-            select(cols).where(User.login.in_(stats.keys())).distinct())
+            select(cols)
+            .where(and_(User.login.in_(stats.keys()), User.acc_id.in_(meta_ids))))
 
     contribs = []
     for ud in user_details:

@@ -167,7 +167,6 @@ class PullRequestMiner:
         postprocess=_postprocess_cached_prs,
     )
     async def _mine(cls,
-                    meta_ids: Tuple[int, ...],
                     date_from: date,
                     date_to: date,
                     repositories: Set[str],
@@ -182,6 +181,7 @@ class PullRequestMiner:
                     updated_max: Optional[datetime],
                     pr_blacklist: Optional[Tuple[Collection[str], Dict[str, List[str]]]],
                     truncate: bool,
+                    meta_ids: Tuple[int, ...],
                     mdb: databases.Database,
                     pdb: databases.Database,
                     cache: Optional[aiomcache.Client],
@@ -584,9 +584,9 @@ class PullRequestMiner:
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
         dfs, facts, _, _, _, _, matched_bys, event = await cls._mine(
-            meta_ids, date_from, date_to, repositories, participants, labels, jira, branches,
+            date_from, date_to, repositories, participants, labels, jira, branches,
             default_branches, exclude_inactive, release_settings, updated_min, updated_max,
-            pr_blacklist, truncate, mdb, pdb, cache)
+            pr_blacklist, truncate, meta_ids, mdb, pdb, cache)
         cls._truncate_prs(dfs, time_from, time_to)
         return cls(dfs), facts, matched_bys, event
 

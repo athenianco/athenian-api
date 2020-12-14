@@ -30,7 +30,9 @@ async def extract_branches(repos: Iterable[str],
     """Fetch branches in the given repositories and extract the default branch names."""
     branches = await read_sql_query(
         select([Branch]).where(and_(Branch.repository_full_name.in_(repos),
-                                    Branch.commit_sha.isnot(None))), mdb, Branch)
+                                    Branch.acc_id.in_(meta_ids),
+                                    Branch.commit_sha.isnot(None))),
+        mdb, Branch)
     log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
     default_branches = {}
     ambiguous_defaults = {}
@@ -78,7 +80,8 @@ async def extract_branches(repos: Iterable[str],
     zero_branch_repos = [repo for repo in repos if repo not in default_branches]
     if zero_branch_repos:
         rows = await mdb.fetch_all(select([Repository.node_id, Repository.full_name])
-                                   .where(Repository.full_name.in_(zero_branch_repos)))
+                                   .where(and_(Repository.full_name.in_(zero_branch_repos),
+                                               Repository.acc_id.in_(meta_ids))))
         existing_zero_branch_repos = {r[0]: r[1] for r in rows}
         deleted_repos = set(zero_branch_repos) - set(existing_zero_branch_repos.values())
         if deleted_repos:
@@ -89,9 +92,12 @@ async def extract_branches(repos: Iterable[str],
             sql = """
                 SELECT parent_id, COUNT(child_id) AS numrefs
                 FROM github_node_repository_refs
-                WHERE parent_id IN (%s)
+                WHERE parent_id IN (%s) AND acc_id %s
                 GROUP BY parent_id;
-            """ % ", ".join("'%s'" % n for n in existing_zero_branch_repos)
+            """ % (", ".join("'%s'" % n for n in existing_zero_branch_repos),
+                   ("= %d" % meta_ids[0])
+                   if len(meta_ids) == 1
+                   else ("IN (%s)" % ", ".join(str(i) for i in meta_ids)))
             rows = await mdb.fetch_all(sql)
             refs = {r["parent_id"]: r["numrefs"] for r in rows}
             reported_repos = set()

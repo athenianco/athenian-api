@@ -78,10 +78,8 @@ def _postprocess_cached_facts(result: Tuple[Dict[str, List[PullRequestFacts]], b
         fresh,
     ),
     postprocess=_postprocess_cached_facts,
-    version=2,
 )
-async def _calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
-                                          time_from: datetime,
+async def _calc_pull_request_facts_github(time_from: datetime,
                                           time_to: datetime,
                                           repositories: Set[str],
                                           participants: PRParticipants,
@@ -91,6 +89,7 @@ async def _calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
                                           release_settings: Dict[str, ReleaseMatchSetting],
                                           fresh: bool,
                                           with_jira_map: bool,
+                                          meta_ids: Tuple[int, ...],
                                           mdb: Database,
                                           pdb: Database,
                                           cache: Optional[aiomcache.Client],
@@ -217,8 +216,7 @@ async def _calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
     return by_repo, with_jira_map
 
 
-async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
-                                         time_from: datetime,
+async def calc_pull_request_facts_github(time_from: datetime,
                                          time_to: datetime,
                                          repositories: Set[str],
                                          participants: PRParticipants,
@@ -228,6 +226,7 @@ async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
                                          release_settings: Dict[str, ReleaseMatchSetting],
                                          fresh: bool,
                                          with_jira_map: bool,
+                                         meta_ids: Tuple[int, ...],
                                          mdb: Database,
                                          pdb: Database,
                                          cache: Optional[aiomcache.Client],
@@ -242,7 +241,6 @@ async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
     :return: Map repository name -> list of PR facts.
     """
     return (await _calc_pull_request_facts_github(
-        meta_ids,
         time_from,
         time_to,
         repositories,
@@ -253,6 +251,7 @@ async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
         release_settings,
         fresh,
         with_jira_map,
+        meta_ids,
         mdb,
         pdb,
         cache,
@@ -275,10 +274,8 @@ async def calc_pull_request_facts_github(meta_ids: Tuple[int, ...],
         exclude_inactive,
         release_settings,
     ),
-    version=2,
 )
-async def calc_pull_request_metrics_line_github(meta_ids: Tuple[int, ...],
-                                                metrics: Sequence[str],
+async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
                                                 quantiles: Sequence[float],
                                                 lines: Sequence[int],
@@ -289,6 +286,7 @@ async def calc_pull_request_metrics_line_github(meta_ids: Tuple[int, ...],
                                                 exclude_inactive: bool,
                                                 release_settings: Dict[str, ReleaseMatchSetting],
                                                 fresh: bool,
+                                                meta_ids: Tuple[int, ...],
                                                 mdb: Database,
                                                 pdb: Database,
                                                 cache: Optional[aiomcache.Client],
@@ -304,8 +302,8 @@ async def calc_pull_request_metrics_line_github(meta_ids: Tuple[int, ...],
         metrics, quantiles, lines, exclude_inactive=exclude_inactive)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
-        meta_ids, time_from, time_to, all_repositories, participants, labels, jira,
-        exclude_inactive, release_settings, fresh, need_jira_mapping(metrics), mdb, pdb, cache)
+        time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
+        release_settings, fresh, need_jira_mapping(metrics), meta_ids, mdb, pdb, cache)
     return calc(mined_facts, time_intervals, repositories)
 
 
@@ -346,10 +344,8 @@ async def calc_code_metrics_github(prop: FilterCommitsProperty,
         exclude_inactive,
         release_settings,
     ),
-    version=2,
 )
-async def calc_pull_request_histogram_github(meta_ids: Tuple[int, ...],
-                                             defs: Dict[HistogramParameters, List[str]],
+async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, List[str]],
                                              time_from: datetime,
                                              time_to: datetime,
                                              quantiles: Sequence[float],
@@ -361,6 +357,7 @@ async def calc_pull_request_histogram_github(meta_ids: Tuple[int, ...],
                                              exclude_inactive: bool,
                                              release_settings: Dict[str, ReleaseMatchSetting],
                                              fresh: bool,
+                                             meta_ids: Tuple[int, ...],
                                              mdb: Database,
                                              pdb: Database,
                                              cache: Optional[aiomcache.Client],
@@ -376,8 +373,8 @@ async def calc_pull_request_histogram_github(meta_ids: Tuple[int, ...],
     except KeyError as e:
         raise ValueError("Unsupported metric: %s" % e)
     mined_facts = await calc_pull_request_facts_github(
-        meta_ids, time_from, time_to, all_repositories, participants, labels, jira,
-        exclude_inactive, release_settings, fresh, False, mdb, pdb, cache)
+        time_from, time_to, all_repositories, participants, labels, jira,
+        exclude_inactive, release_settings, fresh, False, meta_ids, mdb, pdb, cache)
     hists = calc(mined_facts, [[time_from, time_to]], repositories, defs)
     result = [[] for _ in range(len(repositories) * (len(lines or [None] * 2) - 1))]
     for defs_hists, metrics in zip(hists, defs.values()):
@@ -403,7 +400,6 @@ async def calc_pull_request_histogram_github(meta_ids: Tuple[int, ...],
         jira,
         release_settings,
     ),
-    version=2,
 )
 async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            time_intervals: Sequence[Sequence[datetime]],
