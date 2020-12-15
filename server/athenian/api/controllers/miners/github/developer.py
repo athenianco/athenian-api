@@ -341,7 +341,8 @@ async def calc_developer_metrics_github(devs: Sequence[str],
     zerotd = timedelta(0)
     assert isinstance(time_from, datetime) and time_from.tzinfo.utcoffset(time_from) == zerotd
     assert isinstance(time_to, datetime) and time_to.tzinfo.utcoffset(time_to) == zerotd
-    dev_ids_map, reverse_dev_ids_map, repo_ids_map = await _fetch_node_ids(devs, repos, mdb)
+    dev_ids_map, reverse_dev_ids_map, repo_ids_map = await _fetch_node_ids(
+        devs, repos, meta_ids, mdb)
     stats_by_repo_by_dev = defaultdict(lambda: defaultdict(dict))
     tasks = []
     for key, setter in processors:
@@ -356,6 +357,7 @@ async def calc_developer_metrics_github(devs: Sequence[str],
 @sentry_span
 async def _fetch_node_ids(devs: Collection[str],
                           repos: Sequence[Collection[str]],
+                          meta_ids: Tuple[int, ...],
                           mdb: databases.Database,
                           ) -> Tuple[Dict[str, str], Dict[str, int], Dict[str, str]]:
     all_repos = set(chain.from_iterable(repos))
@@ -363,7 +365,7 @@ async def _fetch_node_ids(devs: Collection[str],
         mdb.fetch_all(select([Repository.node_id, Repository.full_name])
                       .where(Repository.full_name.in_(all_repos))),
         mdb.fetch_all(select([User.node_id, User.login])
-                      .where(User.login.in_(devs))),
+                      .where(and_(User.login.in_(devs), User.acc_id.in_(meta_ids)))),
     ]
     repo_ids, dev_ids = await gather(*tasks)
     repo_ids_map = {r[1]: r[0] for r in repo_ids}

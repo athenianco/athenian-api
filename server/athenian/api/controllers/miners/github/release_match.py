@@ -354,8 +354,8 @@ async def map_releases_to_prs(repos: Collection[str],
 
     tasks = [
         _find_releases_for_matching_prs(
-            meta_ids, repos, branches, default_branches, time_from, time_to,
-            not truncate, release_settings, mdb, pdb, cache),
+            repos, branches, default_branches, time_from, time_to,
+            not truncate, release_settings, meta_ids, mdb, pdb, cache),
         fetch_precomputed_commit_history_dags(repos, pdb, cache),
     ]
     (matched_bys, releases, releases_in_time_range, release_settings), pdags = await gather(*tasks)
@@ -392,14 +392,14 @@ async def map_releases_to_prs(repos: Collection[str],
 
 
 @sentry_span
-async def _find_releases_for_matching_prs(meta_ids: Tuple[int, ...],
-                                          repos: Iterable[str],
+async def _find_releases_for_matching_prs(repos: Iterable[str],
                                           branches: pd.DataFrame,
                                           default_branches: Dict[str, str],
                                           time_from: datetime,
                                           time_to: datetime,
                                           until_today: bool,
                                           release_settings: Dict[str, ReleaseMatchSetting],
+                                          meta_ids: Tuple[int, ...],
                                           mdb: databases.Database,
                                           pdb: databases.Database,
                                           cache: Optional[aiomcache.Client],

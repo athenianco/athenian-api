@@ -177,7 +177,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         events, stages, filt.date_from, filt.date_to, repos, participants, labels, jira,
         filt.exclude_inactive, settings, updated_min, updated_max,
         meta_ids, request.mdb, request.pdb, request.cache)
-    return await _build_github_prs_response(prs, request.mdb, request.cache)
+    return await _build_github_prs_response(prs, meta_ids, request.mdb, request.cache)
 
 
 def _bake_updated_min_max(filt: FilterPullRequestsRequest) -> Tuple[datetime, datetime]:
@@ -434,16 +434,17 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     settings = await Settings.from_request(request, body.account).list_release_matches(repos)
     prs = await fetch_pull_requests(
         github_repos, settings, meta_ids, request.mdb, request.pdb, request.cache)
-    return await _build_github_prs_response(prs, request.mdb, request.cache)
+    return await _build_github_prs_response(prs, meta_ids, request.mdb, request.cache)
 
 
 @sentry_span
 async def _build_github_prs_response(prs: List[PullRequestListItem],
+                                     meta_ids: Tuple[int, ...],
                                      mdb: databases.Database,
                                      cache: Optional[aiomcache.Client]) -> web.Response:
     web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
-    avatars = await mine_user_avatars(users, mdb, cache)
+    avatars = await mine_user_avatars(users, meta_ids, mdb, cache)
     prefix = PREFIXES["github"]
     model = PullRequestSet(include=IncludedNativeUsers(users={
         prefix + login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars

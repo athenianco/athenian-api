@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from itertools import chain
 from sqlite3 import IntegrityError, OperationalError
-from typing import Dict, Iterable, List, Mapping, Optional, Union
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 from aiohttp import web
 import aiomcache
@@ -10,7 +10,7 @@ import databases
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api.auth import disable_default_user
-from athenian.api.controllers.account import get_user_account_status
+from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.miners.github.users import mine_users
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import User
@@ -81,8 +81,10 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
         team = await sdb_conn.fetch_one(select([Team]).where(Team.id == id))
         if team is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
-        await get_user_account_status(user, team[Team.owner_id.key], sdb_conn, request.cache)
-    members = await _get_all_members([team], request.mdb, request.cache)
+        account = team[Team.owner_id.key]
+        await get_user_account_status(user, account, sdb_conn, request.cache)
+        meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
+    members = await _get_all_members([team], meta_ids, request.mdb, request.cache)
     model = TeamListItem(id=team[Team.id.key],
                          name=team[Team.name.key],
                          parent=team[Team.parent_id.key],
@@ -102,8 +104,8 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
         await get_user_account_status(user, account, sdb_conn, request.cache)
         teams = await sdb_conn.fetch_all(
             select([Team]).where(Team.owner_id == account).order_by(Team.name))
-
-    all_members = await _get_all_members(teams, request.mdb, request.cache)
+        meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
+    all_members = await _get_all_members(teams, meta_ids, request.mdb, request.cache)
     items = [TeamListItem(id=t[Team.id.key],
                           name=t[Team.name.key],
                           parent=t[Team.parent_id.key],
@@ -191,12 +193,15 @@ async def _check_parent_cycle(team_id: int, parent_id: Optional[int], sdb: Datab
 
 
 async def _get_all_members(teams: Iterable[Mapping],
-                           db: databases.Database,
+                           meta_ids: Tuple[int, ...],
+                           mdb: databases.Database,
                            cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
     prefix = PREFIXES["github"]
     all_members = set(chain.from_iterable([t[Team.members.key] for t in teams]))
     all_members = {m.split("/", 1)[1] for m in all_members if m.startswith(prefix)}
-    user_by_login = {u[User.login.key]: u for u in await mine_users(all_members, db, cache)}
+    user_by_login = {
+        u[User.login.key]: u for u in await mine_users(all_members, meta_ids, mdb, cache)
+    }
     all_contributors = {}
     for m in all_members:
         ud = user_by_login.get(m)

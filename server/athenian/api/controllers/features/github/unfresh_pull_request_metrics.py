@@ -22,8 +22,7 @@ from athenian.api.tracing import sentry_span
 
 
 @sentry_span
-async def fetch_pull_request_facts_unfresh(meta_ids: Tuple[int, ...],
-                                           done_facts: Dict[str, Tuple[str, PullRequestFacts]],
+async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, Tuple[str, PullRequestFacts]],
                                            ambiguous: Dict[str, List[str]],
                                            time_from: datetime,
                                            time_to: datetime,
@@ -35,6 +34,7 @@ async def fetch_pull_request_facts_unfresh(meta_ids: Tuple[int, ...],
                                            branches: pd.DataFrame,
                                            default_branches: Dict[str, str],
                                            release_settings: Dict[str, ReleaseMatchSetting],
+                                           meta_ids: Tuple[int, ...],
                                            mdb: databases.Database,
                                            pdb: databases.Database,
                                            cache: Optional[aiomcache.Client],

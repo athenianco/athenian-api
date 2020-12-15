@@ -4,7 +4,7 @@ from operator import attrgetter
 import pytest
 from sqlalchemy import insert, select
 
-from athenian.api.models.state.models import Team
+from athenian.api.models.state.models import AccountGitHubAccount, Team
 from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
@@ -218,6 +218,10 @@ async def test_create_team_same_name(client, headers, sdb, disable_default_user)
 )
 @pytest.mark.parametrize("account", [1, 2], ids=["as admin", "as non-admin"])
 async def test_list_teams_smoke(client, headers, initial_teams, sdb, account):
+    await sdb.execute(insert(AccountGitHubAccount).values({
+        AccountGitHubAccount.account_id: 2,
+        AccountGitHubAccount.id: 1,
+    }))
     contributors_details = {
         # No further details because didn't contribute to repos
         "github.com/se7entyse7en": {
@@ -230,12 +234,11 @@ async def test_list_teams_smoke(client, headers, initial_teams, sdb, account):
             "picture": "https://avatars1.githubusercontent.com/u/2793551?s=600&v=4",
         },
     }
-
     for t in initial_teams:
         await sdb.execute(insert(Team).values(Team(**t).create_defaults().explode()))
 
     response = await client.request(method="GET", path=f"/v1/teams/{account}", headers=headers)
-
+    assert response.status == 200
     body = (await response.read()).decode("utf-8")
     teams = sorted([TeamListItem.from_dict(t) for t in json.loads(body)],
                    key=attrgetter("id"))
@@ -462,7 +465,7 @@ async def test_get_team_smoke(client, headers, sdb):
 
 @pytest.mark.parametrize("owner, id, status", [
     (1, 2, 404),
-    (2, 1, 200),
+    (2, 1, 422),
     (3, 1, 404),
 ])
 async def test_get_team_nasty_input(client, headers, sdb, owner, id, status):

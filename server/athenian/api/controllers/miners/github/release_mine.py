@@ -134,8 +134,8 @@ async def mine_releases(repos: Iterable[str],
             releases_in_time_range[Release.repository_full_name.key].isin(missing_repos).values,
         )[0])
         _, releases, _, _ = await _find_releases_for_matching_prs(
-            meta_ids, missing_repos, branches, default_branches, time_from, time_to, False,
-            settings, mdb, pdb, cache, releases_in_time_range=releases_in_time_range)
+            missing_repos, branches, default_branches, time_from, time_to, False,
+            settings, meta_ids, mdb, pdb, cache, releases_in_time_range=releases_in_time_range)
         tasks = [
             load_commit_dags(releases, meta_ids, mdb, pdb, cache),
             _fetch_repository_first_commit_dates(missing_repos, mdb, pdb, cache),
@@ -333,7 +333,7 @@ async def mine_releases(repos: Iterable[str],
     mentioned_authors = set(mentioned_authors)
     tasks = [
         main_flow(),
-        mine_user_avatars(all_authors, mdb, cache, prefix=prefix),
+        mine_user_avatars(all_authors, meta_ids, mdb, cache, prefix=prefix),
     ]
     mined_releases, avatars = await gather(*tasks, op="main_flow + avatars")
     await defer(store_precomputed_release_facts(mined_releases, default_branches, settings, pdb),
