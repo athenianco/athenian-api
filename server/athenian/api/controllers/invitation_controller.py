@@ -293,17 +293,17 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
     key=lambda account, **_: (account,),
 )
 async def get_installation_event_ids(account: int,
-                                     sdb_conn: databases.core.Connection,
-                                     mdb_conn: databases.core.Connection,
+                                     sdb: DatabaseLike,
+                                     mdb: DatabaseLike,
                                      cache: Optional[aiomcache.Client],
                                      ) -> List[Tuple[int, str]]:
-    """Load the app installation and delivery IDs for the given account."""
-    metadata_account_ids = await get_metadata_account_ids(account, sdb_conn, cache)
-    rows = await mdb_conn.fetch_all(
+    """Load the GitHub account and delivery event IDs for the given sdb account."""
+    meta_ids = await get_metadata_account_ids(account, sdb, cache)
+    rows = await mdb.fetch_all(
         select([AccountRepository.acc_id, AccountRepository.event_id])
-        .where(AccountRepository.acc_id.in_(metadata_account_ids))
+        .where(AccountRepository.acc_id.in_(meta_ids))
         .distinct())
-    if diff := set(metadata_account_ids) - {r[0] for r in rows}:
+    if diff := set(meta_ids) - {r[0] for r in rows}:
         raise ResponseError(NoSourceDataError(detail="Some installation%s missing: %s." %
                                                      ("s are" if len(diff) > 1 else " is", diff)))
     return [(r[0], r[1]) for r in rows]
@@ -352,7 +352,9 @@ async def fetch_github_installation_progress(account: int,
                 select([func.count(AccountRepository.repo_node_id)])
                 .where(AccountRepository.acc_id == metadata_account_id))
             rows = await mdb_conn.fetch_all(
-                select([FetchProgress]).where(FetchProgress.event_id == event_id))
+                select([FetchProgress])
+                .where(and_(FetchProgress.event_id == event_id,
+                            FetchProgress.acc_id == metadata_account_id)))
             if not rows:
                 continue
             tables = [TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.key],

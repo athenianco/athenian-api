@@ -139,9 +139,9 @@ async def _calc_pull_request_facts_github(time_from: datetime,
     # are effectively discarded later in BinnedMetricCalculator
     tasks = [
         PullRequestMiner.mine(
-            meta_ids, date_from, date_to, time_from, time_to, repositories, participants,
+            date_from, date_to, time_from, time_to, repositories, participants,
             labels, jira, branches, default_branches, exclude_inactive, release_settings,
-            mdb, pdb, cache, pr_blacklist=blacklist),
+            meta_ids, mdb, pdb, cache, pr_blacklist=blacklist),
     ]
     if jira and precomputed_facts:
         tasks.append(PullRequestMiner.filter_jira(

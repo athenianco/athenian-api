@@ -207,11 +207,11 @@ class PullRequestMiner:
         # the heaviest task should always go first
         tasks = [
             map_releases_to_prs(
-                meta_ids, repositories, branches, default_branches, time_from, time_to,
+                repositories, branches, default_branches, time_from, time_to,
                 participants.get(PRParticipationKind.AUTHOR, []),
                 participants.get(PRParticipationKind.MERGER, []),
                 jira, release_settings, updated_min, updated_max,
-                mdb, pdb, cache, pr_blacklist, truncate),
+                meta_ids, mdb, pdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
                 time_from, time_to, repositories, participants, labels, jira,
                 exclude_inactive, pr_blacklist, meta_ids, mdb, cache,
@@ -244,11 +244,11 @@ class PullRequestMiner:
                 list(chain.from_iterable(missed_prs.values())))
             tasks = [
                 map_releases_to_prs(
-                    meta_ids, missed_prs, branches, default_branches, time_from, time_to,
+                    missed_prs, branches, default_branches, time_from, time_to,
                     participants.get(PRParticipationKind.AUTHOR, []),
                     participants.get(PRParticipationKind.MERGER, []),
                     jira, release_settings, updated_min, updated_max,
-                    mdb, pdb, cache, inverse_pr_blacklist, truncate),
+                    meta_ids, mdb, pdb, cache, inverse_pr_blacklist, truncate),
                 cls.fetch_prs(
                     time_from, time_to, missed_prs, participants, labels, jira,
                     exclude_inactive, inverse_pr_blacklist, meta_ids, mdb, cache,
@@ -263,8 +263,9 @@ class PullRequestMiner:
         tasks = [
             # bypass the useless inner caching by calling _mine_by_ids directly
             cls._mine_by_ids(
-                meta_ids, prs, unreleased.index, time_to, releases, matched_bys, branches,
-                default_branches, dags, release_settings, mdb, pdb, cache, truncate=truncate),
+                prs, unreleased.index, time_to, releases, matched_bys, branches,
+                default_branches, dags, release_settings, meta_ids,
+                mdb, pdb, cache, truncate=truncate),
             load_open_pull_request_facts(prs, pdb),
         ]
         (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
@@ -309,7 +310,6 @@ class PullRequestMiner:
         ),
     )
     async def mine_by_ids(cls,
-                          meta_ids: Tuple[int, ...],
                           prs: pd.DataFrame,
                           unreleased: Collection[str],
                           time_to: datetime,
@@ -319,6 +319,7 @@ class PullRequestMiner:
                           default_branches: Dict[str, str],
                           dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
                           release_settings: Dict[str, ReleaseMatchSetting],
+                          meta_ids: Tuple[int, ...],
                           mdb: databases.Database,
                           pdb: databases.Database,
                           cache: Optional[aiomcache.Client],
@@ -337,15 +338,14 @@ class PullRequestMiner:
                  3. Synchronization for updating the pdb table with merged unreleased PRs.
         """
         return await cls._mine_by_ids(
-            meta_ids, prs, unreleased, time_to, releases, matched_bys, branches, default_branches,
-            dags, release_settings, mdb, pdb, cache, truncate=truncate)
+            prs, unreleased, time_to, releases, matched_bys, branches, default_branches,
+            dags, release_settings, meta_ids, mdb, pdb, cache, truncate=truncate)
 
     _deserialize_mine_by_ids_cache = staticmethod(_deserialize_mine_by_ids_cache)
 
     @classmethod
     @sentry_span
     async def _mine_by_ids(cls,
-                           meta_ids: Tuple[int, ...],
                            prs: pd.DataFrame,
                            unreleased: Collection[str],
                            time_to: datetime,
@@ -355,6 +355,7 @@ class PullRequestMiner:
                            default_branches: Dict[str, str],
                            dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
                            release_settings: Dict[str, ReleaseMatchSetting],
+                           meta_ids: Tuple[int, ...],
                            mdb: databases.Database,
                            pdb: databases.Database,
                            cache: Optional[aiomcache.Client],
@@ -524,7 +525,6 @@ class PullRequestMiner:
     @classmethod
     @sentry_span
     async def mine(cls,
-                   meta_ids: Tuple[int, ...],
                    date_from: date,
                    date_to: date,
                    time_from: datetime,
@@ -537,6 +537,7 @@ class PullRequestMiner:
                    default_branches: Dict[str, str],
                    exclude_inactive: bool,
                    release_settings: Dict[str, ReleaseMatchSetting],
+                   meta_ids: Tuple[int, ...],
                    mdb: databases.Database,
                    pdb: databases.Database,
                    cache: Optional[aiomcache.Client],
