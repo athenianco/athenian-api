@@ -363,9 +363,11 @@ async def _fetch_node_ids(devs: Collection[str],
     all_repos = set(chain.from_iterable(repos))
     tasks = [
         mdb.fetch_all(select([Repository.node_id, Repository.full_name])
-                      .where(Repository.full_name.in_(all_repos))),
+                      .where(and_(Repository.full_name.in_(all_repos),
+                                  Repository.acc_id.in_(meta_ids)))),
         mdb.fetch_all(select([User.node_id, User.login])
-                      .where(and_(User.login.in_(devs), User.acc_id.in_(meta_ids)))),
+                      .where(and_(User.login.in_(devs),
+                                  User.acc_id.in_(meta_ids)))),
     ]
     repo_ids, dev_ids = await gather(*tasks)
     repo_ids_map = {r[1]: r[0] for r in repo_ids}
