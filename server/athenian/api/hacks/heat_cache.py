@@ -316,10 +316,11 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     if not unique_prs:
         return 0
     log.info("Querying labels in %d PRs", len(unique_prs))
-    for batch in range(0, len(unique_prs), 5000):
+    while unique_prs:
+        batch, unique_prs = unique_prs[:1000], unique_prs[1000:]
         tasks.append(mdb.fetch_all(
             select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
-            .where(PullRequestLabel.pull_request_node_id.in_(unique_prs[batch:batch + 1000]))))
+            .where(PullRequestLabel.pull_request_node_id.in_(batch))))
     try:
         task_results = await gather(*tasks)
     except Exception as e:
@@ -334,8 +335,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     for rows, model in ((all_pr_times, GitHubDonePullRequestFacts),
                         (all_merged, GitHubMergedPullRequestFacts)):
         for row in rows:
-            pr_labels = actual_labels.get(row[0], {})
-            if pr_labels != row[1]:
+            if (pr_labels := actual_labels.get(row[0], {})) != row[1]:
                 tasks.append(pdb.execute(update(model)
                                          .where(model.pr_node_id == row[0])
                                          .values({model.labels: pr_labels,
@@ -343,9 +343,10 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     if not tasks:
         return 0
     log.info("Updating %d records", len(tasks))
-    for batch in range(0, len(tasks), 1000):
+    while tasks:
+        batch, tasks = tasks[:1000], tasks[1000:]
         try:
-            await gather(*tasks[batch:batch + 1000])
+            await gather(*batch)
         except Exception as e:
             sentry_sdk.capture_exception(e)
             log.warning("%s: %s", type(e).__name__, e)

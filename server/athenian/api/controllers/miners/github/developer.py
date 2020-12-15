@@ -290,7 +290,7 @@ async def _set_pr_comments(stats_by_repo_by_dev: StatsByRepoByDev,
     if DeveloperTopic.regular_pr_comments in topics or DeveloperTopic.pr_comments in topics:
         regular_pr_comments = await _fetch_developer_regular_pr_comments(
             dev_ids.values(), repo_ids.values(), repogroups,
-            labels, jira, time_from, time_to, mdb, cache)
+            labels, jira, time_from, time_to, meta_ids, mdb, cache)
         if DeveloperTopic.regular_pr_comments in topics:
             _set_stats(DeveloperTopic.regular_pr_comments, regular_pr_comments["count"],
                        repogroups, stats_by_repo_by_dev)
@@ -463,16 +463,20 @@ async def _fetch_developer_timestamp_prs(attr_filter: InstrumentedAttribute,
         attr_filter.between(time_from, time_to),
         attr_user.in_(devs),
         PullRequest.repository_node_id.in_(repos),
+        PullRequest.acc_id.in_(meta_ids),
     ]
     if labels:
         filters.extend([
+            PullRequestLabel.acc_id.in_(meta_ids) if labels.include else True,
             func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
             or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
-                PullRequestLabel.name.is_(None)) if labels.exclude else True,
+                PullRequestLabel.name.is_(None),
+                PullRequestLabel.acc_id.notin_(meta_ids)) if labels.exclude else True,
         ])
         seed = join(
             PullRequest, PullRequestLabel,
-            PullRequest.node_id == PullRequestLabel.pull_request_node_id,
+            and_(PullRequest.node_id == PullRequestLabel.pull_request_node_id,
+                 PullRequest.acc_id == PullRequestLabel.acc_id),
             isouter=not labels.include,
         )
         if jira:
@@ -566,13 +570,15 @@ async def _fetch_developer_review_common(selected: List[InstrumentedAttribute],
     ]
     if labels:
         filters.extend([
+            PullRequestLabel.acc_id.in_(meta_ids),
             func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
             or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
                 PullRequestLabel.name.is_(None)) if labels.exclude else True,
         ])
         seed = join(
             PullRequestReview, PullRequestLabel,
-            PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+            and_(PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+                 PullRequestReview.acc_id == PullRequestLabel.acc_id),
             isouter=not labels.include,
         )
         if jira:
@@ -682,13 +688,16 @@ async def _fetch_developer_review_comments(devs: Iterable[str],
     ]
     if labels:
         filters.extend([
+            PullRequestLabel.acc_id.in_(meta_ids),
             func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
             or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
                 PullRequestLabel.name.is_(None)) if labels.exclude else True,
         ])
         seed = join(
             PullRequestReviewComment, PullRequestLabel,
-            PullRequestReviewComment.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+            and_(PullRequestReviewComment.pull_request_node_id ==
+                 PullRequestLabel.pull_request_node_id,
+                 PullRequestReviewComment.acc_id == PullRequestLabel.acc_id),
             isouter=not labels.include,
         )
         if jira:
@@ -726,6 +735,7 @@ async def _fetch_developer_regular_pr_comments(devs: Iterable[str],
                                                jira: JIRAFilter,
                                                time_from: datetime,
                                                time_to: datetime,
+                                               meta_ids: Tuple[int, ...],
                                                mdb: databases.Database,
                                                cache: Optional[aiomcache.Client],
                                                ) -> pd.DataFrame:
@@ -742,13 +752,15 @@ async def _fetch_developer_regular_pr_comments(devs: Iterable[str],
     ]
     if labels:
         filters.extend([
+            PullRequestLabel.acc_id.in_(meta_ids),
             func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
             or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
                 PullRequestLabel.name.is_(None)) if labels.exclude else True,
         ])
         seed = join(
             PullRequestComment, PullRequestLabel,
-            PullRequestComment.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+            and_(PullRequestComment.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+                 PullRequestComment.acc_id == PullRequestLabel.acc_id),
             isouter=not labels.include,
         )
         if jira:

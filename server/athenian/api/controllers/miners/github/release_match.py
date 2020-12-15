@@ -97,7 +97,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     branches[Branch.commit_date] = [branch_commit_dates.get(commit_id, now)
                                     for commit_id in branch_commit_ids]
     tasks = [
-        _fetch_labels(merged_prs.index, mdb),
+        _fetch_labels(merged_prs.index, meta_ids, mdb),
         _find_dead_merged_prs(merged_prs, dags, branches, meta_ids, mdb, pdb, cache),
         _map_prs_to_releases(merged_prs, dags, releases),
     ]
@@ -210,10 +210,14 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
 
 
 @sentry_span
-async def _fetch_labels(node_ids: Iterable[str], mdb: databases.Database) -> Dict[str, List[str]]:
+async def _fetch_labels(node_ids: Iterable[str],
+                        meta_ids: Tuple[int, ...],
+                        mdb: databases.Database,
+                        ) -> Dict[str, List[str]]:
     rows = await mdb.fetch_all(
         select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
-        .where(PullRequestLabel.pull_request_node_id.in_(node_ids)))
+        .where(and_(PullRequestLabel.pull_request_node_id.in_(node_ids),
+                    PullRequestLabel.acc_id.in_(meta_ids))))
     labels = {}
     for row in rows:
         node_id, label = row[0], row[1]
