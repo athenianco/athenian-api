@@ -9,7 +9,7 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
@@ -192,7 +192,7 @@ async def mine_releases(repos: Iterable[str],
                                    description=str(len(all_hashes))):
             commits_df = await read_sql_query(
                 select(commits_df_columns)
-                .where(PushCommit.sha.in_(all_hashes))
+                .where(and_(PushCommit.sha.in_(all_hashes), PushCommit.acc_id.in_(meta_ids)))
                 .order_by(PushCommit.sha),
                 mdb, commits_df_columns, index=PushCommit.sha.key)
         commits_index = commits_df.index.values.astype("U40")
