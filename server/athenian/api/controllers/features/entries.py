@@ -120,9 +120,9 @@ async def _calc_pull_request_facts_github(time_from: datetime,
             len(participants.get(prpk.AUTHOR, [])) > unfresh_participants_threshold) and \
             not fresh and not (participants.keys() - {prpk.AUTHOR, prpk.MERGER}):
         facts = await fetch_pull_request_facts_unfresh(
-            meta_ids, precomputed_facts, ambiguous, time_from, time_to, repositories,
+            precomputed_facts, ambiguous, time_from, time_to, repositories,
             participants, labels, jira, exclude_inactive, branches,
-            default_branches, release_settings, mdb, pdb, cache)
+            default_branches, release_settings, meta_ids, mdb, pdb, cache)
         if with_jira_map:
             undone_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
                 {k: v for k, v in facts.items() if k not in precomputed_facts}, meta_ids, mdb))
