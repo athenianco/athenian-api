@@ -652,7 +652,8 @@ async def _fetch_commits(commit_shas: Sequence[str],
         query = \
             select([PushCommit]) \
             .where(and_(PushCommit.sha.in_(commit_shas),
-                        PushCommit.committed_date.between(time_from, time_to))) \
+                        PushCommit.committed_date.between(time_from, time_to),
+                        PushCommit.acc_id.in_(meta_ids))) \
             .order_by(desc(PushCommit.committed_date))
     else:
         # Postgres planner sucks in this case and we have to be inventive.

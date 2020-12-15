@@ -96,7 +96,7 @@ async def _set_commits(stats_by_repo_by_dev: StatsByRepoByDev,
                        pdb: databases.Database,
                        cache: Optional[aiomcache.Client]) -> None:
     commits = await _fetch_developer_commits(
-        dev_ids.values(), repo_ids.values(), repogroups, time_from, time_to, mdb, cache)
+        dev_ids.values(), repo_ids.values(), repogroups, time_from, time_to, meta_ids, mdb, cache)
     if DeveloperTopic.commits_pushed in topics:
         topic = DeveloperTopic.commits_pushed.name
         if not repogroups:
@@ -414,6 +414,7 @@ async def _fetch_developer_commits(devs: Iterable[str],
                                    repogroups: bool,
                                    time_from: datetime,
                                    time_to: datetime,
+                                   meta_ids: Tuple[int, ...],
                                    mdb: databases.Database,
                                    cache: Optional[aiomcache.Client],
                                    ) -> pd.DataFrame:
@@ -428,6 +429,7 @@ async def _fetch_developer_commits(devs: Iterable[str],
         PushCommit.committed_date.between(time_from, time_to),
         PushCommit.author_user.in_(devs),
         PushCommit.repository_node_id.in_(repos),
+        PushCommit.acc_id.in_(meta_ids),
     )).group_by(*group_by)
     df = await read_sql_query(
         query, mdb, [c.key for c in columns], index=[c.key for c in group_by])

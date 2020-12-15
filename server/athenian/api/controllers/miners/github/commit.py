@@ -110,7 +110,8 @@ async def extract_commits(prop: FilterCommitsProperty,
             commits = await read_sql_query(
                 select(cols_query)
                 .select_from(outerjoin(PushCommit, NodePullRequestCommit,
-                                       PushCommit.node_id == NodePullRequestCommit.commit))
+                                       and_(PushCommit.node_id == NodePullRequestCommit.commit,
+                                            PushCommit.acc_id == NodePullRequestCommit.acc_id)))
                 .where(and_(NodePullRequestCommit.commit.is_(None), *sql_filters)),
                 mdb, cols_df)
     else:
