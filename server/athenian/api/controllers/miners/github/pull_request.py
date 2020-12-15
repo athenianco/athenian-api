@@ -6,7 +6,7 @@ from itertools import chain
 import logging
 import pickle
 from typing import Collection, Dict, Generator, Iterable, Iterator, List, Optional, Sequence, \
-    Set, Tuple, Union
+    Set, Tuple
 
 import aiomcache
 import databases
@@ -39,6 +39,7 @@ from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues,
     PullRequestReviewComment, PullRequestReviewRequest, Release
 from athenian.api.models.metadata.jira import Component, Issue
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import DatabaseLike
 
 
 @dataclass
@@ -371,7 +372,7 @@ class PullRequestMiner:
         @sentry_span
         async def fetch_reviews():
             return await cls._read_filtered_models(
-                mdb, PullRequestReview, node_ids, time_to,
+                PullRequestReview, node_ids, time_to, meta_ids, mdb,
                 columns=[PullRequestReview.submitted_at, PullRequestReview.state,
                          PullRequestReview.user_login],
                 created_at=truncate)
@@ -379,28 +380,28 @@ class PullRequestMiner:
         @sentry_span
         async def fetch_review_comments():
             return await cls._read_filtered_models(
-                mdb, PullRequestReviewComment, node_ids, time_to,
+                PullRequestReviewComment, node_ids, time_to, meta_ids, mdb,
                 columns=[PullRequestReviewComment.created_at, PullRequestReviewComment.user_login],
                 created_at=truncate)
 
         @sentry_span
         async def fetch_review_requests():
             return await cls._read_filtered_models(
-                mdb, PullRequestReviewRequest, node_ids, time_to,
+                PullRequestReviewRequest, node_ids, time_to, meta_ids, mdb,
                 columns=[PullRequestReviewRequest.created_at],
                 created_at=truncate)
 
         @sentry_span
         async def fetch_comments():
             return await cls._read_filtered_models(
-                mdb, PullRequestComment, node_ids, time_to,
+                PullRequestComment, node_ids, time_to, meta_ids, mdb,
                 columns=[PullRequestComment.created_at, PullRequestComment.user_login],
                 created_at=truncate)
 
         @sentry_span
         async def fetch_commits():
             return await cls._read_filtered_models(
-                mdb, PullRequestCommit, node_ids, time_to,
+                PullRequestCommit, node_ids, time_to, meta_ids, mdb,
                 columns=[PullRequestCommit.authored_date, PullRequestCommit.committed_date,
                          PullRequestCommit.author_login, PullRequestCommit.committer_login],
                 created_at=truncate)
@@ -432,7 +433,7 @@ class PullRequestMiner:
         @sentry_span
         async def fetch_labels():
             return await cls._read_filtered_models(
-                mdb, PullRequestLabel, node_ids, time_to,
+                PullRequestLabel, node_ids, time_to, meta_ids, mdb,
                 columns=[sql.func.lower(PullRequestLabel.name).label(PullRequestLabel.name.key),
                          PullRequestLabel.description,
                          PullRequestLabel.color],
@@ -649,7 +650,13 @@ class PullRequestMiner:
                 PullRequest.user_login.in_(participants[PRParticipationKind.AUTHOR]),
                 PullRequest.merged_by_login.in_(participants[PRParticipationKind.MERGER]),
             ))
-        selected_columns = [PullRequest] if columns is PullRequest else columns
+        if columns is PullRequest:
+            selected_columns = [PullRequest]
+            remove_acc_id = False
+        else:
+            selected_columns = columns = list(columns)
+            if remove_acc_id := (PullRequest.acc_id not in selected_columns):
+                selected_columns.append(PullRequest.acc_id)
         if not jira:
             query = sql.select(selected_columns).where(sql.and_(*filters))
         else:
@@ -666,13 +673,17 @@ class PullRequestMiner:
             else:
                 in_items = singles
             pr_node_id = sql.column("m.node_id", is_literal=True)
+            pr_acc_id = sql.column("m.acc_id", is_literal=True)
             query = sql.select([sql.column("m.*", is_literal=True)])\
                 .distinct(pr_node_id) \
                 .select_from(sql.join(
                     query.alias("m"), PullRequestLabel,
-                    pr_node_id == PullRequestLabel.pull_request_node_id)) \
+                    sql.and_(pr_node_id == PullRequestLabel.pull_request_node_id,
+                             pr_acc_id == PullRequestLabel.acc_id))) \
                 .where(sql.func.lower(PullRequestLabel.name).in_(in_items))
         prs = await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
+        if remove_acc_id:
+            del prs[PullRequest.acc_id.key]
         if PullRequest.closed.key in prs:
             cls.adjust_pr_closed_merged_timestamps(prs)
         if not labels or embedded_labels_query:
@@ -684,7 +695,9 @@ class PullRequestMiner:
             PullRequestLabel.color,
         ]
         df_labels = await read_sql_query(
-            sql.select(lcols).where(PullRequestLabel.pull_request_node_id.in_(prs.index)),
+            sql.select(lcols)
+            .where(sql.and_(PullRequestLabel.pull_request_node_id.in_(prs.index),
+                            PullRequestLabel.acc_id.in_(meta_ids))),
             mdb, lcols, index=PullRequestLabel.pull_request_node_id.key)
         left = cls._find_left_by_labels(
             df_labels.index, df_labels[PullRequestLabel.name.key].values, labels)
@@ -921,23 +934,23 @@ class PullRequestMiner:
         return inactive_prs
 
     @staticmethod
-    async def _read_filtered_models(conn: Union[databases.core.Connection, databases.Database],
-                                    model_cls: Base,
+    async def _read_filtered_models(model_cls: Base,
                                     node_ids: Collection[str],
                                     time_to: datetime,
+                                    meta_ids: Tuple[int, ...],
+                                    mdb: DatabaseLike,
                                     columns: Optional[List[InstrumentedAttribute]] = None,
                                     created_at=True,
                                     ) -> pd.DataFrame:
         if columns is not None:
             columns = [model_cls.pull_request_node_id, model_cls.node_id] + columns
-        node_id_filter = model_cls.pull_request_node_id.in_(node_ids)
+        filters = [model_cls.pull_request_node_id.in_(node_ids),
+                   model_cls.acc_id.in_(meta_ids)]
         if created_at:
-            filters = sql.and_(node_id_filter, model_cls.created_at < time_to)
-        else:
-            filters = node_id_filter
+            filters.append(model_cls.created_at < time_to)
         df = await read_sql_query(
-            sql.select(columns or [model_cls]).where(filters),
-            con=conn,
+            sql.select(columns or [model_cls]).where(sql.and_(*filters)),
+            con=mdb,
             columns=columns or model_cls,
             index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
         return df

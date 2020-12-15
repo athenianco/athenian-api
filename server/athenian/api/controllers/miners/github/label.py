@@ -2,7 +2,7 @@ import pickle
 from typing import List, Optional, Set, Tuple
 
 import aiomcache
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 
 from athenian.api.cache import cached
 from athenian.api.models.metadata.github import PullRequestLabel
@@ -38,7 +38,8 @@ async def mine_labels(repos: Set[str],
                 func.min(PullRequestLabel.color).label("color"),
                 func.max(PullRequestLabel.description).label("description"),
                 func.count(PullRequestLabel.pull_request_node_id).label("used_prs")])
-        .where(PullRequestLabel.repository_full_name.in_(repos))
+        .where(and_(PullRequestLabel.repository_full_name.in_(repos),
+                    PullRequestLabel.acc_id.in_(meta_ids)))
         .group_by(PullRequestLabel.name))
     result = [LabelDetails(name=row[PullRequestLabel.name.key], color=row["color"],
                            description=row["description"], used_prs=row["used_prs"])
