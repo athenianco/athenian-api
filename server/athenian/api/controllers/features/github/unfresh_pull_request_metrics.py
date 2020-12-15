@@ -54,12 +54,12 @@ async def fetch_pull_request_facts_unfresh(meta_ids: Tuple[int, ...],
             release_settings, meta_ids, mdb, pdb, cache),
         PullRequestMiner.fetch_prs(
             time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
-            blacklist, mdb, cache, columns=[
+            blacklist, meta_ids, mdb, cache, columns=[
                 PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
             ]),
     ]
     if jira and done_facts:
-        tasks.append(_filter_done_facts_jira(done_facts, jira, mdb, cache))
+        tasks.append(_filter_done_facts_jira(done_facts, jira, meta_ids, mdb, cache))
     else:
         async def identity():
             return done_facts
@@ -68,7 +68,7 @@ async def fetch_pull_request_facts_unfresh(meta_ids: Tuple[int, ...],
     if not exclude_inactive:
         tasks.append(_fetch_inactive_merged_unreleased_prs(
             time_from, time_to, repositories, participants, labels, jira, default_branches,
-            release_settings, mdb, pdb, cache))
+            release_settings, meta_ids, mdb, pdb, cache))
     else:
         async def dummy_inactive_prs():
             return pd.DataFrame()
@@ -102,11 +102,12 @@ async def fetch_pull_request_facts_unfresh(meta_ids: Tuple[int, ...],
 @sentry_span
 async def _filter_done_facts_jira(done_facts: Dict[str, Tuple[str, PullRequestFacts]],
                                   jira: JIRAFilter,
+                                  meta_ids: Tuple[int, ...],
                                   mdb: databases.Database,
                                   cache: Optional[aiomcache.Client],
                                   ) -> Dict[str, Tuple[str, PullRequestFacts]]:
     filtered = await PullRequestMiner.filter_jira(
-        done_facts, jira, mdb, cache, columns=[PullRequest.node_id])
+        done_facts, jira, meta_ids, mdb, cache, columns=[PullRequest.node_id])
     return {k: done_facts[k] for k in filtered.index.values}
 
 
@@ -119,6 +120,7 @@ async def _fetch_inactive_merged_unreleased_prs(time_from: datetime,
                                                 jira: JIRAFilter,
                                                 default_branches: Dict[str, str],
                                                 release_settings: Dict[str, ReleaseMatchSetting],
+                                                meta_ids: Tuple[int, ...],
                                                 mdb: databases.Database,
                                                 pdb: databases.Database,
                                                 cache: Optional[aiomcache.Client]) -> pd.DataFrame:

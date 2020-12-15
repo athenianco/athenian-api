@@ -142,8 +142,8 @@ def main():
                 log.info("Mining all the releases")
                 branches, default_branches = await extract_branches(repos, meta_ids, mdb, None)
                 releases, _, _ = await mine_releases(
-                    meta_ids, repos, {}, branches, default_branches, no_time_from, time_to,
-                    JIRAFilter.empty(), settings, mdb, pdb, None, force_fresh=True)
+                    repos, {}, branches, default_branches, no_time_from, time_to,
+                    JIRAFilter.empty(), settings, meta_ids, mdb, pdb, None, force_fresh=True)
                 branches_count = len(branches)
                 del branches
                 releases_by_tag = sum(
@@ -285,7 +285,7 @@ async def create_teams(account: int,
 
     :return: Number of copied teams and the number of noticed bots.
     """
-    num_teams = len(await copy_teams_as_needed(account, sdb, mdb, cache))
+    num_teams = len(await copy_teams_as_needed(account, meta_ids, sdb, mdb, cache))
     team = await sdb.fetch_one(select([Team.id, Team.members_count])
                                .where(and_(Team.name == Team.BOTS,
                                            Team.owner_id == account)))

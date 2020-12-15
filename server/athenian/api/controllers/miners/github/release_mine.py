@@ -45,10 +45,8 @@ from athenian.api.tracing import sentry_span
         ",".join(sorted(repos)),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
         time_from, time_to, jira, settings),
-    version=2,
 )
-async def mine_releases(meta_ids: Tuple[int, ...],
-                        repos: Iterable[str],
+async def mine_releases(repos: Iterable[str],
                         participants: ReleaseParticipants,
                         branches: pd.DataFrame,
                         default_branches: Dict[str, str],
@@ -56,6 +54,7 @@ async def mine_releases(meta_ids: Tuple[int, ...],
                         time_to: datetime,
                         jira: JIRAFilter,
                         settings: Dict[str, ReleaseMatchSetting],
+                        meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
                         pdb: databases.Database,
                         cache: Optional[aiomcache.Client],
@@ -96,7 +95,7 @@ async def mine_releases(meta_ids: Tuple[int, ...],
 
     if jira:
         precomputed_facts = await _filter_precomputed_release_facts_by_jira(
-            precomputed_facts, jira, mdb, cache)
+            precomputed_facts, jira, meta_ids, mdb, cache)
         has_precomputed_facts = \
             releases_in_time_range[Release.id.key].isin(precomputed_facts).values
     result = [
@@ -399,6 +398,7 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
 @sentry_span
 async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str, ReleaseFacts],
                                                     jira: JIRAFilter,
+                                                    meta_ids: Tuple[int, ...],
                                                     mdb: databases.Database,
                                                     cache: Optional[aiomcache.Client],
                                                     ) -> Dict[str, ReleaseFacts]:

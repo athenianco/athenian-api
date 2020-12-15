@@ -245,6 +245,7 @@ async def _find_old_released_prs(commits: np.ndarray,
                                  updated_min: Optional[datetime],
                                  updated_max: Optional[datetime],
                                  pr_blacklist: Optional[BinaryExpression],
+                                 meta_ids: Tuple[int, ...],
                                  mdb: databases.Database,
                                  cache: Optional[aiomcache.Client],
                                  ) -> pd.DataFrame:
@@ -382,7 +383,7 @@ async def map_releases_to_prs(meta_ids: Tuple[int, ...],
         all_observed_repos = all_observed_repos[order]
         prs = await _find_old_released_prs(
             all_observed_commits, all_observed_repos, time_from, authors, mergers, jira,
-            updated_min, updated_max, pr_blacklist, mdb, cache)
+            updated_min, updated_max, pr_blacklist, meta_ids, mdb, cache)
     else:
         prs = pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
                                     if c.name != PullRequest.node_id.key])

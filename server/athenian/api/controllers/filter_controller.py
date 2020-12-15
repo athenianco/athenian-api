@@ -310,10 +310,10 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     branches, default_branches = await extract_branches(
         repos, meta_ids, request.mdb, request.cache)
     releases, avatars, _ = await mine_releases(
-        meta_ids, repos, participants, branches, default_branches, filt.date_from, filt.date_to,
+        repos, participants, branches, default_branches, filt.date_from, filt.date_to,
         JIRAFilter.from_web(filt.jira, jira_ids), settings,
-        request.mdb, request.pdb, request.cache)
-    issues = await _load_jira_issues(jira_ids, releases, request.mdb)
+        meta_ids, request.mdb, request.pdb, request.cache)
+    issues = await _load_jira_issues(jira_ids, releases, meta_ids, request.mdb)
     data = [FilteredRelease(name=details[Release.name.key],
                             repository=details[Release.repository_full_name.key],
                             url=details[Release.url.key],
@@ -335,6 +335,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
 
 async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
                             releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+                            meta_ids: Tuple[int, ...],
                             mdb: databases.Database) -> Dict[str, JIRAIssue]:
     if jira_ids is None:
         for (_, facts) in releases:
@@ -363,6 +364,7 @@ async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
             epiciss, and_(epiciss.id == regiss.epic_id,
                           epiciss.acc_id == regiss.acc_id)))
         .where(and_(prmap.node_id.in_(pr_to_ix),
+                    prmap.node_acc.in_(meta_ids),
                     regiss.project_id.in_(jira_ids[1]))))
     issues = {}
     for r in rows:

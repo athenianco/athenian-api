@@ -145,7 +145,7 @@ async def _calc_pull_request_facts_github(time_from: datetime,
     ]
     if jira and precomputed_facts:
         tasks.append(PullRequestMiner.filter_jira(
-            precomputed_facts, jira, mdb, cache, columns=[PullRequest.node_id]))
+            precomputed_facts, jira, meta_ids, mdb, cache, columns=[PullRequest.node_id]))
         (miner, unreleased_facts, matched_bys, unreleased_prs_event), filtered = \
             await gather(*tasks, op="PullRequestMiner")
         precomputed_facts = {k: precomputed_facts[k] for k in filtered.index.values}
@@ -421,8 +421,8 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
     branches, default_branches = await extract_branches(all_repositories, meta_ids, mdb, cache)
     all_participants = merge_release_participants(participants)
     releases, _, matched_bys = await mine_releases(
-        meta_ids, all_repositories, all_participants, branches, default_branches,
-        time_from, time_to, jira, release_settings, mdb, pdb, cache)
+        all_repositories, all_participants, branches, default_branches,
+        time_from, time_to, jira, release_settings, meta_ids, mdb, pdb, cache)
     mined_facts = defaultdict(list)
     for i, f in releases:
         mined_facts[i[Release.repository_full_name.key].split("/", 1)[1]].append(f)

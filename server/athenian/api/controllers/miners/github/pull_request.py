@@ -214,7 +214,7 @@ class PullRequestMiner:
                 mdb, pdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
                 time_from, time_to, repositories, participants, labels, jira,
-                exclude_inactive, pr_blacklist, mdb, cache,
+                exclude_inactive, pr_blacklist, meta_ids, mdb, cache,
                 updated_min=updated_min, updated_max=updated_max),
         ]
         # the following is a very rough approximation regarding updated_min/max:
@@ -222,7 +222,7 @@ class PullRequestMiner:
         if not exclude_inactive and (updated_min is None or updated_min <= time_from):
             tasks.append(cls._fetch_inactive_merged_unreleased_prs(
                 time_from, time_to, repositories, participants, labels, jira, default_branches,
-                release_settings, mdb, pdb, cache))
+                release_settings, meta_ids, mdb, pdb, cache))
         else:
             async def dummy_unreleased():
                 return pd.DataFrame()
@@ -251,7 +251,7 @@ class PullRequestMiner:
                     mdb, pdb, cache, inverse_pr_blacklist, truncate),
                 cls.fetch_prs(
                     time_from, time_to, missed_prs, participants, labels, jira,
-                    exclude_inactive, inverse_pr_blacklist, mdb, cache,
+                    exclude_inactive, inverse_pr_blacklist, meta_ids, mdb, cache,
                     updated_min=updated_min, updated_max=updated_max),
             ]
             (missed_released_prs, _, _, _), missed_prs = await gather(*tasks)
@@ -455,8 +455,10 @@ class PullRequestMiner:
                             _issue.acc_id == _issue_epic.acc_id), isouter=True),
                         sql.and_(_map.jira_id == _issue.id,
                                  _map.jira_acc == _issue.acc_id)),
-                    PullRequest.node_id == _map.node_id,
-                )).where(PullRequest.node_id.in_(node_ids)),
+                    sql.and_(PullRequest.node_id == _map.node_id,
+                             PullRequest.acc_id == _map.node_acc),
+                )).where(sql.and_(PullRequest.node_id.in_(node_ids),
+                                  PullRequest.acc_id.in_(meta_ids))),
                 mdb, columns=selected, index=[PullRequest.node_id.key, _issue.key.key])
             if df.empty:
                 df.drop([Issue.acc_id.key, Issue.components.key], inplace=True, axis=1)
@@ -601,6 +603,7 @@ class PullRequestMiner:
                         jira: JIRAFilter,
                         exclude_inactive: bool,
                         pr_blacklist: Optional[BinaryExpression],
+                        meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
                         cache: Optional[aiomcache.Client],
                         columns=PullRequest,
@@ -707,6 +710,7 @@ class PullRequestMiner:
             jira: JIRAFilter,
             default_branches: Dict[str, str],
             release_settings: Dict[str, ReleaseMatchSetting],
+            meta_ids: Tuple[int, ...],
             mdb: databases.Database,
             pdb: databases.Database,
             cache: Optional[aiomcache.Client]) -> pd.DataFrame:
@@ -717,13 +721,14 @@ class PullRequestMiner:
             return await read_sql_query(sql.select([PullRequest])
                                         .where(PullRequest.node_id.in_(node_ids)),
                                         mdb, PullRequest, index=PullRequest.node_id.key)
-        return await cls.filter_jira(node_ids, jira, mdb, cache)
+        return await cls.filter_jira(node_ids, jira, meta_ids, mdb, cache)
 
     @classmethod
     @sentry_span
     async def filter_jira(cls,
                           pr_node_ids: Iterable[str],
                           jira: JIRAFilter,
+                          meta_ids: Tuple[int, ...],
                           mdb: databases.Database,
                           cache: Optional[aiomcache.Client],
                           columns=PullRequest) -> pd.DataFrame:

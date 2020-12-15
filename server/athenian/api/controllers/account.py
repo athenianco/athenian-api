@@ -102,6 +102,7 @@ async def get_account_organizations(account: int,
 
 
 async def copy_teams_as_needed(account: int,
+                               meta_ids: Tuple[int, ...],
                                sdb: DatabaseLike,
                                mdb: DatabaseLike,
                                cache: Optional[aiomcache.Client],
@@ -118,7 +119,8 @@ async def copy_teams_as_needed(account: int,
         log.info("Found %d existing teams for account %d, no-op", existing, account)
     orgs = [org.id for org in await get_account_organizations(account, sdb, mdb, cache)]
     team_rows = await mdb.fetch_all(select([MetadataTeam])
-                                    .where(MetadataTeam.organization.in_(orgs)))
+                                    .where(and_(MetadataTeam.organization.in_(orgs),
+                                                MetadataTeam.acc_id.in_(meta_ids))))
     if not team_rows:
         log.warning("Found 0 metadata teams for account %d", account)
         return []
@@ -137,8 +139,9 @@ async def copy_teams_as_needed(account: int,
     teams = {t[MetadataTeam.id.key]: t for t in team_rows}
     member_rows = await mdb.fetch_all(
         select([TeamMember.parent_id, NodeUser.login]).select_from(
-            join(TeamMember, NodeUser, TeamMember.child_id == NodeUser.id),
-        ).where(TeamMember.parent_id.in_(teams)))
+            join(TeamMember, NodeUser, and_(TeamMember.child_id == NodeUser.id,
+                                            TeamMember.acc_id == NodeUser.acc_id)),
+        ).where(and_(TeamMember.parent_id.in_(teams), TeamMember.acc_id.in_(meta_ids))))
     members = defaultdict(list)
     prefix = PREFIXES["github"]
     for row in member_rows:
