@@ -197,8 +197,8 @@ async def _set_releases(meta_ids: Tuple[int, ...],
                         cache: Optional[aiomcache.Client]) -> None:
     branches, default_branches = await extract_branches(repo_ids, meta_ids, mdb, cache)
     releases, _ = await load_releases(
-        meta_ids, repo_ids, branches, default_branches, time_from, time_to,
-        release_settings, mdb, pdb, cache)
+        repo_ids, branches, default_branches, time_from, time_to,
+        release_settings, meta_ids, mdb, pdb, cache)
     topic = DeveloperTopic.releases.name
     included_releases = np.nonzero(np.in1d(releases[Release.author.key].values, list(dev_ids)))[0]
     if not repogroups:

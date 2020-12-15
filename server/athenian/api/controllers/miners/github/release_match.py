@@ -421,8 +421,8 @@ async def _find_releases_for_matching_prs(meta_ids: Tuple[int, ...],
         # that's because the release strategy can change depending on the time range
         # see ENG-710 and ENG-725
         releases_in_time_range, matched_bys = await load_releases(
-            meta_ids, repos, branches, default_branches, time_from, time_to,
-            release_settings, mdb, pdb, cache)
+            repos, branches, default_branches, time_from, time_to,
+            release_settings, meta_ids, mdb, pdb, cache)
     else:
         matched_bys = {}
     # these matching rules must be applied in the past to stay consistent
@@ -452,8 +452,8 @@ async def _find_releases_for_matching_prs(meta_ids: Tuple[int, ...],
                                  datetime.min.time(), tzinfo=timezone.utc)
         if today > time_to:
             until_today_task = load_releases(
-                meta_ids, repos, branches, default_branches, time_to, today,
-                consistent_release_settings, mdb, pdb, cache)
+                repos, branches, default_branches, time_to, today,
+                consistent_release_settings, meta_ids, mdb, pdb, cache)
     if until_today_task is None:
         until_today_task = dummy_load_releases_until_today()
 
@@ -475,12 +475,12 @@ async def _find_releases_for_matching_prs(meta_ids: Tuple[int, ...],
     tag_lookbehind_time_from = time_from - timedelta(days=2 * 365)
     tasks = [
         until_today_task,
-        load_releases(meta_ids, repos_matched_by_branch, branches, default_branches,
+        load_releases(repos_matched_by_branch, branches, default_branches,
                       branch_lookbehind_time_from, time_from, consistent_release_settings,
-                      mdb, pdb, cache),
-        load_releases(meta_ids, repos_matched_by_tag, branches, default_branches,
+                      meta_ids, mdb, pdb, cache),
+        load_releases(repos_matched_by_tag, branches, default_branches,
                       tag_lookbehind_time_from, time_from, consistent_release_settings,
-                      mdb, pdb, cache),
+                      meta_ids, mdb, pdb, cache),
         _fetch_repository_first_commit_dates(repos_matched_by_branch, mdb, pdb, cache),
     ]
     releases_today, releases_old_branches, releases_old_tags, repo_births = await gather(*tasks)
@@ -503,9 +503,9 @@ async def _find_releases_for_matching_prs(meta_ids: Tuple[int, ...],
                 if not hard_repos:
                     break
                 extra_releases, _ = await load_releases(
-                    meta_ids, hard_repos, branches, default_branches,
+                    hard_repos, branches, default_branches,
                     branch_lookbehind_time_from - deeper_step, branch_lookbehind_time_from,
-                    consistent_release_settings, mdb, pdb, cache)
+                    consistent_release_settings, meta_ids, mdb, pdb, cache)
                 releases_old_branches = releases_old_branches.append(extra_releases)
                 hard_repos -= set(extra_releases[Release.repository_full_name.key].unique())
                 del extra_releases

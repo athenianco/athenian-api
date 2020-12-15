@@ -4,6 +4,7 @@ from aiohttp import web
 from sqlalchemy import and_, delete, insert, select
 
 from athenian.api.async_utils import gather
+from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.jira import get_jira_id
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -37,10 +38,9 @@ async def list_release_match_settings(request: AthenianWebRequest, id: int) -> w
     return web.json_response(model)
 
 
+@disable_default_user
 async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Response:
     """Set the release matching rule for a list of repositories."""
-    if request.is_default_user:
-        return ResponseError(ForbiddenError("%s is the default user" % request.uid)).response
     rule = ReleaseMatchRequest.from_dict(body)
     settings = Settings.from_request(request, rule.account)
     match = ReleaseMatch[rule.match]
@@ -72,6 +72,7 @@ async def get_jira_projects(request: AthenianWebRequest,
     return model_response(models)
 
 
+@disable_default_user
 async def set_jira_projects(request: AthenianWebRequest, body: dict) -> web.Response:
     """Set the enabled JIRA projects."""
     model = JIRAProjectsRequest.from_dict(body)

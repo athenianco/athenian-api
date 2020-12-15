@@ -11,7 +11,7 @@ from athenian.api.models.web.team_create_request import TeamCreateRequest
 
 
 @pytest.mark.parametrize("account", [1, 2], ids=["as admin", "as non-admin"])
-async def test_create_team_smoke(client, headers, sdb, account):
+async def test_create_team_smoke(client, headers, sdb, account, disable_default_user):
     body = TeamCreateRequest(account, "Engineering", ["github.com/se7entyse7en"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/team/create", headers=headers, json=body,
@@ -51,7 +51,7 @@ async def test_create_team_smoke(client, headers, sdb, account):
 
 
 @pytest.mark.parametrize("account", [3, 4], ids=["not a member", "invalid account"])
-async def test_create_team_wrong_account(client, headers, sdb, account):
+async def test_create_team_wrong_account(client, headers, sdb, account, disable_default_user):
     body = TeamCreateRequest(account, "Engineering", ["github.com/se7entyse7en"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/team/create", headers=headers, json=body,
@@ -71,7 +71,18 @@ async def test_create_team_wrong_account(client, headers, sdb, account):
     assert len(await sdb.fetch_all(select([Team]))) == 0
 
 
-async def test_create_team_wrong_member(client, headers, sdb):
+async def test_create_team_default_user(client, headers, sdb):
+    body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"]).to_dict()
+    response = await client.request(
+        method="POST", path="/v1/team/create", headers=headers, json=body,
+    )
+
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 403, "Response body is : " + body
+    assert len(await sdb.fetch_all(select([Team]))) == 0
+
+
+async def test_create_team_wrong_member(client, headers, sdb, disable_default_user):
     body = TeamCreateRequest(1, "Engineering",
                              ["github.com/se7entyse7en/foo",
                               "github.com/vmarkovtsev/bar",
@@ -94,7 +105,7 @@ async def test_create_team_wrong_member(client, headers, sdb):
     assert len(await sdb.fetch_all(select([Team]))) == 0
 
 
-async def test_create_team_wrong_parent(client, headers, sdb):
+async def test_create_team_wrong_parent(client, headers, sdb, disable_default_user):
     body = TeamCreateRequest(1, "Engineering",
                              ["github.com/se7entyse7en",
                               "github.com/warenlg"],
@@ -115,7 +126,7 @@ async def test_create_team_wrong_parent(client, headers, sdb):
     assert response.status == 400, "Response body is : " + rbody
 
 
-async def test_create_team_same_members(client, headers, sdb):
+async def test_create_team_same_members(client, headers, sdb, disable_default_user):
     body = TeamCreateRequest(1, "Engineering 1",
                              ["github.com/se7entyse7en",
                               "github.com/vmarkovtsev"]).to_dict()
@@ -156,7 +167,7 @@ async def test_create_team_same_members(client, headers, sdb):
     })
 
 
-async def test_create_team_same_name(client, headers, sdb):
+async def test_create_team_same_name(client, headers, sdb, disable_default_user):
     body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/team/create", headers=headers, json=body,
@@ -279,7 +290,7 @@ def _test_same_team(actual, expected, no_timings=True):
     assert actual == expected
 
 
-async def test_update_team_smoke(client, headers, sdb):
+async def test_update_team_smoke(client, headers, sdb, disable_default_user):
     await sdb.execute(insert(Team).values(Team(
         owner_id=1, name="Test", members=["github.com/vmarkovtsev"],
     ).create_defaults().explode()))
@@ -301,6 +312,17 @@ async def test_update_team_smoke(client, headers, sdb):
     assert team[Team.parent_id.key] == 1
 
 
+async def test_update_team_default_user(client, headers, sdb):
+    await sdb.execute(insert(Team).values(Team(
+        owner_id=1, name="Test", members=["github.com/vmarkovtsev"],
+    ).create_defaults().explode()))
+    body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"]).to_dict()
+    response = await client.request(
+        method="POST", path="/v1/team/create", headers=headers, json=body,
+    )
+    assert response.status == 403
+
+
 @pytest.mark.parametrize("owner, id, name, members, parent, status", [
     (1, 1, "Engineering", [], None, 400),
     (1, 1, "", ["github.com/se7entyse7en"], None, 400),
@@ -316,7 +338,7 @@ async def test_update_team_smoke(client, headers, sdb):
     (2, 1, "Engineering", ["github.com/eiso"], 1, 400),
 ])
 async def test_update_team_nasty_input(
-        client, headers, sdb, owner, id, name, members, parent, status):
+        client, headers, sdb, disable_default_user, owner, id, name, members, parent, status):
     await sdb.execute(insert(Team).values(Team(
         owner_id=owner,
         name="Engineering",
@@ -335,7 +357,7 @@ async def test_update_team_nasty_input(
     assert response.status == status, "Response body is : " + body
 
 
-async def test_update_team_parent_cycle(client, headers, sdb):
+async def test_update_team_parent_cycle(client, headers, sdb, disable_default_user):
     await sdb.execute(insert(Team).values(Team(
         owner_id=1,
         name="Engineering",
@@ -356,7 +378,7 @@ async def test_update_team_parent_cycle(client, headers, sdb):
     assert "cycle" in body
 
 
-async def test_delete_team_smoke(client, headers, sdb):
+async def test_delete_team_smoke(client, headers, sdb, disable_default_user):
     await sdb.execute(insert(Team).values(Team(
         owner_id=1,
         name="Engineering",
@@ -379,12 +401,32 @@ async def test_delete_team_smoke(client, headers, sdb):
     assert teams[0][Team.parent_id.key] is None
 
 
+async def test_delete_team_default_user(client, headers, sdb):
+    await sdb.execute(insert(Team).values(Team(
+        owner_id=1,
+        name="Engineering",
+        members=["github.com/se7entyse7en"],
+    ).create_defaults().explode()))
+    await sdb.execute(insert(Team).values(Team(
+        owner_id=1,
+        name="Test",
+        members=["github.com/vmarkovtsev"],
+        parent_id=1,
+    ).create_defaults().explode()))
+    response = await client.request(
+        method="DELETE", path="/v1/team/1", headers=headers, json={},
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 403, "Response body is : " + body
+
+
 @pytest.mark.parametrize("owner, id, status", [
     (1, 2, 404),
     (2, 1, 200),
     (3, 1, 404),
 ])
-async def test_delete_team_nasty_input(client, headers, sdb, owner, id, status):
+async def test_delete_team_nasty_input(client, headers, sdb, disable_default_user,
+                                       owner, id, status):
     await sdb.execute(insert(Team).values(Team(
         owner_id=owner,
         name="Engineering",
