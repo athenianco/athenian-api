@@ -527,9 +527,10 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     branches, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
     tasks = (
         PullRequestMiner.mine(
-            meta_ids, date_from, date_to, time_from, time_to, repos, participants,
+            date_from, date_to, time_from, time_to, repos, participants,
             labels, jira, branches, default_branches, exclude_inactive, release_settings,
-            mdb, pdb, cache, truncate=False, updated_min=updated_min, updated_max=updated_max),
+            meta_ids, mdb, pdb, cache,
+            truncate=False, updated_min=updated_min, updated_max=updated_max),
         load_precomputed_done_facts_filters(
             time_from, time_to, repos, participants, labels, default_branches,
             exclude_inactive, release_settings, pdb),
@@ -720,8 +721,8 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
         dags = await fetch_precomputed_commit_history_dags(
             prs_df[PullRequest.repository_full_name.key].unique(), pdb, cache)
     dfs, _, _ = await PullRequestMiner.mine_by_ids(
-        meta_ids, prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
-        release_settings, mdb, pdb, cache)
+        prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
+        release_settings, meta_ids, mdb, pdb, cache)
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
     for k, v in unreleased.items():
         if k not in facts:

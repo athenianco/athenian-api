@@ -312,8 +312,7 @@ def _extract_released_commits(releases: pd.DataFrame,
 
 
 @sentry_span
-async def map_releases_to_prs(meta_ids: Tuple[int, ...],
-                              repos: Collection[str],
+async def map_releases_to_prs(repos: Collection[str],
                               branches: pd.DataFrame,
                               default_branches: Dict[str, str],
                               time_from: datetime,
@@ -324,6 +323,7 @@ async def map_releases_to_prs(meta_ids: Tuple[int, ...],
                               release_settings: Dict[str, ReleaseMatchSetting],
                               updated_min: Optional[datetime],
                               updated_max: Optional[datetime],
+                              meta_ids: Tuple[int, ...],
                               mdb: databases.Database,
                               pdb: databases.Database,
                               cache: Optional[aiomcache.Client],
