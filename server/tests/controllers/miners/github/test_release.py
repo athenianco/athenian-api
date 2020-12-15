@@ -1067,8 +1067,8 @@ async def test_mine_releases_full_span(mdb, pdb, release_match_setting_tag):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, matched_bys = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, mdb, pdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     assert len(releases) == 53
     assert len(avatars) == 124
     assert matched_bys == {"github.com/src-d/go-git": ReleaseMatch.tag}
@@ -1095,27 +1095,27 @@ async def test_mine_releases_precomputed_smoke(
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, mdb, pdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     await wait_deferred()
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, mdb, pdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     assert len(releases) == 53
     assert len(avatars) == 124
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_to, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, mdb, pdb, None)
+        ["src-d/go-git"], {}, None, {}, time_to, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     assert len(releases) == 0
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
-        JIRAFilter.empty(), release_match_setting_branch, mdb, pdb, None)
+        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
+        JIRAFilter.empty(), release_match_setting_branch, (6366825,), mdb, pdb, None)
     assert len(releases) == 772
     assert len(avatars) == 131
     await wait_deferred()
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
-        JIRAFilter.empty(), release_match_setting_branch, mdb, pdb, None)
+        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
+        JIRAFilter.empty(), release_match_setting_branch, (6366825,), mdb, pdb, None)
     assert len(releases) == 772
     assert len(avatars) == 131
 
@@ -1125,15 +1125,15 @@ async def test_mine_releases_precomputed_time_range(mdb, pdb, release_match_sett
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, mdb, pdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     await wait_deferred()
 
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, mdb, pdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     for _, f in releases:
         assert time_from <= f.published < time_to
         assert len(f.prs) > 0
@@ -1147,15 +1147,15 @@ async def test_mine_releases_precomputed_update(mdb, pdb, release_match_setting_
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2018, month=11, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, mdb, pdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     await wait_deferred()
 
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, mdb, pdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     for _, f in releases:
         assert time_from <= f.published < time_to
         assert len(f.prs) > 0
@@ -1169,34 +1169,34 @@ async def test_mine_releases_jira(mdb, pdb, release_match_setting_tag, cache):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        ["src-d/go-git"], {}, None, {}, time_from, time_to,
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
                    set(), set(), False),
-        release_match_setting_tag, mdb, pdb, None)
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     await wait_deferred()
     assert len(releases) == 8
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        ["src-d/go-git"], {}, None, {}, time_from, time_to,
         JIRAFilter.empty(),
-        release_match_setting_tag, mdb, pdb, None)
+        release_match_setting_tag, (6366825,), mdb, pdb, None)
     await wait_deferred()
     assert len(releases) == 22
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        ["src-d/go-git"], {}, None, {}, time_from, time_to,
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
                    set(), set(), False),
-        release_match_setting_tag, mdb, pdb, cache)
+        release_match_setting_tag, (6366825,), mdb, pdb, cache)
     assert len(releases) == 8
     await wait_deferred()
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        ["src-d/go-git"], {}, None, {}, time_from, time_to,
         JIRAFilter.empty(),
-        release_match_setting_tag, mdb, pdb, cache)
+        release_match_setting_tag, (6366825,), mdb, pdb, cache)
     assert len(releases) == 22
     releases, avatars, _ = await mine_releases(
-        (6366825,), ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        ["src-d/go-git"], {}, None, {}, time_from, time_to,
         JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), set(), True),
-        release_match_setting_tag, mdb, pdb, cache)
+        release_match_setting_tag, (6366825,), mdb, pdb, cache)
     assert len(releases) == 15
 
 

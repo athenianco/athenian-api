@@ -32,13 +32,15 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
                                   cache: Optional[aiomcache.Client],
                                   columns=PullRequest,
                                   seed=PullRequest,
-                                  on=PullRequest.node_id) -> sql.Select:
+                                  on=(PullRequest.node_id, PullRequest.acc_id),
+                                  ) -> sql.Select:
     """
     Produce SQLAlchemy statement to fetch PRs that satisfy JIRA conditions.
 
     :param filters: Extra WHERE conditions.
     :param columns: SELECT these columns.
     :param seed: JOIN with this object.
+    :param on: JOIN by these two columns: node ID-like and acc_id-like.
     """
     assert jira
     if columns is PullRequest:
@@ -46,7 +48,7 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
     _map = aliased(NodePullRequestJiraIssues, name="m")
     if jira.unmapped:
         return sql.select(columns).select_from(sql.outerjoin(
-            seed, _map, on == _map.node_id,
+            seed, _map, sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
         )).where(sql.and_(*filters, _map.node_id.is_(None)))
     _issue = aliased(Issue, name="j")
     filters.append(_issue.acc_id == jira.account)
@@ -61,7 +63,7 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
     if not jira.epics:
         return sql.select(columns).select_from(sql.join(
             seed, sql.join(_map, _issue, _map.jira_id == _issue.id),
-            on == _map.node_id,
+            sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
         )).where(sql.and_(*filters))
     _issue_epic = aliased(Issue, name="e")
     filters.append(_issue_epic.key.in_(jira.epics))
@@ -69,7 +71,7 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
         seed, sql.join(
             _map, sql.join(_issue, _issue_epic, _issue.epic_id == _issue_epic.id),
             _map.jira_id == _issue.id),
-        on == _map.node_id,
+        sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
     )).where(sql.and_(*filters))
 
 
@@ -189,6 +191,7 @@ async def fetch_jira_issues(ids: Tuple[int, List[str]],
                             load_participants: bool,
                             default_branches: Dict[str, str],
                             release_settings: Dict[str, ReleaseMatchSetting],
+                            meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
                             pdb: databases.Database,
                             cache: Optional[aiomcache.Client],
@@ -216,7 +219,8 @@ async def fetch_jira_issues(ids: Tuple[int, List[str]],
     pr_rows = await mdb.fetch_all(
         sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
         .where(sql.and_(NodePullRequestJiraIssues.jira_acc == ids[0],
-                        NodePullRequestJiraIssues.jira_id.in_(issues.index))))
+                        NodePullRequestJiraIssues.jira_id.in_(issues.index),
+                        NodePullRequestJiraIssues.node_acc.in_(meta_ids))))
     pr_to_issue = {r[0]: r[1] for r in pr_rows}
     # TODO(vmarkovtsev): load the "fresh" released PRs
     released_prs = await _fetch_released_prs(pr_to_issue, default_branches, release_settings, pdb)
@@ -415,7 +419,7 @@ async def load_pr_jira_mapping(prs: Iterable[str],
                                mdb: DatabaseLike) -> Dict[str, str]:
     """Fetch the mapping from PR node IDs to JIRA issue IDs."""
     nprji = NodePullRequestJiraIssues
-    # TODO(vmarkovtsev): update NodePullRequestJiraIssues to carry the account ID and check it
     rows = await mdb.fetch_all(sql.select([nprji.node_id, nprji.jira_id])
-                               .where(nprji.node_id.in_(prs)))
+                               .where(sql.and_(nprji.node_id.in_(prs),
+                                               nprji.node_acc.in_(meta_ids))))
     return {r[0]: r[1] for r in rows}

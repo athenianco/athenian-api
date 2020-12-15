@@ -20,7 +20,7 @@ async def test_fetch_jira_issues_releases(mdb, pdb, default_branches, release_ma
                                      time_from, time_to, False,
                                      LabelFilter.empty(), [], [], [], [], [], [], False,
                                      default_branches, release_match_setting_tag,
-                                     mdb, pdb, None)
+                                     (6366825,), mdb, pdb, None)
     assert issues[ISSUE_PRS_BEGAN].notnull().sum() == 56
     assert issues[ISSUE_PRS_RELEASED].notnull().sum() == 55
     assert (issues[ISSUE_PRS_RELEASED][issues[ISSUE_PRS_RELEASED].notnull()] >

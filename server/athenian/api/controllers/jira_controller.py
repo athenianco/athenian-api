@@ -265,7 +265,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         filt.epics or [],
         reporters, assignees, commenters, len(filt.with_ or []) > 1,
         default_branches, release_settings,
-        request.mdb, request.pdb, request.cache,
+        meta_ids, request.mdb, request.pdb, request.cache,
     )
     return filt, time_intervals, issues
 
