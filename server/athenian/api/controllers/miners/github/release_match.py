@@ -482,7 +482,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
         load_releases(repos_matched_by_tag, branches, default_branches,
                       tag_lookbehind_time_from, time_from, consistent_release_settings,
                       meta_ids, mdb, pdb, cache),
-        _fetch_repository_first_commit_dates(repos_matched_by_branch, mdb, pdb, cache),
+        _fetch_repository_first_commit_dates(repos_matched_by_branch, meta_ids, mdb, pdb, cache),
     ]
     releases_today, releases_old_branches, releases_old_tags, repo_births = await gather(*tasks)
     releases_today = releases_today[0]
@@ -532,6 +532,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
     refresh_on_access=True,
 )
 async def _fetch_repository_first_commit_dates(repos: Iterable[str],
+                                               meta_ids: Tuple[int, ...],
                                                mdb: databases.Database,
                                                pdb: databases.Database,
                                                cache: Optional[aiomcache.Client],
@@ -552,7 +553,8 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
             .select_from(join(NodeCommit, NodeRepository,
                               and_(NodeCommit.repository == NodeRepository.id,
                                    NodeCommit.acc_id == NodeRepository.acc_id)))
-            .where(NodeRepository.name_with_owner.in_(missing))
+            .where(and_(NodeRepository.name_with_owner.in_(missing),
+                        NodeRepository.acc_id.in_(meta_ids)))
             .group_by(NodeRepository.id))
         if computed:
             values = [GitHubRepository(repository_full_name=r[0], first_commit=r[1], node_id=r[2])

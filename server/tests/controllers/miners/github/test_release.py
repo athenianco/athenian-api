@@ -885,12 +885,13 @@ async def test__find_dead_merged_prs_no_branches(mdb, pdb, dag):
 
 @with_defer
 async def test__fetch_repository_first_commit_dates_pdb_cache(mdb, pdb, cache):
-    fcd1 = await _fetch_repository_first_commit_dates(["src-d/go-git"], mdb, pdb, cache)
+    fcd1 = await _fetch_repository_first_commit_dates(
+        ["src-d/go-git"], (6366825,), mdb, pdb, cache)
     await wait_deferred()
     fcd2 = await _fetch_repository_first_commit_dates(
-        ["src-d/go-git"], Database("sqlite://"), pdb, None)
+        ["src-d/go-git"], (6366825,), Database("sqlite://"), pdb, None)
     fcd3 = await _fetch_repository_first_commit_dates(
-        ["src-d/go-git"], Database("sqlite://"), Database("sqlite://"), cache)
+        ["src-d/go-git"], (6366825,), Database("sqlite://"), Database("sqlite://"), cache)
     assert len(fcd1) == len(fcd2) == len(fcd3) == 1
     assert fcd1["src-d/go-git"] == fcd2["src-d/go-git"] == fcd3["src-d/go-git"]
     assert fcd1["src-d/go-git"].tzinfo == timezone.utc

@@ -138,7 +138,7 @@ async def mine_releases(repos: Iterable[str],
             settings, meta_ids, mdb, pdb, cache, releases_in_time_range=releases_in_time_range)
         tasks = [
             load_commit_dags(releases, meta_ids, mdb, pdb, cache),
-            _fetch_repository_first_commit_dates(missing_repos, mdb, pdb, cache),
+            _fetch_repository_first_commit_dates(missing_repos, meta_ids, mdb, pdb, cache),
         ]
         dags, first_commit_dates = await gather(*tasks, op="mine_releases/commits")
 

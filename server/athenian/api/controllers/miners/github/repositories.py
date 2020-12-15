@@ -48,7 +48,8 @@ async def mine_repositories(repos: Collection[str],
     prefix = PREFIXES["github"]
     with sentry_sdk.start_span(op="mine_repositories/nodes", description=str(len(repos))):
         rows = await mdb.fetch_all(select([NodeRepository.id])
-                                   .where(NodeRepository.name_with_owner.in_(repos)))
+                                   .where(and_(NodeRepository.name_with_owner.in_(repos),
+                                               NodeRepository.acc_id.in_(meta_ids))))
         repo_ids = [r[0] for r in rows]
 
     @sentry_span
@@ -145,7 +146,8 @@ async def mine_repositories(repos: Collection[str],
         repos = await mdb.fetch_all(select([Repository.full_name])
                                     .where(and_(Repository.archived.is_(False),
                                                 Repository.disabled.is_(False),
-                                                Repository.full_name.in_(repos)))
+                                                Repository.full_name.in_(repos),
+                                                Repository.acc_id.in_(meta_ids)))
                                     .order_by(Repository.full_name))
     repos = [prefix + r[0] for r in repos]
     return repos
