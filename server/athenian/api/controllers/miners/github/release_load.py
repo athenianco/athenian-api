@@ -29,6 +29,8 @@ from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release
 from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan
+from athenian.api.models.web import NoSourceDataError
+from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 
 
@@ -514,6 +516,10 @@ async def _match_releases_by_tag(repos: Iterable[str],
                 .order_by(desc(Release.published_at)),
                 mdb, Release, index=[Release.repository_full_name.key, Release.tag.key])
     releases = releases[~releases.index.duplicated(keep="first")]
+    if (missing_sha := releases[Release.sha.key].isnull().values).any():
+        raise ResponseError(NoSourceDataError(
+            detail="There are missing commit hashes for releases %s" %
+                   releases[Release.id.key].values[missing_sha].tolist()))
     regexp_cache = {}
     matched = []
     prefix = PREFIXES["github"]
