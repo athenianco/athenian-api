@@ -38,13 +38,13 @@ from athenian.api.models.web.filter_releases_request import FilterReleasesReques
 from athenian.api.models.web.filter_repositories_request import FilterRepositoriesRequest
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_release import FilteredRelease
-from athenian.api.models.web.filtered_releases import FilteredReleases
 from athenian.api.models.web.for_set import ForSet, RepositoryGroupsMixin
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
 from athenian.api.models.web.found_jira_stuff import FoundJIRAStuff
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, \
     ForbiddenError, GenericError, NotFoundError, ServerNotImplementedError, TooManyRequestsError
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
+from athenian.api.models.web.get_releases_request import GetReleasesRequest
 from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.histogram_definition import HistogramDefinition
 from athenian.api.models.web.histogram_scale import HistogramScale
@@ -98,6 +98,8 @@ from athenian.api.models.web.release_match_setting import ReleaseMatchSetting
 from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_metrics_request import ReleaseMetricsRequest
+from athenian.api.models.web.release_names import ReleaseNames
+from athenian.api.models.web.release_set import ReleaseSet, ReleaseSetInclude
 from athenian.api.models.web.release_with import ReleaseWith
 from athenian.api.models.web.released_pull_request import ReleasedPullRequest
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
