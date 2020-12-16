@@ -564,6 +564,7 @@ async def _fetch_developer_review_common(selected: List[InstrumentedAttribute],
         selected.insert(0, PullRequestReview.repository_node_id)
         group_by.insert(0, PullRequestReview.repository_node_id)
     filters = [
+        PullRequestReview.acc_id.in_(meta_ids),
         PullRequestReview.submitted_at.between(time_from, time_to),
         PullRequestReview.user_node_id.in_(devs),
         PullRequestReview.repository_node_id.in_(repos),
@@ -682,6 +683,7 @@ async def _fetch_developer_review_comments(devs: Iterable[str],
         selected.insert(0, PullRequestReviewComment.repository_node_id)
         group_by.insert(0, PullRequestReviewComment.repository_node_id)
     filters = [
+        PullRequestReviewComment.acc_id.in_(meta_ids),
         PullRequestReviewComment.created_at.between(time_from, time_to),
         PullRequestReviewComment.user_node_id.in_(devs),
         PullRequestReviewComment.repository_node_id.in_(repos),
@@ -746,6 +748,7 @@ async def _fetch_developer_regular_pr_comments(devs: Iterable[str],
         selected.insert(0, PullRequestComment.repository_node_id)
         group_by.insert(0, PullRequestComment.repository_node_id)
     filters = [
+        PullRequestComment.acc_id.in_(meta_ids),
         PullRequestComment.created_at.between(time_from, time_to),
         PullRequestComment.user_node_id.in_(devs),
         PullRequestComment.repository_node_id.in_(repos),
