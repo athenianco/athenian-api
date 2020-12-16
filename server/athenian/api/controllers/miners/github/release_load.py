@@ -250,7 +250,7 @@ async def _load_releases(repos: Iterable[Tuple[str, ReleaseMatch]],
     result = []
     if repos_by_tag:
         result.append(_match_releases_by_tag(
-            repos_by_tag, time_from, time_to, settings, mdb))
+            repos_by_tag, time_from, time_to, settings, meta_ids, mdb))
     if repos_by_branch:
         result.append(_match_releases_by_branch(
             repos_by_branch, branches, default_branches, time_from, time_to, settings,
@@ -503,6 +503,7 @@ async def _match_releases_by_tag(repos: Iterable[str],
                                  time_from: datetime,
                                  time_to: datetime,
                                  settings: Dict[str, ReleaseMatchSetting],
+                                 meta_ids: Tuple[int, ...],
                                  mdb: databases.Database,
                                  releases: Optional[pd.DataFrame] = None,
                                  ) -> pd.DataFrame:
@@ -510,7 +511,8 @@ async def _match_releases_by_tag(repos: Iterable[str],
         with sentry_sdk.start_span(op="fetch_tags"):
             releases = await read_sql_query(
                 select([Release])
-                .where(and_(Release.published_at.between(time_from, time_to),
+                .where(and_(Release.acc_id.in_(meta_ids),
+                            Release.published_at.between(time_from, time_to),
                             Release.repository_full_name.in_(repos),
                             Release.commit_id.isnot(None)))
                 .order_by(desc(Release.published_at)),

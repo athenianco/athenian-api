@@ -93,7 +93,8 @@ async def mine_repositories(repos: Collection[str],
     async def fetch_commits_comments_reviews():
         query_comments = \
             select([distinct(PullRequestComment.repository_full_name)]) \
-            .where(and_(PullRequestComment.repository_node_id.in_(repo_ids),
+            .where(and_(PullRequestComment.acc_id.in_(meta_ids),
+                        PullRequestComment.repository_node_id.in_(repo_ids),
                         PullRequestComment.created_at.between(time_from, time_to),
                         ))
         query_commits = \
@@ -102,13 +103,14 @@ async def mine_repositories(repos: Collection[str],
             .select_from(join(NodeCommit, NodeRepository,
                               and_(NodeCommit.repository == NodeRepository.id,
                                    NodeCommit.acc_id == NodeRepository.acc_id))) \
-            .where(and_(NodeCommit.repository.in_(repo_ids),
-                        NodeCommit.acc_id.in_(meta_ids),
+            .where(and_(NodeCommit.acc_id.in_(meta_ids),
+                        NodeCommit.repository.in_(repo_ids),
                         NodeCommit.committed_date.between(time_from, time_to),
                         ))
         query_reviews = \
             select([distinct(PullRequestReview.repository_full_name)]) \
-            .where(and_(PullRequestReview.repository_node_id.in_(repo_ids),
+            .where(and_(PullRequestReview.acc_id.in_(meta_ids),
+                        PullRequestReview.repository_node_id.in_(repo_ids),
                         PullRequestReview.submitted_at.between(time_from, time_to),
                         ))
         return await mdb.fetch_all(union(query_comments, query_commits, query_reviews))
