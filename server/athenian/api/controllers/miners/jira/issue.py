@@ -252,7 +252,8 @@ async def fetch_jira_issues(ids: Tuple[int, List[str]],
         await released_flow()
     else:
         pr_created_ats, err = await gather(
-            _fetch_created_ats(unreleased_prs, mdb), released_flow(), op="released and unreleased")
+            _fetch_created_ats(unreleased_prs, meta_ids, mdb), released_flow(),
+            op="released and unreleased")
         for row in pr_created_ats:
             pr_created_at = row[PullRequest.created_at.key]
             i = issue_to_index[pr_to_issue[row[PullRequest.node_id.key]]]
@@ -270,10 +271,12 @@ async def fetch_jira_issues(ids: Tuple[int, List[str]],
 
 @sentry_span
 async def _fetch_created_ats(pr_node_ids: Iterable[str],
+                             meta_ids: Tuple[int, ...],
                              mdb: databases.Database) -> List[Mapping[str, Union[str, datetime]]]:
     return await mdb.fetch_all(
         sql.select([PullRequest.node_id, PullRequest.created_at])
-        .where(PullRequest.node_id.in_(pr_node_ids)))
+        .where(sql.and_(PullRequest.node_id.in_(pr_node_ids),
+                        PullRequest.acc_id.in_(meta_ids))))
 
 
 @sentry_span

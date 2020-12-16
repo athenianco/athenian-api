@@ -54,23 +54,25 @@ async def mine_repositories(repos: Collection[str],
 
     @sentry_span
     async def fetch_active_prs():
-        query_released = \
-            select([distinct(GitHubDonePullRequestFacts.repository_full_name)]) \
+        query_released = [
+            select([distinct(GitHubDonePullRequestFacts.repository_full_name)])
             .where(and_(GitHubDonePullRequestFacts.repository_full_name.in_(repos),
-                        or_(GitHubDonePullRequestFacts.pr_done_at.between(time_from, time_to),
-                            GitHubDonePullRequestFacts.pr_created_at.between(time_from, time_to),
-                            )))
+                        col.between(time_from, time_to)))
+            for col in (GitHubDonePullRequestFacts.pr_done_at,
+                        GitHubDonePullRequestFacts.pr_created_at)
+        ]
         query_merged = \
             select([distinct(GitHubMergedPullRequestFacts.repository_full_name)]) \
             .where(and_(GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
                         GitHubMergedPullRequestFacts.merged_at.between(time_from, time_to)))
-        query_open = \
-            select([distinct(GitHubOpenPullRequestFacts.repository_full_name)]) \
+        query_open = [
+            select([distinct(GitHubOpenPullRequestFacts.repository_full_name)])
             .where(and_(GitHubOpenPullRequestFacts.repository_full_name.in_(repos),
-                        or_(GitHubOpenPullRequestFacts.pr_updated_at.between(time_from, time_to),
-                            GitHubOpenPullRequestFacts.pr_created_at.between(time_from, time_to),
-                            )))
-        return await pdb.fetch_all(union(query_released, query_merged, query_open))
+                        col.between(time_from, time_to)))
+            for col in (GitHubOpenPullRequestFacts.pr_updated_at,
+                        GitHubOpenPullRequestFacts.pr_created_at)
+        ]
+        return await pdb.fetch_all(union(*query_released, query_merged, *query_open))
 
     @sentry_span
     async def fetch_inactive_open_prs():
@@ -78,6 +80,7 @@ async def mine_repositories(repos: Collection[str],
             select([distinct(PullRequest.repository_full_name)])
             .where(and_(PullRequest.repository_node_id.in_(repo_ids),
                         PullRequest.hidden.is_(False),
+                        PullRequest.acc_id.in_(meta_ids),
                         PullRequest.created_at < time_from,
                         coalesce(PullRequest.closed, False).is_(False))))
 

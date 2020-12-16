@@ -678,7 +678,9 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                                           Dict[str, PullRequestFacts],
                                           Dict[str, ReleaseMatch]]:
     branches, default_branches = await extract_branches(prs, meta_ids, mdb, cache)
-    filters = [and_(PullRequest.repository_full_name == repo, PullRequest.number.in_(numbers))
+    filters = [and_(PullRequest.repository_full_name == repo,
+                    PullRequest.number.in_(numbers),
+                    PullRequest.acc_id.in_(meta_ids))
                for repo, numbers in prs.items()]
     queries = [select([PullRequest]).where(f).order_by(PullRequest.node_id) for f in filters]
     tasks = [

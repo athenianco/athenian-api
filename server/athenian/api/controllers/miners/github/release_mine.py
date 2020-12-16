@@ -215,11 +215,12 @@ async def mine_releases(repos: Iterable[str],
         commits_authors_nz = commits_authors.nonzero()[0]
         commits_authors[commits_authors_nz] = prefix + commits_authors[commits_authors_nz]
 
-        tasks = [_load_prs_by_merge_commit_ids(commit_ids, mdb)]
+        tasks = [_load_prs_by_merge_commit_ids(commit_ids, meta_ids, mdb)]
         if jira:
             query = await generate_jira_prs_query(
-                [PullRequest.merge_commit_id.in_(commit_ids)], jira, mdb, cache,
-                columns=[PullRequest.merge_commit_id])
+                [PullRequest.merge_commit_id.in_(commit_ids),
+                 PullRequest.acc_id.in_(meta_ids)],
+                jira, mdb, cache, columns=[PullRequest.merge_commit_id])
             tasks.append(mdb.fetch_all(query))
         results = await gather(*tasks,
                                op="mine_releases/fetch_pull_requests",
@@ -413,7 +414,8 @@ async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str,
     # we could run the following in parallel with the rest, but
     # "the rest" is a no-op in most of the cases thanks to preheating
     query = await generate_jira_prs_query(
-        [PullRequest.node_id.in_(pr_ids)], jira, mdb, cache, columns=[PullRequest.node_id])
+        [PullRequest.node_id.in_(pr_ids), PullRequest.acc_id.in_(meta_ids)],
+        jira, mdb, cache, columns=[PullRequest.node_id])
     pr_ids = pr_ids.astype("U")
     release_ids = np.repeat(list(precomputed_facts), lengths)
     order = np.argsort(pr_ids)
@@ -426,6 +428,7 @@ async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str,
 
 @sentry_span
 async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
+                                        meta_ids: Tuple[int, ...],
                                         mdb: databases.Database,
                                         ) -> Tuple[pd.DataFrame, List[InstrumentedAttribute]]:
     prs_columns = [
@@ -439,7 +442,8 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
     ]
     df = await read_sql_query(
         select(prs_columns)
-        .where(PullRequest.merge_commit_id.in_(commit_ids))
+        .where(and_(PullRequest.merge_commit_id.in_(commit_ids),
+                    PullRequest.acc_id.in_(meta_ids)))
         .order_by(PullRequest.merge_commit_id),
         mdb, prs_columns)
     return df, prs_columns
