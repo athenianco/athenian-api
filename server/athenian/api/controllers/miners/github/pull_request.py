@@ -626,6 +626,7 @@ class PullRequestMiner:
                 else_=sql.text("'3000-01-01'"),
             ) >= time_from,
             PullRequest.created_at < time_to,
+            PullRequest.acc_id.in_(meta_ids),
             PullRequest.hidden.is_(False),
             PullRequest.repository_full_name.in_(repositories),
         ]
