@@ -80,11 +80,21 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             .where(and_(*filters)))
         epic_ids = [r[Issue.id.key] for r in epic_rows]
         children_rows = await mdb.fetch_all(
-            select([Issue.epic_id, Issue.key, Issue.status, Issue.type, Issue.updated])
-            .where(Issue.epic_id.in_(epic_ids))
+            select([Issue.epic_id, Issue.key, Issue.status, Issue.type,
+                    AthenianIssue.work_began, AthenianIssue.resolved, Issue.updated])
+            .select_from(outerjoin(Issue, AthenianIssue, and_(Issue.acc_id == AthenianIssue.acc_id,
+                                                              Issue.id == AthenianIssue.id)))
+            .where(and_(Issue.epic_id.in_(epic_ids),
+                        Issue.acc_id == jira_ids[0]))
             .order_by(Issue.epic_id))
-        children = {k: [i[1] for i in g] for k, g in groupby(
-            ((r[0], [r[i] for i in range(1, 5)]) for r in children_rows), key=itemgetter(0))}
+        children = {k: sorted((i[1] for i in g), key=lambda c: c[0]) for k, g in groupby(
+            ((r[0], [r[i] for i in range(1, len(r))]) for r in children_rows), key=itemgetter(0))}
+        if mdb.url.dialect == "sqlite":
+            for cs in children.values():
+                for c in cs:
+                    for i in (-3, -2):
+                        if c[i] is not None:
+                            c[i] = c[i].replace(tzinfo=timezone.utc)
         epics = sorted(JIRAEpic(id=r[Issue.key.key],
                                 title=r[Issue.title.key],
                                 updated=max(chain(

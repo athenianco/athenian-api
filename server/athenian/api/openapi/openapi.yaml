@@ -477,7 +477,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FilteredReleases'
+                $ref: '#/components/schemas/ReleaseSet'
           description: Repositories that were updated within the given timeframe.
         400:
           content:
@@ -3693,8 +3693,8 @@ components:
       - repository
       - size_added
       - size_removed
-      - stages_now
       - stage_timings
+      - stages_now
       - title
       - updated
       type: object
@@ -4354,9 +4354,9 @@ components:
           minimum: 0
           type: integer
       type: object
-    FilteredReleases:
+    ReleaseSet:
       additionalProperties: false
-      description: Response of `/filter/releases` - releases metadata and user details.
+      description: Release metadata and contributor user details.
       example:
         include:
           users:
@@ -4494,6 +4494,30 @@ components:
       - number
       - title
       type: object
+    GetReleasesRequest:
+      additionalProperties: false
+      description: Request body of `/get/releases`. Declaration of which releases
+        the user wants to list.
+      example:
+        account: 1
+        releases:
+        - repository: github.com/athenianco/athenian-api
+          names:
+          - v0.7.53
+          - v0.6.10
+      properties:
+        account:
+          description: Account ID.
+          type: integer
+        releases:
+          description: List of repositories and release names to list.
+          items:
+            $ref: '#/components/schemas/ReleaseNames'
+          type: array
+      required:
+      - account
+      - releases
+      type: object
     IncludedJIRAIssues:
       description: Mentioned JIRA issues.
       example:
@@ -4630,7 +4654,7 @@ components:
     GetPullRequestsRequest:
       additionalProperties: false
       description: Request body of `/get/pull_requests`. Declaration of which PRs
-        the user wants to analyze.
+        the user wants to list.
       example:
         account: 1
         prs:
@@ -4644,7 +4668,7 @@ components:
           description: Account ID.
           type: integer
         prs:
-          description: List of repositories and PR numbers to analyze.
+          description: List of repositories and PR numbers to list.
           items:
             $ref: '#/components/schemas/PullRequestNumbers'
           type: array
@@ -4670,6 +4694,25 @@ components:
           type: array
       required:
       - numbers
+      - repository
+      type: object
+    ReleaseNames:
+      additionalProperties: false
+      description: Repository name and a list of release names in that repository.
+      example:
+        repository: github.com/athenianco/athenian-api
+        names:
+        - v0.7.53
+        - v0.6.10
+      properties:
+        repository:
+          $ref: '#/components/schemas/RepositoryID'
+        names:
+          items:
+            type: string
+          type: array
+      required:
+      - names
       - repository
       type: object
     FilterLabelsRequest:
@@ -5281,8 +5324,20 @@ components:
         id:
           type: string
         status:
+          description: Exact name of the issue's status.
           type: string
         type:
+          type: string
+        work_began:
+          description: When the issue entered the "In Progress" stage.
+            This timestamp can be missing and is always less than or equal to
+            `resolved`.
+          format: date-time
+          type: string
+        resolved:
+          description: When the issue was marked as completed. This timestamp
+            can be missing and is always greater than or equal to `work_began`.
+          format: date-time
           type: string
       required:
       - id
@@ -5388,14 +5443,16 @@ components:
         account:
           type: integer
         date_from:
-          description: '`null` disables the time filter boundary, thus everything is
-            returned. `date_from` and `date_to` must be both either `null` or not `null`.'
+          description: '`null` disables the time filter boundary, thus everything
+            is returned. `date_from` and `date_to` must be both either `null` or not
+            `null`.'
           format: date
           nullable: true
           type: string
         date_to:
-          description: '`null` disables the time filter boundary, thus everything is
-            returned. `date_from` and `date_to` must be both either `null` or not `null`.'
+          description: '`null` disables the time filter boundary, thus everything
+            is returned. `date_from` and `date_to` must be both either `null` or not
+            `null`.'
           format: date
           nullable: true
           type: string
