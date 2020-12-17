@@ -10,14 +10,14 @@ services:
           python3 -m athenian.api.models.precomputed \
             postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed &&
           python3 -m athenian.api.models.metadata \
-            postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata &&
+            postgresql://${REMOTE_POSTGRES_USER}:${REMOTE_POSTGRES_PASSWORD}@cloud_sql_proxy:5432/metadata &&
           python3 -m athenian.api \
             --log-level=${API_LOG_LEVEL:-INFO} \
             --log-structured \
             --host=0.0.0.0 \
             --port=8080 \
             --memcached=memcached:11211 \
-            --metadata-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata \
+            --metadata-db=postgresql://${REMOTE_POSTGRES_USER}:${REMOTE_POSTGRES_PASSWORD}@cloud_sql_proxy:5432/metadata \
             --state-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state \
             --precomputed-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed \
             --ui \
@@ -29,36 +29,37 @@ services:
       - postgres
       - memcached
 
-  postgres:
-    image: postgres:11.6
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-api}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-api}
-    ports:
-      - ${POSTGRES_HOST_PORT:-5432}:5432
-    volumes:
-      - postgres:/var/lib/postgresql/data
-      - db_dumps:/db_dumps
-
   memcached:
     image: launcher.gcr.io/google/memcached1
     command: ['memcached', '-m', '1024M', '-I', '128M']
     ports:
       - ${MEMCACHED_HOST_PORT:-11211}:11211
 
+  postgres:
+    image: postgres:11.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-api}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-api}
+      POSTGRES_SOURCE_HOST: cloud_sql_proxy
+      POSTGRES_SOURCE_PORT: 5432
+    ports:
+      - ${POSTGRES_HOST_PORT:-5432}:5432
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./load_pg_data.sh:/load_data.sh
+    depends_on:
+      - cloud_sql_proxy
+
   cloud_sql_proxy:
-    image: gcr.io/cloudsql-docker/gce-proxy:1.14
+    image: atholeque/goterracloud
     command: [
-      '/cloud_sql_proxy',
-      '-instances=${CLOUD_SQL_STAGING_INSTANCE}=tcp:0.0.0.0:5432,${CLOUD_SQL_PRODUCTION_INSTANCE}=tcp:0.0.0.0:5433',
-      '-credential_file=/secrets/cloudsql/credentials.json'
+      'cloud_sql_proxy',
+      '-instances=${CLOUD_SQL_INSTANCE}=tcp:0.0.0.0:5432',
     ]
     volumes:
-      - ${CLOUD_SQL_PROXY_CREDENTIALS_FILE:-./credentials.json}:/secrets/cloudsql/credentials.json
+      - ~/.config/gcloud:/root/.config/gcloud
 
 volumes:
   postgres:
-    external: false
-  db_dumps:
     external: false
