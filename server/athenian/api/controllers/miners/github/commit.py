@@ -22,7 +22,8 @@ from athenian.api.controllers.miners.github.dag_accelerated import extract_first
     extract_subdag, join_dags, partition_dag, searchsorted_inrange
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import NodeCommit, NodePullRequestCommit, PushCommit, User
+from athenian.api.models.metadata.github import Branch, NodeCommit, NodePullRequestCommit, \
+    PushCommit, Release, User
 from athenian.api.models.precomputed.models import GitHubCommitHistory
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
@@ -221,6 +222,14 @@ async def fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarray
         if repo not in result:
             result[repo] = _empty_dag() if prune else pdag
     return result
+
+
+BRANCH_FETCH_COMMITS_COLUMNS = (
+    Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
+    Branch.repository_full_name.key)
+RELEASE_FETCH_COMMITS_COLUMNS = (
+    Release.sha.key, Release.commit_id.key, Release.published_at.key,
+    Release.repository_full_name.key)
 
 
 @sentry_span

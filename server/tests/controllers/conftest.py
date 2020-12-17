@@ -6,7 +6,7 @@ import faker
 import numpy as np
 import pandas as pd
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import delete, insert, select
 
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_edges
@@ -14,7 +14,9 @@ from athenian.api.controllers.miners.github.dag_accelerated import join_dags
 from athenian.api.controllers.miners.types import nonemin, PullRequestFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
+from athenian.api.models.metadata.github import Branch
 from athenian.api.models.state.models import JIRAProjectSetting
+from athenian.api.typing_utils import wraps
 
 
 @pytest.fixture(scope="function")
@@ -145,6 +147,20 @@ async def fetch_dag(mdb, heads=None):
         ]
     edges = await _fetch_commit_history_edges(heads, [], (6366825,), mdb)
     return {"src-d/go-git": join_dags(*_empty_dag(), edges)}
+
+
+def with_only_master_branch(func):
+    async def wrapped_with_only_master_branch(**kwargs):
+        mdb = kwargs["mdb"]
+        branches = await mdb.fetch_all(select([Branch]).where(Branch.branch_name != "master"))
+        await mdb.execute(delete(Branch).where(Branch.branch_name != "master"))
+        try:
+            await func(**kwargs)
+        finally:
+            for branch in branches:
+                await mdb.execute(insert(Branch).values(branch))
+
+    return wraps(wrapped_with_only_master_branch, func)
 
 
 @pytest.fixture(scope="function")  # we cannot declare it "module" because of mdb's scope
