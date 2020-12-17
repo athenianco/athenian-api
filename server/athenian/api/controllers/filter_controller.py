@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import operator
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Collection, Dict, List, Optional, Set, Tuple, Union
 
 from aiohttp import web
 import aiomcache
@@ -24,7 +24,8 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.label import mine_labels
-from athenian.api.controllers.miners.github.release_mine import mine_releases
+from athenian.api.controllers.miners.github.release_mine import mine_releases, \
+    mine_releases_by_name
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
@@ -36,27 +37,12 @@ from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullR
     PushCommit, Release
 from athenian.api.models.metadata.jira import Epic, Issue
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
-    ForbiddenError, InvalidRequestError, JIRAIssue
-from athenian.api.models.web.developer_summary import DeveloperSummary
-from athenian.api.models.web.developer_updates import DeveloperUpdates
-from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
-from athenian.api.models.web.filter_contributors_request import FilterContributorsRequest
-from athenian.api.models.web.filter_labels_request import FilterLabelsRequest
-from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
-from athenian.api.models.web.filter_releases_request import FilterReleasesRequest
-from athenian.api.models.web.filter_repositories_request import FilterRepositoriesRequest
-from athenian.api.models.web.filtered_label import FilteredLabel
-from athenian.api.models.web.filtered_release import FilteredRelease
-from athenian.api.models.web.filtered_releases import FilteredReleases, FilteredReleasesInclude
-from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
-from athenian.api.models.web.included_native_user import IncludedNativeUser
-from athenian.api.models.web.included_native_users import IncludedNativeUsers
-from athenian.api.models.web.pull_request import PullRequest as WebPullRequest
-from athenian.api.models.web.pull_request_label import PullRequestLabel
-from athenian.api.models.web.pull_request_participant import PullRequestParticipant
-from athenian.api.models.web.pull_request_set import PullRequestSet
-from athenian.api.models.web.released_pull_request import ReleasedPullRequest
-from athenian.api.models.web.stage_timings import StageTimings
+    DeveloperSummary, DeveloperUpdates, FilterCommitsRequest, FilterContributorsRequest, \
+    FilteredLabel, FilteredRelease, FilterLabelsRequest, FilterPullRequestsRequest, \
+    FilterReleasesRequest, FilterRepositoriesRequest, ForbiddenError, GetPullRequestsRequest, \
+    GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, InvalidRequestError, JIRAIssue, \
+    PullRequest as WebPullRequest, PullRequestLabel, PullRequestParticipant, PullRequestSet, \
+    ReleasedPullRequest, ReleaseSet, ReleaseSetInclude, StageTimings
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -313,24 +299,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         repos, participants, branches, default_branches, filt.date_from, filt.date_to,
         JIRAFilter.from_web(filt.jira, jira_ids), settings,
         meta_ids, request.mdb, request.pdb, request.cache)
-    issues = await _load_jira_issues(jira_ids, releases, meta_ids, request.mdb)
-    data = [FilteredRelease(name=details[Release.name.key],
-                            repository=details[Release.repository_full_name.key],
-                            url=details[Release.url.key],
-                            publisher=facts.publisher,
-                            published=facts.published,
-                            age=facts.age,
-                            added_lines=facts.additions,
-                            deleted_lines=facts.deletions,
-                            commits=facts.commits_count,
-                            commit_authors=facts.commit_authors,
-                            prs=_extract_release_prs(facts.prs))
-            for details, facts in releases]
-    model = FilteredReleases(data=data, include=FilteredReleasesInclude(
-        users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
-        jira=issues,
-    ))
-    return model_response(model)
+    return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)
 
 
 async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
@@ -376,6 +345,32 @@ async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
     return issues
 
 
+async def _build_release_set_response(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                      avatars: List[Tuple[str, str]],
+                                      jira_ids: Optional[Tuple[int, List[str]]],
+                                      meta_ids: Tuple[int, ...],
+                                      mdb: databases.Database,
+                                      ) -> web.Response:
+    issues = await _load_jira_issues(jira_ids, releases, meta_ids, mdb)
+    data = [FilteredRelease(name=details[Release.name.key],
+                            repository=details[Release.repository_full_name.key],
+                            url=details[Release.url.key],
+                            publisher=facts.publisher,
+                            published=facts.published,
+                            age=facts.age,
+                            added_lines=facts.additions,
+                            deleted_lines=facts.deletions,
+                            commits=facts.commits_count,
+                            commit_authors=facts.commit_authors,
+                            prs=_extract_release_prs(facts.prs))
+            for details, facts in releases]
+    model = ReleaseSet(data=data, include=ReleaseSetInclude(
+        users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
+        jira=issues,
+    ))
+    return model_response(model)
+
+
 def _extract_release_prs(prs: Dict[str, np.ndarray]) -> List[ReleasedPullRequest]:
     return [
         ReleasedPullRequest(
@@ -403,11 +398,27 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     repos = {}
     for p in body.prs:
         repos.setdefault(p.repository, set()).update(p.numbers)
+    try:
+        github_repos, settings, meta_ids = await _get_github_repos(request, body.account, repos)
+    except KeyError:
+        return model_response(PullRequestSet())
+    github_prs = {r: repos[PREFIXES["github"] + r] for r in github_repos}
+    prs = await fetch_pull_requests(
+        github_prs, settings, meta_ids, request.mdb, request.pdb, request.cache)
+    return await _build_github_prs_response(prs, meta_ids, request.mdb, request.cache)
+
+
+async def _get_github_repos(request: AthenianWebRequest,
+                            account: int,
+                            repos: Collection[str],
+                            ) -> Tuple[List[str],
+                                       Dict[str, ReleaseMatchSetting],
+                                       Tuple[int, ...]]:
     checkers = {}
     repos_by_service = {}
     reverse_prefixes = {v: k for k, v in PREFIXES.items()}
     async with request.sdb.connection() as sdb_conn:
-        meta_ids = await get_metadata_account_ids(body.account, sdb_conn, request.cache)
+        meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
         async with request.mdb.connection() as mdb_conn:
             for repo in repos:
                 for prefix, service in reverse_prefixes.items():  # noqa: B007
@@ -420,21 +431,15 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
                     checker = checkers[service]
                 except KeyError:
                     checker = checkers[service] = access_classes[service](
-                        body.account, meta_ids, sdb_conn, mdb_conn, request.cache)
+                        account, meta_ids, sdb_conn, mdb_conn, request.cache)
                     await checker.load()
                 repo = repo[len(prefix):]
                 if await checker.check({repo}):
                     raise ResponseError(ForbiddenError(
-                        detail="Account %d is access denied to repo %s" % (body.account, repo)))
+                        detail="Account %d is access denied to repo %s" % (account, repo)))
                 repos_by_service.setdefault(service, []).append(repo)
-    try:
-        github_repos = {r: repos[PREFIXES["github"] + r] for r in repos_by_service["github"]}
-    except KeyError:
-        return model_response(PullRequestSet())
-    settings = await Settings.from_request(request, body.account).list_release_matches(repos)
-    prs = await fetch_pull_requests(
-        github_repos, settings, meta_ids, request.mdb, request.pdb, request.cache)
-    return await _build_github_prs_response(prs, meta_ids, request.mdb, request.cache)
+    settings = await Settings.from_request(request, account).list_release_matches(repos)
+    return repos_by_service["github"], settings, meta_ids
 
 
 @sentry_span
@@ -465,3 +470,22 @@ async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response
     labels = await mine_labels(repos, meta_ids, request.mdb, request.cache)
     labels = [FilteredLabel(**label) for label in labels]
     return model_response(labels)
+
+
+async def get_releases(request: AthenianWebRequest, body: dict) -> web.Response:
+    """List releases by repository and name."""
+    body = GetReleasesRequest.from_dict(body)
+    repos = {}
+    for p in body.releases:
+        repos.setdefault(p.repository, set()).update(p.names)
+    try:
+        (github_repos, settings, meta_ids), jira_ids = await gather(
+            _get_github_repos(request, body.account, repos),
+            get_jira_installation_or_none(body.account, request.sdb, request.mdb, request.cache),
+        )
+    except KeyError:
+        return model_response(ReleaseSet())
+    github_releases = {r: repos[PREFIXES["github"] + r] for r in github_repos}
+    releases, avatars = await mine_releases_by_name(
+        github_releases, settings, meta_ids, request.mdb, request.pdb, request.cache)
+    return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)

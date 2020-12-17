@@ -137,11 +137,12 @@ class Enum(Slots):
         return len(cls.__members)
 
 
-def AllOf(*mixed: typing.Type[Model], sealed: bool = True) -> typing.Type[Model]:
+def AllOf(*mixed: typing.Type[Model], module: str, sealed: bool = True) -> typing.Type[Model]:
     """
     Inherit from multiple Model classes.
 
     :param sealed: Do not allow inheritance from the resulting class.
+    :param module: Name of the calling module.
     """
     for cls in mixed:
         try:
@@ -164,6 +165,7 @@ def AllOf(*mixed: typing.Type[Model], sealed: bool = True) -> typing.Type[Model]
         "attribute_map": dict(chain.from_iterable(cls.attribute_map.items() for cls in mixed)),
         "__init__": __init__,
         "__enable_slots__": sealed,
+        "__module__": module,
     })
     if len(allOf.openapi_types) < sum(len(cls.openapi_types) for cls in mixed):
         raise TypeError("There are conflicting openapi_types in AllOf classes")

@@ -616,6 +616,56 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
+  /get/releases:
+    post:
+      operationId: get_releases
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetReleasesRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseSet'
+          description: List of releases satisfying the specified filters.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to access the specified pull requests.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: List releases by repository and name.
+      tags:
+      - filter
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.filter_controller
   /histograms/jira:
     post:
       operationId: calc_histogram_jira
@@ -4708,6 +4758,8 @@ components:
         repository:
           $ref: '#/components/schemas/RepositoryID'
         names:
+          description: List of release names. For tag releases, those are the tag names.
+            For branch releases, those are commit hashes.
           items:
             type: string
           type: array

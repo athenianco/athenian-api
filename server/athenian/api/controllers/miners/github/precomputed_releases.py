@@ -1,14 +1,16 @@
 from collections import defaultdict
 from itertools import chain
 import pickle
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 import databases
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, insert, select, union_all
+from sqlalchemy import and_, desc, insert, or_, select, union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
+from athenian.api.async_utils import read_sql_query
+from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import ReleaseFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting
@@ -16,6 +18,7 @@ from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.precomputed.models import GitHubReleaseFacts
 from athenian.api.tracing import sentry_span
+from athenian.precomputer.db.models import GitHubRelease as PrecomputedRelease
 
 
 @sentry_span
@@ -28,6 +31,8 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
 
     :return: Mapping Release.id -> facts.
     """
+    if releases.empty:
+        return {}
     reverse_settings = defaultdict(list)
     prefix = PREFIXES["github"]
     for repo in releases[Release.repository_full_name.key].unique():
@@ -99,3 +104,32 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
         sql = insert(GitHubReleaseFacts).prefix_with("OR IGNORE")
     with sentry_sdk.start_span(op="store_precomputed_release_facts/execute_many"):
         await pdb.execute_many(sql, values)
+
+
+@sentry_span
+async def fetch_precomputed_releases_by_name(names: Dict[str, Iterable[str]],
+                                             pdb: databases.Database,
+                                             ) -> pd.DataFrame:
+    """Load precomputed release facts given the mapping from repository names to release names."""
+    prel = PrecomputedRelease
+    if pdb.url.dialect == "sqlite":
+        query = (
+            select([prel])
+            .where(or_(*(and_(prel.repository_full_name == k,
+                              prel.name.in_(v)) for k, v in names.items())))
+            .order_by(desc(prel.published_at))
+        )
+    else:
+        query = union_all(*(
+            select([prel])
+            .where(and_(prel.repository_full_name == k,
+                        prel.name.in_(v)))
+            .order_by(desc(prel.published_at))
+            for k, v in names.items()))
+    df = await read_sql_query(query, pdb, prel)
+    df[matched_by_column] = None
+    df.loc[df[prel.release_match.key].str.startswith("branch|"), matched_by_column] = \
+        ReleaseMatch.branch
+    df.loc[df[prel.release_match.key].str.startswith("tag|"), matched_by_column] = ReleaseMatch.tag
+    df.drop(PrecomputedRelease.release_match.key, inplace=True, axis=1)
+    return df

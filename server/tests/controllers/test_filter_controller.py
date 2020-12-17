@@ -17,10 +17,8 @@ from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, Release
 from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
-from athenian.api.models.web import CommitsList, PullRequestEvent, PullRequestSet, PullRequestStage
-from athenian.api.models.web.filtered_label import FilteredLabel
-from athenian.api.models.web.filtered_releases import FilteredReleases
-from athenian.api.models.web.pull_request_participant import PullRequestParticipant
+from athenian.api.models.web import CommitsList, FilteredLabel, PullRequestEvent, \
+    PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
 from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache, has_memcached
 
@@ -1144,7 +1142,7 @@ async def test_filter_releases_by_tag(client, headers):
         method="POST", path="/v1/filter/releases", headers=headers, json=body)
     response_text = (await response.read()).decode("utf-8")
     assert response.status == 200, response_text
-    releases = FilteredReleases.from_dict(json.loads(response_text))
+    releases = ReleaseSet.from_dict(json.loads(response_text))
     assert len(releases.include.users) == 78
     assert "github.com/mcuadros" in releases.include.users
     assert len(releases.include.jira) == 41
@@ -1209,7 +1207,7 @@ async def test_filter_releases_by_branch_no_jira(client, headers, client_cache, 
             method="POST", path="/v1/filter/releases", headers=headers, json=body)
         response_text = (await response.read()).decode("utf-8")
         assert response.status == 200, response_text
-        releases = FilteredReleases.from_dict(json.loads(response_text))
+        releases = ReleaseSet.from_dict(json.loads(response_text))
         assert len(releases.data) == 188
     finally:
         await mdb.execute(insert(Release).values(backup))
@@ -1231,7 +1229,7 @@ async def test_filter_releases_by_participants(client, headers):
         method="POST", path="/v1/filter/releases", headers=headers, json=body)
     response_text = (await response.read()).decode("utf-8")
     assert response.status == 200, response_text
-    releases = FilteredReleases.from_dict(json.loads(response_text))
+    releases = ReleaseSet.from_dict(json.loads(response_text))
     releases.include.users = set(releases.include.users)
     assert len(releases.include.users) == 78
     assert "github.com/mcuadros" in releases.include.users
@@ -1280,7 +1278,7 @@ async def test_filter_releases_by_jira(client, headers):
         method="POST", path="/v1/filter/releases", headers=headers, json=body)
     response_text = (await response.read()).decode("utf-8")
     assert response.status == 200, response_text
-    releases = FilteredReleases.from_dict(json.loads(response_text))
+    releases = ReleaseSet.from_dict(json.loads(response_text))
     assert len(releases.data) == 8
 
 
@@ -1358,3 +1356,337 @@ async def test_filter_labels_nasty_input(client, headers, account, repos, status
         method="POST", path="/v1/filter/labels", headers=headers, json=body)
     response_body = json.loads((await response.read()).decode("utf-8"))
     assert response.status == status, response_body
+
+
+async def test_get_releases_smoke(client, headers):
+    body = {
+        "account": 1,
+        "releases": [{
+            "repository": "github.com/src-d/go-git",
+            "names": ["v4.0.0", "v4.4.0"],
+        }],
+    }
+    response = await client.request(
+        method="POST", path="/v1/get/releases", headers=headers, json=body)
+    response_body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 200, response_body
+    assert response_body == {
+        "include": {
+            "users": {
+                "github.com/josephvusich": {
+                    "avatar": "https://avatars3.githubusercontent.com/u/15684831?s=600&v=4"},
+                "github.com/mcuadros": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4"},
+                "github.com/marwan-at-work": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/16294261?s=600&v=4"},
+                "github.com/maguro": {
+                    "avatar": "https://avatars3.githubusercontent.com/u/165060?s=600&v=4"},
+                "github.com/mjl-": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/1684740?s=600&v=4"},
+                "github.com/chunyi1994": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/18182339?s=600&v=4"},
+                "github.com/TheHipbot": {
+                    "avatar": "https://avatars1.githubusercontent.com/u/1820334?s=600&v=4"},
+                "github.com/jfontan": {
+                    "avatar": "https://avatars1.githubusercontent.com/u/1829?s=600&v=4"},
+                "github.com/ilius": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/197648?s=600&v=4"},
+                "github.com/shanedasilva": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/1010309?s=600&v=4"},
+                "github.com/fkollmann": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/106287?s=600&v=4"},
+                "github.com/ajnavarro": {
+                    "avatar": "https://avatars3.githubusercontent.com/u/1196465?s=600&v=4"},
+                "github.com/eiso": {
+                    "avatar": "https://avatars3.githubusercontent.com/u/1247608?s=600&v=4"},
+                "github.com/erizocosmico": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/1312023?s=600&v=4"},
+                "github.com/dimonomid": {
+                    "avatar": "https://avatars1.githubusercontent.com/u/1329932?s=600&v=4"},
+                "github.com/krylovsk": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/136714?s=600&v=4"},
+                "github.com/smithrobs": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/245836?s=600&v=4"},
+                "github.com/ZJvandeWeg": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/2529595?s=600&v=4"},
+                "github.com/zkry": {
+                    "avatar": "https://avatars3.githubusercontent.com/u/20138116?s=600&v=4"},
+                "github.com/thoeni": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/2122700?s=600&v=4"},
+                "github.com/balkian": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/213135?s=600&v=4"},
+                "github.com/grunenwflorian": {
+                    "avatar": "https://avatars3.githubusercontent.com/u/22022442?s=600&v=4"},
+                "github.com/wardn": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/23034?s=600&v=4"},
+                "github.com/rykov": {
+                    "avatar": "https://avatars3.githubusercontent.com/u/35549?s=600&v=4"},
+                "github.com/mvdan": {
+                    "avatar": "https://avatars3.githubusercontent.com/u/3576549?s=600&v=4"},
+                "github.com/blacksails": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/3807831?s=600&v=4"},
+                "github.com/dvrkps": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/4771727?s=600&v=4"},
+                "github.com/antham": {
+                    "avatar": "https://avatars1.githubusercontent.com/u/4854264?s=600&v=4"},
+                "github.com/kuba--": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/4056521?s=600&v=4"},
+                "github.com/taruti": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/42174?s=600&v=4"},
+                "github.com/bzz": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/5582506?s=600&v=4"},
+                "github.com/orirawlings": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/57213?s=600&v=4"},
+                "github.com/matjam": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/578676?s=600&v=4"},
+                "github.com/ferhatelmas": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/648018?s=600&v=4"},
+                "github.com/mdelillo": {
+                    "avatar": "https://avatars3.githubusercontent.com/u/6590106?s=600&v=4"},
+                "github.com/Labutin": {
+                    "avatar": "https://avatars1.githubusercontent.com/u/6604871?s=600&v=4"},
+                "github.com/josharian": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/67496?s=600&v=4"},
+                "github.com/dennwc": {
+                    "avatar": "https://avatars0.githubusercontent.com/u/676724?s=600&v=4"},
+                "github.com/darkowlzz": {
+                    "avatar": "https://avatars1.githubusercontent.com/u/614105?s=600&v=4"},
+                "github.com/strib": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/8516691?s=600&v=4"},
+                "github.com/wellsjo": {
+                    "avatar": "https://avatars2.githubusercontent.com/u/823446?s=600&v=4"}},
+            "jira": {"DEV-261": {"id": "DEV-261", "title": "Remove API deprecations",
+                                 "labels": ["code-quality"], "type": "Task"},
+                     "DEV-760": {"id": "DEV-760",
+                                 "title": "Optimize loading releases by branch",
+                                 "labels": ["performance"], "type": "Task"},
+                     "DEV-772": {"id": "DEV-772",
+                                 "title": "Support JIRA tables in the API + unit tests",
+                                 "epic": "DEV-149", "labels": ["enhancement"],
+                                 "type": "Task"},
+                     "DEV-638": {"id": "DEV-638", "title": "Optimize filter_commits SQL",
+                                 "labels": ["performance"], "type": "Task"}}},
+        "data": [
+            {"name": "v4.4.0", "repository": "github.com/src-d/go-git",
+             "url": "https://github.com/src-d/go-git/releases/tag/v4.4.0",
+             "published": "2018-05-16T10:34:04Z", "age": "2494701s", "added_lines": 453,
+             "deleted_lines": 28, "commits": 6, "publisher": "github.com/mcuadros",
+             "commit_authors": ["github.com/jfontan", "github.com/maguro", "github.com/mcuadros"],
+             "prs": [
+                 {"number": 833, "title": "git: remote, Do not iterate all references on update.",
+                  "additions": 22, "deletions": 2, "author": "github.com/jfontan",
+                  "jira": ["DEV-772"]},
+                 {"number": 825, "title": "Worktree: Provide ability to add excludes to worktree",
+                  "additions": 285, "deletions": 7, "author": "github.com/maguro",
+                  "jira": ["DEV-760"]},
+                 {"number": 815, "title": 'Fix for "Worktree Add function adds ".git" directory"',
+                  "additions": 62, "deletions": 8, "author": "github.com/kuba--",
+                  "jira": ["DEV-638"]},
+             ]},
+            {"name": "v4.0.0", "repository": "github.com/src-d/go-git",
+             "url": "https://github.com/src-d/go-git/releases/tag/v4.0.0",
+             "published": "2018-01-08T13:07:18Z", "age": "10869148s",
+             "added_lines": 10699, "deleted_lines": 3354, "commits": 181,
+             "publisher": "github.com/mcuadros",
+             "commit_authors": ["github.com/ZJvandeWeg",
+                                "github.com/ajnavarro",
+                                "github.com/antham", "github.com/balkian",
+                                "github.com/blacksails", "github.com/bzz",
+                                "github.com/chunyi1994",
+                                "github.com/darkowlzz",
+                                "github.com/dimonomid",
+                                "github.com/dvrkps",
+                                "github.com/eiso",
+                                "github.com/erizocosmico",
+                                "github.com/ferhatelmas",
+                                "github.com/grunenwflorian",
+                                "github.com/jfontan",
+                                "github.com/josharian",
+                                "github.com/krylovsk", "github.com/matjam",
+                                "github.com/mcuadros",
+                                "github.com/orirawlings",
+                                "github.com/smithrobs", "github.com/strib",
+                                "github.com/taruti", "github.com/thoeni",
+                                "github.com/wellsjo"],
+             "prs": [
+                 {"number": 656, "title": "plumbing: object, fix Commit.Verify test",
+                  "additions": 3,
+                  "deletions": 2, "author": "github.com/darkowlzz"},
+                 {"number": 677,
+                  "title": "object: patch, fix stats for submodules (fixes #654)",
+                  "additions": 51, "deletions": 5, "author": "github.com/krylovsk"},
+                 {"number": 609, "title": "remote: add support for ls-remote", "additions": 70,
+                  "deletions": 0, "author": "github.com/darkowlzz"},
+                 {"number": 663, "title": "storage: filesystem, add support for git alternates",
+                  "additions": 148, "deletions": 1, "author": "github.com/darkowlzz"},
+                 {"number": 680,
+                  "title": "License upgrade, plus code of conduct and contributing guidelines",
+                  "additions": 336,
+                  "deletions": 19,
+                  "author": "github.com/mcuadros"},
+                 {"number": 687,
+                  "title": "check .ssh/config for host and port overrides; fixes #629",
+                  "additions": 110, "deletions": 0, "author": "github.com/smithrobs"},
+                 {"number": 617, "title": "Fix spelling", "additions": 1, "deletions": 1,
+                  "author": "github.com/blacksails"},
+                 {"number": 615, "title": "Fix spelling Unstagged -> Unstaged", "additions": 4,
+                  "deletions": 4, "author": "github.com/blacksails"},
+                 {"number": 584,
+                  "title": "revert: revlist: do not revisit already visited ancestors",
+                  "additions": 3, "deletions": 17, "author": "github.com/erizocosmico"},
+                 {"number": 649,
+                  "title": "transport: made public all the fields and standardized AuthMethod",
+                  "additions": 59,
+                  "deletions": 55,
+                  "author": "github.com/mcuadros"},
+                 {"number": 579, "title": "revlist: do not visit again already visited parents",
+                  "additions": 38, "deletions": 11, "author": "github.com/erizocosmico"},
+                 {"number": 631, "title": "packfile: use buffer pool for diffs",
+                  "additions": 13,
+                  "deletions": 4, "author": "github.com/strib"},
+                 {"number": 577, "title": "Worktree.Add: Support Add deleted files, fixes #571",
+                  "additions": 43, "deletions": 0, "author": "github.com/grunenwflorian"},
+                 {"number": 675, "title": "git: worktree, add Clean() method for git clean",
+                  "additions": 67, "deletions": 0, "author": "github.com/darkowlzz"},
+                 {"number": 669,
+                  "title": "storage/repository: add new functions for garbage collection",
+                  "additions": 928,
+                  "deletions": 74,
+                  "author": "github.com/strib"},
+                 {"number": 651, "title": "dotgit: remove ref cache for packed refs",
+                  "additions": 29,
+                  "deletions": 48, "author": "github.com/erizocosmico"},
+                 {"number": 640, "title": "utils: merkletrie, filesystem fix symlinks to dir",
+                  "additions": 40, "deletions": 0, "author": "github.com/dimonomid"},
+                 {"number": 710, "title": "fix typo", "additions": 1, "deletions": 1,
+                  "author": "github.com/wellsjo", "jira": ["DEV-261"]},
+                 {"number": 665,
+                  "title": "remote: support for non-force, fast-forward-only fetches",
+                  "additions": 205, "deletions": 22, "author": "github.com/strib"},
+                 {"number": 655, "title": "*: update to go-billy.v4 and go-git-fixtures.v3",
+                  "additions": 84, "deletions": 89, "author": "github.com/mcuadros"},
+                 {"number": 658,
+                  "title": "plumbing: object/tag, add signature and verification support",
+                  "additions": 172,
+                  "deletions": 7,
+                  "author": "github.com/darkowlzz"},
+                 {"number": 652, "title": "plumbing/object: do not eat error on tree decode",
+                  "additions": 39, "deletions": 2, "author": "github.com/ferhatelmas"},
+                 {"number": 700,
+                  "title": "Add a setRef and rewritePackedRefsWhileLocked versions that supports "
+                           "non rw fs",
+                  "additions": 142,
+                  "deletions": 33,
+                  "author": "github.com/jfontan"},
+                 {"number": 657,
+                  "title": "plumbing: transport/http, Close http.Body reader when needed",
+                  "additions": 3, "deletions": 1, "author": "github.com/ajnavarro"},
+                 {"number": 697, "title": "plumbing: packafile, improve delta reutilization",
+                  "additions": 152, "deletions": 29, "author": "github.com/ajnavarro"},
+                 {"number": 613, "title": "Add Stats() to Commit", "additions": 167,
+                  "deletions": 0,
+                  "author": "github.com/darkowlzz"},
+                 {"number": 672, "title": "all: gofmt -s", "additions": 22, "deletions": 22,
+                  "author": "github.com/ferhatelmas"},
+                 {"number": 610,
+                  "title": "remote: add the last 100 commits for each ref in haves list",
+                  "additions": 97, "deletions": 4, "author": "github.com/strib"},
+                 {"number": 585, "title": "examples: update link to GoDoc in _examples/storage",
+                  "additions": 1, "deletions": 1, "author": "github.com/bzz"},
+                 {"number": 588,
+                  "title": "revlist: do not revisit ancestors as long as all branches are visited",
+                  "additions": 84,
+                  "deletions": 3,
+                  "author": "github.com/erizocosmico"},
+                 {"number": 580, "title": "remote: iterate over references only once",
+                  "additions": 73,
+                  "deletions": 40, "author": "github.com/erizocosmico"},
+                 {"number": 608, "title": "Add port to SCP Endpoints", "additions": 23,
+                  "deletions": 3,
+                  "author": "github.com/balkian"},
+                 {"number": 653, "title": "plumbing: object, new Commit.Verify method",
+                  "additions": 95,
+                  "deletions": 0, "author": "github.com/darkowlzz"},
+                 {"number": 582, "title": "packfile: improve performance of delta generation",
+                  "additions": 367, "deletions": 56, "author": "github.com/erizocosmico"},
+                 {"number": 660, "title": "fix Repository.ResolveRevision for branch and tag",
+                  "additions": 82, "deletions": 54, "author": "github.com/antham"},
+                 {"number": 674, "title": "dotgit: use Equal method of time.Time for equality",
+                  "additions": 1, "deletions": 1, "author": "github.com/ferhatelmas"},
+                 {"number": 587,
+                  "title": "config: support a configurable, and turn-off-able, pack.window",
+                  "additions": 146,
+                  "deletions": 42,
+                  "author": "github.com/strib"},
+                 {"number": 583,
+                  "title": "Minor fix to grammatical error in error message for "
+                           "ErrRepositoryNotExists",
+                  "additions": 1, "deletions": 1, "author": "github.com/matjam"},
+                 {"number": 633, "title": "travis: update go versions", "additions": 2,
+                  "deletions": 2,
+                  "author": "github.com/dvrkps"},
+                 {"number": 632,
+                  "title": "packfile: delete index maps from memory when no longer needed",
+                  "additions": 6, "deletions": 0,
+                  "author": "github.com/strib"},
+                 {"number": 664,
+                  "title": "plumbing/transport: Fix truncated comment in Endpoint",
+                  "additions": 1, "deletions": 1, "author": "github.com/orirawlings"},
+                 {"number": 668, "title": "Updating the outdated README example to the new one",
+                  "additions": 6, "deletions": 7, "author": "github.com/eiso"},
+                 {"number": 626,
+                  "title": "packp/capability: Skip argument validations for unknown capabilities",
+                  "additions": 36, "deletions": 11, "author": "github.com/orirawlings"},
+                 {"number": 534, "title": "plumbing: object, commit.Parent() method",
+                  "additions": 24,
+                  "deletions": 0, "author": "github.com/josharian"},
+                 {"number": 650,
+                  "title": "transport: converts Endpoint interface into a struct",
+                  "additions": 278, "deletions": 269, "author": "github.com/mcuadros"},
+                 {"number": 641, "title": "fix: a range loop can break in advance",
+                  "additions": 1,
+                  "deletions": 0, "author": "github.com/chunyi1994"},
+                 {"number": 667, "title": "all: simplification", "additions": 56,
+                  "deletions": 118,
+                  "author": "github.com/ferhatelmas"},
+                 {"number": 688, "title": "doc: update compatibility for clean", "additions": 1,
+                  "deletions": 1, "author": "github.com/darkowlzz"},
+                 {"number": 638, "title": "Updating reference to the git object model",
+                  "additions": 1,
+                  "deletions": 1, "author": "github.com/thoeni"},
+                 {"number": 586,
+                  "title": "plumbing: the commit walker can skip externally-seen commits",
+                  "additions": 45, "deletions": 15, "author": "github.com/strib"},
+                 {"number": 686, "title": "git: worktree, add Grep() method for git grep",
+                  "additions": 324, "deletions": 1, "author": "github.com/darkowlzz"},
+                 {"number": 698,
+                  "title": "plumbing: cache, enforce the use of cache in packfile decoder",
+                  "additions": 113,
+                  "deletions": 68,
+                  "author": "github.com/jfontan"},
+                 {"number": 616, "title": "Add support for signed commits", "additions": 69,
+                  "deletions": 0, "author": "github.com/darkowlzz"},
+                 {"number": 695,
+                  "title": "git: Worktree.Grep() support multiple patterns and pathspecs",
+                  "additions": 124, "deletions": 35, "author": "github.com/darkowlzz"},
+                 {"number": 690, "title": "README.md update", "additions": 14, "deletions": 18,
+                  "author": "github.com/mcuadros"},
+                 {"number": 647, "title": "examples,plumbing,utils: typo fixes",
+                  "additions": 20,
+                  "deletions": 20, "author": "github.com/ferhatelmas"},
+                 {"number": 659, "title": "doc: Update compatibility for commit/tag verify",
+                  "additions": 2, "deletions": 2, "author": "github.com/ferhatelmas"},
+                 {"number": 643, "title": "Fix typo in the readme", "additions": 1,
+                  "deletions": 1, "author": "github.com/ZJvandeWeg"},
+                 {"number": 646,
+                  "title": "format: packfile fix DecodeObjectAt when Decoder has type",
+                  "additions": 29, "deletions": 4, "author": "github.com/mcuadros"},
+                 {"number": 666,
+                  "title": "dotgit: handle refs that exist in both packed-refs and a loose ref "
+                           "file",
+                  "additions": 76, "deletions": 6, "author": "github.com/strib"},
+                 {"number": 661, "title": "all: fixes for ineffective assign", "additions": 23,
+                  "deletions": 2, "author": "github.com/ferhatelmas"},
+                 {"number": 696, "title": "*: simplication", "additions": 4, "deletions": 11,
+                  "author": "github.com/ferhatelmas"}]}],
+    }

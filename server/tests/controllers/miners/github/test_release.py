@@ -24,13 +24,13 @@ from athenian.api.controllers.miners.github.precomputed_prs import store_precomp
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
-    _fetch_precomputed_release_match_spans, _fetch_precomputed_releases, \
-    _store_precomputed_release_match_spans, group_repos_by_release_match, \
-    load_releases
+    _fetch_precomputed_releases, _store_precomputed_release_match_spans, \
+    fetch_precomputed_release_match_spans, group_repos_by_release_match, load_releases
 from athenian.api.controllers.miners.github.release_match import \
     _fetch_repository_first_commit_dates, _find_dead_merged_prs, map_prs_to_releases, \
     map_releases_to_prs
-from athenian.api.controllers.miners.github.release_mine import mine_releases
+from athenian.api.controllers.miners.github.release_mine import mine_releases, \
+    mine_releases_by_name
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
@@ -523,7 +523,7 @@ async def test_load_releases_tag_or_branch_dates(
     await wait_deferred()
     match_groups, repos_count = group_repos_by_release_match(
         ["src-d/go-git"], default_branches, settings)
-    spans = (await _fetch_precomputed_release_match_spans(match_groups, pdb))["src-d/go-git"]
+    spans = (await fetch_precomputed_release_match_spans(match_groups, pdb))["src-d/go-git"]
     assert ReleaseMatch.tag in spans
     if n > 1:
         assert ReleaseMatch.branch in spans
@@ -1254,7 +1254,7 @@ async def test_precomputed_release_timespans(pdb):
     await _store_precomputed_release_match_spans(
         mg1, {"src-d/go-git": ReleaseMatch.tag},
         time_from - timedelta(days=300), time_to + timedelta(days=200), pdb)
-    spans = await _fetch_precomputed_release_match_spans({**mg1, **mg2}, pdb)
+    spans = await fetch_precomputed_release_match_spans({**mg1, **mg2}, pdb)
     assert len(spans) == 1
     assert len(spans["src-d/go-git"]) == 2
     assert spans["src-d/go-git"][ReleaseMatch.tag][0] == time_from - timedelta(days=300)
@@ -1312,6 +1312,30 @@ async def test_precomputed_releases_tags_after_branches(
         release_match_setting_tag_or_branch, (6366825,), mdb, pdb, None)
     assert len(releases_tag) == 53
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
+
+
+@with_defer
+async def test_mine_releases_by_name(
+        mdb, pdb, branches, default_branches, release_match_setting_branch,
+        release_match_setting_tag_or_branch):
+    # we don't have tags within our reach for this time interval
+    time_from = datetime(year=2017, month=3, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2017, month=4, day=1, tzinfo=timezone.utc)
+    releases, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_branch, (6366825,), mdb, pdb, None)
+    await wait_deferred()
+    assert len(releases) == 15
+    names = {"36c78b9d1b1eea682703fb1cbb0f4f3144354389", "v4.0.0"}
+    releases, _ = await mine_releases_by_name(
+        {"src-d/go-git": names},
+        release_match_setting_tag_or_branch, (6366825,), mdb, pdb, None)
+    assert len(releases) == 2
+    releases = {r[0][Release.name.key]: r for r in releases}
+    assert releases.keys() == names
+    assert len(releases["36c78b9d1b1eea682703fb1cbb0f4f3144354389"][1]
+               .prs[PullRequest.number.key]) == 1
+    assert len(releases["v4.0.0"][1].prs[PullRequest.number.key]) == 62
 
 
 """

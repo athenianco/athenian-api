@@ -77,7 +77,7 @@ async def load_releases(repos: Iterable[str],
             time_from - tag_by_branch_probe_lookaround,
             time_to + tag_by_branch_probe_lookaround,
             pdb, index=index),
-        _fetch_precomputed_release_match_spans(match_groups, pdb),
+        fetch_precomputed_release_match_spans(match_groups, pdb),
     ]
     releases, spans = await gather(*tasks)
 
@@ -218,7 +218,7 @@ async def load_releases(repos: Iterable[str],
     for repo, match in applied_matches.items():
         if settings[prefix + repo].match == ReleaseMatch.tag_or_branch:
             errors |= (repos_vec == repo) & (matched_by_vec != match)
-    include = ~errors & published_at.between(time_from, time_to).values
+    include = ~errors & (published_at >= time_from).values & (published_at < time_to).values
     releases = releases.take(np.nonzero(include)[0])
     if Release.acc_id.key in releases:
         del releases[Release.acc_id.key]
@@ -372,9 +372,10 @@ async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str,
 
 
 @sentry_span
-async def _fetch_precomputed_release_match_spans(
+async def fetch_precomputed_release_match_spans(
         match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
         pdb: databases.Database) -> Dict[str, Dict[str, Tuple[datetime, datetime]]]:
+    """Find out the precomputed time intervals for each release match group of repositories."""
     ghrts = GitHubReleaseMatchTimespan
     sqlite = pdb.url.dialect == "sqlite"
     or_items, _ = match_groups_to_sql(match_groups, ghrts)
