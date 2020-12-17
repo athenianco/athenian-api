@@ -319,32 +319,32 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
         meta_id_sql = ("= %d" % meta_ids[0])
     else:
         meta_id_sql = "IN (%s)" % ", ".join(str(i) for i in meta_ids)
+    _ = meta_id_sql
+    # FIXME(vmarkovtsev): return acc_id-s back in this SQL
     query = f"""
     WITH RECURSIVE commit_history AS (
         SELECT
             p.child_id AS parent,
             p.{quote}index{quote} AS parent_index,
             pc.oid AS child_oid,
-            cc.oid AS parent_oid,
-            p.acc_id
+            cc.oid AS parent_oid
         FROM
             github_node_commit_parents p
-                LEFT JOIN github_node_commit pc ON p.parent_id = pc.id AND p.acc_id = pc.acc_id
-                LEFT JOIN github_node_commit cc ON p.child_id = cc.id AND p.acc_id = cc.acc_id
+                LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
+                LEFT JOIN github_node_commit cc ON p.child_id = cc.id
         WHERE
-            p.parent_id IN ('{"', '".join(commit_ids)}') AND p.acc_id {meta_id_sql}
+            p.parent_id IN ('{"', '".join(commit_ids)}')
         UNION
             SELECT
                 p.child_id AS parent,
                 p.{quote}index{quote} AS parent_index,
                 pc.oid AS child_oid,
-                cc.oid AS parent_oid,
-                p.acc_id
+                cc.oid AS parent_oid
             FROM
                 github_node_commit_parents p
-                    INNER JOIN commit_history h ON h.parent = p.parent_id AND p.acc_id = h.acc_id
-                    LEFT JOIN github_node_commit pc ON p.parent_id = pc.id AND p.acc_id = pc.acc_id
-                    LEFT JOIN github_node_commit cc ON p.child_id = cc.id AND p.acc_id = cc.acc_id
+                    INNER JOIN commit_history h ON h.parent = p.parent_id
+                    LEFT JOIN github_node_commit pc ON p.parent_id = pc.id
+                    LEFT JOIN github_node_commit cc ON p.child_id = cc.id
             WHERE     pc.oid NOT IN ('{"', '".join(stop_hashes)}')
                   AND p.parent_id NOT IN ('{"', '".join(commit_ids)}')
     ) SELECT
