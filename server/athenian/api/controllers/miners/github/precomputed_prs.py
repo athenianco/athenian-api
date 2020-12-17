@@ -20,6 +20,11 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
+from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
+    fetch_precomputed_commit_history_dags, \
+    fetch_repository_commits
+from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.release_load import group_repos_by_release_match, \
     match_groups_to_sql
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
@@ -30,7 +35,8 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, greatest
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
+from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, \
+    PullRequestComment, \
     PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewRequest, Release
 from athenian.api.models.precomputed.models import Base, GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
@@ -1081,3 +1087,65 @@ async def store_open_pull_request_facts(
         sql = insert(GitHubOpenPullRequestFacts).prefix_with("OR REPLACE")
     with sentry_sdk.start_span(op="store_open_pull_request_facts/execute"):
         await pdb.execute_many(sql, values)
+
+
+@sentry_span
+async def rescan_prs_mark_force_push_dropped(repos: Iterable[str],
+                                             meta_ids: Tuple[int, ...],
+                                             mdb: databases.Database,
+                                             pdb: databases.Database,
+                                             cache: Optional[aiomcache.Client],
+                                             ) -> None:
+    """Load all released precomputed PRs and re-check that they are still accessible from \
+    the branch heads. Mark inaccessible as force push dropped."""
+    @sentry_span
+    async def fetch_branches():
+        branches, _ = await extract_branches(repos, meta_ids, mdb, cache)
+        commit_ids = branches[Branch.commit_id.key].values
+        commit_dates = await mdb.fetch_all(
+            select([NodeCommit.id, NodeCommit.committed_date])
+            .where(and_(NodeCommit.id.in_(commit_ids),
+                        NodeCommit.acc_id.in_(meta_ids))))
+        commit_dates = {r[0]: r[1] for r in commit_dates}
+        if mdb.url.dialect == "sqlite":
+            commit_dates = {k: v.replace(tzinfo=timezone.utc) for k, v in commit_dates.items()}
+        now = datetime.now(timezone.utc)
+        branches[Branch.commit_date] = [
+            commit_dates.get(commit_id, now) for commit_id in commit_ids]
+        return branches
+
+    tasks = [
+        pdb.fetch_all(select([GitHubDonePullRequestFacts.pr_node_id])
+                      .where(and_(GitHubDonePullRequestFacts.repository_full_name.in_(repos),
+                                  GitHubDonePullRequestFacts.release_match.like("%|%")))),
+        fetch_branches(),
+        fetch_precomputed_commit_history_dags(repos, pdb, cache),
+    ]
+    rows, branches, dags = await gather(*tasks, op="fetch prs + branches + dags")
+    pr_node_ids = [r[0] for r in rows]
+    del rows
+    tasks = [
+        mdb.fetch_all(select([PullRequest.merge_commit_sha, PullRequest.node_id])
+                      .where(and_(PullRequest.node_id.in_(pr_node_ids),
+                                  PullRequest.acc_id.in_(meta_ids)))),
+        fetch_repository_commits(
+            dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, meta_ids, mdb, pdb, cache),
+    ]
+    del pr_node_ids
+    pr_merges, dags = await gather(*tasks, op="fetch merges + prune dags")
+    accessible_hashes = np.sort(np.concatenate([dag[0] for dag in dags.values()]))
+    merge_hashes = np.sort(np.fromiter((r[0] for r in pr_merges), "U40", len(pr_merges)))
+    found = searchsorted_inrange(accessible_hashes, merge_hashes)
+    dead_indexes = np.nonzero(accessible_hashes[found] != merge_hashes)[0]
+    dead_pr_node_ids = [None] * len(dead_indexes)
+    for i, dead_index in enumerate(dead_indexes):
+        dead_pr_node_ids[i] = pr_merges[dead_index][1]
+    del pr_merges
+    now = datetime.now(timezone.utc)
+    with sentry_sdk.start_span(op="set force push dropped prs",
+                               description=str(len(dead_indexes))):
+        await pdb.execute(
+            update(GitHubDonePullRequestFacts)
+            .where(GitHubDonePullRequestFacts.pr_node_id.in_(dead_pr_node_ids))
+            .values({GitHubDonePullRequestFacts.release_match: ReleaseMatch.force_push_drop.name,
+                     GitHubDonePullRequestFacts.updated_at: now}))

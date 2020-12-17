@@ -17,8 +17,9 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags, \
-    fetch_repository_commits
+from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
+    fetch_precomputed_commit_history_dags, \
+    fetch_repository_commits, RELEASE_FETCH_COMMITS_COLUMNS
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
     mark_dag_access, searchsorted_inrange
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -192,9 +193,8 @@ async def _find_dead_merged_prs(prs: pd.DataFrame,
     rfnkey = PullRequest.repository_full_name.key
     mchkey = PullRequest.merge_commit_sha.key
     dead_prs = []
-    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
-            Branch.repository_full_name.key)
-    dags = await fetch_repository_commits(dags, branches, cols, True, meta_ids, mdb, pdb, cache)
+    dags = await fetch_repository_commits(
+        dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, meta_ids, mdb, pdb, cache)
     for repo, repo_prs in prs[[mchkey, rfnkey]].groupby(rfnkey, sort=False):
         hashes, _, _ = dags[repo]
         if len(hashes) == 0:
@@ -234,9 +234,8 @@ async def load_commit_dags(releases: pd.DataFrame,
     """Produce the commit history DAGs which should contain the specified releases."""
     pdags = await fetch_precomputed_commit_history_dags(
         releases[Release.repository_full_name.key].unique(), pdb, cache)
-    cols = (Release.sha.key, Release.commit_id.key, Release.published_at.key,
-            Release.repository_full_name.key)
-    return await fetch_repository_commits(pdags, releases, cols, False, meta_ids, mdb, pdb, cache)
+    return await fetch_repository_commits(
+        pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, meta_ids, mdb, pdb, cache)
 
 
 @sentry_span
@@ -367,8 +366,8 @@ async def map_releases_to_prs(repos: Collection[str],
     # ensure that our DAGs contain all the mentioned releases
     rpak = Release.published_at.key
     rrfnk = Release.repository_full_name.key
-    cols = (Release.sha.key, Release.commit_id.key, rpak, rrfnk)
-    dags = await fetch_repository_commits(pdags, releases, cols, False, meta_ids, mdb, pdb, cache)
+    dags = await fetch_repository_commits(
+        pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, meta_ids, mdb, pdb, cache)
     all_observed_repos = []
     all_observed_commits = []
     # find the released commit hashes by two DAG traversals

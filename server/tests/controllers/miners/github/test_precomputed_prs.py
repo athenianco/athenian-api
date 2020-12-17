@@ -20,7 +20,8 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     load_open_pull_request_facts, load_open_pull_request_facts_unfresh, \
     load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
     load_precomputed_done_facts_reponums, load_precomputed_pr_releases, \
-    store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
+    rescan_prs_mark_force_push_dropped, store_merged_unreleased_pull_request_facts, \
+    store_open_pull_request_facts, \
     store_precomputed_done_facts, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_load import load_releases
 from athenian.api.controllers.miners.github.release_match import map_prs_to_releases
@@ -31,8 +32,10 @@ from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipat
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestCommit, Release
-from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts, \
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
+    GitHubMergedPullRequestFacts, \
     GitHubOpenPullRequestFacts
+from tests.controllers.conftest import with_only_master_branch
 
 
 def gen_dummy_df(dt: datetime) -> pd.DataFrame:
@@ -813,3 +816,17 @@ async def test_store_open_pull_request_facts_smoke(
     loaded_facts = await load_open_pull_request_facts_unfresh(
         dfs.prs.index, datetime(2019, 11, 1), datetime(2020, 1, 1), True, pdb)
     assert len(loaded_facts) == 0
+
+
+@with_only_master_branch
+@with_defer
+async def test_rescan_prs_mark_force_push_dropped(mdb, pdb, default_branches, pr_samples):
+    samples, prs, settings = _gen_one_pr(pr_samples)
+    prs[0].pr[PullRequest.node_id.key] = "MDExOlB1bGxSZXF1ZXN0NTc5NDcxODA="
+    await store_precomputed_done_facts(
+        prs, zip(repeat("src-d/go-git"), samples), default_branches, settings, pdb)
+    release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
+    assert release_match == "branch|master"
+    await rescan_prs_mark_force_push_dropped(["src-d/go-git"], (6366825,), mdb, pdb, None)
+    release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
+    assert release_match == ReleaseMatch.force_push_drop.name

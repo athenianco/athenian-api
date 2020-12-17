@@ -17,7 +17,8 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
-from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags, \
+from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
+    fetch_precomputed_commit_history_dags, \
     fetch_repository_commits
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
@@ -582,9 +583,8 @@ async def _match_releases_by_branch(repos: Iterable[str],
         commit_dates = {k: v.replace(tzinfo=timezone.utc) for k, v in commit_dates.items()}
     now = datetime.now(timezone.utc)
     branches[Branch.commit_date] = [commit_dates.get(commit_id, now) for commit_id in commit_ids]
-    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
-            Branch.repository_full_name.key)
-    dags = await fetch_repository_commits(dags, branches, cols, False, meta_ids, mdb, pdb, cache)
+    dags = await fetch_repository_commits(
+        dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, False, meta_ids, mdb, pdb, cache)
     first_shas = [extract_first_parents(*dags[repo], branches[Branch.commit_sha.key].values)
                   for repo, branches in branches_matched.items()]
     first_shas = np.sort(np.concatenate(first_shas))

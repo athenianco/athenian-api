@@ -25,6 +25,8 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.contributors import mine_contributors
+from athenian.api.controllers.miners.github.precomputed_prs import \
+    rescan_prs_mark_force_push_dropped
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.controllers.settings import ReleaseMatch, Settings
@@ -176,21 +178,25 @@ def main():
                                      for rf in facts.values())
                     prs_open = sum(sum(1 for f in rf if f.closed is None) for rf in facts.values())
                 del facts  # free some memory
-                if not reposet.precomputed and slack is not None:
-                    await slack.post("precomputed_account.jinja2",
-                                     account=reposet.owner_id,
-                                     prs=prs,
-                                     prs_done=prs_done,
-                                     prs_merged=prs_merged,
-                                     prs_open=prs_open,
-                                     releases=releases_count,
-                                     releases_by_tag=releases_by_tag,
-                                     releases_by_branch=releases_by_branch,
-                                     branches=branches_count,
-                                     repositories=len(repos),
-                                     bots_team_name=Team.BOTS,
-                                     bots=num_bots,
-                                     teams=num_teams)
+                if not reposet.precomputed:
+                    if slack is not None:
+                        await slack.post("precomputed_account.jinja2",
+                                         account=reposet.owner_id,
+                                         prs=prs,
+                                         prs_done=prs_done,
+                                         prs_merged=prs_merged,
+                                         prs_open=prs_open,
+                                         releases=releases_count,
+                                         releases_by_tag=releases_by_tag,
+                                         releases_by_branch=releases_by_branch,
+                                         branches=branches_count,
+                                         repositories=len(repos),
+                                         bots_team_name=Team.BOTS,
+                                         bots=num_bots,
+                                         teams=num_teams)
+                else:
+                    log.info("Scanning for force push dropped PRs")
+                    await rescan_prs_mark_force_push_dropped(repos, meta_ids, mdb, pdb, None)
             except Exception as e:
                 log.warning("reposet %d: %s: %s", reposet.id, type(e).__name__, e)
                 sentry_sdk.capture_exception(e)

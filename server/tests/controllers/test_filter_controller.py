@@ -14,13 +14,14 @@ from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.models.metadata.github import Branch, Release
+from athenian.api.models.metadata.github import Release
 from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
 from athenian.api.models.web import CommitsList, FilteredLabel, PullRequestEvent, \
     PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
 from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache, has_memcached
+from tests.controllers.conftest import with_only_master_branch
 
 
 @pytest.mark.filter_repositories
@@ -292,20 +293,6 @@ def filter_prs_single_cache():
     for v in fc.metrics["context"].values():
         v.set(defaultdict(int))
     return fc
-
-
-def with_only_master_branch(func):
-    async def wrapped_with_only_master_branch(**kwargs):
-        mdb = kwargs["mdb"]
-        branches = await mdb.fetch_all(select([Branch]).where(Branch.branch_name != "master"))
-        await mdb.execute(delete(Branch).where(Branch.branch_name != "master"))
-        try:
-            await func(**kwargs)
-        finally:
-            for branch in branches:
-                await mdb.execute(insert(Branch).values(branch))
-
-    return wraps(wrapped_with_only_master_branch, func)
 
 
 @pytest.mark.filter_pull_requests
