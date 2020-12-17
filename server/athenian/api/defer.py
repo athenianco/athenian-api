@@ -9,7 +9,6 @@ from sentry_sdk.tracing import Transaction
 from athenian.api import metadata
 from athenian.api.typing_utils import wraps
 
-
 _defer_launch_event = None
 _defer_sync = None
 _defer_counter = None
@@ -80,18 +79,23 @@ def launch_defer(delay: float) -> None:
         if Hub.current.scope.span is None:
             transaction = Transaction(name="defer", sampled=False, hub=Hub.current)
         else:
-            parent = Hub.current.scope.transaction
-            transaction = Transaction(name="defer " + parent.name,
-                                      sampled=parent.sampled,
-                                      op=parent.op,
-                                      description=parent.description,
-                                      hub=Hub.current)
+            if (parent := Hub.current.scope.transaction) is None:
+                transaction = Transaction(name="defer", sampled=False, hub=Hub.current)
+            else:
+                transaction = Transaction(
+                    name="defer " + parent.name,
+                    sampled=parent.sampled,
+                    op=parent.op,
+                    description=parent.description,
+                    hub=Hub.current,
+                )
         transaction_ptr[0] = transaction
         launch_event.set()
 
     if delay == 0:
         launch()
     else:
+
         async def delayer():
             await sleep(delay)
             launch()
@@ -152,6 +156,7 @@ async def wait_all_deferred() -> None:
 
 def with_defer(func):
     """Decorate a coroutine to enable defer()."""
+
     async def wrapped_with_defer(*args, **kwargs):
         enable_defer(False)
         try:
