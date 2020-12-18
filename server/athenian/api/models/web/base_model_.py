@@ -56,6 +56,17 @@ class Model(metaclass=Slots):
         """Returns the dict as a model."""
         return serialization.deserialize_model(dikt, cls)
 
+    @classmethod
+    def serialize(cls, value: typing.Any) -> typing.Any:
+        """Convert any value to a JSON-friendly object."""
+        if isinstance(value, Model):
+            return value.to_dict()
+        if isinstance(value, (list, tuple)):
+            return [cls.serialize(x) for x in value]
+        if isinstance(value, dict):
+            return {item[0]: cls.serialize(item[1]) for item in value.items()}
+        return value
+
     def to_dict(self) -> dict:
         """Returns the model properties as a dict."""
         result = {}
@@ -64,23 +75,7 @@ class Model(metaclass=Slots):
             value = getattr(self, attr_key)
             if value is None and typing_utils.is_optional(self.openapi_types[attr_key]):
                 continue
-            if isinstance(value, list):
-                result[json_key] = list(
-                    map(lambda x: x.to_dict() if hasattr(x, "to_dict") else x, value)  # noqa(C812)
-                )
-            elif hasattr(value, "to_dict"):
-                result[json_key] = value.to_dict()
-            elif isinstance(value, dict):
-                result[json_key] = dict(
-                    map(
-                        lambda item: (item[0], item[1].to_dict())
-                        if hasattr(item[1], "to_dict")
-                        else item,
-                        value.items(),
-                    )  # noqa(C812)
-                )
-            else:
-                result[json_key] = value
+            result[json_key] = self.serialize(value)
 
         return result
 

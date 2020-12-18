@@ -24,8 +24,8 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.label import mine_labels
-from athenian.api.controllers.miners.github.release_mine import mine_releases, \
-    mine_releases_by_name
+from athenian.api.controllers.miners.github.release_mine import \
+    diff_releases as mine_diff_releases, mine_releases, mine_releases_by_name
 from athenian.api.controllers.miners.github.repositories import mine_repositories
 from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
@@ -43,6 +43,9 @@ from athenian.api.models.web import BadRequestError, Commit, CommitSignature, Co
     GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, InvalidRequestError, JIRAIssue, \
     PullRequest as WebPullRequest, PullRequestLabel, PullRequestParticipant, PullRequestSet, \
     ReleasedPullRequest, ReleaseSet, ReleaseSetInclude, StageTimings
+from athenian.api.models.web.diff_releases_request import DiffReleasesRequest
+from athenian.api.models.web.diffed_releases import DiffedReleases
+from athenian.api.models.web.release_diff import ReleaseDiff
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -352,23 +355,27 @@ async def _build_release_set_response(releases: List[Tuple[Dict[str, Any], Relea
                                       mdb: databases.Database,
                                       ) -> web.Response:
     issues = await _load_jira_issues(jira_ids, releases, meta_ids, mdb)
-    data = [FilteredRelease(name=details[Release.name.key],
-                            repository=details[Release.repository_full_name.key],
-                            url=details[Release.url.key],
-                            publisher=facts.publisher,
-                            published=facts.published,
-                            age=facts.age,
-                            added_lines=facts.additions,
-                            deleted_lines=facts.deletions,
-                            commits=facts.commits_count,
-                            commit_authors=facts.commit_authors,
-                            prs=_extract_release_prs(facts.prs))
-            for details, facts in releases]
+    data = [_filtered_release_from_tuple(t) for t in releases]
     model = ReleaseSet(data=data, include=ReleaseSetInclude(
         users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
         jira=issues,
     ))
     return model_response(model)
+
+
+def _filtered_release_from_tuple(t: Tuple[Dict[str, Any], ReleaseFacts]) -> FilteredRelease:
+    details, facts = t
+    return FilteredRelease(name=details[Release.name.key],
+                           repository=details[Release.repository_full_name.key],
+                           url=details[Release.url.key],
+                           publisher=facts.publisher,
+                           published=facts.published,
+                           age=facts.age,
+                           added_lines=facts.additions,
+                           deleted_lines=facts.deletions,
+                           commits=facts.commits_count,
+                           commit_authors=facts.commit_authors,
+                           prs=_extract_release_prs(facts.prs))
 
 
 def _extract_release_prs(prs: Dict[str, np.ndarray]) -> List[ReleasedPullRequest]:
@@ -489,3 +496,40 @@ async def get_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     releases, avatars = await mine_releases_by_name(
         github_releases, settings, meta_ids, request.mdb, request.pdb, request.cache)
     return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)
+
+
+async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Find releases between the two given ones per repository."""
+    prefix = PREFIXES["github"]
+    body = DiffReleasesRequest.from_dict(body)
+    borders = {}
+    for repo, border in body.borders.items():
+        borders[repo] = [(pair.old, pair.new) for pair in border]
+    try:
+        (github_repos, settings, meta_ids), jira_ids = await gather(
+            _get_github_repos(request, body.account, borders),
+            get_jira_installation_or_none(body.account, request.sdb, request.mdb, request.cache),
+        )
+    except KeyError:
+        return model_response(ReleaseSet())
+    github_borders = {r: borders[prefix + r] for r in github_repos}
+    try:
+        releases, avatars = await mine_diff_releases(
+            github_borders, settings, meta_ids, request.mdb, request.pdb, request.cache)
+    except ValueError as e:
+        raise ResponseError(InvalidRequestError(detail=str(e), pointer="?")) from None
+    issues = await _load_jira_issues(
+        jira_ids, list(chain.from_iterable(chain.from_iterable(r[-1] for r in rr)
+                                           for rr in releases.values())),
+        meta_ids, request.mdb)
+    result = DiffedReleases(data={}, include=ReleaseSetInclude(
+        users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
+        jira=issues,
+    ))
+    for repo, diffs in releases.items():
+        result.data[prefix + repo] = repo_result = []
+        for diff in diffs:
+            repo_result.append(ReleaseDiff(
+                old=diff[0], new=diff[1],
+                releases=[_filtered_release_from_tuple(t) for t in diff[2]]))
+    return model_response(result)

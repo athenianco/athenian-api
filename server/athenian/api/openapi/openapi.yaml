@@ -216,11 +216,63 @@ paths:
       - apiKeyAuth: []
       summary: List all the contributors belonging to the specified account.
       tags:
-      - contributors
+      - filter
 # {% if False %}
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.contributors_controller
+      x-codegen-request-body-name: body
+  /diff/releases:
+    post:
+      operationId: diff_releases
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiffReleasesRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiffedReleases'
+          description: Releases between the two specified borders, excluding the first
+            one and including the second one. Triaged by repository.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to access the specified repositories.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: Find releases between the two given ones per repository.
+      tags:
+      - filter
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.filter_controller
       x-codegen-request-body-name: body
   /filter/commits:
     post:
@@ -611,7 +663,7 @@ paths:
       - apiKeyAuth: []
       summary: List pull requests by repository and number.
       tags:
-      - filter
+      - get
 # {% if False %}
       - default
 # {% endif %}
@@ -661,7 +713,7 @@ paths:
       - apiKeyAuth: []
       summary: List releases by repository and name.
       tags:
-      - filter
+      - get
 # {% if False %}
       - default
 # {% endif %}
@@ -769,7 +821,7 @@ paths:
       - apiKeyAuth: []
       summary: Calculate histograms over PR distributions.
       tags:
-      - metrics
+      - histograms
 # {% if False %}
       - default
 # {% endif %}
@@ -6201,4 +6253,116 @@ components:
       required:
       - account
       - projects
+      type: object
+    DiffReleasesRequest:
+      additionalProperties: false
+      description: Request of `/diff/releases`. Define pairs of releases for several
+        repositories to find the releases in between.
+      example:
+        account: 1
+        borders:
+          github.com/athenianco/athenian-api:
+          - old: v0.7.50
+            new: v0.7.59
+      properties:
+        account:
+          type: integer
+        borders:
+          additionalProperties:
+            items:
+              $ref: '#/components/schemas/ReleasePair'
+            type: array
+          description: Mapping from repository names to analyzed release pairs.
+          type: object
+      required:
+      - account
+      - borders
+      type: object
+    ReleasePair:
+      additionalProperties: false
+      description: A pair of release names within the same repository.
+      example:
+        old: v0.7.50
+        new: v0.7.59
+      properties:
+        old:
+          description: Older release name.
+          type: string
+        new:
+          description: Newer release name.
+          type: string
+      required:
+      - new
+      - old
+      type: object
+    DiffedReleases:
+      additionalProperties: false
+      description: Response of `/diff/releases` - the found inner releases for
+        each repository.
+      example:
+        include:
+          users:
+            github.com/gkwillie:
+              avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+          jira: null
+        data:
+          github.com/athenianco/athenian-api:
+          - old: v0.0.92
+            new: v0.0.93
+            releases:
+            - added_lines: 1000
+              commits: 20
+              deleted_lines: 200
+              name: v0.0.93
+              published: 2020-03-25T10:57:00Z
+              publisher: github.com/vmarkovtsev
+              publisher_avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+              repository: github.com/athenianco/athenian-api
+              url: https://github.com/athenianco/athenian-api/releases/tag/v0.0.93
+      properties:
+        include:
+          allOf:
+          - $ref: '#/components/schemas/IncludedNativeUsers'
+          - $ref: '#/components/schemas/IncludedJIRAIssues'
+        data:
+          additionalProperties:
+            items:
+              $ref: '#/components/schemas/ReleaseDiff'
+            type: array
+          description: Mapping from repository names to diff results.
+          type: object
+      required:
+      - data
+      - include
+      type: object
+    ReleaseDiff:
+      additionalProperties: false
+      description: Inner releases between `old` and `new`, including the latter.
+      example:
+        old: v0.0.92
+        new: v0.0.93
+        releases:
+        - added_lines: 1000
+          commits: 20
+          deleted_lines: 200
+          name: v0.0.93
+          published: 2020-03-25T10:57:00Z
+          publisher: github.com/vmarkovtsev
+          publisher_avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
+          repository: github.com/athenianco/athenian-api
+          url: https://github.com/athenianco/athenian-api/releases/tag/v0.0.93
+      properties:
+        old:
+          type: string
+        new:
+          type: string
+        releases:
+          description: List of matching release metadata.
+          items:
+            $ref: '#/components/schemas/FilteredRelease'
+          type: array
+      required:
+      - new
+      - old
+      - releases
       type: object
