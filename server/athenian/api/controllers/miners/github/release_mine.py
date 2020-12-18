@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import databases
@@ -484,6 +484,73 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     release names."""
     log = logging.getLogger("%s.mine_releases_by_name" % metadata.__package__)
     names = {k: set(v) for k, v in names.items()}
+    releases, branches, default_branches = await _load_releases_by_name(
+        names, log, settings, meta_ids, mdb, pdb, cache)
+    if releases.empty:
+        return [], []
+    settings_tags, settings_branches = {}, {}
+    for k, v in settings.items():
+        if v.match == ReleaseMatch.tag_or_branch:
+            settings_tags[k] = ReleaseMatchSetting(
+                match=ReleaseMatch.tag,
+                branches=v.branches,
+                tags=v.tags,
+            )
+            settings_branches[k] = ReleaseMatchSetting(
+                match=ReleaseMatch.branch,
+                branches=v.branches,
+                tags=v.tags,
+            )
+        elif v.match == ReleaseMatch.tag:
+            settings_tags[k] = v
+        elif v.match == ReleaseMatch.branch:
+            settings_branches[k] = v
+        else:
+            raise AssertionError("Unsupported ReleaseMatch: %s" % v.match)
+    tag_releases = releases.take(np.nonzero(
+        releases[matched_by_column].values == ReleaseMatch.tag)[0])
+    branch_releases = releases.take(np.nonzero(
+        releases[matched_by_column].values == ReleaseMatch.branch)[0])
+    precomputed_facts_tags, precomputed_facts_branches = await gather(
+        load_precomputed_release_facts(tag_releases, default_branches, settings_tags, pdb),
+        load_precomputed_release_facts(branch_releases, default_branches, settings_branches, pdb),
+    )
+    precomputed_facts = {**precomputed_facts_tags, **precomputed_facts_branches}
+    add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
+    add_pdb_misses(pdb, "release_facts", len(releases) - len(precomputed_facts))
+    result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
+        releases, precomputed_facts)
+    mentioned_authors = [p[1] for p in np.char.split(mentioned_authors, "/", 1)]
+    if not (missing_releases := releases.take(np.nonzero(~has_precomputed_facts)[0])).empty:
+        repos = missing_releases[Release.repository_full_name.key].unique()
+        time_from = missing_releases[Release.published_at.key].iloc[-1]
+        time_to = missing_releases[Release.published_at.key].iloc[0] + timedelta(seconds=1)
+        mined_result, mined_authors, _ = await mine_releases(
+            repos, {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
+            settings, meta_ids, mdb, pdb, cache, force_fresh=True, with_avatars=False)
+        missing_releases_by_repo = defaultdict(set)
+        for repo, name in zip(missing_releases[Release.repository_full_name.key].values,
+                              missing_releases[Release.name.key].values):
+            missing_releases_by_repo[repo].add(name)
+        for r in mined_result:
+            if r[0][Release.name.key] in missing_releases_by_repo[
+                    r[0][Release.repository_full_name.key].split("/", 1)[1]]:
+                result.append(r)
+        # we don't know which are redundant, so include everyone without filtering
+        mentioned_authors = np.unique(np.concatenate([mentioned_authors, mined_authors]))
+    avatars = await mine_user_avatars(
+        mentioned_authors, meta_ids, mdb, cache, prefix=PREFIXES["github"])
+    return result, avatars
+
+
+async def _load_releases_by_name(names: Dict[str, Set[str]],
+                                 log: logging.Logger,
+                                 settings: Dict[str, ReleaseMatchSetting],
+                                 meta_ids: Tuple[int, ...],
+                                 mdb: databases.Database,
+                                 pdb: databases.Database,
+                                 cache: Optional[aiomcache.Client],
+                                 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, str]]:
     tasks = [
         extract_branches(names, meta_ids, mdb, cache),
         fetch_precomputed_releases_by_name(names, pdb),
@@ -541,58 +608,54 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
                                  inplace=True, ascending=False, ignore_index=True)
         if still_missing:
             log.warning("Some releases were not found: %s", still_missing)
-    if releases.empty:
-        return [], []
-    settings_tags, settings_branches = {}, {}
-    for k, v in settings.items():
-        if v.match == ReleaseMatch.tag_or_branch:
-            settings_tags[k] = ReleaseMatchSetting(
-                match=ReleaseMatch.tag,
-                branches=v.branches,
-                tags=v.tags,
-            )
-            settings_branches[k] = ReleaseMatchSetting(
-                match=ReleaseMatch.branch,
-                branches=v.branches,
-                tags=v.tags,
-            )
-        elif v.match == ReleaseMatch.tag:
-            settings_tags[k] = v
-        elif v.match == ReleaseMatch.branch:
-            settings_branches[k] = v
-        else:
-            raise AssertionError("Unsupported ReleaseMatch: %s" % v.match)
-    tag_releases = releases.take(np.nonzero(
-        releases[matched_by_column].values == ReleaseMatch.tag)[0])
-    branch_releases = releases.take(np.nonzero(
-        releases[matched_by_column].values == ReleaseMatch.branch)[0])
-    precomputed_facts_tags, precomputed_facts_branches = await gather(
-        load_precomputed_release_facts(tag_releases, default_branches, settings_tags, pdb),
-        load_precomputed_release_facts(branch_releases, default_branches, settings_branches, pdb),
-    )
-    precomputed_facts = {**precomputed_facts_tags, **precomputed_facts_branches}
-    add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
-    add_pdb_misses(pdb, "release_facts", len(releases) - len(precomputed_facts))
-    result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
-        releases, precomputed_facts)
-    mentioned_authors = [p[1] for p in np.char.split(mentioned_authors, "/", 1)]
-    if not (missing_releases := releases.take(np.nonzero(~has_precomputed_facts)[0])).empty:
-        repos = missing_releases[Release.repository_full_name.key].unique()
-        time_from = missing_releases[Release.published_at.key].iloc[-1]
-        time_to = missing_releases[Release.published_at.key].iloc[0] + timedelta(seconds=1)
-        mined_result, mined_authors, _ = await mine_releases(
-            repos, {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
-            settings, meta_ids, mdb, pdb, cache, force_fresh=True, with_avatars=False)
-        missing_releases_by_repo = defaultdict(set)
-        for repo, name in zip(missing_releases[Release.repository_full_name.key].values,
-                              missing_releases[Release.name.key].values):
-            missing_releases_by_repo[repo].add(name)
-        for r in mined_result:
-            if r[0][Release.name.key] in missing_releases_by_repo[
-                    r[0][Release.repository_full_name.key].split("/", 1)[1]]:
-                result.append(r)
-        # we don't know which are redundant, so include everyone without filtering
-        mentioned_authors = np.unique(np.concatenate([mentioned_authors, mined_authors]))
-    avatars = await mine_user_avatars(
-        mentioned_authors, meta_ids, mdb, cache, prefix=PREFIXES["github"])
+    return releases, branches, default_branches
+
+
+async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
+                        settings: Dict[str, ReleaseMatchSetting],
+                        meta_ids: Tuple[int, ...],
+                        mdb: databases.Database,
+                        pdb: databases.Database,
+                        cache: Optional[aiomcache.Client],
+                        ) -> Tuple[
+        Dict[str, List[Tuple[str, str, List[Tuple[Dict[str, Any], ReleaseFacts]]]]],
+        List[Tuple[str, str]]]:
+    """Collect details about inner releases between the given boundaries for each repo."""
+    log = logging.getLogger("%s.diff_releases" % metadata.__package__)
+    names = defaultdict(set)
+    for repo, pairs in borders.items():
+        for old, new in pairs:
+            if old == new:
+                raise ValueError("Releases pair old == new == %s for %s" % (old, repo))
+            names[repo].update((old, new))
+    border_releases, branches, default_branches = await _load_releases_by_name(
+        names, log, settings, meta_ids, mdb, pdb, cache)
+    repos = border_releases[Release.repository_full_name.key].unique()
+    time_from = border_releases[Release.published_at.key].min()
+    time_to = border_releases[Release.published_at.key].max() + timedelta(seconds=1)
+    del border_releases
+    releases, avatars, _ = await mine_releases(
+        repos, {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
+        settings, meta_ids, mdb, pdb, cache, force_fresh=True)
+    releases_by_repo = defaultdict(list)
+    for r in releases:
+        releases_by_repo[r[0][Release.repository_full_name.key]].append(r)
+    del releases
+    result = {}
+    for repo, repo_releases in releases_by_repo.items():
+        repo = repo.split("/", 1)[1]
+        pairs = borders[repo]
+        result[repo] = repo_result = []
+        repo_releases = sorted(repo_releases, key=lambda r: r[1].published)
+        index = {r[0][Release.name.key]: i for i, r in enumerate(repo_releases)}
+        for old, new in pairs:
+            try:
+                start = index[old]
+                end = index[new]
+            except KeyError:
+                continue
+            if start > end:
+                raise ValueError("Release pair old %s is later than new %s for %s" % (
+                    old, new, repo))
+            repo_result.append((old, new, [repo_releases[i] for i in range(start + 1, end + 1)]))
     return result, avatars

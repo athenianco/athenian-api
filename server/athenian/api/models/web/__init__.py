@@ -29,6 +29,8 @@ from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.developer_metrics_request import DeveloperMetricsRequest
 from athenian.api.models.web.developer_summary import DeveloperSummary
 from athenian.api.models.web.developer_updates import DeveloperUpdates
+from athenian.api.models.web.diff_releases_request import DiffReleasesRequest
+from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contributors_request import FilterContributorsRequest
 from athenian.api.models.web.filter_jira_stuff import FilterJIRAStuff
@@ -93,12 +95,14 @@ from athenian.api.models.web.pull_request_set import PullRequestSet
 from athenian.api.models.web.pull_request_stage import PullRequestStage
 from athenian.api.models.web.pull_request_with import PullRequestWith
 from athenian.api.models.web.quantiles import validate_quantiles
+from athenian.api.models.web.release_diff import ReleaseDiff
 from athenian.api.models.web.release_match_request import ReleaseMatchRequest
 from athenian.api.models.web.release_match_setting import ReleaseMatchSetting
 from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_metrics_request import ReleaseMetricsRequest
 from athenian.api.models.web.release_names import ReleaseNames
+from athenian.api.models.web.release_pair import ReleasePair
 from athenian.api.models.web.release_set import ReleaseSet, ReleaseSetInclude
 from athenian.api.models.web.release_with import ReleaseWith
 from athenian.api.models.web.released_pull_request import ReleasedPullRequest

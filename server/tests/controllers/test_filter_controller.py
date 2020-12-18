@@ -19,6 +19,7 @@ from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
 from athenian.api.models.web import CommitsList, FilteredLabel, PullRequestEvent, \
     PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
+from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache, has_memcached
 from tests.controllers.conftest import with_only_master_branch
@@ -1357,6 +1358,7 @@ async def test_get_releases_smoke(client, headers):
         method="POST", path="/v1/get/releases", headers=headers, json=body)
     response_body = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 200, response_body
+    ReleaseSet.from_dict(response_body)
     assert response_body == {
         "include": {
             "users": {
@@ -1677,3 +1679,65 @@ async def test_get_releases_smoke(client, headers):
                  {"number": 696, "title": "*: simplication", "additions": 4, "deletions": 11,
                   "author": "github.com/ferhatelmas"}]}],
     }
+
+
+@pytest.mark.parametrize("account, repo, names, code", [
+    (3, "github.com/src-d/go-git", ["v4.0.0", "v4.4.0"], 404),
+    (1, "github.com/athenianco/athenian-api", ["v4.0.0", "v4.4.0"], 403),
+    (2, "github.com/src-d/go-git", ["v4.0.0", "v4.4.0"], 422),
+    (1, "github.com/src-d/go-git", [], 200),
+])
+async def test_get_releases_nasty_input(client, headers, account, repo, names, code):
+    body = {
+        "account": account,
+        "releases": [{
+            "repository": repo,
+            "names": names,
+        }],
+    }
+    response = await client.request(
+        method="POST", path="/v1/get/releases", headers=headers, json=body)
+    response_body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == code, response_body
+
+
+async def test_diff_releases_smoke(client, headers):
+    body = {
+        "account": 1,
+        "borders": {
+            "github.com/src-d/go-git": [{"old": "v4.0.0", "new": "v4.4.0"}],
+        },
+    }
+    response = await client.request(
+        method="POST", path="/v1/diff/releases", headers=headers, json=body)
+    response_body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 200, response_body
+    dr = DiffedReleases.from_dict(response_body)
+    assert len(dr.include.users) == 41
+    assert len(dr.include.jira) == 35
+    assert len(dr.data["github.com/src-d/go-git"]) == 1
+    assert {r.name for r in dr.data["github.com/src-d/go-git"][0].releases} == {
+        "v4.3.1", "v4.1.0", "v4.2.0", "v4.3.0", "v4.2.1", "v4.1.1", "v4.4.0"}
+    assert dr.data["github.com/src-d/go-git"][0].old == "v4.0.0"
+    assert dr.data["github.com/src-d/go-git"][0].new == "v4.4.0"
+
+
+@pytest.mark.parametrize("account, repo, old, new, code", [
+    (3, "github.com/src-d/go-git", "v4.0.0", "v4.4.0", 404),
+    (1, "github.com/athenianco/athenian-api", "v4.0.0", "v4.4.0", 403),
+    (2, "github.com/src-d/go-git", "v4.0.0", "v4.4.0", 422),
+    (1, "github.com/src-d/go-git", "whatever", "v4.4.0", 200),
+    (1, "github.com/src-d/go-git", "v4.0.0", "v4.0.0", 400),
+    (1, "github.com/src-d/go-git", "v4.4.0", "v4.0.0", 400),
+])
+async def test_diff_releases_nasty_input(client, headers, account, repo, old, new, code):
+    body = {
+        "account": account,
+        "borders": {
+            repo: [{"old": old, "new": new}],
+        },
+    }
+    response = await client.request(
+        method="POST", path="/v1/diff/releases", headers=headers, json=body)
+    response_body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == code, response_body

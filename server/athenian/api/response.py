@@ -16,7 +16,7 @@ def model_response(model: Union[Model, Iterable[Model]], *,
                    headers: LooseHeaders = None,
                    ) -> web.Response:
     """Generate a web model_response from the given model."""
-    data = model.to_dict() if isinstance(model, Model) else [m.to_dict() for m in model]
+    data = Model.serialize(model)
     return web.json_response(data, dumps=FriendlyJson.dumps,
                              status=status, reason=reason, headers=headers)
 
