@@ -1126,10 +1126,11 @@ async def rescan_prs_mark_force_push_dropped(repos: Iterable[str],
             commit_dates.get(commit_id, now) for commit_id in commit_ids]
         return branches
 
+    ghdprf = GitHubDonePullRequestFacts
     tasks = [
-        pdb.fetch_all(select([GitHubDonePullRequestFacts.pr_node_id])
-                      .where(and_(GitHubDonePullRequestFacts.repository_full_name.in_(repos),
-                                  GitHubDonePullRequestFacts.release_match.like("%|%")))),
+        pdb.fetch_all(select([ghdprf.pr_node_id])
+                      .where(and_(ghdprf.repository_full_name.in_(repos),
+                                  ghdprf.release_match.like("%|%")))),
         fetch_branches(),
         fetch_precomputed_commit_history_dags(repos, pdb, cache),
     ]
@@ -1157,7 +1158,8 @@ async def rescan_prs_mark_force_push_dropped(repos: Iterable[str],
     with sentry_sdk.start_span(op="set force push dropped prs",
                                description=str(len(dead_indexes))):
         await pdb.execute(
-            update(GitHubDonePullRequestFacts)
-            .where(GitHubDonePullRequestFacts.pr_node_id.in_(dead_pr_node_ids))
-            .values({GitHubDonePullRequestFacts.release_match: ReleaseMatch.force_push_drop.name,
-                     GitHubDonePullRequestFacts.updated_at: now}))
+            update(ghdprf)
+            .where(and_(ghdprf.pr_node_id.in_(dead_pr_node_ids),
+                        ghdprf.release_match != ReleaseMatch.force_push_drop.name))
+            .values({ghdprf.release_match: ReleaseMatch.force_push_drop.name,
+                     ghdprf.updated_at: now}))
