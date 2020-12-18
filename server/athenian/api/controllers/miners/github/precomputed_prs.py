@@ -494,9 +494,21 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
     prefix = PREFIXES["github"]
     records = []
     utc = timezone.utc
+    force_push_dropped = set()
     for pr in prs:
         repo = pr[ghprt.repository_full_name.key]
-        match_name, match_by = pr[ghprt.release_match.key].split("|", 1)
+        node_id = pr[ghprt.pr_node_id.key]
+        release_match = pr[ghprt.release_match.key]
+        if release_match == ReleaseMatch.force_push_drop.name:
+            if node_id in force_push_dropped:
+                continue
+            force_push_dropped.add(node_id)
+            records.append((node_id, pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
+                            pr[ghprt.releaser.key].rstrip(), pr[ghprt.release_url.key],
+                            pr[ghprt.release_node_id.key], pr[ghprt.repository_full_name.key],
+                            ReleaseMatch.force_push_drop))
+            continue
+        match_name, match_by = release_match.split("|", 1)
         release_match = ReleaseMatch[match_name]
         try:
             if release_match != matched_bys[repo]:
@@ -515,7 +527,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
                 continue
         else:
             raise AssertionError("Unsupported release match in the precomputed DB: " + match_name)
-        records.append((pr[ghprt.pr_node_id.key], pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
+        records.append((node_id, pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
                         pr[ghprt.releaser.key].rstrip(), pr[ghprt.release_url.key],
                         pr[ghprt.release_node_id.key], pr[ghprt.repository_full_name.key],
                         ReleaseMatch[pr[ghprt.release_match.key].split("|", 1)[0]]))
