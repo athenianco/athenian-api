@@ -47,7 +47,7 @@ services:
       - ${POSTGRES_HOST_PORT:-5432}:5432
     volumes:
       - postgres:/var/lib/postgresql/data
-      - ./load_pg_data.sh:/load_data.sh
+      - ${POSTGRES_LOADER_SCRIPT_PATH:-./server/tests/load_pg_data.sh}:/load_data.sh
     depends_on:
       - cloud_sql_proxy
 
