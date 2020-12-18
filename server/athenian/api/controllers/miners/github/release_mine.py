@@ -312,10 +312,11 @@ async def mine_releases(repos: Iterable[str],
                         "store_precomputed_release_facts(%d)" % len(data))
         return data
 
-    all_authors = np.concatenate([commits_authors[commits_authors_nz],
-                                  prs_authors[prs_authors_nz],
-                                  mentioned_authors])
-    all_authors = [p[1] for p in np.char.split(np.unique(all_authors).astype("U"), "/", 1)]
+    if with_avatars:
+        all_authors = np.concatenate([commits_authors[commits_authors_nz],
+                                      prs_authors[prs_authors_nz],
+                                      mentioned_authors])
+        all_authors = [p[1] for p in np.char.split(np.unique(all_authors).astype("U"), "/", 1)]
     mentioned_authors = set(mentioned_authors)
     if with_avatars:
         tasks = [
@@ -326,7 +327,8 @@ async def mine_releases(repos: Iterable[str],
         avatars = [p for p in avatars if p[0] in mentioned_authors]
     else:
         mined_releases = await main_flow()
-        avatars = all_authors
+        avatars = np.array(
+            [p[1] for p in np.char.split(np.array(list(mentioned_authors), dtype="U"), "/", 1)])
     result.extend(mined_releases)
     if participants:
         result = _filter_by_participants(result, participants)
@@ -362,7 +364,7 @@ def _build_mined_releases(releases: pd.DataFrame,
         *(f.commit_authors for f in precomputed_facts.values()),
         prefix + release_authors[release_authors.nonzero()[0]],
     ])
-    mentioned_authors = np.unique(mentioned_authors[mentioned_authors.nonzero()[0]])
+    mentioned_authors = np.unique(mentioned_authors[mentioned_authors.nonzero()[0]]).astype("U")
     return result, mentioned_authors, has_precomputed_facts
 
 
@@ -573,6 +575,7 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     add_pdb_misses(pdb, "release_facts", len(releases) - len(precomputed_facts))
     result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
         releases, precomputed_facts)
+    mentioned_authors = [p[1] for p in np.char.split(mentioned_authors, "/", 1)]
     if not (missing_releases := releases.take(np.nonzero(~has_precomputed_facts)[0])).empty:
         repos = missing_releases[Release.repository_full_name.key].unique()
         time_from = missing_releases[Release.published_at.key].iloc[-1]
