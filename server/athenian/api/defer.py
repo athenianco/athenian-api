@@ -156,7 +156,6 @@ async def wait_all_deferred() -> None:
 
 def with_defer(func):
     """Decorate a coroutine to enable defer()."""
-
     async def wrapped_with_defer(*args, **kwargs):
         enable_defer(False)
         try:
