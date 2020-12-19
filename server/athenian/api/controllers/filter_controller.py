@@ -513,11 +513,8 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
     except KeyError:
         return model_response(ReleaseSet())
     github_borders = {r: borders[prefix + r] for r in github_repos}
-    try:
-        releases, avatars = await mine_diff_releases(
-            github_borders, settings, meta_ids, request.mdb, request.pdb, request.cache)
-    except ValueError as e:
-        raise ResponseError(InvalidRequestError(detail=str(e), pointer="?")) from None
+    releases, avatars = await mine_diff_releases(
+        github_borders, settings, meta_ids, request.mdb, request.pdb, request.cache)
     issues = await _load_jira_issues(
         jira_ids, list(chain.from_iterable(chain.from_iterable(r[-1] for r in rr)
                                            for rr in releases.values())),

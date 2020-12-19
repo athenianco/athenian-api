@@ -1317,7 +1317,7 @@ async def test_precomputed_releases_tags_after_branches(
 @with_defer
 async def test_mine_releases_by_name(
         mdb, pdb, branches, default_branches, release_match_setting_branch,
-        release_match_setting_tag_or_branch):
+        release_match_setting_tag_or_branch, cache):
     # we don't have tags within our reach for this time interval
     time_from = datetime(year=2017, month=3, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=4, day=1, tzinfo=timezone.utc)
@@ -1329,13 +1329,18 @@ async def test_mine_releases_by_name(
     names = {"36c78b9d1b1eea682703fb1cbb0f4f3144354389", "v4.0.0"}
     releases, _ = await mine_releases_by_name(
         {"src-d/go-git": names},
-        release_match_setting_tag_or_branch, (6366825,), mdb, pdb, None)
+        release_match_setting_tag_or_branch, (6366825,), mdb, pdb, cache)
+    await wait_deferred()
     assert len(releases) == 2
-    releases = {r[0][Release.name.key]: r for r in releases}
-    assert releases.keys() == names
-    assert len(releases["36c78b9d1b1eea682703fb1cbb0f4f3144354389"][1]
+    releases_dict = {r[0][Release.name.key]: r for r in releases}
+    assert releases_dict.keys() == names
+    assert len(releases_dict["36c78b9d1b1eea682703fb1cbb0f4f3144354389"][1]
                .prs[PullRequest.number.key]) == 1
-    assert len(releases["v4.0.0"][1].prs[PullRequest.number.key]) == 62
+    assert len(releases_dict["v4.0.0"][1].prs[PullRequest.number.key]) == 62
+    releases2, _ = await mine_releases_by_name(
+        {"src-d/go-git": names},
+        release_match_setting_tag_or_branch, (6366825,), None, None, cache)
+    assert str(releases) == str(releases2)
 
 
 """
