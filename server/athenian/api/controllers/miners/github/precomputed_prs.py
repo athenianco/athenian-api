@@ -11,7 +11,7 @@ from dateutil.rrule import DAILY, rrule
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, insert, join, not_, or_, select, union_all, update
+from sqlalchemy import and_, delete, desc, insert, join, not_, or_, select, union_all, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
@@ -1157,9 +1157,15 @@ async def rescan_prs_mark_force_push_dropped(repos: Iterable[str],
     now = datetime.now(timezone.utc)
     with sentry_sdk.start_span(op="set force push dropped prs",
                                description=str(len(dead_indexes))):
-        await pdb.execute(
-            update(ghdprf)
-            .where(and_(ghdprf.pr_node_id.in_(dead_pr_node_ids),
-                        ghdprf.release_match != ReleaseMatch.force_push_drop.name))
-            .values({ghdprf.release_match: ReleaseMatch.force_push_drop.name,
-                     ghdprf.updated_at: now}))
+        try:
+            await pdb.execute(
+                delete(ghdprf)
+                .where(and_(ghdprf.pr_node_id.in_(dead_pr_node_ids),
+                            ghdprf.release_match == ReleaseMatch.force_push_drop.name)))
+        finally:
+            await pdb.execute(
+                update(ghdprf)
+                .where(and_(ghdprf.pr_node_id.in_(dead_pr_node_ids),
+                            ghdprf.release_match != ReleaseMatch.force_push_drop.name))
+                .values({ghdprf.release_match: ReleaseMatch.force_push_drop.name,
+                         ghdprf.updated_at: now}))

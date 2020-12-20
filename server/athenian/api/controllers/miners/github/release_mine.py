@@ -18,8 +18,10 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.github.dag_accelerated import mark_dag_access, \
-    mark_dag_parents, searchsorted_inrange
+from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags, \
+    fetch_repository_commits, RELEASE_FETCH_COMMITS_COLUMNS
+from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
+    mark_dag_access, mark_dag_parents, searchsorted_inrange
 from athenian.api.controllers.miners.github.precomputed_releases import \
     fetch_precomputed_releases_by_name, load_precomputed_release_facts, \
     store_precomputed_release_facts
@@ -235,7 +237,7 @@ async def mine_releases(repos: Iterable[str],
                                   repo_releases[Release.author.key].values,
                                   repo_releases[Release.published_at.key],  # no values
                                   repo_releases[matched_by_column].values,
-                                  repo_releases[Release.commit_id.key].values)):
+                                  repo_releases[Release.sha.key].values)):
                 if my_published_at < time_from or my_id in unfiltered_precomputed_facts:
                     continue
                 dupe = computed_release_info_by_commit.get(my_commit)
@@ -296,7 +298,8 @@ async def mine_releases(repos: Iterable[str],
                 data.append(({Release.id.key: my_id,
                               Release.name.key: my_name or my_tag,
                               Release.repository_full_name.key: prefix + repo,
-                              Release.url.key: my_url},
+                              Release.url.key: my_url,
+                              Release.sha.key: my_commit},
                              ReleaseFacts(published=my_published_at,
                                           publisher=my_author,
                                           matched_by=ReleaseMatch(my_matched_by),
@@ -472,6 +475,12 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
 
 
 @sentry_span
+@cached(
+    exptime=5 * 60,  # 5 min
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda names, **_: ({k: sorted(v) for k, v in names.items()},),
+)
 async def mine_releases_by_name(names: Dict[str, Iterable[str]],
                                 settings: Dict[str, ReleaseMatchSetting],
                                 meta_ids: Tuple[int, ...],
@@ -611,6 +620,12 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
     return releases, branches, default_branches
 
 
+@cached(
+    exptime=5 * 60,  # 5 min
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda borders, **_: ({k: sorted(v) for k, v in borders.items()},),
+)
 async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
                         settings: Dict[str, ReleaseMatchSetting],
                         meta_ids: Tuple[int, ...],
@@ -625,18 +640,27 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
     names = defaultdict(set)
     for repo, pairs in borders.items():
         for old, new in pairs:
-            if old == new:
-                raise ValueError("Releases pair old == new == %s for %s" % (old, repo))
             names[repo].update((old, new))
     border_releases, branches, default_branches = await _load_releases_by_name(
         names, log, settings, meta_ids, mdb, pdb, cache)
     repos = border_releases[Release.repository_full_name.key].unique()
     time_from = border_releases[Release.published_at.key].min()
     time_to = border_releases[Release.published_at.key].max() + timedelta(seconds=1)
+
+    async def fetch_dags():
+        nonlocal border_releases
+        dags = await fetch_precomputed_commit_history_dags(repos, pdb, cache)
+        return await fetch_repository_commits(
+            dags, border_releases, RELEASE_FETCH_COMMITS_COLUMNS, True, meta_ids, mdb, pdb, cache)
+
+    tasks = [
+        mine_releases(
+            repos, {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
+            settings, meta_ids, mdb, pdb, cache, force_fresh=True),
+        fetch_dags(),
+    ]
+    (releases, avatars, _), dags = await gather(*tasks, op="mine_releases + dags")
     del border_releases
-    releases, avatars, _ = await mine_releases(
-        repos, {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
-        settings, meta_ids, mdb, pdb, cache, force_fresh=True)
     releases_by_repo = defaultdict(list)
     for r in releases:
         releases_by_repo[r[0][Release.repository_full_name.key]].append(r)
@@ -651,11 +675,24 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
         for old, new in pairs:
             try:
                 start = index[old]
-                end = index[new]
+                finish = index[new]
             except KeyError:
+                log.warning("Release pair %s, %s was not found for %s", old, new, repo)
                 continue
-            if start > end:
-                raise ValueError("Release pair old %s is later than new %s for %s" % (
-                    old, new, repo))
-            repo_result.append((old, new, [repo_releases[i] for i in range(start + 1, end + 1)]))
+            if start > finish:
+                log.warning("Release pair old %s is later than new %s for %s", old, new, repo)
+                continue
+            start_sha, finish_sha = (repo_releases[x][0][Release.sha.key] for x in (start, finish))
+            hashes, _, _ = extract_subdag(*dags[repo], np.array([finish_sha], dtype="U"))
+            if hashes[searchsorted_inrange(hashes, np.array([start_sha], dtype="U"))] == start_sha:
+                diff = []
+                for i in range(start + 1, finish + 1):
+                    r = repo_releases[i]
+                    sha = r[0][Release.sha.key]
+                    if hashes[searchsorted_inrange(hashes, np.array([sha], dtype="U"))] == sha:
+                        diff.append(r)
+                repo_result.append((old, new, diff))
+            else:
+                log.warning("Release pair's old %s is not in the sub-DAG of %s for %s",
+                            old, new, repo)
     return result, avatars

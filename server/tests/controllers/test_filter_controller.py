@@ -1722,15 +1722,15 @@ async def test_diff_releases_smoke(client, headers):
     assert dr.data["github.com/src-d/go-git"][0].new == "v4.4.0"
 
 
-@pytest.mark.parametrize("account, repo, old, new, code", [
-    (3, "github.com/src-d/go-git", "v4.0.0", "v4.4.0", 404),
-    (1, "github.com/athenianco/athenian-api", "v4.0.0", "v4.4.0", 403),
-    (2, "github.com/src-d/go-git", "v4.0.0", "v4.4.0", 422),
-    (1, "github.com/src-d/go-git", "whatever", "v4.4.0", 200),
-    (1, "github.com/src-d/go-git", "v4.0.0", "v4.0.0", 400),
-    (1, "github.com/src-d/go-git", "v4.4.0", "v4.0.0", 400),
+@pytest.mark.parametrize("account, repo, old, new, code, body", [
+    (3, "github.com/src-d/go-git", "v4.0.0", "v4.4.0", 404, None),
+    (1, "github.com/athenianco/athenian-api", "v4.0.0", "v4.4.0", 403, None),
+    (2, "github.com/src-d/go-git", "v4.0.0", "v4.4.0", 422, None),
+    (1, "github.com/src-d/go-git", "whatever", "v4.4.0", 200, None),
+    (1, "github.com/src-d/go-git", "v4.0.0", "v4.0.0", 200, []),
+    (1, "github.com/src-d/go-git", "v4.4.0", "v4.0.0", 200, None),
 ])
-async def test_diff_releases_nasty_input(client, headers, account, repo, old, new, code):
+async def test_diff_releases_nasty_input(client, headers, account, repo, old, new, code, body):
     body = {
         "account": account,
         "borders": {
@@ -1741,3 +1741,8 @@ async def test_diff_releases_nasty_input(client, headers, account, repo, old, ne
         method="POST", path="/v1/diff/releases", headers=headers, json=body)
     response_body = json.loads((await response.read()).decode("utf-8"))
     assert response.status == code, response_body
+    if code == 200:
+        if body is None:
+            assert len(response_body["data"]) == 0
+        elif not body:
+            assert response_body["data"] == [[{"old": old, "new": new, "releases": []}]]
