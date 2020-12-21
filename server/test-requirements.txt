@@ -4,6 +4,6 @@ pytest-aiohttp==0.3.0
 pytest-cov==2.10.1
 pytest-benchmark==3.2.3
 pytest-rerunfailures==9.1.1
-faker==5.0.1
+faker==5.0.2
 nest_asyncio==1.4.3
 codecov==2.1.11
