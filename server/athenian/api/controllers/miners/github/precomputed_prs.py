@@ -36,8 +36,8 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
 from athenian.api.db import add_pdb_hits, greatest
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, \
-    PullRequestComment, \
-    PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewRequest, Release
+    PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
+    PullRequestReviewRequest, Release
 from athenian.api.models.precomputed.models import Base, GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
 from athenian.api.tracing import sentry_span
@@ -1102,12 +1102,12 @@ async def store_open_pull_request_facts(
 
 
 @sentry_span
-async def rescan_prs_mark_force_push_dropped(repos: Iterable[str],
-                                             meta_ids: Tuple[int, ...],
-                                             mdb: databases.Database,
-                                             pdb: databases.Database,
-                                             cache: Optional[aiomcache.Client],
-                                             ) -> None:
+async def delete_force_push_dropped_prs(repos: Iterable[str],
+                                        meta_ids: Tuple[int, ...],
+                                        mdb: databases.Database,
+                                        pdb: databases.Database,
+                                        cache: Optional[aiomcache.Client],
+                                        ) -> Collection[str]:
     """Load all released precomputed PRs and re-check that they are still accessible from \
     the branch heads. Mark inaccessible as force push dropped."""
     @sentry_span
@@ -1154,18 +1154,10 @@ async def rescan_prs_mark_force_push_dropped(repos: Iterable[str],
     for i, dead_index in enumerate(dead_indexes):
         dead_pr_node_ids[i] = pr_merges[dead_index][1]
     del pr_merges
-    now = datetime.now(timezone.utc)
-    with sentry_sdk.start_span(op="set force push dropped prs",
+    with sentry_sdk.start_span(op="delete force push dropped prs",
                                description=str(len(dead_indexes))):
-        try:
-            await pdb.execute(
-                delete(ghdprf)
-                .where(and_(ghdprf.pr_node_id.in_(dead_pr_node_ids),
-                            ghdprf.release_match == ReleaseMatch.force_push_drop.name)))
-        finally:
-            await pdb.execute(
-                update(ghdprf)
-                .where(and_(ghdprf.pr_node_id.in_(dead_pr_node_ids),
-                            ghdprf.release_match != ReleaseMatch.force_push_drop.name))
-                .values({ghdprf.release_match: ReleaseMatch.force_push_drop.name,
-                         ghdprf.updated_at: now}))
+        await pdb.execute(
+            delete(ghdprf)
+            .where(and_(ghdprf.pr_node_id.in_(dead_pr_node_ids),
+                        ghdprf.release_match != ReleaseMatch.force_push_drop.name)))
+    return dead_pr_node_ids

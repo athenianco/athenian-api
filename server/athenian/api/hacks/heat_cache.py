@@ -26,7 +26,7 @@ from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    rescan_prs_mark_force_push_dropped
+    delete_force_push_dropped_prs
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.controllers.settings import ReleaseMatch, Settings
@@ -154,6 +154,9 @@ def main():
                     1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
                 releases_count = len(releases)
                 del releases
+                if not reposet.precomputed:
+                    log.info("Scanning for force push dropped PRs")
+                    await delete_force_push_dropped_prs(repos, meta_ids, mdb, pdb, None)
                 log.info("Extracting PR facts")
                 facts = await calc_pull_request_facts_github(
                     time_from,
@@ -194,22 +197,20 @@ def main():
                                          bots_team_name=Team.BOTS,
                                          bots=num_bots,
                                          teams=num_teams)
-                else:
-                    log.info("Scanning for force push dropped PRs")
-                    await rescan_prs_mark_force_push_dropped(repos, meta_ids, mdb, pdb, None)
             except Exception as e:
                 log.warning("reposet %d: %s: %s", reposet.id, type(e).__name__, e)
                 sentry_sdk.capture_exception(e)
                 return_code = 1
             else:
-                await sdb.execute(
-                    update(RepositorySet)
-                    .where(RepositorySet.id == reposet.id)
-                    .values({RepositorySet.precomputed: True,
-                             RepositorySet.updates_count: reposet.updates_count,
-                             RepositorySet.updated_at: reposet.updated_at,
-                             RepositorySet.items_count: reposet.items_count,
-                             RepositorySet.items_checksum: RepositorySet.items_checksum}))
+                if not reposet.precomputed:
+                    await sdb.execute(
+                        update(RepositorySet)
+                        .where(RepositorySet.id == reposet.id)
+                        .values({RepositorySet.precomputed: True,
+                                 RepositorySet.updates_count: reposet.updates_count,
+                                 RepositorySet.updated_at: reposet.updated_at,
+                                 RepositorySet.items_count: reposet.items_count,
+                                 RepositorySet.items_checksum: RepositorySet.items_checksum}))
             finally:
                 await wait_deferred()
 

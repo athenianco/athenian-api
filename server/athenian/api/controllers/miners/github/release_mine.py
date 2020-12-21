@@ -26,8 +26,7 @@ from athenian.api.controllers.miners.github.precomputed_releases import \
     fetch_precomputed_releases_by_name, load_precomputed_release_facts, \
     store_precomputed_release_facts
 from athenian.api.controllers.miners.github.release_load import \
-    fetch_precomputed_release_match_spans, group_repos_by_release_match, \
-    load_releases
+    fetch_precomputed_release_match_spans, group_repos_by_release_match, load_releases
 from athenian.api.controllers.miners.github.release_match import \
     _fetch_repository_first_commit_dates, _find_releases_for_matching_prs, load_commit_dags
 from athenian.api.controllers.miners.github.released_pr import matched_by_column

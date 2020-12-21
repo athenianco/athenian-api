@@ -16,13 +16,12 @@ from athenian.api.controllers.features.entries import calc_pull_request_facts_gi
 from athenian.api.controllers.features.github.pull_request_filter import _fetch_pull_requests
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
-    load_open_pull_request_facts, load_open_pull_request_facts_unfresh, \
-    load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
-    load_precomputed_done_facts_reponums, load_precomputed_pr_releases, \
-    rescan_prs_mark_force_push_dropped, store_merged_unreleased_pull_request_facts, \
-    store_open_pull_request_facts, \
-    store_precomputed_done_facts, update_unreleased_prs
+    delete_force_push_dropped_prs, discover_inactive_merged_unreleased_prs, \
+    load_merged_unreleased_pull_request_facts, load_open_pull_request_facts, \
+    load_open_pull_request_facts_unfresh, load_precomputed_done_candidates, \
+    load_precomputed_done_facts_filters, load_precomputed_done_facts_reponums, \
+    load_precomputed_pr_releases, store_merged_unreleased_pull_request_facts, \
+    store_open_pull_request_facts, store_precomputed_done_facts, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_load import load_releases
 from athenian.api.controllers.miners.github.release_match import map_prs_to_releases
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
@@ -827,6 +826,8 @@ async def test_rescan_prs_mark_force_push_dropped(mdb, pdb, default_branches, pr
         prs, zip(repeat("src-d/go-git"), samples), default_branches, settings, pdb)
     release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
     assert release_match == "branch|master"
-    await rescan_prs_mark_force_push_dropped(["src-d/go-git"], (6366825,), mdb, pdb, None)
+    node_ids = await delete_force_push_dropped_prs(
+        ["src-d/go-git"], (6366825,), mdb, pdb, None)
+    assert list(node_ids) == ["MDExOlB1bGxSZXF1ZXN0NTc5NDcxODA="]
     release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
-    assert release_match == ReleaseMatch.force_push_drop.name
+    assert release_match is None
