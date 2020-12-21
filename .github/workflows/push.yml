@@ -259,6 +259,10 @@ jobs:
       name: codecov
       with:
         token: ${{ env.CODECOV_TOKEN }}
+    - name: docker prune
+      run: |
+        (docker image ls -a | grep -v $GOOGLE_DOCKER_IMAGE | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+        docker system prune -f
   bump_version:
     name: Bump the version
     needs: [flake8, custom_checks, test, docker, spec]
@@ -325,3 +329,7 @@ jobs:
         docker tag $IMAGE $GOOGLE_DOCKER_IMAGE
         IMAGE=$GOOGLE_DOCKER_IMAGE make docker-push
         sentry-cli releases finalize $current_version
+    - name: docker prune
+      run: |
+        (docker image ls -a | grep -v $GOOGLE_DOCKER_IMAGE | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+        docker system prune -f
