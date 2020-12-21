@@ -279,7 +279,11 @@ class AthenianApp(connexion.AioHttpApp):
         for db in ("mdb", "sdb", "pdb"):
             if getattr(self, db) is None:
                 await self._db_futures[db]
-                del self._db_futures[db]
+                try:
+                    del self._db_futures[db]
+                except KeyError:
+                    # this can happen with several concurrent requests at startup
+                    pass
                 assert getattr(self, db) is not None
             # we can access them through `request.app.*db` but these are shorter to write
             setattr(request, db, getattr(self, db))
