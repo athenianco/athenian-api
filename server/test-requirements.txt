@@ -6,4 +6,4 @@ pytest-benchmark==3.2.3
 pytest-rerunfailures==9.1.1
 faker==5.0.1
 nest_asyncio==1.4.3
-codecov==2.1.10
+codecov==2.1.11
