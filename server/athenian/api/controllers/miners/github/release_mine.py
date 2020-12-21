@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
+import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
@@ -10,7 +11,7 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select, union_all
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
@@ -349,15 +350,15 @@ def _build_mined_releases(releases: pd.DataFrame,
           Release.name.key: my_name or my_tag,
           Release.repository_full_name.key: prefix + repo,
           Release.url.key: my_url,
-          Release.author.key: my_author},
+          Release.sha.key: my_commit},
          precomputed_facts[my_id])
-        for my_id, my_name, my_tag, repo, my_url, my_author in zip(
+        for my_id, my_name, my_tag, repo, my_url, my_commit in zip(
             releases[Release.id.key].values[has_precomputed_facts],
             releases[Release.name.key].values[has_precomputed_facts],
             releases[Release.tag.key].values[has_precomputed_facts],
             releases[Release.repository_full_name.key].values[has_precomputed_facts],
             releases[Release.url.key].values[has_precomputed_facts],
-            releases[Release.author.key].values[has_precomputed_facts],
+            releases[Release.sha.key].values[has_precomputed_facts],
         )
     ]
     release_authors = releases[Release.author.key].values
@@ -492,7 +493,7 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     release names."""
     log = logging.getLogger("%s.mine_releases_by_name" % metadata.__package__)
     names = {k: set(v) for k, v in names.items()}
-    releases, branches, default_branches = await _load_releases_by_name(
+    releases, _, branches, default_branches = await _load_releases_by_name(
         names, log, settings, meta_ids, mdb, pdb, cache)
     if releases.empty:
         return [], []
@@ -558,7 +559,11 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                                  mdb: databases.Database,
                                  pdb: databases.Database,
                                  cache: Optional[aiomcache.Client],
-                                 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, str]]:
+                                 ) -> Tuple[pd.DataFrame,
+                                            pd.DataFrame,
+                                            Dict[str, Dict[str, str]],
+                                            Dict[str, str]]:
+    names = await _complete_commit_hashes(names, meta_ids, mdb)
     tasks = [
         extract_branches(names, meta_ids, mdb, cache),
         fetch_precomputed_releases_by_name(names, pdb),
@@ -570,7 +575,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
         prenames[repo].add(name)
     missing = {}
     for repo, repo_names in names.items():
-        if diff := repo_names.difference(prenames.get(repo, set())):
+        if diff := repo_names.keys() - prenames.get(repo, set()):
             missing[repo] = diff
     if missing:
         now = datetime.now(timezone.utc)
@@ -616,7 +621,49 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                                  inplace=True, ascending=False, ignore_index=True)
         if still_missing:
             log.warning("Some releases were not found: %s", still_missing)
-    return releases, branches, default_branches
+    return releases, names, branches, default_branches
+
+
+commit_prefix_re = re.compile(r"[a-f0-9]{7}")
+
+
+@sentry_span
+async def _complete_commit_hashes(names: Dict[str, Set[str]],
+                                  meta_ids: Tuple[int, ...],
+                                  mdb: databases.Database) -> Dict[str, Dict[str, str]]:
+    candidates = defaultdict(list)
+    for repo, strs in names.items():
+        for name in strs:
+            if commit_prefix_re.fullmatch(name):
+                candidates[repo].append(name)
+    if not candidates:
+        return {repo: {s: s for s in strs} for repo, strs in names.items()}
+    queries = [
+        select([PushCommit.repository_full_name, PushCommit.sha])
+        .where(and_(PushCommit.acc_id.in_(meta_ids),
+                    PushCommit.repository_full_name == repo,
+                    func.substr(PushCommit.sha, 1, 7).in_(prefixes)))
+        for repo, prefixes in candidates.items()
+    ]
+    if mdb.url.dialect == "sqlite" and len(queries) == 1:
+        query = queries[0]
+    else:
+        query = union_all(*queries)
+    rows = await mdb.fetch_all(query)
+    renames = defaultdict(dict)
+    renames_reversed = defaultdict(set)
+    for row in rows:
+        repo = row[PushCommit.repository_full_name.key]
+        sha = row[PushCommit.sha.key]
+        prefix = sha[:7]
+        renames[repo][sha] = prefix
+        renames_reversed[repo].add(prefix)
+    for repo, strs in names.items():
+        repo_renames = renames_reversed[repo]
+        for name in strs:
+            if name not in repo_renames:
+                repo_renames[name] = name
+    return renames
 
 
 @cached(
@@ -640,8 +687,10 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
     for repo, pairs in borders.items():
         for old, new in pairs:
             names[repo].update((old, new))
-    border_releases, branches, default_branches = await _load_releases_by_name(
+    border_releases, names, branches, default_branches = await _load_releases_by_name(
         names, log, settings, meta_ids, mdb, pdb, cache)
+    if border_releases.empty:
+        return {}, []
     repos = border_releases[Release.repository_full_name.key].unique()
     time_from = border_releases[Release.published_at.key].min()
     time_to = border_releases[Release.published_at.key].max() + timedelta(seconds=1)
@@ -667,14 +716,15 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
     result = {}
     for repo, repo_releases in releases_by_repo.items():
         repo = repo.split("/", 1)[1]
+        repo_names = {v: k for k, v in names[repo].items()}
         pairs = borders[repo]
         result[repo] = repo_result = []
         repo_releases = sorted(repo_releases, key=lambda r: r[1].published)
         index = {r[0][Release.name.key]: i for i, r in enumerate(repo_releases)}
         for old, new in pairs:
             try:
-                start = index[old]
-                finish = index[new]
+                start = index[repo_names[old]]
+                finish = index[repo_names[new]]
             except KeyError:
                 log.warning("Release pair %s, %s was not found for %s", old, new, repo)
                 continue
