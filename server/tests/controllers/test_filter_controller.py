@@ -13,6 +13,7 @@ from sqlalchemy import delete, insert, select
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.precomputed.models import GitHubRelease
@@ -1720,6 +1721,52 @@ async def test_diff_releases_smoke(client, headers):
         "v4.3.1", "v4.1.0", "v4.2.0", "v4.3.0", "v4.2.1", "v4.1.1", "v4.4.0"}
     assert dr.data["github.com/src-d/go-git"][0].old == "v4.0.0"
     assert dr.data["github.com/src-d/go-git"][0].new == "v4.4.0"
+
+
+@with_defer
+async def test_diff_releases_commits(
+        client, headers, mdb, pdb, release_match_setting_branch, branches, default_branches):
+    # d105e15d91e7553d9d40d6e9fffe0a5008cf8afe
+    # 31a249d0d5b71bc0f374d3297247d89808263a8b
+    body = {
+        "account": 1,
+        "borders": {
+            "github.com/src-d/go-git": [{"old": "d105e15", "new": "31a249d"}],
+        },
+    }
+    response = await client.request(
+        method="POST", path="/v1/diff/releases", headers=headers, json=body)
+    response_body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 200, response_body
+    dr = DiffedReleases.from_dict(response_body)
+    assert len(dr.data) == 0
+
+    time_from = datetime(year=2017, month=3, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2017, month=4, day=1, tzinfo=timezone.utc)
+    releases, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_branch, (6366825,), mdb, pdb, None)
+    await wait_deferred()
+
+    response = await client.request(
+        method="POST", path="/v1/diff/releases", headers=headers, json=body)
+    response_body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 200, response_body
+    dr = DiffedReleases.from_dict(response_body)
+
+    assert len(dr.include.users) == 8
+    assert len(dr.include.jira) == 0
+    assert len(dr.data["github.com/src-d/go-git"]) == 1
+    assert {r.name for r in dr.data["github.com/src-d/go-git"][0].releases} == {
+        "047a795df6d5a0d5dd0782297cea918e4a4a6e10", "199317f082082fb8f168ad40a5cae134acfe4a16",
+        "31a249d0d5b71bc0f374d3297247d89808263a8b", "36c78b9d1b1eea682703fb1cbb0f4f3144354389",
+        "4eef16a98d093057f1e4c560da4ed3bbba67cd76", "59335b69777f2ef311e63b7d3464459a3ac51d48",
+        "5f4169fe242e7c80d779984a86a1de5a1eb78218", "62ad629b9a4213fdb8d33bcc7e0bea66d043fc41",
+        "cfbd64f09f0d068d593f3dc3beb4ea7e62719e34", "e190c37cf51a2a320cabd81b25057859ed689a3b",
+        "e512b0280d2747249acecdd8ba33b2ec80d0f364", "f51d4a8476f865eef27011a9d90e03566c43d59c",
+        "f64e4b856865bc37f45e55ef094060481b53928e"}
+    assert dr.data["github.com/src-d/go-git"][0].old == "d105e15"
+    assert dr.data["github.com/src-d/go-git"][0].new == "31a249d"
 
 
 @pytest.mark.parametrize("account, repo, old, new, code, body", [
