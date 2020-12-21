@@ -262,6 +262,7 @@ jobs:
     - name: docker prune
       run: |
         (docker image ls -a | grep -v $GOOGLE_DOCKER_IMAGE | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+        (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
         docker system prune -f
   bump_version:
     name: Bump the version
@@ -332,4 +333,5 @@ jobs:
     - name: docker prune
       run: |
         (docker image ls -a | grep -v $GOOGLE_DOCKER_IMAGE | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+        (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
         docker system prune -f
