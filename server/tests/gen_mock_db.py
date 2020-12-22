@@ -30,9 +30,9 @@ def parse_args():
 
 def main():
     args = parse_args()
-    metadata_db()
+    metadata_db("master")
     for letter, name in (("s", "state"), ("p", "precomputed")):
-        db_path = db_dir / ("%sdb.sqlite" % letter)
+        db_path = db_dir / ("%sdb-master.sqlite" % letter)
         if db_path.exists():
             db_path.unlink()
         conn_str = os.getenv("OVERRIDE_%sDB" % letter.upper(), "sqlite:///%s" % db_path)

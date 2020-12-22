@@ -97,10 +97,10 @@ python3 server/tests/mdb_transfer.py postgresql://${POSTGRES_USER}:${POSTGRES_PA
 Generate sample SQLite metadata and state databases:
 
 ```
-docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /server/tests/gen_sqlite_db.py
+docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /server/tests/gen_mock_db.py
 ```
 
-You should have two SQLite files in `$(pwd)`: `mdb.sqlite` and `sdb.sqlite`. The third DB `--precomputed-db` can be set to any (already existing or not) `.sqlite` file or `sqlite://`.
+You should have three SQLite files in `$(pwd)`: `mdb-master.sqlite`, `pdb-master.sqlite`, and `sdb-master.sqlite`.
 
 Obtain Auth0 credentials for running locally: [webapp docs](https://github.com/athenianco/athenian-webapp/blob/master/docs/CONTRIBUTING.md#auth0-and-github-app-local-testing).
 

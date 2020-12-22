@@ -117,9 +117,9 @@ jobs:
           --health-retries 10
           --health-start-period 2s
     env:
-      SDB: sqlite:///tests/sdb.sqlite
-      MDB: sqlite:///tests/mdb.sqlite
-      PDB: sqlite:///tests/pdb.sqlite
+      SDB: sqlite:///tests/sdb-master.sqlite
+      MDB: sqlite:///tests/mdb-master.sqlite
+      PDB: sqlite:///tests/pdb-master.sqlite
     steps:
     - name: actions/checkout
       uses: actions/checkout@v2
@@ -142,13 +142,19 @@ jobs:
       if: matrix.db == 'postgres'
       env:
         PGPASSWORD: postgres
-        SDB: postgresql://postgres:postgres@0.0.0.0:5432/state
-        MDB: postgresql://postgres:postgres@0.0.0.0:5432/metadata
-        PDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed
+        SDB: postgresql://postgres:postgres@0.0.0.0:5432/state_%s
+        MDB: postgresql://postgres:postgres@0.0.0.0:5432/metadata_%s
+        PDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed_%s
       run: |
-        psql -c "create database state template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
-        psql -c "create database metadata template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
-        psql -c "create database precomputed template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database state_gw0 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database state_gw1 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database state_master template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database metadata_gw0 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database metadata_gw1 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database metadata_master template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database precomputed_gw0 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database precomputed_gw1 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database precomputed_master template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
         echo "SDB=$SDB" >> $GITHUB_ENV
         echo "MDB=$MDB" >> $GITHUB_ENV
         echo "PDB=$PDB" >> $GITHUB_ENV
@@ -167,7 +173,7 @@ jobs:
         if [ ${{ matrix.db }} = "postgres" ]; then
           export SLACK_API_TOKEN=xxx
         fi
-        pytest --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py --ignore=tests/controllers/test_histograms_controller.py --ignore=tests/controllers/test_pagination_controller.py
+        pytest -n 2 --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py --ignore=tests/controllers/test_histograms_controller.py --ignore=tests/controllers/test_pagination_controller.py
     - name: test fat
       if: matrix.type == 'fat'
       working-directory: server
@@ -179,12 +185,17 @@ jobs:
         if [ ${{ matrix.db }} = "postgres" ]; then
           export SLACK_API_TOKEN=
         fi
-        pytest $LIMIT --log-level=info --cov-report=xml --cov=athenian.api tests/controllers/test_filter_controller.py tests/controllers/test_metrics_controller.py tests/controllers/test_histograms_controller.py tests/controllers/test_pagination_controller.py
+        pytest -n 2 $LIMIT --log-level=info --cov-report=xml --cov=athenian.api tests/controllers/test_filter_controller.py tests/controllers/test_metrics_controller.py tests/controllers/test_histograms_controller.py tests/controllers/test_pagination_controller.py
     - name: test heater
       if: matrix.type == 'heater'
       working-directory: server
       run: |
         set -x
+        export SDB=${SDB/\%s/master}
+        export MDB=${MDB/\%s/master}
+        export PDB=${PDB/\%s/master}
+        export OVERRIDE_SDB=$SDB
+        export OVERRIDE_PDB=$PDB
         PYTHONPATH=. PRECOMPUTED=0 ATHENIAN_INVITATION_KEY=whatever python3 tests/gen_mock_db.py
         coverage run --source athenian.api -m athenian.api.hacks.heat_cache --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --memcached=0.0.0.0:11211
         # the second run should not crash
