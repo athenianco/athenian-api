@@ -745,4 +745,4 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
             else:
                 log.warning("Release pair's old %s is not in the sub-DAG of %s for %s",
                             old, new, repo)
-    return result, avatars
+    return result, avatars if any(any(d for _, _, d in v) for v in result.values()) else {}
