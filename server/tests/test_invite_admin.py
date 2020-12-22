@@ -11,7 +11,12 @@ from athenian.api.models.state.models import Base
 from tests.sample_db_data import fill_state_session
 
 
-async def test_reset_sequence(state_db):
+async def test_reset_sequence(state_db, locked_migrations):
+    with locked_migrations:
+        await _test_reset_sequence(state_db)
+
+
+async def _test_reset_sequence(state_db):
     engine = create_engine(state_db)
     Base.metadata.drop_all(engine)
     os.putenv("ATHENIAN_INVITATION_KEY", "whatever")

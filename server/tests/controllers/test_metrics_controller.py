@@ -780,8 +780,8 @@ developer_metric_be_stats = {
 }
 
 
-@pytest.mark.parametrize("metric, value", [(m, developer_metric_mcuadros_stats[m])
-                                           for m in DeveloperMetricID])
+@pytest.mark.parametrize("metric, value", sorted((m, developer_metric_mcuadros_stats[m])
+                                                 for m in DeveloperMetricID))
 async def test_developer_metrics_single(client, headers, metric, value):
     body = {
         "account": 1,
@@ -971,8 +971,8 @@ async def test_developer_metrics_repogroups(client, headers):
     assert all(v == 0 for v in result.calculated[1].values[0])
 
 
-@pytest.mark.parametrize("metric, value", [(m, developer_metric_be_stats[m])
-                                           for m in DeveloperMetricID])
+@pytest.mark.parametrize("metric, value", sorted((m, developer_metric_be_stats[m])
+                                                 for m in DeveloperMetricID))
 async def test_developer_metrics_labels_include(client, headers, metric, value):
     body = {
         "account": 1,

@@ -298,7 +298,7 @@ def filter_prs_single_cache():
 
 
 @pytest.mark.filter_pull_requests
-@pytest.mark.parametrize("stage", PullRequestStage)
+@pytest.mark.parametrize("stage", sorted(PullRequestStage))
 @with_only_master_branch
 async def test_filter_prs_single_stage(
         # do not remove "mdb", it is required by the decorators
@@ -319,7 +319,7 @@ async def test_filter_prs_single_stage(
 
 
 @pytest.mark.filter_pull_requests
-@pytest.mark.parametrize("event", PullRequestEvent)
+@pytest.mark.parametrize("event", sorted(PullRequestEvent))
 @with_only_master_branch
 async def test_filter_prs_single_event(
         # do not remove "mdb", it is required by the decorators

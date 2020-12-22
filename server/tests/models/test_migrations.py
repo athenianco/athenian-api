@@ -9,9 +9,9 @@ from sqlalchemy.orm import sessionmaker
 from athenian.api.models.state.models import Base
 
 
-def test_migrations():
+def test_migrations(worker_id):
     with tempfile.TemporaryDirectory() as tmpdir:
-        cs = "sqlite:///%s/sdb.sqlite" % tmpdir
+        cs = "sqlite:///%s/sdb-%s.sqlite" % (tmpdir, worker_id)
         env = {**os.environ, "PYTHONPATH": os.getcwd(), "ATHENIAN_INVITATION_KEY": "whatever"}
         try:
             subprocess.run([sys.executable, "-m", "athenian.api.models.state", cs],

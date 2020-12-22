@@ -7,14 +7,19 @@ from athenian.api.models import migrate
 from tests.conftest import db_dir
 
 
-def test_integration_micro(metadata_db, aiohttp_unused_port):
-    state_db_path = db_dir / "sdb.sqlite"
+def test_integration_micro(metadata_db, aiohttp_unused_port, worker_id, locked_migrations):
+    with locked_migrations:
+        _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id)
+
+
+def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id):
+    state_db_path = db_dir / ("sdb-%s.sqlite" % worker_id)
     state_db = "sqlite:///%s" % state_db_path
     if state_db_path.exists():
         state_db_path.unlink()
     os.putenv("ATHENIAN_INVITATION_KEY", "secret")
     migrate("state", state_db, exec=False)
-    precomputed_db_path = db_dir / "pdb.sqlite"
+    precomputed_db_path = db_dir / ("pdb-%s.sqlite" % worker_id)
     precomputed_db = "sqlite:///%s" % precomputed_db_path
     if precomputed_db_path.exists():
         precomputed_db_path.unlink()

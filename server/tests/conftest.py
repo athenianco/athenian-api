@@ -13,6 +13,7 @@ import time
 from typing import Dict, List, Optional, Union
 
 from databases import Database
+from filelock import FileLock
 try:
     import nest_asyncio
 except ImportError:
@@ -43,6 +44,7 @@ from athenian.api.connexion import AthenianApp
 from athenian.api.controllers import invitation_controller
 from athenian.api.db import ParallelDatabase
 from athenian.api.defer import setup_defer
+from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
 from athenian.api.models.metadata.jira import Base as JiraBase
@@ -293,12 +295,12 @@ def client(loop, aiohttp_client, app):
 
 
 @pytest.fixture(scope="module")
-def metadata_db() -> str:
+def metadata_db(worker_id) -> str:
     metadata.__version__ = metadata.__min_version__
     if override_mdb:
-        conn_str = override_mdb
+        conn_str = override_mdb % worker_id
     else:
-        metadata_db_path = db_dir / "mdb.sqlite"
+        metadata_db_path = db_dir / ("mdb-%s.sqlite" % worker_id)
         conn_str = "sqlite:///%s" % metadata_db_path
     engine = create_engine(conn_str)
     if engine.url.drivername == "postgresql":
@@ -321,14 +323,17 @@ def metadata_db() -> str:
     return conn_str
 
 
-def init_own_db(letter: str, base: DeclarativeMeta, init_sql: Optional[dict] = None):
+def init_own_db(letter: str,
+                base: DeclarativeMeta,
+                worker_id: str,
+                init_sql: Optional[dict] = None):
     override_db = globals()["override_%sdb" % letter]
     backup_path = globals()["%sdb_backup" % letter].name
     if override_db:
-        conn_str = override_db
+        conn_str = override_db % worker_id
         db_path = None
     else:
-        db_path = db_dir / ("%sdb.sqlite" % letter)
+        db_path = db_dir / ("%sdb-%s.sqlite" % (letter, worker_id))
         conn_str = "sqlite:///%s" % db_path
         if db_path.exists():
             db_path.unlink()
@@ -357,18 +362,19 @@ def init_own_db(letter: str, base: DeclarativeMeta, init_sql: Optional[dict] = N
             session.close()
     if not override_db:
         os.chmod(db_path, 0o666)
-        shutil.copy(db_path, backup_path)
+        if not Path(backup_path).exists():
+            shutil.copy(db_path, backup_path)
     return conn_str
 
 
 @pytest.fixture(scope="function")
-def state_db() -> str:
-    return init_own_db("s", StateBase)
+def state_db(worker_id) -> str:
+    return init_own_db("s", StateBase, worker_id)
 
 
 @pytest.fixture(scope="function")
-def precomputed_db() -> str:
-    return init_own_db("p", PrecomputedBase, {
+def precomputed_db(worker_id) -> str:
+    return init_own_db("p", PrecomputedBase, worker_id, {
         "postgresql": "create extension if not exists hstore;",
     })
 
@@ -418,15 +424,28 @@ async def pdb(precomputed_db, loop, request):
     return db
 
 
+@pytest.fixture(scope="session")
+def locked_migrations(request):
+    fn = os.path.join(tempfile.gettempdir(), "%s.migrations.lock" % package)
+
+    def cleanup():
+        try:
+            os.remove(fn)
+        except FileNotFoundError:
+            return
+
+    request.addfinalizer(cleanup)
+    return FileLock(fn)
+
+
 def pytest_addoption(parser):
     parser.addoption("--limit", action="store", default=-1, type=float,
                      help="Max number of tests to run.")
 
 
 def pytest_collection_modifyitems(session, config, items):
-    limit = config.getoption("--limit")
-    if limit >= 0:
-        random.seed()
+    if (limit := config.getoption("--limit")) >= 0:
+        random.seed(time.time() // 60)
         if limit < 1:
             limit = len(items) * limit
         limit = int(limit)
