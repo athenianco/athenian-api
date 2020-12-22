@@ -142,9 +142,9 @@ jobs:
       if: matrix.db == 'postgres'
       env:
         PGPASSWORD: postgres
-        SDB: postgresql://postgres:postgres@0.0.0.0:5432/state_%s
-        MDB: postgresql://postgres:postgres@0.0.0.0:5432/metadata_%s
-        PDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed_%s
+        SDB: postgresql://postgres:postgres@0.0.0.0:5432/state_%s?min_size=2&max_size=3
+        MDB: postgresql://postgres:postgres@0.0.0.0:5432/metadata_%s?min_size=2&max_size=8
+        PDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed_%s?min_size=2&max_size=5
       run: |
         psql -c "create database state_gw0 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
         psql -c "create database state_gw1 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
