@@ -35,7 +35,9 @@ def main():
         db_path = db_dir / ("%sdb-master.sqlite" % letter)
         if db_path.exists():
             db_path.unlink()
-        conn_str = os.getenv("OVERRIDE_%sDB" % letter.upper(), "sqlite:///%s" % db_path)
+        conn_str = os.getenv(
+            "OVERRIDE_%sDB" % letter.upper(), "sqlite:///%s" % db_path,
+        ).rsplit("?", 1)[0]
         migrate(name, conn_str, exec=False)
 
         if letter == "s" and not args.no_state_samples:

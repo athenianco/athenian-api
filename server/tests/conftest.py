@@ -302,7 +302,7 @@ def metadata_db(worker_id) -> str:
     else:
         metadata_db_path = db_dir / ("mdb-%s.sqlite" % worker_id)
         conn_str = "sqlite:///%s" % metadata_db_path
-    engine = create_engine(conn_str)
+    engine = create_engine(conn_str.rsplit("?", 1)[0])
     if engine.url.drivername == "postgresql":
         engine.execute("CREATE SCHEMA IF NOT EXISTS github;")
         engine.execute("CREATE SCHEMA IF NOT EXISTS jira;")
@@ -340,7 +340,7 @@ def init_own_db(letter: str,
         if Path(backup_path).stat().st_size > 0:
             shutil.copy(backup_path, db_path)
             return conn_str
-    engine = create_engine(conn_str)
+    engine = create_engine(conn_str.rsplit("?", 1)[0])
     base.metadata.drop_all(engine)
     if init_sql:
         driver = engine.url.drivername
