@@ -659,9 +659,10 @@ async def _complete_commit_hashes(names: Dict[str, Set[str]],
         renames[repo][sha] = prefix
         renames_reversed[repo].add(prefix)
     for repo, strs in names.items():
-        repo_renames = renames_reversed[repo]
+        repo_renames = renames[repo]
+        repo_renames_reversed = renames_reversed[repo]
         for name in strs:
-            if name not in repo_renames:
+            if name not in repo_renames_reversed:
                 repo_renames[name] = name
     return renames
 
