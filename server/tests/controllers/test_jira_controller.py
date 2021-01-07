@@ -293,7 +293,7 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     assert items[0].granularity == "all"
     assert items[0].with_ is None
     assert items[0].values == [CalculatedLinearMetricValues(
-        date=date(2019, 12, 31),
+        date=date(2020, 1, 1),
         values=[1765, 1623],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
@@ -303,14 +303,14 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     assert items[1].with_ is None
     assert len(items[1].values) == 5
     assert items[1].values[0] == CalculatedLinearMetricValues(
-        date=date(2019, 12, 31),
+        date=date(2020, 1, 1),
         values=[160, 39],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
     )
     assert items[1].values[-1] == CalculatedLinearMetricValues(
-        date=date(2020, 8, 31),
+        date=date(2020, 9, 1),
         values=[266, 243],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
@@ -535,7 +535,7 @@ async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n)
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
     assert items[0].granularity == "all"
     assert items[0].values == [CalculatedLinearMetricValues(
-        date=date(2020, 5, 31),
+        date=date(2020, 6, 1),
         values=[n],
         confidence_mins=[None],
         confidence_maxs=[None],
@@ -569,7 +569,7 @@ async def test_jira_metrics_bug_times(client, headers, metric, value, score, cmi
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
     assert items[0].granularity == "all"
     assert items[0].values == [CalculatedLinearMetricValues(
-        date=date(2015, 12, 31),
+        date=date(2016, 1, 1),
         values=[value],
         confidence_mins=[cmin],
         confidence_maxs=[cmax],
@@ -594,7 +594,7 @@ async def test_jira_metrics_disabled_projects(client, headers, disabled_dev):
     assert response.status == 200, "Response body is : " + body
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in json.loads(body)]
     assert items[0].values == [CalculatedLinearMetricValues(
-        date=date(2019, 12, 31),
+        date=date(2020, 1, 1),
         values=[768, 824],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
