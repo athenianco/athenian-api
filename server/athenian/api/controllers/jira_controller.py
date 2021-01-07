@@ -1,5 +1,5 @@
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import chain, groupby
 import logging
 from operator import itemgetter
@@ -238,7 +238,8 @@ async def _calc_jira_entry(request: AthenianWebRequest,
                            model: Union[Type[JIRAMetricsRequest], Type[JIRAHistogramsRequest]],
                            ) -> Tuple[Union[JIRAMetricsRequest, JIRAHistogramsRequest],
                                       List[List[datetime]],
-                                      pd.DataFrame]:
+                                      pd.DataFrame,
+                                      timedelta]:
     try:
         filt = model.from_dict(body)
     except ValueError as e:
@@ -250,7 +251,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         get_metadata_account_ids(filt.account, request.sdb, request.cache),
     ]
     repos, jira_ids, meta_ids = await gather(*tasks, op="sdb")
-    time_intervals, _ = split_to_time_intervals(
+    time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone)
     tasks = [
         extract_branches(
@@ -277,18 +278,19 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         default_branches, release_settings,
         meta_ids, request.mdb, request.pdb, request.cache,
     )
-    return filt, time_intervals, issues
+    return filt, time_intervals, issues, tzoffset
 
 
 async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over JIRA issue activities."""
-    filt, time_intervals, issues = await _calc_jira_entry(request, body, JIRAMetricsRequest)
+    filt, time_intervals, issues, tzoffset = await _calc_jira_entry(
+        request, body, JIRAMetricsRequest)
     calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1])
     with_groups = _split_issues_by_with(issues, filt.with_)
     metric_values = calc(issues, time_intervals, with_groups)
     mets = list(chain.from_iterable((
         CalculatedJIRAMetricValues(granularity=granularity, with_=group, values=[
-            CalculatedLinearMetricValues(date=dt.date(),
+            CalculatedLinearMetricValues(date=(dt - tzoffset).date(),
                                          values=[v.value for v in vals],
                                          confidence_mins=[v.confidence_min for v in vals],
                                          confidence_maxs=[v.confidence_max for v in vals],
@@ -331,7 +333,8 @@ def _split_issues_by_with(issues: pd.DataFrame,
 
 async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms over JIRA issue activities."""
-    filt, time_intervals, issues = await _calc_jira_entry(request, body, JIRAHistogramsRequest)
+    filt, time_intervals, issues, _ = await _calc_jira_entry(
+        request, body, JIRAHistogramsRequest)
     defs = defaultdict(list)
     for h in (filt.histograms or []):
         defs[HistogramParameters(
