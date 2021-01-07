@@ -257,6 +257,7 @@ async def _find_old_released_prs(commits: np.ndarray,
     filters = [
         PullRequest.merged_at < time_boundary,
         PullRequest.hidden.is_(False),
+        PullRequest.acc_id.in_(meta_ids),
         PullRequest.merge_commit_sha.in_(commits),
     ]
     if updated_min is not None:
