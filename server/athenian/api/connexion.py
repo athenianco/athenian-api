@@ -18,11 +18,12 @@ import aiohttp_cors
 import aiomcache
 from asyncpg import ConnectionDoesNotExistError, InterfaceError
 from connexion.apis import aiohttp_api
-from connexion.exceptions import ConnexionException, OAuthProblem
+from connexion.exceptions import ConnexionException
 import connexion.lifecycle
 from connexion.spec import OpenAPISpecification
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
+from werkzeug.exceptions import Unauthorized
 
 from athenian.api import metadata
 from athenian.api.auth import Auth0
@@ -344,6 +345,7 @@ class AthenianApp(connexion.AioHttpApp):
             return e.response
         except (ConnexionException,
                 HTTPClientError,   # 4xx
+                Unauthorized,      # 401
                 HTTPRedirection,   # 3xx
                 HTTPNoContent,     # 204
                 HTTPResetContent,  # 205
@@ -380,7 +382,7 @@ class AthenianApp(connexion.AioHttpApp):
                         self.log.warning("Manhole code hijacked the request! -> %d",
                                          response.status)
                         return response
-                except (ResponseError, OAuthProblem) as e:
+                except (ResponseError, Unauthorized) as e:
                     self.log.warning("Manhole code hijacked the request! -> %d", e.response.status)
                     raise e from None
                 except Exception as e:
