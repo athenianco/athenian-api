@@ -40,28 +40,27 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 ticks=tuple(h.ticks) if h.ticks is not None else None,
             )].append(h.metric)
         try:
-            group_histograms = await METRIC_ENTRIES[service]["prs_histogram"](
+            histograms = await METRIC_ENTRIES[service]["prs_histogram"](
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
                 repos, devs, labels, jira, filt.exclude_inactive, release_settings,
                 filt.fresh, meta_ids, request.mdb, request.pdb, request.cache)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(str(e))) from None
-        line_index = 0
-        line_bins = len(for_set.lines or [None] * 2) - 1
-        assert len(group_histograms) == len(repos) * line_bins
-        for group, histograms in enumerate(group_histograms):
-            group //= line_bins
-            group_for_set = for_set.select_lines(line_index).select_repogroup(group)
-            line_index = (line_index + 1) % line_bins
-            for metric, histogram in sorted(histograms):
-                result.append(CalculatedPullRequestHistogram(
-                    for_=group_for_set,
-                    metric=metric,
-                    scale=histogram.scale.name.lower(),
-                    ticks=histogram.ticks,
-                    frequencies=histogram.frequencies,
-                    interquartile=Interquartile(*histogram.interquartile),
-                ))
+        for line_groups in histograms:
+            for line_group_index, repo_groups in enumerate(line_groups):
+                for repo_group_index, repo_histograms in enumerate(repo_groups):
+                    group_for_set = for_set \
+                        .select_lines(line_group_index) \
+                        .select_repogroup(repo_group_index)
+                    for metric, histogram in sorted(repo_histograms):
+                        result.append(CalculatedPullRequestHistogram(
+                            for_=group_for_set,
+                            metric=metric,
+                            scale=histogram.scale.name.lower(),
+                            ticks=histogram.ticks,
+                            frequencies=histogram.frequencies,
+                            interquartile=Interquartile(*histogram.interquartile),
+                        ))
 
     tasks = []
     for service, (repos, devs, labels, jira, for_set) in filters:

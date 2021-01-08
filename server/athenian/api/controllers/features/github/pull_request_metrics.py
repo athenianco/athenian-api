@@ -1,15 +1,14 @@
 from datetime import datetime, timedelta
 from enum import IntEnum
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Type
+from typing import Dict, Iterable, List, Optional, Sequence, Type
 
 import numpy as np
 import pandas as pd
 
-from athenian.api.controllers.features.histogram import Histogram
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedEnsemblesCalculator, BinnedHistogramCalculator, BinnedMetricCalculator, Counter, \
-    HistogramCalculator, HistogramCalculatorEnsemble, M, make_register_metric, MetricCalculator, \
+    BinnedHistogramCalculator, BinnedMetricCalculator, Counter, HistogramCalculator, \
+    HistogramCalculatorEnsemble, make_register_metric, MetricCalculator, \
     MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.models.web import PullRequestMetricID
@@ -38,39 +37,42 @@ class PullRequestHistogramCalculatorEnsemble(HistogramCalculatorEnsemble):
         super().__init__(*metrics, quantiles=quantiles, class_mapping=histogram_calculators)
 
 
-class PullRequestBinnedSplitter(BinnedEnsemblesCalculator[M]):
-    """Add support for splitting PRs into groups by number of changed lines."""
+def group_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.ndarray]:
+    """
+    Bin PRs by number of changed `lines`.
 
-    def __init__(self,
-                 metrics: Iterable[Sequence[str]],
-                 quantiles: Sequence[float],
-                 lines: Sequence[int],
-                 **kwargs):
-        """Initialize a new instance of PullRequestBinnedSplitter."""
-        super().__init__(metrics, quantiles, **kwargs)
-        self._lines = np.asarray(lines)
-        if len(self._lines):
-            assert len(self._lines) >= 2
-            assert (np.diff(self._lines) > 0).all()
+    We throw away the ends: PRs with fewer lines than `lines[0]` and with more lines than \
+    `lines[-1]`.
 
-    def _split_items(self, items: pd.DataFrame) -> Tuple[np.ndarray, int]:
-        if len(self._lines) == 0:
-            return super()._split_items(items)
-        values = items["size"].values
-        indexes = np.digitize(values, self._lines) - 1
-        indexes[values >= self._lines[-1]] = -1
-        return indexes, len(self._lines) - 1
+    :param lines: Either an empty sequence or one with at least 2 elements. The numbers must \
+                  monotonically increase.
+    """
+    lines = np.asarray(lines)
+    if len(lines):
+        assert len(lines) >= 2
+        assert (np.diff(lines) > 0).all()
+    else:
+        return [np.arange(len(items))]
+    values = items["size"].values
+    line_group_assignments = np.digitize(values, lines)
+    line_group_assignments[line_group_assignments == len(lines)] = 0
+    line_group_assignments -= 1
+    order = np.argsort(line_group_assignments)
+    line_groups = np.split(
+        np.arange(len(items))[order],
+        np.unique(line_group_assignments[order], return_index=True)[1][1:])
+    if line_group_assignments[order[0]] < 0:
+        line_groups = line_groups[1:]
+    return line_groups
 
 
-class PullRequestBinnedMetricCalculator(PullRequestBinnedSplitter[Metric],
-                                        BinnedMetricCalculator):
+class PullRequestBinnedMetricCalculator(BinnedMetricCalculator):
     """BinnedMetricCalculator adapted for pull requests."""
 
     ensemble_class = PullRequestMetricCalculatorEnsemble
 
 
-class PullRequestBinnedHistogramCalculator(PullRequestBinnedSplitter[Histogram],
-                                           BinnedHistogramCalculator):
+class PullRequestBinnedHistogramCalculator(BinnedHistogramCalculator):
     """BinnedHistogramCalculator adapted for pull request histograms."""
 
     ensemble_class = PullRequestHistogramCalculatorEnsemble

@@ -83,38 +83,34 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
 
     @sentry_span
     async def calculate_for_set_metrics(service, repos, devs, labels, jira, for_set):
-        ti_mvs = await METRIC_ENTRIES[service]["prs_linear"](
+        metric_values = await METRIC_ENTRIES[service]["prs_linear"](
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
             for_set.lines or [], repos, devs, labels, jira,
             filt.exclude_inactive, release_settings, filt.fresh,
             meta_ids, request.mdb, request.pdb, request.cache)
-        assert len(ti_mvs) == len(time_intervals)
         mrange = range(len(met.metrics))
-        for granularity, ts, group_mvs in zip(filt.granularities, time_intervals, ti_mvs):
-            line_index = 0
-            line_bins = len(for_set.lines or [None] * 2) - 1
-            assert len(group_mvs) == len(repos) * line_bins
-            for group, mvs in enumerate(group_mvs):
-                group //= line_bins
-                group_for_set = for_set.select_lines(line_index).select_repogroup(group)
-                line_index = (line_index + 1) % line_bins
-                cm = CalculatedPullRequestMetricsItem(
-                    for_=group_for_set,
-                    granularity=granularity,
-                    values=[CalculatedLinearMetricValues(
-                        date=(d - tzoffset).date(),
-                        values=[mvs[i][m].value for m in mrange],
-                        confidence_mins=[mvs[i][m].confidence_min for m in mrange],
-                        confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
-                        confidence_scores=[mvs[i][m].confidence_score() for m in mrange],
-                    ) for i, d in enumerate(ts[:-1])])
-                for v in cm.values:
-                    if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                        v.confidence_mins = None
-                        v.confidence_maxs = None
-                        v.confidence_scores = None
-                met.calculated.append(cm)
-
+        for lines_group_index, lines_group in enumerate(metric_values):
+            for repos_group_index, repos_group in enumerate(lines_group):
+                group_for_set = for_set \
+                    .select_lines(lines_group_index) \
+                    .select_repogroup(repos_group_index)
+                for granularity, ts, mvs in zip(filt.granularities, time_intervals, repos_group):
+                    cm = CalculatedPullRequestMetricsItem(
+                        for_=group_for_set,
+                        granularity=granularity,
+                        values=[CalculatedLinearMetricValues(
+                            date=(d - tzoffset).date(),
+                            values=[mvs[i][m].value for m in mrange],
+                            confidence_mins=[mvs[i][m].confidence_min for m in mrange],
+                            confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
+                            confidence_scores=[mvs[i][m].confidence_score() for m in mrange],
+                        ) for i, d in enumerate(ts[:-1])])
+                    for v in cm.values:
+                        if sum(1 for c in v.confidence_scores if c is not None) == 0:
+                            v.confidence_mins = None
+                            v.confidence_maxs = None
+                            v.confidence_scores = None
+                    met.calculated.append(cm)
     tasks = []
     for service, (repos, devs, labels, jira, for_set) in filters:
         tasks.append(calculate_for_set_metrics(service, repos, devs, labels, jira, for_set))
@@ -392,22 +388,17 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
                               ("pr_author", ReleaseParticipationKind.PR_AUTHOR),
                               ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
         } for with_ in (filt.with_ or [])]
-        ti_mvs, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
+        release_metric_values, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
             JIRAFilter.from_web(filt.jira, jira_ids), release_settings,
             meta_ids, request.mdb, request.pdb, request.cache)
         release_matches = {k: v.name for k, v in release_matches.items()}
         mrange = range(len(filt.metrics))
-        assert len(ti_mvs) == len(time_intervals)
-        for granularity, ts, group_mvs in zip(filt.granularities, time_intervals, ti_mvs):
-            assert len(group_mvs) == len(for_sets) * len(participants or [None])
-            pos = 0
-            for for_set, my_repos in zip(for_sets, repos):
-                for with_ in (filt.with_ or [None]):
-                    mvs = group_mvs[pos]
-                    pos += 1
+        for with_, repos_mvs in zip((filt.with_ or [None]), release_metric_values):
+            for for_set, repo_group, granular_mvs in zip(for_sets, repos, repos_mvs):
+                for granularity, ts, mvs in zip(filt.granularities, time_intervals, granular_mvs):
                     my_release_matches = {}
-                    for r in my_repos:
+                    for r in repo_group:
                         r = PREFIXES[service] + r
                         try:
                             my_release_matches[r] = release_matches[r]

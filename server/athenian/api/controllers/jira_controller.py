@@ -1,5 +1,6 @@
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from itertools import chain, groupby
 import logging
 from operator import itemgetter
@@ -18,6 +19,7 @@ from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHistogramCalculator, \
     JIRABinnedMetricCalculator
+from athenian.api.controllers.features.metric_calculator import group_to_indexes
 from athenian.api.controllers.jira import get_jira_installation
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -286,8 +288,8 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
     filt, time_intervals, issues, tzoffset = await _calc_jira_entry(
         request, body, JIRAMetricsRequest)
     calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1])
-    with_groups = _split_issues_by_with(issues, filt.with_)
-    metric_values = calc(issues, time_intervals, with_groups)
+    groups = group_to_indexes(issues, partial(_split_issues_by_with, filt.with_))
+    metric_values = calc(issues, time_intervals, groups)
     mets = list(chain.from_iterable((
         CalculatedJIRAMetricValues(granularity=granularity, with_=group, values=[
             CalculatedLinearMetricValues(date=(dt - tzoffset).date(),
@@ -303,8 +305,8 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
     return model_response(mets)
 
 
-def _split_issues_by_with(issues: pd.DataFrame,
-                          with_: Optional[List[JIRAMetricsRequestWith]],
+def _split_issues_by_with(with_: Optional[List[JIRAMetricsRequestWith]],
+                          issues: pd.DataFrame,
                           ) -> List[np.ndarray]:
     result = []
     if len(with_ or []) < 2:
@@ -346,7 +348,7 @@ async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Re
         calc = JIRABinnedHistogramCalculator(defs.values(), filt.quantiles or [0, 1])
     except KeyError as e:
         raise ResponseError(InvalidRequestError("Unsupported metric: %s" % e)) from None
-    with_groups = _split_issues_by_with(issues, filt.with_)
+    with_groups = group_to_indexes(issues, partial(_split_issues_by_with, filt.with_))
     histograms = calc(issues, time_intervals, with_groups, defs)
     result = []
     for metrics, def_hists in zip(defs.values(), histograms):
