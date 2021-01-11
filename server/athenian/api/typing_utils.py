@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
 import dataclasses
-from typing import Any, Iterator, Mapping, Optional, Tuple, Union
+from typing import Any, Iterator, Mapping, Optional, Tuple, Type, TypeVar, Union
 
 import databases
 import numpy as np
@@ -48,7 +48,15 @@ def wraps(wrapper, wrappee):
     return wrapper
 
 
-def dataclass(cls=None, /, *, slots=False, first_mutable: Optional[str] = None, **kwargs):
+T = TypeVar("T")
+
+
+def dataclass(cls: Optional[T] = None,
+              /, *,
+              slots=False,
+              first_mutable: Optional[str] = None,
+              **kwargs,
+              ) -> Union[T, Type[Mapping[str, Any]]]:
     """
     Generate a dataclasses.dataclass with optional __slots__.
 
@@ -88,7 +96,9 @@ def serialize_mutable_fields_in_dataclasses():
         _serialize_mutable_fields_in_dataclasses.set(False)
 
 
-def _add_slots_to_dataclass(cls, first_mutable: Optional[str]):
+def _add_slots_to_dataclass(cls: T,
+                            first_mutable: Optional[str],
+                            ) -> Union[T, Type[Mapping[str, Any]]]:
     """Set __slots__ of a dataclass, and make it a Mapping to compensate for a missing __dict__."""
     # Need to create a new class, since we can't set __slots__ after a class has been created.
 

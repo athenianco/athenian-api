@@ -1,12 +1,14 @@
 import asyncio
 from collections import defaultdict
 from datetime import datetime
+from functools import partial
 from itertools import chain
 import pickle
 from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
 
 import aiomcache
 from databases import Database
+import numpy as np
 import sentry_sdk
 
 from athenian.api import COROUTINE_YIELD_EVERY_ITER
@@ -16,15 +18,17 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request_metrics import \
-    need_jira_mapping, PullRequestBinnedHistogramCalculator, PullRequestBinnedMetricCalculator
-from athenian.api.controllers.features.github.release import make_release_participants_grouper, \
+    group_by_lines, need_jira_mapping, PullRequestBinnedHistogramCalculator, \
+    PullRequestBinnedMetricCalculator
+from athenian.api.controllers.features.github.release import group_by_participants, \
     merge_release_participants
 from athenian.api.controllers.features.github.release_metrics import \
     ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     fetch_pull_request_facts_unfresh
-from athenian.api.controllers.features.histogram import Histogram, HistogramParameters
-from athenian.api.controllers.features.metric import Metric
+from athenian.api.controllers.features.histogram import HistogramParameters
+from athenian.api.controllers.features.metric_calculator import convert_repo_map_to_df, \
+    group_by_repo, group_to_indexes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -274,6 +278,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
         exclude_inactive,
         release_settings,
     ),
+    version=2,
 )
 async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
@@ -290,21 +295,23 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 mdb: Database,
                                                 pdb: Database,
                                                 cache: Optional[aiomcache.Client],
-                                                ) -> List[List[List[List[List[Metric]]]]]:
+                                                ) -> np.ndarray:
     """
     Calculate pull request metrics on GitHub.
 
-    :return: lines x granularities x groups x time intervals x metrics.
+    :return: lines x repositories x granularities x time intervals x metrics.
     """
     assert isinstance(repositories, (tuple, list))
     all_repositories = set(chain.from_iterable(repositories))
-    calc = PullRequestBinnedMetricCalculator(
-        metrics, quantiles, lines, exclude_inactive=exclude_inactive)
+    calc = PullRequestBinnedMetricCalculator(metrics, quantiles, exclude_inactive=exclude_inactive)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
         release_settings, fresh, need_jira_mapping(metrics), meta_ids, mdb, pdb, cache)
-    return calc(mined_facts, time_intervals, repositories)
+    df_facts = convert_repo_map_to_df(mined_facts, PullRequest.repository_full_name.key)
+    repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
+    groups = group_to_indexes(df_facts, partial(group_by_lines, lines), repo_grouper)
+    return calc(df_facts, time_intervals, groups)
 
 
 @sentry_span
@@ -344,44 +351,50 @@ async def calc_code_metrics_github(prop: FilterCommitsProperty,
         exclude_inactive,
         release_settings,
     ),
+    version=2,
 )
-async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, List[str]],
-                                             time_from: datetime,
-                                             time_to: datetime,
-                                             quantiles: Sequence[float],
-                                             lines: Sequence[int],
-                                             repositories: Sequence[Collection[str]],
-                                             participants: PRParticipants,
-                                             labels: LabelFilter,
-                                             jira: JIRAFilter,
-                                             exclude_inactive: bool,
-                                             release_settings: Dict[str, ReleaseMatchSetting],
-                                             fresh: bool,
-                                             meta_ids: Tuple[int, ...],
-                                             mdb: Database,
-                                             pdb: Database,
-                                             cache: Optional[aiomcache.Client],
-                                             ) -> List[List[Tuple[str, Histogram]]]:
+async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, List[str]],
+                                              time_from: datetime,
+                                              time_to: datetime,
+                                              quantiles: Sequence[float],
+                                              lines: Sequence[int],
+                                              repositories: Sequence[Collection[str]],
+                                              participants: PRParticipants,
+                                              labels: LabelFilter,
+                                              jira: JIRAFilter,
+                                              exclude_inactive: bool,
+                                              release_settings: Dict[str, ReleaseMatchSetting],
+                                              fresh: bool,
+                                              meta_ids: Tuple[int, ...],
+                                              mdb: Database,
+                                              pdb: Database,
+                                              cache: Optional[aiomcache.Client],
+                                              ) -> np.ndarray:
     """
     Calculate the pull request histograms on GitHub.
 
-    :return: len(defs) x len(repositories) x (metric ID, Histogram).
+    :return: len(defs) x len(lines) * len(repositories) -> List[Tuple[metric ID, Histogram]].
     """
     all_repositories = set(chain.from_iterable(repositories))
     try:
-        calc = PullRequestBinnedHistogramCalculator(defs.values(), quantiles, lines)
+        calc = PullRequestBinnedHistogramCalculator(defs.values(), quantiles)
     except KeyError as e:
-        raise ValueError("Unsupported metric: %s" % e)
+        raise ValueError("Unsupported metric") from e
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, all_repositories, participants, labels, jira,
         exclude_inactive, release_settings, fresh, False, meta_ids, mdb, pdb, cache)
-    hists = calc(mined_facts, [[time_from, time_to]], repositories, defs)
-    result = [[] for _ in range(len(repositories) * (len(lines or [None] * 2) - 1))]
-    for defs_hists, metrics in zip(hists, defs.values()):
-        for group_result, group_hists in zip(result, defs_hists[0]):
-            for hist, m in zip(group_hists[0], metrics):
-                group_result.append((m, hist))
-    return result
+    df_facts = convert_repo_map_to_df(mined_facts, PullRequest.repository_full_name.key)
+    repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
+    lines_grouper = partial(group_by_lines, lines)
+    groups = group_to_indexes(df_facts, lines_grouper, repo_grouper)
+    hists = calc(df_facts, [[time_from, time_to]], groups, defs)
+    for line_groups, metrics in zip(hists, defs.values()):
+        for repo_groups in line_groups:
+            for i, group_ts in enumerate(repo_groups):
+                repo_groups[i] = group_hists = []
+                for hist, m in zip(group_ts[0][0], metrics):
+                    group_hists.append((m, hist))
+    return hists
 
 
 @sentry_span
@@ -400,6 +413,7 @@ async def calc_pull_request_histogram_github(defs: Dict[HistogramParameters, Lis
         jira,
         release_settings,
     ),
+    version=2,
 )
 async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            time_intervals: Sequence[Sequence[datetime]],
@@ -412,9 +426,13 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            mdb: Database,
                                            pdb: Database,
                                            cache: Optional[aiomcache.Client],
-                                           ) -> Tuple[List[List[List[List[Metric]]]],
-                                                      Dict[str, ReleaseMatch]]:
-    """Calculate the release metrics on GitHub."""
+                                           ) -> Tuple[np.ndarray, Dict[str, ReleaseMatch]]:
+    """
+    Calculate the release metrics on GitHub.
+
+    :return: 1. participants x repositories x granularities x time intervals x metrics.
+             2. matched_bys - map from repository names to applied release matches.
+    """
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     all_repositories = set(chain.from_iterable(repositories))
     calc = ReleaseBinnedMetricCalculator(metrics, quantiles)
@@ -426,15 +444,18 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
     mined_facts = defaultdict(list)
     for i, f in releases:
         mined_facts[i[Release.repository_full_name.key].split("/", 1)[1]].append(f)
-    participants_grouper = make_release_participants_grouper(participants)
-    values = calc(mined_facts, time_intervals, repositories, extra_grouper=participants_grouper)
+    df_facts = convert_repo_map_to_df(mined_facts, Release.repository_full_name.key)
+    repo_grouper = partial(group_by_repo, Release.repository_full_name.key, repositories)
+    participant_grouper = partial(group_by_participants, participants)
+    groups = group_to_indexes(df_facts, participant_grouper, repo_grouper)
+    values = calc(df_facts, time_intervals, groups)
     return values, matched_bys
 
 
 METRIC_ENTRIES = {
     "github": {
         "prs_linear": calc_pull_request_metrics_line_github,
-        "prs_histogram": calc_pull_request_histogram_github,
+        "prs_histogram": calc_pull_request_histograms_github,
         "code": calc_code_metrics_github,
         "developers": calc_developer_metrics_github,
         "releases_linear": calc_release_metrics_line_github,

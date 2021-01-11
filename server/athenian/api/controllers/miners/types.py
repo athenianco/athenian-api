@@ -192,7 +192,7 @@ class MinedPullRequest:
 
 
 @dataclass(slots=True, frozen=True, eq=False, first_mutable="jira_id")
-class PullRequestFacts(Mapping):
+class PullRequestFacts:
     """Various PR event timestamps and other properties."""
 
     created: pd.Timestamp

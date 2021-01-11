@@ -1,20 +1,17 @@
-from datetime import datetime, timedelta
-from typing import Any, Dict, Iterable, List, Sequence, Type
+from datetime import timedelta
+from typing import Dict, Sequence, Type
 
 import numpy as np
 import pandas as pd
 
-from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedEnsemblesCalculator, BinnedHistogramCalculator, HistogramCalculator, \
-    HistogramCalculatorEnsemble, M, \
-    make_register_metric, MetricCalculator, \
-    MetricCalculatorEnsemble, RatioCalculator, \
-    SumMetricCalculator
+    BinnedHistogramCalculator, BinnedMetricCalculator, HistogramCalculator, \
+    HistogramCalculatorEnsemble, make_register_metric, MetricCalculator, \
+    MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator
 from athenian.api.controllers.miners.jira.issue import ISSUE_PRS_BEGAN, ISSUE_PRS_RELEASED
 from athenian.api.models.metadata.jira import AthenianIssue, Issue
 from athenian.api.models.web import JIRAMetricID
-from athenian.api.tracing import sentry_span
+
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[HistogramCalculator]] = {}
@@ -37,87 +34,14 @@ class JIRAHistogramCalculatorEnsemble(HistogramCalculatorEnsemble):
         super().__init__(*metrics, quantiles=quantiles, class_mapping=histogram_calculators)
 
 
-class JIRABinnedEnsemblesCalculator(BinnedEnsemblesCalculator[M]):
-    """
-    BinnedEnsemblesCalculator adapted for JIRA issues.
-
-    We've got a completely custom __call__ method to avoid the redundant complexity of the parent.
-    """
-
-    @sentry_span
-    def __call__(self,
-                 items: pd.DataFrame,
-                 time_intervals: Sequence[Sequence[datetime]],
-                 groups: Sequence[np.ndarray],
-                 agg_kwargs: Iterable[Dict[str, Any]],
-                 ) -> List[List[List[List[List[M]]]]]:
-        """
-        Calculate the binned aggregations on a series of mined issues.
-
-        :param items: pd.DataFrame with the fetched issues data.
-        :param time_intervals: Time interval borders in UTC. Each interval spans \
-                               `[time_intervals[i], time_intervals[i + 1]]`, the ending \
-                               not included.
-        :param groups: Various issue groups, the metrics will be calculated independently \
-                       for each group.
-        :param agg_kwargs: Keyword arguments to be passed to the ensemble aggregation.
-        :return: ensembles x groups x time intervals primary x time intervals secondary x metrics.
-        """
-        min_times, max_times, ts_index_map = self._make_min_max_times(time_intervals)
-        assert len(self.ensembles) == 1
-        for ensemble in self.ensembles:
-            ensemble(items, min_times, max_times, groups)
-        values_dicts = self._aggregate_ensembles(agg_kwargs)
-        result = [[[[[None] * len(metrics)
-                     for _ in range(len(ts) - 1)]
-                    for ts in time_intervals]
-                   for _ in groups]
-                  for metrics in self.metrics]
-        for er, metrics, values_dict in zip(result, self.metrics, values_dicts):
-            for mix, metric in enumerate(metrics):
-                for gi in range(len(groups)):
-                    for (primary, secondary), value in zip(ts_index_map, values_dict[metric][gi]):
-                        er[gi][primary][secondary][mix] = value
-        return result
-
-
-class JIRABinnedMetricCalculator(JIRABinnedEnsemblesCalculator[Metric]):
-    """
-    JIRABinnedEnsemblesCalculator that calculates JIRA issue metrics.
-
-    The number of ensembles is fixed to 1.
-    """
+class JIRABinnedMetricCalculator(BinnedMetricCalculator):
+    """BinnedMetricCalculator adapted for JIRA issues."""
 
     ensemble_class = JIRAMetricCalculatorEnsemble
 
-    def __init__(self,
-                 metrics: Sequence[str],
-                 quantiles: Sequence[float],
-                 **kwargs):
-        """
-        Initialize a new instance of `JIRABinnedMetricCalculator`.
 
-        :param metrics: Sequence of metric names to calculate in each bin.
-        :param quantiles: Pair of quantiles, common for each metric.
-        """
-        super().__init__([metrics], quantiles, **kwargs)
-
-    def __call__(self,
-                 items: pd.DataFrame,
-                 time_intervals: Sequence[Sequence[datetime]],
-                 groups: Sequence[np.ndarray],
-                 ) -> List[List[List[List[M]]]]:
-        """Extract the only ensemble's metrics from the parent's __call__."""
-        return super().__call__(items, time_intervals, groups, [{}])[0]
-
-    def _aggregate_ensembles(self, kwargs: Iterable[Dict[str, Any]],
-                             ) -> List[Dict[str, List[List[Metric]]]]:
-        return [self.ensembles[0].values()]
-
-
-class JIRABinnedHistogramCalculator(JIRABinnedEnsemblesCalculator,
-                                    BinnedHistogramCalculator):
-    """JIRABinnedEnsemblesCalculator that calculates JIRA issue histograms."""
+class JIRABinnedHistogramCalculator(BinnedHistogramCalculator):
+    """BinnedHistogramCalculator adapted for JIRA issues."""
 
     ensemble_class = JIRAHistogramCalculatorEnsemble
 

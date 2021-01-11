@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from functools import reduce
 from itertools import chain
 from typing import Any, Callable, Collection, Dict, Generic, Iterable, List, Mapping, Optional, \
     Sequence, \
@@ -14,6 +15,7 @@ from athenian.api.controllers.features.histogram import calculate_histogram, His
 from athenian.api.controllers.features.metric import Metric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
+from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.tracing import sentry_span
 
 
@@ -49,7 +51,7 @@ class MetricCalculator(Generic[T]):
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
-                 groups: Optional[Sequence[Sequence[int]]],
+                 groups: Sequence[Sequence[int]],
                  **kwargs) -> None:
         """Calculate the samples over the supplied facts.
 
@@ -58,7 +60,7 @@ class MetricCalculator(Generic[T]):
                           samples with both ends less than the minimum time.
         :param max_times: Endings of the considered time intervals. They are needed to discard \
                           samples with both ends greater than the maximum time.
-        :param groups: Series of indexes to split the samples into.
+        :param groups: Series of group indexes to split the samples into.
         """
         assert isinstance(facts, pd.DataFrame)
         assert isinstance(min_times, np.ndarray)
@@ -70,11 +72,12 @@ class MetricCalculator(Generic[T]):
             assert np.datetime_data(min_times.dtype)[0] == "ns"
         except TypeError:
             raise AssertionError("min_times must be of datetime64[ns] dtype")
-        assert len(groups) > 0
+        groups = np.asarray(groups)
+        assert 1 <= len(groups.shape) <= 2
+        assert len(groups) > 0 or facts.empty
         if facts.empty:
             self._peek = np.empty((len(min_times), 0), object)
-            self._samples = [[np.array([], self.dtype)
-                              for _ in range(len(min_times))] for _ in groups]
+            self._samples = np.empty((len(groups), len(min_times), 0), self.dtype)
             return
         self._peek = peek = self._analyze(facts, min_times, max_times, **kwargs)
         assert isinstance(peek, np.ndarray), type(self)
@@ -88,7 +91,11 @@ class MetricCalculator(Generic[T]):
 
     @property
     def values(self) -> List[List[Metric[T]]]:
-        """Return the current metric value."""
+        """
+        Return the current metric value.
+
+        :return: groups x times -> metric.
+        """
         if self._last_values is None:
             self._last_values = self._values()
         return self._last_values
@@ -114,7 +121,11 @@ class MetricCalculator(Generic[T]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
-        """Calculate the samples for each item in the data frame."""
+        """
+        Calculate the samples for each item in the data frame.
+
+        :return: np.ndarray[(len(times), len(facts))]
+        """
         raise NotImplementedError
 
     def _value(self, samples: np.ndarray) -> Metric[T]:
@@ -305,7 +316,11 @@ class MetricCalculatorEnsemble:
 
     @sentry_span
     def values(self) -> Dict[str, List[List[Metric[T]]]]:
-        """Calculate the current metric values."""
+        """
+        Calculate the current metric values.
+
+        :return: Mapping from metric name to corresponding metric values (groups x times).
+        """
         return {k: v.values for k, v in self._metrics.items()}
 
     def reset(self) -> None:
@@ -413,100 +428,59 @@ class BinnedEnsemblesCalculator(Generic[M]):
         self.ensembles = [
             self.ensemble_class(*metrics, quantiles=quantiles, **kwargs) for metrics in metrics
         ]
-        self.metrics = metrics
+        self._metrics = list(metrics)
 
     @sentry_span
     def __call__(self,
-                 items: Dict[str, Iterable[Any]],
+                 items: pd.DataFrame,
                  time_intervals: Sequence[Sequence[datetime]],
-                 groups: Sequence[Collection[str]],
-                 agg_kwargs: Iterable[Dict[str, Any]],
-                 extra_grouper: Optional[Callable[[pd.DataFrame], List[np.ndarray]]] = None,
-                 ) -> List[List[List[List[List[M]]]]]:
+                 groups: np.ndarray,
+                 agg_kwargs: Iterable[Mapping[str, Any]],
+                 ) -> np.ndarray:
         """
         Calculate the binned aggregations on a series of mined facts.
 
-        :param items: Map from repository names to their facts.
+        :param items: Calculate metrics on the elements of this DataFrame.
         :param time_intervals: Time interval borders in UTC. Each interval spans \
-                               `[time_intervals[i], time_intervals[i + 1]]`, the ending \
+                               `[time_intervals[i], time_intervals[i + 1]]`, the ending is \
                                not included.
-        :param groups: Repositories within the same group share the metrics scope.
+        :param groups: Calculate separate metrics for each group. Groups are represented by \
+                       a multi-dimensional tensor with indexes to `items`.
         :param agg_kwargs: Keyword arguments to be passed to the ensemble aggregation.
-        :param extra_grouper: Compute the cartesian product of the groups with the index arrays \
-                              calculated by this callable. The effective `groups` are unfolded \
-                              row-wise, that is, the sequence is: \
-                              1. extra group 1 in the major group 1. \
-                              2. extra group 2 in the major group 1. \
-                              3. extra group 1 of the major group 2. \
-                              4. extra group 2 of the major group 2.
         :return:   ensembles \
+                 x groups \
                  x time intervals primary \
-                 x splitted groups (groups x splits) \
                  x time intervals secondary \
-                 x metrics.
+                 x metrics; \
+                 2D array of List[List[List[Metric]]]] (dtype object).
         """
-        sizes = [len(repo_items) for repo_items in chain([[]], items.values())]
-        df_items = df_from_dataclasses(chain.from_iterable(items.values()), length=sum(sizes))
-        splits, max_splits = self._split_items(df_items)
-        offsets = np.cumsum(sizes)
-        keyix = {k: i for i, k in enumerate(items)}
-        group_indexes = []
-        for group in groups:
-            indexes = []
-            for k in group:
-                try:
-                    indexes.append(np.arange(offsets[keyix[k]], offsets[keyix[k] + 1]))
-                except KeyError:
-                    continue
-            indexes = np.concatenate(indexes) if indexes else np.array([], dtype=int)
-            if max_splits > 1:
-                group_splits = splits[indexes]
-                order = np.argsort(group_splits)
-                indexes = indexes[order]
-                group_splits = group_splits[order]
-                split_indexes, split_counts = np.unique(group_splits, return_counts=True)
-                if split_indexes[0] < 0:
-                    # remove excluded items
-                    indexes = indexes[split_counts[0]:]
-                    split_counts = split_counts[1:]
-                    split_indexes = split_indexes[1:]
-                indexes = dict(zip(split_indexes, np.split(indexes, np.cumsum(split_counts)[:-1])))
-            else:
-                indexes = {0: indexes}
-            for sx in range(max_splits):
-                group_indexes.append(indexes.get(sx, []))
-
-        group_count = len(groups)
-        if extra_grouper is not None:
-            extra_groups = extra_grouper(df_items)
-            group_count *= len(extra_groups)
-            # unfold row-wise, the extras are interleaved and the majors are sequential
-            group_indexes = [
-                np.intersect1d(major_group, extra_group, assume_unique=True)
-                for extra_group in extra_groups for major_group in group_indexes
-            ]
-
+        assert isinstance(items, pd.DataFrame)
+        assert isinstance(groups, np.ndarray)
         min_times, max_times, ts_index_map = self._make_min_max_times(time_intervals)
-
+        if groups.dtype != object:
+            assert np.issubdtype(groups.dtype, np.integer)
+            flat_groups = groups.reshape(-1, groups.shape[-1])
+            effective_groups_shape = groups.shape[:-1]
+        else:
+            flat_groups = groups.ravel()
+            effective_groups_shape = groups.shape
         for ensemble in self.ensembles:
-            ensemble(df_items, min_times, max_times, group_indexes)
-
+            ensemble(items, min_times, max_times, flat_groups)
         values_dicts = self._aggregate_ensembles(agg_kwargs)
-        result = [[[[[None] * len(metrics)
-                     for _ in range(len(ts) - 1)]
-                    for _ in range(group_count * max_splits)]
-                   for ts in time_intervals]
-                  for metrics in self.metrics]
-        for eix, (metrics, values_dict) in enumerate(zip(self.metrics, values_dicts)):
-            for mix, metric in enumerate(metrics):
-                for gix, group in enumerate(values_dict[metric]):
-                    for tix, value in enumerate(group):
-                        primary, secondary = ts_index_map[tix]
-                        result[eix][primary][gix][secondary][mix] = value
-        return result
+        metrics = self._metrics
 
-    def _split_items(self, items: pd.DataFrame) -> Tuple[np.ndarray, int]:
-        return np.zeros(len(items)), 1
+        def fill_ensemble_group(ensemble_index: int, group_index: int) -> List[List[List[M]]]:
+            cell = [[[] for _ in range(len(ts) - 1)] for ts in time_intervals]
+            values_dict = values_dicts[ensemble_index]
+            for metric in metrics[ensemble_index]:
+                for tix, value in enumerate(values_dict[metric][group_index]):
+                    primary, secondary = ts_index_map[tix]
+                    cell[primary][secondary].append(value)
+            return cell
+
+        flat_vals = np.fromfunction(np.vectorize(fill_ensemble_group, otypes=[object]),
+                                    (len(metrics), flat_groups.shape[0]), dtype=object)
+        return flat_vals.reshape((len(metrics),) + effective_groups_shape)
 
     @classmethod
     def _make_min_max_times(cls, time_intervals: Sequence[Sequence[datetime]],
@@ -536,7 +510,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
             offset = next_offset
         return min_times, max_times, ts_index_map
 
-    def _aggregate_ensembles(self, kwargs: Iterable[Dict[str, Any]],
+    def _aggregate_ensembles(self, kwargs: Iterable[Mapping[str, Any]],
                              ) -> List[Dict[str, List[List[M]]]]:
         raise NotImplementedError
 
@@ -557,16 +531,18 @@ class BinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
         super().__init__([metrics], quantiles, **kwargs)
 
     def __call__(self,
-                 items: Dict[str, Iterable[Any]],
+                 items: pd.DataFrame,
                  time_intervals: Sequence[Sequence[datetime]],
-                 groups: Sequence[Collection[str]],
-                 extra_grouper: Optional[Callable[[pd.DataFrame], List[np.ndarray]]] = None,
-                 ) -> List[List[List[List[Metric]]]]:
-        """Override the parent's method to reduce the number of nested lists."""
-        return super().__call__(
-            items, time_intervals, groups, [{}], extra_grouper=extra_grouper)[0]
+                 groups: np.ndarray,
+                 ) -> np.ndarray:
+        """
+        Override the parent's method to reduce the level of nesting.
 
-    def _aggregate_ensembles(self, kwargs: Iterable[Dict[str, Any]],
+        :return: array of List[List[List[Metric]]]].
+        """
+        return super().__call__(items, time_intervals, groups, [{}])[0]
+
+    def _aggregate_ensembles(self, kwargs: Iterable[Mapping[str, Any]],
                              ) -> List[Dict[str, List[List[Metric]]]]:
         return [self.ensembles[0].values()]
 
@@ -574,10 +550,58 @@ class BinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
 class BinnedHistogramCalculator(BinnedEnsemblesCalculator[Histogram]):
     """Batched histograms calculation on sequential time intervals."""
 
-    def _aggregate_ensembles(self, kwargs: Iterable[Dict[str, Any]],
+    def _aggregate_ensembles(self, kwargs: Iterable[Mapping[str, Any]],
                              ) -> List[Dict[str, List[List[Histogram]]]]:
         return [{k: v for k, v in ensemble.histograms(**ekw).items()}
                 for ensemble, ekw in zip(self.ensembles, kwargs)]
+
+
+def group_to_indexes(items: pd.DataFrame,
+                     *groupers: Callable[[pd.DataFrame], List[np.ndarray]],
+                     ) -> np.ndarray:
+    """Apply a chain of grouping functions to a table and return the tensor with group indexes."""
+    if not groupers:
+        return np.arange(len(items))[None, :]
+    groups = [grouper(items) for grouper in groupers]
+
+    def intersect(*coordinates: int) -> np.ndarray:
+        return reduce(lambda x, y: np.intersect1d(x, y, assume_unique=True),
+                      [group[i] for group, i in zip(groups, coordinates)])
+
+    return np.fromfunction(np.vectorize(intersect, otypes=[object]),
+                           [len(g) for g in groups], dtype=object)
+
+
+def convert_repo_map_to_df(items: Mapping[str, Sequence[Mapping[str, Any]]],
+                           repository_full_name_column_name: str,
+                           ) -> pd.DataFrame:
+    """Convert repository-aware dataclasses to DataFrame and append their repository names."""
+    sizes = [len(repo_items) for repo_items in items.values()]
+    df_items = df_from_dataclasses(chain.from_iterable(items.values()), length=sum(sizes))
+    df_items[repository_full_name_column_name] = np.repeat(list(items), sizes)
+    return df_items
+
+
+def group_by_repo(repository_full_name_column_name: str,
+                  repos: Sequence[Collection[str]],
+                  items: pd.DataFrame,
+                  ) -> List[np.ndarray]:
+    """Group items by the value of their "repository_full_name" column."""
+    if items.empty:
+        return [np.ndarray([], dtype=int)]
+    repocol = items[repository_full_name_column_name].values.astype("U")
+    order = np.argsort(repocol)
+    unique_repos, pivots = np.unique(repocol[order], return_index=True)
+    unique_indexes = np.split(np.arange(len(repocol))[order], pivots[1:])
+    group_indexes = []
+    for group in repos:
+        indexes = []
+        for repo in group:
+            if unique_repos[(repo_index := searchsorted_inrange(unique_repos, repo)[0])] == repo:
+                indexes.append(unique_indexes[repo_index])
+        indexes = np.concatenate(indexes) if indexes else np.array([], dtype=int)
+        group_indexes.append(indexes)
+    return group_indexes
 
 
 class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):

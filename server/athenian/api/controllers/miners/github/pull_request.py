@@ -1037,7 +1037,7 @@ class PullRequestMiner:
                         df_fields, grouped_df_states, grouped_df_iters, dfs)):
                     if state_pr_node_id == pr_node_id:
                         if not k.endswith("s"):
-                            # much faster than df.iloc[gdf[0]]
+                            # much faster than items.iloc[gdf[0]]
                             gdf = {c: v for c, v in zip(df.columns, df._data.fast_xs(gdf[0]))}
                         else:
                             gdf = df.take(gdf)
