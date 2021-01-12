@@ -142,6 +142,12 @@ def setup_context(log: logging.Logger) -> None:
     dev_id = os.getenv("ATHENIAN_DEV_ID")
     if dev_id:
         log.info("Developer: %s", dev_id)
+    pandas.set_option("display.max_rows", 20)
+    pandas.set_option("display.large_repr", "info")
+    pandas.set_option("display.memory_usage", False)
+    numpy.set_printoptions(threshold=10, edgeitems=1)
+    if log.level >= logging.INFO:
+        databases.core.logger.setLevel(log.level + 10)
 
     sentry_key, sentry_project = os.getenv("SENTRY_KEY"), os.getenv("SENTRY_PROJECT")
 
@@ -209,10 +215,6 @@ def setup_context(log: logging.Logger) -> None:
             scope.set_tag("commit", commit)
         if build_date is not None:
             scope.set_tag("build_date", build_date)
-    pandas.set_option("display.max_rows", 20)
-    pandas.set_option("display.large_repr", "info")
-    pandas.set_option("display.memory_usage", False)
-    numpy.set_printoptions(threshold=10, edgeitems=1)
 
 
 def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Client]:

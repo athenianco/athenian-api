@@ -36,6 +36,7 @@ from athenian.api.defer import enable_defer, launch_defer, setup_defer, wait_all
     wait_deferred
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.metadata import dereference_schemas
+from athenian.api.models.precomputed.schema_monitor import schedule_pdb_schema_check
 from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
@@ -218,23 +219,25 @@ class AthenianApp(connexion.AioHttpApp):
         self._enable_cors()
         self._cache = cache
         self.mdb = self.sdb = self.pdb = None  # type: Optional[ParallelDatabase]
+        self._pdb_schema_task_box = []
         pdbctx = add_pdb_metrics_context(self.app)
 
         async def connect_to_db(name: str, shortcut: str, db_conn: str, db_options: dict):
             try:
                 db = ParallelDatabase(db_conn, **(db_options or {}))
                 await db.connect()
+                self.log.info("Connected to the %s DB on %s", name, db_conn)
+                setattr(self, shortcut, measure_db_overhead_and_retry(db, shortcut, self.app))
+                if shortcut == "pdb":
+                    db.metrics = pdbctx
+                    self._pdb_schema_task_box = schedule_pdb_schema_check(db, self.app)
+                elif shortcut == "mdb" and db.url.dialect == "sqlite":
+                    dereference_schemas()
             except Exception as e:
                 if isinstance(e, asyncio.CancelledError):
                     return
                 self.log.exception("Failed to connect to the %s DB at %s", name, db_conn)
                 raise GracefulExit() from None
-            self.log.info("Connected to the %s DB on %s", name, db_conn)
-            setattr(self, shortcut, measure_db_overhead_and_retry(db, shortcut, self.app))
-            if shortcut == "pdb":
-                self.pdb.metrics = pdbctx
-            elif shortcut == "mdb" and db.url.dialect == "sqlite":
-                dereference_schemas()
 
         self.app.on_shutdown.append(self.shutdown)
         # schedule the DB connections when the server starts
@@ -256,6 +259,8 @@ class AthenianApp(connexion.AioHttpApp):
         """Free resources associated with the object."""
         if not self._shutting_down:
             self.log.warning("Shutting down disgracefully")
+        if self._pdb_schema_task_box:
+            self._pdb_schema_task_box[0].cancel()
         await self._auth0.close()
         if self._kms is not None:
             await self._kms.close()
