@@ -140,6 +140,11 @@ def pr_samples():
 _dag = None
 
 
+class FakeFacts:
+    def with_repository_full_name(self, _):
+        return self
+
+
 async def fetch_dag(mdb, heads=None):
     if heads is None:
         heads = [

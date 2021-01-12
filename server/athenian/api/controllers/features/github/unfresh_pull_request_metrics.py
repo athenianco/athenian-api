@@ -22,7 +22,7 @@ from athenian.api.tracing import sentry_span
 
 
 @sentry_span
-async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, Tuple[str, PullRequestFacts]],
+async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFacts],
                                            ambiguous: Dict[str, List[str]],
                                            time_from: datetime,
                                            time_to: datetime,
@@ -38,12 +38,14 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, Tuple[str, Pull
                                            mdb: databases.Database,
                                            pdb: databases.Database,
                                            cache: Optional[aiomcache.Client],
-                                           ) -> Dict[str, Tuple[str, PullRequestFacts]]:
+                                           ) -> Dict[str, PullRequestFacts]:
     """
     Load the missing facts about merged unreleased and open PRs from pdb instead of querying \
     the most up to date information from mdb.
 
     The major complexity here is to comply to all the filters.
+
+    :return: Map from PR node IDs to their facts.
     """
     add_pdb_hits(pdb, "fresh", 1)
     blacklist = PullRequest.node_id.notin_(done_facts)
@@ -100,12 +102,12 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, Tuple[str, Pull
 
 
 @sentry_span
-async def _filter_done_facts_jira(done_facts: Dict[str, Tuple[str, PullRequestFacts]],
+async def _filter_done_facts_jira(done_facts: Dict[str, PullRequestFacts],
                                   jira: JIRAFilter,
                                   meta_ids: Tuple[int, ...],
                                   mdb: databases.Database,
                                   cache: Optional[aiomcache.Client],
-                                  ) -> Dict[str, Tuple[str, PullRequestFacts]]:
+                                  ) -> Dict[str, PullRequestFacts]:
     filtered = await PullRequestMiner.filter_jira(
         done_facts, jira, meta_ids, mdb, cache, columns=[PullRequest.node_id])
     return {k: done_facts[k] for k in filtered.index.values}
@@ -123,7 +125,8 @@ async def _fetch_inactive_merged_unreleased_prs(time_from: datetime,
                                                 meta_ids: Tuple[int, ...],
                                                 mdb: databases.Database,
                                                 pdb: databases.Database,
-                                                cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+                                                cache: Optional[aiomcache.Client],
+                                                ) -> pd.DataFrame:
     node_ids, repos = await discover_inactive_merged_unreleased_prs(
         time_from, time_to, repos, participants, labels, default_branches, release_settings,
         pdb, cache)
@@ -134,5 +137,6 @@ async def _fetch_inactive_merged_unreleased_prs(time_from: datetime,
         return df
     columns = [PullRequest.node_id, PullRequest.repository_full_name]
     query = await generate_jira_prs_query(
-        [PullRequest.node_id.in_(node_ids)], jira, mdb, cache, columns=columns)
+        [PullRequest.node_id.in_(node_ids), PullRequest.acc_id.in_(meta_ids)],
+        jira, mdb, cache, columns=columns)
     return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)

@@ -28,6 +28,7 @@ from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts
 from tests.conftest import has_memcached
+from tests.controllers.conftest import FakeFacts
 
 
 @with_defer
@@ -850,7 +851,7 @@ async def test_pr_miner_unreleased_facts(
     assert len(merged_unreleased_prs_and_facts) == 11
     assert len(force_push_dropped) == 1
     await pdb.execute(update(GitHubMergedPullRequestFacts).values({
-        GitHubMergedPullRequestFacts.data: pickle.dumps("fake"),
+        GitHubMergedPullRequestFacts.data: pickle.dumps(FakeFacts()),
         GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
     }))
     discovered = await load_merged_unreleased_pull_request_facts(

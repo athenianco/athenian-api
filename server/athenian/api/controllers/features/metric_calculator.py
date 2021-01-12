@@ -572,16 +572,6 @@ def group_to_indexes(items: pd.DataFrame,
                            [len(g) for g in groups], dtype=object)
 
 
-def convert_repo_map_to_df(items: Mapping[str, Sequence[Mapping[str, Any]]],
-                           repository_full_name_column_name: str,
-                           ) -> pd.DataFrame:
-    """Convert repository-aware dataclasses to DataFrame and append their repository names."""
-    sizes = [len(repo_items) for repo_items in items.values()]
-    df_items = df_from_dataclasses(chain.from_iterable(items.values()), length=sum(sizes))
-    df_items[repository_full_name_column_name] = np.repeat(list(items), sizes)
-    return df_items
-
-
 def group_by_repo(repository_full_name_column_name: str,
                   repos: Sequence[Collection[str]],
                   items: pd.DataFrame,

@@ -1,5 +1,4 @@
 import asyncio
-from collections import defaultdict
 from datetime import datetime
 from functools import partial
 from itertools import chain
@@ -25,7 +24,7 @@ from athenian.api.controllers.features.github.release_metrics import \
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     fetch_pull_request_facts_unfresh
 from athenian.api.controllers.features.histogram import HistogramParameters
-from athenian.api.controllers.features.metric_calculator import convert_repo_map_to_df, \
+from athenian.api.controllers.features.metric_calculator import df_from_dataclasses, \
     group_by_repo, group_to_indexes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
@@ -80,6 +79,7 @@ def _postprocess_cached_facts(result: Tuple[Dict[str, List[PullRequestFacts]], b
         fresh,
     ),
     postprocess=_postprocess_cached_facts,
+    version=2,
 )
 async def _calc_pull_request_facts_github(time_from: datetime,
                                           time_to: datetime,
@@ -95,7 +95,7 @@ async def _calc_pull_request_facts_github(time_from: datetime,
                                           mdb: Database,
                                           pdb: Database,
                                           cache: Optional[aiomcache.Client],
-                                          ) -> Tuple[Dict[str, List[PullRequestFacts]], bool]:
+                                          ) -> Tuple[List[PullRequestFacts], bool]:
     assert isinstance(repositories, set)
     branches, default_branches = await extract_branches(repositories, meta_ids, mdb, cache)
     precomputed_tasks = [
@@ -128,12 +128,9 @@ async def _calc_pull_request_facts_github(time_from: datetime,
         if with_jira_map:
             undone_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
                 {k: v for k, v in facts.items() if k not in precomputed_facts}, meta_ids, mdb))
-        by_repo = defaultdict(list)
-        for repo, f in facts.values():
-            by_repo[repo].append(f)
         if with_jira_map:
             await gather(done_jira_map_task, undone_jira_map_task)
-        return by_repo, with_jira_map
+        return list(facts.values()), with_jira_map
 
     add_pdb_misses(pdb, "fresh", 1)
     date_from, date_to = coarsen_time_interval(time_from, time_to)
@@ -179,7 +176,7 @@ async def _calc_pull_request_facts_github(time_from: datetime,
             except ImpossiblePullRequest:
                 continue
             mined_prs.append(pr)
-            mined_facts.append((pr.pr[PullRequest.repository_full_name.key], facts))
+            mined_facts.append(facts)
             if facts.done:
                 done_count += 1
             elif not facts.closed:
@@ -204,18 +201,13 @@ async def _calc_pull_request_facts_github(time_from: datetime,
             merged_unreleased_pr_facts, matched_bys, default_branches, release_settings, pdb,
             unreleased_prs_event),
             "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts))
-    by_repo = {}
-    for repo, f in chain(precomputed_facts.values(), mined_facts):
-        try:
-            by_repo[repo].append(f)
-        except KeyError:
-            by_repo[repo] = [f]
     if with_jira_map:
         _, _, new_jira_map = await gather(
             done_jira_map_task, precomputed_unreleased_jira_map_task, new_jira_map_task)
-        for pr, (_, facts) in zip(mined_prs, mined_facts):
+        for pr, facts in zip(mined_prs, mined_facts):
             facts.jira_id = new_jira_map.get(pr.pr[PullRequest.node_id.key])
-    return by_repo, with_jira_map
+    all_facts = list(chain(precomputed_facts.values(), mined_facts))
+    return all_facts, with_jira_map
 
 
 async def calc_pull_request_facts_github(time_from: datetime,
@@ -232,7 +224,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
                                          mdb: Database,
                                          pdb: Database,
                                          cache: Optional[aiomcache.Client],
-                                         ) -> Dict[str, List[PullRequestFacts]]:
+                                         ) -> List[PullRequestFacts]:
     """
     Calculate facts about pull request on GitHub.
 
@@ -276,7 +268,6 @@ async def calc_pull_request_facts_github(time_from: datetime,
         exclude_inactive,
         release_settings,
     ),
-    version=2,
 )
 async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 time_intervals: Sequence[Sequence[datetime]],
@@ -306,7 +297,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
         release_settings, fresh, need_jira_mapping(metrics), meta_ids, mdb, pdb, cache)
-    df_facts = convert_repo_map_to_df(mined_facts, PullRequest.repository_full_name.key)
+    df_facts = df_from_dataclasses(mined_facts)
     repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
     groups = group_to_indexes(df_facts, partial(group_by_lines, lines), repo_grouper)
     return calc(df_facts, time_intervals, groups)
@@ -349,7 +340,6 @@ async def calc_code_metrics_github(prop: FilterCommitsProperty,
         exclude_inactive,
         release_settings,
     ),
-    version=2,
 )
 async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, List[str]],
                                               time_from: datetime,
@@ -381,7 +371,7 @@ async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, Li
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, all_repositories, participants, labels, jira,
         exclude_inactive, release_settings, fresh, False, meta_ids, mdb, pdb, cache)
-    df_facts = convert_repo_map_to_df(mined_facts, PullRequest.repository_full_name.key)
+    df_facts = df_from_dataclasses(mined_facts)
     repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
     lines_grouper = partial(group_by_lines, lines)
     groups = group_to_indexes(df_facts, lines_grouper, repo_grouper)
@@ -411,7 +401,6 @@ async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, Li
         jira,
         release_settings,
     ),
-    version=2,
 )
 async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            time_intervals: Sequence[Sequence[datetime]],
@@ -439,10 +428,7 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
     releases, _, matched_bys = await mine_releases(
         all_repositories, all_participants, branches, default_branches,
         time_from, time_to, jira, release_settings, meta_ids, mdb, pdb, cache)
-    mined_facts = defaultdict(list)
-    for i, f in releases:
-        mined_facts[i[Release.repository_full_name.key].split("/", 1)[1]].append(f)
-    df_facts = convert_repo_map_to_df(mined_facts, Release.repository_full_name.key)
+    df_facts = df_from_dataclasses([f for _, f in releases])
     repo_grouper = partial(group_by_repo, Release.repository_full_name.key, repositories)
     participant_grouper = partial(group_by_participants, participants)
     groups = group_to_indexes(df_facts, participant_grouper, repo_grouper)

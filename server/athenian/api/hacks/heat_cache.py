@@ -6,6 +6,8 @@ from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from itertools import chain
 import logging
+import sys
+import traceback
 from typing import Collection, Optional, Set, Tuple
 
 import aiomcache
@@ -175,11 +177,10 @@ def main():
                     None,  # yes, disable the cache
                 )
                 if not reposet.precomputed and slack is not None:
-                    prs = sum(len(rf) for rf in facts.values())
-                    prs_done = sum(sum(1 for f in rf if f.done) for rf in facts.values())
-                    prs_merged = sum(sum(1 for f in rf if not f.done and f.merged is not None)
-                                     for rf in facts.values())
-                    prs_open = sum(sum(1 for f in rf if f.closed is None) for rf in facts.values())
+                    prs = len(facts)
+                    prs_done = sum(f.done for f in facts)
+                    prs_merged = sum((not f.done and f.merged is not None) for f in facts)
+                    prs_open = sum((f.closed is None) for f in facts)
                 del facts  # free some memory
                 if not reposet.precomputed:
                     if slack is not None:
@@ -198,7 +199,8 @@ def main():
                                          bots=num_bots,
                                          teams=num_teams)
             except Exception as e:
-                log.warning("reposet %d: %s: %s", reposet.id, type(e).__name__, e)
+                log.warning("reposet %d: %s: %s\n%s", reposet.id, type(e).__name__, e,
+                            "".join(traceback.format_exception(*sys.exc_info())[:-1]))
                 sentry_sdk.capture_exception(e)
                 return_code = 1
             else:

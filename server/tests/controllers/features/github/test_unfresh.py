@@ -17,7 +17,9 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
         False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
     )
     await wait_deferred()
-    assert len(facts_fresh["src-d/go-git"]) == 230
+    assert len(facts_fresh) == 230
+    for f in facts_fresh:
+        assert f.repository_full_name == "src-d/go-git"
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:
@@ -26,7 +28,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
             {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
         )
-        assert len(facts_unfresh["src-d/go-git"]) == 230
+        assert len(facts_unfresh) == 230
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
             assert fresh == unfresh, i
     finally:
@@ -45,7 +47,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
         False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
     )
     await wait_deferred()
-    assert len(facts_fresh["src-d/go-git"]) == 6
+    assert len(facts_fresh) == 6
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:
@@ -54,7 +56,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
             {"src-d/go-git"}, {}, label_filter, JIRAFilter.empty(),
             False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
         )
-        assert len(facts_unfresh["src-d/go-git"]) == 6
+        assert len(facts_unfresh) == 6
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
             assert fresh == unfresh, i
     finally:
@@ -73,7 +75,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
     )
     await wait_deferred()
-    assert len(facts_fresh["src-d/go-git"]) == 36
+    assert len(facts_fresh) == 36
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:
@@ -82,7 +84,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
             {"src-d/go-git"}, {}, LabelFilter.empty(), jira_filter,
             False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
         )
-        assert len(facts_unfresh["src-d/go-git"]) == 36
+        assert len(facts_unfresh) == 36
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
             assert fresh == unfresh, i
     finally:

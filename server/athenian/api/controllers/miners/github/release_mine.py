@@ -308,7 +308,8 @@ async def mine_releases(repos: Iterable[str],
                                           deletions=my_deletions,
                                           commits_count=commits_count,
                                           prs=my_prs,
-                                          commit_authors=my_commit_authors)))
+                                          commit_authors=my_commit_authors,
+                                          repository_full_name=repo)))
             await asyncio.sleep(0)
         if data:
             await defer(store_precomputed_release_facts(data, default_branches, settings, pdb),
@@ -351,7 +352,7 @@ def _build_mined_releases(releases: pd.DataFrame,
           Release.repository_full_name.key: prefix + repo,
           Release.url.key: my_url,
           Release.sha.key: my_commit},
-         precomputed_facts[my_id])
+         precomputed_facts[my_id].with_repository_full_name(repo))
         for my_id, my_name, my_tag, repo, my_url, my_commit in zip(
             releases[Release.id.key].values[has_precomputed_facts],
             releases[Release.name.key].values[has_precomputed_facts],
