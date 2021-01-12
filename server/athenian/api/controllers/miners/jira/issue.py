@@ -251,18 +251,24 @@ async def fetch_jira_issues(ids: Tuple[int, List[str]],
     if not unreleased_prs:
         await released_flow()
     else:
-        pr_created_ats, err = await gather(
-            _fetch_created_ats(unreleased_prs, meta_ids, mdb), released_flow(),
+        pr_created_ats_and_repos, err = await gather(
+            _fetch_pr_created_ats_and_repos(unreleased_prs, meta_ids, mdb), released_flow(),
             op="released and unreleased")
-        for row in pr_created_ats:
+        prefix = PREFIXES["github"]
+        for row in pr_created_ats_and_repos:
             pr_created_at = row[PullRequest.created_at.key]
+            repo = row[PullRequest.repository_full_name.key]
             i = issue_to_index[pr_to_issue[row[PullRequest.node_id.key]]]
             dt = work_began[i]
             if dt != dt:
                 work_began[i] = pr_created_at
             else:
                 work_began[i] = min(dt, np.datetime64(pr_created_at))
-            released[i] = nat
+            if (prefix + repo) not in release_settings:
+                # deleted repository, consider the PR as force push dropped
+                released[i] = work_began[i]
+            else:
+                released[i] = nat
 
     issues[ISSUE_PRS_BEGAN] = work_began
     issues[ISSUE_PRS_RELEASED] = released
@@ -270,11 +276,12 @@ async def fetch_jira_issues(ids: Tuple[int, List[str]],
 
 
 @sentry_span
-async def _fetch_created_ats(pr_node_ids: Iterable[str],
-                             meta_ids: Tuple[int, ...],
-                             mdb: databases.Database) -> List[Mapping[str, Union[str, datetime]]]:
+async def _fetch_pr_created_ats_and_repos(pr_node_ids: Iterable[str],
+                                          meta_ids: Tuple[int, ...],
+                                          mdb: databases.Database,
+                                          ) -> List[Mapping[str, Union[str, datetime]]]:
     return await mdb.fetch_all(
-        sql.select([PullRequest.node_id, PullRequest.created_at])
+        sql.select([PullRequest.node_id, PullRequest.created_at, PullRequest.repository_full_name])
         .where(sql.and_(PullRequest.node_id.in_(pr_node_ids),
                         PullRequest.acc_id.in_(meta_ids))))
 
@@ -304,6 +311,14 @@ async def _fetch_released_prs(pr_node_ids: Iterable[str],
     prefix = PREFIXES["github"]
     for repo, matches in released_by_repo.items():
         for match, prs in matches.items():
+            if (prefix + repo) not in release_settings:
+                for node_id, row in prs.items():
+                    try:
+                        if released_prs[node_id][ghdprf.pr_done_at] < row[ghdprf.pr_done_at]:
+                            released_prs[node_id] = row
+                    except KeyError:
+                        released_prs[node_id] = row
+                continue
             dump = triage_by_release_match(repo, match, release_settings, default_branches,
                                            prefix, released_prs, ambiguous)
             if dump is None:
