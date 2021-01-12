@@ -67,12 +67,16 @@ def triage_by_release_match(repo: str,
                             result: Any,
                             ambiguous: Dict[str, Any]) -> Optional[Any]:
     """Check the release match of the specified `repo` and return `None` if it is not effective \
-    or decide between `result` and `ambioguous`, depending on the settings."""
+    or decide between `result` and `ambiguous`, depending on the settings."""
+    full_repo_name = prefix + repo
+    # DEV-1451: if we don't have this repository in the release settings, then it is deleted
+    assert full_repo_name in release_settings, \
+        "You must take care of deleted repositories separately."
     if release_match in (ReleaseMatch.rejected.name, ReleaseMatch.force_push_drop.name):
         return result
     match_name, match_by = release_match.split("|", 1)
     match = ReleaseMatch[match_name]
-    required_release_match = release_settings[prefix + repo]
+    required_release_match = release_settings[full_repo_name]
     if required_release_match.match != ReleaseMatch.tag_or_branch:
         if match != required_release_match.match:
             return None
