@@ -4810,8 +4810,8 @@ components:
         repository:
           $ref: '#/components/schemas/RepositoryID'
         names:
-          description: List of release names. For tag releases, those are the tag names.
-            For branch releases, those are commit hashes.
+          description: List of release names. For tag releases, those are the tag
+            names. For branch releases, those are commit hashes.
           items:
             type: string
           type: array
@@ -4949,6 +4949,31 @@ components:
       - id
       - title
       - type
+      type: object
+    JIRAIssueType:
+      additionalProperties: false
+      description: Details about a JIRA issue type.
+      example:
+        name: Bug
+        count: 12
+        image: https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype
+      properties:
+        name:
+          description: Name of the issue type.
+          type: string
+        count:
+          description: Number of issues that satisfy the filters and belong to this
+            type.
+          minimum: 1
+          type: integer
+        image:
+          description: Icon URL.
+          format: url
+          type: string
+      required:
+      - count
+      - image
+      - name
       type: object
     ProductFeatures:
       description: Enabled client-side product features.
@@ -5327,8 +5352,12 @@ components:
           issues_count: 300
           kind: regular
         issue_types:
-        - Story
-        - Task
+        - name: Bug
+          count: 12
+          image: https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype
+        - name: Task
+          count: 6
+          image: https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype
         priorities:
         - name: None
           image: https://athenianco.atlassian.net/images/icons/priorities/trivial.svg
@@ -5355,7 +5384,7 @@ components:
         issue_types:
           description: Types of the updated issues.
           items:
-            type: string
+            $ref: '#/components/schemas/JIRAIssueType'
           type: array
         priorities:
           description: Issue priority names sorted by importance in ascending order.
@@ -5433,14 +5462,13 @@ components:
         type:
           type: string
         work_began:
-          description: When the issue entered the "In Progress" stage.
-            This timestamp can be missing and is always less than or equal to
-            `resolved`.
+          description: When the issue entered the "In Progress" stage. This timestamp
+            can be missing and is always less than or equal to `resolved`.
           format: date-time
           type: string
         resolved:
-          description: When the issue was marked as completed. This timestamp
-            can be missing and is always greater than or equal to `work_began`.
+          description: When the issue was marked as completed. This timestamp can
+            be missing and is always greater than or equal to `work_began`.
           format: date-time
           type: string
       required:
@@ -6297,8 +6325,8 @@ components:
       type: object
     DiffedReleases:
       additionalProperties: false
-      description: Response of `/diff/releases` - the found inner releases for
-        each repository.
+      description: Response of `/diff/releases` - the found inner releases for each
+        repository.
       example:
         include:
           users:

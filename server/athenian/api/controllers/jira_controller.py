@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple, Type, Union
 from aiohttp import web
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, outerjoin, select, true
+from sqlalchemy import and_, outerjoin, select, true, union_all
 from sqlalchemy.sql.functions import coalesce
 
 from athenian.api import metadata
@@ -25,12 +25,14 @@ from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
 from athenian.api.controllers.settings import Settings
-from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, Priority, User
+from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
+    Priority, User
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
     CalculatedLinearMetricValues, FilterJIRAStuff, FoundJIRAStuff, Interquartile, \
     InvalidRequestError, JIRAEpic, JIRAHistogramsRequest, JIRALabel, JIRAMetricsRequest, \
     JIRAPriority, JIRAUser
 from athenian.api.models.web.jira_epic_child import JIRAEpicChild
+from athenian.api.models.web.jira_issue_type import JIRAIssueType
 from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
@@ -120,18 +122,43 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         ]
         append_time_filters(filters)
         property_rows = await mdb.fetch_all(
-            select([Issue.id, Issue.labels, Issue.components, Issue.type, Issue.updated,
-                    Issue.assignee_id, Issue.reporter_id, Issue.commenters_ids, Issue.priority_id])
+            select([Issue.id,
+                    Issue.project_id,
+                    Issue.labels,
+                    Issue.components,
+                    Issue.type,
+                    Issue.updated,
+                    Issue.assignee_id,
+                    Issue.reporter_id,
+                    Issue.commenters_ids,
+                    Issue.priority_id])
             .select_from(outerjoin(Issue, AthenianIssue, and_(Issue.acc_id == AthenianIssue.acc_id,
                                                               Issue.id == AthenianIssue.id)))
             .where(and_(*filters)))
-        components = Counter(chain.from_iterable(
-            (r[Issue.components.key] or ()) for r in property_rows))
-        people = set(r[Issue.reporter_id.key] for r in property_rows)
-        people.update(r[Issue.assignee_id.key] for r in property_rows)
-        people.update(chain.from_iterable(
-            (r[Issue.commenters_ids.key] or []) for r in property_rows))
-        priorities = set(r[Issue.priority_id.key] for r in property_rows)
+        if "labels" in return_:
+            components = Counter(chain.from_iterable(
+                (r[Issue.components.key] or ()) for r in property_rows))
+        else:
+            components = None
+        if "users" in return_:
+            people = set(r[Issue.reporter_id.key] for r in property_rows)
+            people.update(r[Issue.assignee_id.key] for r in property_rows)
+            people.update(chain.from_iterable(
+                (r[Issue.commenters_ids.key] or []) for r in property_rows))
+        else:
+            people = None
+        if "priorities" in return_:
+            priorities = set(r[Issue.priority_id.key] for r in property_rows)
+        else:
+            priorities = None
+        if "issue_types" in return_:
+            issue_type_counts = Counter(r[Issue.type.key] for r in property_rows)
+            issue_type_projects = defaultdict(set)
+            for r in property_rows:
+                issue_type_projects[r[Issue.project_id.key]].add(r[Issue.type.key])
+            project_counts = Counter(r[Issue.project_id.key] for r in property_rows)
+        else:
+            issue_type_counts = issue_type_projects = project_counts = None
 
         @sentry_span
         async def fetch_components():
@@ -169,7 +196,22 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                 .order_by(Priority.rank))
 
         @sentry_span
-        async def main_flow():
+        async def fetch_types():
+            if "issue_types" not in return_:
+                return []
+            queries = [
+                select([IssueType.name, IssueType.project_id, IssueType.icon_url])
+                .where(and_(
+                    IssueType.name.in_(names),
+                    IssueType.acc_id == jira_ids[0],
+                    IssueType.project_id == project_id,
+                ))
+                for project_id, names in issue_type_projects.items()
+            ]
+            return await mdb.fetch_all(union_all(*queries))
+
+        @sentry_span
+        async def extract_labels():
             if "labels" in return_:
                 labels = Counter(chain.from_iterable(
                     (r[Issue.labels.key] or ()) for r in property_rows))
@@ -186,14 +228,10 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                         label.last_used = label.last_used.replace(tzinfo=timezone.utc)
             else:
                 labels = None
-            if "issue_types" in return_:
-                types = sorted(set(r[Issue.type.key] for r in property_rows))
-            else:
-                types = None
-            return labels, types
+            return labels
 
-        component_names, users, priorities, (labels, types) = await gather(
-            fetch_components(), fetch_users(), fetch_priorities(), main_flow())
+        component_names, users, priorities, issue_types, labels = await gather(
+            fetch_components(), fetch_users(), fetch_priorities(), fetch_types(), extract_labels())
         components = {
             row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
             for row in component_names
@@ -207,6 +245,17 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                                    rank=row[Priority.rank.key],
                                    color=row[Priority.status_color.key])
                       for row in priorities] or None
+        # take the issue type URL corresponding to the project with the most issues
+        max_issue_types = {}
+        for row in issue_types:
+            name = row[IssueType.name.key]
+            max_count, _ = max_issue_types.get(name, (0, ""))
+            if (count := project_counts[row[IssueType.project_id.key]]) > max_count:
+                max_issue_types[name] = count, row[IssueType.icon_url.key]
+        issue_types = [JIRAIssueType(name=name,
+                                     image=image,
+                                     count=issue_type_counts[name])
+                       for name, (_, image) in sorted(max_issue_types.items())] or None
         if "labels" in return_:
             for row in property_rows:
                 updated = row[Issue.updated.key]
@@ -223,7 +272,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                     label.last_used = label.last_used.replace(tzinfo=timezone.utc)
 
             labels = sorted(chain(components.values(), labels.values()))
-        return labels, users, types, priorities
+        return labels, users, issue_types, priorities
 
     epics, (labels, users, types, priorities) = await gather(epic_flow(), issue_flow(), op="mdb")
     return model_response(FoundJIRAStuff(
