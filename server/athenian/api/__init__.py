@@ -78,7 +78,7 @@ def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(metadata.__package__, epilog="""environment variables:
   SENTRY_KEY               Sentry token: ???@sentry.io
-  SENTRY_PROJECT           Sentry project name.
+  SENTRY_PROJECT           Sentry project name
   AUTH0_DOMAIN             Auth0 domain, usually *.auth0.com
   AUTH0_AUDIENCE           JWT audience - the backref URL, usually the website address
   AUTH0_CLIENT_ID          Client ID of the Auth0 Machine-to-Machine Application
@@ -87,6 +87,7 @@ def parse_args() -> argparse.Namespace:
   ATHENIAN_INVITATION_KEY  Passphrase to encrypt the invitation links
   ATHENIAN_INVITATION_URL_PREFIX
                            String with which any invitation URL starts, e.g. https://app.athenian.co/i/
+  ATHENIAN_MAX_CLIENT_SIZE Reject HTTP requests if their size in bytes is bigger than this value
   GOOGLE_KMS_PROJECT       Name of the project with Google Cloud Key Management Service
   GOOGLE_KMS_KEYRING       Name of the keyring in Google Cloud Key Management Service
   GOOGLE_KMS_KEYNAME       Name of the key in the keyring in Google Cloud Key Management Service
@@ -337,7 +338,7 @@ def compose_db_options(mdb: str, sdb: str, pdb: str) -> Dict[str, Dict[str, Any]
 
 
 def main() -> Optional[AthenianApp]:
-    """Server entry point."""
+    """Server's entry point."""
     uvloop.install()
     args = parse_args()
     log = logging.getLogger(metadata.__package__)

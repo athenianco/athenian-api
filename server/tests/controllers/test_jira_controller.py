@@ -6,9 +6,8 @@ import numpy as np
 import pytest
 
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
-    CalculatedLinearMetricValues, FoundJIRAStuff, JIRAEpic, JIRALabel, JIRAMetricID, \
-    JIRAPriority, JIRAUser
-from athenian.api.models.web.jira_epic_child import JIRAEpicChild
+    CalculatedLinearMetricValues, FoundJIRAStuff, JIRAEpic, JIRAEpicChild, JIRAIssueType, \
+    JIRALabel, JIRAMetricID, JIRAPriority, JIRAUser
 from athenian.api.serialization import FriendlyJson
 
 
@@ -107,7 +106,18 @@ async def test_filter_jira_return(client, headers, return_, checked):
     else:
         assert model.epics is None
     if "issue_types" in checked:
-        assert model.issue_types == ["Design document", "Epic", "Story", "Subtask", "Task"]
+        assert model.issue_types == [
+            JIRAIssueType(name="Design document", count=10,
+                          image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
+            JIRAIssueType(name="Epic", count=2,
+                          image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype"),  # noqa
+            JIRAIssueType(name="Story", count=49,
+                          image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10315&avatarType=issuetype"),  # noqa
+            JIRAIssueType(name="Subtask", count=98,
+                          image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
+            JIRAIssueType(name="Task", count=9,
+                          image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype"),  # noqa
+        ]
     else:
         assert model.issue_types is None
     if "users" in checked:
@@ -178,11 +188,37 @@ async def test_filter_jira_no_time(client, headers):
 
 
 @pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [
-    [False, 33, 34,
-     ["Bug", "Design Document", "Epic", "Incident", "Story", "Sub-task", "Subtask", "Task"],
+    [False, 33, 34, [
+        JIRAIssueType(name="Bug", count=96,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Design Document", count=7,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Epic", count=34,
+                      image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
+        JIRAIssueType(name="Incident", count=3,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Story", count=26,
+                      image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
+        JIRAIssueType(name="Sub-task", count=26,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Subtask", count=1,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Task", count=194,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
      15, 6],
-    [True, 29, 13,
-     ["Bug", "Epic", "Incident", "Story", "Sub-task", "Task"],
+    [True, 29, 13, [
+        JIRAIssueType(name="Bug", count=77,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Epic", count=13,
+                      image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
+        JIRAIssueType(name="Incident", count=3,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Story", count=11,
+                      image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
+        JIRAIssueType(name="Sub-task", count=19,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Task", count=128,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
      11, 6],
 ])
 async def test_filter_jira_exclude_inactive(
@@ -246,7 +282,18 @@ async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
         JIRAEpic(id="ENG-1", title="Evaluate our product and process internally",
                  updated=datetime(2020, 6, 1, 7, 19, tzinfo=tzutc()), children=[]),
     ]
-    assert model.issue_types == ["Design document", "Epic", "Story", "Subtask", "Task"]
+    assert model.issue_types == [
+        JIRAIssueType(name="Design document", count=10,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Epic", count=1,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Story", count=49,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10315&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Subtask", count=98,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Task", count=4,
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype"),  # noqa
+    ]
 
 
 @pytest.mark.parametrize("account, date_to, timezone, status", [

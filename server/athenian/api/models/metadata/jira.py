@@ -96,3 +96,13 @@ class Project(Base):
     key = Column(Text)
     name = Column(Text)
     avatar_url = Column(Text)
+
+
+class IssueType(Base):
+    __tablename__ = "issue_type"
+
+    id = Column(Text, primary_key=True)
+    project_id = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
+    description = Column(Text)
+    icon_url = Column(Text, nullable=False)

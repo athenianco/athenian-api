@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_epic import JIRAEpic
+from athenian.api.models.web.jira_issue_type import JIRAIssueType
 from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.jira_priority import JIRAPriority
 from athenian.api.models.web.jira_user import JIRAUser
@@ -14,7 +15,7 @@ class FoundJIRAStuff(Model):
     openapi_types = {
         "epics": Optional[List[JIRAEpic]],
         "labels": Optional[List[JIRALabel]],
-        "issue_types": Optional[List[str]],
+        "issue_types": Optional[List[JIRAIssueType]],
         "priorities": Optional[List[JIRAPriority]],
         "users": Optional[List[JIRAUser]],
     }
@@ -29,7 +30,7 @@ class FoundJIRAStuff(Model):
     def __init__(self,
                  epics: Optional[List[JIRAEpic]] = None,
                  labels: Optional[List[JIRALabel]] = None,
-                 issue_types: Optional[List[str]] = None,
+                 issue_types: Optional[List[JIRAIssueType]] = None,
                  priorities: Optional[List[JIRAPriority]] = None,
                  users: Optional[List[JIRAUser]] = None):
         """FoundJIRAStuff - a model defined in OpenAPI
@@ -85,7 +86,7 @@ class FoundJIRAStuff(Model):
         self._labels = labels
 
     @property
-    def issue_types(self) -> List[str]:
+    def issue_types(self) -> List[JIRAIssueType]:
         """Gets the issue_types of this FoundJIRAStuff.
 
         Types of the updated issues.
@@ -95,7 +96,7 @@ class FoundJIRAStuff(Model):
         return self._issue_types
 
     @issue_types.setter
-    def issue_types(self, issue_types: List[str]):
+    def issue_types(self, issue_types: List[JIRAIssueType]):
         """Sets the issue_types of this FoundJIRAStuff.
 
         Types of the updated issues.

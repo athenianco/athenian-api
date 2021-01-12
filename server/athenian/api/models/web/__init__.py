@@ -66,6 +66,7 @@ from athenian.api.models.web.jira_histogram_definition import JIRAHistogramDefin
 from athenian.api.models.web.jira_histograms_request import JIRAHistogramsRequest
 from athenian.api.models.web.jira_installation import JIRAInstallation
 from athenian.api.models.web.jira_issue import JIRAIssue
+from athenian.api.models.web.jira_issue_type import JIRAIssueType
 from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
 from athenian.api.models.web.jira_metrics_request import JIRAMetricsRequest
