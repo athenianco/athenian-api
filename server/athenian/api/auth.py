@@ -7,6 +7,7 @@ import os
 import pickle
 from random import random
 import re
+import socket
 import struct
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -236,12 +237,20 @@ class Auth0:
 
         async def get_batch(batch: List[str]) -> List[User]:
             nonlocal token
+            query = "user_id:(%s)" % " ".join('"%s"' % u for u in batch)
             for retries in range(1, 31):
-                query = "user_id:(%s)" % " ".join('"%s"' % u for u in batch)
                 try:
                     resp = await self._session.get(
                         "https://%s/api/v2/users?q=%s" % (self._domain, query),
                         headers={"Authorization": "Bearer " + token})
+                except aiohttp.ClientConnectorError as e:
+                    if isinstance(e.__cause__, socket.gaierror) and e.__cause__.errno == -3:
+                        self.log.warning("Auth0 Management API: %s", e)
+                        # Temporary failure in name resolution
+                        await asyncio.sleep(0.1)
+                        continue
+                    else:
+                        raise e from None
                 except RuntimeError:
                     # our loop is closed and we are doomed
                     return []
