@@ -20,10 +20,8 @@ from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request_metrics import \
     group_by_lines, need_jira_mapping, PullRequestBinnedHistogramCalculator, \
     PullRequestBinnedMetricCalculator
-from athenian.api.controllers.features.github.release import group_by_participants, \
-    merge_release_participants
 from athenian.api.controllers.features.github.release_metrics import \
-    ReleaseBinnedMetricCalculator
+    group_by_participants, merge_release_participants, ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     fetch_pull_request_facts_unfresh
 from athenian.api.controllers.features.histogram import HistogramParameters
