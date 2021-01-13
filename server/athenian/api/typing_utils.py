@@ -140,7 +140,17 @@ def _add_slots_to_dataclass(cls: T,
             assert attr in mutable_fields, "You can only change mutable optional fields."
             object.__setattr__(self, attr, val)
 
+        def make_with_attr(attr):
+            def with_attr(self, value) -> cls:
+                """Chain __setattr__ to return `self`."""
+                setattr(self, attr, value)
+                return self
+
+            return with_attr
+
         cls_dict["__setattr__"] = __setattr__
+        for attr in mutable_fields:
+            cls_dict["with_" + attr] = make_with_attr(attr)
 
     class SlotsMapping(Mapping[str, Any]):
         """Satisfy Mapping abstractions by relying on the __slots__."""

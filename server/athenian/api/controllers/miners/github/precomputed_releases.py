@@ -25,7 +25,8 @@ from athenian.precomputer.db.models import GitHubRelease as PrecomputedRelease
 async def load_precomputed_release_facts(releases: pd.DataFrame,
                                          default_branches: Dict[str, str],
                                          settings: Dict[str, ReleaseMatchSetting],
-                                         pdb: databases.Database) -> Dict[str, ReleaseFacts]:
+                                         pdb: databases.Database,
+                                         ) -> Dict[str, ReleaseFacts]:
     """
     Fetch precomputed facts about releases.
 

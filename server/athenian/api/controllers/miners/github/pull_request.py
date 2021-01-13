@@ -1278,6 +1278,7 @@ class PullRequestFactsMiner:
             activity_days=activity_days,
             size=size,
             force_push_dropped=force_push_dropped,
+            repository_full_name=pr.pr[PullRequest.repository_full_name.key],
         )
         self._validate(facts, pr.pr[PullRequest.htmlurl.key])
         return facts

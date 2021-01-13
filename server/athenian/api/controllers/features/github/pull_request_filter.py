@@ -543,7 +543,6 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     facts, unreleased_facts = unreleased_facts, facts
     facts.update(unreleased_facts)
     del unreleased_facts
-    facts = {k: v for k, (_, v) in facts.items()}
 
     prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
 
@@ -593,7 +592,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                     continue
                 if pr_facts.released or pr_facts.closed and not pr_facts.merged:
                     missed_done_facts_counter += 1
-                    missed_done_facts.append((pr, (None, pr_facts)))
+                    missed_done_facts.append((pr, pr_facts))
                     if (len(missed_done_facts) + 1) % 100 == 0:
                         await store_missed_done_facts()
                 elif not pr_facts.closed:
@@ -738,14 +737,13 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
         for pr in prs:
             if (node_id := pr.pr[PullRequest.node_id.key]) not in facts:
                 try:
-                    facts[node_id] = None, facts_miner(pr)
+                    facts[node_id] = facts_miner(pr)
                 except ImpossiblePullRequest:
                     continue
                 finally:
                     pdb_misses += 1
             filtered_prs.append(pr)
 
-    facts = {k: v for k, (_, v) in facts.items()}
     set_pdb_hits(pdb, "fetch_pull_requests/facts", len(filtered_prs) - pdb_misses)
     set_pdb_misses(pdb, "fetch_pull_requests/facts", pdb_misses)
     return filtered_prs, dfs, facts, matched_bys

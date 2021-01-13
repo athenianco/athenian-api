@@ -215,6 +215,7 @@ class PullRequestFacts:
     force_push_dropped: bool
     # Mutable optional fields go below.
     jira_id: Optional[str] = None
+    repository_full_name: Optional[str] = None
 
     def max_timestamp(self) -> pd.Timestamp:
         """Find the maximum timestamp contained in the struct."""
@@ -278,7 +279,9 @@ class PullRequestFacts:
 
     def __lt__(self, other: "PullRequestFacts") -> bool:
         """Order by `work_began`."""
-        return self.work_began < other.work_began
+        if self.work_began != other.work_began:
+            return self.work_began < other.work_began
+        return self.created < other.created
 
 
 def nonemin(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
@@ -295,7 +298,7 @@ def nonemax(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
     return max(arg for arg in args if arg)
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(slots=True, frozen=True, first_mutable="repository_full_name")
 class ReleaseFacts:
     """Various release properties and statistics."""
 
@@ -308,6 +311,8 @@ class ReleaseFacts:
     commits_count: int
     prs: Dict[str, np.ndarray]
     commit_authors: List[str]
+    # Mutable optional fields go below.
+    repository_full_name: Optional[str] = None
 
     def max_timestamp(self) -> datetime:
         """Find the maximum timestamp contained in the struct."""

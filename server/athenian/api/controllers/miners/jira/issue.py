@@ -422,12 +422,12 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
     return df.take(np.nonzero(passed)[0])
 
 
-async def append_pr_jira_mapping(prs: Dict[str, Tuple[str, PullRequestFacts]],
+async def append_pr_jira_mapping(prs: Dict[str, PullRequestFacts],
                                  meta_ids: Tuple[int, ...],
                                  mdb: DatabaseLike) -> None:
     """Load and insert "jira_id" to the PR facts."""
     jira_map = await load_pr_jira_mapping(prs, meta_ids, mdb)
-    for pr, (_, facts) in prs.items():
+    for pr, facts in prs.items():
         facts.jira_id = jira_map.get(pr)
 
 

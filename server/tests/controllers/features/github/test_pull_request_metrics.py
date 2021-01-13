@@ -581,7 +581,7 @@ async def test_calc_pull_request_facts_github_open_precomputed(
     open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
     assert len(open_facts) == 21
     facts2 = await calc_pull_request_facts_github(*args)
-    assert set(facts1["src-d/go-git"]) == set(facts2["src-d/go-git"])
+    assert set(facts1) == set(facts2)
 
 
 @with_defer
@@ -600,7 +600,7 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
         assert row[GitHubMergedPullRequestFacts.data.key] is not None, \
             row[GitHubMergedPullRequestFacts.pr_node_id.key]
     facts2 = await calc_pull_request_facts_github(*args)
-    assert set(facts1["src-d/go-git"]) == set(facts2["src-d/go-git"])
+    assert set(facts1) == set(facts2)
 
 
 @with_defer
@@ -611,22 +611,22 @@ async def test_calc_pull_request_facts_github_jira(
     args = [time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, cache]
-    facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
+    facts = await calc_pull_request_facts_github(*args)
     await wait_deferred()
-    assert sum(1 for f in facts if f.released) == 233
+    assert sum(bool(f.released) for f in facts) == 233
     args[5] = JIRAFilter(1, ["10003", "10009"], LabelFilter({"performance", "task"}, set()),
                          set(), set(), False)
-    facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
-    assert sum(1 for f in facts if f.released) == 16
+    facts = await calc_pull_request_facts_github(*args)
+    assert sum(bool(f.released) for f in facts) == 16
 
     args[5] = JIRAFilter.empty()
     args[-5] = True
-    facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
-    assert sum(1 for f in facts if f.jira_id) == 60
+    facts = await calc_pull_request_facts_github(*args)
+    assert sum(bool(f.jira_id) for f in facts) == 60
     await wait_deferred()
     args[-3] = args[-2] = None
-    facts = (await calc_pull_request_facts_github(*args))["src-d/go-git"]
-    assert sum(1 for f in facts if f.jira_id) == 60
+    facts = await calc_pull_request_facts_github(*args)
+    assert sum(bool(f.jira_id) for f in facts) == 60
 
 
 def test_size_calculator_shift_log():
