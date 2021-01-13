@@ -587,7 +587,7 @@ def group_by_repo(repository_full_name_column_name: str,
                   items: pd.DataFrame,
                   ) -> List[np.ndarray]:
     """Group items by the value of their "repository_full_name" column."""
-    if items.empty:
+    if items.empty or items.empty:
         return [np.ndarray([], dtype=int)]
     repocol = items[repository_full_name_column_name].values.astype("U")
     order = np.argsort(repocol)

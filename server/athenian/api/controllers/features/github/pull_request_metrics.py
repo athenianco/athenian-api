@@ -48,7 +48,7 @@ def group_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.ndarray
                   monotonically increase.
     """
     lines = np.asarray(lines)
-    if len(lines):
+    if len(lines) and not items.empty:
         assert len(lines) >= 2
         assert (np.diff(lines) > 0).all()
     else:
