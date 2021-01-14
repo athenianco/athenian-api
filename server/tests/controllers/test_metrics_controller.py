@@ -499,6 +499,42 @@ async def test_calc_metrics_prs_filter_authors(client, headers):
     assert cm.calculated[0].values[0].values[0] == 1
 
 
+async def test_calc_metrics_prs_group_authors(client, headers):
+    body = {
+        "date_from": "2017-01-01",
+        "date_to": "2017-04-11",
+        "for": [{
+            "repositories": [
+                "github.com/src-d/go-git",
+            ],
+            "withgroups": [
+                {
+                    "author": ["github.com/mcuadros"],
+                },
+                {
+                    "merger": ["github.com/mcuadros"],
+                },
+            ],
+        }],
+        "granularities": ["all"],
+        "account": 1,
+        "metrics": [PullRequestMetricID.PR_ALL_COUNT],
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
+    assert cm.calculated[0].values[0].values[0] == 13
+    assert cm.calculated[0].for_.with_.author == ["github.com/mcuadros"]
+    assert not cm.calculated[0].for_.with_.merger
+    assert cm.calculated[1].values[0].values[0] == 49
+    assert cm.calculated[1].for_.with_.merger == ["github.com/mcuadros"]
+    assert not cm.calculated[1].for_.with_.author
+
+
 async def test_calc_metrics_prs_labels_include(client, headers):
     body = {
         "date_from": "2018-09-01",

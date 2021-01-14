@@ -30,8 +30,8 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
 
-#               service                       developers                           originals
-FilterPRs = Tuple[str, Tuple[List[Set[str]], PRParticipants, LabelFilter, JIRAFilter, ForSet]]
+#               service                          developers                                originals  # noqa
+FilterPRs = Tuple[str, Tuple[List[Set[str]], List[PRParticipants], LabelFilter, JIRAFilter, ForSet]]  # noqa
 #                             repositories
 
 #                service                     developers
@@ -82,38 +82,42 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         await Settings.from_request(request, filt.account).list_release_matches(repos)
 
     @sentry_span
-    async def calculate_for_set_metrics(service, repos, devs, labels, jira, for_set):
+    async def calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_set):
         metric_values = await METRIC_ENTRIES[service]["prs_linear"](
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
-            for_set.lines or [], repos, [devs], labels, jira,
+            for_set.lines or [], repos, withgroups, labels, jira,
             filt.exclude_inactive, release_settings, filt.fresh,
             meta_ids, request.mdb, request.pdb, request.cache)
         mrange = range(len(met.metrics))
         for lines_group_index, lines_group in enumerate(metric_values):
-            for repos_group_index, repos_group in enumerate(lines_group):
-                group_for_set = for_set \
-                    .select_lines(lines_group_index) \
-                    .select_repogroup(repos_group_index)
-                for granularity, ts, mvs in zip(filt.granularities, time_intervals, repos_group):
-                    cm = CalculatedPullRequestMetricsItem(
-                        for_=group_for_set,
-                        granularity=granularity,
-                        values=[CalculatedLinearMetricValues(
-                            date=(d - tzoffset).date(),
-                            values=[mvs[i][m].value for m in mrange],
-                            confidence_mins=[mvs[i][m].confidence_min for m in mrange],
-                            confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
-                            confidence_scores=[mvs[i][m].confidence_score() for m in mrange],
-                        ) for i, d in enumerate(ts[:-1])])
-                    for v in cm.values:
-                        if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                            v.confidence_mins = None
-                            v.confidence_maxs = None
-                            v.confidence_scores = None
-                    met.calculated.append(cm)
+            for repos_group_index, with_groups in enumerate(lines_group):
+                for with_group_index, repos_group in enumerate(with_groups):
+                    group_for_set = for_set \
+                        .select_lines(lines_group_index) \
+                        .select_repogroup(repos_group_index) \
+                        .select_withgroup(with_group_index)
+                    for granularity, ts, mvs in zip(filt.granularities,
+                                                    time_intervals,
+                                                    repos_group):
+                        cm = CalculatedPullRequestMetricsItem(
+                            for_=group_for_set,
+                            granularity=granularity,
+                            values=[CalculatedLinearMetricValues(
+                                date=(d - tzoffset).date(),
+                                values=[mvs[i][m].value for m in mrange],
+                                confidence_mins=[mvs[i][m].confidence_min for m in mrange],
+                                confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
+                                confidence_scores=[mvs[i][m].confidence_score() for m in mrange],
+                            ) for i, d in enumerate(ts[:-1])])
+                        for v in cm.values:
+                            if sum(1 for c in v.confidence_scores if c is not None) == 0:
+                                v.confidence_mins = None
+                                v.confidence_maxs = None
+                                v.confidence_scores = None
+                        met.calculated.append(cm)
     tasks = []
-    for service, (repos, devs, labels, jira, for_set) in filters:
-        tasks.append(calculate_for_set_metrics(service, repos, devs, labels, jira, for_set))
+    for service, (repos, withgroups, labels, jira, for_set) in filters:
+        tasks.append(calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_set))
     await gather(*tasks)
     return model_response(met)
 
@@ -147,18 +151,22 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
             else:
                 repogroups = [set(chain.from_iterable(repos))]
             prefix = PREFIXES[service]
-            devs = {}
-            for k, v in (for_set.with_ or {}).items():
-                if not v:
-                    continue
-                devs[PRParticipationKind[k.upper()]] = dk = set()
-                for dev in v:
-                    if not dev.startswith(prefix):
-                        raise ResponseError(InvalidRequestError(
-                            detail='providers in "with" and "repositories" do not match',
-                            pointer=".for[%d].with" % i,
-                        ))
-                    dk.add(dev[len(prefix):])
+            withgroups = []
+            for with_ in (for_set.withgroups or []) + ([for_set.with_] if for_set.with_ else []):
+                withgroup = {}
+                for k, v in with_.items():
+                    if not v:
+                        continue
+                    withgroup[PRParticipationKind[k.upper()]] = dk = set()
+                    for dev in v:
+                        if not dev.startswith(prefix):
+                            raise ResponseError(InvalidRequestError(
+                                detail='providers in "with" and "repositories" do not match',
+                                pointer=".for[%d].with" % i,
+                            ))
+                        dk.add(dev[len(prefix):])
+                if withgroup:
+                    withgroups.append(withgroup)
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
             try:
                 jira = JIRAFilter.from_web(
@@ -166,7 +174,7 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
                     await get_jira_installation(account, request.sdb, request.mdb, request.cache))
             except ResponseError:
                 jira = JIRAFilter.empty()
-            filters.append((service, (repogroups, devs, labels, jira, for_set)))
+            filters.append((service, (repogroups, withgroups, labels, jira, for_set)))
     return filters, all_repos
 
 

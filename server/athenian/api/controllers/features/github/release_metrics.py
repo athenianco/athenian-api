@@ -39,9 +39,9 @@ def merge_release_participants(participants: List[ReleaseParticipants]) -> Relea
     return {k: list(v) for k, v in merged.items()}
 
 
-def group_by_participants(participants: List[ReleaseParticipants],
-                          df: pd.DataFrame,
-                          ) -> List[np.ndarray]:
+def group_releases_by_participants(participants: List[ReleaseParticipants],
+                                   df: pd.DataFrame,
+                                   ) -> List[np.ndarray]:
     """Triage releases by their contributors."""
     if not participants or df.empty:
         return [np.arange(len(df))]
