@@ -128,7 +128,7 @@ async def load_precomputed_done_candidates(time_from: datetime,
             release_settings, default_branches, prefix, result, ambiguous)
         if dump is None:
             continue
-        dump[row[ghprt.pr_node_id.key]] = row[ghprt.repository_full_name.key], None
+        dump[row[ghprt.pr_node_id.key]] = row
     result, ambiguous = _post_process_ambiguous_done_prs(result, ambiguous)
     return set(result), ambiguous
 
@@ -239,11 +239,17 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
              2. Map from repository name to ambiguous PR node IDs which are released by \
              branch with tag_or_branch strategy and without tags on the time interval.
     """
+    ghdprf = GitHubDonePullRequestFacts
     result, ambiguous = await _load_precomputed_done_filters(
-        GitHubDonePullRequestFacts.data, time_from, time_to, repos, participants, labels,
+        [ghdprf.data, ghdprf.author, ghdprf.merger, ghdprf.releaser],
+        time_from, time_to, repos, participants, labels,
         default_branches, exclude_inactive, release_settings, pdb)
-    for node_id, (repo, data) in result.items():
-        result[node_id] = pickle.loads(data).with_repository_full_name(repo)
+    for node_id, map in result.items():
+        result[node_id] = pickle.loads(map[ghdprf.data.key]) \
+            .with_repository_full_name(map[ghdprf.repository_full_name.key]) \
+            .with_author(map[ghdprf.author.key]) \
+            .with_merger(map[ghdprf.merger.key]) \
+            .with_releaser(map[ghdprf.releaser.key])
     return result, ambiguous
 
 
@@ -267,10 +273,11 @@ async def load_precomputed_done_timestamp_filters(time_from: datetime,
              branch with tag_or_branch strategy and without tags on the time interval.
     """
     result, ambiguous = await _load_precomputed_done_filters(
-        GitHubDonePullRequestFacts.pr_done_at, time_from, time_to, repos, participants, labels,
+        [GitHubDonePullRequestFacts.pr_done_at], time_from, time_to, repos, participants, labels,
         default_branches, exclude_inactive, release_settings, pdb)
     sqlite = pdb.url.dialect == "sqlite"
-    for node_id, (_, dt) in result.items():
+    for node_id, row in result.items():
+        dt = row[GitHubDonePullRequestFacts.pr_done_at.key]
         if sqlite:
             dt = dt.replace(tzinfo=timezone.utc)
         result[node_id] = dt
@@ -298,7 +305,7 @@ def remove_ambiguous_prs(prs: Dict[str, Any],
 
 
 @sentry_span
-async def _load_precomputed_done_filters(column: InstrumentedAttribute,
+async def _load_precomputed_done_filters(columns: List[InstrumentedAttribute],
                                          time_from: datetime,
                                          time_to: datetime,
                                          repos: Collection[str],
@@ -308,7 +315,7 @@ async def _load_precomputed_done_filters(column: InstrumentedAttribute,
                                          exclude_inactive: bool,
                                          release_settings: Dict[str, ReleaseMatchSetting],
                                          pdb: databases.Database,
-                                         ) -> Tuple[Dict[str, Tuple[str, Any]],
+                                         ) -> Tuple[Dict[str, Mapping[str, Any]],
                                                     Dict[str, List[str]]]:
     """
     Load some data belonging to released or rejected PRs from the precomputed DB.
@@ -323,7 +330,7 @@ async def _load_precomputed_done_filters(column: InstrumentedAttribute,
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match,
-                column]
+                ] + columns
     match_groups, _ = group_repos_by_release_match(repos, default_branches, release_settings)
     match_groups[ReleaseMatch.rejected] = match_groups[ReleaseMatch.force_push_drop] = {"": repos}
     or_items, _ = match_groups_to_sql(match_groups, ghprt)
@@ -365,13 +372,13 @@ async def _load_precomputed_done_filters(column: InstrumentedAttribute,
                                  for d in row[ghprt.activity_days.key]}
                 if not activity_days.intersection(date_range):
                     continue
-        dump[row[ghprt.pr_node_id.key]] = repo, row[column.key]
+        dump[row[ghprt.pr_node_id.key]] = row
     return _post_process_ambiguous_done_prs(result, ambiguous)
 
 
-def _post_process_ambiguous_done_prs(result: Dict[str, Tuple[str, Any]],
+def _post_process_ambiguous_done_prs(result: Dict[str, Mapping[str, Any]],
                                      ambiguous: Dict[ReleaseMatch, Dict[str, Tuple[str, Any]]],
-                                     ) -> Tuple[Dict[str, Tuple[str, Any]],
+                                     ) -> Tuple[Dict[str, Mapping[str, Any]],
                                                 Dict[str, List[str]]]:
     """Figure out what to do with uncertain `tag_or_branch` release matches."""
     result.update(ambiguous[ReleaseMatch.tag.name])
@@ -379,9 +386,10 @@ def _post_process_ambiguous_done_prs(result: Dict[str, Tuple[str, Any]],
     # This means that we are going to load tags in load_releases().
     confirmed_tag_repos = {p[0] for p in ambiguous[ReleaseMatch.tag.name].values()}
     ambiguous_prs = defaultdict(list)
-    for node_id, (repo, whatever) in ambiguous[ReleaseMatch.branch.name].items():
+    for node_id, map in ambiguous[ReleaseMatch.branch.name].items():
+        repo = map[GitHubDonePullRequestFacts.repository_full_name.key]
         if repo not in confirmed_tag_repos:
-            result[node_id] = repo, whatever
+            result[node_id] = map
             ambiguous_prs[repo].append(node_id)
     return result, ambiguous_prs
 
@@ -426,7 +434,11 @@ async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match,
-                ghprt.data]
+                ghprt.data,
+                ghprt.author,
+                ghprt.merger,
+                ghprt.releaser,
+                ]
     format_version_filter = \
         ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg
     if pdb.url.dialect == "sqlite":
@@ -460,8 +472,11 @@ async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
             result, ambiguous)
         if dump is None:
             continue
-        dump[row[ghprt.pr_node_id.key]] = \
-            pickle.loads(row[ghprt.data.key]).with_repository_full_name(repo)
+        dump[row[ghprt.pr_node_id.key]] = pickle.loads(row[ghprt.data.key]) \
+            .with_repository_full_name(repo) \
+            .with_author(row[ghprt.author.key]) \
+            .with_merger(row[ghprt.merger.key]) \
+            .with_releaser(row[ghprt.releaser.key])
     return _post_process_ambiguous_done_prs(result, ambiguous)
 
 
@@ -692,7 +707,12 @@ async def load_merged_unreleased_pull_request_facts(
     log = logging.getLogger("%s.load_merged_unreleased_pull_request_facts" % metadata.__package__)
     ghmprf = GitHubMergedPullRequestFacts
     postgres = pdb.url.dialect in ("postgres", "postgresql")
-    selected = [ghmprf.pr_node_id, ghmprf.repository_full_name, ghmprf.data]
+    selected = [ghmprf.pr_node_id,
+                ghmprf.repository_full_name,
+                ghmprf.data,
+                ghmprf.author,
+                ghmprf.merger,
+                ]
     default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
     common_filters = [
         ghmprf.checked_until >= time_to,
@@ -749,8 +769,10 @@ async def load_merged_unreleased_pull_request_facts(
         if labels and not _labels_are_compatible(
                 include_singles, include_multiples, labels.exclude, row[ghmprf.labels.key]):
             continue
-        facts[node_id] = pickle.loads(data).with_repository_full_name(
-            row[ghmprf.repository_full_name.key])
+        facts[node_id] = pickle.loads(data) \
+            .with_repository_full_name(row[ghmprf.repository_full_name.key]) \
+            .with_author(row[ghmprf.author.key]) \
+            .with_merger(row[ghmprf.merger.key])
     return facts
 
 
@@ -1006,10 +1028,17 @@ async def load_open_pull_request_facts(prs: pd.DataFrame,
     """
     open_indexes = np.nonzero(prs[PullRequest.closed_at.key].isnull().values)[0]
     node_ids = prs.index.take(open_indexes)
+    authors = dict(zip(node_ids, prs[PullRequest.user_login.key].values[open_indexes]))
     ghoprf = GitHubOpenPullRequestFacts
     default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
+    selected = [
+        ghoprf.pr_node_id,
+        ghoprf.pr_updated_at,
+        ghoprf.repository_full_name,
+        ghoprf.data,
+    ]
     rows = await pdb.fetch_all(
-        select([ghoprf.pr_node_id, ghoprf.pr_updated_at, ghoprf.repository_full_name, ghoprf.data])
+        select(selected)
         .where(and_(ghoprf.pr_node_id.in_(node_ids),
                     ghoprf.format_version == default_version)))
     if not rows:
@@ -1026,7 +1055,8 @@ async def load_open_pull_request_facts(prs: pd.DataFrame,
         node_id = row[ghoprf.pr_node_id.key]
         if node_id in passed_node_ids:
             facts[node_id] = pickle.loads(row[ghoprf.data.key]) \
-                .with_repository_full_name(row[ghoprf.repository_full_name.key])
+                .with_repository_full_name(row[ghoprf.repository_full_name.key]) \
+                .with_author(authors[node_id])
     return facts
 
 
@@ -1035,6 +1065,7 @@ async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
                                                time_from: datetime,
                                                time_to: datetime,
                                                exclude_inactive: bool,
+                                               authors: Mapping[str, str],
                                                pdb: databases.Database,
                                                ) -> Dict[str, PullRequestFacts]:
     """
@@ -1042,6 +1073,7 @@ async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
 
     We don't filter PRs by the last update here.
 
+    :param authors: Map from PR node IDs to their author logins.
     :return: Map from PR node IDs to their facts.
     """
     postgres = pdb.url.dialect in ("postgres", "postgresql")
@@ -1062,9 +1094,10 @@ async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
                              for d in row[ghoprf.activity_days.key]}
             if not activity_days.intersection(date_range):
                 continue
-        facts[row[ghoprf.pr_node_id.key].rstrip()] = \
-            pickle.loads(row[ghoprf.data.key]).with_repository_full_name(
-                row[ghoprf.repository_full_name.key])
+        node_id = row[ghoprf.pr_node_id.key].rstrip()
+        facts[node_id] = pickle.loads(row[ghoprf.data.key]) \
+            .with_repository_full_name(row[ghoprf.repository_full_name.key]) \
+            .with_author(authors[node_id])
     return facts
 
 

@@ -2916,7 +2916,7 @@ components:
         withgroups:
           description: |-
             Aggregate by groups of PR contributors.
-            Currently, only the grouping by `author` is supported.
+            Currently, only the groupings by `author`, `merger`, and `releaser` are supported.
             People do not have to be mentioned in `with` in contrast to `repogroups`.
           items:
             $ref: '#/components/schemas/PullRequestWith'

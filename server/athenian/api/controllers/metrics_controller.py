@@ -85,7 +85,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     async def calculate_for_set_metrics(service, repos, devs, labels, jira, for_set):
         metric_values = await METRIC_ENTRIES[service]["prs_linear"](
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
-            for_set.lines or [], repos, devs, labels, jira,
+            for_set.lines or [], repos, [devs], labels, jira,
             filt.exclude_inactive, release_settings, filt.fresh,
             meta_ids, request.mdb, request.pdb, request.cache)
         mrange = range(len(met.metrics))
