@@ -40,8 +40,8 @@ def schedule_pdb_schema_check(pdb: databases.Database,
                 log.error("pdb schema unsync: declared %s but actual is %s", req_rev, real_rev)
             else:
                 log.debug("Checked")
-        task_box[0] = asyncio.create_task(pdb_schema_check_callback())
+        task_box[0] = asyncio.create_task(pdb_schema_check_callback(), name="pdb_schema_check")
 
-    task_box[0] = asyncio.create_task(pdb_schema_check_callback())
+    task_box[0] = asyncio.create_task(pdb_schema_check_callback(), name="pdb_schema_check")
     log.info("Scheduled regular pdb schema version checks once per %ds" % interval)
     return task_box

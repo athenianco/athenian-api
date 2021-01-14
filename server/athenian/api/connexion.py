@@ -92,6 +92,15 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
         return api_req
 
 
+class AthenianWebApplication(aiohttp.web.Application):
+    """Lower-level aiohttp application class with tweaks."""
+
+    def _make_request(self, *args, **kwargs) -> aiohttp.web.Request:
+        request = super()._make_request(*args, **kwargs)
+        asyncio.current_task().set_name("top %s %s" % (request.method, request.path))
+        return request
+
+
 class ServerCrashedError(GenericError):
     """HTTP 500."""
 
@@ -124,12 +133,7 @@ class ServiceUnavailableError(GenericError):
 
 
 class AthenianApp(connexion.AioHttpApp):
-    """
-    Athenian API application.
-
-    We need to override create_app() so that we can inject arbitrary middleware.
-    Besides, we simplify the class construction, especially the DB connection.
-    """
+    """Athenian API connexion application, everything roots here."""
 
     log = logging.getLogger(metadata.__package__)
 
@@ -274,6 +278,10 @@ class AthenianApp(connexion.AioHttpApp):
                 f.cancel()
             await self._cache.close()
 
+    def create_app(self):
+        """Override create_app to control the lower-level class."""
+        return AthenianWebApplication(**self.server_args)
+
     @property
     def auth0(self):
         """Return the own Auth0 class instance."""
@@ -311,8 +319,7 @@ class AthenianApp(connexion.AioHttpApp):
     async def postprocess_response(self, request: aiohttp.web.Request, handler,
                                    ) -> aiohttp.web.Response:
         """Append X-Backend-Server HTTP header."""
-        with sentry_sdk.start_span(op=handler.__qualname__):
-            response = await handler(request)  # type: aiohttp.web.Response
+        response = await handler(request)  # type: aiohttp.web.Response
         response.headers.add("X-Backend-Server", self.server_name)
         try:
             if len(response.body) > 1000:
@@ -336,11 +343,17 @@ class AthenianApp(connexion.AioHttpApp):
                 detail="This server is shutting down, please repeat your request.",
             )).response
 
+        asyncio.current_task().set_name("entry %s %s" % (request.method, request.path))
         return await asyncio.shield(self._shielded(request, handler))
 
     async def _shielded(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
+        asyncio.current_task().set_name("shield %s %s" % (request.method, request.path))
         self._requests += 1
         enable_defer(explicit_launch=not self._devenv)
+        with sentry_sdk.configure_scope() as scope:
+            tasks = sorted(t.get_name() for t in asyncio.all_tasks())
+            scope.set_extra("asyncio.all_tasks", tasks)
+            scope.set_extra("concurrent requests", self._requests)
         try:
             return await handler(request)
         except bdb.BdbQuit:
@@ -394,7 +407,9 @@ class AthenianApp(connexion.AioHttpApp):
                     self.log.error("Failed to execute the manhole code: %s: %s",
                                    type(e).__name__, e)
                     # we continue the execution
-        return await handler(request)
+        asyncio.current_task().set_name(handler.__qualname__)
+        with sentry_sdk.start_span(op=handler.__qualname__):
+            return await handler(request)
 
     def _setup_survival(self):
         self._shutting_down = False

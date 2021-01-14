@@ -1,4 +1,4 @@
-from asyncio import ensure_future, Event, shield, sleep, wait
+from asyncio import current_task, ensure_future, Event, shield, sleep, wait
 from contextvars import ContextVar
 import logging
 from typing import Coroutine, List, Optional
@@ -116,7 +116,9 @@ async def defer(coroutine: Coroutine, name: str) -> None:
     transaction_ptr = _defer_transaction.get()
 
     async def wrapped_defer():
+        current_task().set_name("defer[wait] " + name)
         await launch_event.wait()
+        current_task().set_name("defer " + name)
         transaction = transaction_ptr[0]  # type: Transaction
         try:
             with transaction.start_child(op=name):
