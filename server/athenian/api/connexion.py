@@ -351,7 +351,10 @@ class AthenianApp(connexion.AioHttpApp):
         self._requests += 1
         enable_defer(explicit_launch=not self._devenv)
         with sentry_sdk.configure_scope() as scope:
-            tasks = sorted(t.get_name() for t in asyncio.all_tasks())
+            tasks = sorted((t.get_name()
+                            if not t.get_name().startswith("Task-")
+                            else t.get_coro().__qualname__)
+                           for t in asyncio.all_tasks())
             scope.set_extra("asyncio.all_tasks", tasks)
             scope.set_extra("concurrent requests", self._requests)
         try:
