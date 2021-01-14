@@ -65,6 +65,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         "repositories": List[str],
         "repogroups": Optional[List[List[int]]],
         "with_": Optional[PullRequestWith],
+        "withgroups": Optional[List[PullRequestWith]],
         "labels_include": Optional[List[str]],
         "labels_exclude": Optional[List[str]],
         "jira": Optional[JIRAFilter],
@@ -75,6 +76,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         "repositories": "repositories",
         "repogroups": "repogroups",
         "with_": "with",
+        "withgroups": "withgroups",
         "labels_include": "labels_include",
         "labels_exclude": "labels_exclude",
         "jira": "jira",
@@ -86,6 +88,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         repositories: Optional[List[str]] = None,
         repogroups: Optional[List[List[int]]] = None,
         with_: Optional[PullRequestWith] = None,
+        withgroups: Optional[List[PullRequestWith]] = None,
         labels_include: Optional[List[str]] = None,
         labels_exclude: Optional[List[str]] = None,
         jira: Optional[JIRAFilter] = None,
@@ -96,6 +99,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         :param repositories: The repositories of this ForSet.
         :param repogroups: The repogroups of this ForSet.
         :param with_: The with of this ForSet.
+        :param withgroups: The withgroups of this ForSet.
         :param labels_include: The labels_include of this ForSet.
         :param labels_exclude: The labels_exclude of this ForSet.
         :param jira: The jira of this ForSet.
@@ -104,6 +108,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         self._repositories = repositories
         self._repogroups = repogroups
         self._with_ = with_
+        self._withgroups = withgroups
         self._labels_include = labels_include
         self._labels_exclude = labels_exclude
         self._jira = jira
@@ -136,7 +141,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         self._repositories = repositories
 
     @property
-    def with_(self) -> PullRequestWith:
+    def with_(self) -> Optional[PullRequestWith]:
         """Gets the with_ of this PullRequest.
 
         List of developers related to this PR.
@@ -146,7 +151,7 @@ class ForSet(Model, RepositoryGroupsMixin):
         return self._with_
 
     @with_.setter
-    def with_(self, with_: PullRequestWith):
+    def with_(self, with_: Optional[PullRequestWith]):
         """Sets the with_ of this PullRequest.
 
         List of developers related to this PR.
@@ -154,6 +159,26 @@ class ForSet(Model, RepositoryGroupsMixin):
         :param with_: The with_ of this PullRequest.
         """
         self._with_ = with_
+
+    @property
+    def withgroups(self) -> Optional[List[PullRequestWith]]:
+        """Gets the withgroups of this PullRequest.
+
+        List of developers related to this PR.
+
+        :return: The withgroups of this PullRequest.
+        """
+        return self._withgroups
+
+    @withgroups.setter
+    def withgroups(self, withgroups: Optional[List[PullRequestWith]]):
+        """Sets the withgroups of this PullRequest.
+
+        List of developers related to this PR.
+
+        :param withgroups: The withgroups of this PullRequest.
+        """
+        self._withgroups = withgroups
 
     @property
     def labels_include(self) -> Optional[List[str]]:
