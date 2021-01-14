@@ -216,6 +216,9 @@ class PullRequestFacts:
     # Mutable optional fields go below.
     jira_id: Optional[str] = None
     repository_full_name: Optional[str] = None
+    author: Optional[str] = None
+    merger: Optional[str] = None
+    releaser: Optional[str] = None
 
     def max_timestamp(self) -> pd.Timestamp:
         """Find the maximum timestamp contained in the struct."""

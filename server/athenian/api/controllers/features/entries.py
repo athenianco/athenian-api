@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime
-from functools import partial
+from functools import partial, reduce
 from itertools import chain
 import pickle
 from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
@@ -263,7 +263,8 @@ async def calc_pull_request_facts_github(time_from: datetime,
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
         ",".join(str(q) for q in quantiles),
         ",".join(str(sorted(r)) for r in repositories),
-        ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+        ";".join(",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items()))
+                 for p in participants),
         labels, jira,
         exclude_inactive,
         release_settings,
@@ -274,7 +275,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 quantiles: Sequence[float],
                                                 lines: Sequence[int],
                                                 repositories: Sequence[Collection[str]],
-                                                participants: PRParticipants,
+                                                participants: List[PRParticipants],
                                                 labels: LabelFilter,
                                                 jira: JIRAFilter,
                                                 exclude_inactive: bool,
@@ -288,14 +289,21 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
     """
     Calculate pull request metrics on GitHub.
 
-    :return: lines x repositories x granularities x time intervals x metrics.
+    :return: lines x repositories x participants x granularities x time intervals x metrics.
     """
     assert isinstance(repositories, (tuple, list))
     all_repositories = set(chain.from_iterable(repositories))
+    if participants:
+        all_participants = {}
+        for k in PRParticipationKind:
+            if kp := reduce(lambda x, y: x.union(y), [p.get(k, set()) for p in participants]):
+                all_participants[k] = kp
+    else:
+        all_participants = {}
     calc = PullRequestBinnedMetricCalculator(metrics, quantiles, exclude_inactive=exclude_inactive)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
-        time_from, time_to, all_repositories, participants, labels, jira, exclude_inactive,
+        time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
         release_settings, fresh, need_jira_mapping(metrics), meta_ids, mdb, pdb, cache)
     df_facts = df_from_dataclasses(mined_facts)
     repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)

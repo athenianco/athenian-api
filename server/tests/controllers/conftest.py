@@ -144,6 +144,15 @@ class FakeFacts:
     def with_repository_full_name(self, _):
         return self
 
+    def with_author(self, _):
+        return self
+
+    def with_merger(self, _):
+        return self
+
+    def with_releaer(self, _):
+        return self
+
 
 async def fetch_dag(mdb, heads=None):
     if heads is None:

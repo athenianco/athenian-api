@@ -263,3 +263,16 @@ class ForSet(Model, RepositoryGroupsMixin):
             raise IndexError("%d is out of range (max is %d)" % (index, len(self.lines) - 1))
         fs.lines = [fs.lines[index], fs.lines[index + 1]]
         return fs
+
+    def select_with(self, index: int) -> "ForSet":
+        """Change `with` to point at the specified `withgroup`."""
+        fs = self.copy()
+        if self.withgroups is None:
+            if index > 0:
+                raise IndexError("%d is out of range (no withgroups)" % index)
+            return fs
+        if index >= len(self.withgroups) - 1:
+            raise IndexError("%d is out of range (max is %d)" % (index, len(self.withgroups) - 1))
+        fs.with_ = self.withgroups[index]
+        fs.withgroups = None
+        return fs

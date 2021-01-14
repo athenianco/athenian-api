@@ -1279,6 +1279,9 @@ class PullRequestFactsMiner:
             size=size,
             force_push_dropped=force_push_dropped,
             repository_full_name=pr.pr[PullRequest.repository_full_name.key],
+            author=pr.pr[PullRequest.user_login.key],
+            merger=pr.pr[PullRequest.merged_by_login.key],
+            releaser=pr.release[Release.author.key],
         )
         self._validate(facts, pr.pr[PullRequest.htmlurl.key])
         return facts

@@ -58,6 +58,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
             time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
             blacklist, meta_ids, mdb, cache, columns=[
                 PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
+                PullRequest.user_login,
             ]),
     ]
     if jira and done_facts:
@@ -81,14 +82,17 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
     add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
                    remove_ambiguous_prs(done_facts, ambiguous, matched_bys))
     unreleased_pr_node_ids = unreleased_prs.index.values
-    merged_mask = unreleased_prs[PullRequest.merged_at.key].notnull()
+    merged_mask = unreleased_prs[PullRequest.merged_at.key].notnull().values
     open_prs = unreleased_pr_node_ids[~merged_mask]
+    open_pr_authors = dict(zip(
+        open_prs, unreleased_prs[PullRequest.user_login.key].values[~merged_mask]))
     merged_prs = \
         unreleased_prs[[PullRequest.repository_full_name.key]].take(np.where(merged_mask)[0])
     if not inactive_merged_prs.empty:
         merged_prs = pd.concat([merged_prs, inactive_merged_prs])
     tasks = [
-        load_open_pull_request_facts_unfresh(open_prs, time_from, time_to, exclude_inactive, pdb),
+        load_open_pull_request_facts_unfresh(
+            open_prs, time_from, time_to, exclude_inactive, open_pr_authors, pdb),
         load_merged_unreleased_pull_request_facts(
             merged_prs, time_to, LabelFilter.empty(), matched_bys,
             default_branches, release_settings, pdb,
