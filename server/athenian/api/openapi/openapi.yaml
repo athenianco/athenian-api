@@ -2913,6 +2913,14 @@ components:
           $ref: '#/components/schemas/RepositoryGroups'
         with:
           $ref: '#/components/schemas/PullRequestWith'
+        withgroups:
+          description: |-
+            Aggregate by groups of PR contributors.
+            Currently, only the grouping by `author` is supported.
+            People do not have to be mentioned in `with` in contrast to `repogroups`.
+          items:
+            $ref: '#/components/schemas/PullRequestWith'
+          type: array
         labels_include:
           description: At least one of these labels must be present in each analyzed
             PR.
