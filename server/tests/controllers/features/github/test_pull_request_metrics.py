@@ -341,7 +341,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
     args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, False, (6366825,), mdb, pdb, cache)
-    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     await wait_deferred()
     assert await calc_pull_request_metrics_line_github.reset_cache(*args)
     if with_mine_cache_wipe:
@@ -349,7 +349,7 @@ async def test_calc_pull_request_metrics_line_github_cache(
             None, date_from, date_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
             JIRAFilter.empty(), branches, default_branches,
             False, release_match_setting_tag, None, None, None, True, (6366825,), mdb, pdb, cache)
-    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     assert metrics1.exists and metrics2.exists
     assert metrics1.value == metrics2.value
     assert metrics1.confidence_score() == metrics2.confidence_score()
@@ -364,12 +364,12 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
     args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, False, (6366825,), mdb, pdb, cache]
-    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     release_match_setting_tag = {
         "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
     }
     args[-6] = release_match_setting_tag
-    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     assert metrics1 != metrics2
 
 
@@ -383,13 +383,13 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]], [0, 1], [],
         [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
         release_match_setting_tag, False, (6366825,), mdb, pdb, None,
-    ))[0][0][0][0][0].value
+    ))[0][0][0][0][0][0].value
     await wait_deferred()
     metric2 = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]], [0, 1], [],
         [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
         release_match_setting_tag, False, (6366825,), mdb, pdb, None,
-    ))[0][0][0][0][0].value
+    ))[0][0][0][0][0][0].value
     await wait_deferred()
     metric1_ext, metric2_ext = (m[0].value for m in (
         await calc_pull_request_metrics_line_github(
@@ -397,7 +397,7 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
             [0, 1], [], [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, False, (6366825,), mdb, pdb, None,
         )
-    )[0][0][0])
+    )[0][0][0][0])
     assert metric1 == metric1_ext
     assert metric2 == metric2_ext
 
@@ -410,11 +410,11 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, False, (6366825,), mdb, pdb, cache]
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == 7
     args[8] = True
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == 6
     date_from = datetime(year=2017, month=5, day=23, tzinfo=timezone.utc)
@@ -422,14 +422,14 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     args[0] = [PullRequestMetricID.PR_RELEASE_COUNT]
     args[1] = [[date_from, date_to]]
     args[8] = False
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == 70
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == 70
     args[8] = True
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     assert metrics.value == 71
 
 
@@ -441,11 +441,11 @@ async def test_calc_pull_request_metrics_line_github_tag_after_branch(
     args = [[PullRequestMetricID.PR_RELEASE_TIME], [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_branch, False, (6366825,), mdb, pdb, cache]
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == timedelta(seconds=395)
     args[-6] = release_match_setting_tag_or_branch
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     assert metrics.value == timedelta(days=41, seconds=19129)
 
 
@@ -462,7 +462,7 @@ async def test_calc_pull_request_metrics_line_jira_map(
     args = [metrics, [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag_or_branch, False, (6366825,), mdb, pdb, cache]
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0]
+    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
     await wait_deferred()
     assert metrics[0].value == 0.02527075812274368
     assert metrics[1].value == 0.01195219123505976
@@ -489,38 +489,77 @@ async def test_calc_pull_request_metrics_deep_filters(
             False, settings, False, (6366825,), mdb, pdb, cache]
     # 1. line: 2 groups
     # 2. repository: 3 groups
-    # 3. time series primary: 2 groups
-    # 4. time series secondary: 1 and 2 groups
-    # 5. metrics: 3 groups
+    # 3. participants: 1 group
+    # 4. time series primary: 2 groups
+    # 5. time series secondary: 1 and 2 groups
+    # 6. metrics: 3 groups
     metrics = (await calc_pull_request_metrics_line_github(*args))
-    ground_truth = np.array(
-        [[
-            [[[Metric(exists=True, value=134, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=131, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=110, confidence_min=None, confidence_max=None)]],
-             [[Metric(exists=True, value=65, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=62, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=54, confidence_min=None, confidence_max=None)],
-              [Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=56, confidence_min=None, confidence_max=None)]]],
-            *[[[[Metric(exists=True, value=0, confidence_min=None, confidence_max=None)] * 3],
-              [[Metric(exists=True, value=0, confidence_min=None, confidence_max=None)] * 3] * 2],
-              ] * 2,
-        ], [
-            [[[Metric(exists=True, value=142, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=142, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=130, confidence_min=None, confidence_max=None)]],
-             [[Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=70, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=64, confidence_min=None, confidence_max=None)],
-              [Metric(exists=True, value=73, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=72, confidence_min=None, confidence_max=None),
-               Metric(exists=True, value=66, confidence_min=None, confidence_max=None)]]],
-            *[[[[Metric(exists=True, value=0, confidence_min=None, confidence_max=None)] * 3],
-              [[Metric(exists=True, value=0, confidence_min=None, confidence_max=None)] * 3] * 2],
-              ] * 2,
-        ]], dtype=object)
+    ground_truth = np.array([
+        [  # line group 1
+            [  # repository group 1
+                [  # participants group 1
+                    [  # time series primary 1
+                        [Metric(exists=True, value=134, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=131, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=110, confidence_min=None, confidence_max=None)],
+                    ],
+                    [  # time series primary 2
+                        [Metric(exists=True, value=65, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=62, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=54, confidence_min=None, confidence_max=None)],
+                        [Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=56, confidence_min=None, confidence_max=None)],
+                    ],
+                ],
+            ],
+            # repository group 2 and 3
+            *[[  # repository group
+                [  # participants group 1
+                    [  # time series primary 1
+                        [Metric(exists=True, value=0, confidence_min=None,
+                                confidence_max=None)] * 3,
+                    ],
+                    [  # time series primary 2
+                        [Metric(exists=True, value=0, confidence_min=None,
+                                confidence_max=None)] * 3,
+                    ] * 2,
+                ],
+            ]] * 2,
+        ],
+        [  # line group 2
+            [  # repository group 1
+                [  # participants group 1
+                    [  # time series primary 1
+                        [Metric(exists=True, value=142, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=142, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=130, confidence_min=None, confidence_max=None)],
+                    ],
+                    [  # time series primary 2
+                        [Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=70, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=64, confidence_min=None, confidence_max=None)],
+                        [Metric(exists=True, value=73, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=72, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=66, confidence_min=None, confidence_max=None)],
+                    ],
+                ],
+            ],
+            # repository group 2 and 3
+            *[[  # repository group
+                [  # participants group 1
+                    [  # time series primary 1
+                        [Metric(exists=True, value=0, confidence_min=None,
+                                confidence_max=None)] * 3,
+                    ],
+                    [  # time series primary 2
+                        [Metric(exists=True, value=0, confidence_min=None,
+                                confidence_max=None)] * 3,
+                    ] * 2,
+                ],
+            ]] * 2,
+        ],
+    ], dtype=object)
     np.testing.assert_array_equal(np.array(metrics.tolist(), dtype=object), ground_truth)
 
 

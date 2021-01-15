@@ -30,7 +30,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     result = []
 
-    async def calculate_for_set_histograms(service, repos, devs, labels, jira, for_set):
+    async def calculate_for_set_histograms(service, repos, withgroups, labels, jira, for_set):
         # for each filter, we find the functions to calculate the histograms
         defs = defaultdict(list)
         for h in filt.histograms:
@@ -42,28 +42,31 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         try:
             histograms = await METRIC_ENTRIES[service]["prs_histogram"](
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
-                repos, devs, labels, jira, filt.exclude_inactive, release_settings,
+                repos, withgroups, labels, jira, filt.exclude_inactive, release_settings,
                 filt.fresh, meta_ids, request.mdb, request.pdb, request.cache)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(str(e))) from None
         for line_groups in histograms:
             for line_group_index, repo_groups in enumerate(line_groups):
-                for repo_group_index, repo_histograms in enumerate(repo_groups):
-                    group_for_set = for_set \
-                        .select_lines(line_group_index) \
-                        .select_repogroup(repo_group_index)
-                    for metric, histogram in sorted(repo_histograms):
-                        result.append(CalculatedPullRequestHistogram(
-                            for_=group_for_set,
-                            metric=metric,
-                            scale=histogram.scale.name.lower(),
-                            ticks=histogram.ticks,
-                            frequencies=histogram.frequencies,
-                            interquartile=Interquartile(*histogram.interquartile),
-                        ))
+                for repo_group_index, with_groups in enumerate(repo_groups):
+                    for with_group_index, repo_histograms in enumerate(with_groups):
+                        group_for_set = for_set \
+                            .select_lines(line_group_index) \
+                            .select_repogroup(repo_group_index) \
+                            .select_withgroup(with_group_index)
+                        for metric, histogram in sorted(repo_histograms):
+                            result.append(CalculatedPullRequestHistogram(
+                                for_=group_for_set,
+                                metric=metric,
+                                scale=histogram.scale.name.lower(),
+                                ticks=histogram.ticks,
+                                frequencies=histogram.frequencies,
+                                interquartile=Interquartile(*histogram.interquartile),
+                            ))
 
     tasks = []
-    for service, (repos, devs, labels, jira, for_set) in filters:
-        tasks.append(calculate_for_set_histograms(service, repos, devs, labels, jira, for_set))
+    for service, (repos, withgroups, labels, jira, for_set) in filters:
+        tasks.append(calculate_for_set_histograms(
+            service, repos, withgroups, labels, jira, for_set))
     await gather(*tasks)
     return model_response(result)

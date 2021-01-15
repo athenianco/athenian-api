@@ -17,10 +17,11 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.pull_request_metrics import \
-    group_by_lines, need_jira_mapping, PullRequestBinnedHistogramCalculator, \
+    group_by_lines, group_prs_by_participants, need_jira_mapping, \
+    PullRequestBinnedHistogramCalculator, \
     PullRequestBinnedMetricCalculator
 from athenian.api.controllers.features.github.release_metrics import \
-    group_by_participants, merge_release_participants, ReleaseBinnedMetricCalculator
+    group_releases_by_participants, merge_release_participants, ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     fetch_pull_request_facts_unfresh
 from athenian.api.controllers.features.histogram import HistogramParameters
@@ -252,6 +253,29 @@ async def calc_pull_request_facts_github(time_from: datetime,
     ))[0]
 
 
+def _merge_repositories_and_participants(repositories: Sequence[Collection[str]],
+                                         participants: List[PRParticipants],
+                                         ) -> Tuple[Set[str], PRParticipants]:
+    all_repositories = set(chain.from_iterable(repositories))
+    if participants:
+        all_participants = {}
+        for k in PRParticipationKind:
+            if kp := reduce(lambda x, y: x.union(y), [p.get(k, set()) for p in participants]):
+                all_participants[k] = kp
+    else:
+        all_participants = {}
+    return all_repositories, all_participants
+
+
+def _compose_cache_key_repositories(repositories: Sequence[Collection[str]]) -> str:
+    return ",".join(str(sorted(r)) for r in repositories)
+
+
+def _compose_cache_key_participants(participants: List[PRParticipants]) -> str:
+    return ";".join(",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items()))
+                    for p in participants)
+
+
 @sentry_span
 @cached(
     exptime=PullRequestMiner.CACHE_TTL,
@@ -262,9 +286,8 @@ async def calc_pull_request_facts_github(time_from: datetime,
         ",".join(sorted(metrics)),
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
         ",".join(str(q) for q in quantiles),
-        ",".join(str(sorted(r)) for r in repositories),
-        ";".join(",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items()))
-                 for p in participants),
+        _compose_cache_key_repositories(repositories),
+        _compose_cache_key_participants(participants),
         labels, jira,
         exclude_inactive,
         release_settings,
@@ -292,14 +315,8 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
     :return: lines x repositories x participants x granularities x time intervals x metrics.
     """
     assert isinstance(repositories, (tuple, list))
-    all_repositories = set(chain.from_iterable(repositories))
-    if participants:
-        all_participants = {}
-        for k in PRParticipationKind:
-            if kp := reduce(lambda x, y: x.union(y), [p.get(k, set()) for p in participants]):
-                all_participants[k] = kp
-    else:
-        all_participants = {}
+    all_repositories, all_participants = \
+        _merge_repositories_and_participants(repositories, participants)
     calc = PullRequestBinnedMetricCalculator(metrics, quantiles, exclude_inactive=exclude_inactive)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
@@ -307,7 +324,8 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
         release_settings, fresh, need_jira_mapping(metrics), meta_ids, mdb, pdb, cache)
     df_facts = df_from_dataclasses(mined_facts)
     repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
-    groups = group_to_indexes(df_facts, partial(group_by_lines, lines), repo_grouper)
+    with_grouper = partial(group_prs_by_participants, participants)
+    groups = group_to_indexes(df_facts, partial(group_by_lines, lines), repo_grouper, with_grouper)
     return calc(df_facts, time_intervals, groups)
 
 
@@ -342,8 +360,8 @@ async def calc_code_metrics_github(prop: FilterCommitsProperty,
         ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
         time_from, time_to,
         ",".join(str(q) for q in quantiles),
-        ",".join(str(sorted(r)) for r in repositories),
-        ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+        _compose_cache_key_repositories(repositories),
+        _compose_cache_key_participants(participants),
         labels, jira,
         exclude_inactive,
         release_settings,
@@ -355,7 +373,7 @@ async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, Li
                                               quantiles: Sequence[float],
                                               lines: Sequence[int],
                                               repositories: Sequence[Collection[str]],
-                                              participants: PRParticipants,
+                                              participants: List[PRParticipants],
                                               labels: LabelFilter,
                                               jira: JIRAFilter,
                                               exclude_inactive: bool,
@@ -369,27 +387,30 @@ async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, Li
     """
     Calculate the pull request histograms on GitHub.
 
-    :return: len(defs) x len(lines) * len(repositories) -> List[Tuple[metric ID, Histogram]].
+    :return: defs x lines x repositories x participants -> List[Tuple[metric ID, Histogram]].
     """
-    all_repositories = set(chain.from_iterable(repositories))
+    all_repositories, all_participants = \
+        _merge_repositories_and_participants(repositories, participants)
     try:
         calc = PullRequestBinnedHistogramCalculator(defs.values(), quantiles)
     except KeyError as e:
         raise ValueError("Unsupported metric") from e
     mined_facts = await calc_pull_request_facts_github(
-        time_from, time_to, all_repositories, participants, labels, jira,
+        time_from, time_to, all_repositories, all_participants, labels, jira,
         exclude_inactive, release_settings, fresh, False, meta_ids, mdb, pdb, cache)
     df_facts = df_from_dataclasses(mined_facts)
-    repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
     lines_grouper = partial(group_by_lines, lines)
-    groups = group_to_indexes(df_facts, lines_grouper, repo_grouper)
+    repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
+    with_grouper = partial(group_prs_by_participants, participants)
+    groups = group_to_indexes(df_facts, lines_grouper, repo_grouper, with_grouper)
     hists = calc(df_facts, [[time_from, time_to]], groups, defs)
     for line_groups, metrics in zip(hists, defs.values()):
         for repo_groups in line_groups:
-            for i, group_ts in enumerate(repo_groups):
-                repo_groups[i] = group_hists = []
-                for hist, m in zip(group_ts[0][0], metrics):
-                    group_hists.append((m, hist))
+            for participants_groups in repo_groups:
+                for i, group_ts in enumerate(participants_groups):
+                    participants_groups[i] = group_hists = []
+                    for hist, m in zip(group_ts[0][0], metrics):
+                        group_hists.append((m, hist))
     return hists
 
 
@@ -438,7 +459,7 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
         time_from, time_to, jira, release_settings, meta_ids, mdb, pdb, cache)
     df_facts = df_from_dataclasses([f for _, f in releases])
     repo_grouper = partial(group_by_repo, Release.repository_full_name.key, repositories)
-    participant_grouper = partial(group_by_participants, participants)
+    participant_grouper = partial(group_releases_by_participants, participants)
     groups = group_to_indexes(df_facts, participant_grouper, repo_grouper)
     values = calc(df_facts, time_intervals, groups)
     return values, matched_bys

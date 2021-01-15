@@ -1,16 +1,18 @@
 from datetime import datetime, timedelta
 from enum import IntEnum
+import logging
 from typing import Dict, Iterable, List, Optional, Sequence, Type
 
 import numpy as np
 import pandas as pd
 
+from athenian.api import metadata
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedHistogramCalculator, BinnedMetricCalculator, Counter, HistogramCalculator, \
     HistogramCalculatorEnsemble, make_register_metric, MetricCalculator, \
     MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
-from athenian.api.controllers.miners.types import PullRequestFacts
+from athenian.api.controllers.miners.types import PRParticipants, PullRequestFacts
 from athenian.api.models.web import PullRequestMetricID
 
 
@@ -64,6 +66,31 @@ def group_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.ndarray
     if line_group_assignments[order[0]] < 0:
         line_groups = line_groups[1:]
     return line_groups
+
+
+def group_prs_by_participants(participants: List[PRParticipants],
+                              items: pd.DataFrame,
+                              ) -> List[np.ndarray]:
+    """
+    Group PRs by participants.
+
+    The aggregation is OR. We don't support all kinds, see `PullRequestFacts`'s mutable fields.
+    """
+    # if len(participants) == 1, we've already filtered in SQL so don't have to re-check
+    if len(participants) < 2 or items.empty:
+        return [np.arange(len(items))]
+    groups = []
+    log = logging.getLogger("%s.group_prs_by_participants" % metadata.__package__)
+    for participants_group in participants:
+        group = np.full(len(items), False)
+        for participation_kind, devs in participants_group.items():
+            name = participation_kind.name.lower()
+            try:
+                group |= items[name].isin(devs).values
+            except KeyError:
+                log.warning("Unsupported participation kind: %s", name)
+        groups.append(np.nonzero(group)[0])
+    return groups
 
 
 class PullRequestBinnedMetricCalculator(BinnedMetricCalculator):
