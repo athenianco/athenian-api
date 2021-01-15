@@ -623,7 +623,7 @@ class PullRequestMiner:
         filters = [
             sql.case(
                 [(PullRequest.closed, PullRequest.closed_at)],
-                else_=sql.text("'3000-01-01'"),
+                else_=sql.text("'3000-01-01'"),  # backed up with a DB index
             ) >= time_from,
             PullRequest.created_at < time_to,
             PullRequest.acc_id.in_(meta_ids),

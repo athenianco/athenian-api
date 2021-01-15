@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from itertools import chain
 import pickle
 from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Tuple, Union
@@ -356,10 +356,12 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
         columns.extend([sql.func.lower(Issue.reporter_display_name).label("reporter"),
                         sql.func.lower(Issue.assignee_display_name).label("assignee"),
                         Issue.commenters_display_names.label("commenters")])
+    # this is backed with a DB index
+    far_away_future = datetime(3000, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     and_filters = [
         Issue.acc_id == ids[0],
         Issue.project_id.in_(ids[1]),
-        sql.func.coalesce(Issue.resolved >= time_from, sql.true()),
+        sql.func.coalesce(Issue.resolved, far_away_future) >= time_from,
         Issue.created < time_to,
     ]
     if exclude_inactive:
