@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from itertools import chain
 import logging
+import os
 import sys
 import traceback
 from typing import Collection, Optional, Set, Tuple
@@ -76,7 +77,7 @@ def main():
     time_to = datetime.combine(date.today() + timedelta(days=1),
                                datetime.min.time(),
                                tzinfo=timezone.utc)
-    time_from = time_to - timedelta(days=365 * 2)
+    time_from = time_to - timedelta(days=365 * (20 if os.getenv("CI") else 2))
     no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
     return_code = 0
 
@@ -332,7 +333,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
         select([GitHubDonePullRequestFacts.pr_node_id, GitHubDonePullRequestFacts.labels]))
     all_merged = await pdb.fetch_all(
         select([GitHubMergedPullRequestFacts.pr_node_id, GitHubMergedPullRequestFacts.labels]))
-    unique_prs = np.unique(np.array(list(chain(all_pr_times, all_merged)), dtype="U"))
+    unique_prs = np.unique(np.array([pr[0] for pr in chain(all_pr_times, all_merged)], dtype="U"))
     found_account_indexes = searchsorted_inrange(all_node_ids, unique_prs)
     found_mask = all_node_ids[found_account_indexes] == unique_prs
     unique_prs = unique_prs[found_mask]
@@ -357,7 +358,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
         tasks.append(mdb.fetch_all(
             select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
             .where(and_(PullRequestLabel.pull_request_node_id.in_(node_ids),
-                        PullRequestLabel.acc_id == acc_id))))
+                        PullRequestLabel.acc_id == int(acc_id)))))
     del unique_acc_ids
     del node_id_by_acc_id
     try:
