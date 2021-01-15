@@ -11,6 +11,7 @@ import traceback
 from typing import Collection, Optional, Set, Tuple
 
 import aiomcache
+import numpy as np
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, desc, func, insert, select, update
@@ -27,6 +28,7 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.contributors import mine_contributors
+from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs
 from athenian.api.controllers.miners.github.release_mine import mine_releases
@@ -36,7 +38,7 @@ import athenian.api.db
 from athenian.api.db import ParallelDatabase
 from athenian.api.defer import enable_defer, setup_defer, wait_deferred
 from athenian.api.models.metadata import dereference_schemas, PREFIXES
-from athenian.api.models.metadata.github import NodeUser, PullRequestLabel, User
+from athenian.api.models.metadata.github import NodePullRequest, NodeUser, PullRequestLabel, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts
 from athenian.api.models.state.models import Account, RepositorySet, Team, UserAccount
@@ -317,19 +319,47 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     """Update the labels in `github_done_pull_request_times` and `github_merged_pull_requests`."""
     log.info("Syncing labels")
     tasks = []
+    all_prs = await mdb.fetch_all(select([NodePullRequest.id, NodePullRequest.acc_id]))
+    log.info("There are %d PRs in mdb", len(all_prs))
+    all_node_ids = np.array([pr[0] for pr in all_prs], dtype="U")
+    all_accounts = np.array([pr[1] for pr in all_prs], dtype=np.uint32)
+    del all_prs
+    order = np.argsort(all_node_ids)
+    all_node_ids = all_node_ids[order]
+    all_accounts = all_accounts[order]
+    del order
     all_pr_times = await pdb.fetch_all(
         select([GitHubDonePullRequestFacts.pr_node_id, GitHubDonePullRequestFacts.labels]))
     all_merged = await pdb.fetch_all(
         select([GitHubMergedPullRequestFacts.pr_node_id, GitHubMergedPullRequestFacts.labels]))
-    unique_prs = list({pr[0] for pr in chain(all_pr_times, all_merged)})
-    if not unique_prs:
+    unique_prs = np.unique(np.array(list(chain(all_pr_times, all_merged)), dtype="U"))
+    found_account_indexes = searchsorted_inrange(all_node_ids, unique_prs)
+    found_mask = all_node_ids[found_account_indexes] == unique_prs
+    unique_prs = unique_prs[found_mask]
+    unique_pr_acc_ids = all_accounts[found_account_indexes[found_mask]]
+    del found_mask
+    del found_account_indexes
+    del all_node_ids
+    del all_accounts
+    if (prs_count := len(unique_prs)) == 0:
         return 0
-    log.info("Querying labels in %d PRs", len(unique_prs))
-    while unique_prs:
-        batch, unique_prs = unique_prs[:1000], unique_prs[1000:]
+    log.info("Querying labels in %d PRs", prs_count)
+    order = np.argsort(unique_pr_acc_ids)
+    unique_prs = unique_prs[order]
+    unique_pr_acc_ids = unique_pr_acc_ids[order]
+    del order
+    unique_acc_ids, acc_id_counts = np.unique(unique_pr_acc_ids, return_counts=True)
+    del unique_pr_acc_ids
+    node_id_by_acc_id = np.split(unique_prs, acc_id_counts)
+    del unique_prs
+    del acc_id_counts
+    for acc_id, node_ids in zip(unique_acc_ids, node_id_by_acc_id):
         tasks.append(mdb.fetch_all(
             select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
-            .where(PullRequestLabel.pull_request_node_id.in_(batch))))
+            .where(and_(PullRequestLabel.pull_request_node_id.in_(node_ids),
+                        PullRequestLabel.acc_id == acc_id))))
+    del unique_acc_ids
+    del node_id_by_acc_id
     try:
         task_results = await gather(*tasks)
     except Exception as e:

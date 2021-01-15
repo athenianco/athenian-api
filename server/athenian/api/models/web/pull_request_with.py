@@ -7,13 +7,13 @@ class PullRequestWith(Model, Mapping):
     """Triage PRs by various developer participation."""
 
     openapi_types = {
-        "author": List[str],
-        "reviewer": List[str],
-        "commit_author": List[str],
-        "commit_committer": List[str],
-        "commenter": List[str],
-        "merger": List[str],
-        "releaser": List[str],
+        "author": Optional[List[str]],
+        "reviewer": Optional[List[str]],
+        "commit_author": Optional[List[str]],
+        "commit_committer": Optional[List[str]],
+        "commenter": Optional[List[str]],
+        "merger": Optional[List[str]],
+        "releaser": Optional[List[str]],
     }
 
     attribute_map = {

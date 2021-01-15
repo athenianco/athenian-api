@@ -64,9 +64,7 @@ async def test_calc_histogram_prs_smoke(
 
         assert body == [{
             "for": {"repositories": ["github.com/src-d/go-git"],
-                    "with": {"author": None, "reviewer": None, "commit_author": None,
-                             "commit_committer": None, "commenter": None, "merger": None,
-                             "releaser": None}},
+                    "with": {}},
             "metric": metric,
             "scale": "log",
             "ticks": result[0],
@@ -211,9 +209,7 @@ async def test_calc_histogram_prs_size(client, headers):
     assert response.status == 200, "Response body is : " + body
     body = FriendlyJson.loads(body)
     assert body == [{"for": {"repositories": ["github.com/src-d/go-git"],
-                             "with": {"author": None, "reviewer": None, "commit_author": None,
-                                      "commit_committer": None, "commenter": None,
-                                      "merger": ["github.com/mcuadros"], "releaser": None}},
+                             "with": {"merger": ["github.com/mcuadros"]}},
                      "metric": "pr-size", "scale": "linear",
                      "ticks": [0.0, 1109.9, 2219.8, 3329.7000000000003, 4439.6, 5549.5,
                                6659.400000000001, 7769.300000000001, 8879.2, 9989.1, 11099.0],
