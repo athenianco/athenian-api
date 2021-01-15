@@ -201,7 +201,8 @@ class Auth0:
                 # token_info = {"token": <token>, "method": "bearer" or "apikey"}
                 await self._set_user(request.context, **token_info)
                 # check whether the user may access the specified account
-                if request.json and (account := request.json.get("account")) is not None:
+                if isinstance(request.json, dict) and \
+                        (account := request.json.get("account")) is not None:
                     assert isinstance(account, int)
                     await get_user_account_status(
                         request.context.uid, account, request.context.sdb, request.context.cache)
