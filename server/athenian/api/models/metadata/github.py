@@ -331,6 +331,12 @@ class NodeCommitParent(Base,
     index = Column(Integer, nullable=False)
 
 
+class NodePullRequest(Base,
+                      IDMixinNG,
+                      ):
+    __tablename__ = "github_node_pull_request"
+
+
 class NodePullRequestCommit(Base,
                             IDMixinNG,
                             ):
