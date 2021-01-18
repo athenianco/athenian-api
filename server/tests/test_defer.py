@@ -14,7 +14,7 @@ async def test_defer_end_to_end():
 
         async def task(name: str):
             enable_defer(True)
-            launch_defer(0.1)
+            launch_defer(0.1, "test")
             log.info("task %s launched", name)
             my_done = 0
 

@@ -382,9 +382,10 @@ class AthenianApp(connexion.AioHttpApp):
                 # block the response until we execute all the deferred coroutines
                 await wait_deferred()
             else:
-                # execute the deferred coroutines in 1 second to not interfere with serving
-                # the response, but only if not shutting down, otherwise, immediately
-                launch_defer(1 - self._shutting_down)
+                # execute the deferred coroutines in 15 seconds to not interfere with serving
+                # the parallel requests, but only if not shutting down, otherwise, immediately
+                launch_defer(15 * (1 - self._shutting_down),
+                             "%s %s" % (request.method, request.path))
             self._requests -= 1
             if self._requests == 0 and self._shutting_down:
                 asyncio.ensure_future(self._raise_graceful_exit())
