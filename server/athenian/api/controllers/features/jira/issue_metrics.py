@@ -178,7 +178,7 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, object)
-        work_began = facts[AthenianIssue.work_began.key].values
+        work_began = facts[AthenianIssue.work_began.key].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
         released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)
