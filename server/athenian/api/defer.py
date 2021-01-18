@@ -67,10 +67,10 @@ def enable_defer(explicit_launch: bool) -> None:
     _defer_counter.set([0])
     _defer_transaction.set([None])
     if not explicit_launch:
-        launch_defer(0)
+        launch_defer(0, "enable_defer")
 
 
-def launch_defer(delay: float) -> None:
+def launch_defer(delay: float, name: str) -> None:
     """Allow the deferred coroutines to execute after a certain delay (in seconds)."""
     transaction_ptr = _defer_transaction.get()  # type: List[Transaction]
     launch_event = _defer_launch_event.get()  # type: Event
@@ -97,6 +97,7 @@ def launch_defer(delay: float) -> None:
     else:
 
         async def delayer():
+            current_task().set_name("launch_defer.delayer " + name)
             await sleep(delay)
             launch()
 
