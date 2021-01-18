@@ -174,7 +174,7 @@ class ParallelDatabase(databases.Database):
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
 _testing = "pytest" in sys.modules or os.getenv("SENTRY_ENV", "development") == "development"
 _sql_str_re = re.compile(r"'[^']+'(, )?")
-_log_sql_re = re.compile(r"SELECT|\(SELECT|WITH")
+_log_sql_re = re.compile(r"SELECT|\(SELECT|WITH RECURSIVE")
 
 
 async def _asyncpg_execute(self, query: str, args, limit, timeout, return_status=False):

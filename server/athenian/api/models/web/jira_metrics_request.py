@@ -26,6 +26,7 @@ class JIRAMetricsRequest(Model):
         "labels_include": List[str],
         "labels_exclude": List[str],
         "epics": List[str],
+        "group_by_jira_label": Optional[bool],
     }
 
     attribute_map = {
@@ -43,6 +44,7 @@ class JIRAMetricsRequest(Model):
         "labels_include": "labels_include",
         "labels_exclude": "labels_exclude",
         "epics": "epics",
+        "group_by_jira_label": "group_by_jira_label",
     }
 
     def __init__(
@@ -61,6 +63,7 @@ class JIRAMetricsRequest(Model):
         labels_include: Optional[List[str]] = None,
         labels_exclude: Optional[List[str]] = None,
         epics: Optional[List[str]] = None,
+        group_by_jira_label: Optional[bool] = None,
     ):
         """JIRAMetricsRequest - a model defined in OpenAPI
 
@@ -77,6 +80,7 @@ class JIRAMetricsRequest(Model):
         :param labels_include: The labels_include of this JIRAMetricsRequest.
         :param labels_exclude: The labels_exclude of this JIRAMetricsRequest.
         :param epics: The epics of this JIRAMetricsRequest.
+        :param group_by_jira_label: The group_by_jira_label of this JIRAMetricsRequest.
         """
         self._account = account
         self._date_from = date_from
@@ -92,6 +96,7 @@ class JIRAMetricsRequest(Model):
         self._labels_include = labels_include
         self._labels_exclude = labels_exclude
         self._epics = epics
+        self._group_by_jira_label = group_by_jira_label
 
     @property
     def account(self) -> int:
@@ -411,3 +416,23 @@ class JIRAMetricsRequest(Model):
         :param epics: The epics of this JIRAMetricsRequest.
         """
         self._epics = epics
+
+    @property
+    def group_by_jira_label(self) -> Optional[bool]:
+        """Gets the group_by_jira_label of this JIRAMetricsRequest.
+
+        Value indicating whether the metrics should be grouped by assigned JIRA issue label.
+
+        :return: The group_by_jira_label of this JIRAMetricsRequest.
+        """
+        return self._group_by_jira_label
+
+    @group_by_jira_label.setter
+    def group_by_jira_label(self, group_by_jira_label: Optional[bool]):
+        """Sets the group_by_jira_label of this JIRAMetricsRequest.
+
+        Value indicating whether the metrics should be grouped by assigned JIRA issue label.
+
+        :param group_by_jira_label: The group_by_jira_label of this JIRAMetricsRequest.
+        """
+        self._group_by_jira_label = group_by_jira_label
