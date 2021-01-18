@@ -133,19 +133,23 @@ class MetricCalculator(Generic[T]):
         raise NotImplementedError
 
     def _values(self) -> List[List[Metric[T]]]:
-        cut_values = self._calc_quantile_cut_values()
-        return [[self._value(self._cut_by_quantiles(s, cut_values))
-                 for s in gs]
-                for gs in self._samples]
+        return [
+            [self._value(self._cut_by_quantiles(s, self._calc_quantile_cut_values(
+                np.concatenate(gs))))
+             for s in gs]
+            for gs in self._samples]
 
-    def _calc_quantile_cut_values(self, as_dtype=None) -> Optional[np.ndarray]:
-        """Calculate the quantile cut values."""
-        if self._quantiles[0] == 0 and self._quantiles[1] == 1:
+    def _calc_quantile_cut_values(self,
+                                  samples: np.ndarray,
+                                  as_dtype=None,
+                                  ) -> Optional[np.ndarray]:
+        """Calculate the quantile interval borders given the distribution and the desired \
+        quantiles."""
+        if (self._quantiles[0] == 0 and self._quantiles[1] == 1) or len(samples) == 0:
             return None
-        peek = self._peek[self._peek != np.array(None)].astype(as_dtype or self.dtype)
-        if len(peek) == 0:
-            return None
-        return np.quantile(peek, self._quantiles, interpolation="nearest")
+        if as_dtype is not None:
+            samples = samples.astype(as_dtype)
+        return np.quantile(samples, self._quantiles, interpolation="nearest")
 
     def _cut_by_quantiles(self,
                           samples: np.ndarray,
@@ -214,8 +218,11 @@ class Counter(MetricCalculator[int]):
     def _value(self, samples: np.ndarray) -> Metric[int]:
         return Metric(True, len(samples), None, None)
 
-    def _calc_quantile_cut_values(self, as_dtype=None) -> Optional[np.ndarray]:
-        return super()._calc_quantile_cut_values(as_dtype or self.deps[0].dtype)
+    def _calc_quantile_cut_values(self,
+                                  samples: np.ndarray,
+                                  as_dtype=None,
+                                  ) -> Optional[np.ndarray]:
+        return super()._calc_quantile_cut_values(samples, as_dtype or self.deps[0].dtype)
 
     def __call__(self,
                  facts: pd.DataFrame,
@@ -231,7 +238,10 @@ class Counter(MetricCalculator[int]):
 class WithoutQuantilesMixin:
     """Ignore the quantiles."""
 
-    def _calc_quantile_cut_values(self, as_dtype=None) -> Optional[np.ndarray]:
+    def _calc_quantile_cut_values(self,
+                                  samples: np.ndarray,
+                                  as_dtype=None,
+                                  ) -> Optional[np.ndarray]:
         return None
 
 
@@ -245,8 +255,8 @@ class HistogramCalculator(MetricCalculator):
                   ) -> List[List[Histogram[T]]]:
         """Calculate the histogram over the current distribution."""
         histograms = []
-        cut_values = self._calc_quantile_cut_values()
         for group_samples in self.samples:
+            cut_values = self._calc_quantile_cut_values(np.concatenate(group_samples))
             histograms.append(group_histograms := [])
             for samples in group_samples:
                 samples = self._cut_by_quantiles(samples, cut_values)
