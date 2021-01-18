@@ -11,27 +11,32 @@ class CalculatedJIRAMetricValues(Model):
 
     openapi_types = {
         "granularity": str,
+        "jira_label": Optional[str],
         "with_": Optional[JIRAMetricsRequestWith],
         "values": List[CalculatedLinearMetricValues],
     }
 
     attribute_map = {
         "granularity": "granularity",
+        "jira_label": "jira_label",
         "with_": "with",
         "values": "values",
     }
 
     def __init__(self,
                  granularity: Optional[str] = None,
+                 jira_label: Optional[str] = None,
                  with_: Optional[JIRAMetricsRequestWith] = None,
                  values: Optional[List[CalculatedLinearMetricValues]] = None):
         """CalculatedJIRAMetricValues - a model defined in OpenAPI
 
         :param granularity: The granularity of this CalculatedJIRAMetricValues.
+        :param jira_label: The jira_label of this CalculatedJIRAMetricValues.
         :param with_: The with of this CalculatedJIRAMetricValues.
         :param values: The values of this CalculatedJIRAMetricValues.
         """
         self._granularity = granularity
+        self._jira_label = jira_label
         self._with_ = with_
         self._values = values
 
@@ -61,6 +66,26 @@ class CalculatedJIRAMetricValues(Model):
             raise ValueError("Invalid value for `granularity`, must not be `None`")
 
         self._granularity = granularity
+
+    @property
+    def jira_label(self) -> Optional[str]:
+        """Gets the jira_label of this CalculatedJIRAMetricValues.
+
+        Title of the assigned JIRA label, if `group_by_jira_label` was previously set to `true`.
+
+        :return: The jira_label of this CalculatedJIRAMetricValues.
+        """
+        return self._jira_label
+
+    @jira_label.setter
+    def jira_label(self, jira_label: Optional[str]):
+        """Sets the jira_label of this CalculatedJIRAMetricValues.
+
+        Title of the assigned JIRA label, if `group_by_jira_label` was previously set to `true`.
+
+        :param jira_label: The jira_label of this CalculatedJIRAMetricValues.
+        """
+        self._jira_label = jira_label
 
     @property
     def with_(self) -> Optional[List[JIRAMetricsRequestWith]]:

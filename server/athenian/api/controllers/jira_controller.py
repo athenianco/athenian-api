@@ -337,20 +337,25 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
     filt, time_intervals, issues, tzoffset = await _calc_jira_entry(
         request, body, JIRAMetricsRequest)
     calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1])
-    groups = group_to_indexes(issues, partial(_split_issues_by_with, filt.with_))
+    label_splitter = _IssuesLabelSplitter(filt.group_by_jira_label)
+    groupers = partial(_split_issues_by_with, filt.with_), label_splitter
+    groups = group_to_indexes(issues, *groupers)
     metric_values = calc(issues, time_intervals, groups)
     mets = list(chain.from_iterable((
-        CalculatedJIRAMetricValues(granularity=granularity, with_=group, values=[
-            CalculatedLinearMetricValues(date=(dt - tzoffset).date(),
-                                         values=[v.value for v in vals],
-                                         confidence_mins=[v.confidence_min for v in vals],
-                                         confidence_maxs=[v.confidence_max for v in vals],
-                                         confidence_scores=[v.confidence_score() for v in vals])
-            for dt, vals in zip(ts, ts_values)
-        ])
+        CalculatedJIRAMetricValues(
+            granularity=granularity, with_=with_group, jira_label=label, values=[
+                CalculatedLinearMetricValues(
+                    date=(dt - tzoffset).date(),
+                    values=[v.value for v in vals],
+                    confidence_mins=[v.confidence_min for v in vals],
+                    confidence_maxs=[v.confidence_max for v in vals],
+                    confidence_scores=[v.confidence_score() for v in vals])
+                for dt, vals in zip(ts, ts_values)
+            ])
+        for label, group_metric_values in zip(label_splitter.labels, label_metric_values)
         for granularity, ts, ts_values in zip(filt.granularities, time_intervals,
                                               group_metric_values)
-    ) for group, group_metric_values in zip(filt.with_ or [None], metric_values)))
+    ) for with_group, label_metric_values in zip(filt.with_ or [None], metric_values)))
     return model_response(mets)
 
 
@@ -380,6 +385,35 @@ def _split_issues_by_with(with_: Optional[List[JIRAMetricsRequestWith]],
             mask[indexes] = True
         result.append(np.nonzero(mask)[0])
     return result
+
+
+class _IssuesLabelSplitter:
+    def __init__(self, enabled: bool):
+        self._labels = np.array([None], dtype=object)
+        self.enabled = enabled
+
+    @property
+    def labels(self):
+        return self._labels
+
+    def __call__(self, issues: pd.DataFrame) -> List[np.ndarray]:
+        if not self.enabled or issues.empty:
+            return [np.arange(len(issues))]
+        labels_column = issues[Issue.labels.key].tolist()
+        rows_all_labels = np.repeat(np.arange(len(labels_column), dtype=int),
+                                    [len(labels) for labels in labels_column])
+        all_labels = np.concatenate(labels_column).astype("U")
+        del labels_column
+        all_labels_order = np.argsort(all_labels)
+        ordered_rows_all_labels = rows_all_labels[all_labels_order]
+        unique_labels, unique_counts = np.unique(all_labels[all_labels_order], return_counts=True)
+        del all_labels
+        groups = np.array(np.split(ordered_rows_all_labels, np.cumsum(unique_counts)),
+                          dtype=object)
+        unique_labels_order = np.argsort(-unique_counts)
+        self._labels = unique_labels[unique_labels_order]
+        groups = groups[unique_labels_order]
+        return groups
 
 
 async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Response:

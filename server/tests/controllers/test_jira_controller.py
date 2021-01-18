@@ -649,6 +649,32 @@ async def test_jira_metrics_disabled_projects(client, headers, disabled_dev):
     )]
 
 
+async def test_jira_metrics_group_by_label(client, headers):
+    body = {
+        "date_from": "2020-01-01",
+        "date_to": "2020-10-20",
+        "timezone": 0,
+        "account": 1,
+        "metrics": [JIRAMetricID.JIRA_RAISED],
+        "exclude_inactive": True,
+        "granularities": ["all"],
+        "group_by_jira_label": True,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = json.loads(body)
+    assert len(body) == 48
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
+    assert items[0].granularity == "all"
+    assert items[0].jira_label == "performance"
+    assert items[0].values[0].values == [148]
+    assert items[1].jira_label == "webapp"
+    assert items[1].values[0].values == [143]
+
+
 @pytest.mark.parametrize("with_, ticks, frequencies, interquartile", [
     [None,
      [["60s", "122s", "249s", "507s", "1033s", "2105s", "4288s", "8737s", "17799s", "36261s",

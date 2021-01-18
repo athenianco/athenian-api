@@ -5979,6 +5979,10 @@ components:
           description: Value indicating whether issues with the last update older
             than `date_from` should be ignored.
           type: boolean
+        group_by_jira_label:
+          description: Value indicating whether the metrics should be grouped by
+            assigned JIRA issue label.
+          type: boolean
       required:
       - account
       - date_from
@@ -6050,6 +6054,10 @@ components:
       properties:
         granularity:
           $ref: '#/components/schemas/Granularity'
+        jira_label:
+          description: Title of the assigned JIRA label, if `group_by_jira_label`
+            was previously set to `true`.
+          type: string
         with:
           $ref: '#/components/schemas/JIRAMetricsRequestWith'
         values:

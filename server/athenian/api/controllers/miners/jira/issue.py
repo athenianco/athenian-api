@@ -350,7 +350,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
     postgres = mdb.url.dialect in ("postgres", "postgresql")
     columns = [
         Issue.created, AthenianIssue.work_began, AthenianIssue.resolved, Issue.updated,
-        Issue.priority_name, Issue.epic_id, Issue.status, Issue.type, Issue.id,
+        Issue.priority_name, Issue.epic_id, Issue.status, Issue.type, Issue.id, Issue.labels,
     ]
     if load_participants:
         columns.extend([sql.func.lower(Issue.reporter_display_name).label("reporter"),
