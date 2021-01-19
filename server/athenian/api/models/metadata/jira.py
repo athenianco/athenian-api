@@ -62,6 +62,7 @@ class User(Base):
     id = Column(Text, primary_key=True)
     type = Column(Text, nullable=False)
     display_name = Column(Text, nullable=False)
+    active = Column(Boolean)
     avatar_url = Column(Text, nullable=False)
 
 

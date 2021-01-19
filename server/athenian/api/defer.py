@@ -75,17 +75,19 @@ def launch_defer(delay: float, name: str) -> None:
     transaction_ptr = _defer_transaction.get()  # type: List[Transaction]
     launch_event = _defer_launch_event.get()  # type: Event
     if (parent := Hub.current.scope.transaction) is None:
-        transaction = start_transaction(name="defer", sampled=False)
+        def transaction():
+            return start_transaction(name="defer", sampled=False)
     else:
-        transaction = start_transaction(
-            name="defer " + parent.name,
-            sampled=parent.sampled,
-            op="defer" + ((" " + parent.op) if parent.op else ""),
-            description=parent.description,
-        )
+        def transaction():
+            return start_transaction(
+                name="defer " + parent.name,
+                sampled=parent.sampled,
+                op="defer" + ((" " + parent.op) if parent.op else ""),
+                description=parent.description,
+            )
 
     def launch():
-        transaction_ptr[0] = transaction
+        transaction_ptr[0] = transaction()
         launch_event.set()
 
     if delay == 0:
