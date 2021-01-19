@@ -3,7 +3,7 @@ from contextvars import ContextVar
 import logging
 from typing import Coroutine, List, Optional
 
-from sentry_sdk import Hub
+from sentry_sdk import Hub, start_transaction
 from sentry_sdk.tracing import Transaction
 
 from athenian.api import metadata
@@ -74,21 +74,17 @@ def launch_defer(delay: float, name: str) -> None:
     """Allow the deferred coroutines to execute after a certain delay (in seconds)."""
     transaction_ptr = _defer_transaction.get()  # type: List[Transaction]
     launch_event = _defer_launch_event.get()  # type: Event
+    if (parent := Hub.current.scope.transaction) is None:
+        transaction = start_transaction(name="defer", sampled=False)
+    else:
+        transaction = start_transaction(
+            name="defer " + parent.name,
+            sampled=parent.sampled,
+            op="defer" + ((" " + parent.op) if parent.op else ""),
+            description=parent.description,
+        )
 
     def launch():
-        if Hub.current.scope.span is None:
-            transaction = Transaction(name="defer", sampled=False, hub=Hub.current)
-        else:
-            if (parent := Hub.current.scope.transaction) is None:
-                transaction = Transaction(name="defer", sampled=False, hub=Hub.current)
-            else:
-                transaction = Transaction(
-                    name="defer " + parent.name,
-                    sampled=parent.sampled,
-                    op=parent.op,
-                    description=parent.description,
-                    hub=Hub.current,
-                )
         transaction_ptr[0] = transaction
         launch_event.set()
 
