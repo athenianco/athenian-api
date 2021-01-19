@@ -18,7 +18,8 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, desc, func, insert, select, update
 from tqdm import tqdm
 
-from athenian.api import add_logging_args, check_schema_versions, create_memcached, create_slack, \
+from athenian.api import add_logging_args, check_schema_versions, compose_db_options, \
+    create_memcached, create_slack, \
     patch_pandas, setup_context
 from athenian.api.async_utils import gather
 from athenian.api.cache import setup_cache_metrics
@@ -87,11 +88,12 @@ def main():
         setup_cache_metrics(cache, {}, None)
         for v in cache.metrics["context"].values():
             v.set(defaultdict(int))
-        sdb = ParallelDatabase(args.state_db)
+        db_opts = compose_db_options(args.metadata_db, args.state_db, args.precomputed_db)
+        sdb = ParallelDatabase(args.state_db, **db_opts["sdb_options"])
         await sdb.connect()
-        mdb = ParallelDatabase(args.metadata_db)
+        mdb = ParallelDatabase(args.metadata_db, **db_opts["mdb_options"])
         await mdb.connect()
-        pdb = ParallelDatabase(args.precomputed_db)
+        pdb = ParallelDatabase(args.precomputed_db, **db_opts["pdb_options"])
         await pdb.connect()
         pdb.metrics = {
             "hits": ContextVar("pdb_hits", default=defaultdict(int)),
