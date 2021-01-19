@@ -146,8 +146,8 @@ def setup_context(log: logging.Logger) -> None:
     pandas.set_option("display.large_repr", "info")
     pandas.set_option("display.memory_usage", False)
     numpy.set_printoptions(threshold=10, edgeitems=1)
-    if log.level >= logging.INFO:
-        databases.core.logger.setLevel(log.level + 10)
+    if (level := log.getEffectiveLevel()) >= logging.INFO:
+        databases.core.logger.setLevel(level + 10)
 
     sentry_key, sentry_project = os.getenv("SENTRY_KEY"), os.getenv("SENTRY_PROJECT")
 
