@@ -100,11 +100,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8080, help="HTTP server port.")
     parser.add_argument("--metadata-db",
                         default="postgresql://postgres:postgres@0.0.0.0:5432/metadata",
-                        help="Metadata (GitHub events, etc.) DB connection string in SQLAlchemy "
+                        help="Metadata (GitHub, JIRA, etc.) DB connection string in SQLAlchemy "
                              "format. This DB is readonly.")
     parser.add_argument("--state-db",
                         default="postgresql://postgres:postgres@0.0.0.0:5432/state",
-                        help="Server state (user settings, etc.) DB connection string in "
+                        help="Server state (user settings, teams, etc.) DB connection string in "
                              "SQLAlchemy format. This DB is read/write.")
     parser.add_argument("--precomputed-db",
                         default="postgresql://postgres:postgres@0.0.0.0:5432/precomputed",
