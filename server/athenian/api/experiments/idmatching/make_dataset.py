@@ -76,7 +76,7 @@ def main():
         "email": u.email,
         "signatures": signatures.get(u.node_id),
     } for u in users])
-    df.to_pickle("github.pickle")
+    df.to_pickle("github_%d.pickle" % args.account)
     bar.update(1)
     jira_id = sdb.query(AccountJiraInstallation.id) \
                  .filter(AccountJiraInstallation.account_id == args.account) \
@@ -88,7 +88,7 @@ def main():
     df = pd.DataFrame([{
         "name": u.display_name,
     } for u in jira_users])
-    df.to_pickle("jira.pickle")
+    df.to_pickle("jira_%d.pickle" % args.account)
     bar.update(1)
     bar.close()
 
