@@ -50,7 +50,7 @@ jobs:
     - name: pip
       run: |
         pip3 install -r server/lint-requirements.txt --no-warn-script-location
-        echo "~/.local/bin" >> $GITHUB_PATH
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: flake8
       working-directory: server
       run: flake8
@@ -136,8 +136,8 @@ jobs:
         pip3 install -r server/requirements.txt --no-warn-script-location
         pip3 install -r server/test-requirements.txt --no-warn-script-location
         sudo pip3 install -e server/
-        patch ~/.local/lib/python3.*/site-packages/aiomcache/client.py patches/aiomcache_version.patch
-        echo "~/.local/bin" >> $GITHUB_PATH
+        patch $HOME/.local/lib/python3.*/site-packages/aiomcache/client.py patches/aiomcache_version.patch
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: setup postgres
       if: matrix.db == 'postgres'
       env:

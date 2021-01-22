@@ -239,3 +239,15 @@ class JIRAProjectSetting(create_time_mixin(updated_at=True), Base):
                         primary_key=True)
     key = Column(Text(), primary_key=True)
     enabled = Column(Boolean(), nullable=False)
+
+
+class MappedJIRAIdentity(create_time_mixin(created_at=True, updated_at=True), Base):
+    """JIRA identity mapping."""
+
+    __tablename__ = "jira_identity_mapping"
+
+    account_id = Column(Integer(),
+                        ForeignKey("accounts.id", name="fk_jira_identity_mapping_account"),
+                        primary_key=True)
+    github_user_id = Column(Text(), primary_key=True)
+    jira_user_id = Column(Text())
