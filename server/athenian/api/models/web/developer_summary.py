@@ -1,3 +1,5 @@
+from typing import Optional
+
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.developer_updates import DeveloperUpdates
 
@@ -10,6 +12,7 @@ class DeveloperSummary(Model):
         "name": str,
         "avatar": str,
         "updates": DeveloperUpdates,
+        "jira_user": Optional[str],
     }
 
     attribute_map = {
@@ -17,14 +20,16 @@ class DeveloperSummary(Model):
         "name": "name",
         "avatar": "avatar",
         "updates": "updates",
+        "jira_user": "jira_user",
     }
 
     def __init__(
         self,
-        login: str = None,
-        name: str = None,
-        avatar: str = None,
-        updates: DeveloperUpdates = None,
+        login: Optional[str] = None,
+        name: Optional[str] = None,
+        avatar: Optional[str] = None,
+        updates: Optional[DeveloperUpdates] = None,
+        jira_user: Optional[str] = None,
     ):
         """DeveloperSummary - a model defined in OpenAPI
 
@@ -32,11 +37,13 @@ class DeveloperSummary(Model):
         :param name: The name of this DeveloperSummary.
         :param avatar: The avatar of this DeveloperSummary.
         :param updates: The updates of this DeveloperSummary.
+        :param jira_user: The jira_user of this DeveloperSummary.
         """
         self._login = login
         self._name = name
         self._avatar = avatar
         self._updates = updates
+        self._jira_user = jira_user
 
     @property
     def login(self) -> str:
@@ -125,3 +132,23 @@ class DeveloperSummary(Model):
             raise ValueError("Invalid value for `updates`, must not be `None`")
 
         self._updates = updates
+
+    @property
+    def jira_user(self) -> Optional[str]:
+        """Gets the jira_user of this DeveloperSummary.
+
+        Mapped JIRA user name.
+
+        :return: The jira_user of this DeveloperSummary.
+        """
+        return self._jira_user
+
+    @jira_user.setter
+    def jira_user(self, jira_user: Optional[str]):
+        """Sets the jira_user of this DeveloperSummary.
+
+        Mapped JIRA user name.
+
+        :param jira_user: The jira_user of this DeveloperSummary.
+        """
+        self._jira_user = jira_user

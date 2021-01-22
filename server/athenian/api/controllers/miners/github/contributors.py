@@ -205,7 +205,7 @@ async def mine_contributors(repos: Collection[str],
 
     stats.pop(None, None)
 
-    cols = [User.login, User.email, User.avatar_url, User.name]
+    cols = [User.login, User.email, User.avatar_url, User.name, User.node_id]
     with sentry_sdk.start_span(op="SELECT FROM github.api_users"):
         user_details = await mdb.fetch_all(
             select(cols)

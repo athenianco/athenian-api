@@ -6,22 +6,36 @@ from athenian.api.models.web.base_model_ import Model
 class JIRAUser(Model):
     """Details about a JIRA user."""
 
-    openapi_types = {"name": str, "avatar": str, "type": str}
-    attribute_map = {"name": "name", "avatar": "avatar", "type": "type"}
+    openapi_types = {
+        "name": str,
+        "avatar": str,
+        "type": str,
+        "developer": Optional[str],
+    }
+    attribute_map = {
+        "name": "name",
+        "avatar": "avatar",
+        "type": "type",
+        "developer": "developer",
+    }
 
     def __init__(self,
                  name: Optional[str] = None,
                  avatar: Optional[str] = None,
-                 type: Optional[str] = None):
+                 type: Optional[str] = None,
+                 developer: Optional[str] = None,
+                 ):
         """JIRAUser - a model defined in OpenAPI
 
         :param name: The name of this JIRAUser.
         :param avatar: The avatar of this JIRAUser.
         :param type: The type of this JIRAUser.
+        :param developer: The developer of this JIRAUser.
         """
         self._name = name
         self._avatar = avatar
         self._type = type
+        self._developer = developer
 
     @property
     def name(self) -> str:
@@ -97,3 +111,23 @@ class JIRAUser(Model):
                 "Invalid value for `type` (%s), must be one of %s" % (type, allowed_values))
 
         self._type = type
+
+    @property
+    def developer(self) -> Optional[str]:
+        """Gets the developer of this JIRAUser.
+
+        Mapped developer identity.
+
+        :return: The developer of this JIRAUser.
+        """
+        return self._developer
+
+    @developer.setter
+    def developer(self, developer: Optional[str]):
+        """Sets the developer of this JIRAUser.
+
+        Mapped developer identity.
+
+        :param developer: The developer of this JIRAUser.
+        """
+        self._developer = developer
