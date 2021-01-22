@@ -27,6 +27,7 @@ from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
     Priority, User
+from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
     CalculatedLinearMetricValues, FilterJIRAStuff, FoundJIRAStuff, Interquartile, \
     InvalidRequestError, JIRAEpic, JIRAHistogramsRequest, JIRALabel, JIRAMetricsRequest, \
@@ -57,6 +58,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     return_ = set(filt.return_ or FoundJIRAStuff.openapi_types)
     jira_ids = await get_jira_installation(filt.account, request.sdb, request.mdb, request.cache)
     mdb = request.mdb
+    sdb = request.sdb
     log = logging.getLogger("%s.filter_jira_stuff" % metadata.__package__)
 
     def append_time_filters(filters: list) -> None:
@@ -176,12 +178,23 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             if "users" not in return_:
                 return []
             return await mdb.fetch_all(
-                select([User.display_name, User.avatar_url, User.type])
+                select([User.display_name, User.avatar_url, User.type, User.id])
                 .where(and_(
                     User.id.in_(people),
                     User.acc_id == jira_ids[0],
                 ))
                 .order_by(User.display_name))
+
+        @sentry_span
+        async def fetch_mapped_identities():
+            if "users" not in return_:
+                return []
+            return await sdb.fetch_all(
+                select([MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id])
+                .where(and_(
+                    MappedJIRAIdentity.account_id == filt.account,
+                    MappedJIRAIdentity.jira_user_id.in_(people),
+                )))
 
         @sentry_span
         async def fetch_priorities():
@@ -230,15 +243,22 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                 labels = None
             return labels
 
-        component_names, users, priorities, issue_types, labels = await gather(
-            fetch_components(), fetch_users(), fetch_priorities(), fetch_types(), extract_labels())
+        component_names, users, mapped_identities, priorities, issue_types, labels = await gather(
+            fetch_components(), fetch_users(), fetch_mapped_identities(), fetch_priorities(),
+            fetch_types(), extract_labels())
         components = {
             row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
             for row in component_names
         }
+        mapped_identities = {
+            r[MappedJIRAIdentity.jira_user_id.key]: r[MappedJIRAIdentity.github_user_id.key]
+            for r in mapped_identities
+        }
         users = [JIRAUser(avatar=row[User.avatar_url.key],
                           name=row[User.display_name.key],
-                          type=row[User.type.key])
+                          type=row[User.type.key],
+                          developer=mapped_identities.get(row[User.id.key]),
+                          )
                  for row in users] or None
         priorities = [JIRAPriority(name=row[Priority.name.key],
                                    image=row[Priority.icon_url.key],

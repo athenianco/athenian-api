@@ -3,9 +3,11 @@ from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
+from athenian.api.controllers.jira import load_mapped_jira_users
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
+from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import Contributor, NotFoundError
 from athenian.api.request import AthenianWebRequest
@@ -39,11 +41,15 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
         users = await mine_contributors(
             repos, None, None, False, [], release_settings,
             meta_ids, request.mdb, request.pdb, request.cache)
+        mapped_jira = await load_mapped_jira_users(
+            account_id, [u[User.node_id.key] for u in users], sdb_conn, request.mdb, request.cache)
         prefix = PREFIXES["github"]
         contributors = [
-            Contributor(login=f"{prefix}{u['login']}", name=u["name"],
-                        email="<classified>",  # u["email"] TODO(vmarkovtsev): DEV-87
-                        picture=u["avatar_url"])
+            Contributor(login=f"{prefix}{u[User.login.key]}",
+                        name=u[User.name.key],
+                        email="<classified>",  # u[User.email.key] TODO(vmarkovtsev): DEV-87
+                        picture=u[User.avatar_url.key],
+                        jira_user=mapped_jira.get(u[User.node_id.key]))
             for u in users
         ]
         return model_response(contributors)

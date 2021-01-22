@@ -11,6 +11,7 @@ class Contributor(Model):
         "name": Optional[str],
         "email": Optional[str],
         "picture": Optional[str],
+        "jira_user": Optional[str],
     }
 
     attribute_map = {
@@ -18,6 +19,7 @@ class Contributor(Model):
         "name": "name",
         "email": "email",
         "picture": "picture",
+        "jira_user": "jira_user",
     }
 
     def __init__(
@@ -26,6 +28,7 @@ class Contributor(Model):
             name: Optional[str] = None,
             email: Optional[str] = None,
             picture: Optional[str] = None,
+            jira_user: Optional[str] = None,
     ):
         """Contributor - a model defined in OpenAPI
 
@@ -33,11 +36,13 @@ class Contributor(Model):
         :param name: The name of this Contributor.
         :param email: The email of this Contributor.
         :param picture: The picture of this Contributor.
+        :param jira_user: The jira_user of this Contributor.
         """
         self._login = login
         self._name = name
         self._email = email
         self._picture = picture
+        self._jira_user = jira_user
 
     @property
     def login(self) -> str:
@@ -123,3 +128,23 @@ class Contributor(Model):
         :param picture: The picture of this Contributor.
         """
         self._picture = picture
+
+    @property
+    def jira_user(self) -> Optional[str]:
+        """Gets the jira_user of this Contributor.
+
+        Mapped JIRA user name.
+
+        :return: The jira_user of this Contributor.
+        """
+        return self._jira_user
+
+    @jira_user.setter
+    def jira_user(self, jira_user: Optional[str]):
+        """Sets the jira_user of this Contributor.
+
+        Mapped JIRA user name.
+
+        :param jira_user: The jira_user of this Contributor.
+        """
+        self._jira_user = jira_user

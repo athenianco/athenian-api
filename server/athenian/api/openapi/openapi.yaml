@@ -2390,6 +2390,9 @@ components:
         picture:
           description: Avatar URL of the contributor.
           type: string
+        jira_user:
+          description: Mapped JIRA user name.
+          type: string
       required:
       - login
       type: object
@@ -4418,6 +4421,9 @@ components:
           type: string
         updates:
           $ref: '#/components/schemas/DeveloperUpdates'
+        jira_user:
+          description: Mapped JIRA user name.
+          type: string
       required:
       - avatar
       - login
@@ -5565,6 +5571,10 @@ components:
           - app
           - customer
           type: string
+        developer:
+          allOf:
+          - $ref: '#/components/schemas/DeveloperID'
+          - description: Mapped developer identity.
       required:
       - avatar
       - name
