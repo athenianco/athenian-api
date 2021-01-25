@@ -199,18 +199,21 @@ async def _match_jira_identities(account: int,
                                           .where(OrganizationMember.acc_id.in_(meta_ids)))
     ]
     log.info("Discovered %d organization members", len(user_ids))
-    user_rows = await mdb.fetch_all(select([GitHubUser])
+    user_rows = await mdb.fetch_all(select([GitHubUser.node_id, GitHubUser.name])
                                     .where(and_(GitHubUser.acc_id.in_(meta_ids),
-                                                GitHubUser.node_id.in_(user_ids))))
+                                                GitHubUser.node_id.in_(user_ids),
+                                                GitHubUser.name.isnot(None))))
     log.info("Detailed %d GitHub users", len(user_rows))
     signature_rows = await mdb.fetch_all(union(
         select([PushCommit.author_user, PushCommit.author_name])
         .where(and_(PushCommit.acc_id.in_(meta_ids),
-                    PushCommit.author_user.in_(user_ids)))
+                    PushCommit.author_user.in_(user_ids),
+                    PushCommit.author_name.isnot(None)))
         .distinct(),
         select([PushCommit.committer_user, PushCommit.committer_name])
         .where(and_(PushCommit.acc_id.in_(meta_ids),
-                    PushCommit.committer_user.in_(user_ids)))
+                    PushCommit.committer_user.in_(user_ids),
+                    PushCommit.committer_name.isnot(None)))
         .distinct(),
     ))
     log.info("Loaded %d signatures", len(signature_rows))
@@ -229,7 +232,8 @@ async def _match_jira_identities(account: int,
         log.info("Effective GitHub set size: %d", len(github_users))
     jira_user_rows = await mdb.fetch_all(select([JIRAUser.id, JIRAUser.display_name])
                                          .where(and_(JIRAUser.acc_id == jira_id[0],
-                                                     JIRAUser.type == "atlassian")))
+                                                     JIRAUser.type == "atlassian",
+                                                     JIRAUser.display_name.isnot(None))))
     jira_users = {row[JIRAUser.id.key]: [row[JIRAUser.display_name.key]] for row in jira_user_rows}
     log.info("JIRA set size: %d", len(jira_users))
     if existing_mapping:
