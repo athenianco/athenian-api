@@ -26,6 +26,7 @@ from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
+from athenian.api.controllers.jira import match_jira_identities
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -142,6 +143,7 @@ def main():
                     sentry_sdk.capture_exception(e)
                     return_code = 1
                     num_teams = num_bots = 0
+            await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
             repos = {r.split("/", 1)[1] for r in reposet.items}
             settings = await Settings.from_account(
                 reposet.owner_id, sdb, mdb, cache, None).list_release_matches(reposet.items)

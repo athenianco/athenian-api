@@ -1,11 +1,17 @@
+from collections import defaultdict
+import logging
 import marshal
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import aiomcache
-from sqlalchemy import and_, select
+from names_matcher import NamesMatcher
+from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
+from sqlalchemy import and_, insert, select, union
 
+from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
+from athenian.api.models.metadata.github import OrganizationMember, PushCommit, User as GitHubUser
 from athenian.api.models.metadata.jira import Project, User as JIRAUser
 from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
     MappedJIRAIdentity
@@ -149,3 +155,108 @@ async def load_jira_identity_mapping_sentinel(account: int,
     """Load the value indicating whether the JIRA identity mapping cache is valid."""
     # we evaluated => cache miss
     return False
+
+
+async def match_jira_identities(account: int,
+                                meta_ids: Tuple[int, ...],
+                                sdb: DatabaseLike,
+                                mdb: DatabaseLike,
+                                slack: Optional[SlackWebClient],
+                                cache: Optional[aiomcache.Client],
+                                ) -> Optional[int]:
+    """
+    Perform GitHub -> JIRA identity matching and store the results in the state DB.
+
+    :return: Number of the matched identities.
+    """
+    match_result = await _match_jira_identities(account, meta_ids, sdb, mdb, cache)
+    if match_result is not None:
+        matched_jira_size, github_size, jira_size, from_scratch = match_result
+        if slack is not None and from_scratch:
+            await slack.post("matched_jira_identities.jinja2",
+                             account=account,
+                             github_users=github_size,
+                             jira_users=jira_size,
+                             matched=matched_jira_size)
+        return matched_jira_size
+    return None
+
+
+async def _match_jira_identities(account: int,
+                                 meta_ids: Tuple[int, ...],
+                                 sdb: DatabaseLike,
+                                 mdb: DatabaseLike,
+                                 cache: Optional[aiomcache.Client],
+                                 ) -> Optional[Tuple[int, int, int, bool]]:
+    if (jira_id := await get_jira_installation_or_none(account, sdb, mdb, cache)) is None:
+        return None
+    existing_mapping = await sdb.fetch_all(select([MappedJIRAIdentity.github_user_id,
+                                                   MappedJIRAIdentity.jira_user_id])
+                                           .where(MappedJIRAIdentity.account_id == account))
+    log = logging.getLogger("%s.match_jira_identities" % metadata.__package__)
+    user_ids = [
+        r[0] for r in await mdb.fetch_all(select([OrganizationMember.child_id])
+                                          .where(OrganizationMember.acc_id.in_(meta_ids)))
+    ]
+    log.info("Discovered %d organization members", len(user_ids))
+    user_rows = await mdb.fetch_all(select([GitHubUser])
+                                    .where(and_(GitHubUser.acc_id.in_(meta_ids),
+                                                GitHubUser.node_id.in_(user_ids))))
+    log.info("Detailed %d GitHub users", len(user_rows))
+    signature_rows = await mdb.fetch_all(union(
+        select([PushCommit.author_user, PushCommit.author_name])
+        .where(and_(PushCommit.acc_id.in_(meta_ids),
+                    PushCommit.author_user.in_(user_ids)))
+        .distinct(),
+        select([PushCommit.committer_user, PushCommit.committer_name])
+        .where(and_(PushCommit.acc_id.in_(meta_ids),
+                    PushCommit.committer_user.in_(user_ids)))
+        .distinct(),
+    ))
+    log.info("Loaded %d signatures", len(signature_rows))
+    github_users = defaultdict(set)
+    for row in signature_rows:
+        github_users[row[0]].add(row[1])
+    for row in user_rows:
+        github_users[row[GitHubUser.node_id.key]].add(row[GitHubUser.name.key])
+    log.info("GitHub set size: %d", len(github_users))
+    if existing_mapping:
+        for row in existing_mapping:
+            try:
+                del github_users[row[MappedJIRAIdentity.github_user_id.key]]
+            except KeyError:
+                continue
+        log.info("Effective GitHub set size: %d", len(github_users))
+    jira_user_rows = await mdb.fetch_all(select([JIRAUser.id, JIRAUser.display_name])
+                                         .where(and_(JIRAUser.acc_id == jira_id[0],
+                                                     JIRAUser.type == "atlassian")))
+    jira_users = {row[JIRAUser.id.key]: [row[JIRAUser.display_name.key]] for row in jira_user_rows}
+    log.info("JIRA set size: %d", len(jira_users))
+    if existing_mapping:
+        for row in existing_mapping:
+            try:
+                del jira_users[row[MappedJIRAIdentity.jira_user_id.key]]
+            except KeyError:
+                continue
+        log.info("Effective JIRA set size: %d", len(jira_users))
+    if not jira_users:
+        return 0, len(github_users), 0, len(existing_mapping) == 0
+    if not github_users:
+        return 0, 0, len(jira_users), len(existing_mapping) == 0
+    matches, confidences = NamesMatcher()(github_users.values(), jira_users.values())
+    jira_users_keys = list(jira_users)
+    db_records = []
+    for github_user, match_index, confidence in zip(github_users, matches, confidences):
+        if match_index >= 0 and confidence > 0:
+            jira_user_id = jira_users_keys[match_index]
+            log.debug("%s -> %s", github_users[github_user], jira_users[jira_user_id][0])
+            db_records.append(MappedJIRAIdentity(
+                account_id=account,
+                github_user_id=github_user,
+                jira_user_id=jira_user_id,
+                confidence=confidence,
+            ).create_defaults().explode(with_primary_keys=True))
+    if db_records:
+        log.info("Storing %d matches", len(db_records))
+        await sdb.execute_many(insert(MappedJIRAIdentity), db_records)
+    return len(db_records), len(github_users), len(jira_users), len(existing_mapping) == 0
