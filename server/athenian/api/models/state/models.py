@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import enum
 import json
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Enum, ForeignKey, \
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Enum, Float, ForeignKey, \
     ForeignKeyConstraint, func, \
     Integer, JSON, SmallInteger, String, Text, TIMESTAMP, UniqueConstraint
 import xxhash
@@ -251,3 +251,4 @@ class MappedJIRAIdentity(create_time_mixin(created_at=True, updated_at=True), Ba
                         primary_key=True)
     github_user_id = Column(Text(), primary_key=True)
     jira_user_id = Column(Text())
+    confidence = Column(Float())
