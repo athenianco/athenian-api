@@ -14,10 +14,10 @@ echo\n' > /browser && \
 # runtime environment
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends \
-      apt-utils ca-certificates gnupg2 locales curl python3 python3-distutils && \
+      apt-utils ca-certificates gnupg2 locales wget python3 python3-distutils && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen && \
-    curl -L https://bootstrap.pypa.io/get-pip.py | python3 && \
+    wget -O - https://bootstrap.pypa.io/get-pip.py | python3 && \
     pip3 install --no-cache-dir cython && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -26,7 +26,7 @@ ENV MKL=2020.0-166
 
 # Intel MKL
 RUN echo "deb https://apt.repos.intel.com/mkl all main" > /etc/apt/sources.list.d/intel-mkl.list && \
-    curl -L https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB | \
+    wget -O - https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB | \
     apt-key add - && \
     apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends intel-mkl-common-c-$MKL intel-mkl-gnu-rt-$MKL intel-mkl-f95-$MKL && \
