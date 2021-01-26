@@ -17,7 +17,7 @@ from athenian.api.models.metadata.jira import Project, User as JIRAUser
 from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, JIRAProject, \
     JIRAProjectsRequest, MappedJIRAIdentity as WebMappedJIRAIdentity, ReleaseMatchRequest, \
-    ReleaseMatchSetting
+    ReleaseMatchSetting, SetMappedJIRAIdentitiesRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
@@ -105,13 +105,79 @@ async def set_jira_projects(request: AthenianWebRequest, body: dict) -> web.Resp
 
 async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Response:
     """Add or override GitHub<>JIRA user identity mapping."""
-    raise NotImplementedError
+    request_model = SetMappedJIRAIdentitiesRequest.from_dict(body)
+    sdb = request.sdb
+    mdb = request.mdb
+    cache = request.cache
+    if not await get_user_account_status(request.uid, request_model.account, sdb, cache):
+        raise ResponseError(ForbiddenError("You must be an admin to edit the identity mapping."))
+    tasks = [
+        get_jira_id(request_model.account, sdb, cache),
+        get_metadata_account_ids(request_model.account, sdb, cache),
+    ]
+    jira_acc, meta_ids = await gather(*tasks)
+    github_logins = []
+    for i, c in enumerate(request_model.changes):
+        try:
+            github_logins.append(c.developer_id.split("/", 1)[1])
+        except IndexError:
+            raise ResponseError(InvalidRequestError(detail="Invalid developer identifier.",
+                                                    pointer=".changes[%d].developer_id" % i))
+    jira_names = [c.jira_name for c in request_model.changes]
+    tasks = [
+        mdb.fetch_all(select([GitHubUser.node_id, GitHubUser.login])
+                      .where(and_(GitHubUser.acc_id.in_(meta_ids),
+                                  GitHubUser.login.in_(github_logins)))),
+        mdb.fetch_all(select([JIRAUser.id, JIRAUser.display_name])
+                      .where(and_(JIRAUser.acc_id == jira_acc,
+                                  JIRAUser.display_name.in_(jira_names)))),
+    ]
+    github_id_rows, jira_id_rows = await gather(*tasks)
+    github_id_map = {r[GitHubUser.login.key]: r[GitHubUser.node_id.key] for r in github_id_rows}
+    jira_id_map = {r[JIRAUser.display_name.key]: r[JIRAUser.id.key] for r in jira_id_rows}
+    cleared_github_ids = \
+        {github_id_map[login] for login in github_logins if login in github_id_map}
+    added_maps = []
+    for i, change in enumerate(request_model.changes):
+        if change.jira_name is None:
+            continue
+        try:
+            github_id = github_id_map[change.developer_id.split("/", 1)[1]]
+        except KeyError:
+            raise ResponseError(InvalidRequestError(detail="Developer was not found.",
+                                                    pointer=".changes[%d].developer_id" % i))
+        if not change.jira_name:
+            raise ResponseError(InvalidRequestError(detail="String cannot be empty.",
+                                                    pointer=".changes[%d].jira_name" % i))
+        try:
+            jira_id = jira_id_map[change.jira_name]
+        except KeyError:
+            raise ResponseError(InvalidRequestError(detail="JIRA user was not found.",
+                                                    pointer=".changes[%d].jira_name" % i))
+        added_maps.append((github_id, jira_id))
+
+    async with sdb.transaction():
+        await sdb.execute(delete(MappedJIRAIdentity)
+                          .where(and_(MappedJIRAIdentity.account_id == request_model.account,
+                                      MappedJIRAIdentity.github_user_id.in_(cleared_github_ids))))
+        await sdb.execute_many(insert(MappedJIRAIdentity), [
+            MappedJIRAIdentity(
+                account_id=request_model.account,
+                github_user_id=ghid,
+                jira_user_id=jid,
+                confidence=1.,
+            ).create_defaults().explode(with_primary_keys=True) for ghid, jid in added_maps])
+    return await get_jira_identities(request, request_model.account, jira_acc=jira_acc)
 
 
-async def get_jira_identities(request: AthenianWebRequest, id: int) -> web.Response:
+async def get_jira_identities(request: AthenianWebRequest,
+                              id: int,
+                              jira_acc: Optional[int] = None,
+                              ) -> web.Response:
     """Fetch the GitHub<>JIRA user identity mapping."""
-    await get_user_account_status(request.uid, id, request.sdb, request.cache)
-    jira_acc = await get_jira_id(id, request.sdb, request.cache)
+    if jira_acc is None:
+        await get_user_account_status(request.uid, id, request.sdb, request.cache)
+        jira_acc = await get_jira_id(id, request.sdb, request.cache)
     tasks = [
         request.sdb.fetch_all(
             select([MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id,

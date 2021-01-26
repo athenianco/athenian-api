@@ -45,7 +45,7 @@ class MappedJIRAIdentityChange(Model):
         self._developer_id = developer_id
 
     @property
-    def jira_name(self) -> str:
+    def jira_name(self) -> Optional[str]:
         """Gets the jira_name of this MappedJIRAIdentityChange.
 
         Full name of the mapped JIRA user. `null` means the removal.
@@ -55,14 +55,11 @@ class MappedJIRAIdentityChange(Model):
         return self._jira_name
 
     @jira_name.setter
-    def jira_name(self, jira_name: str):
+    def jira_name(self, jira_name: Optional[str]):
         """Sets the jira_name of this MappedJIRAIdentityChange.
 
         Full name of the mapped JIRA user. `null` means the removal.
 
         :param jira_name: The jira_name of this MappedJIRAIdentityChange.
         """
-        if jira_name is None:
-            raise ValueError("Invalid value for `jira_name`, must not be `None`")
-
         self._jira_name = jira_name
