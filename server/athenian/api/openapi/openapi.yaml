@@ -1573,6 +1573,109 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.reposet_controller
       x-codegen-request-body-name: body
+  /settings/jira/identities:
+    patch:
+      operationId: set_jira_identities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetMappedJIRAIdentitiesRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappedJIRAIdentities'
+          description: List with the Github<>JIRA identity mapping.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is not an admin of this account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user or the account was not found.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The JIRA installation does not exist.
+      security:
+      - bearerAuth: []
+      summary: Add or override GitHub<>JIRA user identity mapping.
+      tags:
+      - settings
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.settings_controller
+      x-codegen-request-body-name: body
+  /settings/jira/identities/{id}:
+    get:
+      operationId: get_jira_identities
+      parameters:
+      - description: Numeric identifier of the account.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappedJIRAIdentities'
+          description: List with the Github<>JIRA identity mapping.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is not an admin of this account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user or the account was not found.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The JIRA installation does not exist.
+      security:
+      - bearerAuth: []
+      summary: Fetch the GitHub<>JIRA user identity mapping.
+      tags:
+      - settings
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.settings_controller
+      x-codegen-request-body-name: body
   /settings/jira/projects:
     put:
       operationId: set_jira_projects
@@ -5990,8 +6093,8 @@ components:
             than `date_from` should be ignored.
           type: boolean
         group_by_jira_label:
-          description: Value indicating whether the metrics should be grouped by
-            assigned JIRA issue label.
+          description: Value indicating whether the metrics should be grouped by assigned
+            JIRA issue label.
           type: boolean
       required:
       - account
@@ -6419,4 +6522,77 @@ components:
       - new
       - old
       - releases
+      type: object
+    MappedJIRAIdentities:
+      description: List of currently mapped GitHub<>JIRA users.
+      items:
+        $ref: '#/components/schemas/MappedJIRAIdentity'
+      type: array
+    MappedJIRAIdentity:
+      additionalProperties: false
+      description: GitHub user (developer) mapped to a JIRA user.
+      example:
+        developer_id: github.com/vmarkovtsev
+        developer_name: Vadim Markovtsev
+        jira_name: Vadim Markovtsev
+        confidence: 1.0
+      properties:
+        developer_id:
+          $ref: '#/components/schemas/DeveloperID'
+        developer_name:
+          description: Full name of the mapped GitHub user.
+          type: string
+        jira_name:
+          description: Full name of the mapped JIRA user.
+          type: string
+        confidence:
+          description: Value from 0 to 1 indicating how similar are the users.
+          format: float
+          maximum: 1
+          minimum: 0
+          type: number
+      required:
+      - confidence
+      - developer_id
+      - developer_name
+      - jira_name
+      type: object
+    SetMappedJIRAIdentitiesRequest:
+      additionalProperties: false
+      description: Request body of `/settings/jira/identities`. Describes a patch
+        to the GitHub<>JIRA identity mapping.
+      example:
+      - developer_id: github.com/vmarkovtsev
+        jira_name: Vadim Markovtsev
+      - developer_id: github.com/warenlg
+        jira_name: null
+      properties:
+        account:
+          description: Account ID.
+          type: integer
+        changes:
+          description: Individual GitHub<>JIRA user mapping change.
+          items:
+            $ref: '#/components/schemas/MappedJIRAIdentityChange'
+          type: array
+      required:
+      - account
+      - changes
+      type: object
+    MappedJIRAIdentityChange:
+      additionalProperties: false
+      description: Individual GitHub<>JIRA user mapping change.
+      example:
+        developer_id: github.com/vmarkovtsev
+        jira_name: Vadim Markovtsev
+      properties:
+        developer_id:
+          $ref: '#/components/schemas/DeveloperID'
+        jira_name:
+          description: Full name of the mapped JIRA user. `null` means the removal.
+          nullable: true
+          type: string
+      required:
+      - developer_id
+      - jira_name
       type: object

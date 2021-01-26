@@ -1,8 +1,10 @@
+import logging
 from typing import Optional
 
 from aiohttp import web
 from sqlalchemy import and_, delete, insert, select
 
+from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
@@ -10,12 +12,12 @@ from athenian.api.controllers.jira import get_jira_id
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.jira import Project
-from athenian.api.models.state.models import JIRAProjectSetting
-from athenian.api.models.web import ForbiddenError, InvalidRequestError, ReleaseMatchSetting
-from athenian.api.models.web.jira_project import JIRAProject
-from athenian.api.models.web.jira_projects_request import JIRAProjectsRequest
-from athenian.api.models.web.release_match_request import ReleaseMatchRequest
+from athenian.api.models.metadata.github import User as GitHubUser
+from athenian.api.models.metadata.jira import Project, User as JIRAUser
+from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity
+from athenian.api.models.web import ForbiddenError, InvalidRequestError, JIRAProject, \
+    JIRAProjectsRequest, MappedJIRAIdentity as WebMappedJIRAIdentity, ReleaseMatchRequest, \
+    ReleaseMatchSetting
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
@@ -99,3 +101,57 @@ async def set_jira_projects(request: AthenianWebRequest, body: dict) -> web.Resp
                                            JIRAProjectSetting.key.in_(projects))))
             await conn.execute_many(insert(JIRAProjectSetting), values)
     return await get_jira_projects(request, model.account, jira_id=jira_id)
+
+
+async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Add or override GitHub<>JIRA user identity mapping."""
+    raise NotImplementedError
+
+
+async def get_jira_identities(request: AthenianWebRequest, id: int) -> web.Response:
+    """Fetch the GitHub<>JIRA user identity mapping."""
+    await get_user_account_status(request.uid, id, request.sdb, request.cache)
+    jira_acc = await get_jira_id(id, request.sdb, request.cache)
+    tasks = [
+        request.sdb.fetch_all(
+            select([MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id,
+                    MappedJIRAIdentity.confidence])
+            .where(MappedJIRAIdentity.account_id == id)),
+        get_metadata_account_ids(id, request.sdb, request.cache),
+    ]
+    map_rows, meta_ids = await gather(*tasks)
+    github_ids = [r[MappedJIRAIdentity.github_user_id.key] for r in map_rows]
+    jira_ids = [r[MappedJIRAIdentity.jira_user_id.key] for r in map_rows]
+    tasks = [
+        request.mdb.fetch_all(
+            select([GitHubUser.node_id, GitHubUser.login, GitHubUser.name])
+            .where(and_(GitHubUser.node_id.in_(github_ids),
+                        GitHubUser.acc_id.in_(meta_ids)))),
+        request.mdb.fetch_all(
+            select([JIRAUser.id, JIRAUser.display_name])
+            .where(and_(JIRAUser.id.in_(jira_ids),
+                        JIRAUser.acc_id == jira_acc)),
+        ),
+    ]
+    github_rows, jira_rows = await gather(*tasks)
+    github_details = {r[GitHubUser.node_id.key]: r for r in github_rows}
+    jira_details = {r[JIRAUser.id.key]: r for r in jira_rows}
+    models = []
+    prefix = PREFIXES["github"]
+    log = logging.getLogger("%s.get_jira_identities" % metadata.__package__)
+    for map_row in map_rows:
+        try:
+            github_user = github_details[map_row[MappedJIRAIdentity.github_user_id.key]]
+            jira_user = jira_details[map_row[MappedJIRAIdentity.jira_user_id.key]]
+        except KeyError:
+            log.error("Identity mapping %s -> %s misses details" % (
+                map_row[MappedJIRAIdentity.github_user_id.key],
+                map_row[MappedJIRAIdentity.jira_user_id.key]))
+            continue
+        models.append(WebMappedJIRAIdentity(
+            developer_id=prefix + github_user[GitHubUser.login.key],
+            developer_name=github_user[GitHubUser.name.key],
+            jira_name=jira_user[JIRAUser.display_name.key],
+            confidence=map_row[MappedJIRAIdentity.confidence.key],
+        ))
+    return model_response(sorted(models, key=lambda m: m.developer_id))

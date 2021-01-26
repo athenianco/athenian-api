@@ -76,6 +76,8 @@ from athenian.api.models.web.jira_project import JIRAProject
 from athenian.api.models.web.jira_projects_request import JIRAProjectsRequest
 from athenian.api.models.web.jira_user import JIRAUser
 from athenian.api.models.web.listed_token import ListedToken
+from athenian.api.models.web.mapped_jira_identity import MappedJIRAIdentity
+from athenian.api.models.web.mapped_jira_identity_change import MappedJIRAIdentityChange
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
 from athenian.api.models.web.organization import Organization
 from athenian.api.models.web.paginate_pull_requests_request import PaginatePullRequestsRequest
@@ -110,6 +112,8 @@ from athenian.api.models.web.released_pull_request import ReleasedPullRequest
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.models.web.repository_set_with_name import RepositorySetWithName
+from athenian.api.models.web.set_mapped_jira_identities_request import \
+    SetMappedJIRAIdentitiesRequest
 from athenian.api.models.web.stage_timings import StageTimings
 from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
 from athenian.api.models.web.team import Team
