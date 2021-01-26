@@ -7,10 +7,11 @@ from sqlalchemy import delete, insert, select, update
 from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
 from athenian.api.models.metadata.github import NodeUser
-from athenian.api.models.state.models import AccountGitHubAccount, ReleaseSetting, \
-    RepositorySet, UserAccount
-from athenian.api.models.web import ReleaseMatchSetting, ReleaseMatchStrategy
-from athenian.api.models.web.jira_project import JIRAProject
+from athenian.api.models.state.models import AccountGitHubAccount, MappedJIRAIdentity, \
+    ReleaseSetting, RepositorySet, UserAccount
+from athenian.api.models.web import JIRAProject, MappedJIRAIdentity as WebMappedJIRAIdentity, \
+    ReleaseMatchSetting, ReleaseMatchStrategy
+from athenian.api.serialization import FriendlyJson
 
 
 async def validate_settings(body, response, sdb, exhaustive: bool):
@@ -324,4 +325,116 @@ async def test_set_jira_projects_nasty_input(
     }
     response = await client.request(
         method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers)
+    assert response.status == code
+
+
+@pytest.fixture(scope="function")
+async def denys_id_mapping(sdb):
+    await sdb.execute(insert(MappedJIRAIdentity).values(
+        MappedJIRAIdentity(
+            account_id=1,
+            github_user_id="MDQ6VXNlcjY3NjcyNA==",
+            jira_user_id="5de4cff936b8050e29258600",
+            confidence=1.0,
+        ).create_defaults().explode(with_primary_keys=True),
+    ))
+
+
+async def test_get_jira_identities_smoke(client, headers, sdb, denys_id_mapping):
+    response = await client.request(
+        method="GET", path="/v1/settings/jira/identities/1", headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
+    assert ids == [WebMappedJIRAIdentity(developer_id="github.com/dennwc",
+                                         developer_name="Denys Smirnov",
+                                         jira_name="Denys Smirnov",
+                                         confidence=1.0)]
+
+
+async def test_get_jira_identities_empty(client, headers):
+    response = await client.request(
+        method="GET", path="/v1/settings/jira/identities/1", headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
+    assert ids == []
+
+
+@pytest.mark.parametrize("account, code", [[2, 422], [3, 404], [4, 404]])
+async def test_get_jira_identities_nasty_input(client, headers, account, code):
+    response = await client.request(
+        method="GET", path="/v1/settings/jira/identities/%d" % account, headers=headers)
+    assert response.status == code
+
+
+async def test_set_jira_identities_smoke(client, headers, sdb, denys_id_mapping):
+    body = {
+        "account": 1,
+        "changes": [{
+            "developer_id": "github.com/dennwc",
+            "jira_name": "Vadim Markovtsev",
+        }],
+    }
+    response = await client.request(
+        method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
+    assert ids == [WebMappedJIRAIdentity(developer_id="github.com/dennwc",
+                                         developer_name="Denys Smirnov",
+                                         jira_name="Vadim Markovtsev",
+                                         confidence=1.0)]
+    rows = await sdb.fetch_all(select([MappedJIRAIdentity]))
+    assert len(rows) == 1
+    assert rows[0][MappedJIRAIdentity.account_id.key] == 1
+    assert rows[0][MappedJIRAIdentity.github_user_id.key] == "MDQ6VXNlcjY3NjcyNA=="
+    assert rows[0][MappedJIRAIdentity.jira_user_id.key] == "5de5049e2c5dd20d0f9040c1"
+    assert rows[0][MappedJIRAIdentity.confidence.key] == 1
+
+
+async def test_set_jira_identities_delete(client, headers, sdb, denys_id_mapping):
+    body = {
+        "account": 1,
+        "changes": [{
+            "developer_id": "github.com/dennwc",
+            "jira_name": None,
+        }],
+    }
+    response = await client.request(
+        method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
+    assert ids == []
+    rows = await sdb.fetch_all(select([MappedJIRAIdentity]))
+    assert len(rows) == 0
+
+
+@pytest.mark.parametrize("account, github, jira, code", [
+    [2, "github.com/vmarkovtsev", "Vadim Markovtsev", 403],
+    [2, "github.com/vmarkovtsev", "Vadim Markovtsev", 422],
+    [3, "github.com/vmarkovtsev", "Vadim Markovtsev", 404],
+    [4, "github.com/vmarkovtsev", "Vadim Markovtsev", 404],
+    [1, None, "Vadim Markovtsev", 400],
+    [1, "", "Vadim Markovtsev", 400],
+    [1, "github.com", "Vadim Markovtsev", 400],
+    [1, "github.com/incognito", "Vadim Markovtsev", 400],
+    [1, "github.com/vmarkovtsev", "Vadim", 400],
+    [1, "github.com/vmarkovtsev", "", 400],
+])
+async def test_set_jira_identities_nasty_input(client, headers, account, github, jira, code, sdb):
+    if account == 2 and code == 422:
+        await sdb.execute(update(UserAccount)
+                          .where(UserAccount.account_id == 2)
+                          .values({UserAccount.is_admin: True}))
+    body = {
+        "account": account,
+        "changes": [{
+            "developer_id": github,
+            "jira_name": jira,
+        }],
+    }
+    response = await client.request(
+        method="PATCH", path="/v1/settings/jira/identities", json=body, headers=headers)
     assert response.status == code
