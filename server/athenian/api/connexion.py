@@ -1,6 +1,7 @@
 import ast
 import asyncio
 import bdb
+from datetime import timedelta
 from functools import partial
 from http import HTTPStatus
 import logging
@@ -8,6 +9,7 @@ import os
 from pathlib import Path
 import signal
 import socket
+import time
 from typing import Any, Callable, Dict, Optional
 
 import aiohttp.web
@@ -21,6 +23,7 @@ from connexion.apis import aiohttp_api
 from connexion.exceptions import ConnexionException
 import connexion.lifecycle
 from connexion.spec import OpenAPISpecification
+import psutil
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from werkzeug.exceptions import Unauthorized
@@ -258,6 +261,7 @@ class AthenianApp(connexion.AioHttpApp):
         if node_name is not None:
             self.server_name = node_name + "/" + self.server_name
         self._slack = self.app["slack"] = slack
+        self._boot_time = psutil.boot_time()
 
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
@@ -357,6 +361,7 @@ class AthenianApp(connexion.AioHttpApp):
                            for t in asyncio.all_tasks())
             scope.set_extra("asyncio.all_tasks", tasks)
             scope.set_extra("concurrent requests", self._requests)
+            scope.set_extra("uptime", timedelta(seconds=time.time() - self._boot_time))
         try:
             return await handler(request)
         except bdb.BdbQuit:
