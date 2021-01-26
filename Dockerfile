@@ -81,8 +81,9 @@ RUN apt-get update && \
     pip3 uninstall -y flask && \
     patch /usr/local/lib/python*/dist-packages/prometheus_client/exposition.py /patches/prometheus_client.patch && \
     patch /usr/local/lib/python*/dist-packages/aiomcache/client.py /patches/aiomcache_version.patch && \
-    apt-get remove -y patch git && \
+    apt-get remove -y patch git perl libldap-2.4-2 && \
     apt-get autoremove -y && \
+    apt-get upgrade -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
