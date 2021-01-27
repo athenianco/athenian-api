@@ -14,7 +14,7 @@ echo\n' > /browser && \
 # runtime environment
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends \
-      apt-utils ca-certificates gnupg2 locales wget python3 python3-distutils && \
+      apt-utils ca-certificates locales wget python3 python3-distutils && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen && \
     wget -O - https://bootstrap.pypa.io/get-pip.py | python3 && \
@@ -25,7 +25,9 @@ RUN apt-get update && \
 ENV MKL=2020.0-166
 
 # Intel MKL
-RUN echo "deb https://apt.repos.intel.com/mkl all main" > /etc/apt/sources.list.d/intel-mkl.list && \
+RUN apt-get update && \
+    apt-get install -y --no-install-suggests --no-install-recommends gnupg && \
+    echo "deb https://apt.repos.intel.com/mkl all main" > /etc/apt/sources.list.d/intel-mkl.list && \
     wget -O - https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB | \
     apt-key add - && \
     apt-get update && \
@@ -43,6 +45,8 @@ RUN echo "deb https://apt.repos.intel.com/mkl all main" > /etc/apt/sources.list.
     update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 \
                     liblapack.so.3-x86_64-linux-gnu  /opt/intel/mkl/lib/intel64/libmkl_rt.so 50 && \
     apt-get clean && \
+    apt-get remove -y gnupg && \
+    apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 
 # numpy
@@ -81,7 +85,7 @@ RUN apt-get update && \
     pip3 uninstall -y flask && \
     patch /usr/local/lib/python*/dist-packages/prometheus_client/exposition.py /patches/prometheus_client.patch && \
     patch /usr/local/lib/python*/dist-packages/aiomcache/client.py /patches/aiomcache_version.patch && \
-    apt-get remove -y patch git perl libldap-2.4-2 && \
+    apt-get remove -y patch git && \
     apt-get autoremove -y && \
     apt-get upgrade -y && \
     apt-get clean && \
@@ -89,7 +93,9 @@ RUN apt-get update && \
 
 ADD server /server
 ADD README.md /
-RUN pip3 install -e /server
+RUN pip3 install -e /server && \
+    apt-get remove -y gcc g++ && \
+    apt-get autoremove -y
 ARG COMMIT
 RUN echo "__commit__ = \"$COMMIT\"" >>/server/athenian/api/metadata.py && \
     echo "__date__ = \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"" >>/server/athenian/api/metadata.py
