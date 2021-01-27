@@ -45,8 +45,8 @@ RUN apt-get update && \
     update-alternatives --install /usr/lib/x86_64-linux-gnu/liblapack.so.3 \
                     liblapack.so.3-x86_64-linux-gnu  /opt/intel/mkl/lib/intel64/libmkl_rt.so 50 && \
     apt-get clean && \
-    apt-get remove -y gnupg && \
-    apt-get autoremove -y && \
+    apt-get purge -y gnupg && \
+    apt-get autoremove -y --purge && \
     rm -rf /var/lib/apt/lists/*
 
 # numpy
@@ -68,8 +68,8 @@ lapack_libs = mkl_lapack95_lp64' > /root/.numpy-site.cfg && \
     export NPY_NUM_BUILD_JOBS=$(getconf _NPROCESSORS_ONLN) && \
     echo $NPY_NUM_BUILD_JOBS && \
     pip3 $VERBOSE install --no-cache-dir scipy==1.6.0 numpy==1.19.1 --no-binary numpy && \
-    apt-get remove -y libfftw3-dev gfortran python3-dev gcc g++ && \
-    apt-get autoremove -y && \
+    apt-get purge -y libfftw3-dev gfortran python3-dev gcc g++ && \
+    apt-get autoremove -y --purge && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     rm -rf /usr/share/doc/*
@@ -85,8 +85,8 @@ RUN apt-get update && \
     pip3 uninstall -y flask && \
     patch /usr/local/lib/python*/dist-packages/prometheus_client/exposition.py /patches/prometheus_client.patch && \
     patch /usr/local/lib/python*/dist-packages/aiomcache/client.py /patches/aiomcache_version.patch && \
-    apt-get remove -y patch git gcc g++ && \
-    apt-get autoremove -y && \
+    apt-get purge -y patch git gcc g++ && \
+    apt-get autoremove -y --purge && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -95,8 +95,8 @@ ADD README.md /
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends gcc g++ && \
     pip3 install -e /server && \
-    apt-get remove -y gcc g++ && \
-    apt-get autoremove -y && \
+    apt-get purge -y gcc g++ && \
+    apt-get autoremove -y --purge && \
     apt-get upgrade -y && \
     apt-get clean
 ARG COMMIT
