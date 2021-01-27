@@ -217,7 +217,13 @@ async def fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarray
             sql = insert(GitHubCommitHistory).prefix_with("OR REPLACE")
         else:
             raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
-        await defer(pdb.execute_many(sql, sql_values), "fetch_repository_commits/pdb")
+
+        async def execute():
+            async with pdb.connection() as pdb_conn:
+                async with pdb_conn.transaction():
+                    await pdb_conn.execute_many(sql, sql_values)
+
+        await defer(execute(), "fetch_repository_commits/pdb")
     for repo, pdag in repos.items():
         if repo not in result:
             result[repo] = _empty_dag() if prune else pdag

@@ -104,7 +104,9 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
     else:
         sql = insert(GitHubReleaseFacts).prefix_with("OR IGNORE")
     with sentry_sdk.start_span(op="store_precomputed_release_facts/execute_many"):
-        await pdb.execute_many(sql, values)
+        async with pdb.connection() as pdb_conn:
+            async with pdb_conn.transaction():
+                await pdb_conn.execute_many(sql, values)
 
 
 @sentry_span

@@ -262,5 +262,7 @@ async def _match_jira_identities(account: int,
             ).create_defaults().explode(with_primary_keys=True))
     if db_records:
         log.info("Storing %d matches", len(db_records))
-        await sdb.execute_many(insert(MappedJIRAIdentity), db_records)
+        async with sdb.connection() as sdb_conn:
+            async with sdb_conn.transaction():
+                await sdb_conn.execute_many(insert(MappedJIRAIdentity), db_records)
     return len(db_records), len(github_users), len(jira_users), len(existing_mapping) == 0

@@ -6,6 +6,7 @@ import re
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import aiomcache
+import asyncpg
 import databases
 import numpy as np
 import pandas as pd
@@ -33,7 +34,6 @@ from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedR
 from athenian.api.models.web import NoSourceDataError
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
-
 
 tag_by_branch_probe_lookaround = timedelta(weeks=4)
 unfresh_releases_threshold = 50
@@ -198,15 +198,18 @@ async def load_releases(repos: Iterable[str],
     if tasks:
         async def store_precomputed_releases():
             # we must execute these in sequence to stay consistent
-            # the transaction is not necessary
-            await _store_precomputed_releases(missings, default_branches, settings, pdb)
-            # if we know that we've scanned branches for `tag_or_branch`, no matter if
-            # we loaded tags or not, we should update the span
-            matches = applied_matches.copy()
-            for repo in ambiguous_branches_scanned:
-                matches[repo] = ReleaseMatch.branch
-            await _store_precomputed_release_match_spans(
-                match_groups, matches, time_from, time_to, pdb)
+            async with pdb.connection() as pdb_conn:
+                # the transaction is necessary to support pgbouncer
+                async with pdb_conn.transaction():
+                    await _store_precomputed_releases(
+                        missings, default_branches, settings, pdb_conn)
+                    # if we know that we've scanned branches for `tag_or_branch`, no matter if
+                    # we loaded tags or not, we should update the span
+                    matches = applied_matches.copy()
+                    for repo in ambiguous_branches_scanned:
+                        matches[repo] = ReleaseMatch.branch
+                    await _store_precomputed_release_match_spans(
+                        match_groups, matches, time_from, time_to, pdb_conn)
 
         await defer(store_precomputed_releases(),
                     "store_precomputed_releases(%d, %d)" % (len(missings), repos_count))
@@ -412,7 +415,8 @@ async def _store_precomputed_release_match_spans(
         matched_bys: Dict[str, ReleaseMatch],
         time_from: datetime,
         time_to: datetime,
-        pdb: databases.Database) -> None:
+        pdb: databases.core.Connection) -> None:
+    assert isinstance(pdb, databases.core.Connection)
     inserted = []
     time_to = min(time_to, datetime.now(timezone.utc))
     for rm, pair in match_groups.items():
@@ -436,7 +440,7 @@ async def _store_precomputed_release_match_spans(
                     ).explode(with_primary_keys=True))
     if not inserted:
         return
-    if pdb.url.dialect in ("postgres", "postgresql"):
+    if isinstance(pdb.raw_connection, asyncpg.Connection):
         sql = postgres_insert(GitHubReleaseMatchTimespan)
         sql = sql.on_conflict_do_update(
             constraint=GitHubReleaseMatchTimespan.__table__.primary_key,
@@ -447,10 +451,8 @@ async def _store_precomputed_release_match_spans(
                     sql.excluded.time_to, GitHubReleaseMatchTimespan.time_to),
             },
         )
-    elif pdb.url.dialect == "sqlite":
-        sql = insert(GitHubReleaseMatchTimespan).prefix_with("OR REPLACE")
     else:
-        raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
+        sql = insert(GitHubReleaseMatchTimespan).prefix_with("OR REPLACE")
     with sentry_sdk.start_span(op="_store_precomputed_release_match_spans/execute_many"):
         await pdb.execute_many(sql, inserted)
 
@@ -459,7 +461,8 @@ async def _store_precomputed_release_match_spans(
 async def _store_precomputed_releases(releases: pd.DataFrame,
                                       default_branches: Dict[str, str],
                                       settings: Dict[str, ReleaseMatchSetting],
-                                      pdb: databases.Database) -> None:
+                                      pdb: databases.core.Connection) -> None:
+    assert isinstance(pdb, databases.core.Connection)
     inserted = []
     prefix = PREFIXES["github"]
     columns = [Release.id.key,
@@ -488,14 +491,13 @@ async def _store_precomputed_releases(releases: pd.DataFrame,
         del obj[matched_by_column]
         inserted.append(obj)
 
-    if pdb.url.dialect in ("postgres", "postgresql"):
-        sql = postgres_insert(PrecomputedRelease)
-        sql = sql.on_conflict_do_nothing()
-    elif pdb.url.dialect == "sqlite":
-        sql = insert(PrecomputedRelease).prefix_with("OR IGNORE")
-    else:
-        raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
     if inserted:
+        if isinstance(pdb.raw_connection, asyncpg.Connection):
+            sql = postgres_insert(PrecomputedRelease)
+            sql = sql.on_conflict_do_nothing()
+        else:
+            sql = insert(PrecomputedRelease).prefix_with("OR IGNORE")
+
         with sentry_sdk.start_span(op="_store_precomputed_releases/execute_many"):
             await pdb.execute_many(sql, inserted)
 

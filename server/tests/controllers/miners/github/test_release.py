@@ -1246,14 +1246,15 @@ async def test_precomputed_release_timespans(pdb):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime.now(timezone.utc) - timedelta(days=100)
     mg1 = {ReleaseMatch.tag: {".*": ["src-d/go-git"]}}
-    await _store_precomputed_release_match_spans(
-        mg1, {"src-d/go-git": ReleaseMatch.tag}, time_from, time_to, pdb)
-    mg2 = {ReleaseMatch.branch: {"master": ["src-d/go-git"]}}
-    await _store_precomputed_release_match_spans(
-        mg2, {"src-d/go-git": ReleaseMatch.branch}, time_from, time_to, pdb)
-    await _store_precomputed_release_match_spans(
-        mg1, {"src-d/go-git": ReleaseMatch.tag},
-        time_from - timedelta(days=300), time_to + timedelta(days=200), pdb)
+    async with pdb.connection() as pdb_conn:
+        await _store_precomputed_release_match_spans(
+            mg1, {"src-d/go-git": ReleaseMatch.tag}, time_from, time_to, pdb_conn)
+        mg2 = {ReleaseMatch.branch: {"master": ["src-d/go-git"]}}
+        await _store_precomputed_release_match_spans(
+            mg2, {"src-d/go-git": ReleaseMatch.branch}, time_from, time_to, pdb_conn)
+        await _store_precomputed_release_match_spans(
+            mg1, {"src-d/go-git": ReleaseMatch.tag},
+            time_from - timedelta(days=300), time_to + timedelta(days=200), pdb_conn)
     spans = await fetch_precomputed_release_match_spans({**mg1, **mg2}, pdb)
     assert len(spans) == 1
     assert len(spans["src-d/go-git"]) == 2
