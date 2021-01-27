@@ -570,13 +570,15 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
                         v[GitHubRepository.first_commit.key].replace(tzinfo=timezone.utc)
 
             async def insert_repository():
-                try:
-                    await pdb.execute_many(insert(GitHubRepository), values)
-                except Exception as e:
-                    log = logging.getLogger(
-                        "%s._fetch_repository_first_commit_dates" % metadata.__package__)
-                    log.warning("Failed to store %d rows: %s: %s",
-                                len(values), type(e).__name__, e)
+                async with pdb.connection() as pdb_conn:
+                    async with pdb_conn.transaction():
+                        try:
+                            await pdb_conn.execute_many(insert(GitHubRepository), values)
+                        except Exception as e:
+                            log = logging.getLogger(
+                                "%s._fetch_repository_first_commit_dates" % metadata.__package__)
+                            log.warning("Failed to store %d rows: %s: %s",
+                                        len(values), type(e).__name__, e)
             await defer(insert_repository(), "insert_repository")
             rows.extend(computed)
     result = {r[0]: r[1] for r in rows}

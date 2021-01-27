@@ -156,17 +156,19 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
                                                     pointer=".changes[%d].jira_name" % i))
         added_maps.append((github_id, jira_id))
 
-    async with sdb.transaction():
-        await sdb.execute(delete(MappedJIRAIdentity)
-                          .where(and_(MappedJIRAIdentity.account_id == request_model.account,
-                                      MappedJIRAIdentity.github_user_id.in_(cleared_github_ids))))
-        await sdb.execute_many(insert(MappedJIRAIdentity), [
-            MappedJIRAIdentity(
-                account_id=request_model.account,
-                github_user_id=ghid,
-                jira_user_id=jid,
-                confidence=1.,
-            ).create_defaults().explode(with_primary_keys=True) for ghid, jid in added_maps])
+    async with sdb.connection() as sdb_conn:
+        async with sdb_conn.transaction():
+            await sdb_conn.execute(
+                delete(MappedJIRAIdentity)
+                .where(and_(MappedJIRAIdentity.account_id == request_model.account,
+                            MappedJIRAIdentity.github_user_id.in_(cleared_github_ids))))
+            await sdb_conn.execute_many(insert(MappedJIRAIdentity), [
+                MappedJIRAIdentity(
+                    account_id=request_model.account,
+                    github_user_id=ghid,
+                    jira_user_id=jid,
+                    confidence=1.,
+                ).create_defaults().explode(with_primary_keys=True) for ghid, jid in added_maps])
     return await get_jira_identities(request, request_model.account, jira_acc=jira_acc)
 
 

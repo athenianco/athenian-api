@@ -521,6 +521,8 @@ async def test_discover_update_unreleased_prs_smoke(
         datetime(2018, 11, 1, tzinfo=utc),
         release_match_setting_tag,
         (6366825,), mdb, pdb, None)
+    if pdb.url.dialect == "sqlite":
+        await wait_deferred()
     assert len(releases) == 2
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     empty_rdf = new_released_prs_df()
@@ -533,6 +535,8 @@ async def test_discover_update_unreleased_prs_smoke(
         datetime(2018, 11, 20, tzinfo=utc),
         release_match_setting_tag,
         (6366825,), mdb, pdb, None)
+    if pdb.url.dialect == "sqlite":
+        await wait_deferred()
     assert len(releases) == 1
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     await update_unreleased_prs(
@@ -556,6 +560,8 @@ async def test_discover_update_unreleased_prs_smoke(
         datetime(2018, 11, 1, tzinfo=utc),
         release_match_setting_tag,
         (6366825,), mdb, pdb, None)
+    if pdb.url.dialect == "sqlite":
+        await wait_deferred()
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     unreleased_prs = await load_merged_unreleased_pull_request_facts(
         prs, datetime(2018, 11, 1, tzinfo=utc), LabelFilter.empty(), matched_bys, default_branches,
