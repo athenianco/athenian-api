@@ -9,6 +9,7 @@ import time
 from typing import Callable, List, Mapping, Tuple, Union
 
 import aiohttp.web
+import aiosqlite
 import asyncpg
 import databases.core
 from databases.interfaces import ConnectionBackend, TransactionBackend
@@ -31,33 +32,40 @@ def measure_db_overhead_and_retry(db: databases.Database,
     Also retry queries after connectivity errors.
     """
     log = logging.getLogger("%s.measure_db_overhead_and_retry" % metadata.__package__)
-
-    def measure_method_overhead_and_retry(func) -> callable:
-        async def wrapped_measure_method_overhead_and_retry(*args, **kwargs):
-            start_time = time.time()
-            wait_intervals = [0.1, 0.5, 1.4, None]
-            for i, wait_time in enumerate(wait_intervals):
-                try:
-                    return await func(*args, **kwargs)
-                except OSError as e:
-                    if i == len(wait_intervals) - 1:
-                        raise e from None
-                    log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
-                    await asyncio.sleep(wait_time)
-                finally:
-                    elapsed = app["db_elapsed"].get()
-                    if elapsed is None:
-                        log.warning("Cannot record the %s overhead", db_id)
-                    else:
-                        delta = time.time() - start_time
-                        elapsed[db_id] += delta
-
-        return wraps(wrapped_measure_method_overhead_and_retry, func)
-
     backend_connection = db._backend.connection  # type: Callable[[], ConnectionBackend]
 
     def wrapped_backend_connection() -> ConnectionBackend:
         connection = backend_connection()
+
+        def measure_method_overhead_and_retry(func) -> callable:
+            async def wrapped_measure_method_overhead_and_retry(*args, **kwargs):
+                start_time = time.time()
+                if (
+                    (isinstance(connection, asyncpg.Connection) and connection.is_in_transaction())
+                    or
+                    (isinstance(connection, aiosqlite.Connection) and connection.in_transaction)
+                ):
+                    wait_intervals = [None]
+                else:
+                    wait_intervals = [0.1, 0.5, 1.4, None]
+                for i, wait_time in enumerate(wait_intervals):
+                    try:
+                        return await func(*args, **kwargs)
+                    except OSError as e:
+                        if wait_time is None:
+                            raise e from None
+                        log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
+                        await asyncio.sleep(wait_time)
+                    finally:
+                        elapsed = app["db_elapsed"].get()
+                        if elapsed is None:
+                            log.warning("Cannot record the %s overhead", db_id)
+                        else:
+                            delta = time.time() - start_time
+                            elapsed[db_id] += delta
+
+            return wraps(wrapped_measure_method_overhead_and_retry, func)
+
         connection.acquire = measure_method_overhead_and_retry(connection.acquire)
         connection.fetch_all = measure_method_overhead_and_retry(connection.fetch_all)
         connection.fetch_one = measure_method_overhead_and_retry(connection.fetch_one)
@@ -120,16 +128,18 @@ def add_pdb_misses(pdb: databases.Database, topic: str, value: int) -> None:
     pdb_metrics_logger.info("misses/%s: +%d", topic, value, stacklevel=2)
 
 
-class ParallelDatabase(databases.Database):
-    """Override connection() to ignore the task context and spawn a new Connection every time."""
+class ExecuteManyConnection(databases.core.Connection):
+    """Connection with a better execute_many()."""
 
-    def __str__(self):
-        """Make Sentry debugging easier."""
-        return "ParallelDatabase('%s', options=%s)" % (self.url, self.options)
-
-    def connection(self) -> "databases.core.Connection":
-        """Bypass self._connection_context."""
-        return databases.core.Connection(self._backend)
+    async def execute_many(self,
+                           query: Union[ClauseElement, str],
+                           values: List[Mapping]) -> None:
+        """Leverage executemany() if connected to PostgreSQL for better performance."""
+        if not isinstance(self.raw_connection, asyncpg.Connection):
+            return await super().execute_many(query, values)
+        sql, args = self._compile(query, values)
+        async with self._query_lock:
+            await self.raw_connection.executemany(sql, args)
 
     def _compile(self, query: ClauseElement, values: List[Mapping]) -> Tuple[str, List[list]]:
         compiled = query.compile(dialect=self._backend._dialect)
@@ -152,23 +162,17 @@ class ParallelDatabase(databases.Database):
 
         return compiled_query, args
 
-    async def _connection_execute_many(self,
-                                       connection: databases.core.Connection,
-                                       query: Union[ClauseElement, str],
-                                       values: List[Mapping]) -> None:
-        """Leverage executemany() if connected to PostgreSQL."""
-        if self.url.dialect not in ("postgres", "postgresql"):
-            return await connection.execute_many(query, values)
-        sql, args = self._compile(query, values)
-        async with connection._query_lock:
-            await connection._connection.raw_connection.executemany(sql, args)
 
-    async def execute_many(self,
-                           query: Union[ClauseElement, str],
-                           values: List[Mapping]) -> None:
-        """Re-implement execute_many for better performance."""
-        async with self.connection() as connection:
-            return await self._connection_execute_many(connection, query, values)
+class ParallelDatabase(databases.Database):
+    """Override connection() to ignore the task context and spawn a new Connection every time."""
+
+    def __str__(self):
+        """Make Sentry debugging easier."""
+        return "ParallelDatabase('%s', options=%s)" % (self.url, self.options)
+
+    def connection(self) -> "databases.core.Connection":
+        """Bypass self._connection_context."""
+        return ExecuteManyConnection(self._backend)
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
