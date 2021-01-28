@@ -17,7 +17,6 @@ def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id):
     state_db = "sqlite:///%s" % state_db_path
     if state_db_path.exists():
         state_db_path.unlink()
-    os.putenv("ATHENIAN_INVITATION_KEY", "secret")
     migrate("state", state_db, exec=False)
     precomputed_db_path = db_dir / ("pdb-%s.sqlite" % worker_id)
     precomputed_db = "sqlite:///%s" % precomputed_db_path
@@ -29,7 +28,7 @@ def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id):
     env["ATHENIAN_INVITATION_URL_PREFIX"] = "https://app.athenian.co/i/"
     env["ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE"] = \
         "https://installation.athenian.co/jira/%s/atlassian-connect.json"
-    env["ATHENIAN_INVITATION_KEY"] = "secret"
+    env["ATHENIAN_INVITATION_KEY"] = "vadim"
     env["ATHENIAN_DEFAULT_USER"] = "github|60340680"
     proc = subprocess.Popen(
         [sys.executable, "-m", "athenian.api", "--ui", "--no-google-kms",

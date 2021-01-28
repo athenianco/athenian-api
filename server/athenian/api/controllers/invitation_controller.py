@@ -22,10 +22,12 @@ from sqlalchemy import and_, delete, func, insert, select, update
 from sqlalchemy.sql.functions import count
 
 from athenian.api import metadata
-from athenian.api.auth import disable_default_user
+from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
+from athenian.api.controllers.ffx import encrypt
 from athenian.api.controllers.reposet import load_account_reposets
+from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
     FetchProgress
 from athenian.api.models.state.models import Account, Invitation, RepositorySet, UserAccount
@@ -41,7 +43,7 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.typing_utils import DatabaseLike
 
-ikey = os.getenv("ATHENIAN_INVITATION_KEY")
+
 admin_backdoor = (1 << 24) - 1
 url_prefix = os.getenv("ATHENIAN_INVITATION_URL_PREFIX")
 jira_url_template = os.getenv("ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE")
@@ -49,7 +51,7 @@ jira_url_template = os.getenv("ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE")
 
 def validate_env():
     """Check that the required global parameters are set."""
-    if ikey is None:
+    if Auth0.KEY is None:
         raise EnvironmentError("ATHENIAN_INVITATION_KEY environment variable must be set")
     if url_prefix is None:
         raise EnvironmentError("ATHENIAN_INVITATION_URL_PREFIX environment variable must be set")
@@ -73,7 +75,7 @@ async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
             salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
             inv = Invitation(salt=salt, account_id=id, created_by=request.uid).create_defaults()
             invitation_id = await sdb_conn.execute(insert(Invitation).values(inv.explode()))
-        slug = encode_slug(invitation_id, salt)
+        slug = encode_slug(invitation_id, salt, request.app["auth"].key)
         model = InvitationLink(url=url_prefix + slug)
         return model_response(model)
 
@@ -90,25 +92,24 @@ async def _check_admin_access(uid: str, account: int, sdb_conn: databases.core.C
             detail="User %s is not an admin of the account %d" % (uid, account)))
 
 
-def encode_slug(iid: int, salt: int) -> str:
+def encode_slug(iid: int, salt: int, key: str) -> str:
     """Encode an invitation ID and some extra data to 8 chars."""
     part1 = struct.pack("!H", salt)  # 2 bytes
     part2 = struct.pack("!I", iid)[1:]  # 3 bytes
-    binseq = (part1 + part2).hex()  # 5 bytes, 10 hex chars
-    e = pyffx.String(ikey.encode(), alphabet="0123456789abcdef", length=len(binseq))
-    encseq = e.encrypt(binseq)  # encrypted 5 bytes, 10 hex chars
+    binseq = part1 + part2  # 5 bytes, 10 hex chars
+    encseq = encrypt(binseq, key.encode())  # encrypted 5 bytes, 10 hex chars
     finseq = base64.b32encode(bytes.fromhex(encseq)).lower().decode()  # 8 base32 chars
     finseq = finseq.replace("o", "8").replace("l", "9")
     return finseq
 
 
-def decode_slug(slug: str) -> (int, int):
+def decode_slug(slug: str, key: str) -> (int, int):
     """Decode an invitation ID and some extra data from 8 chars."""
     assert len(slug) == 8
     assert isinstance(slug, str)
     b32 = slug.replace("8", "o").replace("9", "l").upper().encode()
     x = base64.b32decode(b32).hex()
-    e = pyffx.String(ikey.encode(), alphabet="0123456789abcdef", length=len(x))
+    e = pyffx.String(key.encode(), alphabet="0123456789abcdef", length=len(x))
     x = bytes.fromhex(e.decrypt(x))
     salt = struct.unpack("!H", x[:2])[0]
     iid = struct.unpack("!I", b"\x00" + x[2:])[0]
@@ -133,7 +134,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
     if len(x) != 8:
         bad_req()
     try:
-        iid, salt = decode_slug(x)
+        iid, salt = decode_slug(x, request.app["auth"].key)
     except binascii.Error:
         bad_req()
     async with sdb.connection() as conn:
@@ -177,7 +178,7 @@ async def _accept_invitation(iid: int,
                     detail="You cannot accept new admin invitations until your account's "
                            "installation finishes."))
         # create a new account for the admin user
-        acc_id = await create_new_account(conn)
+        acc_id = await create_new_account(conn, request.app["auth"].key)
         if acc_id >= admin_backdoor:
             await conn.execute(delete(Account).where(Account.id == acc_id))
             raise ResponseError(GenericError(
@@ -187,7 +188,10 @@ async def _accept_invitation(iid: int,
                 detail="Invitation was not found."))
         log.info("Created new account %d", acc_id)
         if slack is not None:
-            await slack.post("new_account.jinja2", uid=request.uid, account=acc_id)
+            async def report_new_account_to_slack():
+                await slack.post("new_account.jinja2", user=await request.user(), account=acc_id)
+
+            await defer(report_new_account_to_slack(), "report_new_account_to_slack")
         status = None
     else:
         status = await conn.fetch_one(select([UserAccount.is_admin])
@@ -203,26 +207,28 @@ async def _accept_invitation(iid: int,
         await conn.execute(insert(UserAccount).values(user.explode(with_primary_keys=True)))
         log.info("Assigned user %s to account %d (admin: %s)", request.uid, acc_id, is_admin)
         if slack is not None:
-            await slack.post("new_user.jinja2", user=await request.user(), account=acc_id)
+            async def report_new_user_to_slack():
+                await slack.post("new_user.jinja2", user=await request.user(), account=acc_id)
+
+            await defer(report_new_user_to_slack(), "report_new_user_to_slack")
         values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
         await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
     user = await (await request.user()).load_accounts(conn)
     return acc_id, user
 
 
-async def create_new_account(conn: DatabaseLike) -> int:
+async def create_new_account(conn: DatabaseLike, secret: str) -> int:
     """Create a new account."""
     if isinstance(conn, databases.Database):
         slow = conn.url.dialect == "sqlite"
     else:
         slow = isinstance(conn.raw_connection, aiosqlite.core.Connection)
     if slow:
-        return await _create_new_account_slow(conn)
-    return await _create_new_account_fast(conn)
+        return await _create_new_account_slow(conn, secret)
+    return await _create_new_account_fast(conn, secret)
 
 
-async def _create_new_account_fast(
-        conn: DatabaseLike) -> int:
+async def _create_new_account_fast(conn: DatabaseLike, secret: str) -> int:
     """Create a new account.
 
     Should be used for PostgreSQL.
@@ -231,7 +237,7 @@ async def _create_new_account_fast(
         account_id = await conn.execute(
             insert(Account).values(Account(secret_salt=0, secret=Account.missing_secret)
                                    .create_defaults().explode()))
-        salt, secret = _generate_account_secret(account_id)
+        salt, secret = _generate_account_secret(account_id, secret)
         await conn.execute(update(Account).where(Account.id == account_id).values({
             Account.secret_salt: salt,
             Account.secret: secret,
@@ -239,8 +245,7 @@ async def _create_new_account_fast(
         return account_id
 
 
-async def _create_new_account_slow(
-        conn: DatabaseLike) -> int:
+async def _create_new_account_slow(conn: DatabaseLike, secret: str) -> int:
     """Create a new account without relying on autoincrement.
 
     SQLite does not allow resetting the primary key sequence, so we have to increment the ID
@@ -252,7 +257,7 @@ async def _create_new_account_slow(
                                        .where(Account.id < admin_backdoor)))[0] or 0
         acc.id = max_id + 1
         acc_id = await conn.execute(insert(Account).values(acc.explode(with_primary_keys=True)))
-        salt, secret = _generate_account_secret(acc_id)
+        salt, secret = _generate_account_secret(acc_id, secret)
         await conn.execute(update(Account).where(Account.id == acc_id).values({
             Account.secret_salt: salt,
             Account.secret: secret,
@@ -271,7 +276,7 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
     if len(x) != 8:
         return model_response(result)
     try:
-        iid, salt = decode_slug(x)
+        iid, salt = decode_slug(x, request.app["auth"].key)
     except binascii.Error:
         return model_response(result)
     inv = await request.sdb.fetch_one(
@@ -468,9 +473,9 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
     return model_response(model)
 
 
-def _generate_account_secret(account_id: int) -> Tuple[int, str]:
+def _generate_account_secret(account_id: int, key: str) -> Tuple[int, str]:
     salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
-    secret = encode_slug(account_id, salt)
+    secret = encode_slug(account_id, salt, key)
     return salt, secret
 
 

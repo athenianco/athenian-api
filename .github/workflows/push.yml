@@ -196,7 +196,7 @@ jobs:
         export PDB=${PDB/\%s/master}
         export OVERRIDE_SDB=$SDB
         export OVERRIDE_PDB=$PDB
-        PYTHONPATH=. PRECOMPUTED=0 ATHENIAN_INVITATION_KEY=whatever python3 tests/gen_mock_db.py
+        PYTHONPATH=. PRECOMPUTED=0 python3 tests/gen_mock_db.py
         coverage run --source athenian.api -m athenian.api.hacks.heat_cache --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --memcached=0.0.0.0:11211
         # the second run should not crash
         python3 -m athenian.api.hacks.heat_cache --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --memcached=0.0.0.0:11211

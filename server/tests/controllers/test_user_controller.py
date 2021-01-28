@@ -14,7 +14,11 @@ from athenian.api.request import AthenianWebRequest
 from tests.conftest import disable_default_user
 
 
-async def test_get_user_smoke(client, headers):
+vadim_email = "af253b50a4d7b2c9841f436fbe4c635f270f4388653649b0971f2751a441a556fe63a9dabfa150a444dd"  # noqa
+eiso_email = "18fe5f66fce88e4791d0117a311c6c2b2102216e18585c1199f90516186aa4461df7a2453857d781b6"  # noqa
+
+
+async def test_get_user_smoke(client, headers, app):
     response = await client.request(
         method="GET", path="/v1/user", headers=headers, json={},
     )
@@ -72,7 +76,7 @@ async def test_get_default_user(client, headers, lazy_gkwillie):
         "id": "github|60340680",
         "login": "gkwillie",
         "name": "Groundskeeper Willie",
-        "email": "<classified>",
+        "email": "<empty email>",
         "native_id": "60340680",
         "picture": "https://avatars0.githubusercontent.com/u/60340680?v=4",
         "accounts": {},
@@ -86,10 +90,10 @@ async def test_get_account_details_smoke(client, headers):
     body = Account.from_dict(json.loads((await response.read()).decode("utf-8")))
     assert len(body.admins) == 1
     assert body.admins[0].name == "Vadim Markovtsev"
-    assert body.admins[0].email == "<classified>"  # "vadim@athenian.co"
+    assert body.admins[0].email == vadim_email
     assert len(body.regulars) == 1
     assert body.regulars[0].name == "Eiso Kant"
-    assert body.regulars[0].email == "<classified>"  # "eiso@athenian.co"
+    assert body.regulars[0].email == eiso_email
     assert len(body.organizations) == 1
     assert body.organizations[0].login == "src-d"
     assert body.organizations[0].name == "source{d}"
@@ -155,9 +159,9 @@ async def test_get_users_query_size_limit(xapp):
         ["auth0|5e1f6dfb57bc640ea390557b"] * 200 + ["auth0|5e1f6e2e8bfa520ea5290741"] * 200)
     assert len(users) == 2
     assert users["auth0|5e1f6dfb57bc640ea390557b"].name == "Vadim Markovtsev"
-    assert users["auth0|5e1f6dfb57bc640ea390557b"].email == "<classified>"  # "vadim@athenian.co"
+    assert users["auth0|5e1f6dfb57bc640ea390557b"].email == vadim_email
     assert users["auth0|5e1f6e2e8bfa520ea5290741"].name == "Eiso Kant"
-    assert users["auth0|5e1f6e2e8bfa520ea5290741"].email == "<classified>"  # "eiso@athenian.co"
+    assert users["auth0|5e1f6e2e8bfa520ea5290741"].email == eiso_email
 
 
 async def test_get_users_rate_limit(xapp):
@@ -165,7 +169,7 @@ async def test_get_users_rate_limit(xapp):
                            for _ in range(20)])
     for u in users:
         assert u.name == "Vadim Markovtsev"
-        assert u.email == "<classified>"  # "vadim@athenian.co"
+        assert u.email == vadim_email
 
 
 async def test_become_db(client, headers, sdb):
@@ -188,7 +192,7 @@ async def test_become_db(client, headers, sdb):
     assert body1 == {
         "id": "auth0|5e1f6e2e8bfa520ea5290741",
         "login": "eiso",
-        "email": "<classified>",  # "eiso@athenian.co",
+        "email": eiso_email,
         "name": "Eiso Kant",
         "native_id": "5e1f6e2e8bfa520ea5290741",
         "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
@@ -202,7 +206,7 @@ async def test_become_db(client, headers, sdb):
     assert body3 == {
         "id": "auth0|5e1f6dfb57bc640ea390557b",
         "login": "vadim",
-        "email": "<classified>",  # "vadim@athenian.co",
+        "email": vadim_email,
         "name": "Vadim Markovtsev",
         "native_id": "5e1f6dfb57bc640ea390557b",
         "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
@@ -224,7 +228,7 @@ async def test_become_header(client, headers, sdb):
     assert body == {
         "id": "auth0|5e1f6e2e8bfa520ea5290741",
         "login": "eiso",
-        "email": "<classified>",  # "eiso@athenian.co",
+        "email": eiso_email,
         "name": "Eiso Kant",
         "native_id": "5e1f6e2e8bfa520ea5290741",
         "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa

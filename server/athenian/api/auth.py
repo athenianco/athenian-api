@@ -44,13 +44,14 @@ class Auth0:
     AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")
     AUTH0_CLIENT_SECRET = os.getenv("AUTH0_CLIENT_SECRET")
     DEFAULT_USER = os.getenv("ATHENIAN_DEFAULT_USER")
+    KEY = os.getenv("ATHENIAN_INVITATION_KEY")
     USERINFO_CACHE_TTL = 60  # seconds
     log = logging.getLogger("auth")
 
     def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
                  client_secret=AUTH0_CLIENT_SECRET, whitelist: Sequence[str] = tuple(),
-                 default_user=DEFAULT_USER, cache: Optional[aiomcache.Client] = None, lazy=False,
-                 force_user: str = ""):
+                 default_user=DEFAULT_USER, key=KEY,
+                 cache: Optional[aiomcache.Client] = None, lazy=False, force_user: str = ""):
         """
         Create a new Auth0 middleware.
 
@@ -65,6 +66,7 @@ class Auth0:
         :param whitelist: Routes that do not need authorization.
         :param default_user: Default user ID - the one that's assigned to public, unauthorized \
                              requests.
+        :param key: Global secret used to encrypt sensitive personal information.
         :param cache: memcached client to cache the user profiles.
         :param lazy: Value that indicates whether Auth0 Management API tokens and JWKS data \
                      must be asynchronously requested at first related method call.
@@ -75,7 +77,8 @@ class Auth0:
                               (audience, "AUTH0_AUDIENCE"),
                               (client_id, "AUTH0_CLIENT_ID"),
                               (client_secret, "AUTH0_CLIENT_SECRET"),
-                              (default_user, "ATHENIAN_DEFAULT_USER")):
+                              (default_user, "ATHENIAN_DEFAULT_USER"),
+                              (key, "ATHENIAN_INVITATION_KEY")):
             if not var:
                 raise EnvironmentError("%s environment variable must be set." % env_name)
         self._domain = domain
@@ -86,6 +89,7 @@ class Auth0:
         self._client_secret = client_secret
         self._default_user_id = default_user
         self._default_user = None  # type: Optional[User]
+        self._key = key
         self.force_user = force_user
         if force_user:
             self.log.warning("Forced user authorization mode: %s", force_user)
@@ -132,14 +136,19 @@ class Auth0:
         return self._default_user
 
     @property
-    def domain(self):
+    def domain(self) -> str:
         """Return the assigned Auth0 domain, e.g. "athenian.auth0.com"."""
         return self._domain
 
     @property
-    def audience(self):
+    def audience(self) -> str:
         """Return the assigned Auth0 audience URL, e.g. "https://api.athenian.co"."""
         return self._audience
+
+    @property
+    def key(self) -> str:
+        """Return the global secret used to encrypt sensitive personal information."""
+        return self._key
 
     async def close(self):
         """Free resources and close connections associated with the object."""
@@ -285,7 +294,7 @@ class Auth0:
             if resp.status != HTTPStatus.OK:
                 return []
             found = await resp.json()
-            return [User.from_auth0(**u) for u in found]
+            return [User.from_auth0(**u, encryption_key=self.key) for u in found]
 
         return {u.id: u for u in await get_batch(list(users))}
 
@@ -363,7 +372,7 @@ class Auth0:
             raise ResponseError(GenericError(
                 "/errors/Auth0", title=resp.reason, status=resp.status,
                 detail=user.get("description", str(user))))
-        return User.from_auth0(**user)
+        return User.from_auth0(**user, encryption_key=self.key)
 
     async def _set_user(self, request: AthenianWebRequest, token: str, method: str) -> None:
         if method == "bearer":

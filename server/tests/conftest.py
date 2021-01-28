@@ -37,6 +37,9 @@ from sqlalchemy.ext.declarative import DeclarativeMeta
 from sqlalchemy.orm import sessionmaker
 import uvloop
 
+# This must stay before any athenian.api import to override any external ATHENIAN_INVITATION_KEY
+os.environ["ATHENIAN_INVITATION_KEY"] = "vadim"
+
 from athenian.api import create_memcached, create_slack, patch_pandas
 from athenian.api.auth import Auth0, User
 from athenian.api.cache import setup_cache_metrics
@@ -62,7 +65,7 @@ setup_defer(False)
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".sqlite")
 pdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.precomputed.", suffix=".sqlite")
-invitation_controller.ikey = "vadim"
+assert Auth0.KEY == os.environ["ATHENIAN_INVITATION_KEY"], "athenian.api was imported before tests"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
 invitation_controller.jira_url_template = \
     "https://installation.athenian.co/jira/%s/atlassian-connect.json"

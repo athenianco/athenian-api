@@ -6,6 +6,7 @@ from random import randint
 from sqlalchemy import and_, create_engine, func
 from sqlalchemy.orm import sessionmaker
 
+from athenian.api import Auth0
 from athenian.api.controllers import invitation_controller
 from athenian.api.models import check_alembic_schema_version
 from athenian.api.models.state.models import Account, Invitation
@@ -67,7 +68,7 @@ def main(conn_str: str, force_new: bool = False) -> None:
             inv = issued[-1]
         url_prefix = invitation_controller.url_prefix
         encode_slug = invitation_controller.encode_slug
-        print(url_prefix + encode_slug(inv.id, inv.salt))
+        print(url_prefix + encode_slug(inv.id, inv.salt, Auth0.KEY))
         session.commit()
     finally:
         session.close()

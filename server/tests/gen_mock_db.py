@@ -16,9 +16,10 @@ try:
 except ImportError:
     pass
 
-from athenian.api.models import migrate
 from tests.conftest import db_dir, metadata_db
 from tests.sample_db_data import fill_state_session
+# this must go *after* tests to let tests.conftest check ATHENIAN_INVITATION_KEY
+from athenian.api.models import migrate  # noqa: I100
 
 
 def parse_args():
