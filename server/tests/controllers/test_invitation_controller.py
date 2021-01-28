@@ -201,11 +201,6 @@ async def test_accept_invitation_inactive(client, headers, sdb, disable_default_
 
 
 async def test_accept_invitation_admin(client, headers, sdb, disable_default_user):
-    # avoid 429 cooldown
-    cooldowntd = invitation_controller.accept_admin_cooldown
-    await sdb.execute(update(UserAccount)
-                      .where(UserAccount.user_id == "auth0|5e1f6dfb57bc640ea390557b")
-                      .values({UserAccount.created_at: datetime.now(timezone.utc) - cooldowntd}))
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     iid = await sdb.execute(
         insert(Invitation).values(
@@ -243,11 +238,14 @@ async def test_accept_invitation_admin(client, headers, sdb, disable_default_use
             assert secret != Account.missing_secret
 
 
-async def test_accept_invitation_admin_cooldown(client, headers, sdb, disable_default_user):
-    await sdb.execute(update(UserAccount)
-                      .where(and_(UserAccount.user_id == "auth0|5e1f6dfb57bc640ea390557b",
-                                  UserAccount.is_admin))
-                      .values({UserAccount.created_at: datetime.now(timezone.utc)}))
+async def test_accept_invitation_admin_duplicate(client, headers, sdb, disable_default_user):
+    await sdb.execute(update(RepositorySet)
+                      .where(RepositorySet.id == 1)
+                      .values({RepositorySet.precomputed: False,
+                               RepositorySet.updates_count: RepositorySet.updates_count,
+                               RepositorySet.updated_at: datetime.now(timezone.utc),
+                               RepositorySet.items_count: RepositorySet.items_count,
+                               RepositorySet.items_checksum: RepositorySet.items_checksum}))
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     iid = await sdb.execute(
         insert(Invitation).values(
