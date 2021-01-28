@@ -200,16 +200,21 @@ async def load_releases(repos: Iterable[str],
             # we must execute these in sequence to stay consistent
             async with pdb.connection() as pdb_conn:
                 # the transaction is necessary to support pgbouncer
-                async with pdb_conn.transaction():
-                    await _store_precomputed_releases(
-                        missings, default_branches, settings, pdb_conn)
-                    # if we know that we've scanned branches for `tag_or_branch`, no matter if
-                    # we loaded tags or not, we should update the span
-                    matches = applied_matches.copy()
-                    for repo in ambiguous_branches_scanned:
-                        matches[repo] = ReleaseMatch.branch
-                    await _store_precomputed_release_match_spans(
-                        match_groups, matches, time_from, time_to, pdb_conn)
+                try:
+                    async with pdb_conn.transaction():
+                        await _store_precomputed_releases(
+                            missings, default_branches, settings, pdb_conn)
+                        # if we know that we've scanned branches for `tag_or_branch`, no matter if
+                        # we loaded tags or not, we should update the span
+                        matches = applied_matches.copy()
+                        for repo in ambiguous_branches_scanned:
+                            matches[repo] = ReleaseMatch.branch
+                        await _store_precomputed_release_match_spans(
+                            match_groups, matches, time_from, time_to, pdb_conn)
+                except asyncpg.DeadlockDetectedError:
+                    # We lock two tables in one transaction, this signals that our transaction
+                    # lost the battle with another concurrent one.
+                    return
 
         await defer(store_precomputed_releases(),
                     "store_precomputed_releases(%d, %d)" % (len(missings), repos_count))
