@@ -19,6 +19,7 @@ import databases.core
 import pyffx
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, func, insert, select, update
+from sqlalchemy.sql.functions import count
 
 from athenian.api import metadata
 from athenian.api.auth import disable_default_user
@@ -43,7 +44,6 @@ from athenian.api.typing_utils import DatabaseLike
 ikey = os.getenv("ATHENIAN_INVITATION_KEY")
 admin_backdoor = (1 << 24) - 1
 url_prefix = os.getenv("ATHENIAN_INVITATION_URL_PREFIX")
-accept_admin_cooldown = timedelta(minutes=1)
 jira_url_template = os.getenv("ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE")
 
 
@@ -162,19 +162,20 @@ async def _accept_invitation(iid: int,
     is_admin = acc_id == admin_backdoor
     slack = request.app["slack"]  # type: SlackWebClient
     if is_admin:
-        timestamp = await conn.fetch_val(
-            select([UserAccount.created_at]).where(and_(UserAccount.user_id == request.uid,
-                                                        UserAccount.is_admin)))
-        if timestamp is not None:
-            if timestamp.tzinfo is None:
-                now = datetime.utcnow()
-            else:
-                now = datetime.now(tz=timestamp.tzinfo)
-            if now - timestamp < accept_admin_cooldown:
+        other_accounts = await conn.fetch_all(select([UserAccount.account_id])
+                                              .where(and_(UserAccount.user_id == request.uid,
+                                                          UserAccount.is_admin)))
+        if other_accounts:
+            other_accounts = [row[0] for row in other_accounts]
+            pending = await conn.fetch_val(select([count(RepositorySet.owner_id)])
+                                           .where(and_(RepositorySet.owner_id.in_(other_accounts),
+                                                       RepositorySet.name == RepositorySet.ALL,
+                                                       RepositorySet.precomputed.is_(False))))
+            if pending:
                 raise ResponseError(TooManyRequestsError(
-                    type="/errors/AdminCooldownError",
-                    detail="You accepted an admin invitation less than %s ago." %
-                           accept_admin_cooldown))
+                    type="/errors/DuplicateAccountRegistrationError",
+                    detail="You cannot accept new admin invitations until your account's "
+                           "installation finishes."))
         # create a new account for the admin user
         acc_id = await create_new_account(conn)
         if acc_id >= admin_backdoor:

@@ -216,9 +216,9 @@ def main():
                         update(RepositorySet)
                         .where(RepositorySet.id == reposet.id)
                         .values({RepositorySet.precomputed: True,
-                                 RepositorySet.updates_count: reposet.updates_count,
-                                 RepositorySet.updated_at: reposet.updated_at,
-                                 RepositorySet.items_count: reposet.items_count,
+                                 RepositorySet.updates_count: RepositorySet.updates_count,
+                                 RepositorySet.updated_at: datetime.now(timezone.utc),
+                                 RepositorySet.items_count: RepositorySet.items_count,
                                  RepositorySet.items_checksum: RepositorySet.items_checksum}))
             finally:
                 await wait_deferred()
