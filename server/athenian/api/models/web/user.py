@@ -1,10 +1,12 @@
 from datetime import datetime
+import struct
 from typing import List, Optional, Union
 
 import databases
 import dateutil.parser
 from sqlalchemy import select
 
+from athenian.api.controllers.ffx import encrypt
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web.base_model_ import Model
 
@@ -72,7 +74,7 @@ class User(Model):
 
     @classmethod
     def from_auth0(cls, name: str, nickname: str, picture: str, updated_at: str,
-                   email: Optional[str] = None, sub: Optional[str] = None,
+                   encryption_key: str, email: Optional[str] = None, sub: Optional[str] = None,
                    user_id: Optional[str] = None, identities: Optional[List[dict]] = None, **_):
         """Create a new User object from Auth0 /userinfo."""
         if sub is None and user_id is None:
@@ -82,7 +84,14 @@ class User(Model):
             native_id = identities[0]["user_id"]
         else:
             native_id = id.rsplit("|", 1)[1]
-        email = "<classified>"  # TODO(vmarkovtsev): https://athenianco.atlassian.net/browse/DEV-87
+        if not email:
+            email = "<empty email>"
+        else:
+            try:
+                salt = struct.pack("!I", int(native_id))
+            except ValueError:
+                salt = native_id.encode()
+            email = encrypt(email.encode() + b"|" + salt, encryption_key.encode())
         return cls(
             id=id,
             native_id=native_id,

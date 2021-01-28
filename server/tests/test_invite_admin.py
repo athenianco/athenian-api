@@ -1,5 +1,3 @@
-import os
-
 import databases
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -20,7 +18,6 @@ async def _test_reset_sequence(state_db):
     sqla_conn_str = state_db.rsplit("?", 1)[0]
     engine = create_engine(sqla_conn_str)
     Base.metadata.drop_all(engine)
-    os.putenv("ATHENIAN_INVITATION_KEY", "whatever")
     migrate("state", url=sqla_conn_str, exec=False)
     session = sessionmaker(bind=engine)()
     try:
@@ -31,4 +28,4 @@ async def _test_reset_sequence(state_db):
     main_invite(sqla_conn_str)
     db = databases.Database(state_db)
     await db.connect()
-    assert await invitation_controller.create_new_account(db) == 4
+    assert await invitation_controller.create_new_account(db, "whatever") == 4

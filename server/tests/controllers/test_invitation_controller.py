@@ -7,7 +7,8 @@ import databases
 import pytest
 from sqlalchemy import and_, delete, insert, select, update
 
-from athenian.api.controllers import invitation_controller
+from athenian.api.controllers.invitation_controller import admin_backdoor, decode_slug, \
+    encode_slug, jira_url_template, url_prefix
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
     AccountJiraInstallation, God, Invitation, ReleaseSetting, RepositorySet, UserAccount, UserToken
@@ -22,20 +23,20 @@ async def clean_state(sdb: databases.Database) -> int:
     await sdb.execute(delete(UserToken))
     await sdb.execute(delete(ReleaseSetting))
     await sdb.execute(delete(AccountJiraInstallation))
-    await sdb.execute(delete(Account).where(Account.id != invitation_controller.admin_backdoor))
+    await sdb.execute(delete(Account).where(Account.id != admin_backdoor))
     if sdb.url.dialect != "sqlite":
         await sdb.execute("ALTER SEQUENCE accounts_id_seq RESTART;")
 
     return await sdb.execute(
         insert(Invitation).values(
-            Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
+            Invitation(salt=888, account_id=admin_backdoor)
             .create_defaults().explode()))
 
 
-async def test_empty_db_account_creation(client, headers, sdb, eiso, disable_default_user):
+async def test_empty_db_account_creation(client, headers, sdb, eiso, disable_default_user, app):
     iid = await clean_state(sdb)
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
+        "url": url_prefix + encode_slug(iid, 888, app.app["auth"].key),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -68,15 +69,15 @@ async def test_empty_db_account_creation(client, headers, sdb, eiso, disable_def
     assert "github.com/src-d/go-git" in reposets[0]["items"]
 
 
-async def test_gen_invitation_new(client, headers, sdb):
+async def test_gen_invitation_new(client, headers, sdb, app):
     response = await client.request(
         method="GET", path="/v1/invite/generate/1", headers=headers, json={},
     )
     body = json.loads((await response.read()).decode("utf-8"))
-    prefix = invitation_controller.url_prefix
+    prefix = url_prefix
     assert body["url"].startswith(prefix)
     x = body["url"][len(prefix):]
-    iid, salt = invitation_controller.decode_slug(x)
+    iid, salt = decode_slug(x, app.app["auth"].key)
     inv = await sdb.fetch_one(
         select([Invitation])
         .where(and_(Invitation.id == iid, Invitation.salt == salt)))
@@ -105,23 +106,23 @@ async def test_gen_invitation_no_member(client, headers):
     assert response.status == 404
 
 
-async def test_gen_invitation_existing(client, eiso, headers):
+async def test_gen_invitation_existing(client, eiso, headers, app):
     response = await client.request(
         method="GET", path="/v1/invite/generate/3", headers=headers, json={},
     )
     body = json.loads((await response.read()).decode("utf-8"))
-    prefix = invitation_controller.url_prefix
+    prefix = url_prefix
     assert body["url"].startswith(prefix)
     x = body["url"][len(prefix):]
-    iid, salt = invitation_controller.decode_slug(x)
+    iid, salt = decode_slug(x, app.app["auth"].key)
     assert iid == 1
     assert salt == 777
 
 
-async def test_accept_invitation_smoke(client, headers, sdb, disable_default_user):
+async def test_accept_invitation_smoke(client, headers, sdb, disable_default_user, app):
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -144,9 +145,9 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
     assert num_accounts_after == num_accounts_before
 
 
-async def test_accept_invitation_default_user(client, headers):
+async def test_accept_invitation_default_user(client, headers, app):
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -154,9 +155,9 @@ async def test_accept_invitation_default_user(client, headers):
     assert response.status == 403
 
 
-async def test_accept_invitation_noop(client, eiso, headers, disable_default_user):
+async def test_accept_invitation_noop(client, eiso, headers, disable_default_user, app):
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -180,7 +181,7 @@ async def test_accept_invitation_noop(client, eiso, headers, disable_default_use
 @pytest.mark.parametrize("trash", ["0", "0" * 8, "a" * 8])
 async def test_accept_invitation_trash(client, trash, headers, disable_default_user):
     body = {
-        "url": invitation_controller.url_prefix + "0" * 8,
+        "url": url_prefix + "0" * 8,
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -188,11 +189,11 @@ async def test_accept_invitation_trash(client, trash, headers, disable_default_u
     assert response.status == 400
 
 
-async def test_accept_invitation_inactive(client, headers, sdb, disable_default_user):
+async def test_accept_invitation_inactive(client, headers, sdb, disable_default_user, app):
     await sdb.execute(
         update(Invitation).where(Invitation.id == 1).values({Invitation.is_active: False}))
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -200,14 +201,14 @@ async def test_accept_invitation_inactive(client, headers, sdb, disable_default_
     assert response.status == 403
 
 
-async def test_accept_invitation_admin(client, headers, sdb, disable_default_user):
+async def test_accept_invitation_admin(client, headers, sdb, disable_default_user, app):
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     iid = await sdb.execute(
         insert(Invitation).values(
-            Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
+            Invitation(salt=888, account_id=admin_backdoor)
             .create_defaults().explode()))
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
+        "url": url_prefix + encode_slug(iid, 888, app.app["auth"].key),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -238,7 +239,8 @@ async def test_accept_invitation_admin(client, headers, sdb, disable_default_use
             assert secret != Account.missing_secret
 
 
-async def test_accept_invitation_admin_duplicate(client, headers, sdb, disable_default_user):
+async def test_accept_invitation_admin_duplicate(
+        client, headers, sdb, disable_default_user, app):
     await sdb.execute(update(RepositorySet)
                       .where(RepositorySet.id == 1)
                       .values({RepositorySet.precomputed: False,
@@ -249,10 +251,10 @@ async def test_accept_invitation_admin_duplicate(client, headers, sdb, disable_d
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     iid = await sdb.execute(
         insert(Invitation).values(
-            Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
+            Invitation(salt=888, account_id=admin_backdoor)
             .create_defaults().explode()))
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
+        "url": url_prefix + encode_slug(iid, 888, app.app["auth"].key),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -262,9 +264,9 @@ async def test_accept_invitation_admin_duplicate(client, headers, sdb, disable_d
     assert num_accounts_after == num_accounts_before
 
 
-async def test_check_invitation(client, headers):
+async def test_check_invitation(client, headers, app):
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
@@ -273,9 +275,9 @@ async def test_check_invitation(client, headers):
     assert body == {"valid": True, "active": True, "type": "regular"}
 
 
-async def test_check_invitation_not_exists(client, headers):
+async def test_check_invitation_not_exists(client, headers, app):
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 888),
+        "url": url_prefix + encode_slug(1, 888, app.app["auth"].key),
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
@@ -284,13 +286,13 @@ async def test_check_invitation_not_exists(client, headers):
     assert body == {"valid": False}
 
 
-async def test_check_invitation_admin(client, headers, sdb):
+async def test_check_invitation_admin(client, headers, sdb, app):
     iid = await sdb.execute(
         insert(Invitation).values(
-            Invitation(salt=888, account_id=invitation_controller.admin_backdoor)
+            Invitation(salt=888, account_id=admin_backdoor)
             .create_defaults().explode()))
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
+        "url": url_prefix + encode_slug(iid, 888, app.app["auth"].key),
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
@@ -299,11 +301,11 @@ async def test_check_invitation_admin(client, headers, sdb):
     assert body == {"valid": True, "active": True, "type": "admin"}
 
 
-async def test_check_invitation_inactive(client, headers, sdb):
+async def test_check_invitation_inactive(client, headers, sdb, app):
     await sdb.execute(
         update(Invitation).where(Invitation.id == 1).values({Invitation.is_active: False}))
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(1, 777),
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
     }
     response = await client.request(
         method="POST", path="/v1/invite/check", headers=headers, json=body,
@@ -323,17 +325,17 @@ async def test_check_invitation_malformed(client, headers):
     assert body == {"valid": False}
 
 
-async def test_accept_invitation_god(client, headers, sdb):
+async def test_accept_invitation_god(client, headers, sdb, app):
     await sdb.execute(insert(God).values(God(
         user_id="auth0|5e1f6dfb57bc640ea390557b",
         mapped_id="auth0|5e1f6e2e8bfa520ea5290741",
     ).create_defaults().explode(with_primary_keys=True)))
     iid = await sdb.execute(
         insert(Invitation).values(Invitation(
-            salt=888, account_id=invitation_controller.admin_backdoor).create_defaults().explode(),
+            salt=888, account_id=admin_backdoor).create_defaults().explode(),
         ))
     body = {
-        "url": invitation_controller.url_prefix + invitation_controller.encode_slug(iid, 888),
+        "url": url_prefix + encode_slug(iid, 888, app.app["auth"].key),
     }
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
@@ -341,13 +343,13 @@ async def test_accept_invitation_god(client, headers, sdb):
     assert response.status == 403
 
 
-def test_encode_decode():
+def test_encode_decode(xapp):
     for _ in range(1000):
-        iid = randint(0, invitation_controller.admin_backdoor)
+        iid = randint(0, admin_backdoor)
         salt = randint(0, (1 << 16) - 1)
         try:
-            iid_back, salt_back = invitation_controller.decode_slug(
-                invitation_controller.encode_slug(iid, salt))
+            iid_back, salt_back = decode_slug(
+                encode_slug(iid, salt, xapp.app["auth"].key), xapp.app["auth"].key)
         except Exception as e:
             print(iid, salt)
             raise e from None
@@ -468,7 +470,7 @@ async def test_gen_jira_link_smoke(client, headers):
     assert response.status == 200
     body = json.loads((await response.read()).decode("utf-8"))
     url = body["url"]
-    assert re.match(invitation_controller.jira_url_template % "[a-z0-9]{8}", url)
+    assert re.match(jira_url_template % "[a-z0-9]{8}", url)
     body = json.loads((await response.read()).decode("utf-8"))
     assert url == body["url"]
 
