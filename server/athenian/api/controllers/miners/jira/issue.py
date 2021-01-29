@@ -186,7 +186,7 @@ async def fetch_jira_issues(ids: Tuple[int, List[str]],
                             types: Collection[str],
                             epics: Collection[str],
                             reporters: Collection[str],
-                            assignees: Collection[str],
+                            assignees: Collection[Optional[str]],
                             commenters: Collection[str],
                             load_participants: bool,
                             default_branches: Dict[str, str],
@@ -210,7 +210,7 @@ async def fetch_jira_issues(ids: Tuple[int, List[str]],
     :param types: List of lower-case types.
     :param epics: List of required parent epic keys.
     :param reporters: List of lower-case issue reporters.
-    :param assignees: List of lower-case issue assignees.
+    :param assignees: List of lower-case issue assignees. None means unassigned.
     :param commenters: List of lower-case issue commenters.
     """
     issues = await _fetch_issues(
@@ -341,7 +341,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
                         types: Collection[str],
                         epics: Collection[str],
                         reporters: Collection[str],
-                        assignees: Collection[str],
+                        assignees: Collection[Optional[str]],
                         commenters: Collection[str],
                         load_participants: bool,
                         mdb: databases.Database,
@@ -380,6 +380,9 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
     if reporters and (postgres or not commenters):
         or_filters.append(sql.func.lower(Issue.reporter_display_name).in_(reporters))
     if assignees and (postgres or not commenters):
+        if None in assignees:
+            # NULL IN (NULL) = false
+            or_filters.append(Issue.assignee_display_name.is_(None))
         or_filters.append(sql.func.lower(Issue.assignee_display_name).in_(assignees))
     if commenters:
         if postgres:

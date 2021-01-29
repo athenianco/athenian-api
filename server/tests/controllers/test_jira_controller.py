@@ -490,8 +490,10 @@ async def test_jira_metrics_labels(client, headers):
 @pytest.mark.parametrize("assignees, reporters, commenters, count", [
     (["Vadim markovtsev"], ["waren long"], ["lou Marvin caraig"], 1177),
     (["Vadim markovtsev"], [], [], 536),
+    ([None, "Vadim MARKOVTSEV"], [], [], 708),
     ([], ["waren long"], [], 567),
     ([], [], ["lou Marvin caraig"], 252),
+    ([None], [], ["lou Marvin caraig"], 403),
 ])
 async def test_jira_metrics_people(client, headers, assignees, reporters, commenters, count):
     body = {
