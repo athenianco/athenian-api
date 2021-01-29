@@ -16,7 +16,6 @@ import aiomcache
 import aiosqlite.core
 from asyncpg import IntegrityConstraintViolationError
 import databases.core
-import pyffx
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, func, insert, select, update
 from sqlalchemy.sql.functions import count
@@ -25,7 +24,7 @@ from athenian.api import metadata
 from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
-from athenian.api.controllers.ffx import encrypt
+from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
@@ -109,8 +108,7 @@ def decode_slug(slug: str, key: str) -> (int, int):
     assert isinstance(slug, str)
     b32 = slug.replace("8", "o").replace("9", "l").upper().encode()
     x = base64.b32decode(b32).hex()
-    e = pyffx.String(key.encode(), alphabet="0123456789abcdef", length=len(x))
-    x = bytes.fromhex(e.decrypt(x))
+    x = decrypt(x, key.encode())
     salt = struct.unpack("!H", x[:2])[0]
     iid = struct.unpack("!I", b"\x00" + x[2:])[0]
     return iid, salt
