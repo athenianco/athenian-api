@@ -3,6 +3,7 @@ from contextvars import ContextVar
 import logging
 from typing import Coroutine, List, Optional
 
+import asyncpg
 from sentry_sdk import Hub, start_transaction
 from sentry_sdk.tracing import Transaction
 
@@ -122,7 +123,10 @@ async def defer(coroutine: Coroutine, name: str) -> None:
         try:
             with transaction.start_child(op=name):
                 await coroutine
-        except BaseException:
+        except asyncpg.DeadlockDetectedError:
+            # Our DB transaction lost, but that's fine for a deferred task.
+            return
+        except Exception:
             _log.exception("Unhandled exception in deferred function %s", name)
         finally:
             global _global_defer_counter
