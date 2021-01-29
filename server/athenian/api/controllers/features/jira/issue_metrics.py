@@ -142,10 +142,7 @@ class LifeTimeCalculator(AverageMetricCalculator[timedelta]):
         resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
         released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)
         focus_mask = (min_times[:, None] <= resolved) & (resolved < max_times[:, None])
-        life_times = np.maximum(released, resolved) - np.minimum(created, prs_began)
-        nat = np.datetime64("nat")
-        life_times[released != released] = nat
-        life_times[resolved != resolved] = nat
+        life_times = np.maximum(released, resolved) - np.fmin(created, prs_began)
         unmapped_mask = prs_began != prs_began
         life_times[unmapped_mask] = resolved[unmapped_mask] - created[unmapped_mask]
         empty_life_time_mask = life_times != life_times
@@ -183,15 +180,44 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
         resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
         released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)
         focus_mask = (min_times[:, None] <= resolved) & (resolved < max_times[:, None])
-        lead_times = np.maximum(released, resolved) - np.minimum(work_began, prs_began)
-        nat = np.datetime64("nat")
-        lead_times[released != released] = nat
-        lead_times[resolved != resolved] = nat
+        lead_times = np.maximum(released, resolved) - np.fmin(work_began, prs_began)
         unmapped_mask = prs_began != prs_began
         lead_times[unmapped_mask] = resolved[unmapped_mask] - work_began[unmapped_mask]
         empty_lead_time_mask = lead_times != lead_times
         lead_times = lead_times.astype(self.dtype).view(int)
         result[:] = lead_times
         result[:, empty_lead_time_mask] = None
+        result[~focus_mask] = None
+        return result
+
+
+@register_metric(JIRAMetricID.JIRA_ACKNOWLEDGE_TIME)
+class AcknowledgeTimeCalculator(AverageMetricCalculator[timedelta]):
+    """
+    Issue Acknowledge Time calculator.
+
+    Acknowledge time is the time it takes for the work to actually being after the issue is \
+    created.
+
+    * If the work began before the creation time, the acknowledge time is 0.
+    """
+
+    may_have_negative_values = False
+    dtype = "timedelta64[s]"
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), None, object)
+        work_began = facts[AthenianIssue.work_began.key].values.astype(min_times.dtype)
+        prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
+        acknowledged = np.fmin(work_began, prs_began)
+        created = facts[Issue.created.key].values.astype(min_times.dtype)
+        ack_times = acknowledged - created
+        ack_times = np.maximum(ack_times, ack_times.dtype.type(0))
+        focus_mask = (min_times[:, None] <= acknowledged) & (acknowledged < max_times[:, None])
+        result[:] = ack_times.astype(self.dtype).view(int)
         result[~focus_mask] = None
         return result
