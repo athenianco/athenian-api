@@ -335,7 +335,8 @@ async def _calc_jira_entry(request: AthenianWebRequest,
     reporters = list(set(chain.from_iterable(
         ([p.lower() for p in (g.reporters or [])]) for g in (filt.with_ or []))))
     assignees = list(set(chain.from_iterable(
-        ([p.lower() for p in (g.assignees or [])]) for g in (filt.with_ or []))))
+        ([(p.lower() if p is not None else None) for p in (g.assignees or [])])
+        for g in (filt.with_ or []))))
     commenters = list(set(chain.from_iterable(
         ([p.lower() for p in (g.commenters or [])]) for g in (filt.with_ or []))))
     issues = await fetch_jira_issues(
@@ -388,6 +389,8 @@ def _split_issues_by_with(with_: Optional[List[JIRAMetricsRequestWith]],
     for group in with_:
         mask = np.full(len(issues), False)
         if group.assignees:
+            # None will become "None" and will match; nobody is going to name a user "None"
+            # except for to troll Athenian.
             assignees = np.char.lower(np.array(group.assignees, dtype="U"))
             mask |= np.in1d(issues["assignee"].values.astype("U"), assignees)
         if group.reporters:

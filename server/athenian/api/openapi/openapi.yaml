@@ -6112,8 +6112,9 @@ components:
         - Vadim Markovtsev
       properties:
         assignees:
-          description: Selected issue assignee users.
+          description: Selected issue assignee users. `null` means unassigned.
           items:
+            nullable: true
             type: string
           type: array
         reporters:
