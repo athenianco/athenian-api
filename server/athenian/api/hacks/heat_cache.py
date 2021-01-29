@@ -312,7 +312,7 @@ async def create_teams(account: int,
     contributors = await mine_contributors(
         {r.split("/", 1)[1] for r in repos}, None, None, False, [],
         release_settings, meta_ids, mdb, pdb, None, force_fresh_releases=True)
-    if (bots := {u[User.login.key] for u in contributors}.intersection(all_bots)):
+    if bots := {u[User.login.key] for u in contributors}.intersection(all_bots):
         bots = [PREFIXES["github"] + login for login in bots]
         await sdb.execute(insert(Team).values(
             Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))

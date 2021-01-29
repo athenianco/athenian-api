@@ -11,6 +11,7 @@ from sqlalchemy import and_, insert, select, union
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
+from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.models.metadata.github import OrganizationMember, PushCommit, User as GitHubUser
 from athenian.api.models.metadata.jira import Project, User as JIRAUser
 from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
@@ -182,6 +183,9 @@ async def match_jira_identities(account: int,
     return None
 
 
+ID_MATCH_MIN_CONFIDENCE = 0.35
+
+
 async def _match_jira_identities(account: int,
                                  meta_ids: Tuple[int, ...],
                                  sdb: DatabaseLike,
@@ -199,11 +203,27 @@ async def _match_jira_identities(account: int,
                                           .where(OrganizationMember.acc_id.in_(meta_ids)))
     ]
     log.info("Discovered %d organization members", len(user_ids))
-    user_rows = await mdb.fetch_all(select([GitHubUser.node_id, GitHubUser.name])
-                                    .where(and_(GitHubUser.acc_id.in_(meta_ids),
-                                                GitHubUser.node_id.in_(user_ids),
-                                                GitHubUser.name.isnot(None))))
+    tasks = [
+        mdb.fetch_all(select([GitHubUser.node_id, GitHubUser.name, GitHubUser.login])
+                      .where(and_(GitHubUser.acc_id.in_(meta_ids),
+                                  GitHubUser.node_id.in_(user_ids),
+                                  GitHubUser.name.isnot(None)))),
+        Bots()(mdb),
+    ]
+    user_rows, bots = await gather(*tasks)
     log.info("Detailed %d GitHub users", len(user_rows))
+    bot_ids = set()
+    new_user_rows = []
+    for row in user_rows:
+        if row[GitHubUser.login.key] in bots:
+            bot_ids.add(row[GitHubUser.node_id.key])
+        else:
+            new_user_rows.append(row)
+    user_rows = new_user_rows
+    user_ids = [uid for uid in user_ids if uid not in bot_ids]
+    log.info("Excluded %d bots", len(bot_ids))
+    if not user_ids:
+        return 0, 0, 0, len(existing_mapping) == 0
     signature_rows = await mdb.fetch_all(union(
         select([PushCommit.author_user, PushCommit.author_name])
         .where(and_(PushCommit.acc_id.in_(meta_ids),
@@ -251,7 +271,7 @@ async def _match_jira_identities(account: int,
     jira_users_keys = list(jira_users)
     db_records = []
     for github_user, match_index, confidence in zip(github_users, matches, confidences):
-        if match_index >= 0 and confidence > 0:
+        if match_index >= 0 and confidence >= ID_MATCH_MIN_CONFIDENCE:
             jira_user_id = jira_users_keys[match_index]
             log.debug("%s -> %s", github_users[github_user], jira_users[jira_user_id][0])
             db_records.append(MappedJIRAIdentity(
