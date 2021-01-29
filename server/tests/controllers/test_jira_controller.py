@@ -595,6 +595,7 @@ async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n)
 @pytest.mark.parametrize("metric, value, score, cmin, cmax", [
     (JIRAMetricID.JIRA_LIFE_TIME, "758190s", 72, "654210s", "868531s"),
     (JIRAMetricID.JIRA_LEAD_TIME, "304289s", 51, "226105s", "375748s"),
+    (JIRAMetricID.JIRA_ACKNOWLEDGE_TIME, "458094s", 66, "380403s", "539884s"),
 ])
 async def test_jira_metrics_bug_times(client, headers, metric, value, score, cmin, cmax):
     np.random.seed(7)
