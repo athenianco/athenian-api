@@ -123,8 +123,10 @@ async def defer(coroutine: Coroutine, name: str) -> None:
         try:
             with transaction.start_child(op=name):
                 await coroutine
-        except asyncpg.DeadlockDetectedError:
-            # Our DB transaction lost, but that's fine for a deferred task.
+        except (asyncpg.DeadlockDetectedError, asyncpg.InterfaceError) as e:
+            # 1. Our DB transaction lost, but that's fine for a deferred task.
+            # 2. Failed to rollback a transaction.
+            _log.warning("defer %s: %s: %s", name, type(e).__name__, e)
             return
         except Exception:
             _log.exception("Unhandled exception in deferred function %s", name)
