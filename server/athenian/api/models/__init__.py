@@ -150,4 +150,4 @@ def migrate(name: str, url=None, exec=True):
     if exec:
         os.execlp(*args)
     else:
-        subprocess.run(" ".join(args[1:]), check=True, shell=True)
+        subprocess.run(args[1:], check=True)

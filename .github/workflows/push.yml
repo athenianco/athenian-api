@@ -54,6 +54,9 @@ jobs:
     - name: flake8
       working-directory: server
       run: flake8
+    - name: semgrep security
+      working-directory: server
+      run: semgrep --config p/r2c-security-audit --severity ERROR --disable-version-check --error
   custom_checks:
     name: custom checks
     if: "!contains(github.event.head_commit.message, 'Bump version')"
