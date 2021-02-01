@@ -95,6 +95,10 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
         return api_req
 
 
+# Avoid DeprecationWarning on inheritance, because we know better than @asvetlov.
+del aiohttp.web.Application.__init_subclass__
+
+
 class AthenianWebApplication(aiohttp.web.Application):
     """Lower-level aiohttp application class with tweaks."""
 

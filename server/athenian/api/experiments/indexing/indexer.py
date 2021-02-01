@@ -153,7 +153,7 @@ class BaseIndexer:
             return df["values"].to_numpy()
 
         def virtual_indexes(df):
-            return df["timestamp"].apply(cls._indexify).to_numpy().astype("UInt32")
+            return df["timestamp"].apply(cls._indexify).to_numpy().astype(np.uint32)
 
         last_update = datetime.utcnow().replace(tzinfo=timezone.utc)
         print("Fetching data...")
