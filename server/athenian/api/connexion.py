@@ -44,7 +44,7 @@ from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
 from athenian.api.slogging import log_multipart
-from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
+from athenian.api.tracing import InfiniteString, MAX_SENTRY_STRING_LENGTH
 
 
 class AthenianConnexionRequest(connexion.lifecycle.ConnexionRequest):
@@ -358,12 +358,17 @@ class AthenianApp(connexion.AioHttpApp):
         asyncio.current_task().set_name("shield %s %s" % (request.method, request.path))
         self._requests += 1
         enable_defer(explicit_launch=not self._devenv)
+        sample_stack_requests = []
+        start_time = time.time()
         with sentry_sdk.configure_scope() as scope:
-            tasks = sorted((t.get_name()
-                            if not t.get_name().startswith("Task-")
-                            else t.get_coro().__qualname__)
-                           for t in asyncio.all_tasks())
-            scope.set_extra("asyncio.all_tasks", tasks)
+            if scope.transaction is not None and scope.transaction.sampled:
+                try:
+                    sampler = self.app["sampler"]
+                except KeyError:
+                    sampler = self.app["sampler"] = (
+                        asyncio.create_task(self._sample_stack(), name="sample_stack"), [], [],
+                    )
+                (sample_stack_requests := sampler[1]).append(request)
             scope.set_extra("concurrent requests", self._requests)
             scope.set_extra("uptime", timedelta(seconds=time.time() - self._boot_time))
         try:
@@ -387,6 +392,27 @@ class AthenianApp(connexion.AioHttpApp):
             event_id = sentry_sdk.capture_exception(e)
             return ResponseError(ServerCrashedError(event_id)).response
         finally:
+            if sample_stack_requests:
+                samples = self.app["sampler"][2]
+                sample_stack_requests.remove(request)
+                related_samples = []
+                for ts, stack in reversed(samples):
+                    if (offset := ts - start_time) >= 0:
+                        related_samples.insert(0, (offset, stack))
+                diff_samples = []
+                state = set()
+                for offset, stack in related_samples:
+                    added = stack - state
+                    removed = state - stack
+                    state = stack
+                    diff = [("+" + name) for name in sorted(added)] + \
+                           [("-" + name) for name in sorted(removed)]
+                    if diff:
+                        diff_samples.append("%05.2f %s" % (offset, "; ".join(diff)))
+                with sentry_sdk.configure_scope() as scope:
+                    scope.set_context("Tracing", {
+                        "stack samples": InfiniteString("\n".join(diff_samples)),
+                    })
             if self._devenv:
                 # block the response until we execute all the deferred coroutines
                 await wait_deferred()
@@ -467,3 +493,26 @@ class AthenianApp(connexion.AioHttpApp):
         loop.remove_signal_handler(signal.SIGTERM)
         loop.add_signal_handler(signal.SIGTERM, raise_graceful_exit)
         os.kill(os.getpid(), signal.SIGTERM)
+
+    async def _sample_stack(self):
+        blacklist = {
+            "_run_app",
+            "Auth0._acquire_management_token_loop",
+            "Auth0._fetch_jwks_loop",
+            "pdb_schema_check",
+            "sample_stack",
+        }
+        while True:
+            _, requests, samples = self.app["sampler"]
+            if not requests:
+                del self.app["sampler"]
+                break
+            tasks = set()
+            for t in asyncio.all_tasks():
+                name = t.get_name()
+                if name.startswith("Task-"):
+                    name = t.get_coro().__qualname__
+                if name not in blacklist:
+                    tasks.add(name)
+            samples.append((time.time(), tasks))
+            await asyncio.sleep(0.2)

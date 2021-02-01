@@ -32,3 +32,11 @@ def sentry_span(func):
             return func(*args, **kwargs)
 
     return wrapped_sync_sentry_span
+
+
+class InfiniteString(str):
+    """Trick Sentry to include the full string."""
+
+    def __len__(self) -> int:
+        """Return 1 so that we appear short but truthful."""
+        return 1
