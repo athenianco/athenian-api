@@ -14,6 +14,7 @@ from sqlalchemy import and_, join, outerjoin, select
 from sqlalchemy.orm import aliased
 
 from athenian.api.async_utils import gather
+from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
@@ -52,6 +53,7 @@ from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
 
 
+@weight(2.5)
 async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find developers that made an action within the given timeframe."""
     try:
@@ -86,6 +88,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
     return model_response(model)
 
 
+@weight(0.5)
 async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find repositories that were updated within the given timeframe."""
     try:
@@ -159,6 +162,7 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
     return repos, events, stages, participants, labels, jira, settings, meta_ids
 
 
+@weight(6)
 async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """List pull requests that satisfy the query."""
     try:
@@ -222,6 +226,7 @@ def _nan_to_none(val):
     return val
 
 
+@weight(1.5)
 async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find commits that match the specified query."""
     try:
@@ -283,6 +288,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     return model_response(model)
 
 
+@weight(0.5)
 async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find releases that were published in the given time fram in the given repositories."""
     try:
@@ -406,6 +412,7 @@ def _extract_release_prs(prs: Dict[str, np.ndarray]) -> List[ReleasedPullRequest
     ]
 
 
+@weight(0.5)
 async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """List pull requests by repository and number."""
     body = GetPullRequestsRequest.from_dict(body)
@@ -471,6 +478,7 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
     return model_response(model)
 
 
+@weight(0.5)
 async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find labels used in the given repositories."""
     body = FilterLabelsRequest.from_dict(body)
@@ -486,6 +494,7 @@ async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response
     return model_response(labels)
 
 
+@weight(1)
 async def get_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     """List releases by repository and name."""
     body = GetReleasesRequest.from_dict(body)
@@ -505,6 +514,7 @@ async def get_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)
 
 
+@weight(1)
 async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find releases between the two given ones per repository."""
     prefix = PREFIXES["github"]

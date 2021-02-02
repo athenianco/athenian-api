@@ -6,6 +6,7 @@ from aiohttp import web
 import databases.core
 
 from athenian.api.async_utils import gather
+from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.code import CodeStats
@@ -39,6 +40,7 @@ FilterDevs = Tuple[str, Tuple[List[Set[str]], List[str], ForSetDevelopers]]
 #                              repositories                  originals
 
 
+@weight(10)
 async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate linear metrics over PRs.
 
@@ -271,6 +273,7 @@ async def _extract_repos(request: AthenianWebRequest,
     return resolved, service
 
 
+@weight(1.5)
 async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Measure the amount of code that was pushed outside of pull requests."""
     try:
@@ -304,6 +307,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     return model_response(model)
 
 
+@weight(1.5)
 async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over developer activities."""
     try:
@@ -364,6 +368,7 @@ async def _compile_repos_releases(request: AthenianWebRequest,
     return filters, all_repos
 
 
+@weight(4)
 async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate linear metrics over releases."""
     try:

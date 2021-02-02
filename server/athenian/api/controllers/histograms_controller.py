@@ -3,6 +3,7 @@ from collections import defaultdict
 from aiohttp import web
 
 from athenian.api.async_utils import gather
+from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.entries import METRIC_ENTRIES
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
@@ -16,6 +17,7 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
 
+@weight(10)
 async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms over PR distributions."""
     try:

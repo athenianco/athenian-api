@@ -14,6 +14,7 @@ from sqlalchemy.sql.functions import coalesce
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
+from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
@@ -40,6 +41,7 @@ from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
 
 
+@weight(0.5)
 async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find JIRA epics and labels used in the specified date interval."""
     try:
@@ -353,6 +355,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
     return filt, time_intervals, issues, tzoffset
 
 
+@weight(2.5)
 async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over JIRA issue activities."""
     filt, time_intervals, issues, tzoffset = await _calc_jira_entry(
@@ -439,10 +442,10 @@ class _IssuesLabelSplitter:
         return groups
 
 
+@weight(1.5)
 async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms over JIRA issue activities."""
-    filt, time_intervals, issues, _ = await _calc_jira_entry(
-        request, body, JIRAHistogramsRequest)
+    filt, time_intervals, issues, _ = await _calc_jira_entry(request, body, JIRAHistogramsRequest)
     defs = defaultdict(list)
     for h in (filt.histograms or []):
         defs[HistogramParameters(
