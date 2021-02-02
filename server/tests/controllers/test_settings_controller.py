@@ -346,10 +346,17 @@ async def test_get_jira_identities_smoke(client, headers, sdb, denys_id_mapping)
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
-    assert ids == [WebMappedJIRAIdentity(developer_id="github.com/dennwc",
-                                         developer_name="Denys Smirnov",
-                                         jira_name="Denys Smirnov",
-                                         confidence=1.0)]
+    assert len(ids) == 16
+    has_match = False
+    for user_map in ids:
+        match = user_map == WebMappedJIRAIdentity(developer_id="github.com/dennwc",
+                                                  developer_name="Denys Smirnov",
+                                                  jira_name="Denys Smirnov",
+                                                  confidence=1.0)
+        unmapped = user_map.developer_id is None and user_map.developer_name is None
+        assert match or unmapped
+        has_match |= match
+    assert has_match
 
 
 async def test_get_jira_identities_empty(client, headers):
@@ -358,7 +365,11 @@ async def test_get_jira_identities_empty(client, headers):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
-    assert ids == []
+    assert len(ids) == 16
+    for user_map in ids:
+        assert user_map.developer_id is None
+        assert user_map.developer_name is None
+        assert user_map.jira_name is not None
 
 
 @pytest.mark.parametrize("account, code", [[2, 422], [3, 404], [4, 404]])
@@ -381,10 +392,11 @@ async def test_set_jira_identities_smoke(client, headers, sdb, denys_id_mapping)
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
-    assert ids == [WebMappedJIRAIdentity(developer_id="github.com/dennwc",
-                                         developer_name="Denys Smirnov",
-                                         jira_name="Vadim Markovtsev",
-                                         confidence=1.0)]
+    assert WebMappedJIRAIdentity(developer_id="github.com/dennwc",
+                                 developer_name="Denys Smirnov",
+                                 jira_name="Vadim Markovtsev",
+                                 confidence=1.0) in ids
+    assert len(ids) == 16
     rows = await sdb.fetch_all(select([MappedJIRAIdentity]))
     assert len(rows) == 1
     assert rows[0][MappedJIRAIdentity.account_id.key] == 1
@@ -406,7 +418,11 @@ async def test_set_jira_identities_delete(client, headers, sdb, denys_id_mapping
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
-    assert ids == []
+    assert len(ids) == 16
+    for user_map in ids:
+        assert user_map.developer_id is None
+        assert user_map.developer_name is None
+        assert user_map.jira_name is not None
     rows = await sdb.fetch_all(select([MappedJIRAIdentity]))
     assert len(rows) == 0
 

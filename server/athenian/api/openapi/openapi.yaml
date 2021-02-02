@@ -6527,7 +6527,9 @@ components:
       - releases
       type: object
     MappedJIRAIdentities:
-      description: List of currently mapped GitHub<>JIRA users.
+      description: |-
+        List of currently mapped GitHub<>JIRA users.
+        Additionally, we include unmapped JIRA users to provide a complete list of them.
       items:
         $ref: '#/components/schemas/MappedJIRAIdentity'
       type: array
@@ -6541,9 +6543,12 @@ components:
         confidence: 1.0
       properties:
         developer_id:
-          $ref: '#/components/schemas/DeveloperID'
+          allOf:
+          - $ref: '#/components/schemas/DeveloperID'
+          - nullable: true
         developer_name:
           description: Full name of the mapped GitHub user.
+          nullable: true
           type: string
         jira_name:
           description: Full name of the mapped JIRA user.

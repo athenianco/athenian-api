@@ -189,7 +189,6 @@ async def get_jira_identities(request: AthenianWebRequest,
     ]
     map_rows, meta_ids = await gather(*tasks)
     github_ids = [r[MappedJIRAIdentity.github_user_id.key] for r in map_rows]
-    jira_ids = [r[MappedJIRAIdentity.jira_user_id.key] for r in map_rows]
     tasks = [
         request.mdb.fetch_all(
             select([GitHubUser.node_id, GitHubUser.login, GitHubUser.name])
@@ -197,8 +196,8 @@ async def get_jira_identities(request: AthenianWebRequest,
                         GitHubUser.acc_id.in_(meta_ids)))),
         request.mdb.fetch_all(
             select([JIRAUser.id, JIRAUser.display_name])
-            .where(and_(JIRAUser.id.in_(jira_ids),
-                        JIRAUser.acc_id == jira_acc)),
+            .where(and_(JIRAUser.acc_id == jira_acc,
+                        JIRAUser.type == "atlassian")),
         ),
     ]
     github_rows, jira_rows = await gather(*tasks)
@@ -207,19 +206,30 @@ async def get_jira_identities(request: AthenianWebRequest,
     models = []
     prefix = PREFIXES["github"]
     log = logging.getLogger("%s.get_jira_identities" % metadata.__package__)
+    mentioned_jira_user_ids = set()
     for map_row in map_rows:
         try:
             github_user = github_details[map_row[MappedJIRAIdentity.github_user_id.key]]
-            jira_user = jira_details[map_row[MappedJIRAIdentity.jira_user_id.key]]
+            jira_user = jira_details[
+                (jira_user_id := map_row[MappedJIRAIdentity.jira_user_id.key])
+            ]
         except KeyError:
             log.error("Identity mapping %s -> %s misses details" % (
                 map_row[MappedJIRAIdentity.github_user_id.key],
                 map_row[MappedJIRAIdentity.jira_user_id.key]))
             continue
+        mentioned_jira_user_ids.add(jira_user_id)
         models.append(WebMappedJIRAIdentity(
             developer_id=prefix + github_user[GitHubUser.login.key],
             developer_name=github_user[GitHubUser.name.key],
             jira_name=jira_user[JIRAUser.display_name.key],
             confidence=map_row[MappedJIRAIdentity.confidence.key],
         ))
-    return model_response(sorted(models, key=lambda m: m.developer_id))
+    for user_id in jira_details.keys() - mentioned_jira_user_ids:
+        models.append(WebMappedJIRAIdentity(
+            developer_id=None,
+            developer_name=None,
+            jira_name=jira_details[user_id][JIRAUser.display_name.key],
+            confidence=0,
+        ))
+    return model_response(sorted(models, key=lambda m: (m.developer_id or "", m.jira_name)))
