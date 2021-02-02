@@ -18,7 +18,6 @@ from asyncpg import IntegrityConstraintViolationError
 import databases.core
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, func, insert, select, update
-from sqlalchemy.sql.functions import count
 
 from athenian.api import metadata
 from athenian.api.auth import Auth0, disable_default_user
@@ -165,12 +164,14 @@ async def _accept_invitation(iid: int,
                                               .where(and_(UserAccount.user_id == request.uid,
                                                           UserAccount.is_admin)))
         if other_accounts:
-            other_accounts = [row[0] for row in other_accounts]
-            pending = await conn.fetch_val(select([count(RepositorySet.owner_id)])
-                                           .where(and_(RepositorySet.owner_id.in_(other_accounts),
-                                                       RepositorySet.name == RepositorySet.ALL,
-                                                       RepositorySet.precomputed.is_(False))))
-            if pending:
+            other_accounts = {row[0] for row in other_accounts}
+            installed_accounts = await conn.fetch_all(
+                select([RepositorySet.owner_id])
+                .where(and_(RepositorySet.owner_id.in_(other_accounts),
+                            RepositorySet.name == RepositorySet.ALL,
+                            RepositorySet.precomputed)))
+            installed = {row[0] for row in installed_accounts}
+            if other_accounts - installed:
                 raise ResponseError(TooManyRequestsError(
                     type="/errors/DuplicateAccountRegistrationError",
                     detail="You cannot accept new admin invitations until your account's "

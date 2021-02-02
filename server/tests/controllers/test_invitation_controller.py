@@ -239,7 +239,7 @@ async def test_accept_invitation_admin(client, headers, sdb, disable_default_use
             assert secret != Account.missing_secret
 
 
-async def test_accept_invitation_admin_duplicate(
+async def test_accept_invitation_admin_duplicate_not_precomputed(
         client, headers, sdb, disable_default_user, app):
     await sdb.execute(update(RepositorySet)
                       .where(RepositorySet.id == 1)
@@ -248,6 +248,25 @@ async def test_accept_invitation_admin_duplicate(
                                RepositorySet.updated_at: datetime.now(timezone.utc),
                                RepositorySet.items_count: RepositorySet.items_count,
                                RepositorySet.items_checksum: RepositorySet.items_checksum}))
+    num_accounts_before = len(await sdb.fetch_all(select([Account])))
+    iid = await sdb.execute(
+        insert(Invitation).values(
+            Invitation(salt=888, account_id=admin_backdoor)
+            .create_defaults().explode()))
+    body = {
+        "url": url_prefix + encode_slug(iid, 888, app.app["auth"].key),
+    }
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+    assert response.status == 429
+    num_accounts_after = len(await sdb.fetch_all(select([Account])))
+    assert num_accounts_after == num_accounts_before
+
+
+async def test_accept_invitation_admin_duplicate_no_reposet(
+        client, headers, sdb, disable_default_user, app):
+    await sdb.execute(delete(RepositorySet))
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     iid = await sdb.execute(
         insert(Invitation).values(
