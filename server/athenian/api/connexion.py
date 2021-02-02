@@ -10,7 +10,7 @@ from pathlib import Path
 import signal
 import socket
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Coroutine, Dict, Optional
 
 import aiohttp.web
 from aiohttp.web_exceptions import HTTPClientError, HTTPFound, HTTPNoContent, HTTPRedirection, \
@@ -30,6 +30,7 @@ from werkzeug.exceptions import Unauthorized
 
 from athenian.api import metadata
 from athenian.api.auth import Auth0
+from athenian.api.balancing import extract_handler_weight
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
@@ -150,6 +151,7 @@ class AthenianApp(connexion.AioHttpApp):
                  pdb_conn: str,
                  ui: bool,
                  client_max_size: int,
+                 max_load: float,
                  mdb_options: Optional[Dict[str, Any]] = None,
                  sdb_options: Optional[Dict[str, Any]] = None,
                  pdb_options: Optional[Dict[str, Any]] = None,
@@ -165,6 +167,8 @@ class AthenianApp(connexion.AioHttpApp):
         :param pdb_conn: SQLAlchemy connection string for the writeable precomputed objects DB.
         :param ui: Value indicating whether to enable the Swagger/OpenAPI UI at host:port/v*/ui.
         :param client_max_size: Maximum incoming request body size.
+        :param max_load: Maximum load the server is allowed to serve. The unit is abstract, see \
+                         `balancing.py`.
         :param mdb_options: Extra databases.Database() kwargs for the metadata DB.
         :param sdb_options: Extra databases.Database() kwargs for the state DB.
         :param pdb_options: Extra databases.Database() kwargs for the precomputed objects DB.
@@ -219,6 +223,7 @@ class AthenianApp(connexion.AioHttpApp):
             self.log.warning("Google Key Management Service is disabled, PATs will not work")
             self.app["kms"] = self._kms = None
         api.jsonifier.json = FriendlyJson
+        self._max_load = max_load
         prometheus_registry = setup_status(self.app)
         self._setup_survival()
         setup_cache_metrics(cache, self.app, prometheus_registry)
@@ -339,8 +344,8 @@ class AthenianApp(connexion.AioHttpApp):
 
     @aiohttp.web.middleware
     async def i_will_survive(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
-        """Return HTTP 503 Service Unavailable if the server is shutting down, also track \
-        the number of active connections and handle ResponseError-s.
+        """Return HTTP 503 Service Unavailable if the server is shutting down or under heavy load,\
+        also track the number of active connections and handle ResponseError-s.
 
         We prevent aiohttp from cancelling the handlers with _setup_survival() but there can still
         happen unexpected intrusions by some "clever" author of the upstream code.
@@ -354,23 +359,24 @@ class AthenianApp(connexion.AioHttpApp):
         asyncio.current_task().set_name("entry %s %s" % (request.method, request.path))
         return await asyncio.shield(self._shielded(request, handler))
 
-    async def _shielded(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
+    async def _shielded(self,
+                        request: aiohttp.web.Request,
+                        handler: Callable[..., Coroutine],
+                        ) -> aiohttp.web.Response:
         asyncio.current_task().set_name("shield %s %s" % (request.method, request.path))
+
+        load = extract_handler_weight(handler)
+        if self._load + load > self._max_load:
+            return ResponseError(ServiceUnavailableError(
+                type="/errors/HeavyLoadError",
+                detail="This server is serving too much load, please repeat your request.",
+            )).response
         self._requests += 1
-        enable_defer(explicit_launch=not self._devenv)
-        sample_stack_requests = []
+        self._load += load
+
         start_time = time.time()
-        with sentry_sdk.configure_scope() as scope:
-            if scope.transaction is not None and scope.transaction.sampled:
-                try:
-                    sampler = self.app["sampler"]
-                except KeyError:
-                    sampler = self.app["sampler"] = (
-                        asyncio.create_task(self._sample_stack(), name="sample_stack"), [], [],
-                    )
-                (sample_stack_requests := sampler[1]).append(request)
-            scope.set_extra("concurrent requests", self._requests)
-            scope.set_extra("uptime", timedelta(seconds=time.time() - self._boot_time))
+        enable_defer(explicit_launch=not self._devenv)
+        traced = self._set_request_sentry_context(request)
         try:
             return await handler(request)
         except bdb.BdbQuit:
@@ -392,27 +398,8 @@ class AthenianApp(connexion.AioHttpApp):
             event_id = sentry_sdk.capture_exception(e)
             return ResponseError(ServerCrashedError(event_id)).response
         finally:
-            if sample_stack_requests:
-                samples = self.app["sampler"][2]
-                sample_stack_requests.remove(request)
-                related_samples = []
-                for ts, stack in reversed(samples):
-                    if (offset := ts - start_time) >= 0:
-                        related_samples.insert(0, (offset, stack))
-                diff_samples = []
-                state = set()
-                for offset, stack in related_samples:
-                    added = stack - state
-                    removed = state - stack
-                    state = stack
-                    diff = [("+" + name) for name in sorted(added)] + \
-                           [("-" + name) for name in sorted(removed)]
-                    if diff:
-                        diff_samples.append("%05.2f %s" % (offset, "; ".join(diff)))
-                with sentry_sdk.configure_scope() as scope:
-                    scope.set_context("Tracing", {
-                        "stack samples": InfiniteString("\n".join(diff_samples)),
-                    })
+            if traced:
+                self._set_stack_samples_sentry_context(request, start_time)
             if self._devenv:
                 # block the response until we execute all the deferred coroutines
                 await wait_deferred()
@@ -422,6 +409,7 @@ class AthenianApp(connexion.AioHttpApp):
                 launch_defer(15 * (1 - self._shutting_down),
                              "%s %s" % (request.method, request.path))
             self._requests -= 1
+            self._load -= load
             if self._requests == 0 and self._shutting_down:
                 asyncio.ensure_future(self._raise_graceful_exit())
 
@@ -453,6 +441,7 @@ class AthenianApp(connexion.AioHttpApp):
     def _setup_survival(self):
         self._shutting_down = False
         self._requests = 0
+        self._load = 0
 
         def initiate_graceful_shutdown(signame: str):
             self.log.warning("Received %s, waiting for pending %d requests to finish...",
@@ -516,3 +505,43 @@ class AthenianApp(connexion.AioHttpApp):
                     tasks.add(name)
             samples.append((time.time(), tasks))
             await asyncio.sleep(0.2)
+
+    def _set_request_sentry_context(self, request: aiohttp.web.Request) -> bool:
+        with sentry_sdk.configure_scope() as scope:
+            if traced := (scope.transaction is not None and scope.transaction.sampled):
+                try:
+                    sampler = self.app["sampler"]
+                except KeyError:
+                    sampler = self.app["sampler"] = (
+                        asyncio.create_task(self._sample_stack(), name="sample_stack"), [], [],
+                    )
+                sampler[1].append(request)
+            scope.set_extra("concurrent requests", self._requests)
+            scope.set_extra("load", self._load)
+            scope.set_extra("uptime", timedelta(seconds=time.time() - self._boot_time))
+        return traced
+
+    def _set_stack_samples_sentry_context(self,
+                                          request: aiohttp.web.Request,
+                                          start_time: float,
+                                          ) -> None:
+        sample_stack_requests, samples = self.app["sampler"][1:]
+        sample_stack_requests.remove(request)
+        related_samples = []
+        for ts, stack in reversed(samples):
+            if (offset := ts - start_time) >= 0:
+                related_samples.insert(0, (offset, stack))
+        diff_samples = []
+        state = set()
+        for offset, stack in related_samples:
+            added = stack - state
+            removed = state - stack
+            state = stack
+            diff = [("+" + name) for name in sorted(added)] + \
+                   [("-" + name) for name in sorted(removed)]
+            if diff:
+                diff_samples.append("%05.2f %s" % (offset, "; ".join(diff)))
+        with sentry_sdk.configure_scope() as scope:
+            scope.set_context("Tracing", {
+                "stack samples": InfiniteString("\n".join(diff_samples)),
+            })

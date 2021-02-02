@@ -280,7 +280,7 @@ async def app(metadata_db, state_db, precomputed_db, slack) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
     return AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, pdb_conn=precomputed_db,
                        ui=False, auth0_cls=TestAuth0, kms_cls=FakeKMS, slack=slack,
-                       client_max_size=256 * 1024)
+                       client_max_size=256 * 1024, max_load=15)
 
 
 @pytest.fixture(scope="function")

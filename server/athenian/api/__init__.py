@@ -356,7 +356,8 @@ def main() -> Optional[AthenianApp]:
         mdb_conn=args.metadata_db, sdb_conn=args.state_db, pdb_conn=args.precomputed_db,
         **compose_db_options(args.metadata_db, args.state_db, args.precomputed_db),
         ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache, slack=slack,
-        client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)))
+        client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
+        max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)))
     app.run(host=args.host, port=args.port, use_default_access_log=True, handle_signals=False,
             print=lambda s: log.info("\n" + s))
     return app

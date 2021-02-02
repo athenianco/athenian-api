@@ -4,6 +4,7 @@ from aiohttp import web
 import numpy as np
 
 from athenian.api.async_utils import gather
+from athenian.api.balancing import weight
 from athenian.api.controllers.filter_controller import resolve_filter_prs_parameters
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -16,6 +17,7 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
 
+@weight(1)
 async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Compute the balanced pagination plan for `/filter/pull_requests`."""
     try:
