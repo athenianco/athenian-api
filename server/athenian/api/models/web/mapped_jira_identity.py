@@ -40,7 +40,7 @@ class MappedJIRAIdentity(Model):
         self._confidence = confidence
 
     @property
-    def developer_id(self) -> str:
+    def developer_id(self) -> Optional[str]:
         """Gets the developer_id of this MappedJIRAIdentity.
 
         User name which uniquely identifies any developer on any service provider. The format
@@ -51,7 +51,7 @@ class MappedJIRAIdentity(Model):
         return self._developer_id
 
     @developer_id.setter
-    def developer_id(self, developer_id: str):
+    def developer_id(self, developer_id: Optional[str]):
         """Sets the developer_id of this MappedJIRAIdentity.
 
         User name which uniquely identifies any developer on any service provider. The format
@@ -59,13 +59,10 @@ class MappedJIRAIdentity(Model):
 
         :param developer_id: The developer_id of this MappedJIRAIdentity.
         """
-        if developer_id is None:
-            raise ValueError("Invalid value for `developer_id`, must not be `None`")
-
         self._developer_id = developer_id
 
     @property
-    def developer_name(self) -> str:
+    def developer_name(self) -> Optional[str]:
         """Gets the developer_name of this MappedJIRAIdentity.
 
         Full name of the mapped GitHub user.
@@ -75,16 +72,13 @@ class MappedJIRAIdentity(Model):
         return self._developer_name
 
     @developer_name.setter
-    def developer_name(self, developer_name: str):
+    def developer_name(self, developer_name: Optional[str]):
         """Sets the developer_name of this MappedJIRAIdentity.
 
         Full name of the mapped GitHub user.
 
         :param developer_name: The developer_name of this MappedJIRAIdentity.
         """
-        if developer_name is None:
-            raise ValueError("Invalid value for `developer_name`, must not be `None`")
-
         self._developer_name = developer_name
 
     @property
