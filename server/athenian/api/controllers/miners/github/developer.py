@@ -43,6 +43,7 @@ class DeveloperTopic(Enum):
     pr_comments = "dev-pr-comments"
     regular_pr_comments = "dev-regular-pr-comments"
     review_pr_comments = "dev-review-pr-comments"
+    active = "dev-active"
 
 
 @dataclass(slots=True, frozen=True)
@@ -62,6 +63,7 @@ class DeveloperStats:
     pr_comments: int = 0
     regular_pr_comments: int = 0
     review_pr_comments: int = 0
+    active: int = 0
 
 
 #                          repo             dev     metric
@@ -307,6 +309,24 @@ async def _set_pr_comments(stats_by_repo_by_dev: StatsByRepoByDev,
         _set_stats(DeveloperTopic.pr_comments, joint, repogroups, stats_by_repo_by_dev)
 
 
+@sentry_span
+async def _set_active(stats_by_repo_by_dev: StatsByRepoByDev,
+                      topics: Set[str],
+                      time_from: datetime,
+                      time_to: datetime,
+                      dev_ids: Dict[str, str],
+                      repo_ids: Dict[str, str],
+                      repogroups: bool,
+                      labels: LabelFilter,
+                      jira: JIRAFilter,
+                      release_settings: Dict[str, ReleaseMatchSetting],
+                      meta_ids: Tuple[int, ...],
+                      mdb: databases.Database,
+                      pdb: databases.Database,
+                      cache: Optional[aiomcache.Client]) -> None:
+    pass
+
+
 processors = [
     ({DeveloperTopic.commits_pushed, DeveloperTopic.lines_changed}, _set_commits),
     ({DeveloperTopic.prs_created}, _set_prs_created),
@@ -317,6 +337,7 @@ processors = [
       DeveloperTopic.review_rejections}, _set_reviews),
     ({DeveloperTopic.pr_comments, DeveloperTopic.regular_pr_comments,
       DeveloperTopic.review_pr_comments}, _set_pr_comments),
+    ({DeveloperTopic.active}, _set_active),
 ]
 
 

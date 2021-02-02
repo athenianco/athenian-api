@@ -17,6 +17,7 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
         "date_to": date,
         "timezone": int,
         "account": int,
+        "aggregate": Optional[bool],
     }
 
     attribute_map = {
@@ -26,6 +27,7 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
         "date_to": "date_to",
         "timezone": "timezone",
         "account": "account",
+        "aggregate": "aggregate",
     }
 
     def __init__(
@@ -36,6 +38,7 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
         date_to: Optional[date] = None,
         timezone: Optional[int] = None,
         account: Optional[int] = None,
+        aggregate: Optional[bool] = None,
     ):
         """DeveloperMetricsRequest - a model defined in OpenAPI
 
@@ -45,6 +48,7 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
         :param date_to: The date_to of this DeveloperMetricsRequest.
         :param timezone: The timezone of this DeveloperMetricsRequest.
         :param account: The account of this DeveloperMetricsRequest.
+        :param aggregate: The aggregate of this DeveloperMetricsRequest.
         """
         self._for_ = for_
         self._metrics = metrics
@@ -52,6 +56,7 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
         self._date_to = date_to
         self._timezone = timezone
         self._account = account
+        self._aggregate = aggregate
 
     @property
     def for_(self) -> List[ForSetDevelopers]:
@@ -101,3 +106,25 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
             raise ValueError("Unsupported values of `metrics`: %s" % diff)
 
         self._metrics = metrics
+
+    @property
+    def aggregate(self) -> Optional[bool]:
+        """Gets the aggregate of this DeveloperMetricsRequest.
+
+        Value indicating whether to aggregate metrics per `developers` group or not.
+        The default is `false`: we calculate metrics for each developer separately.
+
+        :return: The aggregate of this DeveloperMetricsRequest.
+        """
+        return self._aggregate
+
+    @aggregate.setter
+    def aggregate(self, aggregate: Optional[bool]):
+        """Sets the aggregate of this DeveloperMetricsRequest.
+
+        Value indicating whether to aggregate metrics per `developers` group or not.
+        The default is `false`: we calculate metrics for each developer separately.
+
+        :param aggregate: The aggregate of this DeveloperMetricsRequest.
+        """
+        self._aggregate = aggregate

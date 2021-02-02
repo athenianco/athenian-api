@@ -797,6 +797,7 @@ developer_metric_mcuadros_stats = {
     "dev-pr-comments": 166,
     "dev-regular-pr-comments": 92,
     "dev-review-pr-comments": 74,
+    "dev-active": 0,
 }
 
 developer_metric_be_stats = {
@@ -813,6 +814,7 @@ developer_metric_be_stats = {
     "dev-pr-comments": [[10], [6], [5], [2]],
     "dev-regular-pr-comments": [[3], [1], [0], [1]],
     "dev-review-pr-comments": [[7], [5], [5], [1]],
+    "dev-active": [[0], [0], [0], [0]],
 }
 
 
@@ -855,6 +857,7 @@ developer_metric_mcuadros_jira_stats = {
     "dev-pr-comments": 43,
     "dev-regular-pr-comments": 24,
     "dev-review-pr-comments": 19,
+    "dev-active": 0,
 }
 
 
@@ -903,6 +906,7 @@ developer_metric_mcuadros_jira_labels_stats = {
     "dev-pr-comments": 0,
     "dev-regular-pr-comments": 0,
     "dev-review-pr-comments": 0,
+    "dev-active": 0,
 }
 
 
@@ -992,7 +996,8 @@ async def test_developer_metrics_repogroups(client, headers):
              "repogroups": [[0], [1]],
              "developers": ["github.com/mcuadros"]},
         ],
-        "metrics": sorted(DeveloperMetricID),
+        # FIXME(vmarkovtsev): remove when we implement the metric
+        "metrics": [m for m in sorted(DeveloperMetricID) if m != DeveloperMetricID.ACTIVE],
     }
     response = await client.request(
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
@@ -1001,7 +1006,7 @@ async def test_developer_metrics_repogroups(client, headers):
     result: CalculatedDeveloperMetrics
     result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
-    assert set(result.metrics) == set(DeveloperMetricID)
+    assert set(result.metrics) == set(DeveloperMetricID) - {DeveloperMetricID.ACTIVE}
     assert len(result.calculated) == 2
     assert all(v > 0 for v in result.calculated[0].values[0])
     assert all(v == 0 for v in result.calculated[1].values[0])
