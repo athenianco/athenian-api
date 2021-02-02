@@ -4339,6 +4339,11 @@ components:
         account:
           description: Session account ID.
           type: integer
+        aggregate:
+          description: |-
+            Value indicating whether to aggregate metrics per `developers` group or not.
+            The default is `false`: we calculate metrics for each developer separately.
+          type: boolean
       required:
       - account
       - date_from
@@ -4362,6 +4367,7 @@ components:
         * `dev-pr-comments`: how many comments (both regular and review) this developer posted.
         * `dev-regular-pr-comments`: how many regular comments (not review suggestions!) this developer posted.
         * `dev-review-pr-comments`: how many review suggestions (summaries are not considered!) this developer posted.
+        * `dev-active`: indicates whether this developer has made commits on more than X days during T days. `X / T = 0.2` at the moment.
       enum:
       - dev-commits-pushed
       - dev-lines-changed
@@ -4376,6 +4382,7 @@ components:
       - dev-pr-comments
       - dev-regular-pr-comments
       - dev-review-pr-comments
+      - dev-active
       example: dev-prs-created
       type: string
     CalculatedDeveloperMetrics:

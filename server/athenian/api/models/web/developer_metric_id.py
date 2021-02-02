@@ -17,3 +17,4 @@ class DeveloperMetricID(Model, metaclass=Enum):
     PR_COMMENTS = "dev-pr-comments"
     REGULAR_PR_COMMENTS = "dev-regular-pr-comments"
     REVIEW_PR_COMMENTS = "dev-review-pr-comments"
+    ACTIVE = "dev-active"
