@@ -1142,8 +1142,12 @@ class PullRequestFactsMiner:
             last_commit_before_first_review = None
             last_commit_before_first_review_own = False
             first_review_request_backup = None
-        first_review_request = first_review_request_exact = \
+        first_review_request_exact = \
             pr.review_requests[PullRequestReviewRequest.created_at.key].nonemin()
+        if first_review_request_exact and first_review_request_exact < created:
+            # DEV-1610: there are lags possible
+            first_review_request_exact = created
+        first_review_request = first_review_request_exact
         if first_review_request_backup and first_review_request and \
                 first_review_request > first_comment_on_first_review:
             # we cannot request a review after we received a review
