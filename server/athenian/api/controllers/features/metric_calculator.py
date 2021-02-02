@@ -9,6 +9,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 from pandas._libs import tslib
+import sentry_sdk
 
 from athenian.api import typing_utils
 from athenian.api.controllers.features.histogram import calculate_histogram, Histogram, Scale
@@ -176,8 +177,15 @@ class AverageMetricCalculator(MetricCalculator[T]):
         assert self.may_have_negative_values is not None
         if not self.may_have_negative_values:
             zero = samples.dtype.type(0)
-            negative = np.where(samples < zero)[0]
-            assert len(negative) == 0, samples[negative]
+            negative = np.nonzero(samples < zero)[0]
+            try:
+                assert len(negative) == 0, samples[negative]
+            except AssertionError as e:
+                if sentry_sdk.Hub.current.scope.transaction is not None:
+                    sentry_sdk.capture_exception(e)
+                    samples = samples[samples >= zero]
+                else:
+                    raise e from None
         return Metric(True, *mean_confidence_interval(samples, self.may_have_negative_values))
 
     def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
