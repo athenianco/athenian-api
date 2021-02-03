@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from itertools import chain
 import pickle
@@ -97,7 +97,7 @@ async def _set_commits(stats_by_repo_by_dev: StatsByRepoByDev,
                        mdb: databases.Database,
                        pdb: databases.Database,
                        cache: Optional[aiomcache.Client]) -> None:
-    commits = await _fetch_developer_commits(
+    commits = await _fetch_developer_committed_changes(
         dev_ids.values(), repo_ids.values(), repogroups, time_from, time_to, meta_ids, mdb, cache)
     if DeveloperTopic.commits_pushed in topics:
         topic = DeveloperTopic.commits_pushed.name
@@ -309,6 +309,9 @@ async def _set_pr_comments(stats_by_repo_by_dev: StatsByRepoByDev,
         _set_stats(DeveloperTopic.pr_comments, joint, repogroups, stats_by_repo_by_dev)
 
 
+ACTIVITY_DAYS_THRESHOLD_DENSITY = 0.2
+
+
 @sentry_span
 async def _set_active(stats_by_repo_by_dev: StatsByRepoByDev,
                       topics: Set[str],
@@ -324,7 +327,19 @@ async def _set_active(stats_by_repo_by_dev: StatsByRepoByDev,
                       mdb: databases.Database,
                       pdb: databases.Database,
                       cache: Optional[aiomcache.Client]) -> None:
-    pass
+    commits = await _fetch_developer_commit_days(
+        dev_ids.values(), repo_ids.values(), repogroups, time_from, time_to, meta_ids, mdb, cache)
+    if DeveloperTopic.active in topics:
+        topic = DeveloperTopic.active.name
+        days = (time_to - time_from + timedelta(seconds=24 * 3600 - 1)).days
+        threshold = ACTIVITY_DAYS_THRESHOLD_DENSITY
+        if not repogroups:
+            output = stats_by_repo_by_dev[None]
+            for dev, active_days in zip(commits.index.values, commits["days"].values):
+                output[dev][topic] = int(active_days / days >= threshold)
+        else:
+            for (repo, dev), active_days in zip(commits.index.values, commits["days"].values):
+                stats_by_repo_by_dev[repo][dev][topic] = int(active_days / days >= threshold)
 
 
 processors = [
@@ -434,18 +449,61 @@ CACHE_EXPIRATION_TIME = 5 * 60  # 5 min
         repogroups,
     ),
 )
-async def _fetch_developer_commits(devs: Iterable[str],
-                                   repos: Iterable[str],
-                                   repogroups: bool,
-                                   time_from: datetime,
-                                   time_to: datetime,
-                                   meta_ids: Tuple[int, ...],
-                                   mdb: databases.Database,
-                                   cache: Optional[aiomcache.Client],
-                                   ) -> pd.DataFrame:
+async def _fetch_developer_committed_changes(devs: Iterable[str],
+                                             repos: Iterable[str],
+                                             repogroups: bool,
+                                             time_from: datetime,
+                                             time_to: datetime,
+                                             meta_ids: Tuple[int, ...],
+                                             mdb: databases.Database,
+                                             cache: Optional[aiomcache.Client],
+                                             ) -> pd.DataFrame:
     columns = [func.sum(PushCommit.additions + PushCommit.deletions).label("lines"),
                func.count(PushCommit.node_id).label("count"),
                PushCommit.author_user]
+    group_by = [PushCommit.author_user]
+    if repogroups:
+        columns.insert(0, PushCommit.repository_node_id)
+        group_by.insert(0, PushCommit.repository_node_id)
+    query = select(columns).where(and_(
+        PushCommit.committed_date.between(time_from, time_to),
+        PushCommit.author_user.in_(devs),
+        PushCommit.repository_node_id.in_(repos),
+        PushCommit.acc_id.in_(meta_ids),
+    )).group_by(*group_by)
+    df = await read_sql_query(
+        query, mdb, [c.key for c in columns], index=[c.key for c in group_by])
+    df.fillna(0, inplace=True, downcast="infer")
+    return df
+
+
+@cached(
+    exptime=CACHE_EXPIRATION_TIME,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda devs, repos, repogroups, time_from, time_to, **_: (
+        ",".join(devs), ",".join(sorted(repos)), time_from.toordinal(), time_to.toordinal(),
+        repogroups,
+    ),
+)
+async def _fetch_developer_commit_days(devs: Iterable[str],
+                                       repos: Iterable[str],
+                                       repogroups: bool,
+                                       time_from: datetime,
+                                       time_to: datetime,
+                                       meta_ids: Tuple[int, ...],
+                                       mdb: databases.Database,
+                                       cache: Optional[aiomcache.Client],
+                                       ) -> pd.DataFrame:
+    dt_offset = time_from - datetime.combine((time_from + timedelta(days=1)).date(),
+                                             datetime.min.time(), tzinfo=timezone.utc)
+    if mdb.url.dialect in ("postgres", "postgresql"):
+        committed_date_with_offset = func.date_trunc("day", PushCommit.committed_date + dt_offset)
+    else:
+        committed_date_with_offset = func.date(
+            PushCommit.committed_date, "%d minutes" % (dt_offset.seconds // 60), "start of day")
+    columns = [PushCommit.author_user,
+               func.count(distinct(committed_date_with_offset)).label("days")]
     group_by = [PushCommit.author_user]
     if repogroups:
         columns.insert(0, PushCommit.repository_node_id)
