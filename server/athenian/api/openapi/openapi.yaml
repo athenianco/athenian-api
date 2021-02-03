@@ -3016,7 +3016,7 @@ components:
         repositories:
           $ref: '#/components/schemas/RepositorySet'
         repogroups:
-          $ref: '#/components/schemas/RepositoryGroups'
+          $ref: '#/components/schemas/IndexedGroups'
         with:
           $ref: '#/components/schemas/PullRequestWith'
         withgroups:
@@ -3066,7 +3066,13 @@ components:
         developers:
           $ref: '#/components/schemas/DeveloperSet'
         repogroups:
-          $ref: '#/components/schemas/RepositoryGroups'
+          allOf:
+          - description: Split metrics per defined repository groups.
+          - $ref: '#/components/schemas/IndexedGroups'
+        aggregate_devgroups:
+          allOf:
+          - description: Aggregate metrics for each defined developer group.
+          - $ref: '#/components/schemas/IndexedGroups'
         labels_include:
           description: PRs must be labeled with at least one name from this list so
             that the related metrics include them.
@@ -4339,11 +4345,6 @@ components:
         account:
           description: Session account ID.
           type: integer
-        aggregate:
-          description: |-
-            Value indicating whether to aggregate metrics per `developers` group or not.
-            The default is `false`: we calculate metrics for each developer separately.
-          type: boolean
       required:
       - account
       - date_from
@@ -5963,8 +5964,9 @@ components:
             type: string
           type: array
       type: object
-    RepositoryGroups:
-      description: Lists of indexes in `repositories` that define independent groups
+    IndexedGroups:
+      description: |-
+        Lists of indexes in `repositories` or `developers` that define independent groups
         that must be processed individually. The groups may have intersections.
       example:
       - 0
