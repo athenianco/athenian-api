@@ -12,6 +12,7 @@ class ForSetDevelopers(Model, RepositoryGroupsMixin):
         "repositories": List[str],
         "repogroups": Optional[List[List[int]]],
         "developers": List[str],
+        "aggregate_devgroups": Optional[List[List[int]]],
         "labels_include": List[str],
         "labels_exclude": List[str],
         "jira": JIRAFilter,
@@ -21,6 +22,7 @@ class ForSetDevelopers(Model, RepositoryGroupsMixin):
         "repositories": "repositories",
         "repogroups": "repogroups",
         "developers": "developers",
+        "aggregate_devgroups": "aggregate_devgroups",
         "labels_include": "labels_include",
         "labels_exclude": "labels_exclude",
         "jira": "jira",
@@ -31,6 +33,7 @@ class ForSetDevelopers(Model, RepositoryGroupsMixin):
         repositories: Optional[List[str]] = None,
         repogroups: Optional[List[List[int]]] = None,
         developers: Optional[List[str]] = None,
+        aggregate_devgroups: Optional[List[List[int]]] = None,
         labels_include: Optional[List[str]] = None,
         labels_exclude: Optional[List[str]] = None,
         jira: Optional[JIRAFilter] = None,
@@ -40,6 +43,7 @@ class ForSetDevelopers(Model, RepositoryGroupsMixin):
         :param repositories: The repositories of this ForSetDevelopers.
         :param repogroups: The repogroups of this ForSetDevelopers.
         :param developers: The developers of this ForSetDevelopers.
+        :param aggregate_devgroups: The aggregate_devgroups of this ForSetDevelopers.
         :param labels_include: The labels_include of this ForSetDevelopers.
         :param labels_exclude: The labels_exclude of this ForSetDevelopers.
         :param jira: The jira of this ForSetDevelopers.
@@ -47,6 +51,7 @@ class ForSetDevelopers(Model, RepositoryGroupsMixin):
         self._repositories = repositories
         self._repogroups = repogroups
         self._developers = developers
+        self._aggregate_devgroups = aggregate_devgroups
         self._labels_include = labels_include
         self._labels_exclude = labels_exclude
         self._jira = jira
@@ -88,6 +93,40 @@ class ForSetDevelopers(Model, RepositoryGroupsMixin):
             raise ValueError("Invalid value for `developers`, must not be `None`")
 
         self._developers = developers
+
+    @property
+    def aggregate_devgroups(self) -> Optional[List[List[int]]]:
+        """Gets the aggregate_devgroups of this ForSetDevelopers.
+
+        :return: The aggregate_devgroups of this ForSetDevelopers.
+        """
+        return self._aggregate_devgroups
+
+    @aggregate_devgroups.setter
+    def aggregate_devgroups(self, aggregate_devgroups: Optional[List[List[int]]]):
+        """Sets the aggregate_devgroups of this ForSetDevelopers.
+
+        :param aggregate_devgroups: The aggregate_devgroups of this ForSetDevelopers.
+        """
+        if aggregate_devgroups is not None:
+            if len(aggregate_devgroups) == 0:
+                raise ValueError("`aggregate_devgroups` must contain at least one list")
+            for i, group in enumerate(aggregate_devgroups):
+                if len(group) == 0:
+                    raise ValueError(
+                        "`aggregate_devgroups[%d]` must contain at least one element" % i)
+                for j, v in enumerate(group):
+                    if v < 0:
+                        raise ValueError(
+                            "`aggregate_devgroups[%d][%d]` = %s must not be negative" % (i, j, v))
+                    if self._developers is not None and v >= len(self._developers):
+                        raise ValueError(
+                            "`aggregate_devgroups[%d][%d]` = %s must be less than the number of "
+                            "developers (%d)" % (i, j, v, len(self._developers)))
+                if len(set(group)) < len(group):
+                    raise ValueError("`aggregate_devgroups[%d]` has duplicate items" % i)
+
+        self._aggregate_devgroups = aggregate_devgroups
 
     @property
     def labels_include(self) -> List[str]:

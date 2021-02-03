@@ -344,9 +344,16 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     all_stats = await gather(*tasks)
     for stats, for_set in zip(all_stats, for_sets):
         for i, group in enumerate(stats):
+            if for_set.aggregate_devgroups:
+                values = [[sum(getattr(group[i], DeveloperTopic(t).name) for i in devgroup)
+                           for t in filt.metrics]
+                          for devgroup in for_set.aggregate_devgroups]
+            else:
+                values = [[getattr(s, DeveloperTopic(t).name) for t in filt.metrics]
+                          for s in group]
             met.calculated.append(CalculatedDeveloperMetricsItem(
                 for_=for_set.select_repogroup(i),
-                values=[[getattr(s, DeveloperTopic(t).name) for t in filt.metrics] for s in group],
+                values=values,
             ))
     return model_response(met)
 
