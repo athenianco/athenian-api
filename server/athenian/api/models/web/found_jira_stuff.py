@@ -5,6 +5,7 @@ from athenian.api.models.web.jira_epic import JIRAEpic
 from athenian.api.models.web.jira_issue_type import JIRAIssueType
 from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.jira_priority import JIRAPriority
+from athenian.api.models.web.jira_status import JIRAStatus
 from athenian.api.models.web.jira_user import JIRAUser
 
 
@@ -17,6 +18,7 @@ class FoundJIRAStuff(Model):
         "labels": Optional[List[JIRALabel]],
         "issue_types": Optional[List[JIRAIssueType]],
         "priorities": Optional[List[JIRAPriority]],
+        "statuses": Optional[List[JIRAStatus]],
         "users": Optional[List[JIRAUser]],
     }
     attribute_map = {
@@ -24,6 +26,7 @@ class FoundJIRAStuff(Model):
         "labels": "labels",
         "issue_types": "issue_types",
         "priorities": "priorities",
+        "statuses": "statuses",
         "users": "users",
     }
 
@@ -32,6 +35,7 @@ class FoundJIRAStuff(Model):
                  labels: Optional[List[JIRALabel]] = None,
                  issue_types: Optional[List[JIRAIssueType]] = None,
                  priorities: Optional[List[JIRAPriority]] = None,
+                 statuses: Optional[List[JIRAStatus]] = None,
                  users: Optional[List[JIRAUser]] = None):
         """FoundJIRAStuff - a model defined in OpenAPI
 
@@ -39,16 +43,18 @@ class FoundJIRAStuff(Model):
         :param labels: The labels of this FoundJIRAStuff.
         :param issue_types: The issue_types of this FoundJIRAStuff.
         :param priorities: The priorities of this FoundJIRAStuff.
+        :param statuses: The statuses of this FoundJIRAStuff.
         :param users: The users of this FoundJIRAStuff.
         """
         self._epics = epics
         self._labels = labels
         self._issue_types = issue_types
         self._priorities = priorities
+        self._statuses = statuses
         self._users = users
 
     @property
-    def epics(self) -> List[JIRAEpic]:
+    def epics(self) -> Optional[List[JIRAEpic]]:
         """Gets the epics of this FoundJIRAStuff.
 
         :return: The epics of this FoundJIRAStuff.
@@ -56,18 +62,15 @@ class FoundJIRAStuff(Model):
         return self._epics
 
     @epics.setter
-    def epics(self, epics: List[JIRAEpic]):
+    def epics(self, epics: Optional[List[JIRAEpic]]):
         """Sets the epics of this FoundJIRAStuff.
 
         :param epics: The epics of this FoundJIRAStuff.
         """
-        if epics is None:
-            raise ValueError("Invalid value for `epics`, must not be `None`")
-
         self._epics = epics
 
     @property
-    def labels(self) -> List[JIRALabel]:
+    def labels(self) -> Optional[List[JIRALabel]]:
         """Gets the labels of this FoundJIRAStuff.
 
         :return: The labels of this FoundJIRAStuff.
@@ -75,18 +78,15 @@ class FoundJIRAStuff(Model):
         return self._labels
 
     @labels.setter
-    def labels(self, labels: List[JIRALabel]):
+    def labels(self, labels: Optional[List[JIRALabel]]):
         """Sets the labels of this FoundJIRAStuff.
 
         :param labels: The labels of this FoundJIRAStuff.
         """
-        if labels is None:
-            raise ValueError("Invalid value for `labels`, must not be `None`")
-
         self._labels = labels
 
     @property
-    def issue_types(self) -> List[JIRAIssueType]:
+    def issue_types(self) -> Optional[List[JIRAIssueType]]:
         """Gets the issue_types of this FoundJIRAStuff.
 
         Types of the updated issues.
@@ -96,20 +96,17 @@ class FoundJIRAStuff(Model):
         return self._issue_types
 
     @issue_types.setter
-    def issue_types(self, issue_types: List[JIRAIssueType]):
+    def issue_types(self, issue_types: Optional[List[JIRAIssueType]]):
         """Sets the issue_types of this FoundJIRAStuff.
 
         Types of the updated issues.
 
         :param issue_types: The issue_types of this FoundJIRAStuff.
         """
-        if issue_types is None:
-            raise ValueError("Invalid value for `issue_types`, must not be `None`")
-
         self._issue_types = issue_types
 
     @property
-    def priorities(self) -> List[JIRAPriority]:
+    def priorities(self) -> Optional[List[JIRAPriority]]:
         """Gets the priorities of this FoundJIRAStuff.
 
         Issue priority names sorted by importance in ascending order.
@@ -119,20 +116,37 @@ class FoundJIRAStuff(Model):
         return self._priorities
 
     @priorities.setter
-    def priorities(self, priorities: List[JIRAPriority]):
+    def priorities(self, priorities: Optional[List[JIRAPriority]]):
         """Sets the priorities of this FoundJIRAStuff.
 
         Issue priority names sorted by importance in ascending order.
 
         :param priorities: The priorities of this FoundJIRAStuff.
         """
-        if priorities is None:
-            raise ValueError("Invalid value for `priorities`, must not be `None`")
-
         self._priorities = priorities
 
     @property
-    def users(self) -> List[JIRAUser]:
+    def statuses(self) -> Optional[List[JIRAStatus]]:
+        """Gets the statuses of this FoundJIRAStuff.
+
+        Mentioned issue statuses sorted by name.
+
+        :return: The statuses of this FoundJIRAStuff.
+        """
+        return self._statuses
+
+    @statuses.setter
+    def statuses(self, statuses: Optional[List[JIRAStatus]]):
+        """Sets the statuses of this FoundJIRAStuff.
+
+        Mentioned issue statuses sorted by name.
+
+        :param statuses: The statuses of this FoundJIRAStuff.
+        """
+        self._statuses = statuses
+
+    @property
+    def users(self) -> Optional[List[JIRAUser]]:
         """Gets the users of this FoundJIRAStuff.
 
         Mentioned users in the found JIRA issues.
@@ -142,14 +156,11 @@ class FoundJIRAStuff(Model):
         return self._users
 
     @users.setter
-    def users(self, users: List[JIRAUser]):
+    def users(self, users: Optional[List[JIRAUser]]):
         """Sets the users of this FoundJIRAStuff.
 
         Mentioned users in the found JIRA issues.
 
         :param users: The users of this FoundJIRAStuff.
         """
-        if users is None:
-            raise ValueError("Invalid value for `users`, must not be `None`")
-
         self._users = users

@@ -74,6 +74,7 @@ from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequest
 from athenian.api.models.web.jira_priority import JIRAPriority
 from athenian.api.models.web.jira_project import JIRAProject
 from athenian.api.models.web.jira_projects_request import JIRAProjectsRequest
+from athenian.api.models.web.jira_status import JIRAStatus
 from athenian.api.models.web.jira_user import JIRAUser
 from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.mapped_jira_identity import MappedJIRAIdentity

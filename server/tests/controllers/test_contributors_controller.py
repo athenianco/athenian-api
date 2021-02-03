@@ -25,7 +25,7 @@ async def _test_get_contributors(client, cached, headers, app, client_cache):
         app._cache = client_cache
 
     response = await client.request(
-        method="GET", path="/v1/contributors/1", headers=headers,
+        method="GET", path="/v1/get/contributors/1", headers=headers,
     )
 
     assert response.status == 200
@@ -48,7 +48,7 @@ async def _test_get_contributors(client, cached, headers, app, client_cache):
 async def test_get_contributors_no_installation(client, headers, sdb):
     await sdb.execute(delete(RepositorySet))
     response = await client.request(
-        method="GET", path="/v1/contributors/2", headers=headers,
+        method="GET", path="/v1/get/contributors/2", headers=headers,
     )
 
     assert response.status == 422
@@ -68,7 +68,7 @@ async def test_get_contributors_no_installation(client, headers, sdb):
                               "account doesn't exist"])
 async def test_get_contributors_not_found(client, account, headers):
     response = await client.request(
-        method="GET", path="/v1/contributors/3", headers=headers,
+        method="GET", path="/v1/get/contributors/3", headers=headers,
     )
 
     assert response.status == 404
