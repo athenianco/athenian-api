@@ -88,6 +88,7 @@ def parse_args() -> argparse.Namespace:
   ATHENIAN_INVITATION_URL_PREFIX
                            String with which any invitation URL starts, e.g. https://app.athenian.co/i/
   ATHENIAN_MAX_CLIENT_SIZE Reject HTTP requests if their size in bytes is bigger than this value
+  ATHENIAN_MAX_LOAD        Maximum load in abstract units the server accepts before rejecting requests with HTTP 503; the default value is 12
   GOOGLE_KMS_PROJECT       Name of the project with Google Cloud Key Management Service
   GOOGLE_KMS_KEYRING       Name of the keyring in Google Cloud Key Management Service
   GOOGLE_KMS_KEYNAME       Name of the key in the keyring in Google Cloud Key Management Service

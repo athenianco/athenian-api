@@ -35,7 +35,7 @@ http://localhost:8080/v1/openapi.json
 
 To launch the integration tests, use pytest:
 ```
-sudo pip install -r test-requirements.txt
+sudo pip install -r requirements-test.txt
 pytest
 ```
 
@@ -77,7 +77,7 @@ python3 -m athenian.api.models.metadata postgresql://${POSTGRES_USER}:${POSTGRES
 Install the linters:
 
 ```
-pip install -r lint-requirements.txt
+pip install -r requirements-list.txt
 ```
 
 Validate your changes:
