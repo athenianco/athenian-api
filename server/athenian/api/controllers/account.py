@@ -114,7 +114,8 @@ async def copy_teams_as_needed(account: int,
     """
     log = logging.getLogger("%s.create_teams_as_needed" % metadata.__package__)
     existing = await sdb.fetch_val(select([func.count(StateTeam.id)])
-                                   .where(StateTeam.owner_id == account))
+                                   .where(and_(StateTeam.owner_id == account,
+                                               StateTeam.name != StateTeam.BOTS)))
     if existing > 0:
         log.info("Found %d existing teams for account %d, no-op", existing, account)
     orgs = [org.id for org in await get_account_organizations(account, sdb, mdb, cache)]
@@ -127,8 +128,11 @@ async def copy_teams_as_needed(account: int,
     # check for cycles - who knows?
     dig = nx.DiGraph()
     for row in team_rows:
+        team_id = row[MetadataTeam.id.key]
         if (parent_id := row[MetadataTeam.parent_team.key]) is not None:
-            dig.add_edge(row[MetadataTeam.id.key], parent_id)
+            dig.add_edge(team_id, parent_id)
+        else:
+            dig.add_node(team_id)
     try:
         cycle = nx.find_cycle(dig)
     except nx.NetworkXNoCycle:
@@ -147,6 +151,7 @@ async def copy_teams_as_needed(account: int,
     for row in member_rows:
         members[row[TeamMember.parent_id.key]].append(prefix + row[NodeUser.login.key])
     db_ids = {}
+    created_teams = []
     for node_id in reversed(list(nx.topological_sort(dig))):
         team = teams[node_id]
         if (parent := teams.get(team[MetadataTeam.parent_team.key])) is not None:
@@ -162,6 +167,9 @@ async def copy_teams_as_needed(account: int,
             log.error('Failed to create team "%s" in account %d: %s',
                       team[StateTeam.name.key], account, e)
             db_ids[node_id] = None
+        else:
+            created_teams.append(team[StateTeam.name.key])
     team_names = [t[MetadataTeam.name.key] for t in team_rows]
-    log.info("Created %d teams in account %d: %s", len(team_names), account, team_names)
-    return team_names
+    log.info("Created %d out of %d teams in account %d: %s",
+             len(created_teams), len(team_names), account, created_teams)
+    return created_teams
