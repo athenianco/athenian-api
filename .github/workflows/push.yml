@@ -192,6 +192,8 @@ jobs:
     - name: test heater
       if: matrix.type == 'heater'
       working-directory: server
+      env:
+        ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE: https://whatever-jira/%s
       run: |
         set -x
         export SDB=${SDB/\%s/master}

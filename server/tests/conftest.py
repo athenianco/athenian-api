@@ -44,7 +44,7 @@ from athenian.api import create_memcached, create_slack, patch_pandas
 from athenian.api.auth import Auth0, User
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.connexion import AthenianApp
-from athenian.api.controllers import invitation_controller
+from athenian.api.controllers import account, invitation_controller
 from athenian.api.db import ParallelDatabase
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata
@@ -65,7 +65,7 @@ sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".
 pdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.precomputed.", suffix=".sqlite")
 assert Auth0.KEY == os.environ["ATHENIAN_INVITATION_KEY"], "athenian.api was imported before tests"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
-invitation_controller.jira_url_template = \
+account.jira_url_template = invitation_controller.jira_url_template = \
     "https://installation.athenian.co/jira/%s/atlassian-connect.json"
 override_mdb = os.getenv("OVERRIDE_MDB")
 override_sdb = os.getenv("OVERRIDE_SDB")

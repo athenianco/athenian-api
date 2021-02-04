@@ -2,6 +2,7 @@
 
 - Extracted facts about *{{ prs }}* PRs: *{{ prs_done }}* done, *{{ prs_merged }}* merged unreleased, *{{ prs_open }}* open.
 - Detected *{{ releases }}* releases: *{{ releases_by_tag }}* by tag and *{{ releases_by_branch }}* by branch.
-- Processed *{{ branches }}* branches in *{{ repositories }}* repositories.
+- Processed *{{ branches }}* branches in *{{ repositories }}* repositories prefixed with {% for prefix in prefixes %}`{{ prefix }}`{{ ", " if not loop.last }}{% endfor %}.
 - Copied *{{ teams }}* teams.
 - Created "{{ bots_team_name }}" team with *{{ bots }}* bots.
+- JIRA installation link: `{{ jira_link }}`

@@ -22,7 +22,8 @@ from sqlalchemy import and_, delete, func, insert, select, update
 from athenian.api import metadata
 from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, max_exptime
-from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
+from athenian.api.controllers.account import generate_jira_invitation_link, \
+    get_metadata_account_ids, get_user_account_status, jira_url_template
 from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.defer import defer
@@ -44,7 +45,6 @@ from athenian.api.typing_utils import DatabaseLike
 
 admin_backdoor = (1 << 24) - 1
 url_prefix = os.getenv("ATHENIAN_INVITATION_URL_PREFIX")
-jira_url_template = os.getenv("ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE")
 
 
 def validate_env():
@@ -483,7 +483,6 @@ async def gen_jira_link(request: AthenianWebRequest, id: int) -> web.Response:
     account_id = id
     async with request.sdb.connection() as sdb_conn:
         await _check_admin_access(request.uid, account_id, sdb_conn)
-        secret = await sdb_conn.fetch_val(select([Account.secret]).where(Account.id == account_id))
-        assert secret not in (None, Account.missing_secret)
-        model = InvitationLink(url=jira_url_template % secret)
+        url = await generate_jira_invitation_link(account_id, sdb_conn)
+        model = InvitationLink(url=url)
         return model_response(model)
