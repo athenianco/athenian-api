@@ -173,7 +173,7 @@ async def match_jira_identities(account: int,
     match_result = await _match_jira_identities(account, meta_ids, sdb, mdb, cache)
     if match_result is not None:
         matched_jira_size, github_size, jira_size, from_scratch = match_result
-        if slack is not None and from_scratch:
+        if slack is not None and from_scratch and github_size > 0 and jira_size > 0:
             await slack.post("matched_jira_identities.jinja2",
                              account=account,
                              github_users=github_size,

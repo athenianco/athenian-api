@@ -35,7 +35,9 @@ async def test_get_metadata_account_id_error(sdb):
 async def test_copy_teams_as_needed(sdb, mdb):
     await copy_teams_as_needed(1, (6366825,), sdb, mdb, None)
     teams = {t[Team.name.key]: t for t in await sdb.fetch_all(select([Team]))}
-    assert teams.keys() == {"team", "engineering", "business", "operations", "product", "admin"}
+    assert teams.keys() == {
+        "team", "engineering", "business", "operations", "product", "admin", "automation",
+    }
     assert teams["product"][Team.members.key] == ["github.com/eiso", "github.com/warenlg"]
     assert teams["product"][Team.members_count.key] == 2
     assert teams["product"][Team.parent_id.key] == 1

@@ -302,11 +302,11 @@ async def create_teams(account: int,
     :return: Number of copied teams and the number of noticed bots.
     """
     num_teams = len(await copy_teams_as_needed(account, meta_ids, sdb, mdb, cache))
-    team = await sdb.fetch_one(select([Team.id, Team.members_count])
-                               .where(and_(Team.name == Team.BOTS,
-                                           Team.owner_id == account)))
-    if team is not None:
-        return num_teams, team[Team.members_count.key]
+    bot_team = await sdb.fetch_one(select([Team.id, Team.members_count])
+                                   .where(and_(Team.name == Team.BOTS,
+                                               Team.owner_id == account)))
+    if bot_team is not None:
+        return num_teams, bot_team[Team.members_count.key]
     release_settings = await Settings.from_account(
         account, sdb, mdb, None, None).list_release_matches(repos)
     contributors = await mine_contributors(
