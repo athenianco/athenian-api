@@ -46,7 +46,6 @@ from athenian.api.cache import setup_cache_metrics
 from athenian.api.connexion import AthenianApp
 from athenian.api.controllers import invitation_controller
 from athenian.api.db import ParallelDatabase
-from athenian.api.defer import setup_defer
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
@@ -61,7 +60,6 @@ if os.getenv("NEST_ASYNCIO"):
 uvloop.install()
 np.seterr(all="raise")
 patch_pandas()
-setup_defer(False)
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".sqlite")
 pdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.precomputed.", suffix=".sqlite")

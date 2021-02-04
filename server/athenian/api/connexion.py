@@ -36,8 +36,7 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.db import add_pdb_metrics_context, measure_db_overhead_and_retry, \
     ParallelDatabase
-from athenian.api.defer import enable_defer, launch_defer, setup_defer, wait_all_deferred, \
-    wait_deferred
+from athenian.api.defer import enable_defer, launch_defer, wait_all_deferred, wait_deferred
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.metadata import dereference_schemas
 from athenian.api.models.precomputed.schema_monitor import schedule_pdb_schema_check
@@ -186,7 +185,6 @@ class AthenianApp(connexion.AioHttpApp):
                          server_args={"client_max_size": client_max_size})
         self.api_cls = AthenianAioHttpApi
         self._devenv = os.getenv("SENTRY_ENV", "development") == "development"
-        setup_defer(not self._devenv)
         invitation_controller.validate_env()
         self.app["auth"] = self._auth0 = auth0_cls(whitelist=[
             r"/v1/openapi.json$",
@@ -404,9 +402,9 @@ class AthenianApp(connexion.AioHttpApp):
                 # block the response until we execute all the deferred coroutines
                 await wait_deferred()
             else:
-                # execute the deferred coroutines in 15 seconds to not interfere with serving
+                # execute the deferred coroutines in 100ms to not interfere with serving
                 # the parallel requests, but only if not shutting down, otherwise, immediately
-                launch_defer(15 * (1 - self._shutting_down),
+                launch_defer(0.1 * (1 - self._shutting_down),
                              "%s %s" % (request.method, request.path))
             self._requests -= 1
             self._load -= load

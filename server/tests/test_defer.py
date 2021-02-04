@@ -1,12 +1,12 @@
 import asyncio
 import logging
 
-from athenian.api.defer import defer, enable_defer, launch_defer, setup_defer, wait_all_deferred, \
-    wait_deferred
+from athenian.api.defer import defer, enable_defer, launch_defer, set_defer_loop, \
+    wait_all_deferred, wait_deferred
 
 
 async def test_defer_end_to_end():
-    setup_defer(False)
+    set_defer_loop()
     for _ in range(2):
         done = 0
         done_by_task = {}
