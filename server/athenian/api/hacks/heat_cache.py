@@ -39,7 +39,7 @@ from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 import athenian.api.db
 from athenian.api.db import ParallelDatabase
-from athenian.api.defer import enable_defer, setup_defer, wait_deferred
+from athenian.api.defer import enable_defer, wait_deferred
 from athenian.api.models.metadata import dereference_schemas, PREFIXES
 from athenian.api.models.metadata.github import NodePullRequest, NodeUser, PullRequestLabel, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
@@ -71,7 +71,6 @@ def main():
     log = logging.getLogger("heater")
     args = _parse_args()
     setup_context(log)
-    setup_defer(False)
     sentry_sdk.add_breadcrumb(category="origin", message="heater", level="info")
     if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):
         return 1

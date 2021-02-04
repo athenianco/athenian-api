@@ -1,7 +1,7 @@
 from asyncio import current_task, ensure_future, Event, shield, sleep, wait
 from contextvars import ContextVar
 import logging
-from typing import Coroutine, List, Optional
+from typing import Coroutine, List
 
 import asyncpg
 from sentry_sdk import Hub, start_transaction
@@ -10,63 +10,30 @@ from sentry_sdk.tracing import Transaction
 from athenian.api import metadata
 from athenian.api.typing_utils import wraps
 
-_defer_launch_event = None
-_defer_sync = None
-_defer_counter = None
+_defer_launch_event = ContextVar("defer_launch_event")
+_defer_sync = ContextVar("defer_sync")
+_defer_counter = ContextVar("defer_counter")
+_defer_explicit = ContextVar("defer_explicit")
 _global_defer_counter = 0
-_global_defer_sync = None  # type: Optional[Event]
-_defer_transaction = None
+_global_defer_sync = Event()
+_defer_transaction = ContextVar("defer_transaction")
 _log = logging.getLogger("%s.defer" % metadata.__package__)
+_log.setLevel(logging.DEBUG)
 
 
-class GlobalVar:
-    """Mock the interface of ContextVar."""
-
-    def __init__(self, value):
-        """Assign an object at initialization time."""
-        self.value = value
-
-    def get(self):
-        """Return the encapsulated object."""
-        return self.value
-
-
-def setup_defer(global_scope: bool) -> None:
-    """
-    Initialize the deferred subsystem.
-
-    This function is a no-op if called multiple times.
-
-    :param global_scope: Indicates whether the deferred tasks must register in the global context \
-                         or in the current coroutine context.
-    """
-    global _defer_sync, _defer_counter, _defer_launch_event, _defer_transaction
-    if _defer_sync is not None:
-        # do not allow to reinitialize with a different scope
-        assert global_scope == isinstance(_defer_sync, GlobalVar)
-    if global_scope:
-        _defer_launch_event = GlobalVar(Event())
-        _defer_sync = GlobalVar(Event())
-        _defer_counter = GlobalVar([0])
-        _defer_transaction = GlobalVar([None])
-    else:
-        _defer_launch_event = ContextVar("defer_launch_event")
-        _defer_sync = ContextVar("defer_sync")
-        _defer_counter = ContextVar("defer_counter")
-        _defer_transaction = ContextVar("defer_transaction")
-    global _global_defer_counter, _global_defer_sync
-    _global_defer_counter = 0
+def set_defer_loop() -> None:
+    """Bind asyncio.Event to the current global event loop."""
+    global _global_defer_sync
     _global_defer_sync = Event()
 
 
 def enable_defer(explicit_launch: bool) -> None:
     """Allow deferred couroutines in the current context."""
-    if isinstance(_defer_sync, GlobalVar):
-        return
     _defer_launch_event.set(Event())
     _defer_sync.set(Event())
-    _defer_counter.set([0])
     _defer_transaction.set([None])
+    _defer_counter.set([0])
+    _defer_explicit.set(explicit_launch)
     if not explicit_launch:
         launch_defer(0, "enable_defer")
 
@@ -74,7 +41,10 @@ def enable_defer(explicit_launch: bool) -> None:
 def launch_defer(delay: float, name: str) -> None:
     """Allow the deferred coroutines to execute after a certain delay (in seconds)."""
     transaction_ptr = _defer_transaction.get()  # type: List[Transaction]
+    deferred_count_ptr = _defer_counter.get()
     launch_event = _defer_launch_event.get()  # type: Event
+    explicit_launch = _defer_explicit.get()
+
     if (parent := Hub.current.scope.transaction) is None:
         def transaction():
             return start_transaction(name="defer", sampled=False)
@@ -84,17 +54,18 @@ def launch_defer(delay: float, name: str) -> None:
                 name="defer " + parent.name,
                 sampled=parent.sampled,
                 op="defer" + ((" " + parent.op) if parent.op else ""),
-                description=parent.description,
+                description="%d tasks" % deferred_count_ptr[0],
             )
 
     def launch():
-        transaction_ptr[0] = transaction()
+        _log.debug("launching %d deferred tasks %r", deferred_count_ptr[0], launch_event)
+        if deferred_count_ptr[0] > 0 or not explicit_launch:
+            transaction_ptr[0] = transaction()
         launch_event.set()
 
     if delay == 0:
         launch()
     else:
-
         async def delayer():
             current_task().set_name("launch_defer.delayer " + name)
             await sleep(delay)
@@ -114,10 +85,13 @@ async def defer(coroutine: Coroutine, name: str) -> None:
     _global_defer_counter += 1
     launch_event = _defer_launch_event.get()  # type: Event
     transaction_ptr = _defer_transaction.get()
+    explicit_launch = _defer_explicit.get()
+    _log.debug("planned %s %d %r", name, counter_ptr[0], launch_event)
 
     async def wrapped_defer():
         current_task().set_name("defer[wait] " + name)
         await launch_event.wait()
+        _log.debug("%d exec %s", counter_ptr[0], name)
         current_task().set_name("defer " + name)
         transaction = transaction_ptr[0]  # type: Transaction
         try:
@@ -137,9 +111,12 @@ async def defer(coroutine: Coroutine, name: str) -> None:
                 _global_defer_sync.set()
             value = counter_ptr[0] - 1
             counter_ptr[0] = value
+            _log.debug("_defer_counter %d", value)
             if value == 0:
                 sync.set()
-                transaction.finish()
+                if explicit_launch:
+                    transaction.finish()
+                    launch_event.clear()
 
     ensure_future(shield(wrapped_defer()))
 
@@ -148,10 +125,12 @@ async def wait_deferred() -> None:
     """Wait for the deferred coroutines in the current context to finish."""
     sync = _defer_sync.get()
     counter = _defer_counter.get()
-    value = counter[0]
-    if value > 0:
+    if (value := counter[0]) > 0:
         _log.info("Waiting for %d deferred tasks...", value)
         await sync.wait()
+    assert counter[0] == 0
+    if not _defer_explicit.get():
+        _defer_transaction.get()[0].finish()
 
 
 async def wait_all_deferred() -> None:
@@ -159,6 +138,8 @@ async def wait_all_deferred() -> None:
     if _global_defer_counter > 0:
         _log.info("Waiting for %d deferred tasks...", _global_defer_counter)
         await _global_defer_sync.wait()
+    assert _global_defer_counter == 0
+    _global_defer_sync.clear()
 
 
 def with_defer(func):
