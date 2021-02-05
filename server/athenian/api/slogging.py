@@ -113,7 +113,7 @@ def check_trailing_dot(func: Callable) -> Callable:
 
 
 class AwesomeFormatter(logging.Formatter):
-    """logging.Formatter which adds colors to messages and shortens thread ids."""
+    """logging.Formatter which adds colors to messages and shortens thread installation_ids."""
 
     GREEN_MARKERS = ["ok", "finished", "complete", "ready", "done", "running", "success",
                      "saved", "loaded"]

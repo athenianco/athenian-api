@@ -4,9 +4,11 @@ from functools import partial
 from itertools import chain, groupby
 import logging
 from operator import itemgetter
-from typing import List, Optional, Tuple, Type, Union
+from typing import Dict, List, Optional, Tuple, Type, Union
 
 from aiohttp import web
+import aiomcache
+import databases
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, outerjoin, select, true, union_all
@@ -25,7 +27,7 @@ from athenian.api.controllers.jira import get_jira_installation
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
-from athenian.api.controllers.settings import Settings
+from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
     Priority, User
 from athenian.api.models.state.models import MappedJIRAIdentity
@@ -38,7 +40,7 @@ from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
 
 
-@weight(0.5)
+@weight(1.0)
 async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find JIRA epics and labels used in the specified date interval."""
     try:
@@ -46,6 +48,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
+    meta_ids, jira_ids, default_branches, release_settings = await _collect_ids(
+        filt.account, request, request.sdb, request.mdb, request.cache)
     if filt.date_from is None or filt.date_to is None:
         if (filt.date_from is None) != (filt.date_to is None):
             raise ResponseError(InvalidRequestError(
@@ -54,10 +58,18 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         time_from = time_to = None
     else:
         time_from, time_to = filt.resolve_time_from_and_to()
+    label_filter = LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude)
+    if filt.with_ is not None:
+        reporters = [p.lower() for p in (filt.with_.reporters or [])]
+        assignees = [p.lower() for p in (filt.with_.assignees or [])]
+        commenters = [p.lower() for p in (filt.with_.commenters or [])]
+    else:
+        reporters = assignees = commenters = []
     return_ = set(filt.return_ or FoundJIRAStuff.openapi_types)
-    jira_ids = await get_jira_installation(filt.account, request.sdb, request.mdb, request.cache)
     mdb = request.mdb
     sdb = request.sdb
+    pdb = request.pdb
+    cache = request.cache
     log = logging.getLogger("%s.filter_jira_stuff" % metadata.__package__)
 
     def append_time_filters(filters: list) -> None:
@@ -118,47 +130,45 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         if not {JIRAFilterReturn.LABELS, JIRAFilterReturn.ISSUE_TYPES, JIRAFilterReturn.PRIORITIES,
                 JIRAFilterReturn.STATUSES, JIRAFilterReturn.USERS}.intersection(return_):
             return None, None, None, None
-        filters = [
-            Issue.acc_id == jira_ids[0],
-            Issue.project_id.in_(jira_ids[1]),
-        ]
-        append_time_filters(filters)
-        property_rows = await mdb.fetch_all(
-            select([Issue.id,
-                    Issue.project_id,
-                    Issue.labels,
-                    Issue.components,
-                    Issue.type,
-                    Issue.updated,
-                    Issue.assignee_id,
-                    Issue.reporter_id,
-                    Issue.commenters_ids,
-                    Issue.priority_id])
-            .select_from(outerjoin(Issue, AthenianIssue, and_(Issue.acc_id == AthenianIssue.acc_id,
-                                                              Issue.id == AthenianIssue.id)))
-            .where(and_(*filters)))
+        issues = await fetch_jira_issues(
+            jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
+            filt.priorities or [], [], [], reporters, assignees, commenters,
+            JIRAFilterReturn.USERS in return_, default_branches, release_settings,
+            meta_ids, mdb, pdb, cache, extra_columns=[
+                Issue.project_id,
+                Issue.components,
+                Issue.assignee_id,
+                Issue.reporter_id,
+                Issue.commenters_ids,
+                Issue.priority_id,
+            ])
+
         if JIRAFilterReturn.LABELS in return_:
             components = Counter(chain.from_iterable(
-                (r[Issue.components.key] or ()) for r in property_rows))
+                _nonzero(issues[Issue.components.key].values)))
         else:
             components = None
         if JIRAFilterReturn.USERS in return_:
-            people = set(r[Issue.reporter_id.key] for r in property_rows)
-            people.update(r[Issue.assignee_id.key] for r in property_rows)
-            people.update(chain.from_iterable(
-                (r[Issue.commenters_ids.key] or []) for r in property_rows))
+            people = np.unique(np.concatenate([
+                _nonzero(issues[Issue.reporter_id.key].values),
+                _nonzero(issues[Issue.assignee_id.key].values),
+                list(chain.from_iterable(_nonzero(issues[Issue.commenters_ids.key].values))),
+            ]))
+            # we can leave None because `IN (null)` is always false
         else:
             people = None
         if JIRAFilterReturn.PRIORITIES in return_:
-            priorities = set(r[Issue.priority_id.key] for r in property_rows)
+            priorities = issues[Issue.priority_id.key].unique()
         else:
             priorities = None
         if JIRAFilterReturn.ISSUE_TYPES in return_:
-            issue_type_counts = Counter(r[Issue.type.key] for r in property_rows)
+            issue_type_counts = Counter(issues[Issue.type.key].values)
             issue_type_projects = defaultdict(set)
-            for r in property_rows:
-                issue_type_projects[r[Issue.project_id.key]].add(r[Issue.type.key])
-            project_counts = Counter(r[Issue.project_id.key] for r in property_rows)
+            project_counts = defaultdict(int)
+            for project_id, issue_type in zip(issues[Issue.project_id.key].values,
+                                              issues[Issue.type.key].values):
+                issue_type_projects[project_id].add(issue_type)
+                project_counts[project_id] += 1
         else:
             issue_type_counts = issue_type_projects = project_counts = None
 
@@ -226,13 +236,14 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         @sentry_span
         async def extract_labels():
             if JIRAFilterReturn.LABELS in return_:
-                labels = Counter(chain.from_iterable(
-                    (r[Issue.labels.key] or ()) for r in property_rows))
+                labels = Counter(chain.from_iterable(issues[Issue.labels.key].values))
+                if None in labels:
+                    del labels[None]
                 labels = {k: JIRALabel(title=k, kind="regular", issues_count=v)
                           for k, v in labels.items()}
-                for row in property_rows:
-                    updated = row[Issue.updated.key]
-                    for label in (row[Issue.labels.key] or ()):
+                for updated, issue_labels in zip(issues[Issue.updated.key],
+                                                 issues[Issue.labels.key].values):
+                    for label in (issue_labels or ()):
                         label = labels[label]  # type: JIRALabel
                         if label.last_used is None or label.last_used < updated:
                             label.last_used = updated
@@ -278,9 +289,9 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                                      project="<not implemented>")
                        for name, (_, image) in sorted(max_issue_types.items())] or None
         if JIRAFilterReturn.LABELS in return_:
-            for row in property_rows:
-                updated = row[Issue.updated.key]
-                for component in (row[Issue.components.key] or ()):
+            for updated, issue_components in zip(issues[Issue.updated.key],
+                                                 issues[Issue.components.key].values):
+                for component in (issue_components or ()):
                     try:
                         label = components[component]  # type: JIRALabel
                     except KeyError:
@@ -305,6 +316,32 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     ))
 
 
+def _nonzero(arr: np.ndarray) -> np.ndarray:
+    return arr[arr.nonzero()[0]]
+
+
+async def _collect_ids(account: int,
+                       request: AthenianWebRequest,
+                       sdb: databases.Database,
+                       mdb: databases.Database,
+                       cache: Optional[aiomcache.Client],
+                       ) -> Tuple[Tuple[int, ...], Tuple[int, List[str]],
+                                  Dict[str, str], Dict[str, ReleaseMatchSetting]]:
+    tasks = [
+        get_account_repositories(account, sdb),
+        get_jira_installation(account, sdb, mdb, cache),
+        get_metadata_account_ids(account, sdb, cache),
+    ]
+    repos, jira_ids, meta_ids = await gather(*tasks, op="sdb/ids")
+    tasks = [
+        extract_branches(
+            [r.split("/", 1)[1] for r in repos], meta_ids, mdb, cache),
+        Settings.from_request(request, account).list_release_matches(repos),
+    ]
+    (_, default_branches), release_settings = await gather(*tasks, op="sdb/branches and releases")
+    return meta_ids, jira_ids, default_branches, release_settings
+
+
 async def _calc_jira_entry(request: AthenianWebRequest,
                            body: dict,
                            model: Union[Type[JIRAMetricsRequest], Type[JIRAHistogramsRequest]],
@@ -317,22 +354,10 @@ async def _calc_jira_entry(request: AthenianWebRequest,
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e))) from None
-    tasks = [
-        get_account_repositories(filt.account, request.sdb),
-        get_jira_installation(filt.account, request.sdb, request.mdb, request.cache),
-        get_metadata_account_ids(filt.account, request.sdb, request.cache),
-    ]
-    repos, jira_ids, meta_ids = await gather(*tasks, op="sdb")
+    meta_ids, jira_ids, default_branches, release_settings = await _collect_ids(
+        filt.account, request, request.sdb, request.mdb, request.cache)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone)
-    tasks = [
-        extract_branches(
-            [r.split("/", 1)[1] for r in repos], meta_ids, request.mdb, request.cache),
-        Settings.from_request(
-            request, filt.account).list_release_matches(repos),
-    ]
-    (_, default_branches), release_settings = await gather(
-        *tasks, op="branches and release settings")
     reporters = list(set(chain.from_iterable(
         ([p.lower() for p in (g.reporters or [])]) for g in (filt.with_ or []))))
     assignees = list(set(chain.from_iterable(

@@ -188,28 +188,30 @@ async def test_filter_jira_no_time(client, headers):
 
 
 @pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [
-    [False, 33, 34, [
-        JIRAIssueType(name="Bug", count=96, project="<not implemented>",
+    [False, 38, 34, [
+        JIRAIssueType(name="Bug", count=260, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Design Document", count=7, project="<not implemented>",
+        JIRAIssueType(name="Design Document", count=10, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=34, project="<not implemented>",
+        JIRAIssueType(name="Design document", count=1, project="<not implemented>",
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Epic", count=54, project="<not implemented>",
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
-        JIRAIssueType(name="Incident", count=3, project="<not implemented>",
+        JIRAIssueType(name="Incident", count=7, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Story", count=26, project="<not implemented>",
+        JIRAIssueType(name="Story", count=81, project="<not implemented>",
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
-        JIRAIssueType(name="Sub-task", count=26, project="<not implemented>",
+        JIRAIssueType(name="Sub-task", count=75, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Subtask", count=1, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Task", count=194, project="<not implemented>",
+        JIRAIssueType(name="Task", count=516, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
      15, 6],
-    [True, 29, 13, [
-        JIRAIssueType(name="Bug", count=77, project="<not implemented>",
+    [True, 31, 13, [
+        JIRAIssueType(name="Bug", count=78, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=13, project="<not implemented>",
+        JIRAIssueType(name="Epic", count=15, project="<not implemented>",
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
         JIRAIssueType(name="Incident", count=3, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
@@ -217,7 +219,7 @@ async def test_filter_jira_no_time(client, headers):
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
         JIRAIssueType(name="Sub-task", count=19, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Task", count=128, project="<not implemented>",
+        JIRAIssueType(name="Task", count=131, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
      11, 6],
 ])

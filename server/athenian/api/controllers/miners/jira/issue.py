@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import sql
 from sqlalchemy.orm import aliased
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api.async_utils import gather, read_sql_query
@@ -177,9 +178,9 @@ ISSUE_PRS_RELEASED = "prs_released"
         load_participants,
     ),
 )
-async def fetch_jira_issues(ids: Tuple[int, List[str]],
-                            time_from: datetime,
-                            time_to: datetime,
+async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
+                            time_from: Optional[datetime],
+                            time_to: Optional[datetime],
                             exclude_inactive: bool,
                             labels: LabelFilter,
                             priorities: Collection[str],
@@ -195,13 +196,14 @@ async def fetch_jira_issues(ids: Tuple[int, List[str]],
                             mdb: databases.Database,
                             pdb: databases.Database,
                             cache: Optional[aiomcache.Client],
+                            extra_columns: Iterable[InstrumentedAttribute] = (),
                             ) -> pd.DataFrame:
     """
     Load JIRA issues following the specified filters.
 
     The aggregation is OR between the participation roles.
 
-    :param ids: JIRA installation ID and the enabled project IDs.
+    :param installation_ids: JIRA installation ID and the enabled project IDs.
     :param time_from: Issues should not be resolved before this timestamp.
     :param time_to: Issues should be opened before this timestamp.
     :param exclude_inactive: Issues must be updated after `time_from`.
@@ -212,13 +214,15 @@ async def fetch_jira_issues(ids: Tuple[int, List[str]],
     :param reporters: List of lower-case issue reporters.
     :param assignees: List of lower-case issue assignees. None means unassigned.
     :param commenters: List of lower-case issue commenters.
+    :param extra_columns: Additional `Issue` or `AthenianIssue` columns to fetch.
     """
     issues = await _fetch_issues(
-        ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics,
-        reporters, assignees, commenters, load_participants, mdb, cache)
+        installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics,
+        reporters, assignees, commenters, load_participants, mdb, cache,
+        extra_columns=extra_columns)
     pr_rows = await mdb.fetch_all(
         sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
-        .where(sql.and_(NodePullRequestJiraIssues.jira_acc == ids[0],
+        .where(sql.and_(NodePullRequestJiraIssues.jira_acc == installation_ids[0],
                         NodePullRequestJiraIssues.jira_id.in_(issues.index),
                         NodePullRequestJiraIssues.node_acc.in_(meta_ids))))
     pr_to_issue = {r[0]: r[1] for r in pr_rows}
@@ -333,8 +337,8 @@ async def _fetch_released_prs(pr_node_ids: Iterable[str],
 
 @sentry_span
 async def _fetch_issues(ids: Tuple[int, List[str]],
-                        time_from: datetime,
-                        time_to: datetime,
+                        time_from: Optional[datetime],
+                        time_to: Optional[datetime],
                         exclude_inactive: bool,
                         labels: LabelFilter,
                         priorities: Collection[str],
@@ -346,25 +350,37 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
                         load_participants: bool,
                         mdb: databases.Database,
                         cache: Optional[aiomcache.Client],
+                        extra_columns: Iterable[InstrumentedAttribute] = (),
                         ) -> pd.DataFrame:
     postgres = mdb.url.dialect in ("postgres", "postgresql")
     columns = [
-        Issue.created, AthenianIssue.work_began, AthenianIssue.resolved, Issue.updated,
-        Issue.priority_name, Issue.epic_id, Issue.status, Issue.type, Issue.id, Issue.labels,
+        Issue.id,
+        Issue.type,
+        Issue.created,
+        Issue.updated,
+        AthenianIssue.work_began,
+        AthenianIssue.resolved,
+        Issue.priority_name,
+        Issue.epic_id,
+        Issue.status,
+        Issue.labels,
     ]
     if load_participants:
         columns.extend([sql.func.lower(Issue.reporter_display_name).label("reporter"),
                         sql.func.lower(Issue.assignee_display_name).label("assignee"),
                         Issue.commenters_display_names.label("commenters")])
+    columns.extend(extra_columns)
     # this is backed with a DB index
     far_away_future = datetime(3000, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     and_filters = [
         Issue.acc_id == ids[0],
         Issue.project_id.in_(ids[1]),
-        sql.func.coalesce(Issue.resolved, far_away_future) >= time_from,
-        Issue.created < time_to,
     ]
-    if exclude_inactive:
+    if time_from is not None:
+        and_filters.append(sql.func.coalesce(Issue.resolved, far_away_future) >= time_from)
+    if time_to is not None:
+        and_filters.append(Issue.created < time_to)
+    if exclude_inactive and time_from is not None:
         and_filters.append(Issue.updated >= time_from)
     if priorities:
         and_filters.append(sql.func.lower(Issue.priority_name).in_(priorities))
