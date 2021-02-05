@@ -5872,7 +5872,7 @@ components:
         with:
           allOf:
           - description: JIRA issue participants.
-          - $ref: '#/components/schemas/JIRAMetricsRequestWith'
+          - $ref: '#/components/schemas/JIRAFilterWith'
         exclude_inactive:
           description: Value indicating whether issues with the last update older
             than `date_from` should be ignored. If `date_from` and `date_to` are `null`,
@@ -5882,14 +5882,7 @@ components:
           description: Specifies which items are required, an empty or missing array
             means everything.
           items:
-            enum:
-            - epics
-            - labels
-            - issue_types
-            - priorities
-            - statuses
-            - users
-            type: string
+            $ref: '#/components/schemas/JIRAFilterReturn'
           type: array
       required:
       - account
@@ -5897,6 +5890,16 @@ components:
       - date_to
       - exclude_inactive
       type: object
+    JIRAFilterReturn:
+      description: Requested chapter to return in `/filter/jira`.
+      enum:
+      - epics
+      - labels
+      - issue_types
+      - priorities
+      - statuses
+      - users
+      type: string
     ReleaseMetricsRequest:
       additionalProperties: false
       description: Request of `/metrics/releases` to calculate metrics on releases.
@@ -6240,7 +6243,7 @@ components:
           description: Groups of issue participants. The metrics will be calculated
             for each group.
           items:
-            $ref: '#/components/schemas/JIRAMetricsRequestWith'
+            $ref: '#/components/schemas/JIRAFilterWith'
           type: array
         metrics:
           description: List of measured metrics.
@@ -6270,7 +6273,7 @@ components:
       - granularities
       - metrics
       type: object
-    JIRAMetricsRequestWith:
+    JIRAFilterWith:
       additionalProperties: false
       description: Group of JIRA issue participant names split by role.
       example:
@@ -6339,7 +6342,7 @@ components:
             was previously set to `true`.
           type: string
         with:
-          $ref: '#/components/schemas/JIRAMetricsRequestWith'
+          $ref: '#/components/schemas/JIRAFilterWith'
         values:
           items:
             $ref: '#/components/schemas/CalculatedLinearMetricValues'
@@ -6392,7 +6395,7 @@ components:
           description: Groups of issue participants. The histograms will be calculated
             for each group.
           items:
-            $ref: '#/components/schemas/JIRAMetricsRequestWith'
+            $ref: '#/components/schemas/JIRAFilterWith'
           type: array
         histograms:
           description: Histogram parameters for each wanted topic.
@@ -6494,7 +6497,7 @@ components:
           right: 76
       properties:
         with:
-          $ref: '#/components/schemas/JIRAMetricsRequestWith'
+          $ref: '#/components/schemas/JIRAFilterWith'
         metric:
           $ref: '#/components/schemas/JIRAMetricID'
         scale:

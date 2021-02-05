@@ -3,8 +3,8 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.granularity import Granularity
+from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
-from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
 from athenian.api.models.web.quantiles import validate_quantiles
 
 
@@ -18,7 +18,7 @@ class JIRAMetricsRequest(Model):
         "timezone": int,
         "priorities": List[str],
         "types": List[str],
-        "with_": List[JIRAMetricsRequestWith],
+        "with_": List[JIRAFilterWith],
         "metrics": List[str],
         "quantiles": List[float],
         "granularities": List[str],
@@ -55,7 +55,7 @@ class JIRAMetricsRequest(Model):
         timezone: Optional[int] = None,
         priorities: Optional[List[str]] = None,
         types: Optional[List[str]] = None,
-        with_: Optional[List[JIRAMetricsRequestWith]] = None,
+        with_: Optional[List[JIRAFilterWith]] = None,
         metrics: Optional[List[str]] = None,
         quantiles: Optional[List[float]] = None,
         granularities: Optional[List[str]] = None,
@@ -235,7 +235,7 @@ class JIRAMetricsRequest(Model):
         self._types = types
 
     @property
-    def with_(self) -> Optional[List[JIRAMetricsRequestWith]]:
+    def with_(self) -> Optional[List[JIRAFilterWith]]:
         """Gets the with of this JIRAMetricsRequest.
 
         Groups of issue participants. The metrics will be calculated for each group.
@@ -245,7 +245,7 @@ class JIRAMetricsRequest(Model):
         return self._with_
 
     @with_.setter
-    def with_(self, with_: Optional[List[JIRAMetricsRequestWith]]):
+    def with_(self, with_: Optional[List[JIRAFilterWith]]):
         """Sets the with of this JIRAMetricsRequest.
 
         Groups of issue participants. The metrics will be calculated for each group.

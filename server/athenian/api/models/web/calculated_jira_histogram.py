@@ -4,15 +4,15 @@ from typing import List, Optional, Union
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.histogram_scale import HistogramScale
 from athenian.api.models.web.interquartile import Interquartile
+from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
-from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
 
 
 class CalculatedJIRAHistogram(Model):
     """Calculated histogram over JIRA issue activities."""
 
     openapi_types = {
-        "with_": Optional[JIRAMetricsRequestWith],
+        "with_": Optional[JIRAFilterWith],
         "metric": str,
         "scale": str,
         "ticks": List[Union[float, timedelta]],
@@ -31,7 +31,7 @@ class CalculatedJIRAHistogram(Model):
 
     def __init__(
         self,
-        with_: Optional[JIRAMetricsRequestWith] = None,
+        with_: Optional[JIRAFilterWith] = None,
         metric: Optional[str] = None,
         scale: Optional[str] = None,
         ticks: Optional[List[Union[float, timedelta]]] = None,
@@ -55,7 +55,7 @@ class CalculatedJIRAHistogram(Model):
         self._interquartile = interquartile
 
     @property
-    def with_(self) -> Optional[JIRAMetricsRequestWith]:
+    def with_(self) -> Optional[JIRAFilterWith]:
         """Gets the with_ of this CalculatedJIRAHistogram.
 
         :return: The with_ of this CalculatedJIRAHistogram.
@@ -63,7 +63,7 @@ class CalculatedJIRAHistogram(Model):
         return self._with_
 
     @with_.setter
-    def with_(self, with_: Optional[JIRAMetricsRequestWith]):
+    def with_(self, with_: Optional[JIRAFilterWith]):
         """Sets the with_ of this CalculatedJIRAHistogram.
 
         :param with_: The with_ of this CalculatedJIRAHistogram.
