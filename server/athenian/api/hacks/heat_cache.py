@@ -23,7 +23,8 @@ from athenian.api import add_logging_args, check_schema_versions, compose_db_opt
     patch_pandas, setup_context
 from athenian.api.async_utils import gather
 from athenian.api.cache import setup_cache_metrics
-from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids
+from athenian.api.controllers.account import copy_teams_as_needed, generate_jira_invitation_link, \
+    get_metadata_account_ids
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.jira import match_jira_identities
@@ -190,8 +191,10 @@ def main():
                 del facts  # free some memory
                 if not reposet.precomputed:
                     if slack is not None:
+                        jira_link = await generate_jira_invitation_link(reposet.owner_id, sdb)
                         await slack.post("precomputed_account.jinja2",
                                          account=reposet.owner_id,
+                                         prefixes={r.split("/", 1)[1] for r in reposet.items},
                                          prs=prs,
                                          prs_done=prs_done,
                                          prs_merged=prs_merged,
@@ -203,7 +206,8 @@ def main():
                                          repositories=len(repos),
                                          bots_team_name=Team.BOTS,
                                          bots=num_bots,
-                                         teams=num_teams)
+                                         teams=num_teams,
+                                         jira_link=jira_link)
             except Exception as e:
                 log.warning("reposet %d: %s: %s\n%s", reposet.id, type(e).__name__, e,
                             "".join(traceback.format_exception(*sys.exc_info())[:-1]))

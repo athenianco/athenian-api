@@ -1,5 +1,6 @@
 from collections import defaultdict
 import logging
+import os
 import pickle
 from sqlite3 import IntegrityError, OperationalError
 import struct
@@ -20,6 +21,9 @@ from athenian.api.models.state.models import Account, AccountGitHubAccount, Repo
 from athenian.api.models.web import NoSourceDataError, NotFoundError
 from athenian.api.response import ResponseError
 from athenian.api.typing_utils import DatabaseLike
+
+
+jira_url_template = os.getenv("ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE")
 
 
 @cached(
@@ -173,3 +177,10 @@ async def copy_teams_as_needed(account: int,
     log.info("Created %d out of %d teams in account %d: %s",
              len(created_teams), len(team_names), account, created_teams)
     return created_teams
+
+
+async def generate_jira_invitation_link(account: int, sdb: DatabaseLike) -> str:
+    """Return the JIRA installation URL for the given account."""
+    secret = await sdb.fetch_val(select([Account.secret]).where(Account.id == account))
+    assert secret not in (None, Account.missing_secret)
+    return jira_url_template % secret
