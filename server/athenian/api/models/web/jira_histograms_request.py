@@ -3,8 +3,8 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
+from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 from athenian.api.models.web.jira_histogram_definition import JIRAHistogramDefinition
-from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
 
 
 class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
@@ -16,7 +16,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         "epics": Optional[List[str]],
         "labels_include": Optional[List[str]],
         "labels_exclude": Optional[List[str]],
-        "with_": Optional[List[JIRAMetricsRequestWith]],
+        "with_": Optional[List[JIRAFilterWith]],
         "histograms": List[JIRAHistogramDefinition],
         "date_from": date,
         "date_to": date,
@@ -49,7 +49,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         epics: Optional[List[str]] = None,
         labels_include: Optional[List[str]] = None,
         labels_exclude: Optional[List[str]] = None,
-        with_: Optional[List[JIRAMetricsRequestWith]] = None,
+        with_: Optional[List[JIRAFilterWith]] = None,
         histograms: Optional[List[JIRAHistogramDefinition]] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
@@ -191,7 +191,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         self._labels_exclude = labels_exclude
 
     @property
-    def with_(self) -> Optional[List[JIRAMetricsRequestWith]]:
+    def with_(self) -> Optional[List[JIRAFilterWith]]:
         """Gets the with_ of this JIRAHistogramsRequest.
 
         Groups of issue participants. The histograms will be calculated for each group.
@@ -201,7 +201,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         return self._with_
 
     @with_.setter
-    def with_(self, with_: Optional[List[JIRAMetricsRequestWith]]):
+    def with_(self, with_: Optional[List[JIRAFilterWith]]):
         """Sets the with_ of this JIRAHistogramsRequest.
 
         Groups of issue participants. The histograms will be calculated for each group.

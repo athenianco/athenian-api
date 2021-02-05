@@ -3,7 +3,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_linear_metric_values import \
     CalculatedLinearMetricValues
-from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
+from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 
 
 class CalculatedJIRAMetricValues(Model):
@@ -12,7 +12,7 @@ class CalculatedJIRAMetricValues(Model):
     openapi_types = {
         "granularity": str,
         "jira_label": Optional[str],
-        "with_": Optional[JIRAMetricsRequestWith],
+        "with_": Optional[JIRAFilterWith],
         "values": List[CalculatedLinearMetricValues],
     }
 
@@ -26,7 +26,7 @@ class CalculatedJIRAMetricValues(Model):
     def __init__(self,
                  granularity: Optional[str] = None,
                  jira_label: Optional[str] = None,
-                 with_: Optional[JIRAMetricsRequestWith] = None,
+                 with_: Optional[JIRAFilterWith] = None,
                  values: Optional[List[CalculatedLinearMetricValues]] = None):
         """CalculatedJIRAMetricValues - a model defined in OpenAPI
 
@@ -88,7 +88,7 @@ class CalculatedJIRAMetricValues(Model):
         self._jira_label = jira_label
 
     @property
-    def with_(self) -> Optional[List[JIRAMetricsRequestWith]]:
+    def with_(self) -> Optional[List[JIRAFilterWith]]:
         """Gets the with of this CalculatedJIRAMetricValues.
 
         Groups of issue participants. The metrics will be calculated for each group.
@@ -98,7 +98,7 @@ class CalculatedJIRAMetricValues(Model):
         return self._with_
 
     @with_.setter
-    def with_(self, with_: Optional[List[JIRAMetricsRequestWith]]):
+    def with_(self, with_: Optional[List[JIRAFilterWith]]):
         """Sets the with of this CalculatedJIRAMetricValues.
 
         Groups of issue participants. The metrics will be calculated for each group.

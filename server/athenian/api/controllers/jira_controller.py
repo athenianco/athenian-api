@@ -31,11 +31,8 @@ from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, I
 from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
     CalculatedLinearMetricValues, FilterJIRAStuff, FoundJIRAStuff, Interquartile, \
-    InvalidRequestError, JIRAEpic, JIRAHistogramsRequest, JIRALabel, JIRAMetricsRequest, \
-    JIRAPriority, JIRAUser
-from athenian.api.models.web.jira_epic_child import JIRAEpicChild
-from athenian.api.models.web.jira_issue_type import JIRAIssueType
-from athenian.api.models.web.jira_metrics_request_with import JIRAMetricsRequestWith
+    InvalidRequestError, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, JIRAFilterWith, \
+    JIRAHistogramsRequest, JIRAIssueType, JIRALabel, JIRAMetricsRequest, JIRAPriority, JIRAUser
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -73,7 +70,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
     @sentry_span
     async def epic_flow() -> Optional[List[JIRAEpic]]:
-        if "epics" not in return_:
+        if JIRAFilterReturn.EPICS not in return_:
             return None
         filters = [
             Issue.acc_id == jira_ids[0],
@@ -118,7 +115,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
     @sentry_span
     async def issue_flow():
-        if not {"labels", "issue_types", "priorities", "users"}.intersection(return_):
+        if not {JIRAFilterReturn.LABELS, JIRAFilterReturn.ISSUE_TYPES, JIRAFilterReturn.PRIORITIES,
+                JIRAFilterReturn.STATUSES, JIRAFilterReturn.USERS}.intersection(return_):
             return None, None, None, None
         filters = [
             Issue.acc_id == jira_ids[0],
@@ -139,23 +137,23 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             .select_from(outerjoin(Issue, AthenianIssue, and_(Issue.acc_id == AthenianIssue.acc_id,
                                                               Issue.id == AthenianIssue.id)))
             .where(and_(*filters)))
-        if "labels" in return_:
+        if JIRAFilterReturn.LABELS in return_:
             components = Counter(chain.from_iterable(
                 (r[Issue.components.key] or ()) for r in property_rows))
         else:
             components = None
-        if "users" in return_:
+        if JIRAFilterReturn.USERS in return_:
             people = set(r[Issue.reporter_id.key] for r in property_rows)
             people.update(r[Issue.assignee_id.key] for r in property_rows)
             people.update(chain.from_iterable(
                 (r[Issue.commenters_ids.key] or []) for r in property_rows))
         else:
             people = None
-        if "priorities" in return_:
+        if JIRAFilterReturn.PRIORITIES in return_:
             priorities = set(r[Issue.priority_id.key] for r in property_rows)
         else:
             priorities = None
-        if "issue_types" in return_:
+        if JIRAFilterReturn.ISSUE_TYPES in return_:
             issue_type_counts = Counter(r[Issue.type.key] for r in property_rows)
             issue_type_projects = defaultdict(set)
             for r in property_rows:
@@ -166,7 +164,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
         @sentry_span
         async def fetch_components():
-            if "labels" not in return_:
+            if JIRAFilterReturn.LABELS not in return_:
                 return []
             return await mdb.fetch_all(
                 select([Component.id, Component.name])
@@ -177,7 +175,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
         @sentry_span
         async def fetch_users():
-            if "users" not in return_:
+            if JIRAFilterReturn.USERS not in return_:
                 return []
             return await mdb.fetch_all(
                 select([User.display_name, User.avatar_url, User.type, User.id])
@@ -189,7 +187,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
         @sentry_span
         async def fetch_mapped_identities():
-            if "users" not in return_:
+            if JIRAFilterReturn.USERS not in return_:
                 return []
             return await sdb.fetch_all(
                 select([MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id])
@@ -200,7 +198,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
         @sentry_span
         async def fetch_priorities():
-            if "priorities" not in return_:
+            if JIRAFilterReturn.PRIORITIES not in return_:
                 return []
             return await mdb.fetch_all(
                 select([Priority.name, Priority.icon_url, Priority.rank, Priority.status_color])
@@ -212,7 +210,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
         @sentry_span
         async def fetch_types():
-            if "issue_types" not in return_:
+            if JIRAFilterReturn.ISSUE_TYPES not in return_:
                 return []
             queries = [
                 select([IssueType.name, IssueType.project_id, IssueType.icon_url])
@@ -227,7 +225,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
         @sentry_span
         async def extract_labels():
-            if "labels" in return_:
+            if JIRAFilterReturn.LABELS in return_:
                 labels = Counter(chain.from_iterable(
                     (r[Issue.labels.key] or ()) for r in property_rows))
                 labels = {k: JIRALabel(title=k, kind="regular", issues_count=v)
@@ -279,7 +277,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                                      count=issue_type_counts[name],
                                      project="<not implemented>")
                        for name, (_, image) in sorted(max_issue_types.items())] or None
-        if "labels" in return_:
+        if JIRAFilterReturn.LABELS in return_:
             for row in property_rows:
                 updated = row[Issue.updated.key]
                 for component in (row[Issue.components.key] or ()):
@@ -384,7 +382,7 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
     return model_response(mets)
 
 
-def _split_issues_by_with(with_: Optional[List[JIRAMetricsRequestWith]],
+def _split_issues_by_with(with_: Optional[List[JIRAFilterWith]],
                           issues: pd.DataFrame,
                           ) -> List[np.ndarray]:
     result = []

@@ -3,7 +3,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 
 
-class JIRAMetricsRequestWith(Model):
+class JIRAFilterWith(Model):
     """Group of JIRA issue participant names split by role."""
 
     openapi_types = {
@@ -23,11 +23,11 @@ class JIRAMetricsRequestWith(Model):
         reporters: Optional[List[str]] = None,
         commenters: Optional[List[str]] = None,
     ):
-        """JIRAMetricsRequestWith - a model defined in OpenAPI
+        """JIRAFilterWith - a model defined in OpenAPI
 
-        :param assignees: The assignees of this JIRAMetricsRequestWith.
-        :param reporters: The reporters of this JIRAMetricsRequestWith.
-        :param commenters: The commenters of this JIRAMetricsRequestWith.
+        :param assignees: The assignees of this JIRAFilterWith.
+        :param reporters: The reporters of this JIRAFilterWith.
+        :param commenters: The commenters of this JIRAFilterWith.
         """
         self._assignees = assignees
         self._reporters = reporters
@@ -35,41 +35,41 @@ class JIRAMetricsRequestWith(Model):
 
     @property
     def assignees(self) -> Optional[List[Optional[str]]]:
-        """Gets the assignees of this JIRAMetricsRequestWith.
+        """Gets the assignees of this JIRAFilterWith.
 
         Selected issue assignee users. `null` means unassigned.
 
-        :return: The assignees of this JIRAMetricsRequestWith.
+        :return: The assignees of this JIRAFilterWith.
         """
         return self._assignees
 
     @assignees.setter
     def assignees(self, assignees: Optional[List[Optional[str]]]):
-        """Sets the assignees of this JIRAMetricsRequestWith.
+        """Sets the assignees of this JIRAFilterWith.
 
         Selected issue assignee users. `null` means unassigned.
 
-        :param assignees: The assignees of this JIRAMetricsRequestWith.
+        :param assignees: The assignees of this JIRAFilterWith.
         """
         self._assignees = assignees
 
     @property
     def reporters(self) -> Optional[List[str]]:
-        """Gets the reporters of this JIRAMetricsRequestWith.
+        """Gets the reporters of this JIRAFilterWith.
 
         Selected issue reporter users.
 
-        :return: The reporters of this JIRAMetricsRequestWith.
+        :return: The reporters of this JIRAFilterWith.
         """
         return self._reporters
 
     @reporters.setter
     def reporters(self, reporters: Optional[List[str]]):
-        """Sets the reporters of this JIRAMetricsRequestWith.
+        """Sets the reporters of this JIRAFilterWith.
 
         Selected issue reporter users.
 
-        :param reporters: The reporters of this JIRAMetricsRequestWith.
+        :param reporters: The reporters of this JIRAFilterWith.
         """
         for i, reporter in enumerate(reporters):
             if reporter is None:
@@ -78,21 +78,21 @@ class JIRAMetricsRequestWith(Model):
 
     @property
     def commenters(self) -> Optional[List[str]]:
-        """Gets the commenters of this JIRAMetricsRequestWith.
+        """Gets the commenters of this JIRAFilterWith.
 
         Selected issue commenter users.
 
-        :return: The commenters of this JIRAMetricsRequestWith.
+        :return: The commenters of this JIRAFilterWith.
         """
         return self._commenters
 
     @commenters.setter
     def commenters(self, commenters: Optional[List[str]]):
-        """Sets the commenters of this JIRAMetricsRequestWith.
+        """Sets the commenters of this JIRAFilterWith.
 
         Selected issue commenter users.
 
-        :param commenters: The commenters of this JIRAMetricsRequestWith.
+        :param commenters: The commenters of this JIRAFilterWith.
         """
         for i, commenter in enumerate(commenters):
             if commenter is None:
