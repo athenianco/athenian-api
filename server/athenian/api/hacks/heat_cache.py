@@ -194,7 +194,7 @@ def main():
                         jira_link = await generate_jira_invitation_link(reposet.owner_id, sdb)
                         await slack.post("precomputed_account.jinja2",
                                          account=reposet.owner_id,
-                                         prefixes={r.split("/", 1)[1] for r in reposet.items},
+                                         prefixes={r.split("/", 2)[1] for r in reposet.items},
                                          prs=prs,
                                          prs_done=prs_done,
                                          prs_merged=prs_merged,
