@@ -6,13 +6,24 @@ from athenian.api.models.web.base_model_ import Model
 class JIRAIssueType(Model):
     """Details about a JIRA issue type."""
 
-    openapi_types = {"name": str, "count": int, "image": str}
-    attribute_map = {"name": "name", "count": "count", "image": "image"}
+    openapi_types = {
+        "name": str,
+        "count": int,
+        "image": str,
+        "project": str,
+    }
+    attribute_map = {
+        "name": "name",
+        "count": "count",
+        "image": "image",
+        "project": "project",
+    }
 
     def __init__(self,
                  name: Optional[str] = None,
                  count: Optional[int] = None,
-                 image: Optional[str] = None):
+                 image: Optional[str] = None,
+                 project: Optional[str] = None):
         """JIRAIssueType - a model defined in OpenAPI
 
         :param name: The name of this JIRAIssueType.
@@ -22,6 +33,7 @@ class JIRAIssueType(Model):
         self._name = name
         self._count = count
         self._image = image
+        self._project = project
 
     @property
     def name(self) -> str:
@@ -94,3 +106,26 @@ class JIRAIssueType(Model):
             raise ValueError("Invalid value for `image`, must not be `None`")
 
         self._image = image
+
+    @property
+    def project(self) -> str:
+        """Gets the project of this JIRAIssueType.
+
+        Bound project identifier.
+
+        :return: The project of this JIRAIssueType.
+        """
+        return self._project
+
+    @project.setter
+    def project(self, project: str):
+        """Sets the project of this JIRAIssueType.
+
+        Bound project identifier.
+
+        :param project: The project of this JIRAIssueType.
+        """
+        if project is None:
+            raise ValueError("Invalid value for `project`, must not be `None`")
+
+        self._project = project

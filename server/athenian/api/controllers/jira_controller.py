@@ -276,7 +276,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                 max_issue_types[name] = count, row[IssueType.icon_url.key]
         issue_types = [JIRAIssueType(name=name,
                                      image=image,
-                                     count=issue_type_counts[name])
+                                     count=issue_type_counts[name],
+                                     project="<not implemented>")
                        for name, (_, image) in sorted(max_issue_types.items())] or None
         if "labels" in return_:
             for row in property_rows:
@@ -472,3 +473,8 @@ async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Re
                     interquartile=Interquartile(*histogram.interquartile),
                 ))
     return model_response(result)
+
+
+async def filter_jira_epics(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Find JIRA epics which were active in the specified date interval."""
+    raise NotImplementedError

@@ -180,48 +180,6 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.user_controller
       x-codegen-request-body-name: body
-  /contributors/{id}:
-    get:
-      operationId: get_contributors
-      parameters:
-      - description: Numeric identifier of the account.
-        explode: false
-        in: path
-        name: id
-        required: true
-        schema:
-          type: integer
-        style: simple
-      responses:
-        200:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Contributors'
-          description: List of all contributors belonging to the specified account.
-        404:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The user does not belong to the specified account.
-        422:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericError'
-          description: The installation has not started yet.
-      security:
-      - bearerAuth: []
-      - apiKeyAuth: []
-      summary: List all the contributors belonging to the specified account.
-      tags:
-      - filter
-# {% if False %}
-      - default
-# {% endif %}
-      x-openapi-router-controller: athenian.api.controllers.contributors_controller
-      x-codegen-request-body-name: body
   /diff/releases:
     post:
       operationId: diff_releases
@@ -406,7 +364,7 @@ paths:
           description: The account was not found.
       security:
       - bearerAuth: []
-      summary: Find JIRA epics and labels used in the specified date interval.
+      summary: Find various JIRA entities relevant to the specified date interval.
       tags:
       - filter
 # {% if False %}
@@ -617,6 +575,46 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
+      x-codegen-request-body-name: body
+  /get/contributors/{id}:
+    get:
+      operationId: get_contributors
+      parameters:
+      - description: Numeric identifier of the account.
+        explode: false
+        in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+        style: simple
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contributors'
+          description: List of all contributors belonging to the specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The installation has not started yet.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: List all the contributors belonging to the specified account.
+      tags:
+      - get
+      - default
+      x-openapi-router-controller: athenian.api.controllers.contributors_controller
       x-codegen-request-body-name: body
   /get/pull_requests:
     post:
@@ -5082,6 +5080,7 @@ components:
         name: Bug
         count: 12
         image: https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype
+        project: 10009
       properties:
         name:
           description: Name of the issue type.
@@ -5095,10 +5094,14 @@ components:
           description: Icon URL.
           format: url
           type: string
+        project:
+          description: Bound project identifier.
+          type: string
       required:
       - count
       - image
       - name
+      - project
       type: object
     ProductFeatures:
       description: Enabled client-side product features.
@@ -5419,54 +5422,37 @@ components:
         epics:
         - id: DEV-158
           title: Precomputed DB - stage 2
+          created: 2020-05-21T18:27:00Z
           updated: 2020-08-03T23:47:00Z
+          reporter: Vadim Markovtsev
+          assignee: Vadim Markovtsev
+          comments: 1
+          prs: 0
+          priority: Low
+          status: Backlog
           children:
           - id: DEV-157
-            status: Done
+            title: New repository for the precomputing service
+            created: 2020-05-21T18:29:00Z
+            updated: 2020-11-25T13:49:00Z
+            reporter: Vadim Markovtsev
+            assignee: Oleksandr Chabaiev
+            comments: 10
+            priority: Low
+            status: Released
+            prs: 0
             type: Task
           - id: DEV-156
-            status: Done
+            title: Design the architecture of the precomputing service
+            created: 2020-05-21T18:27:00Z
+            updated: 2020-09-09T00:05:00Z
+            reporter: Vadim Markovtsev
+            assignee: Vadim Markovtsev
+            comments: 0
+            priority: Low
+            status: Released
+            prs: 0
             type: Task
-          - id: DEV-533
-            status: Done
-            type: Task
-          - id: DEV-536
-            status: Done
-            type: Bug
-          - id: DEV-538
-            status: ToDo
-            type: Bug
-          - id: DEV-539
-            status: In Progress
-            type: Bug
-          - id: DEV-620
-            status: Done
-            type: Bug
-        - id: DEV-158
-          title: Precomputed DB - stage 2
-          updated: 2020-08-03T23:47:00Z
-          children:
-          - id: DEV-157
-            status: Done
-            type: Task
-          - id: DEV-156
-            status: Done
-            type: Task
-          - id: DEV-533
-            status: Done
-            type: Task
-          - id: DEV-536
-            status: Done
-            type: Bug
-          - id: DEV-538
-            status: ToDo
-            type: Bug
-          - id: DEV-539
-            status: In Progress
-            type: Bug
-          - id: DEV-620
-            status: Done
-            type: Bug
         labels:
         - title: performance
           last_used: 2020-08-10T12:47:00Z
@@ -5480,9 +5466,11 @@ components:
         - name: Bug
           count: 12
           image: https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype
+          project: 10009
         - name: Task
           count: 6
           image: https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype
+          project: 10009
         priorities:
         - name: None
           image: https://athenianco.atlassian.net/images/icons/priorities/trivial.svg
@@ -5490,6 +5478,10 @@ components:
         - name: High
           image: https://athenianco.atlassian.net/images/icons/priorities/high.svg
           value: 5
+        statuses:
+          name: Released
+          stage: done
+          project: 10009
         users:
         - name: Vadim Markovtsev
           avatar: https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/5de504edde32fb0d03a3b4e3/8c3ffc1b-2ac0-488e-ac55-295ff06f9e28/48
@@ -5499,75 +5491,139 @@ components:
           type: atlassian
       properties:
         epics:
+          description: List of epics satisfying the filters.
           items:
             $ref: '#/components/schemas/JIRAEpic'
           type: array
         labels:
+          description: Mentioned issue labels.
           items:
             $ref: '#/components/schemas/JIRALabel'
           type: array
         issue_types:
-          description: Types of the updated issues.
+          description: Mentioned issue types.
           items:
             $ref: '#/components/schemas/JIRAIssueType'
           type: array
         priorities:
-          description: Issue priority names sorted by importance in ascending order.
+          description: Mentioned issue priorites sorted by importance in ascending
+            order.
           items:
             $ref: '#/components/schemas/JIRAPriority'
           type: array
+        statuses:
+          description: Mentioned issue statuses sorted by name.
+          items:
+            $ref: '#/components/schemas/JIRAStatus'
+          type: array
         users:
-          description: Mentioned users in the found JIRA issues.
+          description: Mentioned users in the filtered issues.
           items:
             $ref: '#/components/schemas/JIRAUser'
           type: array
       type: object
     JIRAEpic:
       additionalProperties: false
-      description: Details about a JIRA epic - a "big" issue with sub-issues.
+      description: JIRA epic details together with its child issues.
       example:
         id: DEV-158
         title: Precomputed DB - stage 2
+        created: 2020-05-21T18:27:00Z
         updated: 2020-08-03T23:47:00Z
+        reporter: Vadim Markovtsev
+        assignee: Vadim Markovtsev
+        comments: 1
+        prs: 0
+        priority: Low
+        status: Backlog
         children:
         - id: DEV-157
-          status: Done
+          title: New repository for the precomputing service
+          created: 2020-05-21T18:29:00Z
+          updated: 2020-11-25T13:49:00Z
+          reporter: Vadim Markovtsev
+          assignee: Oleksandr Chabaiev
+          comments: 10
+          priority: Low
+          status: Released
+          prs: 0
           type: Task
         - id: DEV-156
-          status: Done
+          title: Design the architecture of the precomputing service
+          created: 2020-05-21T18:27:00Z
+          updated: 2020-09-09T00:05:00Z
+          reporter: Vadim Markovtsev
+          assignee: Vadim Markovtsev
+          comments: 0
+          priority: Low
+          status: Released
+          prs: 0
           type: Task
-        - id: DEV-533
-          status: Done
-          type: Task
-        - id: DEV-536
-          status: Done
-          type: Bug
-        - id: DEV-538
-          status: ToDo
-          type: Bug
-        - id: DEV-539
-          status: In Progress
-          type: Bug
-        - id: DEV-620
-          status: Done
-          type: Bug
       properties:
         id:
           type: string
         title:
           type: string
+        created:
+          description: When this epic was created.
+          format: date-time
+          type: string
         updated:
           description: When this epic was last updated.
           format: date-time
           type: string
+        reporter:
+          description: Name of the person who reported the issue.
+          type: string
+        assignee:
+          description: Name of the assigned person.
+          nullable: true
+          type: string
+        comments:
+          description: Number of comments in the epic excluding its children.
+          type: integer
+        priority:
+          description: Name of the priority. The details are returned in `FoundJIRAStuff.priorities`.
+          type: string
+        status:
+          description: Name of the status. The details are returned in `FoundJIRAStuff.statuses`.
+          type: string
+        work_began:
+          description: |-
+            Minimum time when a child issue entered "In Progress" stage or received a PR.
+            This timestamp can be missing and is always less than or equal to `resolved`.
+          format: date-time
+          type: string
+        lead_time:
+          allOf:
+          - description: Epic's time between `work_began` and `resolved`.
+          - $ref: '#/components/schemas/TimeDuration'
+        resolved:
+          description: |-
+            When the epic finished: the stage is "Done" and all PRs are either released or rejected.
+            This timestamp can be missing and is always greater than or equal to `work_began`.
+          format: date-time
+          type: string
+        prs:
+          description: Number of mapped pull requests including the children.
+          type: integer
+        project:
+          description: Identifier of the project where this epic exists.
+          type: string
         children:
-          description: Details about the contained sub-issues.
+          description: Details about the child issues.
           items:
             $ref: '#/components/schemas/JIRAEpicChild'
           type: array
       required:
-      - children
+      - comments
+      - created
       - id
+      - priority
+      - project
+      - prs
+      - reporter
+      - status
       - title
       - updated
       type: object
@@ -5576,30 +5632,81 @@ components:
       description: Brief details about a JIRA issue in an epic.
       example:
         id: DEV-157
-        status: Done
+        title: New repository for the precomputing service
+        created: 2020-05-21T18:29:00Z
+        updated: 2020-11-25T13:49:00Z
+        reporter: Vadim Markovtsev
+        assignee: Oleksandr Chabaiev
+        comments: 10
+        priority: Low
+        status: Released
+        prs: 0
         type: Task
       properties:
         id:
           type: string
-        status:
-          description: Exact name of the issue's status.
+        title:
           type: string
-        type:
+        created:
+          description: When this epic was created.
+          format: date-time
+          type: string
+        updated:
+          description: When this epic was last updated.
+          format: date-time
+          type: string
+        reporter:
+          description: Name of the person who reported the issue.
+          type: string
+        assignee:
+          description: Name of the assigned person.
+          type: string
+        comments:
+          description: Number of comments in the issue excluding sub-tasks.
+          type: integer
+        priority:
+          description: Name of the priority. The details are returned in `FoundJIRAStuff.priorities`.
+          type: string
+        status:
+          description: Name of the status. The details are returned in `FoundJIRAStuff.statuses`.
           type: string
         work_began:
-          description: When the issue entered the "In Progress" stage. This timestamp
-            can be missing and is always less than or equal to `resolved`.
+          description: |-
+            When the issue entered the "In Progress" stage or received a PR.
+            This timestamp can be missing and is always less than or equal to `resolved`.
           format: date-time
           type: string
+        lead_time:
+          allOf:
+          - description: Issue's time between `work_began` and `resolved`.
+          - $ref: '#/components/schemas/TimeDuration'
         resolved:
-          description: When the issue was marked as completed. This timestamp can
-            be missing and is always greater than or equal to `work_began`.
+          description: |-
+            When the issue finished: the stage is "Done" and all PRs are either released or rejected.
+            This timestamp can be missing and is always greater than or equal to `work_began`.
           format: date-time
           type: string
+        type:
+          description: Name of the type. The details are returned in `FoundJIRAStuff.issue_types`.
+          type: string
+        prs:
+          description: Number of mapped pull requests.
+          type: integer
+        subtasks:
+          description: Number of sub-tasks.
+          type: integer
       required:
+      - comments
+      - created
       - id
+      - priority
+      - prs
+      - reporter
       - status
+      - subtasks
+      - title
       - type
+      - updated
       type: object
     JIRALabel:
       additionalProperties: false
@@ -5656,6 +5763,32 @@ components:
       - image
       - name
       - rank
+      type: object
+    JIRAStatus:
+      additionalProperties: false
+      description: JIRA issue status details.
+      example:
+        name: Released
+        stage: done
+        project: 10009
+      properties:
+        name:
+          description: Exact status name.
+          type: string
+        stage:
+          description: One of the three status categories.
+          enum:
+          - to_do
+          - in_progress
+          - done
+          type: string
+        project:
+          description: Identifier of the project where this status exists.
+          type: string
+      required:
+      - name
+      - project
+      - stage
       type: object
     JIRAUser:
       additionalProperties: false
@@ -5719,6 +5852,27 @@ components:
           type: string
         timezone:
           $ref: '#/components/schemas/TimeZone'
+        priorities:
+          description: Selected issue priorities.
+          items:
+            type: string
+          type: array
+        labels_include:
+          description: JIRA issues must contain at least one label from the list.
+            Several labels may be concatenated by a comma `,` so that all of them
+            are required.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: JIRA issues may not contain labels from this list.
+          items:
+            type: string
+          type: array
+        with:
+          allOf:
+          - description: JIRA issue participants.
+          - $ref: '#/components/schemas/JIRAMetricsRequestWith'
         exclude_inactive:
           description: Value indicating whether issues with the last update older
             than `date_from` should be ignored. If `date_from` and `date_to` are `null`,
@@ -5733,6 +5887,7 @@ components:
             - labels
             - issue_types
             - priorities
+            - statuses
             - users
             type: string
           type: array
