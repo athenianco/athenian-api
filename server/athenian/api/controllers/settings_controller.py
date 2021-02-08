@@ -8,7 +8,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
-from athenian.api.controllers.jira import get_jira_id
+from athenian.api.controllers.jira import get_jira_id, load_jira_identity_mapping_sentinel
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata import PREFIXES
@@ -169,6 +169,7 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
                     jira_user_id=jid,
                     confidence=1.,
                 ).create_defaults().explode(with_primary_keys=True) for ghid, jid in added_maps])
+    await load_jira_identity_mapping_sentinel.reset_cache(request_model.account, cache)
     return await get_jira_identities(request, request_model.account, jira_acc=jira_acc)
 
 
