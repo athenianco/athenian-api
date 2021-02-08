@@ -6,7 +6,7 @@ import pickle
 import re
 import sys
 import time
-from typing import Callable, List, Mapping, Tuple, Union
+from typing import Any, Callable, List, Mapping, Tuple, Union
 
 import aiohttp.web
 import aiosqlite
@@ -131,15 +131,68 @@ def add_pdb_misses(pdb: databases.Database, topic: str, value: int) -> None:
 class ExecuteManyConnection(databases.core.Connection):
     """Connection with a better execute_many()."""
 
+    def __init__(self, backend: databases.core.DatabaseBackend) -> None:
+        """Initialize a new instance of ExecuteManyConnection."""
+        super().__init__(backend)
+        self._locked = False  # a poor man's recursive lock for SQLite
+
     async def execute_many(self,
                            query: Union[ClauseElement, str],
                            values: List[Mapping]) -> None:
         """Leverage executemany() if connected to PostgreSQL for better performance."""
         if not isinstance(self.raw_connection, asyncpg.Connection):
+            assert self._locked  # pgbouncer requires wrapping every execute_many in a transaction
             return await super().execute_many(query, values)
-        sql, args = self._compile(query, values)
         async with self._query_lock:
-            await self.raw_connection.executemany(sql, args)
+            return await self.raw_connection.executemany(*self._compile(query, values))
+
+    async def execute(self,
+                      query: Union[ClauseElement, str],
+                      values: dict = None,
+                      ) -> Any:
+        """Invoke the parent's execute() with a write serialization lock on SQLite."""  # noqa
+        if not isinstance(self.raw_connection, asyncpg.Connection) and not self._locked:
+            async with self._serialization_lock:
+                self._locked = True
+                try:
+                    return await super().execute(query, values)
+                finally:
+                    self._locked = False
+        return await super().execute(query, values)
+
+    def transaction(self, *, force_rollback: bool = False, **kwargs: Any,
+                    ) -> databases.core.Transaction:
+        """Serialize transactions if running on SQLite."""
+        transaction = super().transaction(force_rollback=force_rollback, **kwargs)
+        if isinstance(self.raw_connection, asyncpg.Connection):
+            return transaction
+
+        original_start = transaction.start
+        original_rollback = transaction.rollback
+        original_commit = transaction.commit
+
+        async def start_transaction() -> databases.core.Transaction:
+            assert not self._locked
+            await self._serialization_lock.acquire()
+            self._locked = True
+            return await original_start()
+
+        async def rollback_transaction() -> None:
+            assert self._locked
+            self._locked = False
+            self._serialization_lock.release()
+            return await original_rollback()
+
+        async def commit_transaction() -> None:
+            assert self._locked
+            self._locked = False
+            self._serialization_lock.release()
+            return await original_commit()
+
+        transaction.start = start_transaction
+        transaction.rollback = rollback_transaction
+        transaction.commit = commit_transaction
+        return transaction
 
     def _compile(self, query: ClauseElement, values: List[Mapping]) -> Tuple[str, List[list]]:
         compiled = query.compile(dialect=self._backend._dialect)
@@ -166,13 +219,27 @@ class ExecuteManyConnection(databases.core.Connection):
 class ParallelDatabase(databases.Database):
     """Override connection() to ignore the task context and spawn a new Connection every time."""
 
+    _serialization_lock = None
+
     def __str__(self):
         """Make Sentry debugging easier."""
         return "ParallelDatabase('%s', options=%s)" % (self.url, self.options)
 
+    async def connect(self) -> None:
+        """
+        Establish the connection pool.
+
+        If running on SQLite, initialize the shared write serialization lock.
+        """
+        await super().connect()
+        if self.url.dialect == "sqlite":
+            self._serialization_lock = asyncio.Lock()
+
     def connection(self) -> "databases.core.Connection":
         """Bypass self._connection_context."""
-        return ExecuteManyConnection(self._backend)
+        connection = ExecuteManyConnection(self._backend)
+        connection._serialization_lock = self._serialization_lock
+        return connection
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)

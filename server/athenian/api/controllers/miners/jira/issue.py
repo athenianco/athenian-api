@@ -163,9 +163,9 @@ ISSUE_PRS_RELEASED = "prs_released"
     exptime=5 * 60,  # 5 minutes
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, load_participants, **_: (  # noqa
-        ids[0],
-        ",".join(ids[1]),
+    key=lambda installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, load_participants, **kwargs: (  # noqa
+        installation_ids[0],
+        ",".join(installation_ids[1]),
         time_from.timestamp(), time_to.timestamp(),
         exclude_inactive,
         labels,
@@ -176,6 +176,7 @@ ISSUE_PRS_RELEASED = "prs_released"
         ",".join(sorted(assignees)),
         ",".join(sorted(commenters)),
         load_participants,
+        ",".join(c.key for c in kwargs.get("extra_columns", ())),
     ),
 )
 async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],

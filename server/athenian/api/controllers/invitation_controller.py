@@ -232,16 +232,15 @@ async def _create_new_account_fast(conn: DatabaseLike, secret: str) -> int:
 
     Should be used for PostgreSQL.
     """
-    async with conn.transaction():
-        account_id = await conn.execute(
-            insert(Account).values(Account(secret_salt=0, secret=Account.missing_secret)
-                                   .create_defaults().explode()))
-        salt, secret = _generate_account_secret(account_id, secret)
-        await conn.execute(update(Account).where(Account.id == account_id).values({
-            Account.secret_salt: salt,
-            Account.secret: secret,
-        }))
-        return account_id
+    account_id = await conn.execute(
+        insert(Account).values(Account(secret_salt=0, secret=Account.missing_secret)
+                               .create_defaults().explode()))
+    salt, secret = _generate_account_secret(account_id, secret)
+    await conn.execute(update(Account).where(Account.id == account_id).values({
+        Account.secret_salt: salt,
+        Account.secret: secret,
+    }))
+    return account_id
 
 
 async def _create_new_account_slow(conn: DatabaseLike, secret: str) -> int:
@@ -251,17 +250,16 @@ async def _create_new_account_slow(conn: DatabaseLike, secret: str) -> int:
     by hand.
     """
     acc = Account(secret_salt=0, secret=Account.missing_secret).create_defaults()
-    async with conn.transaction():
-        max_id = (await conn.fetch_one(select([func.max(Account.id)])
-                                       .where(Account.id < admin_backdoor)))[0] or 0
-        acc.id = max_id + 1
-        acc_id = await conn.execute(insert(Account).values(acc.explode(with_primary_keys=True)))
-        salt, secret = _generate_account_secret(acc_id, secret)
-        await conn.execute(update(Account).where(Account.id == acc_id).values({
-            Account.secret_salt: salt,
-            Account.secret: secret,
-        }))
-        return acc_id
+    max_id = (await conn.fetch_one(select([func.max(Account.id)])
+                                   .where(Account.id < admin_backdoor)))[0] or 0
+    acc.id = max_id + 1
+    acc_id = await conn.execute(insert(Account).values(acc.explode(with_primary_keys=True)))
+    salt, secret = _generate_account_secret(acc_id, secret)
+    await conn.execute(update(Account).where(Account.id == acc_id).values({
+        Account.secret_salt: salt,
+        Account.secret: secret,
+    }))
+    return acc_id
 
 
 async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Response:

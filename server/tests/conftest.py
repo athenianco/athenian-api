@@ -12,7 +12,6 @@ import tempfile
 import time
 from typing import Dict, List, Optional, Union
 
-from databases import Database
 from filelock import FileLock
 try:
     import nest_asyncio
@@ -406,17 +405,12 @@ async def sdb(state_db, loop, request):
 
 @pytest.fixture(scope="function")
 async def pdb(precomputed_db, loop, request):
-    if precomputed_db.startswith("sqlite"):
-        db = Database(precomputed_db)
-    else:
-        db = ParallelDatabase(precomputed_db)
+    db = ParallelDatabase(precomputed_db)
     db.metrics = {
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
     }
     await db.connect()
-    if precomputed_db.startswith("sqlite"):
-        db._global_connection = db.connection()
 
     def shutdown():
         loop.run_until_complete(db.disconnect())
