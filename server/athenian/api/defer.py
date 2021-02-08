@@ -18,7 +18,6 @@ _global_defer_counter = 0
 _global_defer_sync = Event()
 _defer_transaction = ContextVar("defer_transaction")
 _log = logging.getLogger("%s.defer" % metadata.__package__)
-_log.setLevel(logging.DEBUG)
 
 
 def set_defer_loop() -> None:
