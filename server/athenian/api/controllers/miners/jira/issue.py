@@ -166,7 +166,8 @@ ISSUE_PRS_RELEASED = "prs_released"
     key=lambda installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, load_participants, **kwargs: (  # noqa
         installation_ids[0],
         ",".join(installation_ids[1]),
-        time_from.timestamp(), time_to.timestamp(),
+        time_from.timestamp() if time_from else "-",
+        time_to.timestamp() if time_to else "-",
         exclude_inactive,
         labels,
         ",".join(sorted(priorities)),
