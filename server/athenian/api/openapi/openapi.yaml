@@ -4612,6 +4612,7 @@ components:
           allOf:
           - $ref: '#/components/schemas/IncludedNativeUsers'
           - $ref: '#/components/schemas/IncludedJIRAIssues'
+          type: object
         data:
           description: List of matching release metadata.
           items:
@@ -5873,6 +5874,7 @@ components:
           allOf:
           - description: JIRA issue participants.
           - $ref: '#/components/schemas/JIRAFilterWith'
+          type: object
         exclude_inactive:
           description: Value indicating whether issues with the last update older
             than `date_from` should be ignored. If `date_from` and `date_to` are `null`,
@@ -6651,6 +6653,7 @@ components:
           allOf:
           - $ref: '#/components/schemas/IncludedNativeUsers'
           - $ref: '#/components/schemas/IncludedJIRAIssues'
+          type: object
         data:
           additionalProperties:
             items:
