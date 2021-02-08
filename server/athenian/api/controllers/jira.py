@@ -111,7 +111,7 @@ async def load_mapped_jira_users(account: int,
 
 
 @cached(
-    exptime=max_exptime,  # we drop _load_jira_identity_mapping_sentinel when we re-compute
+    exptime=max_exptime,  # we drop load_jira_identity_mapping_sentinel when we re-compute
     serialize=marshal.dumps,
     deserialize=marshal.loads,
     key=lambda account, github_user_ids, **_: (account, sorted(github_user_ids)),
@@ -285,4 +285,5 @@ async def _match_jira_identities(account: int,
         async with sdb.connection() as sdb_conn:
             async with sdb_conn.transaction():
                 await sdb_conn.execute_many(insert(MappedJIRAIdentity), db_records)
+        await load_jira_identity_mapping_sentinel.reset_cache(account, cache)
     return len(db_records), len(github_users), len(jira_users), len(existing_mapping) == 0
