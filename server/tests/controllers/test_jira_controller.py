@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import json
 
 from dateutil.tz import tzutc
@@ -83,25 +83,72 @@ async def test_filter_jira_return(client, headers, return_, checked):
         assert model.labels is None
     if "epics" in checked:
         assert model.epics == [
-            JIRAEpic(id="DEV-70", title="Show the installation progress in the waiting page",
-                     updated=datetime(2020, 7, 27, 16, 56, 22, tzinfo=tzutc()),
-                     children=[JIRAEpicChild("DEV-183", "Closed", "Task",
-                                             datetime(2020, 6, 2, 11, 40, 42, tzinfo=tzutc()),
-                                             datetime(2020, 6, 2, 11, 40, 42, tzinfo=tzutc())),
-                               JIRAEpicChild("DEV-228", "Released", "Task",
-                                             datetime(2020, 6, 9, 10, 8, 15, tzinfo=tzutc()),
-                                             datetime(2020, 6, 9, 10, 34, 7, tzinfo=tzutc())),
-                               JIRAEpicChild("DEV-315", "Released", "Story",
-                                             datetime(2020, 6, 25, 17, 8, 11, tzinfo=tzutc()),
-                                             datetime(2020, 7, 13, 17, 43, 20, tzinfo=tzutc())),
-                               JIRAEpicChild("DEV-364", "Released", "Story",
-                                             datetime(2020, 7, 2, 4, 23, 20, tzinfo=tzutc()),
-                                             datetime(2020, 7, 13, 17, 46, 15, tzinfo=tzutc())),
-                               JIRAEpicChild("DEV-365", "Released", "Story",
-                                             datetime(2020, 6, 26, 9, 33, 9, tzinfo=tzutc()),
-                                             datetime(2020, 6, 26, 9, 35, 43, tzinfo=tzutc()))]),
             JIRAEpic(id="ENG-1", title="Evaluate our product and process internally",
-                     updated=datetime(2020, 6, 1, 7, 19, tzinfo=tzutc()), children=[]),
+                     created=datetime(2019, 12, 2, 14, 19, 58, 762),
+                     updated=datetime(2020, 6, 1, 7, 19, 0, 316),
+                     work_began=datetime(2020, 6, 1, 7, 19, 0, 335),
+                     resolved=datetime(2020, 6, 1, 7, 19, 0, 335), lead_time=timedelta(0),
+                     reporter="Lou Marvin Caraig", assignee="Waren Long", comments=0,
+                     priority="Medium", status="Done", prs=0, project="10003", children=[]),
+            JIRAEpic(id="DEV-70", title="Show the installation progress in the waiting page",
+                     created=datetime(2020, 1, 22, 16, 57, 10, 253),
+                     updated=datetime(2020, 7, 13, 17, 45, 58, 294),
+                     work_began=datetime(2020, 6, 2, 11, 40, 42, 905),
+                     resolved=datetime(2020, 7, 13, 17, 45, 58, 305),
+                     lead_time=timedelta(days=41, seconds=21915), reporter="Lou Marvin Caraig",
+                     assignee="David Pordomingo", comments=0, priority="Low", status="Released",
+                     prs=0, project="10009", children=[
+                         JIRAEpicChild(
+                             id="DEV-183",
+                             title="Implement the endpoint that returns the installation progress",
+                             created=datetime(2020, 6, 2, 11, 7, 36, 558),
+                             updated=datetime(2020, 6, 2, 11, 40, 42, 891),
+                             work_began=datetime(2020, 6, 2, 11, 40, 42, 905),
+                             resolved=datetime(2020, 6, 2, 11, 40, 42, 905),
+                             lead_time=None, reporter="Waren Long", assignee="Vadim Markovtsev",
+                             comments=0, priority="Low", status="Closed", prs=0, type="Task",
+                             subtasks=0),
+                         JIRAEpicChild(
+                             id="DEV-228",
+                             title="Consider installation progress without updates during 3 hours as complete",  # noqa
+                             created=datetime(2020, 6, 8, 9, 0, 22, 517),
+                             updated=datetime(2020, 6, 16, 18, 12, 38, 634),
+                             work_began=datetime(2020, 6, 9, 10, 8, 15, 357),
+                             resolved=datetime(2020, 6, 9, 10, 34, 7, 221),
+                             lead_time=None, reporter="Vadim Markovtsev",
+                             assignee="Vadim Markovtsev", comments=0, priority="Medium",
+                             status="Released", prs=0, type="Task", subtasks=0),
+                        JIRAEpicChild(
+                            id="DEV-315",
+                            title="Add a progress bar in the waiting page to show the installation progress",  # noqa
+                            created=datetime(2020, 6, 18, 21, 51, 19, 344),
+                            updated=datetime(2020, 7, 27, 16, 56, 20, 144),
+                            work_began=datetime(2020, 6, 25, 17, 8, 11, 311),
+                            resolved=datetime(2020, 7, 13, 17, 43, 20, 317),
+                            lead_time=None, reporter="Waren Long", assignee="David Pordomingo",
+                            comments=0, priority="High", status="Released", prs=0, type="Story",
+                            subtasks=0),
+                        JIRAEpicChild(
+                            id="DEV-364",
+                            title="Block the access to the Overview page until the installation is 100% complete",  # noqa
+                            created=datetime(2020, 6, 25, 16, 12, 34, 233),
+                            updated=datetime(2020, 7, 27, 16, 56, 22, 968),
+                            work_began=datetime(2020, 7, 2, 4, 23, 20, 3),
+                            resolved=datetime(2020, 7, 13, 17, 46, 15, 634),
+                            lead_time=None, reporter="Waren Long", assignee="David Pordomingo",
+                            comments=0, priority="Medium", status="Released", prs=0, type="Story",
+                            subtasks=0),
+                        JIRAEpicChild(
+                            id="DEV-365",
+                            title="Design the success view telling the user the installation is complete and the account ready to use",  # noqa
+                            created=datetime(2020, 6, 25, 16, 17, 14, 436),
+                            updated=datetime(2020, 6, 26, 9, 38, 36, 635),
+                            work_began=datetime(2020, 6, 26, 9, 33, 9, 184),
+                            resolved=datetime(2020, 6, 26, 9, 35, 43, 579),
+                            lead_time=None, reporter="Waren Long", assignee="Zuri Negrin",
+                            comments=0, priority="Medium", status="Released", prs=0, type="Story",
+                            subtasks=0),
+                     ]),
         ]
     else:
         assert model.epics is None
@@ -150,7 +197,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
     else:
         assert model.users is None
     if "priorities" in checked:
-        assert model.priorities == [
+        true_priorities = [
             JIRAPriority(name="Medium",
                          image="https://athenianco.atlassian.net/images/icons/priorities/medium.svg",  # noqa
                          rank=3,
@@ -164,6 +211,13 @@ async def test_filter_jira_return(client, headers, return_, checked):
                          rank=6,
                          color="9AA1B2"),
         ]
+        if "epics" in checked:
+            true_priorities.insert(0, JIRAPriority(
+                name="High",
+                image="https://athenianco.atlassian.net/images/icons/priorities/high.svg",
+                rank=2,
+                color="EA4444"))
+        assert model.priorities == true_priorities
     else:
         assert model.priorities is None
 
@@ -188,7 +242,7 @@ async def test_filter_jira_no_time(client, headers):
 
 
 @pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [
-    [False, 38, 34, [
+    [False, 38, 54, [
         JIRAIssueType(name="Bug", count=260, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Design Document", count=10, project="<not implemented>",
@@ -208,7 +262,7 @@ async def test_filter_jira_no_time(client, headers):
         JIRAIssueType(name="Task", count=516, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
      15, 6],
-    [True, 31, 13, [
+    [True, 31, 15, [
         JIRAIssueType(name="Bug", count=78, project="<not implemented>",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Epic", count=15, project="<not implemented>",
@@ -280,9 +334,16 @@ async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
                   issues_count=5, kind="regular"),
         JIRALabel(title="webapp", last_used=datetime(2020, 4, 3, 18, 47, 6, tzinfo=tzutc()),
                   issues_count=1, kind="regular")]
+    print(model.epics)
     assert model.epics == [
         JIRAEpic(id="ENG-1", title="Evaluate our product and process internally",
-                 updated=datetime(2020, 6, 1, 7, 19, tzinfo=tzutc()), children=[]),
+                 created=datetime(2019, 12, 2, 14, 19, 58, 762),
+                 updated=datetime(2020, 6, 1, 7, 19, 0, 316),
+                 work_began=datetime(2020, 6, 1, 7, 19, 0, 335),
+                 resolved=datetime(2020, 6, 1, 7, 19, 0, 335),
+                 lead_time=timedelta(0), reporter="Lou Marvin Caraig", assignee="Waren Long",
+                 comments=0, priority="Medium", status="Done", prs=0, project="10003",
+                 children=[]),
     ]
     assert model.issue_types == [
         JIRAIssueType(name="Design document", count=10, project="<not implemented>",

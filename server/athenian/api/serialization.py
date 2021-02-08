@@ -184,7 +184,7 @@ class FriendlyJson:
         """Format timedeltas and dates according to https://athenianco.atlassian.net/browse/ENG-125"""  # noqa
         if isinstance(obj, (datetime.timedelta, np.timedelta64)):
             if isinstance(obj, np.timedelta64):
-                obj = obj.item()
+                obj = obj.astype("timedelta64[s]").item()
             return "%ds" % obj.total_seconds()
         if isinstance(obj, datetime.datetime):
             if obj != obj:

@@ -1,18 +1,17 @@
+import asyncio
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from itertools import chain, groupby
+from itertools import chain
 import logging
-from operator import itemgetter
-from typing import Dict, List, Optional, Tuple, Type, Union
+from typing import Collection, Dict, List, Optional, Set, Tuple, Type, Union
 
 from aiohttp import web
 import aiomcache
 import databases
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, outerjoin, select, true, union_all
-from sqlalchemy.sql.functions import coalesce
+from sqlalchemy import and_, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
@@ -26,7 +25,9 @@ from athenian.api.controllers.features.metric_calculator import group_to_indexes
 from athenian.api.controllers.jira import get_jira_installation
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
+from athenian.api.controllers.miners.jira.epic import filter_epics
+from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PRS_BEGAN, \
+    ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
     Priority, User
@@ -34,7 +35,8 @@ from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
     CalculatedLinearMetricValues, FilterJIRAStuff, FoundJIRAStuff, Interquartile, \
     InvalidRequestError, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, JIRAFilterWith, \
-    JIRAHistogramsRequest, JIRAIssueType, JIRALabel, JIRAMetricsRequest, JIRAPriority, JIRAUser
+    JIRAHistogramsRequest, JIRAIssueType, JIRALabel, JIRAMetricsRequest, JIRAPriority, \
+    JIRAStatus, JIRAUser
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -71,59 +73,133 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     pdb = request.pdb
     cache = request.cache
     log = logging.getLogger("%s.filter_jira_stuff" % metadata.__package__)
-
-    def append_time_filters(filters: list) -> None:
-        if time_to is not None:
-            filters.append(Issue.created < time_to)
-        if time_from is not None:
-            filters.append(coalesce(AthenianIssue.resolved >= time_from, true()))
-            if filt.exclude_inactive:
-                filters.append(Issue.updated >= time_from)
+    extra_columns_jira_fetch = [
+        Issue.project_id,
+        Issue.components,
+        Issue.assignee_id,
+        Issue.reporter_id,
+        Issue.commenters_ids,
+        Issue.priority_id,
+    ]
 
     @sentry_span
-    async def epic_flow() -> Optional[List[JIRAEpic]]:
+    async def epic_flow() -> Tuple[Optional[List[JIRAEpic]],
+                                   Optional[List[JIRAPriority]],
+                                   Optional[List[JIRAStatus]]]:
         if JIRAFilterReturn.EPICS not in return_:
-            return None
-        filters = [
-            Issue.acc_id == jira_ids[0],
-            Issue.project_id.in_(jira_ids[1]),
-            Issue.type == "Epic",
+            return None, None, None
+        epics_df, children_df, subtask_coro, epic_children_map = await filter_epics(
+            jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
+            filt.priorities or [], reporters, assignees, commenters, default_branches,
+            release_settings, meta_ids, mdb, pdb, cache,
+            extra_columns=[
+                Issue.key,
+                Issue.title,
+                Issue.reporter_display_name,
+                Issue.assignee_display_name,
+            ] + extra_columns_jira_fetch,
+        )
+        children_columns = {k: children_df[k].values for k in children_df.columns}
+        children_columns[Issue.id.key] = children_df.index.values
+        epics = []
+        issue_by_id = {}
+        for epic_id, project_id, epic_key, epic_title, epic_created, epic_updated, epic_prs_began,\
+            epic_work_began, epic_prs_released, epic_resolved, epic_reporter, epic_assignee, \
+            epic_priority, epic_status, epic_prs in zip(
+                epics_df.index.values, *(epics_df[column].values for column in (
+                Issue.project_id.key,
+                Issue.key.key,
+                Issue.title.key,
+                Issue.created.key,
+                Issue.updated.key,  # FIXME(vmarkovtsev): use AthenianIssue.updated
+                ISSUE_PRS_BEGAN,
+                AthenianIssue.work_began.key,
+                ISSUE_PRS_RELEASED,
+                AthenianIssue.resolved.key,
+                Issue.reporter_display_name.key,
+                Issue.assignee_display_name.key,
+                Issue.priority_name.key,
+                Issue.status.key,
+                ISSUE_PRS_COUNT,
+                ))):
+            work_began, resolved = resolve_work_began_and_resolved(
+                epic_work_began, epic_prs_began, epic_resolved, epic_prs_released)
+            epics.append(epic := JIRAEpic(
+                id=epic_key,
+                project=project_id,
+                children=[],
+                title=epic_title,
+                created=epic_created,
+                updated=epic_updated,
+                work_began=work_began,
+                resolved=resolved,
+                reporter=epic_reporter,
+                assignee=epic_assignee,
+                comments=0,  # TODO(vmarkovtsev): DEV-1658
+                priority=epic_priority,
+                status=epic_status,
+                prs=epic_prs,
+            ))
+            children_indexes = epic_children_map.get(epic_id, [])
+            for child_id, child_key, child_title, child_created, child_updated, child_prs_began, \
+                child_work_began, child_prs_released, child_resolved, child_reporter, \
+                child_assignee, child_priority, child_status, child_prs, child_type in zip(*(
+                    children_columns[column][children_indexes] for column in (
+                    Issue.id.key,
+                    Issue.key.key,
+                    Issue.title.key,
+                    Issue.created.key,
+                    Issue.updated.key,  # FIXME(vmarkovtsev): use AthenianIssue.updated
+                    ISSUE_PRS_BEGAN,
+                    AthenianIssue.work_began.key,
+                    ISSUE_PRS_RELEASED,
+                    AthenianIssue.resolved.key,
+                    Issue.reporter_display_name.key,
+                    Issue.assignee_display_name.key,
+                    Issue.priority_name.key,
+                    Issue.status.key,
+                    ISSUE_PRS_COUNT,
+                    Issue.type.key,
+                    ))):
+                epic.prs += child_prs
+                work_began, resolved = resolve_work_began_and_resolved(
+                    child_work_began, child_prs_began, child_resolved, child_prs_released)
+                if work_began is not None:
+                    epic.work_began = min(epic.work_began or work_began, work_began)
+                if resolved is None:
+                    epic.resolved = None
+                epic.children.append(child := JIRAEpicChild(
+                    id=child_key,
+                    title=child_title,
+                    created=child_created,
+                    updated=child_updated,
+                    work_began=work_began,
+                    resolved=resolved,
+                    reporter=child_reporter,
+                    assignee=child_assignee,
+                    comments=0,  # TODO(vmarkovtsev): DEV-1658
+                    priority=child_priority,
+                    status=child_status,
+                    prs=child_prs,
+                    type=child_type,
+                    subtasks=0,
+                ))
+                issue_by_id[child_id] = child
+                if len(issue_by_id) % 100 == 0:
+                    await asyncio.sleep(0)
+            if epic.resolved is not None and epic.work_began is not None:
+                epic.lead_time = epic.resolved - epic.work_began
+        priority_ids = np.unique(np.concatenate([epics_df[Issue.priority_id.key].values,
+                                                 children_columns[Issue.priority_id.key]]))
+        tasks = [
+            subtask_coro,
+            _fetch_priorities(priority_ids, jira_ids[0], return_, mdb),
         ]
-        append_time_filters(filters)
-        epic_rows = await mdb.fetch_all(
-            select([Issue.id, Issue.key, Issue.title, Issue.updated])
-            .select_from(outerjoin(Issue, AthenianIssue, and_(Issue.acc_id == AthenianIssue.acc_id,
-                                                              Issue.id == AthenianIssue.id)))
-            .where(and_(*filters)))
-        epic_ids = [r[Issue.id.key] for r in epic_rows]
-        children_rows = await mdb.fetch_all(
-            select([Issue.epic_id, Issue.key, Issue.status, Issue.type,
-                    AthenianIssue.work_began, AthenianIssue.resolved, Issue.updated])
-            .select_from(outerjoin(Issue, AthenianIssue, and_(Issue.acc_id == AthenianIssue.acc_id,
-                                                              Issue.id == AthenianIssue.id)))
-            .where(and_(Issue.epic_id.in_(epic_ids),
-                        Issue.acc_id == jira_ids[0]))
-            .order_by(Issue.epic_id))
-        children = {k: sorted((i[1] for i in g), key=lambda c: c[0]) for k, g in groupby(
-            ((r[0], [r[i] for i in range(1, len(r))]) for r in children_rows), key=itemgetter(0))}
-        if mdb.url.dialect == "sqlite":
-            for cs in children.values():
-                for c in cs:
-                    for i in (-3, -2):
-                        if c[i] is not None:
-                            c[i] = c[i].replace(tzinfo=timezone.utc)
-        epics = sorted(JIRAEpic(id=r[Issue.key.key],
-                                title=r[Issue.title.key],
-                                updated=max(chain(
-                                    (r[Issue.updated.key],),
-                                    (c[-1] for c in children.get(r[Issue.id.key], [])))),
-                                children=[JIRAEpicChild(*c[:-1]) for c in children.get(
-                                    r[Issue.id.key], [])])
-                       for r in epic_rows)
-        if mdb.url.dialect == "sqlite":
-            for epic in epics:
-                epic.updated = epic.updated.replace(tzinfo=timezone.utc)
-        return epics
+        statuses = []  # FIXME(vmarkovtsev); DEV-1660
+        subtask_counts, priorities = await gather(*tasks, op="epic epilog")
+        for row in subtask_counts:
+            issue_by_id[row[Issue.parent_id.key]].subtasks = row["subtasks"]
+        return epics, priorities, statuses
 
     @sentry_span
     async def issue_flow():
@@ -207,18 +283,6 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                 )))
 
         @sentry_span
-        async def fetch_priorities():
-            if JIRAFilterReturn.PRIORITIES not in return_:
-                return []
-            return await mdb.fetch_all(
-                select([Priority.name, Priority.icon_url, Priority.rank, Priority.status_color])
-                .where(and_(
-                    Priority.id.in_(priorities),
-                    Priority.acc_id == jira_ids[0],
-                ))
-                .order_by(Priority.rank))
-
-        @sentry_span
         async def fetch_types():
             if JIRAFilterReturn.ISSUE_TYPES not in return_:
                 return []
@@ -255,7 +319,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             return labels
 
         component_names, users, mapped_identities, priorities, issue_types, labels = await gather(
-            fetch_components(), fetch_users(), fetch_mapped_identities(), fetch_priorities(),
+            fetch_components(), fetch_users(), fetch_mapped_identities(),
+            _fetch_priorities(priorities, jira_ids[0], return_, mdb),
             fetch_types(), extract_labels())
         components = {
             row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
@@ -271,11 +336,6 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                           developer=mapped_identities.get(row[User.id.key]),
                           )
                  for row in users] or None
-        priorities = [JIRAPriority(name=row[Priority.name.key],
-                                   image=row[Priority.icon_url.key],
-                                   rank=row[Priority.rank.key],
-                                   color=row[Priority.status_color.key])
-                      for row in priorities] or None
         # take the issue type URL corresponding to the project with the most issues
         max_issue_types = {}
         for row in issue_types:
@@ -306,14 +366,44 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             labels = sorted(chain(components.values(), labels.values()))
         return labels, users, issue_types, priorities
 
-    epics, (labels, users, types, priorities) = await gather(epic_flow(), issue_flow(), op="mdb")
+    ((epics, epic_priorities, epic_statuses),
+     (labels, issue_users, issue_types, issue_priorities),
+     ) = await gather(epic_flow(), issue_flow(), op="forked flows")
+    if epic_priorities is None:
+        priorities = issue_priorities
+    elif issue_priorities is None:
+        priorities = epic_priorities
+    else:
+        priorities = sorted(set(epic_priorities).union(issue_priorities))
     return model_response(FoundJIRAStuff(
         epics=epics,
         labels=labels,
-        issue_types=types,
+        issue_types=issue_types,
         priorities=priorities,
-        users=users,
+        users=issue_users,
     ))
+
+
+@sentry_span
+async def _fetch_priorities(priorities: Collection[str],
+                            acc_id: int,
+                            return_: Set[str],
+                            mdb: databases.Database,
+                            ) -> Optional[List[JIRAPriority]]:
+    if JIRAFilterReturn.PRIORITIES not in return_:
+        return None
+    rows = await mdb.fetch_all(
+        select([Priority.name, Priority.icon_url, Priority.rank, Priority.status_color])
+        .where(and_(
+            Priority.id.in_(priorities),
+            Priority.acc_id == acc_id,
+        ))
+        .order_by(Priority.rank))
+    return [JIRAPriority(name=row[Priority.name.key],
+                         image=row[Priority.icon_url.key],
+                         rank=row[Priority.rank.key],
+                         color=row[Priority.status_color.key])
+            for row in rows]
 
 
 def _nonzero(arr: np.ndarray) -> np.ndarray:
