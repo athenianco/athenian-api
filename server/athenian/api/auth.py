@@ -305,7 +305,7 @@ class Auth0:
 
     async def _acquire_management_token_loop(self) -> None:
         while True:
-            expires_in = await self._acquire_management_token()
+            expires_in = await self._acquire_management_token(0)
             await asyncio.sleep(expires_in)
 
     async def _fetch_jwks(self) -> None:
@@ -316,8 +316,9 @@ class Auth0:
                       for key in jwks["keys"]}
         self._kids_event.set()
 
-    async def _acquire_management_token(self) -> float:
+    async def _acquire_management_token(self, attempt: int) -> float:
         data = {}
+        max_attempts = 10
         try:
             resp = await self._session.post("https://%s/oauth/token" % self._domain, headers={
                 "content-type": "application/x-www-form-urlencoded",
@@ -332,8 +333,14 @@ class Auth0:
             self._mgmt_event.set()
             expires_in = int(data["expires_in"])
         except Exception as e:
-            self.log.exception("Failed to renew the mgmt Auth0 token: %s", data)
-            raise GracefulExit() from e
+            # do not use %s - Sentry does not display it properly
+            if attempt >= max_attempts:
+                self.log.exception("Failed to renew the Auth0 management token: " + str(data))
+                raise GracefulExit() from e
+            self.log.warning("Failed to renew the Auth0 management token %d / %d: %s: %s",
+                             attempt + 1, max_attempts, e, data)
+            await asyncio.sleep(0.1)
+            return await self._acquire_management_token(attempt + 1)
         self.log.info("Acquired new Auth0 management token %s...%s for the next %s",
                       self._mgmt_token[:12], self._mgmt_token[-12:], timedelta(seconds=expires_in))
         expires_in -= 5 * 60  # 5 minutes earlier
