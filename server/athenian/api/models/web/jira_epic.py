@@ -1,130 +1,80 @@
-from datetime import datetime
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.jira_epic_child import JIRAEpicChild
+from athenian.api.models.web.jira_epic_issue_common import JIRAEpicIssueCommon
 
 
-class JIRAEpic(Model):
-    """Details about a JIRA epic - a "big" issue with sub-issues."""
+class _JIRAEpicSpecials(Model):
+    """Details specific to JIRA epics."""
 
     openapi_types = {
-        "id": str,
-        "title": str,
-        "updated": datetime,
+        "project": str,
         "children": List[JIRAEpicChild],
     }
 
     attribute_map = {
-        "id": "id",
-        "title": "title",
-        "updated": "updated",
+        "project": "project",
         "children": "children",
     }
 
+    __enable_slots__ = False
+
     def __init__(
         self,
-        id: Optional[str] = None,
-        title: Optional[str] = None,
-        updated: Optional[datetime] = None,
+        project: Optional[str] = None,
         children: Optional[List[JIRAEpicChild]] = None,
     ):
-        """JIRAEpic - a model defined in OpenAPI
+        """_JIRAEpicSpecials - a model defined in OpenAPI
 
-        :param id: The id of this JIRAEpic.
-        :param title: The title of this JIRAEpic.
-        :param updated: The updated of this JIRAEpic.
-        :param children: The children of this JIRAEpic.
+        :param project: The id of this _JIRAEpicSpecials.
+        :param children: The children of this _JIRAEpicSpecials.
         """
-        self._id = id
-        self._title = title
-        self._updated = updated
+        self._project = project
         self._children = children
 
-    def __lt__(self, other: "JIRAEpic") -> bool:
-        """Support sorting."""
-        return self._id < other._id
+    @property
+    def project(self) -> str:
+        """Gets the project of this _JIRAEpicSpecials.
+
+        Identifier of the project where this epic exists.
+
+        :return: The project of this _JIRAEpicSpecials.
+        """
+        return self._project
+
+    @project.setter
+    def project(self, project: str):
+        """Sets the project of this _JIRAEpicSpecials.
+
+        Identifier of the project where this epic exists.
+
+        :param project: The project of this _JIRAEpicSpecials.
+        """
+        if project is None:
+            raise ValueError("Invalid value for `project`, must not be `None`")
+
+        self._project = project
 
     @property
-    def id(self) -> str:
-        """Gets the id of this JIRAEpic.
+    def children(self) -> Optional[List[JIRAEpicChild]]:
+        """Gets the children of this _JIRAEpicSpecials.
 
-        :return: The id of this JIRAEpic.
-        """
-        return self._id
+        Details about the child issues.
 
-    @id.setter
-    def id(self, id: str):
-        """Sets the id of this JIRAEpic.
-
-        :param id: The id of this JIRAEpic.
-        """
-        if id is None:
-            raise ValueError("Invalid value for `id`, must not be `None`")
-
-        self._id = id
-
-    @property
-    def title(self) -> str:
-        """Gets the title of this JIRAEpic.
-
-        :return: The title of this JIRAEpic.
-        """
-        return self._title
-
-    @title.setter
-    def title(self, title: str):
-        """Sets the title of this JIRAEpic.
-
-        :param title: The title of this JIRAEpic.
-        """
-        if title is None:
-            raise ValueError("Invalid value for `title`, must not be `None`")
-
-        self._title = title
-
-    @property
-    def updated(self) -> datetime:
-        """Gets the updated of this JIRAEpic.
-
-        When this epic was last updated.
-
-        :return: The updated of this JIRAEpic.
-        """
-        return self._updated
-
-    @updated.setter
-    def updated(self, updated: datetime):
-        """Sets the updated of this JIRAEpic.
-
-        When this epic was last updated.
-
-        :param updated: The updated of this JIRAEpic.
-        """
-        if updated is None:
-            raise ValueError("Invalid value for `updated`, must not be `None`")
-
-        self._updated = updated
-
-    @property
-    def children(self) -> List[JIRAEpicChild]:
-        """Gets the children of this JIRAEpic.
-
-        IDs of the owned sub-issues.
-
-        :return: The children of this JIRAEpic.
+        :return: The children of this _JIRAEpicSpecials.
         """
         return self._children
 
     @children.setter
-    def children(self, children: List[JIRAEpicChild]):
-        """Sets the children of this JIRAEpic.
+    def children(self, children: Optional[List[JIRAEpicChild]]):
+        """Sets the children of this _JIRAEpicSpecials.
 
-        IDs of the owned sub-issues.
+        Details about the child issues.
 
-        :param children: The children of this JIRAEpic.
+        :param children: The children of this _JIRAEpicSpecials.
         """
-        if children is None:
-            raise ValueError("Invalid value for `children`, must not be `None`")
-
         self._children = children
+
+
+JIRAEpic = AllOf(JIRAEpicIssueCommon, _JIRAEpicSpecials, module=__name__)

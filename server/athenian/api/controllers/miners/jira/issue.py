@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from itertools import chain
 import pickle
@@ -156,6 +156,7 @@ def _append_label_filters(labels: LabelFilter,
 
 ISSUE_PRS_BEGAN = "prs_began"
 ISSUE_PRS_RELEASED = "prs_released"
+ISSUE_PRS_COUNT = "prs_count"
 
 
 @sentry_span
@@ -216,6 +217,8 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
     :param reporters: List of lower-case issue reporters.
     :param assignees: List of lower-case issue assignees. None means unassigned.
     :param commenters: List of lower-case issue commenters.
+    :param load_participants: Value indicating whether to fetch lower-case names of mentioned \
+                              users.
     :param extra_columns: Additional `Issue` or `AthenianIssue` columns to fetch.
     """
     issues = await _fetch_issues(
@@ -232,12 +235,15 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
     released_prs = await _fetch_released_prs(pr_to_issue, default_branches, release_settings, pdb)
     unreleased_prs = pr_to_issue.keys() - released_prs.keys()
     issue_to_index = {iid: i for i, iid in enumerate(issues.index.values)}
+    prs_count = np.full(len(issues.index), 0, int)
     nat = np.datetime64("nat")
     work_began = np.full(len(issues.index), nat, "datetime64[ns]")
     released = work_began.copy()
 
     @sentry_span
     async def released_flow():
+        for issue, count in Counter(pr_to_issue.values()).items():
+            prs_count[issue_to_index[issue]] = count
         ghdprf = GitHubDonePullRequestFacts
         for pr_node_id, row in released_prs.items():
             pr_created_at = row[ghdprf.pr_created_at.key]
@@ -278,6 +284,7 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
 
     issues[ISSUE_PRS_BEGAN] = work_began
     issues[ISSUE_PRS_RELEASED] = released
+    issues[ISSUE_PRS_COUNT] = prs_count
     return issues
 
 
@@ -384,11 +391,12 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
         and_filters.append(Issue.created < time_to)
     if exclude_inactive and time_from is not None:
         and_filters.append(Issue.updated >= time_from)
-    if priorities:
+        # FIXME(vmarkovtsev): replace with AthenianIssue.updated >= time_from from DEV-1654
+    if len(priorities):
         and_filters.append(sql.func.lower(Issue.priority_name).in_(priorities))
-    if types:
+    if len(types):
         and_filters.append(sql.func.lower(Issue.type).in_(types))
-    if epics:
+    if len(epics):
         and_filters.append(Epic.key.in_(epics))
     or_filters = []
     if labels:
@@ -414,7 +422,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
 
     def query_start():
         seed = Issue
-        if epics:
+        if len(epics):
             seed = sql.join(Issue, Epic, sql.and_(Issue.epic_id == Epic.id,
                                                   Issue.acc_id == Epic.acc_id))
         return sql.select(columns).select_from(sql.outerjoin(
@@ -464,3 +472,20 @@ async def load_pr_jira_mapping(prs: Iterable[str],
                                .where(sql.and_(nprji.node_id.in_(prs),
                                                nprji.node_acc.in_(meta_ids))))
     return {r[0]: r[1] for r in rows}
+
+
+def resolve_work_began_and_resolved(issue_work_began: np.datetime64,
+                                    prs_began: np.datetime64,
+                                    issue_resolved: np.datetime64,
+                                    prs_released: np.datetime64,
+                                    ) -> Tuple[Optional[np.datetime64], Optional[np.datetime64]]:
+    """Compute the final timestamps of when the work started on the issue, and when the issue \
+    became fully resolved."""
+    if issue_work_began != issue_work_began:
+        return None, None
+    if prs_began != prs_began:
+        return issue_work_began, issue_resolved if issue_resolved == issue_resolved else None
+    work_began = min(prs_began, issue_work_began)
+    if prs_released != prs_released or issue_resolved != issue_resolved:
+        return work_began, None
+    return work_began, max(issue_resolved, prs_released)

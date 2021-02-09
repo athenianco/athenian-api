@@ -61,6 +61,7 @@ from athenian.api.models.web.invitation_link import InvitationLink
 from athenian.api.models.web.invited_user import InvitedUser
 from athenian.api.models.web.jira_epic import JIRAEpic
 from athenian.api.models.web.jira_epic_child import JIRAEpicChild
+from athenian.api.models.web.jira_epic_issue_common import JIRAEpicIssueCommon
 from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.jira_filter_return import JIRAFilterReturn
 from athenian.api.models.web.jira_filter_with import JIRAFilterWith

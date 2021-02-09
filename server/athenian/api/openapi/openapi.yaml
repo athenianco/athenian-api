@@ -5053,7 +5053,7 @@ components:
         type: task
       properties:
         id:
-          description: Identifier of this issue.
+          description: JIRA issue key `PROJECT-###`.
           type: string
         title:
           description: Title of this issue.
@@ -5525,7 +5525,7 @@ components:
       type: object
     JIRAEpic:
       additionalProperties: false
-      description: JIRA epic details together with its child issues.
+      description: Details about a JIRA epic together with its child issues.
       example:
         id: DEV-158
         title: Precomputed DB - stage 2
@@ -5560,77 +5560,23 @@ components:
           status: Released
           prs: 0
           type: Task
-      properties:
-        id:
-          type: string
-        title:
-          type: string
-        created:
-          description: When this epic was created.
-          format: date-time
-          type: string
-        updated:
-          description: When this epic was last updated.
-          format: date-time
-          type: string
-        reporter:
-          description: Name of the person who reported the issue.
-          type: string
-        assignee:
-          description: Name of the assigned person.
-          nullable: true
-          type: string
-        comments:
-          description: Number of comments in the epic excluding its children.
-          type: integer
-        priority:
-          description: Name of the priority. The details are returned in `FoundJIRAStuff.priorities`.
-          type: string
-        status:
-          description: Name of the status. The details are returned in `FoundJIRAStuff.statuses`.
-          type: string
-        work_began:
-          description: |-
-            Minimum time when a child issue entered "In Progress" stage or received a PR.
-            This timestamp can be missing and is always less than or equal to `resolved`.
-          format: date-time
-          type: string
-        lead_time:
-          allOf:
-          - description: Epic's time between `work_began` and `resolved`.
-          - $ref: '#/components/schemas/TimeDuration'
-        resolved:
-          description: |-
-            When the epic finished: the stage is "Done" and all PRs are either released or rejected.
-            This timestamp can be missing and is always greater than or equal to `work_began`.
-          format: date-time
-          type: string
-        prs:
-          description: Number of mapped pull requests including the children.
-          type: integer
-        project:
-          description: Identifier of the project where this epic exists.
-          type: string
-        children:
-          description: Details about the child issues.
-          items:
-            $ref: '#/components/schemas/JIRAEpicChild'
-          type: array
-      required:
-      - comments
-      - created
-      - id
-      - priority
-      - project
-      - prs
-      - reporter
-      - status
-      - title
-      - updated
+      allOf:
+      - $ref: '#/components/schemas/JIRAEpicIssueCommon'
+      - properties:
+          project:
+            description: Identifier of the project where this epic exists.
+            type: string
+          children:
+            description: Details about the child issues.
+            items:
+              $ref: '#/components/schemas/JIRAEpicChild'
+            type: array
+        required:
+        - project
       type: object
     JIRAEpicChild:
       additionalProperties: false
-      description: Brief details about a JIRA issue in an epic.
+      description: Details about a JIRA issue contained in an epic.
       example:
         id: DEV-157
         title: New repository for the precomputing service
@@ -5643,19 +5589,53 @@ components:
         status: Released
         prs: 0
         type: Task
+      allOf:
+      - $ref: '#/components/schemas/JIRAEpicIssueCommon'
+      - properties:
+          type:
+            description: Name of the issue type. The details are returned in
+              `FoundJIRAStuff.issue_types`.
+            type: string
+          subtasks:
+            description: Number of sub-tasks.
+            type: integer
+        required:
+        - subtasks
+        - type
+      type: object
+    JIRAEpicIssueCommon:
+      description: Common properies if a JIRA issue or epic.
       properties:
         id:
+          description: JIRA issue key `PROJECT-###`.
           type: string
         title:
+          description: Title of this issue.
           type: string
         created:
-          description: When this epic was created.
+          description: When this issue was created.
           format: date-time
           type: string
         updated:
-          description: When this epic was last updated.
+          description: When this issue was last updated.
           format: date-time
           type: string
+        work_began:
+          description: |-
+            When the issue entered the "In Progress" stage or received a PR.
+            This timestamp can be missing and is always less than or equal to `resolved`.
+          format: date-time
+          type: string
+        resolved:
+          description: |-
+            When the issue finished: the stage is "Done" and all PRs are either released or rejected.
+            This timestamp can be missing and is always greater than or equal to `work_began`.
+          format: date-time
+          type: string
+        lead_time:
+          allOf:
+          - description: Issue's time spent between `work_began` and `resolved`.
+          - $ref: '#/components/schemas/TimeDuration'
         reporter:
           description: Name of the person who reported the issue.
           type: string
@@ -5671,30 +5651,8 @@ components:
         status:
           description: Name of the status. The details are returned in `FoundJIRAStuff.statuses`.
           type: string
-        work_began:
-          description: |-
-            When the issue entered the "In Progress" stage or received a PR.
-            This timestamp can be missing and is always less than or equal to `resolved`.
-          format: date-time
-          type: string
-        lead_time:
-          allOf:
-          - description: Issue's time between `work_began` and `resolved`.
-          - $ref: '#/components/schemas/TimeDuration'
-        resolved:
-          description: |-
-            When the issue finished: the stage is "Done" and all PRs are either released or rejected.
-            This timestamp can be missing and is always greater than or equal to `work_began`.
-          format: date-time
-          type: string
-        type:
-          description: Name of the type. The details are returned in `FoundJIRAStuff.issue_types`.
-          type: string
         prs:
           description: Number of mapped pull requests.
-          type: integer
-        subtasks:
-          description: Number of sub-tasks.
           type: integer
       required:
       - comments
@@ -5704,9 +5662,7 @@ components:
       - prs
       - reporter
       - status
-      - subtasks
       - title
-      - type
       - updated
       type: object
     JIRALabel:

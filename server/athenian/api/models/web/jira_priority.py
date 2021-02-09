@@ -36,6 +36,14 @@ class JIRAPriority(Model):
         self._rank = rank
         self._color = color
 
+    def __lt__(self, other: "JIRAPriority") -> bool:
+        """Support sorting."""
+        return (self._rank, self._name) < (other._rank, other._name)
+
+    def __hash__(self) -> int:
+        """Support dict-s."""
+        return hash(self._name)
+
     @property
     def name(self) -> str:
         """Gets the name of this JIRAPriority.
