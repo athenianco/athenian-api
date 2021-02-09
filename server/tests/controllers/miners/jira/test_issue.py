@@ -31,3 +31,15 @@ async def test_fetch_jira_issues_releases(
     args[-3] = args[-2] = None
     cached_issues = await fetch_jira_issues(*args)
     assert_frame_equal(issues, cached_issues)
+
+
+@with_defer
+async def test_fetch_jira_issues_no_times(
+        mdb, pdb, default_branches, release_match_setting_tag, cache):
+    args = [(1, ["10003", "10009"]), None, None, False,
+            LabelFilter.empty(), [], [], [], [], [], [], False,
+            default_branches, release_match_setting_tag, (6366825,), mdb, pdb, cache]
+    issues = await fetch_jira_issues(*args)
+    await wait_deferred()
+    cached_issues = await fetch_jira_issues(*args)
+    assert_frame_equal(issues, cached_issues)
