@@ -51,6 +51,15 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
         priorities, ["epic"], [], reporters, assignees, commenters,
         default_branches, release_settings, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
+    if epics.empty:
+        async def noop():
+            return []
+
+        return (epics,
+                pd.DataFrame(columns=[
+                    Issue.priority_id.key, Issue.status_id.key, Issue.project_id.key]),
+                noop(),
+                {})
     # discover the issues belonging to those epics
     children = await fetch_jira_issues(
         jira_ids, None, None, False, LabelFilter.empty(),

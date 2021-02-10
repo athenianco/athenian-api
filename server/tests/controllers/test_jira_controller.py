@@ -382,6 +382,47 @@ async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
     ]
 
 
+async def test_filter_jira_no_epics(client, headers):
+    body = {
+        "date_from": None,
+        "date_to": None,
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": False,
+        "priorities": ["Impossible"],
+        "return": ["epics", "priorities", "statuses"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FoundJIRAStuff.from_dict(json.loads(body))
+    assert len(model.epics) == 0
+
+
+async def test_filter_jira_extended_filters(client, headers):
+    body = {
+        "date_from": None,
+        "date_to": None,
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": False,
+        "priorities": ["High", "Medium"],
+        "with": {"assignees": ["Vadim Markovtsev", None]},
+        "return": ["epics", "priorities", "statuses"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FoundJIRAStuff.from_dict(json.loads(body))
+    assert len(model.epics) == 26
+    assert len(model.priorities) == 4  # two projects
+    assert len(model.statuses) == 5
+
+
 @pytest.mark.parametrize("account, date_to, timezone, status", [
     (1, "2015-10-12", 0, 400),
     (1, None, 0, 400),
