@@ -61,7 +61,7 @@ def validate_env():
 async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
     """Generate a new regular member invitation URL."""
     async with request.sdb.connection() as sdb_conn:
-        await _check_admin_access(request.uid, id, sdb_conn)
+        await get_user_account_status(request.uid, id, sdb_conn, request.cache)
         existing = await sdb_conn.fetch_one(
             select([Invitation.id, Invitation.salt])
             .where(and_(Invitation.is_active, Invitation.account_id == id)))

@@ -1306,6 +1306,7 @@ async def test_precomputed_releases_tags_after_branches(
     releases_tag, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
         release_match_setting_tag_or_branch, (6366825,), mdb, pdb, None)
+    await wait_deferred()
     assert len(releases_tag) == 53
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
 
