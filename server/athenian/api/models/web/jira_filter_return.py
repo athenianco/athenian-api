@@ -5,6 +5,7 @@ class JIRAFilterReturn(Model, metaclass=Enum):
     """Requested chapter to return in `/filter/jira`."""
 
     EPICS = "epics"
+    ISSUES = "issues"
     LABELS = "labels"
     ISSUE_TYPES = "issue_types"
     PRIORITIES = "priorities"
