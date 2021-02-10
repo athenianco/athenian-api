@@ -63,10 +63,11 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     label_filter = LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude)
     if filt.with_ is not None:
         reporters = [p.lower() for p in (filt.with_.reporters or [])]
-        assignees = [p.lower() for p in (filt.with_.assignees or [])]
+        assignees = [(p.lower() if p is not None else None) for p in (filt.with_.assignees or [])]
         commenters = [p.lower() for p in (filt.with_.commenters or [])]
     else:
         reporters = assignees = commenters = []
+    filt.priorities = [p.lower() for p in (filt.priorities or [])]
     return_ = set(filt.return_ or JIRAFilterReturn)
     mdb = request.mdb
     sdb = request.sdb
@@ -93,7 +94,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             return None, None, None
         epics_df, children_df, subtask_coro, epic_children_map = await filter_epics(
             jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
-            filt.priorities or [], reporters, assignees, commenters, default_branches,
+            filt.priorities, reporters, assignees, commenters, default_branches,
             release_settings, meta_ids, mdb, pdb, cache,
             extra_columns=[
                 Issue.key,
@@ -223,7 +224,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             return None, None, None, None, None
         issues = await fetch_jira_issues(
             jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
-            filt.priorities or [], [], [], reporters, assignees, commenters,
+            filt.priorities, [], [], reporters, assignees, commenters,
             default_branches, release_settings, meta_ids, mdb, pdb, cache,
             extra_columns=extra_columns_jira_fetch)
 
