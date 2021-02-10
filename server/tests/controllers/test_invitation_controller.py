@@ -96,7 +96,7 @@ async def test_gen_invitation_no_admin(client, headers):
     response = await client.request(
         method="GET", path="/v1/invite/generate/2", headers=headers, json={},
     )
-    assert response.status == 403
+    assert response.status == 200
 
 
 async def test_gen_invitation_no_member(client, headers):
