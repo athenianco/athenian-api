@@ -164,7 +164,7 @@ ISSUE_PRS_COUNT = "prs_count"
     exptime=5 * 60,  # 5 minutes
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, load_participants, **kwargs: (  # noqa
+    key=lambda installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, **kwargs: (  # noqa
         installation_ids[0],
         ",".join(installation_ids[1]),
         time_from.timestamp() if time_from else "-",
@@ -175,9 +175,8 @@ ISSUE_PRS_COUNT = "prs_count"
         ",".join(sorted(types)),
         ",".join(sorted(epics)),
         ",".join(sorted(reporters)),
-        ",".join(sorted(assignees)),
+        ",".join(sorted((ass if ass is not None else "<None>") for ass in assignees)),
         ",".join(sorted(commenters)),
-        load_participants,
         ",".join(c.key for c in kwargs.get("extra_columns", ())),
     ),
 )
@@ -192,7 +191,6 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
                             reporters: Collection[str],
                             assignees: Collection[Optional[str]],
                             commenters: Collection[str],
-                            load_participants: bool,
                             default_branches: Dict[str, str],
                             release_settings: Dict[str, ReleaseMatchSetting],
                             meta_ids: Tuple[int, ...],
@@ -217,13 +215,11 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
     :param reporters: List of lower-case issue reporters.
     :param assignees: List of lower-case issue assignees. None means unassigned.
     :param commenters: List of lower-case issue commenters.
-    :param load_participants: Value indicating whether to fetch lower-case names of mentioned \
-                              users.
     :param extra_columns: Additional `Issue` or `AthenianIssue` columns to fetch.
     """
     issues = await _fetch_issues(
         installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics,
-        reporters, assignees, commenters, load_participants, mdb, cache,
+        reporters, assignees, commenters, mdb, cache,
         extra_columns=extra_columns)
     pr_rows = await mdb.fetch_all(
         sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
@@ -356,7 +352,6 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
                         reporters: Collection[str],
                         assignees: Collection[Optional[str]],
                         commenters: Collection[str],
-                        load_participants: bool,
                         mdb: databases.Database,
                         cache: Optional[aiomcache.Client],
                         extra_columns: Iterable[InstrumentedAttribute] = (),
@@ -374,10 +369,6 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
         Issue.status,
         Issue.labels,
     ]
-    if load_participants:
-        columns.extend([sql.func.lower(Issue.reporter_display_name).label("reporter"),
-                        sql.func.lower(Issue.assignee_display_name).label("assignee"),
-                        Issue.commenters_display_names.label("commenters")])
     columns.extend(extra_columns)
     # this is backed with a DB index
     far_away_future = datetime(3000, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -413,12 +404,13 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
     if commenters:
         if postgres:
             or_filters.append(Issue.commenters_display_names.overlap(commenters))
-        elif not load_participants:
-            if reporters:
+        else:
+            if reporters and all(c.key != "reporter" for c in extra_columns):
                 columns.append(sql.func.lower(Issue.reporter_display_name).label("reporter"))
-            if assignees:
+            if assignees and all(c.key != "assignee" for c in extra_columns):
                 columns.append(sql.func.lower(Issue.assignee_display_name).label("assignee"))
-            columns.append(Issue.commenters_display_names.label("commenters"))
+            if all(c.key != "commenters" for c in extra_columns):
+                columns.append(Issue.commenters_display_names.label("commenters"))
 
     def query_start():
         seed = Issue

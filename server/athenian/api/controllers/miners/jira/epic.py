@@ -49,14 +49,14 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
     epics = await fetch_jira_issues(
         jira_ids, time_from, time_to, exclude_inactive, labels,
         priorities, ["epic"], [], reporters, assignees, commenters,
-        False, default_branches, release_settings,
-        meta_ids, mdb, pdb, cache, extra_columns=extra_columns)
+        default_branches, release_settings, meta_ids, mdb, pdb, cache,
+        extra_columns=extra_columns)
     # discover the issues belonging to those epics
     children = await fetch_jira_issues(
         jira_ids, None, None, False, LabelFilter.empty(),
         [], [], epics[Issue.key.key].values, [], [], [],
-        False, default_branches, release_settings,
-        meta_ids, mdb, pdb, cache, extra_columns=extra_columns)
+        default_branches, release_settings, meta_ids, mdb, pdb, cache,
+        extra_columns=extra_columns)
     # plan to fetch the subtask counts, but not await it now
     subtasks = mdb.fetch_all(select([Issue.parent_id, func.count(Issue.id).label("subtasks")])
                              .where(and_(Issue.acc_id == jira_ids[0],

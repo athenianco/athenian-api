@@ -11,7 +11,7 @@ import aiomcache
 import databases
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, select, union_all
+from sqlalchemy import and_, func, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
@@ -82,6 +82,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         Issue.priority_id,
         Issue.status_id,
     ]
+    if JIRAFilterReturn.USERS in return_:
+        extra_columns_jira_fetch.extend(_participant_columns)
 
     @sentry_span
     async def epic_flow() -> Tuple[Optional[List[JIRAEpic]],
@@ -222,8 +224,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         issues = await fetch_jira_issues(
             jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
             filt.priorities or [], [], [], reporters, assignees, commenters,
-            JIRAFilterReturn.USERS in return_, default_branches, release_settings,
-            meta_ids, mdb, pdb, cache, extra_columns=extra_columns_jira_fetch)
+            default_branches, release_settings, meta_ids, mdb, pdb, cache,
+            extra_columns=extra_columns_jira_fetch)
 
         if JIRAFilterReturn.LABELS in return_:
             components = Counter(chain.from_iterable(
@@ -450,6 +452,13 @@ async def _fetch_statuses(statuses: Collection[str],
             for row in rows]
 
 
+_participant_columns = [
+    func.lower(Issue.reporter_display_name).label("reporter"),
+    func.lower(Issue.assignee_display_name).label("assignee"),
+    Issue.commenters_display_names.label("commenters"),
+]
+
+
 def _nonzero(arr: np.ndarray) -> np.ndarray:
     return arr[arr.nonzero()[0]]
 
@@ -506,9 +515,10 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         [p.lower() for p in (filt.priorities or [])],
         [p.lower() for p in (filt.types or [])],
         filt.epics or [],
-        reporters, assignees, commenters, len(filt.with_ or []) > 1,
+        reporters, assignees, commenters,
         default_branches, release_settings,
         meta_ids, request.mdb, request.pdb, request.cache,
+        extra_columns=_participant_columns if len(filt.with_ or []) > 1 else (),
     )
     return filt, time_intervals, issues, tzoffset
 
