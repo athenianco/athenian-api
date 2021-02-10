@@ -32,6 +32,14 @@ class JIRAStatus(Model):
         self._stage = stage
         self._project = project
 
+    def __lt__(self, other: "JIRAStatus") -> bool:
+        """Support sorting."""
+        return self._name < other._name
+
+    def __hash__(self) -> int:
+        """Support dict/set keys."""
+        return hash((self._name, self._project))
+
     @property
     def name(self) -> str:
         """Gets the name of this JIRAStatus.
@@ -73,7 +81,7 @@ class JIRAStatus(Model):
 
         :param stage: The stage of this JIRAStatus.
         """
-        allowed_values = {"to_do", "in_progress", "done"}
+        allowed_values = {"To Do", "In Progress", "Done"}
         if stage not in allowed_values:
             raise ValueError(
                 "Invalid value for `stage` (%s), must be one of %s" % (

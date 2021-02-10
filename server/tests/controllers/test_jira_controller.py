@@ -6,15 +6,22 @@ import numpy as np
 import pytest
 
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
-    CalculatedLinearMetricValues, FoundJIRAStuff, JIRAEpic, JIRAEpicChild, JIRAIssueType, \
-    JIRALabel, JIRAMetricID, JIRAPriority, JIRAUser
+    CalculatedLinearMetricValues, FoundJIRAStuff, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, \
+    JIRAIssueType, \
+    JIRALabel, JIRAMetricID, JIRAPriority, JIRAStatus, JIRAUser
 from athenian.api.serialization import FriendlyJson
 
 
 @pytest.mark.parametrize("return_, checked", [
-    (None, FoundJIRAStuff.openapi_types),
-    ([], FoundJIRAStuff.openapi_types),
-] + [([k], [k]) for k in FoundJIRAStuff.openapi_types])
+    (None, set(JIRAFilterReturn)),
+    ([], set(JIRAFilterReturn)),
+    [*([list(JIRAFilterReturn)] * 2)],
+    ([JIRAFilterReturn.EPICS], {JIRAFilterReturn.EPICS}),
+    [*([[JIRAFilterReturn.EPICS, JIRAFilterReturn.PRIORITIES, JIRAFilterReturn.STATUSES]] * 2)],
+    ([JIRAFilterReturn.ISSUES], ()),
+    [*([[JIRAFilterReturn.ISSUES, JIRAFilterReturn.PRIORITIES, JIRAFilterReturn.STATUSES,
+         JIRAFilterReturn.ISSUE_TYPES, JIRAFilterReturn.USERS, JIRAFilterReturn.LABELS]] * 2)],
+])
 async def test_filter_jira_return(client, headers, return_, checked):
     body = {
         "date_from": "2019-10-13",
@@ -198,6 +205,10 @@ async def test_filter_jira_return(client, headers, return_, checked):
         assert model.users is None
     if "priorities" in checked:
         true_priorities = [
+            JIRAPriority(name="High",
+                         image="https://athenianco.atlassian.net/images/icons/priorities/high.svg",
+                         rank=2,
+                         color="EA4444"),
             JIRAPriority(name="Medium",
                          image="https://athenianco.atlassian.net/images/icons/priorities/medium.svg",  # noqa
                          rank=3,
@@ -211,15 +222,26 @@ async def test_filter_jira_return(client, headers, return_, checked):
                          rank=6,
                          color="9AA1B2"),
         ]
-        if "epics" in checked:
-            true_priorities.insert(0, JIRAPriority(
-                name="High",
-                image="https://athenianco.atlassian.net/images/icons/priorities/high.svg",
-                rank=2,
-                color="EA4444"))
+        if "issues" not in checked:
+            true_priorities.pop(-1)
+        if "epics" not in checked:
+            # some children of the filtered epics do not belong to the given time interval
+            true_priorities.pop(0)
         assert model.priorities == true_priorities
     else:
         assert model.priorities is None
+    if "statuses" in checked:
+        true_statuses = [
+            JIRAStatus(name="Backlog", stage="To Do", project="10009"),
+            JIRAStatus(name="Closed", stage="Done", project="10009"),
+            JIRAStatus(name="Done", stage="Done", project="10003"),
+            JIRAStatus(name="Released", stage="Done", project="10009"),
+        ]
+        if "issues" not in checked:
+            true_statuses.pop(0)
+        assert model.statuses == true_statuses
+    else:
+        assert model.statuses is None
 
 
 async def test_filter_jira_no_time(client, headers):
@@ -229,7 +251,7 @@ async def test_filter_jira_no_time(client, headers):
         "timezone": 120,
         "account": 1,
         "exclude_inactive": True,
-        "return": ["epics", "priorities"],
+        "return": ["epics", "priorities", "statuses"],
     }
     response = await client.request(
         method="POST", path="/v1/filter/jira", headers=headers, json=body,
@@ -239,6 +261,7 @@ async def test_filter_jira_no_time(client, headers):
     model = FoundJIRAStuff.from_dict(json.loads(body))
     assert len(model.epics) == 81
     assert len(model.priorities) == 6
+    assert len(model.statuses) == 7
 
 
 @pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [

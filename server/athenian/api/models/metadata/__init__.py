@@ -15,7 +15,7 @@ PREFIXES = {
 }
 
 
-__min_version__ = 107
+__min_version__ = 110
 
 
 def dereference_schemas():

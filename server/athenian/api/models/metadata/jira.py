@@ -31,6 +31,7 @@ class Issue(Base):
     title = Column(Text, nullable=False)
     type = Column(Text, nullable=False)
     status = Column(Text)
+    status_id = Column(Text)
     labels = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
     components = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
     epic_id = Column(Text)
@@ -73,6 +74,16 @@ class Priority(Base):
     name = Column(Text, nullable=False)
     rank = Column(SmallInteger, nullable=False)
     status_color = Column(Text, nullable=False)
+    icon_url = Column(Text)
+
+
+class Status(Base):
+    __tablename__ = "api_statuses"
+
+    id = Column(Text, primary_key=True)
+    name = Column(Text, nullable=False)
+    category_name = Column(Text, nullable=False)
+    color = Column(Text)
     icon_url = Column(Text)
 
 

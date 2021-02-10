@@ -5735,9 +5735,9 @@ components:
         stage:
           description: One of the three status categories.
           enum:
-          - to_do
-          - in_progress
-          - done
+          - To Do
+          - In Progress
+          - Done
           type: string
         project:
           description: Identifier of the project where this status exists.
@@ -5849,9 +5849,22 @@ components:
       - exclude_inactive
       type: object
     JIRAFilterReturn:
-      description: Requested chapter to return in `/filter/jira`.
+      description: |-
+        Requested chapter to return in `/filter/jira`.
+        * `epics`: Activates the epic flow.
+        * `issues`: Activates the issue flow.
+        * `labels`: Include the details aboud the mentioned issue labels.
+        * `issue_types`: Include the details aboud the mentioned issue types.
+        * `priorities`: Include the details aboud the mentioned issue priorities.
+        * `statuses`: Include the details aboud the mentioned issue statuses.
+        * `users`: Include the details aboud the issue participants.
+        If neither `epics` nor `issues` are specified, nothing is returned.
+        If `epics` is not specified, the corresponding `epics` list is not populated.
+        The difference is that `issues` flow examines all the issues that satisfy the given filters,
+        whereas `epics` flow examines only the epics that satisfy the given filters, and their children.
       enum:
       - epics
+      - issues
       - labels
       - issue_types
       - priorities
