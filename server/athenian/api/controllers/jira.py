@@ -15,7 +15,7 @@ from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.models.metadata.github import OrganizationMember, PushCommit, User as GitHubUser
 from athenian.api.models.metadata.jira import Project, User as JIRAUser
 from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
-    MappedJIRAIdentity
+    MappedJIRAIdentity, Team
 from athenian.api.models.web import NoSourceDataError
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
@@ -215,8 +215,15 @@ async def _match_jira_identities(account: int,
                                   GitHubUser.node_id.in_(user_ids),
                                   GitHubUser.name.isnot(None)))),
         Bots()(mdb),
+        sdb.fetch_val(select([Team.members]).where(and_(
+            Team.owner_id == account,
+            Team.name == Team.BOTS,
+        ))),
     ]
-    user_rows, bots = await gather(*tasks)
+    user_rows, bots, team_bots = await gather(*tasks)
+    if team_bots:
+        bots = bots.copy()
+        bots.update(u.split("/", 1)[1] for u in team_bots)
     log.info("Detailed %d GitHub users", len(user_rows))
     bot_ids = set()
     new_user_rows = []
