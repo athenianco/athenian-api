@@ -3,7 +3,6 @@ import athenian.api
 
 async def test_manhole_smoke(client, headers, app, client_cache):
     assert athenian.api.trace_sample_rate_manhole(None) is None
-    app._cache = client_cache
     code = """from sqlalchemy import select, func
 from athenian.api.models.state.models import Account
 import athenian.api
@@ -21,7 +20,6 @@ response.headers.add("X-Accounts", str(accounts))"""
 
 
 async def test_manhole_error(client, headers, app, client_cache):
-    app._cache = client_cache
     code = """raise AssertionError("fail")"""
     await client_cache.set(b"manhole", code.encode())
     response = await client.request(
@@ -31,7 +29,6 @@ async def test_manhole_error(client, headers, app, client_cache):
 
 
 async def test_manhole_response_error(client, headers, app, client_cache):
-    app._cache = client_cache
     code = """from athenian.api.models.web import NotFoundError
 raise ResponseError(NotFoundError(detail="test"))"""
     await client_cache.set(b"manhole", code.encode())

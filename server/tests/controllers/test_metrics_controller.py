@@ -53,8 +53,6 @@ from athenian.api.serialization import FriendlyJson
 )
 async def test_calc_metrics_prs_smoke(client, metric, count, headers, app, client_cache):
     """Trivial test to prove that at least something is working."""
-
-    app._cache = client_cache
     req_body = {
         "for": [
             {

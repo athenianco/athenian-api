@@ -427,7 +427,6 @@ complete_progress = {
 
 
 async def test_progress_200(client, headers, app, client_cache):
-    app._cache = client_cache
     for _ in range(2):
         response = await client.request(
             method="GET", path="/v1/invite/progress/1", headers=headers, json={},
