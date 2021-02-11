@@ -5,7 +5,6 @@ from sqlalchemy import delete
 
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import Contributor
-from tests.conftest import has_memcached
 
 
 @pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
@@ -19,10 +18,8 @@ async def test_get_contributors_as_non_admin(client, cached, headers, app, clien
 
 
 async def _test_get_contributors(client, cached, headers, app, client_cache):
-    if cached:
-        if not has_memcached:
-            raise pytest.skip("no memcached")
-        app._cache = client_cache
+    if not cached:
+        app._cache = None
 
     response = await client.request(
         method="GET", path="/v1/get/contributors/1", headers=headers,

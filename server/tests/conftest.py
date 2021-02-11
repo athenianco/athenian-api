@@ -126,6 +126,7 @@ def client_cache(loop, app):
     setup_cache_metrics(fc, app.app, CollectorRegistry(auto_describe=True))
     for v in fc.metrics["context"].values():
         v.set(defaultdict(int))
+    app._cache = fc
     return fc
 
 

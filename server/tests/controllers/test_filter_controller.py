@@ -22,7 +22,7 @@ from athenian.api.models.web import CommitsList, FilteredLabel, PullRequestEvent
     PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
 from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.typing_utils import wraps
-from tests.conftest import FakeCache, has_memcached
+from tests.conftest import FakeCache
 from tests.controllers.conftest import with_only_master_branch
 
 
@@ -945,10 +945,7 @@ async def test_filter_prs_exclude_inactive(client, headers):
 
 def skip_if_no_memcached(func):
     async def wrapped_skip_if_no_memcached(**kwargs):
-        if kwargs["cached"]:
-            if not has_memcached:
-                raise pytest.skip("no memcached")
-            kwargs["app"]._cache = kwargs["client_cache"]
+        kwargs["app"]._cache = kwargs["client_cache"] if kwargs["cached"] else None
         return await func(**kwargs)
 
     wraps(wrapped_skip_if_no_memcached, func)
@@ -1180,7 +1177,6 @@ async def test_filter_releases_by_tag(client, headers):
 
 @pytest.mark.filter_releases
 async def test_filter_releases_by_branch_no_jira(client, headers, client_cache, app, sdb, mdb):
-    app._cache = client_cache
     backup = await mdb.fetch_all(select([Release]))
     backup = [dict(r) for r in backup]
     await sdb.execute(delete(AccountJiraInstallation))

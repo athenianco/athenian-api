@@ -17,7 +17,6 @@ async def test_versions(client, headers):
 
 
 async def test_status(client, headers, client_cache, app):
-    app._cache = client_cache
     for _ in range(2):
         response = await client.request(
             method="GET", path="/status", headers=headers, json={},

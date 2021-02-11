@@ -405,7 +405,7 @@ async def test_set_jira_identities_smoke(client, headers, sdb, denys_id_mapping)
     assert rows[0][MappedJIRAIdentity.confidence.key] == 1
 
 
-async def test_set_jira_identities_reset_cache(client, headers, denys_id_mapping):
+async def test_set_jira_identities_reset_cache(client, headers, denys_id_mapping, client_cache):
     async def fetch_contribs():
         return sorted(json.loads(
             (await (await client.get(path="/v1/get/contributors/1", headers=headers)).read())
@@ -426,6 +426,24 @@ async def test_set_jira_identities_reset_cache(client, headers, denys_id_mapping
     assert response.status == 200
     contribs2 = await fetch_contribs()
     assert contribs1 != contribs2
+    contribs3 = await fetch_contribs()
+    assert contribs2 == contribs3
+
+    body = {
+        "account": 1,
+        "changes": [{
+            "developer_id": "github.com/dennwc",
+            "jira_name": None,
+        }],
+    }
+    response = await client.request(
+        method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body)
+    assert response.status == 200
+    contribs2 = await fetch_contribs()
+    assert contribs1 != contribs2
+    assert contribs2 != contribs3
+    contribs3 = await fetch_contribs()
+    assert contribs2 == contribs3
 
 
 async def test_set_jira_identities_delete(client, headers, sdb, denys_id_mapping):

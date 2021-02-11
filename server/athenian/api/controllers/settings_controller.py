@@ -3,6 +3,7 @@ from typing import Optional
 
 from aiohttp import web
 from sqlalchemy import and_, delete, insert, select
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
@@ -135,17 +136,17 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
     github_id_rows, jira_id_rows = await gather(*tasks)
     github_id_map = {r[GitHubUser.login.key]: r[GitHubUser.node_id.key] for r in github_id_rows}
     jira_id_map = {r[JIRAUser.display_name.key]: r[JIRAUser.id.key] for r in jira_id_rows}
-    cleared_github_ids = \
-        {github_id_map[login] for login in github_logins if login in github_id_map}
-    added_maps = []
+    cleared_github_ids = set()
+    updated_maps = []
     for i, change in enumerate(request_model.changes):
-        if change.jira_name is None:
-            continue
         try:
             github_id = github_id_map[change.developer_id.split("/", 1)[1]]
         except KeyError:
             raise ResponseError(InvalidRequestError(detail="Developer was not found.",
                                                     pointer=".changes[%d].developer_id" % i))
+        if change.jira_name is None:
+            cleared_github_ids.add(github_id)
+            continue
         if not change.jira_name:
             raise ResponseError(InvalidRequestError(detail="String cannot be empty.",
                                                     pointer=".changes[%d].jira_name" % i))
@@ -154,7 +155,7 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
         except KeyError:
             raise ResponseError(InvalidRequestError(detail="JIRA user was not found.",
                                                     pointer=".changes[%d].jira_name" % i))
-        added_maps.append((github_id, jira_id))
+        updated_maps.append((github_id, jira_id))
 
     async with sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
@@ -162,13 +163,25 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
                 delete(MappedJIRAIdentity)
                 .where(and_(MappedJIRAIdentity.account_id == request_model.account,
                             MappedJIRAIdentity.github_user_id.in_(cleared_github_ids))))
-            await sdb_conn.execute_many(insert(MappedJIRAIdentity), [
+            if sdb.url.dialect in ("postgres", "postgresql"):
+                sql = postgres_insert(MappedJIRAIdentity)
+                sql = sql.on_conflict_do_update(
+                    constraint=MappedJIRAIdentity.__table__.primary_key,
+                    set_={
+                        MappedJIRAIdentity.jira_user_id.key: sql.excluded.jira_user_id,
+                        MappedJIRAIdentity.updated_at.key: sql.excluded.updated_at,
+                        MappedJIRAIdentity.confidence.key: sql.excluded.confidence,
+                    },
+                )
+            else:
+                sql = insert(MappedJIRAIdentity).prefix_with("OR REPLACE")
+            await sdb_conn.execute_many(sql, [
                 MappedJIRAIdentity(
                     account_id=request_model.account,
                     github_user_id=ghid,
                     jira_user_id=jid,
-                    confidence=1.,
-                ).create_defaults().explode(with_primary_keys=True) for ghid, jid in added_maps])
+                    confidence=1.0,
+                ).create_defaults().explode(with_primary_keys=True) for ghid, jid in updated_maps])
     await load_jira_identity_mapping_sentinel.reset_cache(request_model.account, cache)
     return await get_jira_identities(request, request_model.account, jira_acc=jira_acc)
 
