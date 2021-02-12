@@ -33,7 +33,8 @@ from athenian.api.models.web.diff_releases_request import DiffReleasesRequest
 from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contributors_request import FilterContributorsRequest
-from athenian.api.models.web.filter_jira_stuff import FilterJIRAStuff
+from athenian.api.models.web.filter_jira_common import FilterJIRACommon
+from athenian.api.models.web.filter_jira_stuff import FilterJIRAStuff, FilterJIRAStuffSpecials
 from athenian.api.models.web.filter_labels_request import FilterLabelsRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
 from athenian.api.models.web.filter_releases_request import FilterReleasesRequest
@@ -71,7 +72,8 @@ from athenian.api.models.web.jira_installation import JIRAInstallation
 from athenian.api.models.web.jira_issue_type import JIRAIssueType
 from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
-from athenian.api.models.web.jira_metrics_request import JIRAMetricsRequest
+from athenian.api.models.web.jira_metrics_request import JIRAMetricsRequest, \
+    JIRAMetricsRequestSpecials
 from athenian.api.models.web.jira_priority import JIRAPriority
 from athenian.api.models.web.jira_project import JIRAProject
 from athenian.api.models.web.jira_projects_request import JIRAProjectsRequest
