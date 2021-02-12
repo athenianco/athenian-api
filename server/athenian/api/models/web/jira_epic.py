@@ -11,11 +11,13 @@ class _JIRAEpicSpecials(Model):
     openapi_types = {
         "project": str,
         "children": List[JIRAEpicChild],
+        "prs": int,
     }
 
     attribute_map = {
         "project": "project",
         "children": "children",
+        "prs": "prs",
     }
 
     __enable_slots__ = False
@@ -24,14 +26,17 @@ class _JIRAEpicSpecials(Model):
         self,
         project: Optional[str] = None,
         children: Optional[List[JIRAEpicChild]] = None,
+        prs: Optional[int] = None,
     ):
         """_JIRAEpicSpecials - a model defined in OpenAPI
 
         :param project: The id of this _JIRAEpicSpecials.
         :param children: The children of this _JIRAEpicSpecials.
+        :param prs: The prs of this _JIRAEpicSpecials.
         """
         self._project = project
         self._children = children
+        self._prs = prs
 
     @property
     def project(self) -> str:
@@ -75,6 +80,29 @@ class _JIRAEpicSpecials(Model):
         :param children: The children of this _JIRAEpicSpecials.
         """
         self._children = children
+
+    @property
+    def prs(self) -> int:
+        """Gets the prs of this _JIRAEpicSpecials.
+
+        Number of mapped pull requests.
+
+        :return: The prs of this _JIRAEpicSpecials.
+        """
+        return self._prs
+
+    @prs.setter
+    def prs(self, prs: int):
+        """Sets the prs of this _JIRAEpicSpecials.
+
+        Number of mapped pull requests.
+
+        :param prs: The prs of this _JIRAEpicSpecials.
+        """
+        if prs is None:
+            raise ValueError("Invalid value for `prs`, must not be `None`")
+
+        self._prs = prs
 
 
 JIRAEpic = AllOf(JIRAEpicIssueCommon, _JIRAEpicSpecials, module=__name__)

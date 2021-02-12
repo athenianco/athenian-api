@@ -20,7 +20,6 @@ class JIRAEpicIssueCommon(Model):
         "comments": int,
         "priority": str,
         "status": str,
-        "prs": int,
     }
 
     attribute_map = {
@@ -36,7 +35,6 @@ class JIRAEpicIssueCommon(Model):
         "comments": "comments",
         "priority": "priority",
         "status": "status",
-        "prs": "prs",
     }
 
     __enable_slots__ = False
@@ -54,7 +52,6 @@ class JIRAEpicIssueCommon(Model):
                  comments: Optional[int] = None,
                  priority: Optional[str] = None,
                  status: Optional[str] = None,
-                 prs: Optional[int] = None,
                  ):
         """JIRAEpicChild - a model defined in OpenAPI
 
@@ -70,7 +67,6 @@ class JIRAEpicIssueCommon(Model):
         :param comments: The comments of this JIRAEpicIssueCommon.
         :param priority: The priority of this JIRAEpicIssueCommon.
         :param status: The status of this JIRAEpicIssueCommon.
-        :param prs: The prs of this JIRAEpicIssueCommon.
         """
         self._id = id
         self._title = title
@@ -84,7 +80,6 @@ class JIRAEpicIssueCommon(Model):
         self._comments = comments
         self._priority = priority
         self._status = status
-        self._prs = prs
 
     def __lt__(self, other: "JIRAEpicIssueCommon") -> bool:
         """Support sorting."""
@@ -316,7 +311,7 @@ class JIRAEpicIssueCommon(Model):
     def priority(self) -> str:
         """Gets the priority of this JIRAEpicIssueCommon.
 
-        Name of the priority. The details are returned in `FoundJIRAStuff.priorities`.
+        Name of the priority. The details are returned in `FilteredJIRAStuff.priorities`.
 
         :return: The priority of this JIRAEpicIssueCommon.
         """
@@ -326,7 +321,7 @@ class JIRAEpicIssueCommon(Model):
     def priority(self, priority: str):
         """Sets the priority of this JIRAEpicIssueCommon.
 
-        Name of the priority. The details are returned in `FoundJIRAStuff.priorities`.
+        Name of the priority. The details are returned in `FilteredJIRAStuff.priorities`.
 
         :param priority: The priority of this JIRAEpicIssueCommon.
         """
@@ -339,7 +334,7 @@ class JIRAEpicIssueCommon(Model):
     def status(self) -> str:
         """Gets the status of this JIRAEpicIssueCommon.
 
-        Name of the status. The details are returned in `FoundJIRAStuff.statuses`.
+        Name of the status. The details are returned in `FilteredJIRAStuff.statuses`.
 
         :return: The status of this JIRAEpicIssueCommon.
         """
@@ -349,7 +344,7 @@ class JIRAEpicIssueCommon(Model):
     def status(self, status: str):
         """Sets the status of this JIRAEpicIssueCommon.
 
-        Name of the status. The details are returned in `FoundJIRAStuff.statuses`.
+        Name of the status. The details are returned in `FilteredJIRAStuff.statuses`.
 
         :param status: The status of this JIRAEpicIssueCommon.
         """
@@ -357,28 +352,3 @@ class JIRAEpicIssueCommon(Model):
             raise ValueError("Invalid value for `status`, must not be `None`")
 
         self._status = status
-
-    @property
-    def prs(self) -> int:
-        """Gets the prs of this JIRAEpicIssueCommon.
-
-        Number of mapped pull requests. Note: the semantics are different for epics and regular \
-        issues.
-
-        :return: The prs of this JIRAEpicIssueCommon.
-        """
-        return self._prs
-
-    @prs.setter
-    def prs(self, prs: int):
-        """Sets the prs of this JIRAEpicIssueCommon.
-
-        Number of mapped pull requests. Note: the semantics are different for epics and regular \
-        issues.
-
-        :param prs: The prs of this JIRAEpicIssueCommon.
-        """
-        if prs is None:
-            raise ValueError("Invalid value for `prs`, must not be `None`")
-
-        self._prs = prs

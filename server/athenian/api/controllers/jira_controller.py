@@ -33,7 +33,7 @@ from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, I
     Priority, Status, User
 from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
-    CalculatedLinearMetricValues, FilterJIRAStuff, FoundJIRAStuff, Interquartile, \
+    CalculatedLinearMetricValues, FilteredJIRAStuff, FilterJIRAStuff, Interquartile, \
     InvalidRequestError, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, JIRAFilterWith, \
     JIRAHistogramsRequest, JIRAIssueType, JIRALabel, JIRAMetricsRequest, JIRAPriority, \
     JIRAStatus, JIRAUser
@@ -401,7 +401,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         statuses = epic_statuses
     else:
         statuses = sorted(set(epic_statuses).union(issue_statuses))
-    return model_response(FoundJIRAStuff(
+    return model_response(FilteredJIRAStuff(
         epics=epics,
         labels=labels,
         issue_types=issue_types,

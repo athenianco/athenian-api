@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
-    CalculatedLinearMetricValues, FoundJIRAStuff, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, \
+    CalculatedLinearMetricValues, FilteredJIRAStuff, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, \
     JIRAIssueType, \
     JIRALabel, JIRAMetricID, JIRAPriority, JIRAStatus, JIRAUser
 from athenian.api.serialization import FriendlyJson
@@ -37,7 +37,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    model = FoundJIRAStuff.from_dict(json.loads(body))
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
     if "labels" in checked:
         assert model.labels == [
             JIRALabel(title="API",
@@ -258,7 +258,7 @@ async def test_filter_jira_no_time(client, headers):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    model = FoundJIRAStuff.from_dict(json.loads(body))
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
     assert len(model.epics) == 81
     assert len(model.priorities) == 6
     assert len(model.statuses) == 7
@@ -314,7 +314,7 @@ async def test_filter_jira_exclude_inactive(
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    model = FoundJIRAStuff.from_dict(json.loads(body))
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
     assert len(model.labels) == labels
     assert len(model.epics) == epics
     assert model.issue_types == types
@@ -335,7 +335,7 @@ async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    model = FoundJIRAStuff.from_dict(json.loads(body))
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
     assert model.labels == [
         JIRALabel(title="accounts", last_used=datetime(2020, 4, 3, 18, 47, 43, tzinfo=tzutc()),
                   issues_count=1, kind="regular"),
@@ -397,7 +397,7 @@ async def test_filter_jira_no_epics(client, headers):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    model = FoundJIRAStuff.from_dict(json.loads(body))
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
     assert len(model.epics) == 0
 
 
@@ -417,7 +417,7 @@ async def test_filter_jira_extended_filters(client, headers):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    model = FoundJIRAStuff.from_dict(json.loads(body))
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
     assert len(model.epics) == 26
     assert len(model.priorities) == 4  # two projects
     assert len(model.statuses) == 5
@@ -439,7 +439,7 @@ async def test_filter_jira_issue_types_filter(client, headers):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    model = FoundJIRAStuff.from_dict(json.loads(body))
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
     assert len(model.issue_types) == 1
     # FIXME(vmarkovtsev): check the number of returned issues
 

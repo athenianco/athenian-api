@@ -348,7 +348,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FoundJIRAStuff'
+                $ref: '#/components/schemas/FilteredJIRAStuff'
           description: List of found JIRA entities, ordered by the last usage time.
         403:
           content:
@@ -5414,7 +5414,7 @@ components:
       - left
       - right
       type: object
-    FoundJIRAStuff:
+    FilteredJIRAStuff:
       additionalProperties: false
       description: |-
         Response from `/filter/jira`: found JIRA epics, labels, issue types, priorities,
@@ -5496,6 +5496,11 @@ components:
           items:
             $ref: '#/components/schemas/JIRAEpic'
           type: array
+        issues:
+          description: List of issues satisfying the filters.
+          items:
+            $ref: '#/components/schemas/JIRAIssue'
+          type: array
         labels:
           description: Mentioned issue labels.
           items:
@@ -5536,8 +5541,12 @@ components:
             items:
               $ref: '#/components/schemas/JIRAEpicChild'
             type: array
+          prs:
+            description: Overall number of mapped pull requests (including the children).
+            type: integer
         required:
         - project
+        - prs
       description: Details about a JIRA epic together with its child issues.
       example:
         id: DEV-158
@@ -5580,12 +5589,16 @@ components:
       - $ref: '#/components/schemas/JIRAEpicIssueCommon'
       - properties:
           type:
-            description: Name of the issue type. The details are returned in `FoundJIRAStuff.issue_types`.
+            description: Name of the issue type. The details are returned in `FilteredJIRAStuff.issue_types`.
             type: string
           subtasks:
             description: Number of sub-tasks.
             type: integer
+          prs:
+            description: Number of mapped pull requests.
+            type: integer
         required:
+        - prs
         - subtasks
         - type
       description: Details about a JIRA issue contained in an epic.
@@ -5602,6 +5615,26 @@ components:
         prs: 0
         type: Task
       type: object
+    JIRAIssue:
+      additionalProperties: false
+      allOf:
+      - $ref: '#/components/schemas/JIRAEpicIssueCommon'
+      - properties:
+          project:
+            description: Identifier of the project where this issue exists.
+            type: string
+          type:
+            description: Name of the issue type. The details are returned in `FilteredJIRAStuff.issue_types`.
+            type: string
+          prs:
+            description: Details about the mapped PRs. `jira` field is unfilled.
+            items:
+              $ref: '#/components/schemas/PullRequest'
+            type: array
+        required:
+        - project
+        - prs
+        - type
     JIRAEpicIssueCommon:
       description: Common properies if a JIRA issue or epic.
       properties:
@@ -5645,20 +5678,16 @@ components:
           description: Number of comments in the issue excluding sub-tasks.
           type: integer
         priority:
-          description: Name of the priority. The details are returned in `FoundJIRAStuff.priorities`.
+          description: Name of the priority. The details are returned in `FilteredJIRAStuff.priorities`.
           type: string
         status:
-          description: Name of the status. The details are returned in `FoundJIRAStuff.statuses`.
+          description: Name of the status. The details are returned in `FilteredJIRAStuff.statuses`.
           type: string
-        prs:
-          description: Number of mapped pull requests.
-          type: integer
       required:
       - comments
       - created
       - id
       - priority
-      - prs
       - reporter
       - status
       - title
@@ -5859,6 +5888,7 @@ components:
         Requested chapter to return in `/filter/jira`.
         * `epics`: Activates the epic flow.
         * `issues`: Activates the issue flow.
+        * `issue_bodies`: Include the details about filtered issues.
         * `labels`: Include the details aboud the mentioned issue labels.
         * `issue_types`: Include the details aboud the mentioned issue types.
         * `priorities`: Include the details aboud the mentioned issue priorities.
@@ -5871,6 +5901,7 @@ components:
       enum:
       - epics
       - issues
+      - issue_bodies
       - labels
       - issue_types
       - priorities
