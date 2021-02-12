@@ -6,6 +6,7 @@ class JIRAFilterReturn(Model, metaclass=Enum):
 
     EPICS = "epics"
     ISSUES = "issues"
+    ISSUE_BODIES = "issue_bodies"
     LABELS = "labels"
     ISSUE_TYPES = "issue_types"
     PRIORITIES = "priorities"
