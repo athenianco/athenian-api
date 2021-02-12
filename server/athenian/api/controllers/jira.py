@@ -189,7 +189,7 @@ async def match_jira_identities(account: int,
     return None
 
 
-ID_MATCH_MIN_CONFIDENCE = 0.35
+ID_MATCH_MIN_CONFIDENCE = 0.5
 
 
 async def _match_jira_identities(account: int,
