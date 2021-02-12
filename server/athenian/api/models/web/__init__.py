@@ -68,7 +68,6 @@ from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 from athenian.api.models.web.jira_histogram_definition import JIRAHistogramDefinition
 from athenian.api.models.web.jira_histograms_request import JIRAHistogramsRequest
 from athenian.api.models.web.jira_installation import JIRAInstallation
-from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.jira_issue_type import JIRAIssueType
 from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
@@ -78,6 +77,7 @@ from athenian.api.models.web.jira_project import JIRAProject
 from athenian.api.models.web.jira_projects_request import JIRAProjectsRequest
 from athenian.api.models.web.jira_status import JIRAStatus
 from athenian.api.models.web.jira_user import JIRAUser
+from athenian.api.models.web.linked_jira_issue import LinkedJIRAIssue
 from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.mapped_jira_identity import MappedJIRAIdentity
 from athenian.api.models.web.mapped_jira_identity_change import MappedJIRAIdentityChange
