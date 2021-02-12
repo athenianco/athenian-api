@@ -5525,6 +5525,19 @@ components:
       type: object
     JIRAEpic:
       additionalProperties: false
+      allOf:
+      - $ref: '#/components/schemas/JIRAEpicIssueCommon'
+      - properties:
+          project:
+            description: Identifier of the project where this epic exists.
+            type: string
+          children:
+            description: Details about the child issues.
+            items:
+              $ref: '#/components/schemas/JIRAEpicChild'
+            type: array
+        required:
+        - project
       description: Details about a JIRA epic together with its child issues.
       example:
         id: DEV-158
@@ -5560,22 +5573,21 @@ components:
           status: Released
           prs: 0
           type: Task
-      allOf:
-      - $ref: '#/components/schemas/JIRAEpicIssueCommon'
-      - properties:
-          project:
-            description: Identifier of the project where this epic exists.
-            type: string
-          children:
-            description: Details about the child issues.
-            items:
-              $ref: '#/components/schemas/JIRAEpicChild'
-            type: array
-        required:
-        - project
       type: object
     JIRAEpicChild:
       additionalProperties: false
+      allOf:
+      - $ref: '#/components/schemas/JIRAEpicIssueCommon'
+      - properties:
+          type:
+            description: Name of the issue type. The details are returned in `FoundJIRAStuff.issue_types`.
+            type: string
+          subtasks:
+            description: Number of sub-tasks.
+            type: integer
+        required:
+        - subtasks
+        - type
       description: Details about a JIRA issue contained in an epic.
       example:
         id: DEV-157
@@ -5589,19 +5601,6 @@ components:
         status: Released
         prs: 0
         type: Task
-      allOf:
-      - $ref: '#/components/schemas/JIRAEpicIssueCommon'
-      - properties:
-          type:
-            description: Name of the issue type. The details are returned in
-              `FoundJIRAStuff.issue_types`.
-            type: string
-          subtasks:
-            description: Number of sub-tasks.
-            type: integer
-        required:
-        - subtasks
-        - type
       type: object
     JIRAEpicIssueCommon:
       description: Common properies if a JIRA issue or epic.
@@ -5790,8 +5789,10 @@ components:
         date_from: 2020-01-01
         date_to: 2020-12-01
         timezone: 120
+        exclude_inactive: true
       properties:
         account:
+          description: Session account ID.
           type: integer
         date_from:
           description: '`null` disables the time filter boundary, thus everything
@@ -5814,6 +5815,11 @@ components:
           items:
             type: string
           type: array
+        types:
+          description: Selected issue types. Ignored for epics.
+          items:
+            type: string
+          type: array
         labels_include:
           description: JIRA issues must contain at least one label from the list.
             Several labels may be concatenated by a comma `,` so that all of them
@@ -5826,16 +5832,16 @@ components:
           items:
             type: string
           type: array
-        with:
-          allOf:
-          - description: JIRA issue participants.
-          - $ref: '#/components/schemas/JIRAFilterWith'
-          type: object
         exclude_inactive:
           description: Value indicating whether issues with the last update older
             than `date_from` should be ignored. If `date_from` and `date_to` are `null`,
             does nothing.
           type: boolean
+        with:
+          allOf:
+          - description: JIRA issue participants.
+          - $ref: '#/components/schemas/JIRAFilterWith'
+          type: object
         return:
           description: Specifies which items are required, an empty or missing array
             means everything.
@@ -6204,6 +6210,11 @@ components:
           items:
             type: string
           type: array
+        exclude_inactive:
+          description: Value indicating whether issues with the last update older
+            than `date_from` should be ignored. If `date_from` and `date_to` are `null`,
+            does nothing.
+          type: boolean
         epics:
           description: JIRA issues must be attached to any of the epic IDs from this
             list.
@@ -6228,10 +6239,6 @@ components:
           items:
             $ref: '#/components/schemas/Granularity'
           type: array
-        exclude_inactive:
-          description: Value indicating whether issues with the last update older
-            than `date_from` should be ignored.
-          type: boolean
         group_by_jira_label:
           description: Value indicating whether the metrics should be grouped by assigned
             JIRA issue label.
@@ -6243,6 +6250,51 @@ components:
       - exclude_inactive
       - granularities
       - metrics
+      type: object
+    FilterJIRACommon:
+      description: Common JIRA issue filters.
+      example:
+        account: 1
+        date_from: 2020-01-01
+        date_to: 2020-12-01
+        timezone: 120
+        exclude_inactive: true
+      properties:
+        account:
+          description: Session account ID.
+          type: integer
+        timezone:
+          $ref: '#/components/schemas/TimeZone'
+        priorities:
+          description: Selected issue priorities.
+          items:
+            type: string
+          type: array
+        types:
+          description: Selected issue types. Ignored for epics.
+          items:
+            type: string
+          type: array
+        labels_include:
+          description: JIRA issues must contain at least one label from the list.
+            Several labels may be concatenated by a comma `,` so that all of them
+            are required.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: JIRA issues may not contain labels from this list.
+          items:
+            type: string
+          type: array
+        exclude_inactive:
+          description: Value indicating whether issues with the last update older
+            than `date_from` should be ignored. If `date_from` and `date_to` are `null`,
+            does nothing.
+          type: boolean
+      required:
+      - account
+      - exclude_inactive
       type: object
     JIRAFilterWith:
       additionalProperties: false

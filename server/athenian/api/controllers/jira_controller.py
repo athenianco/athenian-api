@@ -224,7 +224,9 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
             return None, None, None, None, None
         issues = await fetch_jira_issues(
             jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
-            filt.priorities, [], [], reporters, assignees, commenters,
+            # filt.priorities are already lower-cased and de-None-d
+            filt.priorities, [p.lower() for p in (filt.types or [])], [],
+            reporters, assignees, commenters,
             default_branches, release_settings, meta_ids, mdb, pdb, cache,
             extra_columns=extra_columns_jira_fetch)
 

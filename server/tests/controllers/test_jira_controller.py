@@ -423,6 +423,27 @@ async def test_filter_jira_extended_filters(client, headers):
     assert len(model.statuses) == 5
 
 
+async def test_filter_jira_issue_types_filter(client, headers):
+    body = {
+        "date_from": None,
+        "date_to": None,
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": False,
+        "types": ["Bug"],
+        "with": {"assignees": ["Vadim Markovtsev", None]},
+        "return": ["issues", "issue_types"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FoundJIRAStuff.from_dict(json.loads(body))
+    assert len(model.issue_types) == 1
+    # FIXME(vmarkovtsev): check the number of returned issues
+
+
 @pytest.mark.parametrize("account, date_to, timezone, status", [
     (1, "2015-10-12", 0, 400),
     (1, None, 0, 400),
