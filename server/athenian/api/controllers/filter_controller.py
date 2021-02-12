@@ -42,9 +42,9 @@ from athenian.api.models.web import BadRequestError, Commit, CommitSignature, Co
     DeveloperSummary, DeveloperUpdates, FilterCommitsRequest, FilterContributorsRequest, \
     FilteredLabel, FilteredRelease, FilterLabelsRequest, FilterPullRequestsRequest, \
     FilterReleasesRequest, FilterRepositoriesRequest, ForbiddenError, GetPullRequestsRequest, \
-    GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, InvalidRequestError, JIRAIssue, \
-    PullRequest as WebPullRequest, PullRequestLabel, PullRequestParticipant, PullRequestSet, \
-    ReleasedPullRequest, ReleaseSet, ReleaseSetInclude, StageTimings
+    GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, InvalidRequestError, \
+    LinkedJIRAIssue, PullRequest as WebPullRequest, PullRequestLabel, PullRequestParticipant, \
+    PullRequestSet, ReleasedPullRequest, ReleaseSet, ReleaseSetInclude, StageTimings
 from athenian.api.models.web.diff_releases_request import DiffReleasesRequest
 from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.models.web.release_diff import ReleaseDiff
@@ -212,7 +212,7 @@ def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
     if pr.labels is not None:
         props["labels"] = [PullRequestLabel(**label) for label in pr.labels]
     if pr.jira is not None:
-        props["jira"] = jira = [JIRAIssue(**issue) for issue in pr.jira]
+        props["jira"] = jira = [LinkedJIRAIssue(**issue) for issue in pr.jira]
         for issue in jira:
             if issue.labels is not None:
                 # it is a set, must be a list
@@ -321,7 +321,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
 async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
                             releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                             meta_ids: Tuple[int, ...],
-                            mdb: databases.Database) -> Dict[str, JIRAIssue]:
+                            mdb: databases.Database) -> Dict[str, LinkedJIRAIssue]:
     if jira_ids is None:
         for (_, facts) in releases:
             facts.prs["jira"] = np.full(len(facts.prs[PullRequest.node_id.key]), None)
@@ -354,7 +354,7 @@ async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
     issues = {}
     for r in rows:
         key = r["key"]
-        issues[key] = JIRAIssue(
+        issues[key] = LinkedJIRAIssue(
             id=key, title=r["title"], epic=r["epic"], labels=r["labels"], type=r["type"])
         ri, pri = pr_to_ix[r["node_id"]]
         releases[ri][1].prs["jira"][pri].append(key)

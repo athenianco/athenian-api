@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.jira_issue import JIRAIssue
+from athenian.api.models.web.linked_jira_issue import LinkedJIRAIssue
 from athenian.api.models.web.pull_request_event import PullRequestEvent
 from athenian.api.models.web.pull_request_label import PullRequestLabel
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
@@ -45,7 +45,7 @@ class PullRequest(Model):
         "stages_now": List[str],
         "participants": List[PullRequestParticipant],
         "labels": Optional[List[PullRequestLabel]],
-        "jira": Optional[List[JIRAIssue]],
+        "jira": Optional[List[LinkedJIRAIssue]],
     }
 
     attribute_map = {
@@ -106,7 +106,7 @@ class PullRequest(Model):
         stages_now: Optional[List[str]] = None,
         participants: Optional[List[PullRequestParticipant]] = None,
         labels: Optional[List[PullRequestLabel]] = None,
-        jira: Optional[List[JIRAIssue]] = None,
+        jira: Optional[List[LinkedJIRAIssue]] = None,
     ):
         """PullRequest - a model defined in OpenAPI
 
@@ -747,7 +747,7 @@ class PullRequest(Model):
         self._labels = labels
 
     @property
-    def jira(self) -> Optional[List[JIRAIssue]]:
+    def jira(self) -> Optional[List[LinkedJIRAIssue]]:
         """Gets the jira of this PullRequest.
 
         List of JIRA issues linked to this PR.
@@ -757,7 +757,7 @@ class PullRequest(Model):
         return self._jira
 
     @jira.setter
-    def jira(self, jira: Optional[List[JIRAIssue]]):
+    def jira(self, jira: Optional[List[LinkedJIRAIssue]]):
         """Sets the jira of this PullRequest.
 
         List of JIRA issues linked to this PR.

@@ -3900,7 +3900,7 @@ components:
         jira:
           description: List of linked JIRA issues.
           items:
-            $ref: '#/components/schemas/JIRAIssue'
+            $ref: '#/components/schemas/LinkedJIRAIssue'
           type: array
       required:
       - comments
@@ -4759,7 +4759,7 @@ components:
       properties:
         jira:
           additionalProperties:
-            $ref: '#/components/schemas/JIRAIssue'
+            $ref: '#/components/schemas/LinkedJIRAIssue'
           description: Mapping JIRA issue ID -> details.
           type: object
       required:
@@ -5041,9 +5041,9 @@ components:
             specified with anything else.
           type: boolean
       type: object
-    JIRAIssue:
+    LinkedJIRAIssue:
       additionalProperties: false
-      description: JIRA issue details.
+      description: Brief details about a JIRA issue.
       example:
         id: DEV-344
         title: Write the API specs to filter PRs by Jira epic, ticket type and label
