@@ -357,7 +357,6 @@ async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
                   issues_count=5, kind="regular"),
         JIRALabel(title="webapp", last_used=datetime(2020, 4, 3, 18, 47, 6, tzinfo=tzutc()),
                   issues_count=1, kind="regular")]
-    print(model.epics)
     assert model.epics == [
         JIRAEpic(id="ENG-1", title="Evaluate our product and process internally",
                  created=datetime(2019, 12, 2, 14, 19, 58, 762),
@@ -814,16 +813,30 @@ async def test_jira_metrics_group_by_label(client, headers):
     response = await client.request(
         method="POST", path="/v1/metrics/jira", headers=headers, json=body,
     )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + body
-    body = json.loads(body)
-    assert len(body) == 48
-    items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    rbody = json.loads(rbody)
+    assert len(rbody) == 48
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in rbody]
     assert items[0].granularity == "all"
     assert items[0].jira_label == "performance"
     assert items[0].values[0].values == [148]
     assert items[1].jira_label == "webapp"
     assert items[1].values[0].values == [143]
+
+    body["labels_include"] = ["performance"]
+    body["labels_exclude"] = ["security"]
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    rbody = json.loads(rbody)
+    assert len(rbody) == 1
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in rbody]
+    assert items[0].granularity == "all"
+    assert items[0].jira_label == "performance"
+    assert items[0].values[0].values == [147]
 
 
 @pytest.mark.parametrize("with_, ticks, frequencies, interquartile", [

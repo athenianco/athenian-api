@@ -15,6 +15,7 @@ class _JIRAIssueSpecials(Model):
     }
     attribute_map = {
         "type": "type",
+        "project": "project",
         "prs": "prs",
     }
 
