@@ -466,18 +466,22 @@ async def load_pr_jira_mapping(prs: Iterable[str],
     return {r[0]: r[1] for r in rows}
 
 
-def resolve_work_began_and_resolved(issue_work_began: np.datetime64,
-                                    prs_began: np.datetime64,
-                                    issue_resolved: np.datetime64,
-                                    prs_released: np.datetime64,
+def resolve_work_began_and_resolved(issue_work_began: Optional[np.datetime64],
+                                    prs_began: Optional[np.datetime64],
+                                    issue_resolved: Optional[np.datetime64],
+                                    prs_released: Optional[np.datetime64],
                                     ) -> Tuple[Optional[np.datetime64], Optional[np.datetime64]]:
     """Compute the final timestamps of when the work started on the issue, and when the issue \
     became fully resolved."""
-    if issue_work_began != issue_work_began:
+    if issue_work_began != issue_work_began or issue_work_began is None:
         return None, None
-    if prs_began != prs_began:
-        return issue_work_began, issue_resolved if issue_resolved == issue_resolved else None
+    if prs_began != prs_began or prs_began is None:
+        return issue_work_began, \
+            issue_resolved \
+            if (issue_resolved == issue_resolved and issue_resolved is not None) \
+            else None
     work_began = min(prs_began, issue_work_began)
-    if prs_released != prs_released or issue_resolved != issue_resolved:
+    if (prs_released != prs_released or prs_released is None) or \
+            (issue_resolved != issue_resolved or issue_resolved is None):
         return work_began, None
     return work_began, max(issue_resolved, prs_released)
