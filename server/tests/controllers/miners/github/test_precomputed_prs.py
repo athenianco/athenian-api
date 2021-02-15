@@ -18,7 +18,8 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs, discover_inactive_merged_unreleased_prs, \
     load_merged_unreleased_pull_request_facts, load_open_pull_request_facts, \
     load_open_pull_request_facts_unfresh, load_precomputed_done_candidates, \
-    load_precomputed_done_facts_filters, load_precomputed_done_facts_reponums, \
+    load_precomputed_done_facts_filters, load_precomputed_done_facts_ids, \
+    load_precomputed_done_facts_reponums, \
     load_precomputed_pr_releases, store_merged_unreleased_pull_request_facts, \
     store_open_pull_request_facts, store_precomputed_done_facts, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_load import load_releases
@@ -933,3 +934,15 @@ async def test_rescan_prs_mark_force_push_dropped(mdb, pdb, default_branches, pr
     assert list(node_ids) == ["MDExOlB1bGxSZXF1ZXN0NTc5NDcxODA="]
     release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
     assert release_match is None
+
+
+async def test_load_precomputed_done_facts_ids(pdb, default_branches, pr_samples):
+    sfacts, prs, settings = _gen_one_pr(pr_samples)
+    sfacts = [s.with_repository_full_name("src-d/go-git")
+               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
+              for s in sfacts]
+    await store_precomputed_done_facts(prs, sfacts, default_branches, settings, pdb)
+    pfacts, ambiguous = await load_precomputed_done_facts_ids(
+        [prs[0].pr[PullRequest.node_id.key]], default_branches, settings, pdb)
+    assert sfacts == list(pfacts.values())
+    assert len(ambiguous["src-d/go-git"]) == 1

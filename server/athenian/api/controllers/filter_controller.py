@@ -193,8 +193,10 @@ def _bake_updated_min_max(filt: FilterPullRequestsRequest) -> Tuple[datetime, da
     return updated_min, updated_max
 
 
-def _web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
+def web_pr_from_struct(pr: PullRequestListItem) -> WebPullRequest:
+    """Convert an intermediate PR representation to the web model."""
     props = dict(pr)
+    del props["node_id"]
     if pr.events_time_machine is not None:
         props["events_time_machine"] = sorted(p.name.lower() for p in pr.events_time_machine)
     if pr.stages_time_machine is not None:
@@ -468,7 +470,7 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
                                      meta_ids: Tuple[int, ...],
                                      mdb: databases.Database,
                                      cache: Optional[aiomcache.Client]) -> web.Response:
-    web_prs = sorted(_web_pr_from_struct(pr) for pr in prs)
+    web_prs = sorted(web_pr_from_struct(pr) for pr in prs)
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
     avatars = await mine_user_avatars(users, meta_ids, mdb, cache)
     prefix = PREFIXES["github"]

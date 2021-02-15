@@ -14,24 +14,29 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, select, union_all
 
-from athenian.api import metadata
-from athenian.api.async_utils import gather
+from athenian.api import list_with_yield, metadata
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.balancing import weight
 from athenian.api.cache import cached
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
+from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner, \
+    unwrap_pull_requests
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHistogramCalculator, \
     JIRABinnedMetricCalculator
 from athenian.api.controllers.features.metric_calculator import group_to_indexes
+from athenian.api.controllers.filter_controller import web_pr_from_struct
 from athenian.api.controllers.jira import get_jira_installation
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_facts_ids
 from athenian.api.controllers.miners.jira.epic import filter_epics
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PR_IDS, \
     ISSUE_PRS_BEGAN, \
     ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
+from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
     Priority, Status, User
 from athenian.api.models.state.models import MappedJIRAIdentity
@@ -39,7 +44,7 @@ from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetri
     CalculatedLinearMetricValues, FilteredJIRAStuff, FilterJIRAStuff, Interquartile, \
     InvalidRequestError, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, JIRAFilterWith, \
     JIRAHistogramsRequest, JIRAIssue, JIRAIssueType, JIRALabel, JIRAMetricsRequest, JIRAPriority, \
-    JIRAStatus, JIRAUser
+    JIRAStatus, JIRAUser, PullRequest as WebPullRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -53,7 +58,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
-    meta_ids, jira_ids, default_branches, release_settings = await _collect_ids(
+    meta_ids, jira_ids, branches, default_branches, release_settings = await _collect_ids(
         filt.account, request, request.sdb, request.mdb, request.cache)
     if filt.date_from is None or filt.date_to is None:
         if (filt.date_from is None) != (filt.date_to is None):
@@ -83,7 +88,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                    release_settings, meta_ids, mdb, pdb, cache),
         _issue_flow(return_, filt.account, jira_ids, time_from, time_to, filt.exclude_inactive,
                     label_filter, filt.priorities, filt.types, reporters, assignees, commenters,
-                    default_branches, release_settings, meta_ids, sdb, mdb, pdb, cache),
+                    branches, default_branches, release_settings, meta_ids, sdb, mdb, pdb, cache),
     ]
     ((epics, epic_priorities, epic_statuses),
      (issues, labels, issue_users, issue_types, issue_priorities, issue_statuses),
@@ -323,6 +328,7 @@ async def _issue_flow(return_: Set[str],
                       reporters: Collection[str],
                       assignees: Collection[Optional[str]],
                       commenters: Collection[str],
+                      branches: pd.DataFrame,
                       default_branches: Dict[str, str],
                       release_settings: Dict[str, ReleaseMatchSetting],
                       meta_ids: Tuple[int, ...],
@@ -403,7 +409,6 @@ async def _issue_flow(return_: Set[str],
         pr_ids = np.concatenate(issues[ISSUE_PR_IDS].values)
     else:
         pr_ids = None
-    _ = pr_ids
 
     @sentry_span
     async def fetch_components():
@@ -481,9 +486,33 @@ async def _issue_flow(return_: Set[str],
             labels = None
         return labels
 
-    component_names, users, mapped_identities, priorities, statuses, issue_types, labels = \
+    @sentry_span
+    async def _fetch_prs() -> Optional[Dict[str, WebPullRequest]]:
+        if JIRAFilterReturn.ISSUE_BODIES not in return_:
+            return None
+        tasks = [
+            read_sql_query(
+                select([PullRequest]).where(and_(
+                    PullRequest.acc_id.in_(meta_ids),
+                    PullRequest.node_id.in_(pr_ids),
+                )).order_by(PullRequest.node_id.key),
+                mdb, PullRequest, index=PullRequest.node_id.key),
+            load_precomputed_done_facts_ids(pr_ids, default_branches, release_settings, pdb),
+        ]
+        prs_df, (facts, ambiguous) = await gather(*tasks)
+        mined_prs, dfs, facts, _ = await unwrap_pull_requests(
+            prs_df, facts, ambiguous, False, branches, default_branches, release_settings,
+            meta_ids, mdb, pdb, cache)
+        miner = PullRequestListMiner(
+            mined_prs, dfs, facts, set(), set(),
+            datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc), False)
+        pr_list_items = await list_with_yield(miner, "PullRequestListMiner.__iter__")
+        return dict(zip((pr.node_id for pr in pr_list_items),
+                        (web_pr_from_struct(pr) for pr in pr_list_items)))
+
+    prs, component_names, users, mapped_identities, priorities, statuses, issue_types, labels = \
         await gather(
-            fetch_components(), fetch_users(), fetch_mapped_identities(),
+            _fetch_prs(), fetch_components(), fetch_users(), fetch_mapped_identities(),
             _fetch_priorities(priorities, jira_ids[0], return_, mdb),
             _fetch_statuses(statuses, status_project_map, jira_ids[0], return_, mdb),
             fetch_types(), extract_labels())
@@ -552,9 +581,12 @@ async def _issue_flow(return_: Set[str],
                 Issue.type.key,
                 Issue.project_id.key,
                 ))):
-            _ = issue_prs
             work_began, resolved = resolve_work_began_and_resolved(
                 issue_work_began, issue_prs_began, issue_resolved, issue_prs_released)
+            if resolved:
+                lead_time = resolved - work_began
+            else:
+                lead_time = None
             issue_models.append(JIRAIssue(
                 id=issue_key,
                 title=issue_title,
@@ -562,6 +594,7 @@ async def _issue_flow(return_: Set[str],
                 updated=issue_updated,
                 work_began=work_began,
                 resolved=resolved,
+                lead_time=lead_time,
                 reporter=issue_reporter,
                 assignee=issue_assignee,
                 comments=0,  # TODO(vmarkovtsev): DEV-1658
@@ -569,7 +602,7 @@ async def _issue_flow(return_: Set[str],
                 status=issue_status,
                 project=issue_project,
                 type=issue_type,
-                prs=[],
+                prs=[prs[node_id] for node_id in issue_prs if node_id in prs],
             ))
     else:
         issue_models = None
@@ -636,8 +669,11 @@ async def _collect_ids(account: int,
                        sdb: databases.Database,
                        mdb: databases.Database,
                        cache: Optional[aiomcache.Client],
-                       ) -> Tuple[Tuple[int, ...], Tuple[int, List[str]],
-                                  Dict[str, str], Dict[str, ReleaseMatchSetting]]:
+                       ) -> Tuple[Tuple[int, ...],
+                                  Tuple[int, List[str]],
+                                  pd.DataFrame,
+                                  Dict[str, str],
+                                  Dict[str, ReleaseMatchSetting]]:
     tasks = [
         get_account_repositories(account, sdb),
         get_jira_installation(account, sdb, mdb, cache),
@@ -649,8 +685,9 @@ async def _collect_ids(account: int,
             [r.split("/", 1)[1] for r in repos], meta_ids, mdb, cache),
         Settings.from_request(request, account).list_release_matches(repos),
     ]
-    (_, default_branches), release_settings = await gather(*tasks, op="sdb/branches and releases")
-    return meta_ids, jira_ids, default_branches, release_settings
+    (branches, default_branches), release_settings = await gather(
+        *tasks, op="sdb/branches and releases")
+    return meta_ids, jira_ids, branches, default_branches, release_settings
 
 
 async def _calc_jira_entry(request: AthenianWebRequest,
@@ -666,7 +703,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e))) from None
-    meta_ids, jira_ids, default_branches, release_settings = await _collect_ids(
+    meta_ids, jira_ids, _, default_branches, release_settings = await _collect_ids(
         filt.account, request, request.sdb, request.mdb, request.cache)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone)

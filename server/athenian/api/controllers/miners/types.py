@@ -113,6 +113,7 @@ class PullRequestJIRAIssueItem:
 class PullRequestListItem:
     """General PR properties used to list PRs on the frontend."""
 
+    node_id: str
     repository: str
     number: int
     title: str

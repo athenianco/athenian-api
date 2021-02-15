@@ -242,6 +242,36 @@ async def test_filter_jira_return(client, headers, return_, checked):
         assert model.statuses == true_statuses
     else:
         assert model.statuses is None
+    if "issue_bodies" in checked:
+        assert len(model.issues) == 168
+        work_begans = resolveds = assignees = comments = 0
+        ids = set()
+        for issue in model.issues:
+            assert issue.id
+            ids.add(issue.id)
+            assert issue.title
+            assert issue.created
+            assert issue.updated
+            work_begans += bool(issue.work_began)
+            resolveds += bool(issue.resolved)
+            if issue.resolved:
+                assert issue.lead_time is not None
+            assert issue.reporter
+            assignees += bool(issue.assignee)
+            comments += bool(issue.comments)
+            assert issue.priority
+            assert issue.status
+            assert issue.type
+            assert issue.project
+            # they are not mapped for this time range
+            assert not issue.prs
+        assert work_begans == resolveds
+        assert resolveds == 164
+        assert assignees == 149
+        assert len(ids) == len(model.issues)
+        # assert comments > 0 # FIXME(vmarkovtsev): DEV-1658
+    else:
+        assert not model.issues
 
 
 async def test_filter_jira_no_time(client, headers):
@@ -440,7 +470,32 @@ async def test_filter_jira_issue_types_filter(client, headers):
     assert response.status == 200, "Response body is : " + body
     model = FilteredJIRAStuff.from_dict(json.loads(body))
     assert len(model.issue_types) == 1
-    # FIXME(vmarkovtsev): check the number of returned issues
+    assert not model.issues
+
+
+async def test_filter_jira_issue_prs(client, headers):
+    body = {
+        "date_from": "2020-09-01",
+        "date_to": "2021-01-01",
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": True,
+        "return": ["issues", "issue_bodies"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
+    assert len(model.issues) == 394
+    prs = 0
+    for issue in model.issues:
+        prs += bool(issue.prs)
+        for pr in issue.prs:
+            assert pr.number > 0
+            assert not pr.jira
+    assert prs == 11
 
 
 @pytest.mark.parametrize("account, date_to, timezone, status", [

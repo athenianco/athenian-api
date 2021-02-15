@@ -304,10 +304,10 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=lambda r: pickle.dumps(r[:-1]),
         deserialize=_deserialize_mine_by_ids_cache,
-        key=lambda prs, unreleased, releases, time_to, truncate=True, **_: (
+        key=lambda prs, unreleased, releases, time_to, truncate=True, with_jira=True, **_: (
             ",".join(prs.index), ",".join(unreleased),
             ",".join(releases[Release.id.key].values), time_to.timestamp(),
-            truncate,
+            truncate, with_jira,
         ),
     )
     async def mine_by_ids(cls,
@@ -325,6 +325,7 @@ class PullRequestMiner:
                           pdb: databases.Database,
                           cache: Optional[aiomcache.Client],
                           truncate: bool = True,
+                          with_jira: bool = True,
                           ) -> Tuple[PRDataFrames,
                                      Dict[str, Tuple[str, PullRequestFacts]],
                                      asyncio.Event]:
@@ -334,13 +335,15 @@ class PullRequestMiner:
         :param prs: pandas DataFrame with fetched PullRequest-s. Only the details about those PRs \
                     will be loaded from the DB.
         :param truncate: Do not load anything after `time_to`.
+        :param with_jira: Value indicating whether to load the mapped JIRA issues.
         :return: 1. List of mined DataFrame-s. \
                  2. mapping to pickle-d PullRequestFacts for unreleased merged PR. \
                  3. Synchronization for updating the pdb table with merged unreleased PRs.
         """
         return await cls._mine_by_ids(
             prs, unreleased, time_to, releases, matched_bys, branches, default_branches,
-            dags, release_settings, meta_ids, mdb, pdb, cache, truncate=truncate)
+            dags, release_settings, meta_ids, mdb, pdb, cache,
+            truncate=truncate, with_jira=with_jira)
 
     _deserialize_mine_by_ids_cache = staticmethod(_deserialize_mine_by_ids_cache)
 
@@ -361,6 +364,7 @@ class PullRequestMiner:
                            pdb: databases.Database,
                            cache: Optional[aiomcache.Client],
                            truncate: bool = True,
+                           with_jira: bool = True,
                            ) -> Tuple[PRDataFrames,
                                       Dict[str, Tuple[str, PullRequestFacts]],
                                       asyncio.Event]:
@@ -449,6 +453,9 @@ class PullRequestMiner:
                 _issue.created, _issue.updated, _issue.resolved, _issue.labels, _issue.components,
                 _issue.acc_id, _issue_epic.key.label("epic"),
             ]
+            if not with_jira:
+                return pd.DataFrame(columns=[col.key for col in selected]).set_index(
+                    [PullRequest.node_id.key, _issue.key.key])
             df = await read_sql_query(
                 sql.select(selected).select_from(sql.join(
                     PullRequest, sql.join(

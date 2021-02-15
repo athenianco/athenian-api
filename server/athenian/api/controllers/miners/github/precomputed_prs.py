@@ -244,13 +244,18 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
         [ghdprf.data, ghdprf.author, ghdprf.merger, ghdprf.releaser],
         time_from, time_to, repos, participants, labels,
         default_branches, exclude_inactive, release_settings, pdb)
-    for node_id, map in result.items():
-        result[node_id] = pickle.loads(map[ghdprf.data.key]) \
-            .with_repository_full_name(map[ghdprf.repository_full_name.key]) \
-            .with_author(map[ghdprf.author.key]) \
-            .with_merger(map[ghdprf.merger.key]) \
-            .with_releaser(map[ghdprf.releaser.key])
+    for node_id, row in result.items():
+        result[node_id] = _done_pr_facts_from_row(row)
     return result, ambiguous
+
+
+def _done_pr_facts_from_row(row: Mapping[str, Any]) -> PullRequestFacts:
+    ghdprf = GitHubDonePullRequestFacts
+    return pickle.loads(row[ghdprf.data.key]) \
+        .with_repository_full_name(row[ghdprf.repository_full_name.key]) \
+        .with_author(row[ghdprf.author.key]) \
+        .with_merger(row[ghdprf.merger.key]) \
+        .with_releaser(row[ghdprf.releaser.key])
 
 
 @sentry_span
@@ -466,17 +471,57 @@ async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     for row in rows:
-        repo = row[ghprt.repository_full_name.key]
         dump = triage_by_release_match(
-            repo, row[ghprt.release_match.key], release_settings, default_branches, prefix,
-            result, ambiguous)
+            row[ghprt.repository_full_name.key], row[ghprt.release_match.key],
+            release_settings, default_branches, prefix, result, ambiguous)
         if dump is None:
             continue
-        dump[row[ghprt.pr_node_id.key]] = pickle.loads(row[ghprt.data.key]) \
-            .with_repository_full_name(repo) \
-            .with_author(row[ghprt.author.key]) \
-            .with_merger(row[ghprt.merger.key]) \
-            .with_releaser(row[ghprt.releaser.key])
+        dump[row[ghprt.pr_node_id.key]] = _done_pr_facts_from_row(row)
+    return _post_process_ambiguous_done_prs(result, ambiguous)
+
+
+@sentry_span
+async def load_precomputed_done_facts_ids(node_ids: Iterable[str],
+                                          default_branches: Dict[str, str],
+                                          release_settings: Dict[str, ReleaseMatchSetting],
+                                          pdb: databases.Database,
+                                          ) -> Tuple[Dict[str, PullRequestFacts],
+                                                     Dict[str, List[str]]]:
+    """
+    Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
+
+    node ID version.
+
+    :return: 1. Map PR node ID -> repository name & specified column value. \
+             2. Map from repository name to ambiguous PR node IDs which are released by \
+             branch with tag_or_branch strategy and without tags on the time interval.
+    """
+    ghprt = GitHubDonePullRequestFacts
+    selected = [ghprt.pr_node_id,
+                ghprt.repository_full_name,
+                ghprt.release_match,
+                ghprt.data,
+                ghprt.author,
+                ghprt.merger,
+                ghprt.releaser,
+                ]
+    filters = [
+        ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
+        ghprt.pr_node_id.in_(node_ids),
+    ]
+    query = select(selected).where(and_(*filters))
+    with sentry_sdk.start_span(op="load_precomputed_done_facts_ids/fetch"):
+        rows = await pdb.fetch_all(query)
+    prefix = PREFIXES["github"]
+    result = {}
+    ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
+    for row in rows:
+        dump = triage_by_release_match(
+            row[ghprt.repository_full_name.key], row[ghprt.release_match.key],
+            release_settings, default_branches, prefix, result, ambiguous)
+        if dump is None:
+            continue
+        dump[row[ghprt.pr_node_id.key]] = _done_pr_facts_from_row(row)
     return _post_process_ambiguous_done_prs(result, ambiguous)
 
 
