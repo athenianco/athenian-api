@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from functools import partial
 from itertools import chain
 import logging
+import pickle
 from typing import Collection, Dict, List, Optional, Set, Tuple, Type, Union
 
 from aiohttp import web
@@ -16,6 +17,7 @@ from sqlalchemy import and_, func, select, union_all
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
+from athenian.api.cache import cached
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
@@ -26,7 +28,8 @@ from athenian.api.controllers.jira import get_jira_installation
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.jira.epic import filter_epics
-from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PRS_BEGAN, \
+from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PR_IDS, \
+    ISSUE_PRS_BEGAN, \
     ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
@@ -35,7 +38,7 @@ from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
     CalculatedLinearMetricValues, FilteredJIRAStuff, FilterJIRAStuff, Interquartile, \
     InvalidRequestError, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, JIRAFilterWith, \
-    JIRAHistogramsRequest, JIRAIssueType, JIRALabel, JIRAMetricsRequest, JIRAPriority, \
+    JIRAHistogramsRequest, JIRAIssue, JIRAIssueType, JIRALabel, JIRAMetricsRequest, JIRAPriority, \
     JIRAStatus, JIRAUser
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
@@ -68,327 +71,23 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     else:
         reporters = assignees = commenters = []
     filt.priorities = [p.lower() for p in (filt.priorities or [])]
+    filt.types = [p.lower() for p in (filt.types or [])]
     return_ = set(filt.return_ or JIRAFilterReturn)
-    mdb = request.mdb
     sdb = request.sdb
+    mdb = request.mdb
     pdb = request.pdb
     cache = request.cache
-    log = logging.getLogger("%s.filter_jira_stuff" % metadata.__package__)
-    extra_columns_jira_fetch = [
-        Issue.project_id,
-        Issue.components,
-        Issue.assignee_id,
-        Issue.reporter_id,
-        Issue.commenters_ids,
-        Issue.priority_id,
-        Issue.status_id,
+    tasks = [
+        _epic_flow(return_, jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
+                   filt.priorities, reporters, assignees, commenters, default_branches,
+                   release_settings, meta_ids, mdb, pdb, cache),
+        _issue_flow(return_, filt.account, jira_ids, time_from, time_to, filt.exclude_inactive,
+                    label_filter, filt.priorities, filt.types, reporters, assignees, commenters,
+                    default_branches, release_settings, meta_ids, sdb, mdb, pdb, cache),
     ]
-    if JIRAFilterReturn.USERS in return_:
-        extra_columns_jira_fetch.extend(_participant_columns)
-
-    @sentry_span
-    async def epic_flow() -> Tuple[Optional[List[JIRAEpic]],
-                                   Optional[List[JIRAPriority]],
-                                   Optional[List[JIRAStatus]]]:
-        if JIRAFilterReturn.EPICS not in return_:
-            return None, None, None
-        epics_df, children_df, subtask_coro, epic_children_map = await filter_epics(
-            jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
-            filt.priorities, reporters, assignees, commenters, default_branches,
-            release_settings, meta_ids, mdb, pdb, cache,
-            extra_columns=[
-                Issue.key,
-                Issue.title,
-                Issue.reporter_display_name,
-                Issue.assignee_display_name,
-            ] + extra_columns_jira_fetch,
-        )
-        children_columns = {k: children_df[k].values for k in children_df.columns}
-        children_columns[Issue.id.key] = children_df.index.values
-        epics = []
-        issue_by_id = {}
-        for epic_id, project_id, epic_key, epic_title, epic_created, epic_updated, epic_prs_began,\
-            epic_work_began, epic_prs_released, epic_resolved, epic_reporter, epic_assignee, \
-            epic_priority, epic_status, epic_prs in zip(
-                epics_df.index.values, *(epics_df[column].values for column in (
-                Issue.project_id.key,
-                Issue.key.key,
-                Issue.title.key,
-                Issue.created.key,
-                Issue.updated.key,  # FIXME(vmarkovtsev): use AthenianIssue.updated
-                ISSUE_PRS_BEGAN,
-                AthenianIssue.work_began.key,
-                ISSUE_PRS_RELEASED,
-                AthenianIssue.resolved.key,
-                Issue.reporter_display_name.key,
-                Issue.assignee_display_name.key,
-                Issue.priority_name.key,
-                Issue.status.key,
-                ISSUE_PRS_COUNT,
-                ))):
-            work_began, resolved = resolve_work_began_and_resolved(
-                epic_work_began, epic_prs_began, epic_resolved, epic_prs_released)
-            epics.append(epic := JIRAEpic(
-                id=epic_key,
-                project=project_id,
-                children=[],
-                title=epic_title,
-                created=epic_created,
-                updated=epic_updated,
-                work_began=work_began,
-                resolved=resolved,
-                reporter=epic_reporter,
-                assignee=epic_assignee,
-                comments=0,  # TODO(vmarkovtsev): DEV-1658
-                priority=epic_priority,
-                status=epic_status,
-                prs=epic_prs,
-            ))
-            children_indexes = epic_children_map.get(epic_id, [])
-            for child_id, child_key, child_title, child_created, child_updated, child_prs_began, \
-                child_work_began, child_prs_released, child_resolved, child_reporter, \
-                child_assignee, child_priority, child_status, child_prs, child_type in zip(*(
-                    children_columns[column][children_indexes] for column in (
-                    Issue.id.key,
-                    Issue.key.key,
-                    Issue.title.key,
-                    Issue.created.key,
-                    Issue.updated.key,  # FIXME(vmarkovtsev): use AthenianIssue.updated
-                    ISSUE_PRS_BEGAN,
-                    AthenianIssue.work_began.key,
-                    ISSUE_PRS_RELEASED,
-                    AthenianIssue.resolved.key,
-                    Issue.reporter_display_name.key,
-                    Issue.assignee_display_name.key,
-                    Issue.priority_name.key,
-                    Issue.status.key,
-                    ISSUE_PRS_COUNT,
-                    Issue.type.key,
-                    ))):
-                epic.prs += child_prs
-                work_began, resolved = resolve_work_began_and_resolved(
-                    child_work_began, child_prs_began, child_resolved, child_prs_released)
-                if work_began is not None:
-                    epic.work_began = min(epic.work_began or work_began, work_began)
-                if resolved is None:
-                    epic.resolved = None
-                epic.children.append(child := JIRAEpicChild(
-                    id=child_key,
-                    title=child_title,
-                    created=child_created,
-                    updated=child_updated,
-                    work_began=work_began,
-                    resolved=resolved,
-                    reporter=child_reporter,
-                    assignee=child_assignee,
-                    comments=0,  # TODO(vmarkovtsev): DEV-1658
-                    priority=child_priority,
-                    status=child_status,
-                    prs=child_prs,
-                    type=child_type,
-                    subtasks=0,
-                ))
-                issue_by_id[child_id] = child
-                if len(issue_by_id) % 100 == 0:
-                    await asyncio.sleep(0)
-            if epic.resolved is not None and epic.work_began is not None:
-                epic.lead_time = epic.resolved - epic.work_began
-        if JIRAFilterReturn.PRIORITIES in return_:
-            priority_ids = np.unique(np.concatenate([epics_df[Issue.priority_id.key].values,
-                                                     children_columns[Issue.priority_id.key]]))
-        else:
-            priority_ids = []
-        if JIRAFilterReturn.STATUSES in return_:
-            status_ids = np.unique(np.concatenate([epics_df[Issue.status_id.key].values,
-                                                   children_columns[Issue.status_id.key]]))
-            status_project_map = dict(zip(epics_df[Issue.status_id.key].values,
-                                          epics_df[Issue.project_id.key].values))
-            status_project_map.update(zip(children_columns[Issue.status_id.key],
-                                          children_columns[Issue.project_id.key]))
-        else:
-            status_ids = []
-            status_project_map = {}
-        tasks = [
-            subtask_coro,
-            _fetch_priorities(priority_ids, jira_ids[0], return_, mdb),
-            _fetch_statuses(status_ids, status_project_map, jira_ids[0], return_, mdb),
-        ]
-        subtask_counts, priorities, statuses = await gather(*tasks, op="epic epilog")
-        for row in subtask_counts:
-            issue_by_id[row[Issue.parent_id.key]].subtasks = row["subtasks"]
-        return epics, priorities, statuses
-
-    @sentry_span
-    async def issue_flow():
-        if JIRAFilterReturn.ISSUES not in return_:
-            return None, None, None, None, None
-        issues = await fetch_jira_issues(
-            jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
-            # filt.priorities are already lower-cased and de-None-d
-            filt.priorities, [p.lower() for p in (filt.types or [])], [],
-            reporters, assignees, commenters,
-            default_branches, release_settings, meta_ids, mdb, pdb, cache,
-            extra_columns=extra_columns_jira_fetch)
-
-        if JIRAFilterReturn.LABELS in return_:
-            components = Counter(chain.from_iterable(
-                _nonzero(issues[Issue.components.key].values)))
-        else:
-            components = None
-        if JIRAFilterReturn.USERS in return_:
-            people = np.unique(np.concatenate([
-                _nonzero(issues[Issue.reporter_id.key].values),
-                _nonzero(issues[Issue.assignee_id.key].values),
-                list(chain.from_iterable(_nonzero(issues[Issue.commenters_ids.key].values))),
-            ]))
-            # we can leave None because `IN (null)` is always false
-        else:
-            people = None
-        if JIRAFilterReturn.PRIORITIES in return_:
-            priorities = issues[Issue.priority_id.key].unique()
-        else:
-            priorities = []
-        if JIRAFilterReturn.STATUSES in return_:
-            statuses = issues[Issue.status_id.key].unique()
-            status_project_map = dict(zip(issues[Issue.status_id.key].values,
-                                          issues[Issue.project_id.key].values))
-        else:
-            statuses = []
-            status_project_map = {}
-        if JIRAFilterReturn.ISSUE_TYPES in return_:
-            issue_type_counts = Counter(issues[Issue.type.key].values)
-            issue_type_projects = defaultdict(set)
-            project_counts = defaultdict(int)
-            for project_id, issue_type in zip(issues[Issue.project_id.key].values,
-                                              issues[Issue.type.key].values):
-                issue_type_projects[project_id].add(issue_type)
-                project_counts[project_id] += 1
-        else:
-            issue_type_counts = issue_type_projects = project_counts = None
-
-        @sentry_span
-        async def fetch_components():
-            if JIRAFilterReturn.LABELS not in return_:
-                return []
-            return await mdb.fetch_all(
-                select([Component.id, Component.name])
-                .where(and_(
-                    Component.id.in_(components),
-                    Component.acc_id == jira_ids[0],
-                )))
-
-        @sentry_span
-        async def fetch_users():
-            if JIRAFilterReturn.USERS not in return_:
-                return []
-            return await mdb.fetch_all(
-                select([User.display_name, User.avatar_url, User.type, User.id])
-                .where(and_(
-                    User.id.in_(people),
-                    User.acc_id == jira_ids[0],
-                ))
-                .order_by(User.display_name))
-
-        @sentry_span
-        async def fetch_mapped_identities():
-            if JIRAFilterReturn.USERS not in return_:
-                return []
-            return await sdb.fetch_all(
-                select([MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id])
-                .where(and_(
-                    MappedJIRAIdentity.account_id == filt.account,
-                    MappedJIRAIdentity.jira_user_id.in_(people),
-                )))
-
-        @sentry_span
-        async def fetch_types():
-            if JIRAFilterReturn.ISSUE_TYPES not in return_:
-                return []
-            queries = [
-                select([IssueType.name, IssueType.project_id, IssueType.icon_url])
-                .where(and_(
-                    IssueType.name.in_(names),
-                    IssueType.acc_id == jira_ids[0],
-                    IssueType.project_id == project_id,
-                ))
-                for project_id, names in issue_type_projects.items()
-            ]
-            return await mdb.fetch_all(union_all(*queries))
-
-        @sentry_span
-        async def extract_labels():
-            if JIRAFilterReturn.LABELS in return_:
-                labels = Counter(chain.from_iterable(issues[Issue.labels.key].values))
-                if None in labels:
-                    del labels[None]
-                labels = {k: JIRALabel(title=k, kind="regular", issues_count=v)
-                          for k, v in labels.items()}
-                for updated, issue_labels in zip(issues[Issue.updated.key],
-                                                 issues[Issue.labels.key].values):
-                    for label in (issue_labels or ()):
-                        label = labels[label]  # type: JIRALabel
-                        if label.last_used is None or label.last_used < updated:
-                            label.last_used = updated
-                if mdb.url.dialect == "sqlite":
-                    for label in labels.values():
-                        label.last_used = label.last_used.replace(tzinfo=timezone.utc)
-            else:
-                labels = None
-            return labels
-
-        component_names, users, mapped_identities, priorities, statuses, issue_types, labels = \
-            await gather(
-                fetch_components(), fetch_users(), fetch_mapped_identities(),
-                _fetch_priorities(priorities, jira_ids[0], return_, mdb),
-                _fetch_statuses(statuses, status_project_map, jira_ids[0], return_, mdb),
-                fetch_types(), extract_labels())
-        components = {
-            row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
-            for row in component_names
-        }
-        mapped_identities = {
-            r[MappedJIRAIdentity.jira_user_id.key]: r[MappedJIRAIdentity.github_user_id.key]
-            for r in mapped_identities
-        }
-        users = [JIRAUser(avatar=row[User.avatar_url.key],
-                          name=row[User.display_name.key],
-                          type=row[User.type.key],
-                          developer=mapped_identities.get(row[User.id.key]),
-                          )
-                 for row in users] or None
-        # take the issue type URL corresponding to the project with the most issues
-        max_issue_types = {}
-        for row in issue_types:
-            name = row[IssueType.name.key]
-            max_count, _ = max_issue_types.get(name, (0, ""))
-            if (count := project_counts[row[IssueType.project_id.key]]) > max_count:
-                max_issue_types[name] = count, row[IssueType.icon_url.key]
-        issue_types = [JIRAIssueType(name=name,
-                                     image=image,
-                                     count=issue_type_counts[name],
-                                     project="<not implemented>")
-                       for name, (_, image) in sorted(max_issue_types.items())] or None
-        if JIRAFilterReturn.LABELS in return_:
-            for updated, issue_components in zip(issues[Issue.updated.key],
-                                                 issues[Issue.components.key].values):
-                for component in (issue_components or ()):
-                    try:
-                        label = components[component]  # type: JIRALabel
-                    except KeyError:
-                        log.error("Missing JIRA component: %s" % component)
-                        continue
-                    if label.last_used is None or label.last_used < updated:
-                        label.last_used = updated
-            if mdb.url.dialect == "sqlite":
-                for label in components.values():
-                    label.last_used = label.last_used.replace(tzinfo=timezone.utc)
-
-            labels = sorted(chain(components.values(), labels.values()))
-        return labels, users, issue_types, priorities, statuses
-
     ((epics, epic_priorities, epic_statuses),
-     (labels, issue_users, issue_types, issue_priorities, issue_statuses),
-     ) = await gather(epic_flow(), issue_flow(), op="forked flows")
+     (issues, labels, issue_users, issue_types, issue_priorities, issue_statuses),
+     ) = await gather(*tasks, op="forked flows")
     if epic_priorities is None:
         priorities = issue_priorities
     elif issue_priorities is None:
@@ -403,12 +102,478 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         statuses = sorted(set(epic_statuses).union(issue_statuses))
     return model_response(FilteredJIRAStuff(
         epics=epics,
+        issues=issues,
         labels=labels,
         issue_types=issue_types,
         priorities=priorities,
         users=issue_users,
         statuses=statuses,
     ))
+
+
+@sentry_span
+@cached(
+    exptime=5 * 60,  # 5 min
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, **_: (  # noqa
+        JIRAFilterReturn.EPICS in return_,
+        JIRAFilterReturn.PRIORITIES in return_,
+        JIRAFilterReturn.STATUSES in return_,
+        time_from.timestamp() if time_from else "-",
+        time_to.timestamp() if time_to else "-",
+        exclude_inactive,
+        label_filter,
+        ",".join(sorted(priorities)),
+        ",".join(sorted(reporters)),
+        ",".join(sorted((ass if ass is not None else "<None>") for ass in assignees)),
+        ",".join(sorted(commenters)),
+        ",".join("%s:%s" % db for db in sorted(default_branches.items())),
+        release_settings,
+    ),
+)
+async def _epic_flow(return_: Set[str],
+                     jira_ids: Tuple[int, List[str]],
+                     time_from: Optional[datetime],
+                     time_to: Optional[datetime],
+                     exclude_inactive: bool,
+                     label_filter: LabelFilter,
+                     priorities: Collection[str],
+                     reporters: Collection[str],
+                     assignees: Collection[Optional[str]],
+                     commenters: Collection[str],
+                     default_branches: Dict[str, str],
+                     release_settings: Dict[str, ReleaseMatchSetting],
+                     meta_ids: Tuple[int, ...],
+                     mdb: databases.Database,
+                     pdb: databases.Database,
+                     cache: Optional[aiomcache.Client],
+                     ) -> Tuple[Optional[List[JIRAEpic]],
+                                Optional[List[JIRAPriority]],
+                                Optional[List[JIRAStatus]]]:
+    """Fetch various information related to JIRA epics."""
+    if JIRAFilterReturn.EPICS not in return_:
+        return None, None, None
+    extra_columns = [
+        Issue.key,
+        Issue.title,
+        Issue.reporter_display_name,
+        Issue.assignee_display_name,
+        Issue.project_id,
+        Issue.components,
+        Issue.assignee_id,
+        Issue.reporter_id,
+        Issue.commenters_ids,
+        Issue.priority_id,
+        Issue.status_id,
+    ]
+    if JIRAFilterReturn.USERS in return_:
+        extra_columns.extend(_participant_columns)
+    epics_df, children_df, subtask_coro, epic_children_map = await filter_epics(
+        jira_ids, time_from, time_to, exclude_inactive, label_filter,
+        priorities, reporters, assignees, commenters, default_branches,
+        release_settings, meta_ids, mdb, pdb, cache, extra_columns=extra_columns,
+    )
+    children_columns = {k: children_df[k].values for k in children_df.columns}
+    children_columns[Issue.id.key] = children_df.index.values
+    epics = []
+    issue_by_id = {}
+    for epic_id, project_id, epic_key, epic_title, epic_created, epic_updated, epic_prs_began,\
+        epic_work_began, epic_prs_released, epic_resolved, epic_reporter, epic_assignee, \
+        epic_priority, epic_status, epic_prs in zip(
+            epics_df.index.values, *(epics_df[column].values for column in (
+            Issue.project_id.key,
+            Issue.key.key,
+            Issue.title.key,
+            Issue.created.key,
+            Issue.updated.key,  # FIXME(vmarkovtsev): use AthenianIssue.updated
+            ISSUE_PRS_BEGAN,
+            AthenianIssue.work_began.key,
+            ISSUE_PRS_RELEASED,
+            AthenianIssue.resolved.key,
+            Issue.reporter_display_name.key,
+            Issue.assignee_display_name.key,
+            Issue.priority_name.key,
+            Issue.status.key,
+            ISSUE_PRS_COUNT,
+            ))):
+        work_began, resolved = resolve_work_began_and_resolved(
+            epic_work_began, epic_prs_began, epic_resolved, epic_prs_released)
+        epics.append(epic := JIRAEpic(
+            id=epic_key,
+            project=project_id,
+            children=[],
+            title=epic_title,
+            created=epic_created,
+            updated=epic_updated,
+            work_began=work_began,
+            resolved=resolved,
+            reporter=epic_reporter,
+            assignee=epic_assignee,
+            comments=0,  # TODO(vmarkovtsev): DEV-1658
+            priority=epic_priority,
+            status=epic_status,
+            prs=epic_prs,
+        ))
+        children_indexes = epic_children_map.get(epic_id, [])
+        for child_id, child_key, child_title, child_created, child_updated, child_prs_began, \
+            child_work_began, child_prs_released, child_resolved, child_reporter, \
+            child_assignee, child_priority, child_status, child_prs, child_type in zip(*(
+                children_columns[column][children_indexes] for column in (
+                Issue.id.key,
+                Issue.key.key,
+                Issue.title.key,
+                Issue.created.key,
+                Issue.updated.key,  # FIXME(vmarkovtsev): use AthenianIssue.updated
+                ISSUE_PRS_BEGAN,
+                AthenianIssue.work_began.key,
+                ISSUE_PRS_RELEASED,
+                AthenianIssue.resolved.key,
+                Issue.reporter_display_name.key,
+                Issue.assignee_display_name.key,
+                Issue.priority_name.key,
+                Issue.status.key,
+                ISSUE_PRS_COUNT,
+                Issue.type.key,
+                ))):
+            epic.prs += child_prs
+            work_began, resolved = resolve_work_began_and_resolved(
+                child_work_began, child_prs_began, child_resolved, child_prs_released)
+            if work_began is not None:
+                epic.work_began = min(epic.work_began or work_began, work_began)
+            if resolved is None:
+                epic.resolved = None
+            epic.children.append(child := JIRAEpicChild(
+                id=child_key,
+                title=child_title,
+                created=child_created,
+                updated=child_updated,
+                work_began=work_began,
+                resolved=resolved,
+                reporter=child_reporter,
+                assignee=child_assignee,
+                comments=0,  # TODO(vmarkovtsev): DEV-1658
+                priority=child_priority,
+                status=child_status,
+                prs=child_prs,
+                type=child_type,
+                subtasks=0,
+            ))
+            issue_by_id[child_id] = child
+            if len(issue_by_id) % 100 == 0:
+                await asyncio.sleep(0)
+        if epic.resolved is not None and epic.work_began is not None:
+            epic.lead_time = epic.resolved - epic.work_began
+    if JIRAFilterReturn.PRIORITIES in return_:
+        priority_ids = np.unique(np.concatenate([epics_df[Issue.priority_id.key].values,
+                                                 children_columns[Issue.priority_id.key]]))
+    else:
+        priority_ids = []
+    if JIRAFilterReturn.STATUSES in return_:
+        status_ids = np.unique(np.concatenate([epics_df[Issue.status_id.key].values,
+                                               children_columns[Issue.status_id.key]]))
+        status_project_map = dict(zip(epics_df[Issue.status_id.key].values,
+                                      epics_df[Issue.project_id.key].values))
+        status_project_map.update(zip(children_columns[Issue.status_id.key],
+                                      children_columns[Issue.project_id.key]))
+    else:
+        status_ids = []
+        status_project_map = {}
+    tasks = [
+        subtask_coro,
+        _fetch_priorities(priority_ids, jira_ids[0], return_, mdb),
+        _fetch_statuses(status_ids, status_project_map, jira_ids[0], return_, mdb),
+    ]
+    subtask_counts, priorities, statuses = await gather(*tasks, op="epic epilog")
+    for row in subtask_counts:
+        issue_by_id[row[Issue.parent_id.key]].subtasks = row["subtasks"]
+    return epics, priorities, statuses
+
+
+@sentry_span
+@cached(
+    exptime=5 * 60,  # 5 min
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, **_: (  # noqa
+        JIRAFilterReturn.EPICS in return_,
+        JIRAFilterReturn.PRIORITIES in return_,
+        JIRAFilterReturn.STATUSES in return_,
+        time_from.timestamp() if time_from else "-",
+        time_to.timestamp() if time_to else "-",
+        exclude_inactive,
+        label_filter,
+        ",".join(sorted(priorities)),
+        ",".join(sorted(reporters)),
+        ",".join(sorted((ass if ass is not None else "<None>") for ass in assignees)),
+        ",".join(sorted(commenters)),
+        ",".join("%s:%s" % db for db in sorted(default_branches.items())),
+        release_settings,
+    ),
+)
+async def _issue_flow(return_: Set[str],
+                      account: int,
+                      jira_ids: Tuple[int, List[str]],
+                      time_from: Optional[datetime],
+                      time_to: Optional[datetime],
+                      exclude_inactive: bool,
+                      label_filter: LabelFilter,
+                      priorities: Collection[str],
+                      types: Collection[str],
+                      reporters: Collection[str],
+                      assignees: Collection[Optional[str]],
+                      commenters: Collection[str],
+                      default_branches: Dict[str, str],
+                      release_settings: Dict[str, ReleaseMatchSetting],
+                      meta_ids: Tuple[int, ...],
+                      sdb: databases.Database,
+                      mdb: databases.Database,
+                      pdb: databases.Database,
+                      cache: Optional[aiomcache.Client],
+                      ) -> Tuple[Optional[JIRAIssue],
+                                 Optional[JIRALabel],
+                                 Optional[JIRAUser],
+                                 Optional[JIRAIssueType],
+                                 Optional[JIRAPriority],
+                                 Optional[JIRAStatus]]:
+    """Fetch various information related to JIRA issues."""
+    if JIRAFilterReturn.ISSUES not in return_:
+        return None, None, None, None, None, None
+    log = logging.getLogger("%s.filter_jira_stuff" % metadata.__package__)
+    extra_columns = [
+        Issue.project_id,
+        Issue.components,
+        Issue.assignee_id,
+        Issue.reporter_id,
+        Issue.commenters_ids,
+        Issue.priority_id,
+        Issue.status_id,
+    ]
+    if JIRAFilterReturn.ISSUE_BODIES in return_:
+        extra_columns.extend([
+            Issue.key,
+            Issue.title,
+            Issue.reporter_display_name,
+            Issue.assignee_display_name,
+        ])
+    if JIRAFilterReturn.USERS in return_:
+        extra_columns.extend(_participant_columns)
+    issues = await fetch_jira_issues(
+        jira_ids, time_from, time_to, exclude_inactive, label_filter,
+        # priorities are already lower-cased and de-None-d
+        priorities, types, [], reporters, assignees, commenters,
+        default_branches, release_settings, meta_ids, mdb, pdb, cache,
+        extra_columns=extra_columns)
+    if JIRAFilterReturn.LABELS in return_:
+        components = Counter(chain.from_iterable(
+            _nonzero(issues[Issue.components.key].values)))
+    else:
+        components = None
+    if JIRAFilterReturn.USERS in return_:
+        people = np.unique(np.concatenate([
+            _nonzero(issues[Issue.reporter_id.key].values),
+            _nonzero(issues[Issue.assignee_id.key].values),
+            list(chain.from_iterable(_nonzero(issues[Issue.commenters_ids.key].values))),
+        ]))
+        # we can leave None because `IN (null)` is always false
+    else:
+        people = None
+    if JIRAFilterReturn.PRIORITIES in return_:
+        priorities = issues[Issue.priority_id.key].unique()
+    else:
+        priorities = []
+    if JIRAFilterReturn.STATUSES in return_:
+        statuses = issues[Issue.status_id.key].unique()
+        status_project_map = dict(zip(issues[Issue.status_id.key].values,
+                                      issues[Issue.project_id.key].values))
+    else:
+        statuses = []
+        status_project_map = {}
+    if JIRAFilterReturn.ISSUE_TYPES in return_:
+        issue_type_counts = Counter(issues[Issue.type.key].values)
+        issue_type_projects = defaultdict(set)
+        project_counts = defaultdict(int)
+        for project_id, issue_type in zip(issues[Issue.project_id.key].values,
+                                          issues[Issue.type.key].values):
+            issue_type_projects[project_id].add(issue_type)
+            project_counts[project_id] += 1
+    else:
+        issue_type_counts = issue_type_projects = project_counts = None
+    if JIRAFilterReturn.ISSUE_BODIES in return_:
+        pr_ids = np.concatenate(issues[ISSUE_PR_IDS].values)
+    else:
+        pr_ids = None
+    _ = pr_ids
+
+    @sentry_span
+    async def fetch_components():
+        if JIRAFilterReturn.LABELS not in return_:
+            return []
+        return await mdb.fetch_all(
+            select([Component.id, Component.name])
+            .where(and_(
+                Component.id.in_(components),
+                Component.acc_id == jira_ids[0],
+            )))
+
+    @sentry_span
+    async def fetch_users():
+        if JIRAFilterReturn.USERS not in return_:
+            return []
+        return await mdb.fetch_all(
+            select([User.display_name, User.avatar_url, User.type, User.id])
+            .where(and_(
+                User.id.in_(people),
+                User.acc_id == jira_ids[0],
+            ))
+            .order_by(User.display_name))
+
+    @sentry_span
+    async def fetch_mapped_identities():
+        if JIRAFilterReturn.USERS not in return_:
+            return []
+        return await sdb.fetch_all(
+            select([MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id])
+            .where(and_(
+                MappedJIRAIdentity.account_id == account,
+                MappedJIRAIdentity.jira_user_id.in_(people),
+            )))
+
+    @sentry_span
+    async def fetch_types():
+        if JIRAFilterReturn.ISSUE_TYPES not in return_:
+            return []
+        queries = [
+            select([IssueType.name, IssueType.project_id, IssueType.icon_url])
+            .where(and_(
+                IssueType.name.in_(names),
+                IssueType.acc_id == jira_ids[0],
+                IssueType.project_id == project_id,
+            ))
+            for project_id, names in issue_type_projects.items()
+        ]
+        return await mdb.fetch_all(union_all(*queries))
+
+    @sentry_span
+    async def extract_labels():
+        if JIRAFilterReturn.LABELS in return_:
+            label_iter = issues[Issue.labels.key].values
+            if label_filter:
+                label_iter = (ils for ils in label_iter if label_filter.match(ils))
+            labels = Counter(chain.from_iterable(label_iter))
+            if None in labels:
+                del labels[None]
+            labels = {k: JIRALabel(title=k, kind="regular", issues_count=v)
+                      for k, v in labels.items()}
+            for updated, issue_labels in zip(issues[Issue.updated.key],
+                                             issues[Issue.labels.key].values):
+                for label in (issue_labels or ()):
+                    try:
+                        label = labels[label]  # type: JIRALabel
+                    except KeyError:
+                        continue
+                    if label.last_used is None or label.last_used < updated:
+                        label.last_used = updated
+            if mdb.url.dialect == "sqlite":
+                for label in labels.values():
+                    label.last_used = label.last_used.replace(tzinfo=timezone.utc)
+        else:
+            labels = None
+        return labels
+
+    component_names, users, mapped_identities, priorities, statuses, issue_types, labels = \
+        await gather(
+            fetch_components(), fetch_users(), fetch_mapped_identities(),
+            _fetch_priorities(priorities, jira_ids[0], return_, mdb),
+            _fetch_statuses(statuses, status_project_map, jira_ids[0], return_, mdb),
+            fetch_types(), extract_labels())
+    components = {
+        row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
+        for row in component_names
+    }
+    mapped_identities = {
+        r[MappedJIRAIdentity.jira_user_id.key]: r[MappedJIRAIdentity.github_user_id.key]
+        for r in mapped_identities
+    }
+    users = [JIRAUser(avatar=row[User.avatar_url.key],
+                      name=row[User.display_name.key],
+                      type=row[User.type.key],
+                      developer=mapped_identities.get(row[User.id.key]),
+                      )
+             for row in users] or None
+    # take the issue type URL corresponding to the project with the most issues
+    max_issue_types = {}
+    for row in issue_types:
+        name = row[IssueType.name.key]
+        max_count, _ = max_issue_types.get(name, (0, ""))
+        if (count := project_counts[row[IssueType.project_id.key]]) > max_count:
+            max_issue_types[name] = count, row[IssueType.icon_url.key]
+    issue_types = [JIRAIssueType(name=name,
+                                 image=image,
+                                 count=issue_type_counts[name],
+                                 project="<not implemented>")
+                   for name, (_, image) in sorted(max_issue_types.items())] or None
+    if JIRAFilterReturn.LABELS in return_:
+        for updated, issue_components in zip(issues[Issue.updated.key],
+                                             issues[Issue.components.key].values):
+            for component in (issue_components or ()):
+                try:
+                    label = components[component]  # type: JIRALabel
+                except KeyError:
+                    log.error("Missing JIRA component: %s" % component)
+                    continue
+                if label.last_used is None or label.last_used < updated:
+                    label.last_used = updated
+        if mdb.url.dialect == "sqlite":
+            for label in components.values():
+                label.last_used = label.last_used.replace(tzinfo=timezone.utc)
+
+        labels = sorted(chain(components.values(), labels.values()))
+    if JIRAFilterReturn.ISSUE_BODIES in return_:
+        issue_models = []
+        for issue_key, issue_title, issue_created, issue_updated, issue_prs_began, \
+            issue_work_began, issue_prs_released, issue_resolved, issue_reporter, \
+            issue_assignee, issue_priority, issue_status, issue_prs, issue_type, \
+            issue_project in zip(*(
+                issues[column].values for column in (
+                Issue.key.key,
+                Issue.title.key,
+                Issue.created.key,
+                Issue.updated.key,  # FIXME(vmarkovtsev): use AthenianIssue.updated
+                ISSUE_PRS_BEGAN,
+                AthenianIssue.work_began.key,
+                ISSUE_PRS_RELEASED,
+                AthenianIssue.resolved.key,
+                Issue.reporter_display_name.key,
+                Issue.assignee_display_name.key,
+                Issue.priority_name.key,
+                Issue.status.key,
+                ISSUE_PR_IDS,
+                Issue.type.key,
+                Issue.project_id.key,
+                ))):
+            _ = issue_prs
+            work_began, resolved = resolve_work_began_and_resolved(
+                issue_work_began, issue_prs_began, issue_resolved, issue_prs_released)
+            issue_models.append(JIRAIssue(
+                id=issue_key,
+                title=issue_title,
+                created=issue_created,
+                updated=issue_updated,
+                work_began=work_began,
+                resolved=resolved,
+                reporter=issue_reporter,
+                assignee=issue_assignee,
+                comments=0,  # TODO(vmarkovtsev): DEV-1658
+                priority=issue_priority,
+                status=issue_status,
+                project=issue_project,
+                type=issue_type,
+                prs=[],
+            ))
+    else:
+        issue_models = None
+    return issue_models, labels, users, issue_types, priorities, statuses
 
 
 @sentry_span
@@ -494,7 +659,8 @@ async def _calc_jira_entry(request: AthenianWebRequest,
                            ) -> Tuple[Union[JIRAMetricsRequest, JIRAHistogramsRequest],
                                       List[List[datetime]],
                                       pd.DataFrame,
-                                      timedelta]:
+                                      timedelta,
+                                      LabelFilter]:
     try:
         filt = model.from_dict(body)
     except ValueError as e:
@@ -511,10 +677,11 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         for g in (filt.with_ or []))))
     commenters = list(set(chain.from_iterable(
         ([p.lower() for p in (g.commenters or [])]) for g in (filt.with_ or []))))
+    label_filter = LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude)
     issues = await fetch_jira_issues(
         jira_ids,
         time_intervals[0][0], time_intervals[0][-1], filt.exclude_inactive,
-        LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
+        label_filter,
         [p.lower() for p in (filt.priorities or [])],
         [p.lower() for p in (filt.types or [])],
         filt.epics or [],
@@ -523,16 +690,16 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         meta_ids, request.mdb, request.pdb, request.cache,
         extra_columns=_participant_columns if len(filt.with_ or []) > 1 else (),
     )
-    return filt, time_intervals, issues, tzoffset
+    return filt, time_intervals, issues, tzoffset, label_filter
 
 
 @weight(2.5)
 async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over JIRA issue activities."""
-    filt, time_intervals, issues, tzoffset = await _calc_jira_entry(
+    filt, time_intervals, issues, tzoffset, label_filter = await _calc_jira_entry(
         request, body, JIRAMetricsRequest)
     calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1])
-    label_splitter = _IssuesLabelSplitter(filt.group_by_jira_label)
+    label_splitter = _IssuesLabelSplitter(filt.group_by_jira_label, label_filter)
     groupers = partial(_split_issues_by_with, filt.with_), label_splitter
     groups = group_to_indexes(issues, *groupers)
     metric_values = calc(issues, time_intervals, groups)
@@ -585,9 +752,10 @@ def _split_issues_by_with(with_: Optional[List[JIRAFilterWith]],
 
 
 class _IssuesLabelSplitter:
-    def __init__(self, enabled: bool):
+    def __init__(self, enabled: bool, label_filter: LabelFilter):
         self._labels = np.array([None], dtype=object)
         self.enabled = enabled
+        self._filter = label_filter
 
     @property
     def labels(self):
@@ -608,15 +776,31 @@ class _IssuesLabelSplitter:
         groups = np.array(np.split(ordered_rows_all_labels, np.cumsum(unique_counts)),
                           dtype=object)
         unique_labels_order = np.argsort(-unique_counts)
-        self._labels = unique_labels[unique_labels_order]
+        unique_labels = unique_labels[unique_labels_order]
         groups = groups[unique_labels_order]
+        if self._filter.exclude and len(unique_labels):
+            exclude = np.array(sorted(self._filter.exclude), dtype="U")
+            mask = np.in1d(unique_labels, exclude, assume_unique=True, invert=True)
+            unique_labels = unique_labels[mask]
+            groups = groups[mask]
+        if self._filter.include and len(unique_labels):
+            singles, multiples = LabelFilter.split(self._filter.include)
+            include = set(singles)
+            for labels in multiples:
+                include.update(labels)
+            include = np.array(sorted(self._filter.include), dtype="U")
+            mask = np.in1d(unique_labels, include, assume_unique=True)
+            unique_labels = unique_labels[mask]
+            groups = groups[mask]
+        self._labels = unique_labels
         return groups
 
 
 @weight(1.5)
 async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms over JIRA issue activities."""
-    filt, time_intervals, issues, _ = await _calc_jira_entry(request, body, JIRAHistogramsRequest)
+    filt, time_intervals, issues, _, _ = await _calc_jira_entry(
+        request, body, JIRAHistogramsRequest)
     defs = defaultdict(list)
     for h in (filt.histograms or []):
         defs[HistogramParameters(
@@ -643,8 +827,3 @@ async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Re
                     interquartile=Interquartile(*histogram.interquartile),
                 ))
     return model_response(result)
-
-
-async def filter_jira_epics(request: AthenianWebRequest, body: dict) -> web.Response:
-    """Find JIRA epics which were active in the specified date interval."""
-    raise NotImplementedError

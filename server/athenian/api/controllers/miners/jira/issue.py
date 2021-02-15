@@ -157,6 +157,7 @@ def _append_label_filters(labels: LabelFilter,
 ISSUE_PRS_BEGAN = "prs_began"
 ISSUE_PRS_RELEASED = "prs_released"
 ISSUE_PRS_COUNT = "prs_count"
+ISSUE_PR_IDS = "pr_ids"
 
 
 @sentry_span
@@ -231,9 +232,12 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
     released_prs = await _fetch_released_prs(pr_to_issue, default_branches, release_settings, pdb)
     unreleased_prs = pr_to_issue.keys() - released_prs.keys()
     issue_to_index = {iid: i for i, iid in enumerate(issues.index.values)}
-    prs_count = np.full(len(issues.index), 0, int)
+    prs_count = np.full(len(issues), 0, int)
+    issue_prs = [[] for _ in range(len(issues))]
+    for key, val in pr_to_issue.items():
+        issue_prs[issue_to_index[val]].append(key)
     nat = np.datetime64("nat")
-    work_began = np.full(len(issues.index), nat, "datetime64[ns]")
+    work_began = np.full(len(issues), nat, "datetime64[ns]")
     released = work_began.copy()
 
     @sentry_span
@@ -281,6 +285,7 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
     issues[ISSUE_PRS_BEGAN] = work_began
     issues[ISSUE_PRS_RELEASED] = released
     issues[ISSUE_PRS_COUNT] = prs_count
+    issues[ISSUE_PR_IDS] = issue_prs
     return issues
 
 

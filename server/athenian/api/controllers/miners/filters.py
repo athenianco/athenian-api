@@ -17,7 +17,7 @@ class LabelFilter:
                        exclude: Optional[Iterable[str]],
                        ) -> "LabelFilter":
         """Initialize a new instance of LabelFilter from two iterables."""
-        return cls(include=set(s.lower() for s in (include or [])),
+        return cls(include=set(s.lower().strip(" \t,") for s in (include or [])),
                    exclude=set(s.lower() for s in (exclude or [])))
 
     @classmethod
@@ -44,6 +44,24 @@ class LabelFilter:
             and
             ((not self.exclude) or (other.exclude and self.exclude.issubset(other.exclude)))
         )
+
+    def match(self, labels: Iterable[str]) -> bool:
+        """Check whether a set of labels satisfies the filter."""
+        assert not isinstance(labels, str)
+        labels = set(labels)
+        if self.include:
+            if len(labels) == 1:
+                if not self.include.intersection(labels):
+                    return False
+            else:
+                for iset in self.include:
+                    if labels.issuperset({p.strip() for p in iset.split(",")}):
+                        break
+                else:
+                    return False
+        if self.exclude and self.exclude.intersection(labels):
+            return False
+        return True
 
     @classmethod
     def split(cls, labels: Set[str]) -> Tuple[List[str], List[List[str]]]:
