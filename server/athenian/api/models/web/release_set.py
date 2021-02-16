@@ -6,7 +6,8 @@ from athenian.api.models.web.included_jira_issues import _IncludedJIRAIssues
 from athenian.api.models.web.included_native_users import _IncludedNativeUsers
 
 
-ReleaseSetInclude = AllOf(_IncludedNativeUsers, _IncludedJIRAIssues, module=__name__)
+ReleaseSetInclude = AllOf(_IncludedNativeUsers, _IncludedJIRAIssues,
+                          name="ReleaseSetInclude", module=__name__)
 
 
 class ReleaseSet(Model):

@@ -105,4 +105,4 @@ class _JIRAEpicSpecials(Model):
         self._prs = prs
 
 
-JIRAEpic = AllOf(JIRAEpicIssueCommon, _JIRAEpicSpecials, module=__name__)
+JIRAEpic = AllOf(JIRAEpicIssueCommon, _JIRAEpicSpecials, name="JIRAEpic", module=__name__)
