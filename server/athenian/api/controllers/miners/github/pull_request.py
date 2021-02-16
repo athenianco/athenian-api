@@ -1260,7 +1260,7 @@ class PullRequestFactsMiner:
             pr.review_requests[PullRequestReviewRequest.created_at.key].values,
             pr.reviews[PullRequestReview.created_at.key].values,
             pr.comments[PullRequestComment.created_at.key].values,
-        ]).astype("datetime64[D]")
+        ]).astype(ts_dtype).astype("datetime64[D]")
         activity_days = \
             np.unique(activity_days[activity_days == activity_days]).astype(ts_dtype)
         facts = PullRequestFacts(
