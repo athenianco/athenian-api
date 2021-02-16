@@ -229,6 +229,7 @@ class PullRequestListMiner:
                 )
             ]
         return PullRequestListItem(
+            node_id=pr_node_id,
             repository=self._prefix + pr.pr[PullRequest.repository_full_name.key],
             number=pr.pr[PullRequest.number.key],
             title=pr.pr[PullRequest.title.key],
@@ -339,6 +340,8 @@ class PullRequestListMiner:
 
     def __iter__(self) -> Generator[PullRequestListItem, None, None]:
         """Iterate over individual pull requests."""
+        if not self._prs:
+            return
         stage_timings = self._calc_stage_details()
         hard_events_time_machine, hard_events_now = self._calc_hard_events()
         facts = self._facts
@@ -688,8 +691,45 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
         load_precomputed_done_facts_reponums(prs, default_branches, release_settings, pdb),
     ]
     prs_df, (facts, ambiguous) = await gather(*tasks)
+    return await unwrap_pull_requests(
+        prs_df, facts, ambiguous, True, branches, default_branches, release_settings,
+        meta_ids, mdb, pdb, cache)
+
+
+async def unwrap_pull_requests(prs_df: pd.DataFrame,
+                               precomputed_done_facts: Dict[str, PullRequestFacts],
+                               precomputed_ambiguous_done_facts: Dict[str, List[str]],
+                               with_jira: bool,
+                               branches: pd.DataFrame,
+                               default_branches: Dict[str, str],
+                               release_settings: Dict[str, ReleaseMatchSetting],
+                               meta_ids: Tuple[int, ...],
+                               mdb: databases.Database,
+                               pdb: databases.Database,
+                               cache: Optional[aiomcache.Client],
+                               ) -> Tuple[List[MinedPullRequest],
+                                          PRDataFrames,
+                                          Dict[str, PullRequestFacts],
+                                          Dict[str, ReleaseMatch]]:
+    """
+    Fetch all the missing information about PRs in a dataframe.
+
+    :param prs_df: dataframe with PullRequest-s.
+    :param precomputed_done_facts: Preloaded precomputed facts of done PRs (explicit).
+    :param precomputed_ambiguous_done_facts: Preloaded precomputed facts of done PRs (implicit).
+    :param with_jira: Value indicating whether to load the mapped JIRA issues.
+    :param branches: Branches of the relevant repositories.
+    :param default_branches: Default branches of the relevant repositories.
+    :param release_settings: Account's release settings.
+    :param meta_ids: GitHub account IDs.
+    :param mdb: Metadata DB.
+    :param pdb: Precomputed DB.
+    :param cache: Optional memcached client.
+    :return: Everything that's necessary for PullRequestListMiner.
+    """
     if prs_df.empty:
         return [], PRDataFrames(*(pd.DataFrame() for _ in range(9))), {}, {}
+    facts, ambiguous = precomputed_done_facts, precomputed_ambiguous_done_facts
     PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
     now = datetime.now(timezone.utc)
     if rel_time_from := prs_df[PullRequest.merged_at.key].nonemin():
@@ -705,8 +745,8 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
         milestone_releases = milestone_releases.take(np.where(
             milestone_releases[Release.sha.key].notnull())[0])
         releases, matched_bys = await load_releases(
-            prs, branches, default_branches, rel_time_from, now,
-            release_settings, meta_ids, mdb, pdb, cache)
+            prs_df[PullRequest.repository_full_name.key].unique(), branches, default_branches,
+            rel_time_from, now, release_settings, meta_ids, mdb, pdb, cache)
         add_pdb_misses(pdb, "load_precomputed_done_facts_reponums/ambiguous",
                        remove_ambiguous_prs(facts, ambiguous, matched_bys))
         tasks = [
@@ -723,7 +763,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
             prs_df[PullRequest.repository_full_name.key].unique(), pdb, cache)
     dfs, _, _ = await PullRequestMiner.mine_by_ids(
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
-        release_settings, meta_ids, mdb, pdb, cache)
+        release_settings, meta_ids, mdb, pdb, cache, with_jira=with_jira)
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
     for k, v in unreleased.items():
         if k not in facts:
