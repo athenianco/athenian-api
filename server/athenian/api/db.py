@@ -248,7 +248,12 @@ _sql_str_re = re.compile(r"'[^']+'(, )?")
 _log_sql_re = re.compile(r"SELECT|\(SELECT|WITH RECURSIVE")
 
 
-async def _asyncpg_execute(self, query: str, args, limit, timeout, return_status=False):
+async def _asyncpg_execute(self,
+                           query: str,
+                           args,
+                           limit,
+                           timeout,
+                           **kwargs):
     description = query = query.strip()
     if _log_sql_re.match(query) and not _testing:
         if len(description) <= MAX_SENTRY_STRING_LENGTH and args:
@@ -260,7 +265,7 @@ async def _asyncpg_execute(self, query: str, args, limit, timeout, return_status
                 brief = _sql_str_re.sub("", query)
                 description = "%s\n%s" % (query_id, brief[:MAX_SENTRY_STRING_LENGTH])
     with sentry_sdk.start_span(op="sql", description=description) as span:
-        result = await self._execute_original(query, args, limit, timeout, return_status)
+        result = await self._execute_original(query, args, limit, timeout, **kwargs)
         try:
             span.description = "=> %d\n%s" % (len(result[0]), span.description)
         except TypeError:
@@ -268,9 +273,9 @@ async def _asyncpg_execute(self, query: str, args, limit, timeout, return_status
         return result
 
 
-async def _asyncpg_executemany(self, query, args, timeout):
+async def _asyncpg_executemany(self, query, args, timeout, **kwargs):
     with sentry_sdk.start_span(op="sql", description="<= %d\n%s" % (len(args), query)):
-        return await self._executemany_original(query, args, timeout)
+        return await self._executemany_original(query, args, timeout, **kwargs)
 
 
 asyncpg.Connection._execute_original = asyncpg.Connection._Connection__execute
