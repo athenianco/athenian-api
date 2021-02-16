@@ -133,4 +133,5 @@ class FilterJIRAStuffSpecials(Model):
         self._with_ = with_
 
 
-FilterJIRAStuff = AllOf(FilterJIRACommon, FilterJIRAStuffSpecials, module=__name__)
+FilterJIRAStuff = AllOf(FilterJIRACommon, FilterJIRAStuffSpecials,
+                        name="FilterJIRAStuff", module=__name__)

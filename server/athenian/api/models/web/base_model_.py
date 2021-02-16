@@ -132,11 +132,16 @@ class Enum(Slots):
         return len(cls.__members)
 
 
-def AllOf(*mixed: typing.Type[Model], module: str, sealed: bool = True) -> typing.Type[Model]:
+def AllOf(*mixed: typing.Type[Model],
+          name: str,
+          module: str,
+          sealed: bool = True,
+          ) -> typing.Type[Model]:
     """
     Inherit from multiple Model classes.
 
     :param sealed: Do not allow inheritance from the resulting class.
+    :param name: Name of the class, must match the variable name to avoid pickling errors.
     :param module: Name of the calling module.
     """
     for cls in mixed:
@@ -155,7 +160,7 @@ def AllOf(*mixed: typing.Type[Model], module: str, sealed: bool = True) -> typin
             raise TypeError("%s does not support these keyword arguments: %s",
                             type(self).__name__, extra)
 
-    allOf = type("AllOf_" + "_".join(cls.__name__ for cls in mixed), mixed, {
+    allOf = type(name, mixed, {
         "openapi_types": dict(chain.from_iterable(cls.openapi_types.items() for cls in mixed)),
         "attribute_map": dict(chain.from_iterable(cls.attribute_map.items() for cls in mixed)),
         "__init__": __init__,
