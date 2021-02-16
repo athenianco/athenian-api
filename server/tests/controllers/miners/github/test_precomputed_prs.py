@@ -424,6 +424,32 @@ async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branch
     assert len(loaded_prs) == 0
 
 
+async def test_load_precomputed_done_candidates_ambiguous(pr_samples, default_branches, pdb):
+    samples, prs, settings = _gen_one_pr(pr_samples)
+    await store_precomputed_done_facts(
+        prs, [s.with_repository_full_name("src-d/go-git")
+               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
+              for s in samples],
+        default_branches, settings, pdb)
+    time_from = samples[0].created
+    time_to = samples[0].released
+    loaded_prs, ambiguous = await load_precomputed_done_candidates(
+        time_from, time_to, ["src-d/go-git"], default_branches, settings, pdb)
+    assert len(loaded_prs) == 1
+    assert len(ambiguous["src-d/go-git"]) == 1
+
+    prs[0].release[matched_by_column] = ReleaseMatch.tag
+    await store_precomputed_done_facts(
+        prs, [s.with_repository_full_name("src-d/go-git")
+               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
+              for s in samples],
+        default_branches, settings, pdb)
+    loaded_prs, ambiguous = await load_precomputed_done_candidates(
+        time_from, time_to, ["src-d/go-git"], default_branches, settings, pdb)
+    assert len(loaded_prs) == 1
+    assert len(ambiguous["src-d/go-git"]) == 0
+
+
 @with_defer
 async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, pdb, cache):
     samples, prs, settings = _gen_one_pr(pr_samples)

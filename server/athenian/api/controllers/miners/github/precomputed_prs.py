@@ -377,19 +377,19 @@ async def _load_precomputed_done_filters(columns: List[InstrumentedAttribute],
 
 
 def _post_process_ambiguous_done_prs(result: Dict[str, Mapping[str, Any]],
-                                     ambiguous: Dict[ReleaseMatch, Dict[str, Tuple[str, Any]]],
+                                     ambiguous: Dict[ReleaseMatch, Dict[str, Mapping[str, Any]]],
                                      ) -> Tuple[Dict[str, Mapping[str, Any]],
                                                 Dict[str, List[str]]]:
     """Figure out what to do with uncertain `tag_or_branch` release matches."""
     result.update(ambiguous[ReleaseMatch.tag.name])
+    repokey = GitHubDonePullRequestFacts.repository_full_name.key
     # We've found PRs released by tag belonging to these repos.
     # This means that we are going to load tags in load_releases().
-    confirmed_tag_repos = {p[0] for p in ambiguous[ReleaseMatch.tag.name].values()}
+    confirmed_tag_repos = {obj[repokey] for obj in ambiguous[ReleaseMatch.tag.name].values()}
     ambiguous_prs = defaultdict(list)
-    for node_id, map in ambiguous[ReleaseMatch.branch.name].items():
-        repo = map[GitHubDonePullRequestFacts.repository_full_name.key]
-        if repo not in confirmed_tag_repos:
-            result[node_id] = map
+    for node_id, obj in ambiguous[ReleaseMatch.branch.name].items():
+        if (repo := obj[repokey]) not in confirmed_tag_repos:
+            result[node_id] = obj
             ambiguous_prs[repo].append(node_id)
     return result, ambiguous_prs
 
