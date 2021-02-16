@@ -7,7 +7,6 @@ from http import HTTPStatus
 import logging
 import os
 from pathlib import Path
-from random import random
 import signal
 import socket
 import time
@@ -270,9 +269,6 @@ class AthenianApp(connexion.AioHttpApp):
             self.server_name = node_name + "/" + self.server_name
         self._slack = self.app["slack"] = slack
         self._boot_time = psutil.boot_time()
-        self._sab = float(os.getenv("ATHENIAN_SABOTAGE_FACTOR", "0"))
-        if self._sab > 0:
-            self.log.warning("Sabotage of %.2f of requests", self._sab)
 
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
@@ -368,8 +364,6 @@ class AthenianApp(connexion.AioHttpApp):
         asyncio.current_task().set_name("shield %s %s" % (request.method, request.path))
 
         load = extract_handler_weight(handler)
-        if self._sab > 0 and random() < self._sab:
-            load = 100500
         if (new_load := self._load + load) > self._max_load:
             self.log.warning("Rejecting the request, too much load: %.1f > %.1f",
                              new_load, self._max_load)
