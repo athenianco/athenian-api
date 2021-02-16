@@ -67,7 +67,7 @@ def _postprocess_cached_facts(result: Tuple[Dict[str, List[PullRequestFacts]], b
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, fresh, **_:  # noqa
+    key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, fresh, with_jira_map, **_:  # noqa
     (
         time_from,
         time_to,
@@ -75,6 +75,7 @@ def _postprocess_cached_facts(result: Tuple[Dict[str, List[PullRequestFacts]], b
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
         labels,
         jira,
+        with_jira_map,
         exclude_inactive,
         release_settings,
         fresh,

@@ -1284,6 +1284,29 @@ async def test_release_metrics_participants_multiple(client, headers):
     assert models[0].values[0].values[0] == 12
 
 
+async def test_release_metrics_participants_groups(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [["github.com/src-d/go-git"]],
+        "with": [{"releaser": ["github.com/mcuadros"]},
+                 {"pr_author": ["github.com/smola"]}],
+        "metrics": [ReleaseMetricID.RELEASE_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+    assert len(models) == 2
+    assert models[0].values[0].values[0] == 21
+    assert models[1].values[0].values[0] == 4
+
+
 @pytest.mark.parametrize("account, date_to, quantiles, extra_metrics, in_, code",
                          [(3, "2020-02-22", [0, 1], [], "{1}", 404),
                           (2, "2020-02-22", [0, 1], [], "github.com/src-d/go-git", 422),
