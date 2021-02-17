@@ -47,7 +47,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                       last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
                       issues_count=1, kind="component"),
             JIRALabel(title="accounts",
-                      last_used=datetime(2020, 4, 3, 18, 47, 43, tzinfo=tzutc()),
+                      last_used=datetime(2020, 12, 15, 10, 16, 15, tzinfo=tzutc()),
                       issues_count=1, kind="regular"),
             JIRALabel(title="bug",
                       last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
@@ -161,15 +161,15 @@ async def test_filter_jira_return(client, headers, return_, checked):
         assert model.epics is None
     if "issue_types" in checked:
         assert model.issue_types == [
-            JIRAIssueType(name="Design document", count=10, project="<not implemented>",
+            JIRAIssueType(name="Design document", count=10, project="10003",
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Epic", count=2, project="<not implemented>",
+            JIRAIssueType(name="Epic", count=2, project="10003",
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Story", count=49, project="<not implemented>",
+            JIRAIssueType(name="Story", count=49, project="10003",
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10315&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Subtask", count=98, project="<not implemented>",
+            JIRAIssueType(name="Subtask", count=98, project="10003",
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Task", count=9, project="<not implemented>",
+            JIRAIssueType(name="Task", count=9, project="10003",
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype"),  # noqa
         ]
     else:
@@ -296,39 +296,41 @@ async def test_filter_jira_no_time(client, headers):
 
 @pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [
     [False, 38, 54, [
-        JIRAIssueType(name="Bug", count=260, project="<not implemented>",
+        JIRAIssueType(name="Bug", count=260, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Design Document", count=10, project="<not implemented>",
+        JIRAIssueType(name="Design Document", count=10, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Design document", count=1, project="<not implemented>",
+        JIRAIssueType(name="Design document", count=1, project="10003",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=54, project="<not implemented>",
+        JIRAIssueType(name="Epic", count=54, project="10009",
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
-        JIRAIssueType(name="Incident", count=7, project="<not implemented>",
+        JIRAIssueType(name="Incident", count=7, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Story", count=81, project="<not implemented>",
+        JIRAIssueType(name="Story", count=81, project="10009",
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
-        JIRAIssueType(name="Sub-task", count=75, project="<not implemented>",
+        JIRAIssueType(name="Sub-task", count=75, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Subtask", count=1, project="<not implemented>",
+        JIRAIssueType(name="Subtask", count=1, project="10003",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Task", count=516, project="<not implemented>",
+        JIRAIssueType(name="Task", count=516, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
      15, 6],
-    [True, 31, 15, [
-        JIRAIssueType(name="Bug", count=78, project="<not implemented>",
+    [True, 36, 41, [
+        JIRAIssueType(name="Bug", count=139, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=15, project="<not implemented>",
+        JIRAIssueType(name="Design Document", count=5, project="10009",
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Epic", count=41, project="10009",
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
-        JIRAIssueType(name="Incident", count=3, project="<not implemented>",
+        JIRAIssueType(name="Incident", count=3, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Story", count=11, project="<not implemented>",
+        JIRAIssueType(name="Story", count=30, project="10009",
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
-        JIRAIssueType(name="Sub-task", count=19, project="<not implemented>",
+        JIRAIssueType(name="Sub-task", count=49, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Task", count=131, project="<not implemented>",
+        JIRAIssueType(name="Task", count=265, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
-     11, 6],
+     13, 6],
 ])
 async def test_filter_jira_exclude_inactive(
         client, headers, exclude_inactive, labels, epics, types, users, priorities):
@@ -367,7 +369,7 @@ async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
     assert response.status == 200, "Response body is : " + body
     model = FilteredJIRAStuff.from_dict(json.loads(body))
     assert model.labels == [
-        JIRALabel(title="accounts", last_used=datetime(2020, 4, 3, 18, 47, 43, tzinfo=tzutc()),
+        JIRALabel(title="accounts", last_used=datetime(2020, 12, 15, 10, 16, 15, tzinfo=tzutc()),
                   issues_count=1, kind="regular"),
         JIRALabel(title="bug", last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
                   issues_count=16, kind="regular"),
@@ -398,15 +400,15 @@ async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
                  children=[]),
     ]
     assert model.issue_types == [
-        JIRAIssueType(name="Design document", count=10, project="<not implemented>",
+        JIRAIssueType(name="Design document", count=10, project="10003",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=1, project="<not implemented>",
+        JIRAIssueType(name="Epic", count=1, project="10003",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Story", count=49, project="<not implemented>",
+        JIRAIssueType(name="Story", count=49, project="10003",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10315&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Subtask", count=98, project="<not implemented>",
+        JIRAIssueType(name="Subtask", count=98, project="10003",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Task", count=4, project="<not implemented>",
+        JIRAIssueType(name="Task", count=4, project="10003",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype"),  # noqa
     ]
 
@@ -488,14 +490,14 @@ async def test_filter_jira_issue_prs(client, headers):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     model = FilteredJIRAStuff.from_dict(json.loads(body))
-    assert len(model.issues) == 394
+    assert len(model.issues) == 562
     prs = 0
     for issue in model.issues:
         prs += bool(issue.prs)
         for pr in issue.prs:
             assert pr.number > 0
             assert not pr.jira
-    assert prs == 11
+    assert prs == 15
 
 
 @pytest.mark.parametrize("account, date_to, timezone, status", [
@@ -761,7 +763,7 @@ async def test_jira_metrics_teams(client, headers):
 
 @pytest.mark.parametrize("metric, exclude_inactive, n", [
     (JIRAMetricID.JIRA_OPEN, False, 208),
-    (JIRAMetricID.JIRA_OPEN, True, 196),
+    (JIRAMetricID.JIRA_OPEN, True, 199),
     (JIRAMetricID.JIRA_RESOLVED, False, 850),
     (JIRAMetricID.JIRA_RESOLVED, True, 850),
     (JIRAMetricID.JIRA_RESOLUTION_RATE, False, 0.9594137542277339),
