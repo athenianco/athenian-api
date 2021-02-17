@@ -72,15 +72,19 @@ async def load_releases(repos: Iterable[str],
     if repos_count == 0:
         log.warning("no repositories")
         return dummy_releases_df(), {}
+    # the order is critically important! first fetch the spans, then the releases
+    # because when the update transaction commits, we can be otherwise half-way through
+    # strictly speaking, there is still no guarantee with our order, but it is enough for
+    # passing the unit tests
     tasks = [
+        fetch_precomputed_release_match_spans(match_groups, pdb),
         _fetch_precomputed_releases(
             match_groups,
             time_from - tag_by_branch_probe_lookaround,
             time_to + tag_by_branch_probe_lookaround,
             pdb, index=index),
-        fetch_precomputed_release_match_spans(match_groups, pdb),
     ]
-    releases, spans = await gather(*tasks)
+    spans, releases = await gather(*tasks)
 
     def gather_applied_matches():
         # nlargest(1) puts `tag` in front of `branch` for `tag_or_branch` repositories with both
@@ -199,7 +203,7 @@ async def load_releases(repos: Iterable[str],
         async def store_precomputed_releases():
             # we must execute these in sequence to stay consistent
             async with pdb.connection() as pdb_conn:
-                # the transaction is necessary to support pgbouncer
+                # the updates must be integer so we take a transaction
                 async with pdb_conn.transaction():
                     await _store_precomputed_releases(
                         missings, default_branches, settings, pdb_conn)

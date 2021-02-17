@@ -270,20 +270,31 @@ class AthenianApp(connexion.AioHttpApp):
         self._slack = self.app["slack"] = slack
         self._boot_time = psutil.boot_time()
 
+    def __del__(self):
+        """Check that shutdown() was called."""
+        assert not self._pdb_schema_task_box
+        assert not self._db_futures
+        assert self.mdb is None
+        assert self.sdb is None
+        assert self.pdb is None
+
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
         if not self._shutting_down:
             self.log.warning("Shutting down disgracefully")
         if self._pdb_schema_task_box:
             self._pdb_schema_task_box[0].cancel()
+            self._pdb_schema_task_box.clear()
         await self._auth0.close()
         if self._kms is not None:
             await self._kms.close()
         for f in self._db_futures.values():
             f.cancel()
+        self._db_futures.clear()
         for db in (self.mdb, self.sdb, self.pdb):
             if db is not None:
                 await db.disconnect()
+        self.mdb = self.sdb = self.pdb = None
         if self._cache is not None:
             if (f := getattr(self._cache, "version_future", None)) is not None:
                 f.cancel()
