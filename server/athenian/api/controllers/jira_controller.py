@@ -191,7 +191,7 @@ async def _epic_flow(return_: Set[str],
             Issue.key.key,
             Issue.title.key,
             Issue.created.key,
-            Issue.updated.key,  # FIXME(vmarkovtsev): use AthenianIssue.updated
+            AthenianIssue.updated.key,
             ISSUE_PRS_BEGAN,
             AthenianIssue.work_began.key,
             ISSUE_PRS_RELEASED,
@@ -229,7 +229,7 @@ async def _epic_flow(return_: Set[str],
                 Issue.key.key,
                 Issue.title.key,
                 Issue.created.key,
-                Issue.updated.key,  # FIXME(vmarkovtsev): use AthenianIssue.updated
+                AthenianIssue.updated.key,
                 ISSUE_PRS_BEGAN,
                 AthenianIssue.work_began.key,
                 ISSUE_PRS_RELEASED,
@@ -534,14 +534,15 @@ async def _issue_flow(return_: Set[str],
     max_issue_types = {}
     for row in issue_types:
         name = row[IssueType.name.key]
-        max_count, _ = max_issue_types.get(name, (0, ""))
+        max_count, _, _ = max_issue_types.get(name, (0, "", ""))
         if (count := project_counts[row[IssueType.project_id.key]]) > max_count:
-            max_issue_types[name] = count, row[IssueType.icon_url.key]
+            max_issue_types[name] = \
+                count, row[IssueType.icon_url.key], row[IssueType.project_id.key]
     issue_types = [JIRAIssueType(name=name,
                                  image=image,
                                  count=issue_type_counts[name],
-                                 project="<not implemented>")
-                   for name, (_, image) in sorted(max_issue_types.items())] or None
+                                 project=project)
+                   for name, (_, image, project) in sorted(max_issue_types.items())] or None
     if JIRAFilterReturn.LABELS in return_:
         for updated, issue_components in zip(issues[Issue.updated.key],
                                              issues[Issue.components.key].values):
@@ -568,7 +569,7 @@ async def _issue_flow(return_: Set[str],
                 Issue.key.key,
                 Issue.title.key,
                 Issue.created.key,
-                Issue.updated.key,  # FIXME(vmarkovtsev): use AthenianIssue.updated
+                AthenianIssue.updated.key,
                 ISSUE_PRS_BEGAN,
                 AthenianIssue.work_began.key,
                 ISSUE_PRS_RELEASED,

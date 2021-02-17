@@ -366,7 +366,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
         Issue.id,
         Issue.type,
         Issue.created,
-        Issue.updated,
+        AthenianIssue.updated,
         AthenianIssue.work_began,
         AthenianIssue.resolved,
         Issue.priority_name,
@@ -386,8 +386,8 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
     if time_to is not None:
         and_filters.append(Issue.created < time_to)
     if exclude_inactive and time_from is not None:
-        and_filters.append(Issue.updated >= time_from)
-        # FIXME(vmarkovtsev): replace with AthenianIssue.updated >= time_from from DEV-1654
+        and_filters.append(AthenianIssue.acc_id == ids[0])
+        and_filters.append(AthenianIssue.updated >= time_from)
     if len(priorities):
         and_filters.append(sql.func.lower(Issue.priority_name).in_(priorities))
     if len(types):

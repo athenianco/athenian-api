@@ -93,6 +93,7 @@ class AthenianIssue(Base):
     id = Column(Text, primary_key=True)
     work_began = Column(TIMESTAMP(timezone=True))
     resolved = Column(TIMESTAMP(timezone=True))
+    updated = Column(TIMESTAMP(timezone=True))
 
 
 class Installation(Base):

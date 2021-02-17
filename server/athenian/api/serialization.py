@@ -175,7 +175,11 @@ class FriendlyJson:
         """Wrap json.dumps to str() unsupported objects."""
         if "cls" in kwargs:
             del kwargs["cls"]
-        return json.dumps(data, default=klass.serialize, **kwargs)
+        try:
+            return json.dumps(data, default=klass.serialize, **kwargs)
+        except AssertionError as e:
+            e.args += (data,)
+            raise e from None
 
     loads = staticmethod(json.loads)
 
