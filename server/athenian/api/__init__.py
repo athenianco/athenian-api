@@ -15,6 +15,7 @@ import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
 import databases
+from flogging import flogging
 import jinja2
 import numpy
 import pandas
@@ -36,11 +37,10 @@ from athenian.api.kms import AthenianKMS
 from athenian.api.models import check_alembic_schema_version, check_collation, \
     DBSchemaMismatchError
 from athenian.api.models.metadata import check_schema_version as check_mdb_schema_version
-from athenian.api.slogging import add_logging_args, trailing_dot_exceptions
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
 
-trailing_dot_exceptions.update((
+flogging.trailing_dot_exceptions.update((
     "connexion.api.security",
     "connexion.apis.aiohttp_api",
 ))
@@ -96,7 +96,14 @@ def parse_args() -> argparse.Namespace:
                            Path to the JSON file with Google Cloud credentions to access KMS
   """,  # noqa
                                      formatter_class=Formatter)
-    add_logging_args(parser)
+
+    def level_from_msg(msg: str) -> Optional[str]:
+        if "GET /status" in msg or "before send dropped event" in msg:
+            # these aiohttp access logs are annoying
+            return "debug"
+        return None
+
+    flogging.add_logging_args(parser, level_from_msg=level_from_msg)
     parser.add_argument("--host", default="0.0.0.0", help="HTTP server host.")
     parser.add_argument("--port", type=int, default=8080, help="HTTP server port.")
     parser.add_argument("--metadata-db",
@@ -359,6 +366,5 @@ def main() -> Optional[AthenianApp]:
         ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache, slack=slack,
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
         max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)))
-    app.run(host=args.host, port=args.port, use_default_access_log=True, handle_signals=False,
-            print=lambda s: log.info("\n" + s))
+    app.run(host=args.host, port=args.port, print=lambda s: log.info("\n" + s))
     return app

@@ -12,15 +12,15 @@ import traceback
 from typing import Collection, Optional, Set, Tuple
 
 import aiomcache
+from flogging import flogging
 import numpy as np
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, desc, func, insert, select, update
 from tqdm import tqdm
 
-from athenian.api import add_logging_args, check_schema_versions, compose_db_options, \
-    create_memcached, create_slack, \
-    patch_pandas, setup_context
+from athenian.api import check_schema_versions, compose_db_options, create_memcached, \
+    create_slack, patch_pandas, setup_context
 from athenian.api.async_utils import gather
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers.account import copy_teams_as_needed, generate_jira_invitation_link, \
@@ -52,7 +52,7 @@ from athenian.api.response import ResponseError
 
 def _parse_args():
     parser = argparse.ArgumentParser()
-    add_logging_args(parser)
+    flogging.add_logging_args(parser)
     parser.add_argument("--metadata-db", required=True,
                         help="Metadata DB endpoint, e.g. postgresql://0.0.0.0:5432/metadata")
     parser.add_argument("--precomputed-db", required=True,

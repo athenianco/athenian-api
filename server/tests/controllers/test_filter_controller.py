@@ -1719,6 +1719,7 @@ async def test_diff_releases_smoke(client, headers):
     assert dr.data["github.com/src-d/go-git"][0].new == "v4.4.0"
 
 
+@pytest.mark.flaky(reruns=3)
 @with_defer
 async def test_diff_releases_commits(
         client, headers, mdb, pdb, release_match_setting_branch, branches, default_branches):

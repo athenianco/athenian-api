@@ -7,6 +7,7 @@ from http import HTTPStatus
 import logging
 import os
 from pathlib import Path
+import re
 import signal
 import socket
 import time
@@ -23,6 +24,7 @@ from connexion.apis import aiohttp_api
 from connexion.exceptions import ConnexionException
 import connexion.lifecycle
 from connexion.spec import OpenAPISpecification
+from flogging import flogging
 import psutil
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
@@ -43,7 +45,6 @@ from athenian.api.models.precomputed.schema_monitor import schedule_pdb_schema_c
 from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
-from athenian.api.slogging import log_multipart
 from athenian.api.tracing import InfiniteString, MAX_SENTRY_STRING_LENGTH
 
 
@@ -89,7 +90,7 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
         if sentry_sdk.Hub.current.scope.transaction is not None:
             body = req._read_bytes
             if body is not None and len(body) > MAX_SENTRY_STRING_LENGTH:
-                body_id = log_multipart(aiohttp_api.logger, body)
+                body_id = flogging.log_multipart(aiohttp_api.logger, body)
                 req._read_bytes = ('"%s"' % body_id).encode()
 
         return api_req
@@ -272,11 +273,40 @@ class AthenianApp(connexion.AioHttpApp):
 
     def __del__(self):
         """Check that shutdown() was called."""
-        assert not self._pdb_schema_task_box
-        assert not self._db_futures
-        assert self.mdb is None
-        assert self.sdb is None
-        assert self.pdb is None
+        try:
+            assert not self._pdb_schema_task_box
+            assert not self._db_futures
+            assert self.mdb is None
+            assert self.sdb is None
+            assert self.pdb is None
+        except AttributeError:
+            return
+
+    def run(self, port=None, server=None, debug=None, host=None, **options) -> None:
+        """Launch the event loop and block on serving requests."""
+        if flogging.logs_are_structured:
+            access_log_format = re.sub(r"\s+", " ", """
+                {"ip": "%a",
+                 "start_time": "%t",
+                 "request": "%r",
+                 "status": %s,
+                 "response_size": %b,
+                 "referrer": "%{Referer}i",
+                 "user_agent": "%{User-Agent}i",
+                 "user": "%{User}o",
+                 "elapsed": %Tf,
+                 "performance_db": "%{X-Performance-DB}o"}
+            """.strip())
+        else:
+            access_log_format = '%a %t "%r" %s %b "%{User-Agent}i" "%{User}o"'
+        super().run(port=port,
+                    server=server,
+                    debug=debug,
+                    host=host,
+                    use_default_access_log=True,
+                    handle_signals=False,
+                    access_log_format=access_log_format,
+                    **options)
 
     async def shutdown(self, app: aiohttp.web.Application) -> None:
         """Free resources associated with the object."""
@@ -343,6 +373,8 @@ class AthenianApp(connexion.AioHttpApp):
         """Append X-Backend-Server HTTP header."""
         response = await handler(request)  # type: aiohttp.web.Response
         response.headers.add("X-Backend-Server", self.server_name)
+        if (uid := getattr(request, "uid", None)) is not None:
+            response.headers.add("User", uid)
         try:
             if len(response.body) > 1000:
                 response.enable_compression()
