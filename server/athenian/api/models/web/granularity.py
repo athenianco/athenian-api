@@ -10,7 +10,7 @@ from athenian.api.models.web.base_model_ import Model
 class Granularity(Model):
     """Time frequency."""
 
-    format = re.compile(r"^(([1-9]\d* )?(day|week|month|year)|all)$")
+    format = re.compile(r"all|(([1-9]\d* )?(aligned )?(day|week|month|year))")
 
     @classmethod
     def split(cls, value: str, date_from: date, date_to: date) -> List[date]:
@@ -24,12 +24,12 @@ class Granularity(Model):
         assert date_from <= date_to
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
-        match = cls.format.match(value)
+        match = cls.format.fullmatch(value)
         if not match:
             raise ValueError("Invalid granularity format: " + value)
         if value == "all":
             return [date_from, date_to + timedelta(days=1)]
-        _, step, base = match.groups()
+        _, step, aligned, base = match.groups()
         if step is None:
             step = 1
         freq = {
@@ -38,7 +38,14 @@ class Granularity(Model):
             "month": MONTHLY,
             "year": YEARLY,
         }[base]
-        unsampled = [d.date() for d in rrule(freq, dtstart=date_from, until=date_to)]
+        if aligned and base != "day":
+            alignment = {"by%sday" % base: 1 if base != "week" else 0}
+        else:
+            alignment = {}
+        unsampled = [d.date() for d in rrule(freq, dtstart=date_from, until=date_to, **alignment)]
+        if not unsampled or unsampled[0] != date_from:
+            # happens because of the alignment
+            unsampled.insert(0, date_from)
         series = unsampled[::int(step)]
         series.append(date_to + timedelta(days=1))
         return series
