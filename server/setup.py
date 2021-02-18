@@ -33,8 +33,8 @@ setup(
         code_root / "controllers" / "miners" / "github" / "dag_accelerated.pyx")),
     namespace_packages=["athenian"],
     keywords=[],
-    install_requires=[],
-    tests_require=[],
+    install_requires=[],  # see requirements.txt
+    tests_require=[],  # see requirements-test.txt
     package_data={
         "": ["*.md", "*.jinja2", "*.mako"],
         "athenian": ["../requirements.txt"],
