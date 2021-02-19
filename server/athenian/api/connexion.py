@@ -40,7 +40,9 @@ from athenian.api.db import add_pdb_metrics_context, measure_db_overhead_and_ret
     ParallelDatabase
 from athenian.api.defer import enable_defer, launch_defer, wait_all_deferred, wait_deferred
 from athenian.api.kms import AthenianKMS
-from athenian.api.models.metadata import dereference_schemas
+from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
+from athenian.api.models.persistentdata import \
+    dereference_schemas as dereference_persistentdata_schemas
 from athenian.api.models.precomputed.schema_monitor import schedule_pdb_schema_check
 from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
@@ -250,8 +252,11 @@ class AthenianApp(connexion.AioHttpApp):
                 if shortcut == "pdb":
                     db.metrics = pdbctx
                     self._pdb_schema_task_box = schedule_pdb_schema_check(db, self.app)
-                elif shortcut == "mdb" and db.url.dialect == "sqlite":
-                    dereference_schemas()
+                elif db.url.dialect == "sqlite":
+                    if shortcut == "mdb":
+                        dereference_metadata_schemas()
+                    elif shortcut == "rdb":
+                        dereference_persistentdata_schemas()
             except Exception as e:
                 if isinstance(e, asyncio.CancelledError):
                     return

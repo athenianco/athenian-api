@@ -85,6 +85,7 @@ from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.mapped_jira_identity import MappedJIRAIdentity
 from athenian.api.models.web.mapped_jira_identity_change import MappedJIRAIdentityChange
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
+from athenian.api.models.web.notify_release_request import NotifyReleaseRequest
 from athenian.api.models.web.organization import Organization
 from athenian.api.models.web.paginate_pull_requests_request import PaginatePullRequestsRequest
 from athenian.api.models.web.patch_token_request import PatchTokenRequest
@@ -111,6 +112,7 @@ from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_metrics_request import ReleaseMetricsRequest
 from athenian.api.models.web.release_names import ReleaseNames
+from athenian.api.models.web.release_notification import ReleaseNotification
 from athenian.api.models.web.release_pair import ReleasePair
 from athenian.api.models.web.release_set import ReleaseSet, ReleaseSetInclude
 from athenian.api.models.web.release_with import ReleaseWith

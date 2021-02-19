@@ -130,6 +130,7 @@ paths:
           description: The account was not found.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: List the product features enabled for the account.
       tags:
       - user
@@ -231,6 +232,56 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
+      x-codegen-request-body-name: body
+  /events/releases:
+    post:
+      operationId: notify_release
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotifyReleaseRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Empty object indicates a successful notification.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Current user is not allowed to access the specified repositories.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
+      security:
+      - apiKeyAuth: []
+      summary: Notify about new releases. The release settings must be set to "event".
+      tags:
+      - events
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.events_controller
       x-codegen-request-body-name: body
   /filter/commits:
     post:
@@ -364,6 +415,7 @@ paths:
           description: The account was not found.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Find various JIRA entities relevant to the specified date interval.
       tags:
       - filter
@@ -1345,6 +1397,7 @@ paths:
           description: The account's installation has not finished yet.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Compute the balanced pagination plan for `/filter/pull_requests`.
       tags:
       - pagination
@@ -1666,6 +1719,7 @@ paths:
           description: The JIRA installation does not exist.
       security:
       - bearerAuth: []
+      - apiKeyAuth: []
       summary: Fetch the GitHub<>JIRA user identity mapping.
       tags:
       - settings
@@ -4803,10 +4857,12 @@ components:
       description: |-
         Release workflow choice: how we should detect releases.
         * `branch`: merges to certain branches are considered releases and nothing else.
+        * `event`: releases are manually registered with `POST /events/releases`.
         * `tag`: tags with certain name patterns are considered releases and nothing else.
         * `tag_or_branch`: follow "tag"; if the repository does not have tags, fallback to "branch".
       enum:
       - branch
+      - event
       - tag
       - tag_or_branch
       type: string
@@ -6829,4 +6885,46 @@ components:
       required:
       - developer_id
       - jira_name
+      type: object
+    NotifyReleaseRequest:
+      items:
+        $ref: '#/components/schemas/ReleaseNotification'
+      type: array
+    CommitHash:
+      description: Commit hash, either short (7 chars) or long (40 chars) form.
+      maxLength: 40
+      minLength: 7
+      type: string
+    ReleaseNotification:
+      additionalProperties: false
+      example:
+        author: Vadim Markovtsev
+        commit: c3f4d3a
+        name: 0.8.66
+        repository: github.com/athenianco/athenian-api
+        published_at: 2021-02-23T15:17:07.000+01:00
+        url: https://github.com/athenianco/athenian-api/releases/tag/v0.8.66
+      description: Push message about a custom release event.
+      properties:
+        repository:
+          $ref: '#/components/schemas/RepositoryID'
+        commit:
+          $ref: '#/components/schemas/CommitHash'
+        name:
+          description: Release name.
+          type: string
+        author:
+          description: Release author.
+          type: string
+        url:
+          description: Release URL.
+          format: url
+          type: string
+        published_at:
+          description: When the release was created. If missing, set to `now()`.
+          format: date-time
+          type: string
+      required:
+      - commit
+      - repository
       type: object

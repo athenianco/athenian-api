@@ -41,8 +41,11 @@ from athenian.api.controllers.settings import ReleaseMatch, Settings
 import athenian.api.db
 from athenian.api.db import ParallelDatabase
 from athenian.api.defer import enable_defer, wait_deferred
-from athenian.api.models.metadata import dereference_schemas, PREFIXES
+from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas, \
+    PREFIXES
 from athenian.api.models.metadata.github import NodePullRequest, NodeUser, PullRequestLabel, User
+from athenian.api.models.persistentdata import \
+    dereference_schemas as dereference_persistentdata_schemas
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts
 from athenian.api.models.state.models import Account, RepositorySet, Team, UserAccount
@@ -111,7 +114,8 @@ def main():
             "misses": ContextVar("pdb_misses", default=defaultdict(int)),
         }
         if mdb.url.dialect == "sqlite":
-            dereference_schemas()
+            dereference_metadata_schemas()
+            dereference_persistentdata_schemas()
 
         account_progress_settings = {}
         accounts = [r[0] for r in await sdb.fetch_all(select([Account.id]))]
