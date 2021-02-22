@@ -36,7 +36,7 @@ from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_
     ISSUE_PRS_BEGAN, \
     ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
-from athenian.api.models.metadata.github import PullRequest
+from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
     Priority, Status, User
 from athenian.api.models.state.models import MappedJIRAIdentity
@@ -500,8 +500,11 @@ async def _issue_flow(return_: Set[str],
             load_precomputed_done_facts_ids(pr_ids, default_branches, release_settings, pdb),
         ]
         prs_df, (facts, ambiguous) = await gather(*tasks)
+        related_branches = branches.take(np.nonzero(np.in1d(
+            branches[Branch.repository_full_name.key].values.astype("U"),
+            prs_df[PullRequest.repository_full_name.key].unique().astype("U")))[0])
         mined_prs, dfs, facts, _ = await unwrap_pull_requests(
-            prs_df, facts, ambiguous, False, branches, default_branches, release_settings,
+            prs_df, facts, ambiguous, False, related_branches, default_branches, release_settings,
             meta_ids, mdb, pdb, cache)
         miner = PullRequestListMiner(
             mined_prs, dfs, facts, set(), set(),
