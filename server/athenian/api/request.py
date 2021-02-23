@@ -15,6 +15,7 @@ class AthenianWebRequest(web.Request):
         * mdb              Global metadata DB instance.
         * sdb              Global state DB instance.
         * pdb              Global precomputed objects DB instance.
+        * rdb              Global persistentdata DB instance.
         * cache            Global memcached client. Can be None.
         * uid              Requesting user Auth0 ID, e.g. "github|60340680".
         * user             Coroutine to load the full user profile.
@@ -26,6 +27,7 @@ class AthenianWebRequest(web.Request):
     mdb: databases.Database
     sdb: databases.Database
     pdb: databases.Database
+    rdb: databases.Database
     cache: Optional[aiomcache.Client]  # can be None
     user: Callable[[], Coroutine[None, None, User]]
     uid: str

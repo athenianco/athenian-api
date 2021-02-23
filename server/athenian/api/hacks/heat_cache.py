@@ -59,6 +59,9 @@ def _parse_args():
                         help="Precomputed DB endpoint, e.g. postgresql://0.0.0.0:5432/precomputed")
     parser.add_argument("--state-db", required=True,
                         help="State DB endpoint, e.g. postgresql://0.0.0.0:5432/state")
+    parser.add_argument("--persistentdata-db", required=True,
+                        help="Persistentdata DB endpoint, e.g. "
+                             "postgresql://0.0.0.0:5432/persistentdata")
     parser.add_argument("--memcached", required=True,
                         help="memcached address, e.g. 0.0.0.0:11211")
     return parser.parse_args()
