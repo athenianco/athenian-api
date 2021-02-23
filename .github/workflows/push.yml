@@ -123,6 +123,7 @@ jobs:
       SDB: sqlite:///tests/sdb-master.sqlite
       MDB: sqlite:///tests/mdb-master.sqlite
       PDB: sqlite:///tests/pdb-master.sqlite
+      RDB: sqlite:///tests/rdb-master.sqlite
     steps:
     - name: actions/checkout
       uses: actions/checkout@v2
@@ -147,7 +148,8 @@ jobs:
         PGPASSWORD: postgres
         SDB: postgresql://postgres:postgres@0.0.0.0:5432/state_%s?min_size=2&max_size=3
         MDB: postgresql://postgres:postgres@0.0.0.0:5432/metadata_%s?min_size=2&max_size=8
-        PDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed_%s?min_size=2&max_size=5
+        PDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed_%s?min_size=2&max_size=6
+        RDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed_%s?min_size=2&max_size=5
       run: |
         psql -c "create database state_gw0 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
         psql -c "create database state_gw1 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
@@ -158,12 +160,17 @@ jobs:
         psql -c "create database precomputed_gw0 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
         psql -c "create database precomputed_gw1 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
         psql -c "create database precomputed_master template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database persistentdata_gw0 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database persistentdata_gw1 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
+        psql -c "create database persistentdata_master template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
         echo "SDB=$SDB" >> $GITHUB_ENV
         echo "MDB=$MDB" >> $GITHUB_ENV
         echo "PDB=$PDB" >> $GITHUB_ENV
+        echo "RDB=$RDB" >> $GITHUB_ENV
         echo "OVERRIDE_SDB=$SDB" >> $GITHUB_ENV
         echo "OVERRIDE_MDB=$MDB" >> $GITHUB_ENV
         echo "OVERRIDE_PDB=$PDB" >> $GITHUB_ENV
+        echo "OVERRIDE_RDB=$RDB" >> $GITHUB_ENV
     - name: setup Google KMS
       run: |
         echo $GOOGLE_KMS_SERVICE_ACCOUNT_B64 | base64 -d > google_service.json
@@ -199,12 +206,14 @@ jobs:
         export SDB=${SDB/\%s/master}
         export MDB=${MDB/\%s/master}
         export PDB=${PDB/\%s/master}
+        export RDB=${RDB/\%s/master}
         export OVERRIDE_SDB=$SDB
         export OVERRIDE_PDB=$PDB
+        export OVERRIDE_RDB=$RDB
         PYTHONPATH=. PRECOMPUTED=0 python3 tests/gen_mock_db.py
-        coverage run --source athenian.api -m athenian.api.hacks.heat_cache --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --memcached=0.0.0.0:11211
+        coverage run --source athenian.api -m athenian.api.hacks.heat_cache --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --persistentdata-db=$RDB --memcached=0.0.0.0:11211
         # the second run should not crash
-        python3 -m athenian.api.hacks.heat_cache --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --memcached=0.0.0.0:11211
+        python3 -m athenian.api.hacks.heat_cache --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --persistentdata-db=$RDB --memcached=0.0.0.0:11211
         coverage xml
     - uses: codecov/codecov-action@v1
       name: codecov
