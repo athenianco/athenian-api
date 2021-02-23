@@ -32,7 +32,7 @@ def parse_args():
 def main():
     args = parse_args()
     metadata_db("master")
-    for letter, name in (("s", "state"), ("p", "precomputed")):
+    for letter, name in (("s", "state"), ("p", "precomputed"), ("r", "persistentdata")):
         db_path = db_dir / ("%sdb-master.sqlite" % letter)
         if db_path.exists():
             db_path.unlink()

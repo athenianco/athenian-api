@@ -63,6 +63,7 @@ patch_pandas()
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".sqlite")
 pdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.precomputed.", suffix=".sqlite")
+rdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.persistentdata.", suffix=".sqlite")
 assert Auth0.KEY == os.environ["ATHENIAN_INVITATION_KEY"], "athenian.api was imported before tests"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
 account.jira_url_template = invitation_controller.jira_url_template = \
@@ -70,6 +71,7 @@ account.jira_url_template = invitation_controller.jira_url_template = \
 override_mdb = os.getenv("OVERRIDE_MDB")
 override_sdb = os.getenv("OVERRIDE_SDB")
 override_pdb = os.getenv("OVERRIDE_PDB")
+override_rdb = os.getenv("OVERRIDE_RDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
 logging.getLogger("aiosqlite").setLevel(logging.CRITICAL)
 
@@ -275,11 +277,18 @@ def slack():
 
 
 @pytest.fixture(scope="function")
-async def app(metadata_db, state_db, precomputed_db, slack) -> AthenianApp:
+async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
-    return AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, pdb_conn=precomputed_db,
-                       ui=False, auth0_cls=TestAuth0, kms_cls=FakeKMS, slack=slack,
-                       client_max_size=256 * 1024, max_load=15)
+    return AthenianApp(mdb_conn=metadata_db,
+                       sdb_conn=state_db,
+                       pdb_conn=precomputed_db,
+                       rdb_conn=persistentdata_db,
+                       ui=False,
+                       auth0_cls=TestAuth0,
+                       kms_cls=FakeKMS,
+                       slack=slack,
+                       client_max_size=256 * 1024,
+                       max_load=15)
 
 
 @pytest.fixture(scope="function")

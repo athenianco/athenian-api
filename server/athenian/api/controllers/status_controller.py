@@ -216,50 +216,31 @@ def setup_status(app) -> prometheus_client.CollectorRegistry:
         ["app_name", "version", "endpoint", "method"],
         registry=registry,
     )
-    app["state_db_latency"] = prometheus_client.Histogram(
-        "state_db_latency_seconds", "State DB latency",
-        ["app_name", "version", "endpoint"],
-        registry=registry,
-    )
     db_latency_buckets = [
         0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0,
         1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
         12.0, 15.0, 20.0, 25.0, 30.0,
         45.0, 60.0, 120.0, 180.0, 240.0, prometheus_client.metrics.INF]
-    app["metadata_db_latency"] = prometheus_client.Histogram(
-        "metadata_db_latency_seconds", "Metadata DB latency",
-        ["app_name", "version", "endpoint"],
-        buckets=db_latency_buckets,
-        registry=registry,
-    )
-    app["precomputed_db_latency"] = prometheus_client.Histogram(
-        "precomputed_db_latency_seconds", "Precomputed DB latency",
-        ["app_name", "version", "endpoint"],
-        buckets=db_latency_buckets,
-        registry=registry,
-    )
+    for db in ("state", "metadata", "precomputed", "persistentdata"):
+        app["%s_db_latency" % db] = prometheus_client.Histogram(
+            "%s_db_latency_seconds" % db,
+            "%s%s DB latency" % (db[0].upper(), db[1:]),
+            ["app_name", "version", "endpoint"],
+            buckets=db_latency_buckets,
+            registry=registry,
+        )
     db_ratio_buckets = [
         0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09,
         0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5,
         0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0]
-    app["state_db_latency_ratio"] = prometheus_client.Histogram(
-        "state_db_latency_ratio", "State DB latency ratio to request time",
-        ["app_name", "version", "endpoint"],
-        buckets=db_ratio_buckets,
-        registry=registry,
-    )
-    app["metadata_db_latency_ratio"] = prometheus_client.Histogram(
-        "metadata_db_latency_ratio", "Metadata DB latency ratio to request time",
-        ["app_name", "version", "endpoint"],
-        buckets=db_ratio_buckets,
-        registry=registry,
-    )
-    app["precomputed_db_latency_ratio"] = prometheus_client.Histogram(
-        "precomputed_db_latency_ratio", "Precomputed DB latency ratio to request time",
-        ["app_name", "version", "endpoint"],
-        buckets=db_ratio_buckets,
-        registry=registry,
-    )
+    for db in ("state", "metadata", "precomputed", "persistentdata"):
+        app["%s_db_latency_ratio" % db] = prometheus_client.Histogram(
+            "%s_db_latency_ratio" % db,
+            "%s%s DB latency ratio to request time" % (db[0].upper(), db[1:]),
+            ["app_name", "version", "endpoint"],
+            buckets=db_ratio_buckets,
+            registry=registry,
+        )
     app["db_elapsed"] = ContextVar("db_elapsed", default=None)
     prometheus_client.Info("server", "API server version", registry=registry).info({
         "version": __version__,

@@ -76,7 +76,11 @@ def main():
     args = _parse_args()
     setup_context(log)
     sentry_sdk.add_breadcrumb(category="origin", message="heater", level="info")
-    if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):
+    if not check_schema_versions(args.metadata_db,
+                                 args.state_db,
+                                 args.precomputed_db,
+                                 args.persistentdata_db,
+                                 log):
         return 1
     slack = create_slack(log)
     time_to = datetime.combine(date.today() + timedelta(days=1),
