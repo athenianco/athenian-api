@@ -299,6 +299,7 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
 def check_schema_versions(metadata_db: str,
                           state_db: str,
                           precomputed_db: str,
+                          persistentdata_db: str,
                           log: logging.Logger,
                           ) -> bool:
     """Validate schema versions in parallel threads."""
@@ -330,7 +331,10 @@ def check_schema_versions(metadata_db: str,
             log.exception("while checking metadata")
 
     checkers = [threading.Thread(target=check_alembic, args=args)
-                for args in (("state", state_db), ("precomputed", precomputed_db))]
+                for args in (("state", state_db),
+                             ("precomputed", precomputed_db),
+                             ("persistentdata", persistentdata_db),
+                             )]
     checkers.append(threading.Thread(target=check_metadata, args=(metadata_db,)))
     for t in checkers:
         t.start()
@@ -339,12 +343,13 @@ def check_schema_versions(metadata_db: str,
     return passed
 
 
-def compose_db_options(mdb: str, sdb: str, pdb: str) -> Dict[str, Dict[str, Any]]:
+def compose_db_options(mdb: str, sdb: str, pdb: str, rdb: str) -> Dict[str, Dict[str, Any]]:
     """Create the kwargs for each of the three databases.Database __init__-s."""
     result = {"mdb_options": {},
               "sdb_options": {},
-              "pdb_options": {}}
-    for url, dikt in zip((mdb, sdb, pdb), result.values()):
+              "pdb_options": {},
+              "rdb_options": {}}
+    for url, dikt in zip((mdb, sdb, pdb, rdb), result.values()):
         if databases.DatabaseURL(url).dialect in ("postgres", "postgresql"):
             # enable PgBouncer
             dikt["statement_cache_size"] = 0
@@ -357,7 +362,11 @@ def main() -> Optional[AthenianApp]:
     args = parse_args()
     log = logging.getLogger(metadata.__package__)
     setup_context(log)
-    if not check_schema_versions(args.metadata_db, args.state_db, args.precomputed_db, log):
+    if not check_schema_versions(args.metadata_db,
+                                 args.state_db,
+                                 args.precomputed_db,
+                                 args.persistentdata_db,
+                                 log):
         return None
     patch_pandas()
     cache = create_memcached(args.memcached, log)
@@ -365,8 +374,15 @@ def main() -> Optional[AthenianApp]:
     kms_cls = None if args.no_google_kms else AthenianKMS
     slack = create_slack(log)
     app = AthenianApp(
-        mdb_conn=args.metadata_db, sdb_conn=args.state_db, pdb_conn=args.precomputed_db,
-        **compose_db_options(args.metadata_db, args.state_db, args.precomputed_db),
+        mdb_conn=args.metadata_db,
+        sdb_conn=args.state_db,
+        pdb_conn=args.precomputed_db,
+        rdb_conn=args.persistentdata_db,
+        **compose_db_options(args.metadata_db,
+                             args.state_db,
+                             args.precomputed_db,
+                             args.persistentdata_db,
+                             ),
         ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache, slack=slack,
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
         max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)))

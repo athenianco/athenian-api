@@ -13,10 +13,10 @@ To run the server, please execute the following from the root directory:
 
 ```
 pip3 install -r requirements.txt
-python3 -m athenian.api --state-db sqlite:// --metadata-db sqlite:// --precomputed-db sqlite:// --ui --no-google-kms
+python3 -m athenian.api --state-db sqlite:// --metadata-db sqlite:// --precomputed-db sqlite:// --persistentdata-db sqlite:// --ui --no-google-kms
 ```
 
-You may replace `sqlite://` (in-memory zero-configuration sample DB stub) with a real
+You should replace `sqlite://` (in-memory zero-configuration sample DB stub) with a real
 [SQLAlchemy connection string](https://docs.sqlalchemy.org/en/13/core/engines.html).
 `--no-google-kms` disables the second authentication method (API keys) which relies on Google Key Management Service
 and which you are probably not eager to setup.
@@ -64,6 +64,7 @@ cloud_sql_proxy -instances=athenian-1:us-east1:owl-cloud-sql-2f803bb6=tcp:5432
 --metadata-db=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/metadata
 --state-db=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/state
 --precomputed-db=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/precomputed
+--persistentdata-db=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/persistentdata
 ```
 
 Validating the metadata schema:

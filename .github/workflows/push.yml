@@ -149,7 +149,7 @@ jobs:
         SDB: postgresql://postgres:postgres@0.0.0.0:5432/state_%s?min_size=2&max_size=3
         MDB: postgresql://postgres:postgres@0.0.0.0:5432/metadata_%s?min_size=2&max_size=8
         PDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed_%s?min_size=2&max_size=6
-        RDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed_%s?min_size=2&max_size=5
+        RDB: postgresql://postgres:postgres@0.0.0.0:5432/persistentdata_%s?min_size=2&max_size=5
       run: |
         psql -c "create database state_gw0 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
         psql -c "create database state_gw1 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432

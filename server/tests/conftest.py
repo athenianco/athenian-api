@@ -49,6 +49,7 @@ from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
 from athenian.api.models.metadata.jira import Base as JiraBase
+from athenian.api.models.persistentdata.models import Base as PersistentdataBase
 from athenian.api.models.precomputed.models import Base as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
 from tests.sample_db_data import fill_metadata_session, fill_state_session
@@ -62,6 +63,7 @@ patch_pandas()
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".sqlite")
 pdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.precomputed.", suffix=".sqlite")
+rdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.persistentdata.", suffix=".sqlite")
 assert Auth0.KEY == os.environ["ATHENIAN_INVITATION_KEY"], "athenian.api was imported before tests"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
 account.jira_url_template = invitation_controller.jira_url_template = \
@@ -69,6 +71,7 @@ account.jira_url_template = invitation_controller.jira_url_template = \
 override_mdb = os.getenv("OVERRIDE_MDB")
 override_sdb = os.getenv("OVERRIDE_SDB")
 override_pdb = os.getenv("OVERRIDE_PDB")
+override_rdb = os.getenv("OVERRIDE_RDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
 logging.getLogger("aiosqlite").setLevel(logging.CRITICAL)
 
@@ -274,11 +277,18 @@ def slack():
 
 
 @pytest.fixture(scope="function")
-async def app(metadata_db, state_db, precomputed_db, slack) -> AthenianApp:
+async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
-    return AthenianApp(mdb_conn=metadata_db, sdb_conn=state_db, pdb_conn=precomputed_db,
-                       ui=False, auth0_cls=TestAuth0, kms_cls=FakeKMS, slack=slack,
-                       client_max_size=256 * 1024, max_load=15)
+    return AthenianApp(mdb_conn=metadata_db,
+                       sdb_conn=state_db,
+                       pdb_conn=precomputed_db,
+                       rdb_conn=persistentdata_db,
+                       ui=False,
+                       auth0_cls=TestAuth0,
+                       kms_cls=FakeKMS,
+                       slack=slack,
+                       client_max_size=256 * 1024,
+                       max_load=15)
 
 
 @pytest.fixture(scope="function")
@@ -374,6 +384,11 @@ def state_db(worker_id) -> str:
 
 
 @pytest.fixture(scope="function")
+def persistentdata_db(worker_id) -> str:
+    return init_own_db("r", PersistentdataBase, worker_id)
+
+
+@pytest.fixture(scope="function")
 def precomputed_db(worker_id) -> str:
     return init_own_db("p", PrecomputedBase, worker_id, {
         "postgresql": "create extension if not exists hstore;",
@@ -411,6 +426,18 @@ async def pdb(precomputed_db, loop, request):
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
     }
+    await db.connect()
+
+    def shutdown():
+        loop.run_until_complete(db.disconnect())
+
+    request.addfinalizer(shutdown)
+    return db
+
+
+@pytest.fixture(scope="function")
+async def rdb(persistentdata_db, loop, request):
+    db = ParallelDatabase(persistentdata_db)
     await db.connect()
 
     def shutdown():

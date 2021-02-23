@@ -23,6 +23,11 @@ def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id):
     if precomputed_db_path.exists():
         precomputed_db_path.unlink()
     migrate("precomputed", precomputed_db, exec=False)
+    persistentdata_db_path = db_dir / ("rdb-%s.sqlite" % worker_id)
+    persistentdata_db = "sqlite:///%s" % persistentdata_db_path
+    if persistentdata_db_path.exists():
+        persistentdata_db_path.unlink()
+    migrate("persistentdata", persistentdata_db, exec=False)
     unused_port = str(aiohttp_unused_port())
     env = os.environ.copy()
     env["ATHENIAN_INVITATION_URL_PREFIX"] = "https://app.athenian.co/i/"
@@ -32,8 +37,11 @@ def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id):
     env["ATHENIAN_DEFAULT_USER"] = "github|60340680"
     proc = subprocess.Popen(
         [sys.executable, "-m", "athenian.api", "--ui", "--no-google-kms",
-         "--metadata-db=" + metadata_db, "--state-db=" + state_db,
-         "--precomputed-db=" + precomputed_db, "--memcached=localhost:11211",
+         "--metadata-db=" + metadata_db,
+         "--state-db=" + state_db,
+         "--precomputed-db=" + precomputed_db,
+         "--persistentdata-db=" + persistentdata_db,
+         "--memcached=localhost:11211",
          "--port=" + unused_port],
         encoding="utf-8", text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     kill_cond = Condition()
