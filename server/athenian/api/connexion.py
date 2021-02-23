@@ -149,12 +149,14 @@ class AthenianApp(connexion.AioHttpApp):
                  mdb_conn: str,
                  sdb_conn: str,
                  pdb_conn: str,
+                 rdb_conn: str,
                  ui: bool,
                  client_max_size: int,
                  max_load: float,
                  mdb_options: Optional[Dict[str, Any]] = None,
                  sdb_options: Optional[Dict[str, Any]] = None,
                  pdb_options: Optional[Dict[str, Any]] = None,
+                 rdb_options: Optional[Dict[str, Any]] = None,
                  auth0_cls: Callable[..., Auth0] = Auth0,
                  kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
                  cache: Optional[aiomcache.Client] = None,
@@ -165,6 +167,7 @@ class AthenianApp(connexion.AioHttpApp):
         :param mdb_conn: SQLAlchemy connection string for the readonly metadata DB.
         :param sdb_conn: SQLAlchemy connection string for the writeable server state DB.
         :param pdb_conn: SQLAlchemy connection string for the writeable precomputed objects DB.
+        :param rdb_conn: SQLAlchemy connection string for the writeable push/pull events DB.
         :param ui: Value indicating whether to enable the Swagger/OpenAPI UI at host:port/v*/ui.
         :param client_max_size: Maximum incoming request body size.
         :param max_load: Maximum load the server is allowed to serve. The unit is abstract, see \
@@ -172,6 +175,7 @@ class AthenianApp(connexion.AioHttpApp):
         :param mdb_options: Extra databases.Database() kwargs for the metadata DB.
         :param sdb_options: Extra databases.Database() kwargs for the state DB.
         :param pdb_options: Extra databases.Database() kwargs for the precomputed objects DB.
+        :param rdb_options: Extra databases.Database() kwargs for the push/pull events DB.
         :param auth0_cls: Injected authorization class, simplifies unit testing.
         :param kms_cls: Injected Google Key Management Service class, simplifies unit testing. \
                         `None` disables KMS and, effectively, API Key authentication.
@@ -233,7 +237,7 @@ class AthenianApp(connexion.AioHttpApp):
             self.app.router.add_get("/", index_redirect)
         self._enable_cors()
         self._cache = cache
-        self.mdb = self.sdb = self.pdb = None  # type: Optional[ParallelDatabase]
+        self.mdb = self.sdb = self.pdb = self.rdb = None  # type: Optional[ParallelDatabase]
         self._pdb_schema_task_box = []
         pdbctx = add_pdb_metrics_context(self.app)
 
@@ -262,6 +266,7 @@ class AthenianApp(connexion.AioHttpApp):
                 ("metadata", "mdb", mdb_conn, mdb_options),
                 ("state", "sdb", sdb_conn, sdb_options),
                 ("precomputed", "pdb", pdb_conn, pdb_options),
+                ("persistentdata", "rdb", rdb_conn, rdb_options),
             )
         }
         self.server_name = socket.getfqdn()

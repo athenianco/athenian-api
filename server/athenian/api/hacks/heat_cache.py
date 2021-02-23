@@ -92,13 +92,16 @@ def main():
         setup_cache_metrics(cache, {}, None)
         for v in cache.metrics["context"].values():
             v.set(defaultdict(int))
-        db_opts = compose_db_options(args.metadata_db, args.state_db, args.precomputed_db)
+        db_opts = compose_db_options(
+            args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db)
         sdb = ParallelDatabase(args.state_db, **db_opts["sdb_options"])
         await sdb.connect()
         mdb = ParallelDatabase(args.metadata_db, **db_opts["mdb_options"])
         await mdb.connect()
         pdb = ParallelDatabase(args.precomputed_db, **db_opts["pdb_options"])
         await pdb.connect()
+        rdb = ParallelDatabase(args.persistentdata_db, **db_opts["rdb_options"])
+        await rdb.connect()
         pdb.metrics = {
             "hits": ContextVar("pdb_hits", default=defaultdict(int)),
             "misses": ContextVar("pdb_misses", default=defaultdict(int)),

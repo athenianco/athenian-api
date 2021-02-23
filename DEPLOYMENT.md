@@ -9,7 +9,9 @@ docker build -t athenian/api .
 ### Initialization
 
 ```
-docker run -it --rm --entrypoint python3 athenian/api -m athenian.api.models.state postgres://user:password@host:port/database
+docker run -it --rm --entrypoint python3 athenian/api -m athenian.api.models.state postgres://user:password@host:port/state
+docker run -it --rm --entrypoint python3 athenian/api -m athenian.api.models.precomputed postgres://user:password@host:port/precomputed
+docker run -it --rm --entrypoint python3 athenian/api -m athenian.api.models.persistentdata postgres://user:password@host:port/persistentdata
 ```
 
 ### Environment
@@ -49,5 +51,5 @@ The server's state such as user settings, etc., is stored in a SQL database spec
 Besides, the state implicitly depends on the cache (`--memcached`) and the precomputed objects (`--precomputed-db`).
 So running a sparkling clean and fresh API server requires:
 
-- Wiping the state DB and the precomputed objects DB.
+- Wiping the state DB, the precomputed objects DB, and the persistentdata DB.
 - Re-launching memcached.

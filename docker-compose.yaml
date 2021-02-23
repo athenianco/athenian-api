@@ -9,6 +9,8 @@ services:
             postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state &&
           python3 -m athenian.api.models.precomputed \
             postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed &&
+          python3 -m athenian.api.models.persistentdata \
+            postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/persistentdata &&
           python3 -m athenian.api.models.metadata \
             postgresql://${REMOTE_POSTGRES_USER}:${REMOTE_POSTGRES_PASSWORD}@cloud_sql_proxy:5432/metadata &&
           python3 -m athenian.api \
@@ -19,6 +21,7 @@ services:
             --metadata-db=postgresql://${REMOTE_POSTGRES_USER}:${REMOTE_POSTGRES_PASSWORD}@cloud_sql_proxy:5432/metadata \
             --state-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state \
             --precomputed-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed \
+            --persistentdata-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/persistentdata \
             --ui \
             --no-google-kms"
     env_file: .env

@@ -53,12 +53,13 @@ def _after_response(request: web.Request,
     db_elapsed = request.app["db_elapsed"].get()
     cache_context = request.app["cache_context"]
     pdb_context = request.app["pdb_context"]
-    sdb_elapsed, mdb_elapsed, pdb_elapsed = \
-        db_elapsed["sdb"], db_elapsed["mdb"], db_elapsed["pdb"]
+    sdb_elapsed, mdb_elapsed, pdb_elapsed, rdb_elapsed = (
+        db_elapsed[x + "db"] for x in ("s", "m", "p", "r"))
     if response is not None:
         response.headers.add(
             "X-Performance-DB",
-            "s %.3f, m %.3f, p %.3f" % (sdb_elapsed, mdb_elapsed, pdb_elapsed))
+            "s %.3f, m %.3f, p %.3f, r %.3f" % (
+                sdb_elapsed, mdb_elapsed, pdb_elapsed, rdb_elapsed))
         for k, v in cache_context.items():
             s = sorted("%s %d" % (f.replace("athenian.api.", ""), n)
                        for f, n in v.get().items())
@@ -78,6 +79,9 @@ def _after_response(request: web.Request,
     request.app["precomputed_db_latency"] \
         .labels(__package__, __version__, request.path) \
         .observe(pdb_elapsed)
+    request.app["persistentdata_db_latency"] \
+        .labels(__package__, __version__, request.path) \
+        .observe(rdb_elapsed)
     request.app["request_in_progress"] \
         .labels(__package__, __version__, request.path, request.method) \
         .dec()
@@ -94,6 +98,9 @@ def _after_response(request: web.Request,
     request.app["precomputed_db_latency_ratio"] \
         .labels(__package__, __version__, request.path) \
         .observe(pdb_elapsed / elapsed)
+    request.app["persistentdata_db_latency_ratio"] \
+        .labels(__package__, __version__, request.path) \
+        .observe(rdb_elapsed / elapsed)
     code = response.status if response is not None else 500
     if elapsed > elapsed_error_threshold:
         _log.error("%s took %ds -> HTTP %d", request.path, int(elapsed), code)

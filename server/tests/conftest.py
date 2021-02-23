@@ -49,6 +49,7 @@ from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
 from athenian.api.models.metadata.jira import Base as JiraBase
+from athenian.api.models.persistentdata.models import Base as PersistentdataBase
 from athenian.api.models.precomputed.models import Base as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
 from tests.sample_db_data import fill_metadata_session, fill_state_session
@@ -374,6 +375,11 @@ def state_db(worker_id) -> str:
 
 
 @pytest.fixture(scope="function")
+def persistentdata_db(worker_id) -> str:
+    return init_own_db("r", PersistentdataBase, worker_id)
+
+
+@pytest.fixture(scope="function")
 def precomputed_db(worker_id) -> str:
     return init_own_db("p", PrecomputedBase, worker_id, {
         "postgresql": "create extension if not exists hstore;",
@@ -411,6 +417,18 @@ async def pdb(precomputed_db, loop, request):
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
     }
+    await db.connect()
+
+    def shutdown():
+        loop.run_until_complete(db.disconnect())
+
+    request.addfinalizer(shutdown)
+    return db
+
+
+@pytest.fixture(scope="function")
+async def rdb(persistentdata_db, loop, request):
+    db = ParallelDatabase(persistentdata_db)
     await db.connect()
 
     def shutdown():
