@@ -119,6 +119,10 @@ def parse_args() -> argparse.Namespace:
                         help="Precomputed objects augmenting the metadata DB and reducing "
                              "the amount of online work. DB connection string in SQLAlchemy "
                              "format. This DB is read/write.")
+    parser.add_argument("--persistentdata-db",
+                        default="postgresql://postgres:postgres@0.0.0.0:5432/persistentdata",
+                        help="Pushed and pulled source data that Athenian owns. DB connection "
+                             "string in SQLAlchemy format. This DB is read/write.")
     parser.add_argument("--memcached", required=False,
                         help="memcached (users profiles, preprocessed metadata cache) address, "
                              "for example, 0.0.0.0:11211")
