@@ -18,6 +18,7 @@ class AthenianWebRequest(web.Request):
         * rdb              Global persistentdata DB instance.
         * cache            Global memcached client. Can be None.
         * uid              Requesting user Auth0 ID, e.g. "github|60340680".
+        * account          Requesting user's account ID, exists only with APIKey auth.
         * user             Coroutine to load the full user profile.
         * is_default_user  Value indicating whether the user is a default user, for example, \
                            @gkwillie. Requests on behalf of the default user are considered \
@@ -31,4 +32,5 @@ class AthenianWebRequest(web.Request):
     cache: Optional[aiomcache.Client]  # can be None
     user: Callable[[], Coroutine[None, None, User]]
     uid: str
+    account: Optional[int]
     is_default_user: bool

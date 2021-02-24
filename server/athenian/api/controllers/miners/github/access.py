@@ -1,5 +1,5 @@
 import marshal
-from typing import Iterable, Set
+from typing import Dict, Iterable, Set
 
 from sqlalchemy import select
 
@@ -34,12 +34,13 @@ class GitHubAccessChecker(AccessChecker):
         key=lambda metadata_ids, **_: tuple(metadata_ids),
         cache=lambda self, **_: self.cache,
     )
-    async def _fetch_installed_repos(self, metadata_ids: Iterable[int]) -> Set[str]:
-        installed_repos_db = await self.mdb.fetch_all(
-            select([AccountRepository.repo_full_name])
+    async def _fetch_installed_repos(self, metadata_ids: Iterable[int]) -> Dict[str, str]:
+        rows = await self.mdb.fetch_all(
+            select([AccountRepository.repo_full_name, AccountRepository.repo_node_id])
             .where(AccountRepository.acc_id.in_(metadata_ids)))
-        key = AccountRepository.repo_full_name.key
-        return {r[key] for r in installed_repos_db}
+        name_key = AccountRepository.repo_full_name.key
+        node_key = AccountRepository.repo_node_id.key
+        return {r[name_key]: r[node_key] for r in rows}
 
     async def check(self, repos: Set[str]) -> Set[str]:
         """Return repositories which do not belong to the metadata installation.
@@ -47,4 +48,4 @@ class GitHubAccessChecker(AccessChecker):
         The names must be *without* the service prefix.
         """
         assert isinstance(repos, set)
-        return repos - self._installed_repos
+        return repos - self._installed_repos.keys()

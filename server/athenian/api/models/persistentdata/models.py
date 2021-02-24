@@ -28,7 +28,7 @@ def create_time_mixin(created_at: bool = False, updated_at: bool = False) -> typ
     return TimeMixin
 
 
-class ReleaseNotifications(create_time_mixin(created_at=True, updated_at=True), Base):
+class ReleaseNotification(create_time_mixin(created_at=True, updated_at=True), Base):
     """Client's pushed release notifications."""
 
     __tablename__ = "release_notifications"

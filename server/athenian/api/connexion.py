@@ -351,8 +351,8 @@ class AthenianApp(connexion.AioHttpApp):
 
     @aiohttp.web.middleware
     async def with_db(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
-        """Add "mdb", "pdb", "sdb", and "cache" attributes to every incoming request."""
-        for db in ("mdb", "sdb", "pdb"):
+        """Add "mdb", "pdb", "sdb", "rdb", and "cache" attributes to every incoming request."""
+        for db in ("mdb", "sdb", "pdb", "rdb"):
             if getattr(self, db) is None:
                 await self._db_futures[db]
                 try:

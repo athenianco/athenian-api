@@ -85,7 +85,6 @@ from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.mapped_jira_identity import MappedJIRAIdentity
 from athenian.api.models.web.mapped_jira_identity_change import MappedJIRAIdentityChange
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
-from athenian.api.models.web.notify_release_request import NotifyReleaseRequest
 from athenian.api.models.web.organization import Organization
 from athenian.api.models.web.paginate_pull_requests_request import PaginatePullRequestsRequest
 from athenian.api.models.web.patch_token_request import PatchTokenRequest
