@@ -19,6 +19,7 @@ async def test_create_token_auth(client, headers, app):
     response = CreatedToken.from_dict(json.loads((await response.read()).decode("utf-8")))
     assert response.id == 1
     token = response.token
+    assert token == "AQAAAAAAAAA="  # unencrypted
     app._auth0._default_user_id = None
     headers = headers.copy()
     headers["X-API-Key"] = token

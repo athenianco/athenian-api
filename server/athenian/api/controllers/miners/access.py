@@ -1,4 +1,4 @@
-from typing import Optional, Set, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 import aiomcache
 
@@ -31,12 +31,12 @@ class AccessChecker:
         self.mdb = mdb_conn
         self.cache = cache
         self.cache_ttl = cache_ttl
-        self._installed_repos = set()
+        self._installed_repos = {}
 
-    def installed_repos(self, with_prefix: bool = True) -> Set[str]:
+    def installed_repos(self, with_prefix: bool = True) -> Dict[str, str]:
         """Get the currently installed repository names."""
         prefix = PREFIXES[self.SERVICE] if with_prefix else ""
-        return {f"{prefix}{r}" for r in self._installed_repos}
+        return {f"{prefix}{k}": v for k, v in self._installed_repos.items()}
 
     async def load(self) -> "AccessChecker":
         """Fetch the list of accessible repositories."""

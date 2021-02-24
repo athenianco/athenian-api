@@ -9,7 +9,7 @@ from random import random
 import re
 import socket
 import struct
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
@@ -384,9 +384,9 @@ class Auth0:
     async def _set_user(self, request: AthenianWebRequest, token: str, method: str) -> None:
         if method == "bearer":
             token_info = await self._extract_bearer_token(token)
-            request.uid = token_info["sub"]
+            request.uid, request.account = token_info["sub"], None
         elif method == "apikey":
-            request.uid = await self._extract_api_key(token, request)
+            request.uid, request.account = await self._extract_api_key(token, request)
         else:
             raise AssertionError("Unsupported auth method: %s" % method)
 
@@ -451,7 +451,7 @@ class Auth0:
         except jwt.JWTError as e:
             raise OAuthProblem(description="Unable to parse the authentication token: %s" % e)
 
-    async def _extract_api_key(self, token: str, request: AthenianWebRequest) -> str:
+    async def _extract_api_key(self, token: str, request: AthenianWebRequest) -> Tuple[str, int]:
         kms = request.app["kms"]  # type: AthenianKMS
         if kms is None:
             raise AuthenticationProblem(
@@ -472,7 +472,8 @@ class Auth0:
         if token_obj is None:
             raise Unauthorized()
         uid = token_obj[UserToken.user_id.key]
-        return uid
+        account = token_obj[UserToken.account_id.key]
+        return uid, account
 
 
 def disable_default_user(func):
