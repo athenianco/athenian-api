@@ -46,7 +46,7 @@ from athenian.api.connexion import AthenianApp
 from athenian.api.controllers import account, invitation_controller
 from athenian.api.db import ParallelDatabase
 from athenian.api.metadata import __package__ as package
-from athenian.api.models import check_collation, metadata
+from athenian.api.models import check_collation, metadata, persistentdata
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import Base as PersistentdataBase
@@ -352,11 +352,13 @@ def init_own_db(letter: str,
             shutil.copy(backup_path, db_path)
             return conn_str
     engine = create_engine(conn_str.rsplit("?", 1)[0])
+    driver = engine.url.drivername
+    if driver == "postgres":
+        driver = "postgresql"
+    if letter == "r" and driver == "sqlite":
+        persistentdata.dereference_schemas()
     base.metadata.drop_all(engine)
     if init_sql:
-        driver = engine.url.drivername
-        if driver == "postgres":
-            driver = "postgresql"
         try:
             init_sql = init_sql[driver]
         except KeyError:
@@ -385,7 +387,9 @@ def state_db(worker_id) -> str:
 
 @pytest.fixture(scope="function")
 def persistentdata_db(worker_id) -> str:
-    return init_own_db("r", PersistentdataBase, worker_id)
+    return init_own_db("r", PersistentdataBase, worker_id, {
+        "postgresql": "create schema if not exists athenian;",
+    })
 
 
 @pytest.fixture(scope="function")

@@ -23,7 +23,8 @@ ReleaseMatch = IntEnum("ReleaseMatch", {"rejected": -2,
                                         "force_push_drop": -1,
                                         ReleaseMatchStrategy.BRANCH: 0,
                                         ReleaseMatchStrategy.TAG: 1,
-                                        ReleaseMatchStrategy.TAG_OR_BRANCH: 2})
+                                        ReleaseMatchStrategy.TAG_OR_BRANCH: 2,
+                                        ReleaseMatchStrategy.NOTIFICATION: 3})
 ReleaseMatch.__doc__ = """Enumeration of supported release matching strategies."""
 
 default_branch_alias = "{{default}}"
