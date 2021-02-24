@@ -44,7 +44,7 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token):
     assert columns == {
         ReleaseNotification.account_id.key: 1,
         ReleaseNotification.repository_node_id.key: "MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
-        ReleaseNotification.commit_hash.key: "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
+        ReleaseNotification.commit_hash_prefix.key: "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
         ReleaseNotification.resolved_commit_hash.key: "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
         ReleaseNotification.resolved_commit_node_id.key: "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",  # noqa
         ReleaseNotification.name.key: "xxx",
@@ -114,7 +114,7 @@ async def test_notify_release_nasty_input(client, headers, token, rdb, body, sta
     if status == 200:
         rows = await rdb.fetch_all(select([ReleaseNotification]))
         assert len(rows) == 1
-        assert rows[0][ReleaseNotification.commit_hash.key] == body[0]["commit"]
+        assert rows[0][ReleaseNotification.commit_hash_prefix.key] == body[0]["commit"]
         assert rows[0][ReleaseNotification.resolved_commit_hash.key] is None
         assert rows[0][ReleaseNotification.resolved_commit_node_id.key] is None
 
