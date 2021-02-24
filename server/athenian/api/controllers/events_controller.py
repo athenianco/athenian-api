@@ -93,7 +93,7 @@ async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.R
         inserted.append(ReleaseNotification(
             account_id=account,
             repository_node_id=installed_repos[n.repository],
-            commit_hash=resolved[PushCommit.sha.key] or n.commit,
+            commit_hash_prefix=resolved[PushCommit.sha.key] or n.commit,
             resolved_commit_hash=resolved[PushCommit.sha.key],
             resolved_commit_node_id=resolved[PushCommit.node_id.key],
             name=n.name,
