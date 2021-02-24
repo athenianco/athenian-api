@@ -26,7 +26,7 @@ restore() {
 }
 
 mkdir -p db_dumps
-for db in state precomputed
+for db in state precomputed persistentdata
 do
     dump ${db}
     restore ${db}
