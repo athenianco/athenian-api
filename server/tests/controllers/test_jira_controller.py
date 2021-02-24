@@ -103,7 +103,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                      work_began=datetime(2020, 6, 2, 11, 40, 42, 905),
                      resolved=datetime(2020, 7, 13, 17, 45, 58, 305),
                      lead_time=timedelta(days=41, seconds=21915), reporter="Lou Marvin Caraig",
-                     assignee="David Pordomingo", comments=0, priority="Low", status="Released",
+                     assignee="David Pordomingo", comments=8, priority="Low", status="Released",
                      prs=0, project="10009", children=[
                          JIRAEpicChild(
                              id="DEV-183",
@@ -113,7 +113,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                              work_began=datetime(2020, 6, 2, 11, 40, 42, 905),
                              resolved=datetime(2020, 6, 2, 11, 40, 42, 905),
                              lead_time=None, reporter="Waren Long", assignee="Vadim Markovtsev",
-                             comments=0, priority="Low", status="Closed", prs=0, type="Task",
+                             comments=1, priority="Low", status="Closed", prs=0, type="Task",
                              subtasks=0),
                          JIRAEpicChild(
                              id="DEV-228",
@@ -123,7 +123,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                              work_began=datetime(2020, 6, 9, 10, 8, 15, 357),
                              resolved=datetime(2020, 6, 9, 10, 34, 7, 221),
                              lead_time=None, reporter="Vadim Markovtsev",
-                             assignee="Vadim Markovtsev", comments=0, priority="Medium",
+                             assignee="Vadim Markovtsev", comments=1, priority="Medium",
                              status="Released", prs=0, type="Task", subtasks=0),
                         JIRAEpicChild(
                             id="DEV-315",
@@ -133,7 +133,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                             work_began=datetime(2020, 6, 25, 17, 8, 11, 311),
                             resolved=datetime(2020, 7, 13, 17, 43, 20, 317),
                             lead_time=None, reporter="Waren Long", assignee="David Pordomingo",
-                            comments=0, priority="High", status="Released", prs=0, type="Story",
+                            comments=4, priority="High", status="Released", prs=0, type="Story",
                             subtasks=0),
                         JIRAEpicChild(
                             id="DEV-364",
@@ -143,7 +143,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                             work_began=datetime(2020, 7, 2, 4, 23, 20, 3),
                             resolved=datetime(2020, 7, 13, 17, 46, 15, 634),
                             lead_time=None, reporter="Waren Long", assignee="David Pordomingo",
-                            comments=0, priority="Medium", status="Released", prs=0, type="Story",
+                            comments=1, priority="Medium", status="Released", prs=0, type="Story",
                             subtasks=0),
                         JIRAEpicChild(
                             id="DEV-365",
@@ -153,7 +153,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                             work_began=datetime(2020, 6, 26, 9, 33, 9, 184),
                             resolved=datetime(2020, 6, 26, 9, 35, 43, 579),
                             lead_time=None, reporter="Waren Long", assignee="Zuri Negrin",
-                            comments=0, priority="Medium", status="Released", prs=0, type="Story",
+                            comments=2, priority="Medium", status="Released", prs=0, type="Story",
                             subtasks=0),
                      ]),
         ]
@@ -475,7 +475,7 @@ async def test_filter_jira_issue_types_filter(client, headers):
     assert not model.issues
 
 
-async def test_filter_jira_issue_prs(client, headers):
+async def test_filter_jira_issue_prs_comments(client, headers):
     body = {
         "date_from": "2020-09-01",
         "date_to": "2021-01-01",
@@ -492,12 +492,15 @@ async def test_filter_jira_issue_prs(client, headers):
     model = FilteredJIRAStuff.from_dict(json.loads(body))
     assert len(model.issues) == 562
     prs = 0
+    comments = 0
     for issue in model.issues:
         prs += bool(issue.prs)
+        comments += issue.comments
         for pr in issue.prs:
             assert pr.number > 0
             assert not pr.jira
     assert prs == 15
+    assert comments == 1606
 
 
 @pytest.mark.parametrize("account, date_to, timezone, status", [
