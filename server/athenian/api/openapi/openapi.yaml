@@ -6902,7 +6902,7 @@ components:
         commit: c3f4d3a
         name: 0.8.66
         repository: github.com/athenianco/athenian-api
-        published_at: 2021-02-23T15:17:07.000+01:00
+        published_at: 2021-02-23T15:16:07Z
         url: https://github.com/athenianco/athenian-api/releases/tag/v0.8.66
       description: Push message about a custom release event.
       properties:

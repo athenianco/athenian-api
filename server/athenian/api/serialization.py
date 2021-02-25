@@ -195,7 +195,8 @@ class FriendlyJson:
                 # NaT
                 return None
             tz = obj.tzinfo
-            assert tz == datetime.timezone.utc or tz == tzutc(), "all timestamps must be UTC"
+            assert tz == datetime.timezone.utc or tz == tzutc(), \
+                "all timestamps must be UTC: %s" % obj
             return obj.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339
         if isinstance(obj, datetime.date):
             return obj.strftime("%Y-%m-%d")
