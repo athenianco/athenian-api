@@ -89,7 +89,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
             for_set.lines or [], repos, withgroups, labels, jira,
             filt.exclude_inactive, release_settings, filt.fresh,
-            meta_ids, request.mdb, request.pdb, request.cache)
+            filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
         mrange = range(len(met.metrics))
         for lines_group_index, lines_group in enumerate(metric_values):
             for repos_group_index, with_groups in enumerate(lines_group):
@@ -339,7 +339,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     for service, (repos, devs, labels, jira, for_set) in filters:
         tasks.append(METRIC_ENTRIES[service]["developers"](
             devs, repos, time_from, time_to, topics, labels, jira, release_settings,
-            meta_ids, request.mdb, request.pdb, request.cache))
+            filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache))
         for_sets.append(for_set)
     all_stats = await gather(*tasks)
     for stats, for_set in zip(all_stats, for_sets):
@@ -411,7 +411,7 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
         release_metric_values, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
             JIRAFilter.from_web(filt.jira, jira_ids), release_settings,
-            meta_ids, request.mdb, request.pdb, request.cache)
+            filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
         release_matches = {k: v.name for k, v in release_matches.items()}
         mrange = range(len(filt.metrics))
         for with_, repos_mvs in zip((filt.with_ or [None]), release_metric_values):

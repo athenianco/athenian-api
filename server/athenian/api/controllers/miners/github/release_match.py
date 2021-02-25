@@ -327,9 +327,11 @@ async def map_releases_to_prs(repos: Collection[str],
                               release_settings: Dict[str, ReleaseMatchSetting],
                               updated_min: Optional[datetime],
                               updated_max: Optional[datetime],
+                              account: int,
                               meta_ids: Tuple[int, ...],
                               mdb: databases.Database,
                               pdb: databases.Database,
+                              rdb: databases.Database,
                               cache: Optional[aiomcache.Client],
                               pr_blacklist: Optional[BinaryExpression] = None,
                               truncate: bool = True,
@@ -359,7 +361,7 @@ async def map_releases_to_prs(repos: Collection[str],
     tasks = [
         _find_releases_for_matching_prs(
             repos, branches, default_branches, time_from, time_to,
-            not truncate, release_settings, meta_ids, mdb, pdb, cache),
+            not truncate, release_settings, account, meta_ids, mdb, pdb, rdb, cache),
         fetch_precomputed_commit_history_dags(repos, pdb, cache),
     ]
     (matched_bys, releases, releases_in_time_range, release_settings), pdags = await gather(*tasks)
@@ -403,9 +405,11 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                                           time_to: datetime,
                                           until_today: bool,
                                           release_settings: Dict[str, ReleaseMatchSetting],
+                                          account: int,
                                           meta_ids: Tuple[int, ...],
                                           mdb: databases.Database,
                                           pdb: databases.Database,
+                                          rdb: databases.Database,
                                           cache: Optional[aiomcache.Client],
                                           releases_in_time_range: Optional[pd.DataFrame] = None,
                                           ) -> Tuple[Dict[str, ReleaseMatch],
@@ -427,7 +431,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
         # see ENG-710 and ENG-725
         releases_in_time_range, matched_bys = await load_releases(
             repos, branches, default_branches, time_from, time_to,
-            release_settings, meta_ids, mdb, pdb, cache)
+            release_settings, account, meta_ids, mdb, pdb, rdb, cache)
     else:
         matched_bys = {}
     # these matching rules must be applied in the past to stay consistent
@@ -458,7 +462,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
         if today > time_to:
             until_today_task = load_releases(
                 repos, branches, default_branches, time_to, today,
-                consistent_release_settings, meta_ids, mdb, pdb, cache)
+                consistent_release_settings, account, meta_ids, mdb, pdb, rdb, cache)
     if until_today_task is None:
         until_today_task = dummy_load_releases_until_today()
 
@@ -482,10 +486,10 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
         until_today_task,
         load_releases(repos_matched_by_branch, branches, default_branches,
                       branch_lookbehind_time_from, time_from, consistent_release_settings,
-                      meta_ids, mdb, pdb, cache),
+                      account, meta_ids, mdb, pdb, rdb, cache),
         load_releases(repos_matched_by_tag, branches, default_branches,
                       tag_lookbehind_time_from, time_from, consistent_release_settings,
-                      meta_ids, mdb, pdb, cache),
+                      account, meta_ids, mdb, pdb, rdb, cache),
         _fetch_repository_first_commit_dates(repos_matched_by_branch, meta_ids, mdb, pdb, cache),
     ]
     releases_today, releases_old_branches, releases_old_tags, repo_births = await gather(*tasks)
@@ -510,7 +514,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                 extra_releases, _ = await load_releases(
                     hard_repos, branches, default_branches,
                     branch_lookbehind_time_from - deeper_step, branch_lookbehind_time_from,
-                    consistent_release_settings, meta_ids, mdb, pdb, cache)
+                    consistent_release_settings, account, meta_ids, mdb, pdb, rdb, cache)
                 releases_old_branches = releases_old_branches.append(extra_releases)
                 hard_repos -= set(extra_releases[Release.repository_full_name.key].unique())
                 del extra_releases

@@ -93,9 +93,11 @@ async def _set_commits(stats_by_repo_by_dev: StatsByRepoByDev,
                        labels: LabelFilter,
                        jira: JIRAFilter,
                        release_settings: Dict[str, ReleaseMatchSetting],
+                       account: int,
                        meta_ids: Tuple[int, ...],
                        mdb: databases.Database,
                        pdb: databases.Database,
+                       rdb: databases.Database,
                        cache: Optional[aiomcache.Client]) -> None:
     commits = await _fetch_developer_committed_changes(
         dev_ids.values(), repo_ids.values(), repogroups, time_from, time_to, meta_ids, mdb, cache)
@@ -130,9 +132,11 @@ async def _set_prs_created(stats_by_repo_by_dev: StatsByRepoByDev,
                            labels: LabelFilter,
                            jira: JIRAFilter,
                            release_settings: Dict[str, ReleaseMatchSetting],
+                           account: int,
                            meta_ids: Tuple[int, ...],
                            mdb: databases.Database,
                            pdb: databases.Database,
+                           rdb: databases.Database,
                            cache: Optional[aiomcache.Client]) -> None:
     prs = await _fetch_developer_created_prs(
         dev_ids.values(), repo_ids.values(), repogroups, labels, jira,
@@ -151,9 +155,11 @@ async def _set_prs_reviewed(stats_by_repo_by_dev: StatsByRepoByDev,
                             labels: LabelFilter,
                             jira: JIRAFilter,
                             release_settings: Dict[str, ReleaseMatchSetting],
+                            account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
                             pdb: databases.Database,
+                            rdb: databases.Database,
                             cache: Optional[aiomcache.Client]) -> None:
     prs = await _fetch_developer_reviewed_prs(
         dev_ids.values(), repo_ids.values(), repogroups, labels, jira,
@@ -172,9 +178,11 @@ async def _set_prs_merged(stats_by_repo_by_dev: StatsByRepoByDev,
                           labels: LabelFilter,
                           jira: JIRAFilter,
                           release_settings: Dict[str, ReleaseMatchSetting],
+                          account: int,
                           meta_ids: Tuple[int, ...],
                           mdb: databases.Database,
                           pdb: databases.Database,
+                          rdb: databases.Database,
                           cache: Optional[aiomcache.Client]) -> None:
     prs = await _fetch_developer_merged_prs(
         dev_ids.values(), repo_ids.values(), repogroups, labels, jira,
@@ -193,14 +201,16 @@ async def _set_releases(stats_by_repo_by_dev: StatsByRepoByDev,
                         labels: LabelFilter,
                         jira: JIRAFilter,
                         release_settings: Dict[str, ReleaseMatchSetting],
+                        account: int,
                         meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
                         pdb: databases.Database,
+                        rdb: databases.Database,
                         cache: Optional[aiomcache.Client]) -> None:
     branches, default_branches = await extract_branches(repo_ids, meta_ids, mdb, cache)
     releases, _ = await load_releases(
         repo_ids, branches, default_branches, time_from, time_to,
-        release_settings, meta_ids, mdb, pdb, cache)
+        release_settings, account, meta_ids, mdb, pdb, rdb, cache)
     topic = DeveloperTopic.releases.name
     included_releases = np.nonzero(np.in1d(releases[Release.author.key].values, list(dev_ids)))[0]
     if not repogroups:
@@ -226,9 +236,11 @@ async def _set_reviews(stats_by_repo_by_dev: StatsByRepoByDev,
                        labels: LabelFilter,
                        jira: JIRAFilter,
                        release_settings: Dict[str, ReleaseMatchSetting],
+                       account: int,
                        meta_ids: Tuple[int, ...],
                        mdb: databases.Database,
                        pdb: databases.Database,
+                       rdb: databases.Database,
                        cache: Optional[aiomcache.Client]) -> None:
     reviews = await _fetch_developer_reviews(
         dev_ids.values(), repo_ids.values(), repogroups, labels, jira,
@@ -278,9 +290,11 @@ async def _set_pr_comments(stats_by_repo_by_dev: StatsByRepoByDev,
                            labels: LabelFilter,
                            jira: JIRAFilter,
                            release_settings: Dict[str, ReleaseMatchSetting],
+                           account: int,
                            meta_ids: Tuple[int, ...],
                            mdb: databases.Database,
                            pdb: databases.Database,
+                           rdb: databases.Database,
                            cache: Optional[aiomcache.Client]) -> None:
     if DeveloperTopic.review_pr_comments in topics or DeveloperTopic.pr_comments in topics:
         review_comments = await _fetch_developer_review_comments(
@@ -323,9 +337,11 @@ async def _set_active(stats_by_repo_by_dev: StatsByRepoByDev,
                       labels: LabelFilter,
                       jira: JIRAFilter,
                       release_settings: Dict[str, ReleaseMatchSetting],
+                      account: int,
                       meta_ids: Tuple[int, ...],
                       mdb: databases.Database,
                       pdb: databases.Database,
+                      rdb: databases.Database,
                       cache: Optional[aiomcache.Client]) -> None:
     commits = await _fetch_developer_commit_days(
         dev_ids.values(), repo_ids.values(), repogroups, time_from, time_to, meta_ids, mdb, cache)
@@ -365,9 +381,11 @@ async def calc_developer_metrics_github(devs: Sequence[str],
                                         labels: LabelFilter,
                                         jira: JIRAFilter,
                                         release_settings: Dict[str, ReleaseMatchSetting],
+                                        account: int,
                                         meta_ids: Tuple[int, ...],
                                         mdb: databases.Database,
                                         pdb: databases.Database,
+                                        rdb: databases.Database,
                                         cache: Optional[aiomcache.Client],
                                         ) -> List[List[DeveloperStats]]:
     """Calculate various statistics about developer activities.
@@ -383,9 +401,10 @@ async def calc_developer_metrics_github(devs: Sequence[str],
     tasks = []
     for key, setter in processors:
         if key.intersection(topics):
-            tasks.append(setter(stats_by_repo_by_dev, topics, time_from, time_to,
-                                dev_ids_map, repo_ids_map, len(repos) > 1,
-                                labels, jira, release_settings, meta_ids, mdb, pdb, cache))
+            tasks.append(setter(
+                stats_by_repo_by_dev, topics, time_from, time_to, dev_ids_map, repo_ids_map,
+                len(repos) > 1, labels, jira, release_settings, account, meta_ids,
+                mdb, pdb, rdb, cache))
     await gather(*tasks)
     return _convert_stats(stats_by_repo_by_dev, devs, repos, repo_ids_map, reverse_dev_ids_map)
 

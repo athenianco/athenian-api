@@ -32,22 +32,24 @@ def time_from_to():
     (PullRequestStage.FORCE_PUSH_DROPPED, 40),
 ])
 @with_defer
-async def test_pr_list_miner_stages(mdb, pdb, release_match_setting_tag, time_from_to, stage, n):
+async def test_pr_list_miner_stages(
+        mdb, pdb, rdb, release_match_setting_tag, time_from_to, stage, n):
     prs = await filter_pull_requests(
         set(), {stage}, *time_from_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(),
-        False, release_match_setting_tag, None, None, (6366825,), mdb, pdb, None)
+        False, release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(prs) == n
 
 
 @with_defer
-async def test_pr_list_miner_match_participants(mdb, pdb, release_match_setting_tag, time_from_to):
+async def test_pr_list_miner_match_participants(
+        mdb, pdb, rdb, release_match_setting_tag, time_from_to):
     participants = {PRParticipationKind.AUTHOR: {"mcuadros", "smola"},
                     PRParticipationKind.COMMENTER: {"mcuadros"}}
     prs = await filter_pull_requests(
         set(), set(), *time_from_to, {"src-d/go-git"},
         participants, LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,
-        None, None, (6366825,), mdb, pdb, None)
+        None, None, 1, (6366825,), mdb, pdb, rdb, None)
     assert isinstance(prs, list)
     assert len(prs) == 320
     for pr in prs:
@@ -71,21 +73,21 @@ async def test_pr_list_miner_match_participants(mdb, pdb, release_match_setting_
                                                  date(year=2016, month=12, day=1))])
 @with_defer
 async def test_pr_list_miner_match_metrics_all_count(
-        mdb, pdb, release_match_setting_tag, date_from, date_to):
+        mdb, pdb, rdb, release_match_setting_tag, date_from, date_to):
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
     time_to = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
     prs = await filter_pull_requests(
         set(), set(),
         time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
         JIRAFilter.empty(), False, release_match_setting_tag, None, None,
-        (6366825,), mdb, pdb, None)
+        1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert prs
     await pdb.execute(delete(GitHubMergedPullRequestFacts))  # ignore inactive unreleased
     metric = (await calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_to]], [0, 1], [],
         [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-        release_match_setting_tag, False, (6366825,), mdb, pdb, None,
+        release_match_setting_tag, False, 1, (6366825,), mdb, pdb, rdb, None,
     ))[0][0][0][0][0][0]
     assert len(prs) == metric.value
     if date_from.year == 2018:
@@ -103,25 +105,25 @@ async def test_pr_list_miner_match_metrics_all_count(
 
 @with_defer
 async def test_pr_list_miner_release_settings(
-        mdb, pdb, release_match_setting_tag, release_match_setting_branch, cache):
+        mdb, pdb, rdb, release_match_setting_tag, release_match_setting_branch, cache):
     time_from = datetime(year=2016, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     prs1 = await filter_pull_requests(
         set(), {PullRequestStage.RELEASING}, time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,
-        None, None, (6366825,), mdb, pdb, cache)
+        None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     assert prs1
     await wait_deferred()
     prs2 = await filter_pull_requests(
         set(), {PullRequestStage.RELEASING}, time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_branch,
-        None, None, (6366825,), mdb, pdb, cache)
+        None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs2) == 96  # force-push-dropped PRs still accessible from the artificial branches
 
 
 @with_defer
 async def test_pr_list_miner_release_cache_participants(
-        mdb, pdb, release_match_setting_tag, cache):
+        mdb, pdb, rdb, release_match_setting_tag, cache):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2019, month=1, day=1, tzinfo=timezone.utc)
     participants = {PRParticipationKind.AUTHOR: {"mcuadros", "smola"},
@@ -130,7 +132,7 @@ async def test_pr_list_miner_release_cache_participants(
     prs1 = await filter_pull_requests(
         set(), {PullRequestStage.RELEASING}, time_from, time_to, {"src-d/go-git"},
         participants, LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,
-        None, None, (6366825,), mdb, pdb, cache)
+        None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert prs1
     # reorder
@@ -140,34 +142,34 @@ async def test_pr_list_miner_release_cache_participants(
     prs2 = await filter_pull_requests(
         set(), {PullRequestStage.RELEASING}, time_from, time_to, {"src-d/go-git"},
         participants, LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,
-        None, None, (6366825,), None, None, cache)
+        None, None, 1, (6366825,), None, None, None, cache)
     assert len(prs1) == len(prs2)
 
 
 @with_defer
-async def test_pr_list_miner_exclude_inactive(mdb, pdb, release_match_setting_tag, cache):
+async def test_pr_list_miner_exclude_inactive(mdb, pdb, rdb, release_match_setting_tag, cache):
     time_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=1, day=11, tzinfo=timezone.utc)
     prs1 = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,
-        None, None, (6366825,), mdb, pdb, cache)
+        None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs1) == 7
     prs1 = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(), True, release_match_setting_tag,
-        None, None, (6366825,), mdb, pdb, cache)
+        None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs1) == 6
 
 
 @with_defer
-async def test_pr_list_miner_filter_labels_cache(mdb, pdb, release_match_setting_tag, cache):
+async def test_pr_list_miner_filter_labels_cache(mdb, pdb, rdb, release_match_setting_tag, cache):
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     prs1 = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(), False,
-        release_match_setting_tag, None, None, (6366825,), mdb, pdb, cache)
+        release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert len(prs1) == 6
     for pr in prs1:
@@ -176,7 +178,7 @@ async def test_pr_list_miner_filter_labels_cache(mdb, pdb, release_match_setting
     prs2 = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug"}, set()), JIRAFilter.empty(), False,
-        release_match_setting_tag, None, None, (6366825,), None, None, cache)
+        release_match_setting_tag, None, None, 1, (6366825,), None, None, None, cache)
     await wait_deferred()
     assert len(prs2) == 3
     for pr in prs2:
@@ -185,7 +187,7 @@ async def test_pr_list_miner_filter_labels_cache(mdb, pdb, release_match_setting
     prs3 = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug", "plumbing"}, set()), JIRAFilter.empty(), False,
-        release_match_setting_tag, None, None, (6366825,), mdb, pdb, cache)
+        release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs3) == 5
     for pr in prs3:
         labels = {label.name for label in pr.labels}
@@ -194,53 +196,53 @@ async def test_pr_list_miner_filter_labels_cache(mdb, pdb, release_match_setting
 
 @with_defer
 async def test_pr_list_miner_filter_labels_cache_postprocess(
-        mdb, pdb, release_match_setting_tag, cache):
+        mdb, pdb, rdb, release_match_setting_tag, cache):
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,
-        None, None, (6366825,), mdb, pdb, cache)
+        None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     prs1 = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug"}, set()), JIRAFilter.empty(), False,
-        release_match_setting_tag, None, None, (6366825,), None, None, cache)
+        release_match_setting_tag, None, None, 1, (6366825,), None, None, None, cache)
     await wait_deferred()
     assert len(prs1) == 3
     prs2 = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug"}, set()), JIRAFilter.empty(), False,
-        release_match_setting_tag, None, None, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert prs1 == prs2
     cache.mem = {}
     await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug"}, set()), JIRAFilter.empty(), False,
-        release_match_setting_tag, None, None, (6366825,), mdb, pdb, cache)
+        release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     with pytest.raises(Exception):
         await filter_pull_requests(
             set(), set(), time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,
-            None, None, (6366825,), None, None, cache)
+            None, None, 1, (6366825,), None, None, None, cache)
 
 
 @with_defer
-async def test_pr_list_miner_filter_labels_pdb(mdb, pdb, release_match_setting_tag):
+async def test_pr_list_miner_filter_labels_pdb(mdb, pdb, rdb, release_match_setting_tag):
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     await calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
-        False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
+        False, release_match_setting_tag, False, False, 1, (6366825,), mdb, pdb, rdb, None,
     )
     await wait_deferred()
     prs = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(), False,
-        release_match_setting_tag, None, None, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(prs) == 6
     for pr in prs:
@@ -249,36 +251,36 @@ async def test_pr_list_miner_filter_labels_pdb(mdb, pdb, release_match_setting_t
     prs = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug"}, set()), JIRAFilter.empty(), False, release_match_setting_tag,
-        None, None, (6366825,), mdb, pdb, None)
+        None, None, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(prs) == 3
     for pr in prs:
         assert "bug" in {label.name for label in (pr.labels or [])}
 
 
 @with_defer
-async def test_fetch_pull_requests_smoke(mdb, pdb, release_match_setting_tag, cache):
+async def test_fetch_pull_requests_smoke(mdb, pdb, rdb, release_match_setting_tag, cache):
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     await calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
-        False, release_match_setting_tag, False, False, (6366825,), mdb, pdb, None,
+        False, release_match_setting_tag, False, False, 1, (6366825,), mdb, pdb, rdb, None,
     )
     await wait_deferred()
     prs1 = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,
-        None, None, (6366825,), mdb, pdb, None)
+        None, None, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     prs1 = {pr.number: pr for pr in prs1}
     # 921 is needed to check done_times
     prs2 = await fetch_pull_requests(
         {"src-d/go-git": set(list(range(1000, 1011)) + [921])},
-        release_match_setting_tag, (6366825,), mdb, pdb, cache)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     prs3 = await fetch_pull_requests(
         {"src-d/go-git": set(list(range(1000, 1011)) + [921])},
-        release_match_setting_tag, (6366825,), None, None, cache)
+        release_match_setting_tag, 1, (6366825,), None, None, None, cache)
     assert prs2 == prs3
     del prs3
     assert len(prs2) == 12
@@ -291,13 +293,13 @@ async def test_fetch_pull_requests_smoke(mdb, pdb, release_match_setting_tag, ca
     with pytest.raises(Exception):
         await fetch_pull_requests(
             {"src-d/go-git": set(list(range(1000, 1011)) + [922])},
-            release_match_setting_tag, (6366825,), None, None, cache)
+            release_match_setting_tag, 1, (6366825,), None, None, None, cache)
 
 
 @with_defer
-async def test_fetch_pull_requests_no_merged(mdb, pdb, release_match_setting_tag, cache):
+async def test_fetch_pull_requests_no_merged(mdb, pdb, rdb, release_match_setting_tag, cache):
     prs = await fetch_pull_requests(
-        {"src-d/go-git": {1069}}, release_match_setting_tag, (6366825,), mdb, pdb, cache)
+        {"src-d/go-git": {1069}}, release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs) == 1
     assert prs[0].number == 1069
     assert PullRequestStage.WIP in prs[0].stages_now
@@ -308,20 +310,20 @@ async def test_fetch_pull_requests_no_merged(mdb, pdb, release_match_setting_tag
 
 
 @with_defer
-async def test_fetch_pull_requests_empty(mdb, pdb, release_match_setting_tag, cache):
+async def test_fetch_pull_requests_empty(mdb, pdb, rdb, release_match_setting_tag, cache):
     prs = await fetch_pull_requests(
-        {"src-d/go-git": {0}}, release_match_setting_tag, (6366825,), mdb, pdb, cache)
+        {"src-d/go-git": {0}}, release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs) == 0
 
 
 @with_defer
-async def test_pr_list_miner_filter_open_precomputed(mdb, pdb, release_match_setting_tag):
+async def test_pr_list_miner_filter_open_precomputed(mdb, pdb, rdb, release_match_setting_tag):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = [set(),
             {PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING},
             time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, None, None, (6366825,), mdb, pdb, None]
+            False, release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, None]
     prs1 = await filter_pull_requests(*args)
     await wait_deferred()
     assert len(prs1) == 21
@@ -342,19 +344,20 @@ async def test_pr_list_miner_filter_open_precomputed(mdb, pdb, release_match_set
 
 
 @with_defer
-async def test_pr_list_miner_filter_stages_events_aggregation(mdb, pdb, release_match_setting_tag):
+async def test_pr_list_miner_filter_stages_events_aggregation(
+        mdb, pdb, rdb, release_match_setting_tag):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = [{PullRequestEvent.REVIEWED},
             {PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING},
             time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, None, None, (6366825,), mdb, pdb, None]
+            False, release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, None]
     prs = await filter_pull_requests(*args)
     assert len(prs) == 132
 
 
 @with_defer
-async def test_pr_list_miner_filter_updated_min_max(mdb, pdb, release_match_setting_tag):
+async def test_pr_list_miner_filter_updated_min_max(mdb, pdb, rdb, release_match_setting_tag):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = [{PullRequestEvent.REVIEWED},
@@ -363,6 +366,6 @@ async def test_pr_list_miner_filter_updated_min_max(mdb, pdb, release_match_sett
             False, release_match_setting_tag,
             datetime(2018, 2, 1, tzinfo=timezone.utc),
             datetime(2019, 2, 1, tzinfo=timezone.utc),
-            (6366825,), mdb, pdb, None]
+            1, (6366825,), mdb, pdb, rdb, None]
     prs = await filter_pull_requests(*args)
     assert len(prs) == 72

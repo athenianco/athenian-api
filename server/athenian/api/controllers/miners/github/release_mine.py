@@ -61,9 +61,11 @@ async def mine_releases(repos: Iterable[str],
                         time_to: datetime,
                         jira: JIRAFilter,
                         settings: Dict[str, ReleaseMatchSetting],
+                        account: int,
                         meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
                         pdb: databases.Database,
+                        rdb: databases.Database,
                         cache: Optional[aiomcache.Client],
                         force_fresh: bool = False,
                         with_avatars: bool = True,
@@ -82,7 +84,7 @@ async def mine_releases(repos: Iterable[str],
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
     releases_in_time_range, matched_bys = await load_releases(
         repos, branches, default_branches, time_from, time_to,
-        settings, meta_ids, mdb, pdb, cache, force_fresh=force_fresh)
+        settings, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=force_fresh)
     # resolve ambiguous release match settings
     settings = settings.copy()
     for repo in repos:
@@ -120,7 +122,8 @@ async def mine_releases(repos: Iterable[str],
         )[0])
         _, releases, _, _ = await _find_releases_for_matching_prs(
             missing_repos, branches, default_branches, time_from, time_to, False,
-            settings, meta_ids, mdb, pdb, cache, releases_in_time_range=releases_in_time_range)
+            settings, account, meta_ids, mdb, pdb, rdb, cache,
+            releases_in_time_range=releases_in_time_range)
         tasks = [
             load_commit_dags(releases, meta_ids, mdb, pdb, cache),
             _fetch_repository_first_commit_dates(missing_repos, meta_ids, mdb, pdb, cache),
@@ -484,9 +487,11 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
 )
 async def mine_releases_by_name(names: Dict[str, Iterable[str]],
                                 settings: Dict[str, ReleaseMatchSetting],
+                                account: int,
                                 meta_ids: Tuple[int, ...],
                                 mdb: databases.Database,
                                 pdb: databases.Database,
+                                rdb: databases.Database,
                                 cache: Optional[aiomcache.Client],
                                 ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
                                            List[Tuple[str, str]]]:
@@ -495,7 +500,7 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     log = logging.getLogger("%s.mine_releases_by_name" % metadata.__package__)
     names = {k: set(v) for k, v in names.items()}
     releases, _, branches, default_branches = await _load_releases_by_name(
-        names, log, settings, meta_ids, mdb, pdb, cache)
+        names, log, settings, account, meta_ids, mdb, pdb, rdb, cache)
     if releases.empty:
         return [], []
     settings_tags, settings_branches = {}, {}
@@ -537,7 +542,8 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
         time_to = missing_releases[Release.published_at.key].iloc[0] + timedelta(seconds=1)
         mined_result, mined_authors, _ = await mine_releases(
             repos, {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
-            settings, meta_ids, mdb, pdb, cache, force_fresh=True, with_avatars=False)
+            settings, account, meta_ids, mdb, pdb, rdb, cache,
+            force_fresh=True, with_avatars=False)
         missing_releases_by_repo = defaultdict(set)
         for repo, name in zip(missing_releases[Release.repository_full_name.key].values,
                               missing_releases[Release.name.key].values):
@@ -556,9 +562,11 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
 async def _load_releases_by_name(names: Dict[str, Set[str]],
                                  log: logging.Logger,
                                  settings: Dict[str, ReleaseMatchSetting],
+                                 account: int,
                                  meta_ids: Tuple[int, ...],
                                  mdb: databases.Database,
                                  pdb: databases.Database,
+                                 rdb: databases.Database,
                                  cache: Optional[aiomcache.Client],
                                  ) -> Tuple[pd.DataFrame,
                                             pd.DataFrame,
@@ -581,8 +589,9 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
     if missing:
         now = datetime.now(timezone.utc)
         # There can be fresh new releases that are not in the pdb yet.
-        match_groups, repos_count = group_repos_by_release_match(
+        match_groups, event_releases, repos_count = group_repos_by_release_match(
             missing, default_branches, settings)
+        # event releases will be loaded in any case
         spans = await fetch_precomputed_release_match_spans(match_groups, pdb)
         offset = timedelta(hours=2)
         max_offset = timedelta(days=5 * 365)
@@ -603,7 +612,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                 break
         new_releases, _ = await load_releases(
             missing, branches, default_branches, now - offset, now,
-            settings, meta_ids, mdb, pdb, cache, force_fresh=True)
+            settings, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True)
         new_releases_index = defaultdict(dict)
         for i, (repo, name) in enumerate(zip(new_releases[Release.repository_full_name.key].values,
                                              new_releases[Release.name.key].values)):
@@ -620,6 +629,9 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
             releases = releases.append(new_releases.take(matching_indexes), ignore_index=True)
             releases.sort_values(Release.published_at.key,
                                  inplace=True, ascending=False, ignore_index=True)
+            if event_releases:
+                # we could load them twice
+                releases.drop_duplicates(subset=Release.id.key, inplace=True)
         if still_missing:
             log.warning("Some releases were not found: %s", still_missing)
     return releases, names, branches, default_branches
@@ -676,9 +688,11 @@ async def _complete_commit_hashes(names: Dict[str, Set[str]],
 )
 async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
                         settings: Dict[str, ReleaseMatchSetting],
+                        account: int,
                         meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
                         pdb: databases.Database,
+                        rdb: databases.Database,
                         cache: Optional[aiomcache.Client],
                         ) -> Tuple[
         Dict[str, List[Tuple[str, str, List[Tuple[Dict[str, Any], ReleaseFacts]]]]],
@@ -690,7 +704,7 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
         for old, new in pairs:
             names[repo].update((old, new))
     border_releases, names, branches, default_branches = await _load_releases_by_name(
-        names, log, settings, meta_ids, mdb, pdb, cache)
+        names, log, settings, account, meta_ids, mdb, pdb, rdb, cache)
     if border_releases.empty:
         return {}, []
     repos = border_releases[Release.repository_full_name.key].unique()
@@ -706,7 +720,7 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
     tasks = [
         mine_releases(
             repos, {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
-            settings, meta_ids, mdb, pdb, cache, force_fresh=True),
+            settings, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True),
         fetch_dags(),
     ]
     (releases, avatars, _), dags = await gather(*tasks, op="mine_releases + dags")

@@ -182,9 +182,11 @@ class PullRequestMiner:
                     updated_max: Optional[datetime],
                     pr_blacklist: Optional[Tuple[Collection[str], Dict[str, List[str]]]],
                     truncate: bool,
+                    account: int,
                     meta_ids: Tuple[int, ...],
                     mdb: databases.Database,
                     pdb: databases.Database,
+                    rdb: databases.Database,
                     cache: Optional[aiomcache.Client],
                     ) -> Tuple[PRDataFrames,
                                Dict[str, Tuple[str, PullRequestFacts]],
@@ -212,7 +214,7 @@ class PullRequestMiner:
                 participants.get(PRParticipationKind.AUTHOR, []),
                 participants.get(PRParticipationKind.MERGER, []),
                 jira, release_settings, updated_min, updated_max,
-                meta_ids, mdb, pdb, cache, pr_blacklist, truncate),
+                account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
                 time_from, time_to, repositories, participants, labels, jira,
                 exclude_inactive, pr_blacklist, meta_ids, mdb, cache,
@@ -249,7 +251,7 @@ class PullRequestMiner:
                     participants.get(PRParticipationKind.AUTHOR, []),
                     participants.get(PRParticipationKind.MERGER, []),
                     jira, release_settings, updated_min, updated_max,
-                    meta_ids, mdb, pdb, cache, inverse_pr_blacklist, truncate),
+                    account, meta_ids, mdb, pdb, rdb, cache, inverse_pr_blacklist, truncate),
                 cls.fetch_prs(
                     time_from, time_to, missed_prs, participants, labels, jira,
                     exclude_inactive, inverse_pr_blacklist, meta_ids, mdb, cache,
@@ -545,9 +547,11 @@ class PullRequestMiner:
                    default_branches: Dict[str, str],
                    exclude_inactive: bool,
                    release_settings: Dict[str, ReleaseMatchSetting],
+                   account: int,
                    meta_ids: Tuple[int, ...],
                    mdb: databases.Database,
                    pdb: databases.Database,
+                   rdb: databases.Database,
                    cache: Optional[aiomcache.Client],
                    updated_min: Optional[datetime] = None,
                    updated_max: Optional[datetime] = None,
@@ -560,6 +564,7 @@ class PullRequestMiner:
         """
         Mine metadata about pull requests according to the numerous filters.
 
+        :param account: State DB account ID.
         :param meta_ids: Metadata (GitHub) account IDs.
         :param date_from: Fetch PRs created starting from this date, inclusive.
         :param date_to: Fetch PRs created ending with this date, inclusive.
@@ -578,6 +583,7 @@ class PullRequestMiner:
         :param updated_max: PRs must have the last update timestamp not newer than or equal to it.
         :param mdb: Metadata db instance.
         :param pdb: Precomputed db instance.
+        :param rdb: Persistentdata db instance.
         :param cache: memcached client to cache the collected data.
         :param pr_blacklist: completely ignore the existence of these PR node IDs. \
                              The second tuple element is the ambiguous PRs: released by branch \
@@ -597,7 +603,7 @@ class PullRequestMiner:
         dfs, facts, _, _, _, _, matched_bys, event = await cls._mine(
             date_from, date_to, repositories, participants, labels, jira, branches,
             default_branches, exclude_inactive, release_settings, updated_min, updated_max,
-            pr_blacklist, truncate, meta_ids, mdb, pdb, cache)
+            pr_blacklist, truncate, account, meta_ids, mdb, pdb, rdb, cache)
         cls._truncate_prs(dfs, time_from, time_to)
         return cls(dfs), facts, matched_bys, event
 

@@ -5735,7 +5735,7 @@ components:
           description: Name of the assigned person.
           type: string
         comments:
-          description: Number of comments in the issue excluding sub-tasks.
+          description: Number of comments in the issue excluding sub-tasks and children.
           type: integer
         priority:
           description: Name of the priority. The details are returned in `FilteredJIRAStuff.priorities`.

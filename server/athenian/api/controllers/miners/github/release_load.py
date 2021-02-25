@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
@@ -11,7 +12,7 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, insert, or_, select, union_all
+from sqlalchemy import and_, desc, func, insert, or_, select, union_all, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
 
@@ -28,7 +29,8 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
 from athenian.api.db import add_pdb_hits, add_pdb_misses, greatest, least
 from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release
+from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, Repository
+from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan
 from athenian.api.models.web import NoSourceDataError
@@ -46,9 +48,11 @@ async def load_releases(repos: Iterable[str],
                         time_from: datetime,
                         time_to: datetime,
                         settings: Dict[str, ReleaseMatchSetting],
+                        account: int,
                         meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
                         pdb: databases.Database,
+                        rdb: databases.Database,
                         cache: Optional[aiomcache.Client],
                         index: Optional[Union[str, Sequence[str]]] = None,
                         force_fresh: bool = False,
@@ -57,6 +61,7 @@ async def load_releases(repos: Iterable[str],
     Fetch releases from the metadata DB according to the match settings.
 
     :param repos: Repositories in which to search for releases *without the service prefix*.
+    :param account: Account ID of the releases' owner. Needed to query persistentdata.
     :param branches: DataFrame with all the branches in `repos`.
     :param default_branches: Mapping from repository name to default branch name.
     :return: 1. Pandas DataFrame with the loaded releases (columns match the Release model + \
@@ -65,10 +70,12 @@ async def load_releases(repos: Iterable[str],
     """
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
+    assert isinstance(rdb, databases.Database)
     assert time_from <= time_to
 
     log = logging.getLogger("%s.load_releases" % metadata.__package__)
-    match_groups, repos_count = group_repos_by_release_match(repos, default_branches, settings)
+    match_groups, event_repos, repos_count = group_repos_by_release_match(
+        repos, default_branches, settings)
     if repos_count == 0:
         log.warning("no repositories")
         return dummy_releases_df(), {}
@@ -83,8 +90,9 @@ async def load_releases(repos: Iterable[str],
             time_from - tag_by_branch_probe_lookaround,
             time_to + tag_by_branch_probe_lookaround,
             pdb, index=index),
+        _fetch_release_events(event_repos, account, meta_ids, time_from, time_to, mdb, rdb),
     ]
-    spans, releases = await gather(*tasks)
+    spans, releases, event_releases = await gather(*tasks)
 
     def gather_applied_matches():
         # nlargest(1) puts `tag` in front of `branch` for `tag_or_branch` repositories with both
@@ -230,6 +238,11 @@ async def load_releases(repos: Iterable[str],
     releases = releases.take(np.nonzero(include)[0])
     if Release.acc_id.key in releases:
         del releases[Release.acc_id.key]
+    # append the pushed releases
+    if not event_releases.empty:
+        releases = pd.concat([releases, event_releases], copy=False)
+        releases.sort_values(Release.published_at.key,
+                             inplace=True, ascending=False, ignore_index=True)
     return releases, applied_matches
 
 
@@ -282,12 +295,15 @@ def dummy_releases_df() -> pd.DataFrame:
 def group_repos_by_release_match(repos: Iterable[str],
                                  default_branches: Dict[str, str],
                                  settings: Dict[str, ReleaseMatchSetting],
-                                 ) -> Tuple[Dict[ReleaseMatch, Dict[str, List[str]]], int]:
+                                 ) -> Tuple[Dict[ReleaseMatch, Dict[str, List[str]]],
+                                            List[str],
+                                            int]:
     """
     Aggregate repository lists by specific release matches.
 
     :return: 1. map ReleaseMatch => map Required match regexp => list of repositories. \
-             2. number of processed repositories.
+             2. repositories released by push event. \
+             3. number of processed repositories.
     """
     match_groups = {
         ReleaseMatch.tag: {},
@@ -295,6 +311,7 @@ def group_repos_by_release_match(repos: Iterable[str],
     }
     prefix = PREFIXES["github"]
     count = 0
+    event_repos = []
     for repo in repos:
         count += 1
         rms = settings[prefix + repo]
@@ -304,7 +321,9 @@ def group_repos_by_release_match(repos: Iterable[str],
             match_groups[ReleaseMatch.branch].setdefault(
                 rms.branches.replace(default_branch_alias, default_branches[repo]), [],
             ).append(repo)
-    return match_groups, count
+        if rms.match == ReleaseMatch.event:
+            event_repos.append(repo)
+    return match_groups, event_repos, count
 
 
 def match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]],
@@ -322,6 +341,7 @@ def match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]
         (ReleaseMatch.branch, "|"),
         (ReleaseMatch.rejected, ""),
         (ReleaseMatch.force_push_drop, ""),
+        (ReleaseMatch.event, ""),
     ]:
         if not (match_group := match_groups.get(match)):
             continue
@@ -504,6 +524,115 @@ async def _store_precomputed_releases(releases: pd.DataFrame,
 
         with sentry_sdk.start_span(op="_store_precomputed_releases/execute_many"):
             await pdb.execute_many(sql, inserted)
+
+
+@sentry_span
+async def _fetch_release_events(repos: Sequence[str],
+                                account: int,
+                                meta_ids: Tuple[int, ...],
+                                time_from: datetime,
+                                time_to: datetime,
+                                mdb: databases.Database,
+                                rdb: databases.Database,
+                                ) -> pd.DataFrame:
+    """Load pushed releases from persistentdata DB."""
+    if len(repos) == 0:
+        return dummy_releases_df()
+    release_rows = await mdb.fetch_all(
+        select([Repository.node_id, Repository.full_name])
+        .where(and_(
+            Repository.acc_id.in_(meta_ids),
+            Repository.full_name.in_(repos),
+        )))
+    repo_ids = {r[0]: r[1] for r in release_rows}
+    release_rows = await rdb.fetch_all(
+        select([ReleaseNotification])
+        .where(and_(
+            ReleaseNotification.account_id == account,
+            ReleaseNotification.published_at.between(time_from, time_to),
+        ))
+        .order_by(desc(ReleaseNotification.published_at)))
+    unresolved_commits_short = defaultdict(list)
+    unresolved_commits_long = defaultdict(list)
+    for row in release_rows:
+        if row[ReleaseNotification.resolved_commit_node_id.key] is None:
+            repo = row[ReleaseNotification.repository_node_id.key]
+            commit = row[ReleaseNotification.commit_hash_prefix.key]
+            if len(commit) == 7:
+                unresolved_commits_short[repo].append(commit)
+            else:
+                unresolved_commits_long[repo].append(commit)
+    queries = []
+    queries.extend(
+        select([PushCommit.repository_node_id, PushCommit.node_id, PushCommit.sha])
+        .where(and_(PushCommit.acc_id.in_(meta_ids),
+                    PushCommit.repository_node_id == repo,
+                    func.substr(PushCommit.sha, 1, 7).in_(commits)))
+        for repo, commits in unresolved_commits_short.items()
+    )
+    queries.extend(
+        select([PushCommit.repository_node_id, PushCommit.node_id, PushCommit.sha])
+        .where(and_(PushCommit.acc_id.in_(meta_ids),
+                    PushCommit.repository_node_id == repo,
+                    PushCommit.sha.in_(commits)))
+        for repo, commits in unresolved_commits_long.items()
+    )
+    if len(queries) == 1:
+        sql = queries[0]
+    elif len(queries) > 1:
+        sql = union_all(*queries)
+    else:
+        sql = None
+    resolved_commits = {}
+    if sql is not None:
+        commit_rows = await mdb.fetch_all(sql)
+        for row in commit_rows:
+            repo = row[PushCommit.repository_node_id.key]
+            node_id = row[PushCommit.node_id.key]
+            sha = row[PushCommit.sha.key]
+            resolved_commits[(repo, sha)] = node_id, sha
+            resolved_commits[(repo, sha[:7])] = node_id, sha
+    releases = []
+    updated = []
+    for row in release_rows:
+        repo = row[ReleaseNotification.repository_node_id.key]
+        if (commit_node_id := row[ReleaseNotification.resolved_commit_node_id.key]) is None:
+            commit_node_id, commit_hash = resolved_commits.get(
+                commit_prefix := row[ReleaseNotification.commit_hash_prefix.key], (None, None))
+            if commit_node_id is not None:
+                updated.append((repo, commit_prefix, commit_node_id, commit_hash))
+        else:
+            commit_hash = row[ReleaseNotification.resolved_commit_hash.key]
+        releases.append({
+            Release.author.key: row[ReleaseNotification.author.key],
+            Release.commit_id.key: commit_node_id,
+            Release.id.key: row[ReleaseNotification.resolved_commit_node_id.key],
+            Release.name.key: row[ReleaseNotification.name.key],
+            Release.published_at.key: row[ReleaseNotification.published_at.key],
+            Release.repository_full_name.key: repo_ids[repo],
+            Release.repository_node_id.key: repo,
+            Release.sha.key: commit_hash,
+            Release.tag.key: None,
+            Release.url.key: row[ReleaseNotification.url.key],
+            matched_by_column: ReleaseMatch.notification.value,
+        })
+    if updated:
+        async def update_pushed_release_commits():
+            for repo, prefix, node_id, full_hash in updated:
+                await rdb.execute(
+                    update(ReleaseNotification)
+                    .where(and_(ReleaseNotification.account_id == account,
+                                ReleaseNotification.repository_node_id == repo,
+                                ReleaseNotification.commit_hash_prefix == prefix))
+                    .values({
+                        ReleaseNotification.updated_at: datetime.now(timezone.utc),
+                        ReleaseNotification.resolved_commit_node_id: node_id,
+                        ReleaseNotification.resolved_commit_hash: full_hash,
+                    }))
+
+        await defer(update_pushed_release_commits(),
+                    "update_pushed_release_commits(%d)" % len(updated))
+    return pd.DataFrame(releases)
 
 
 @sentry_span
