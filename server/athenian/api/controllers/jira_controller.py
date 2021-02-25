@@ -171,6 +171,7 @@ async def _epic_flow(return_: Set[str],
         Issue.commenters_ids,
         Issue.priority_id,
         Issue.status_id,
+        Issue.comments_count,
     ]
     if JIRAFilterReturn.USERS in return_:
         extra_columns.extend(_participant_columns)
@@ -185,7 +186,7 @@ async def _epic_flow(return_: Set[str],
     issue_by_id = {}
     for epic_id, project_id, epic_key, epic_title, epic_created, epic_updated, epic_prs_began,\
         epic_work_began, epic_prs_released, epic_resolved, epic_reporter, epic_assignee, \
-        epic_priority, epic_status, epic_prs in zip(
+        epic_priority, epic_status, epic_prs, epic_comments in zip(
             epics_df.index.values, *(epics_df[column].values for column in (
             Issue.project_id.key,
             Issue.key.key,
@@ -201,6 +202,7 @@ async def _epic_flow(return_: Set[str],
             Issue.priority_name.key,
             Issue.status.key,
             ISSUE_PRS_COUNT,
+            Issue.comments_count.key,
             ))):
         work_began, resolved = resolve_work_began_and_resolved(
             epic_work_began, epic_prs_began, epic_resolved, epic_prs_released)
@@ -215,14 +217,14 @@ async def _epic_flow(return_: Set[str],
             resolved=resolved,
             reporter=epic_reporter,
             assignee=epic_assignee,
-            comments=0,  # TODO(vmarkovtsev): DEV-1658
+            comments=epic_comments,
             priority=epic_priority,
             status=epic_status,
             prs=epic_prs,
         ))
         children_indexes = epic_children_map.get(epic_id, [])
         for child_id, child_key, child_title, child_created, child_updated, child_prs_began, \
-            child_work_began, child_prs_released, child_resolved, child_reporter, \
+            child_work_began, child_prs_released, child_resolved, child_comments, child_reporter, \
             child_assignee, child_priority, child_status, child_prs, child_type in zip(*(
                 children_columns[column][children_indexes] for column in (
                 Issue.id.key,
@@ -234,6 +236,7 @@ async def _epic_flow(return_: Set[str],
                 AthenianIssue.work_began.key,
                 ISSUE_PRS_RELEASED,
                 AthenianIssue.resolved.key,
+                Issue.comments_count.key,
                 Issue.reporter_display_name.key,
                 Issue.assignee_display_name.key,
                 Issue.priority_name.key,
@@ -257,7 +260,7 @@ async def _epic_flow(return_: Set[str],
                 resolved=resolved,
                 reporter=child_reporter,
                 assignee=child_assignee,
-                comments=0,  # TODO(vmarkovtsev): DEV-1658
+                comments=child_comments,
                 priority=child_priority,
                 status=child_status,
                 prs=child_prs,
@@ -354,6 +357,7 @@ async def _issue_flow(return_: Set[str],
         Issue.commenters_ids,
         Issue.priority_id,
         Issue.status_id,
+        Issue.comments_count,
     ]
     if JIRAFilterReturn.ISSUE_BODIES in return_:
         extra_columns.extend([
@@ -567,7 +571,7 @@ async def _issue_flow(return_: Set[str],
         for issue_key, issue_title, issue_created, issue_updated, issue_prs_began, \
             issue_work_began, issue_prs_released, issue_resolved, issue_reporter, \
             issue_assignee, issue_priority, issue_status, issue_prs, issue_type, \
-            issue_project in zip(*(
+            issue_project, issue_comments in zip(*(
                 issues[column].values for column in (
                 Issue.key.key,
                 Issue.title.key,
@@ -584,6 +588,7 @@ async def _issue_flow(return_: Set[str],
                 ISSUE_PR_IDS,
                 Issue.type.key,
                 Issue.project_id.key,
+                Issue.comments_count.key,
                 ))):
             work_began, resolved = resolve_work_began_and_resolved(
                 issue_work_began, issue_prs_began, issue_resolved, issue_prs_released)
@@ -601,7 +606,7 @@ async def _issue_flow(return_: Set[str],
                 lead_time=lead_time,
                 reporter=issue_reporter,
                 assignee=issue_assignee,
-                comments=0,  # TODO(vmarkovtsev): DEV-1658
+                comments=issue_comments,
                 priority=issue_priority,
                 status=issue_status,
                 project=issue_project,

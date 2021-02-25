@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Boolean, Column, JSON, SmallInteger, Text, TIMESTAMP
+from sqlalchemy import BigInteger, Boolean, Column, Integer, JSON, SmallInteger, Text, TIMESTAMP
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -46,6 +46,7 @@ class Issue(Base):
         postgresql.ARRAY(BigInteger).with_variant(JSON(), sqlite.dialect.name))
     commenters_display_names = Column(
         postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
+    comments_count = Column(Integer, nullable=False)
     priority_id = Column(Text)  # TODO(vmarkovtsev): make it nullable=False
     priority_name = Column(Text, nullable=False)
 
