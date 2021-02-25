@@ -1317,6 +1317,7 @@ async def test_precomputed_releases_tags_after_branches(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
 
 
+@pytest.mark.flaky(reruns=3)
 @with_defer
 async def test_mine_releases_by_name(
         mdb, pdb, branches, default_branches, release_match_setting_branch,
