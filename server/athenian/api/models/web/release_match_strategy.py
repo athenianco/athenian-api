@@ -12,4 +12,4 @@ class ReleaseMatchStrategy(Model, metaclass=Enum):
     BRANCH = "branch"
     TAG = "tag"
     TAG_OR_BRANCH = "tag_or_branch"
-    NOTIFICATION = "notification"
+    EVENT = "event"
