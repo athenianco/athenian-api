@@ -151,7 +151,7 @@ def main():
                          reposet.owner_id)
                 try:
                     num_teams, num_bots = await create_teams(
-                        reposet.owner_id, meta_ids, reposet.items, bots, sdb, mdb, pdb, cache)
+                        reposet.owner_id, meta_ids, reposet.items, bots, sdb, mdb, pdb, rdb, cache)
                 except Exception as e:
                     log.warning("bots %d: %s: %s", reposet.owner_id, type(e).__name__, e)
                     sentry_sdk.capture_exception(e)
@@ -168,7 +168,8 @@ def main():
                 branches, default_branches = await extract_branches(repos, meta_ids, mdb, None)
                 releases, _, _ = await mine_releases(
                     repos, {}, branches, default_branches, no_time_from, time_to,
-                    JIRAFilter.empty(), settings, meta_ids, mdb, pdb, None, force_fresh=True)
+                    JIRAFilter.empty(), settings, reposet.owner_id, meta_ids, mdb, pdb, rdb, None,
+                    force_fresh=True)
                 branches_count = len(branches)
                 del branches
                 releases_by_tag = sum(
@@ -192,9 +193,11 @@ def main():
                     settings,
                     True,
                     False,
+                    reposet.owner_id,
                     meta_ids,
                     mdb,
                     pdb,
+                    rdb,
                     None,  # yes, disable the cache
                 )
                 if not reposet.precomputed and slack is not None:
@@ -312,6 +315,7 @@ async def create_teams(account: int,
                        sdb: ParallelDatabase,
                        mdb: ParallelDatabase,
                        pdb: ParallelDatabase,
+                       rdb: ParallelDatabase,
                        cache: Optional[aiomcache.Client]) -> Tuple[int, int]:
     """Copy the existing teams from GitHub and create a new team with all the involved bots \
     for the specified account.
@@ -328,7 +332,7 @@ async def create_teams(account: int,
         account, sdb, mdb, None, None).list_release_matches(repos)
     contributors = await mine_contributors(
         {r.split("/", 1)[1] for r in repos}, None, None, False, [],
-        release_settings, meta_ids, mdb, pdb, None, force_fresh_releases=True)
+        release_settings, account, meta_ids, mdb, pdb, rdb, None, force_fresh_releases=True)
     if bots := {u[User.login.key] for u in contributors}.intersection(all_bots):
         bots = [PREFIXES["github"] + login for login in bots]
         await sdb.execute(insert(Team).values(

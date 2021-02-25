@@ -78,9 +78,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     filt.priorities = [p.lower() for p in (filt.priorities or [])]
     filt.types = [p.lower() for p in (filt.types or [])]
     return_ = set(filt.return_ or JIRAFilterReturn)
-    sdb = request.sdb
-    mdb = request.mdb
-    pdb = request.pdb
+    sdb, mdb, pdb, rdb = request.sdb, request.mdb, request.pdb, request.rdb
     cache = request.cache
     tasks = [
         _epic_flow(return_, jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
@@ -88,7 +86,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                    release_settings, meta_ids, mdb, pdb, cache),
         _issue_flow(return_, filt.account, jira_ids, time_from, time_to, filt.exclude_inactive,
                     label_filter, filt.priorities, filt.types, reporters, assignees, commenters,
-                    branches, default_branches, release_settings, meta_ids, sdb, mdb, pdb, cache),
+                    branches, default_branches, release_settings, meta_ids,
+                    sdb, mdb, pdb, rdb, cache),
     ]
     ((epics, epic_priorities, epic_statuses),
      (issues, labels, issue_users, issue_types, issue_priorities, issue_statuses),
@@ -338,6 +337,7 @@ async def _issue_flow(return_: Set[str],
                       sdb: databases.Database,
                       mdb: databases.Database,
                       pdb: databases.Database,
+                      rdb: databases.Database,
                       cache: Optional[aiomcache.Client],
                       ) -> Tuple[Optional[JIRAIssue],
                                  Optional[JIRALabel],
@@ -509,7 +509,7 @@ async def _issue_flow(return_: Set[str],
             prs_df[PullRequest.repository_full_name.key].unique().astype("U")))[0])
         mined_prs, dfs, facts, _ = await unwrap_pull_requests(
             prs_df, facts, ambiguous, False, related_branches, default_branches, release_settings,
-            meta_ids, mdb, pdb, cache)
+            account, meta_ids, mdb, pdb, rdb, cache)
         miner = PullRequestListMiner(
             mined_prs, dfs, facts, set(), set(),
             datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc), False)

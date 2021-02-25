@@ -8,7 +8,7 @@ from athenian.api.models.web import ReleaseMetricID
 
 @with_defer
 async def test_calc_release_metrics_line_github_jira_cache(
-        release_match_setting_tag, mdb, pdb, cache):
+        release_match_setting_tag, mdb, pdb, rdb, cache):
     metrics, _ = await calc_release_metrics_line_github(
         [ReleaseMetricID.RELEASE_PRS],
         [[datetime(2018, 6, 12, tzinfo=timezone.utc),
@@ -18,7 +18,7 @@ async def test_calc_release_metrics_line_github_jira_cache(
         [],
         JIRAFilter.empty(),
         release_match_setting_tag,
-        (6366825,), mdb, pdb, cache,
+        1, (6366825,), mdb, pdb, rdb, cache,
     )
     await wait_deferred()
     assert metrics[0][0][0][0][0].value == 130
@@ -32,6 +32,6 @@ async def test_calc_release_metrics_line_github_jira_cache(
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"performance", "bug"}, set()),
                    set(), set(), False),
         release_match_setting_tag,
-        (6366825,), mdb, pdb, cache,
+        1, (6366825,), mdb, pdb, rdb, cache,
     )
     assert metrics[0][0][0][0][0].value == 7

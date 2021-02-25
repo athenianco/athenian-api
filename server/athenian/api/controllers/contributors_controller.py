@@ -42,7 +42,7 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
         repos = [r.split("/", 1)[1] for r in repos]
         users = await mine_contributors(
             repos, None, None, False, [], release_settings,
-            meta_ids, request.mdb, request.pdb, request.cache)
+            account_id, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
         mapped_jira = await load_mapped_jira_users(
             account_id, [u[User.node_id.key] for u in users], sdb_conn, request.mdb, request.cache)
         prefix = PREFIXES["github"]

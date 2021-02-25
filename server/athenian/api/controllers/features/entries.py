@@ -93,9 +93,11 @@ async def _calc_pull_request_facts_github(time_from: datetime,
                                           release_settings: Dict[str, ReleaseMatchSetting],
                                           fresh: bool,
                                           with_jira_map: bool,
+                                          account: int,
                                           meta_ids: Tuple[int, ...],
                                           mdb: Database,
                                           pdb: Database,
+                                          rdb: Database,
                                           cache: Optional[aiomcache.Client],
                                           ) -> Tuple[List[PullRequestFacts], bool]:
     assert isinstance(repositories, set)
@@ -126,7 +128,7 @@ async def _calc_pull_request_facts_github(time_from: datetime,
         facts = await fetch_pull_request_facts_unfresh(
             precomputed_facts, ambiguous, time_from, time_to, repositories,
             participants, labels, jira, exclude_inactive, branches,
-            default_branches, release_settings, meta_ids, mdb, pdb, cache)
+            default_branches, release_settings, account, meta_ids, mdb, pdb, rdb, cache)
         if with_jira_map:
             undone_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
                 {k: v for k, v in facts.items() if k not in precomputed_facts}, meta_ids, mdb))
@@ -142,7 +144,7 @@ async def _calc_pull_request_facts_github(time_from: datetime,
         PullRequestMiner.mine(
             date_from, date_to, time_from, time_to, repositories, participants,
             labels, jira, branches, default_branches, exclude_inactive, release_settings,
-            meta_ids, mdb, pdb, cache, pr_blacklist=blacklist),
+            account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist=blacklist),
     ]
     if jira and precomputed_facts:
         tasks.append(PullRequestMiner.filter_jira(
@@ -222,9 +224,11 @@ async def calc_pull_request_facts_github(time_from: datetime,
                                          release_settings: Dict[str, ReleaseMatchSetting],
                                          fresh: bool,
                                          with_jira_map: bool,
+                                         account: int,
                                          meta_ids: Tuple[int, ...],
                                          mdb: Database,
                                          pdb: Database,
+                                         rdb: Database,
                                          cache: Optional[aiomcache.Client],
                                          ) -> List[PullRequestFacts]:
     """
@@ -247,9 +251,11 @@ async def calc_pull_request_facts_github(time_from: datetime,
         release_settings,
         fresh,
         with_jira_map,
+        account,
         meta_ids,
         mdb,
         pdb,
+        rdb,
         cache,
     ))[0]
 
@@ -305,9 +311,11 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 exclude_inactive: bool,
                                                 release_settings: Dict[str, ReleaseMatchSetting],
                                                 fresh: bool,
+                                                account: int,
                                                 meta_ids: Tuple[int, ...],
                                                 mdb: Database,
                                                 pdb: Database,
+                                                rdb: Database,
                                                 cache: Optional[aiomcache.Client],
                                                 ) -> np.ndarray:
     """
@@ -322,7 +330,8 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
-        release_settings, fresh, need_jira_mapping(metrics), meta_ids, mdb, pdb, cache)
+        release_settings, fresh, need_jira_mapping(metrics),
+        account, meta_ids, mdb, pdb, rdb, cache)
     df_facts = df_from_dataclasses(mined_facts)
     repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
     with_grouper = partial(group_prs_by_participants, participants)
@@ -380,9 +389,11 @@ async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, Li
                                               exclude_inactive: bool,
                                               release_settings: Dict[str, ReleaseMatchSetting],
                                               fresh: bool,
+                                              account: int,
                                               meta_ids: Tuple[int, ...],
                                               mdb: Database,
                                               pdb: Database,
+                                              rdb: Database,
                                               cache: Optional[aiomcache.Client],
                                               ) -> np.ndarray:
     """
@@ -398,7 +409,7 @@ async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, Li
         raise ValueError("Unsupported metric") from e
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, all_repositories, all_participants, labels, jira,
-        exclude_inactive, release_settings, fresh, False, meta_ids, mdb, pdb, cache)
+        exclude_inactive, release_settings, fresh, False, account, meta_ids, mdb, pdb, rdb, cache)
     df_facts = df_from_dataclasses(mined_facts)
     lines_grouper = partial(group_by_lines, lines)
     repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
@@ -439,9 +450,11 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            participants: List[ReleaseParticipants],
                                            jira: JIRAFilter,
                                            release_settings: Dict[str, ReleaseMatchSetting],
+                                           account: int,
                                            meta_ids: Tuple[int, ...],
                                            mdb: Database,
                                            pdb: Database,
+                                           rdb: Database,
                                            cache: Optional[aiomcache.Client],
                                            ) -> Tuple[np.ndarray, Dict[str, ReleaseMatch]]:
     """
@@ -457,7 +470,7 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
     all_participants = merge_release_participants(participants)
     releases, _, matched_bys = await mine_releases(
         all_repositories, all_participants, branches, default_branches,
-        time_from, time_to, jira, release_settings, meta_ids, mdb, pdb, cache)
+        time_from, time_to, jira, release_settings, account, meta_ids, mdb, pdb, rdb, cache)
     df_facts = df_from_dataclasses([f for _, f in releases])
     repo_grouper = partial(group_by_repo, Release.repository_full_name.key, repositories)
     participant_grouper = partial(group_releases_by_participants, participants)

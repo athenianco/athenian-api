@@ -45,7 +45,8 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
             histograms = await METRIC_ENTRIES[service]["prs_histogram"](
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
                 repos, withgroups, labels, jira, filt.exclude_inactive, release_settings,
-                filt.fresh, meta_ids, request.mdb, request.pdb, request.cache)
+                filt.fresh, filt.account, meta_ids,
+                request.mdb, request.pdb, request.rdb, request.cache)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(str(e))) from None
         for line_groups in histograms:

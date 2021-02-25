@@ -304,12 +304,13 @@ async def _get_outdated_aggregation_prs(
 async def _fetch_prs_data(
         account: int, meta_ids: Tuple[int, ...], prs_collection: PullRequestsCollection,
         sdb: ParallelDatabase, mdb: ParallelDatabase, pdb: ParallelDatabase,
-        cache: Optional[aiomcache.Client] = None,
+        rdb: ParallelDatabase, cache: Optional[aiomcache.Client] = None,
 ) -> Tuple[List[PullRequestListItem], ReleaseMatchSetting]:
     # TODO: fetch_pull_requests and Settings require passing `databases.Database`
     sdb_ = ParallelDatabase(sdb._connection._database._database_url._url)
     mdb_ = ParallelDatabase(mdb._connection._database._database_url._url)
     pdb_ = ParallelDatabase(pdb._connection._database._database_url._url)
+    rdb_ = ParallelDatabase(rdb._connection._database._database_url._url)
     pdb_.metrics = {
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
@@ -323,7 +324,7 @@ async def _fetch_prs_data(
 
     # TODO: add first commit to PullRequestListItem
     prs_data = await fetch_pull_requests(
-        prs_collection, releases_match_settings, meta_ids, mdb_, pdb_, cache=cache)
+        prs_collection, releases_match_settings, account, meta_ids, mdb_, pdb_, rdb_, cache=cache)
     log.info("%d PRs data retrieved!", len(prs_data))
     return prs_data, releases_match_settings
 

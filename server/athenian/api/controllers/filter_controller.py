@@ -67,7 +67,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
     repos = [r.split("/", 1)[1] for r in repos]
     users = await mine_contributors(
         repos, filt.date_from, filt.date_to, True, filt.as_ or [], release_settings,
-        meta_ids, request.mdb, request.pdb, request.cache)
+        filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
     mapped_jira = await load_mapped_jira_users(
         filt.account, [u[User.node_id.key] for u in users],
         request.sdb, request.mdb, request.cache)
@@ -176,7 +176,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     prs = await filter_pull_requests(
         events, stages, filt.date_from, filt.date_to, repos, participants, labels, jira,
         filt.exclude_inactive, settings, updated_min, updated_max,
-        meta_ids, request.mdb, request.pdb, request.cache)
+        filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
     return await _build_github_prs_response(prs, meta_ids, request.mdb, request.cache)
 
 
@@ -316,7 +316,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     releases, avatars, _ = await mine_releases(
         repos, participants, branches, default_branches, filt.date_from, filt.date_to,
         JIRAFilter.from_web(filt.jira, jira_ids), settings,
-        meta_ids, request.mdb, request.pdb, request.cache)
+        filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
     return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)
 
 
@@ -427,7 +427,8 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         return model_response(PullRequestSet())
     github_prs = {r: repos[PREFIXES["github"] + r] for r in github_repos}
     prs = await fetch_pull_requests(
-        github_prs, settings, meta_ids, request.mdb, request.pdb, request.cache)
+        github_prs, settings, body.account, meta_ids,
+        request.mdb, request.pdb, request.rdb, request.cache)
     return await _build_github_prs_response(prs, meta_ids, request.mdb, request.cache)
 
 
@@ -512,7 +513,8 @@ async def get_releases(request: AthenianWebRequest, body: dict) -> web.Response:
         return model_response(ReleaseSet())
     github_releases = {r: repos[PREFIXES["github"] + r] for r in github_repos}
     releases, avatars = await mine_releases_by_name(
-        github_releases, settings, meta_ids, request.mdb, request.pdb, request.cache)
+        github_releases, settings, body.account, meta_ids,
+        request.mdb, request.pdb, request.rdb, request.cache)
     return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)
 
 
@@ -533,7 +535,8 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
         return model_response(ReleaseSet())
     github_borders = {r: borders[prefix + r] for r in github_repos}
     releases, avatars = await mine_diff_releases(
-        github_borders, settings, meta_ids, request.mdb, request.pdb, request.cache)
+        github_borders, settings, body.account, meta_ids,
+        request.mdb, request.pdb, request.rdb, request.cache)
     issues = await _load_jira_issues(
         jira_ids, list(chain.from_iterable(chain.from_iterable(r[-1] for r in rr)
                                            for rr in releases.values())),

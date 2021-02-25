@@ -336,8 +336,11 @@ async def _load_precomputed_done_filters(columns: List[InstrumentedAttribute],
                 ghprt.repository_full_name,
                 ghprt.release_match,
                 ] + columns
-    match_groups, _ = group_repos_by_release_match(repos, default_branches, release_settings)
+    match_groups, event_repos, _ = group_repos_by_release_match(
+        repos, default_branches, release_settings)
     match_groups[ReleaseMatch.rejected] = match_groups[ReleaseMatch.force_push_drop] = {"": repos}
+    if event_repos:
+        match_groups[ReleaseMatch.event] = {"": event_repos}
     or_items, _ = match_groups_to_sql(match_groups, ghprt)
     filters = _create_common_filters(time_from, time_to, None)
     if len(participants) > 0:
@@ -454,9 +457,12 @@ async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
         ]
         query = select(selected).where(and_(*filters))
     else:
-        match_groups, _ = group_repos_by_release_match(repos, default_branches, release_settings)
+        match_groups, event_repos, _ = group_repos_by_release_match(
+            repos, default_branches, release_settings)
         match_groups[ReleaseMatch.rejected] = match_groups[ReleaseMatch.force_push_drop] = \
             {"": repos}
+        if event_repos:
+            match_groups[ReleaseMatch.event] = {"": event_repos}
         or_items, or_repos = match_groups_to_sql(match_groups, ghprt)
         query = union_all(*(
             select(selected).where(and_(item, format_version_filter, or_(

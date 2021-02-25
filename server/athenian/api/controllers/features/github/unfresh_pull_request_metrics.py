@@ -34,9 +34,11 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
                                            branches: pd.DataFrame,
                                            default_branches: Dict[str, str],
                                            release_settings: Dict[str, ReleaseMatchSetting],
+                                           account: int,
                                            meta_ids: Tuple[int, ...],
                                            mdb: databases.Database,
                                            pdb: databases.Database,
+                                           rdb: databases.Database,
                                            cache: Optional[aiomcache.Client],
                                            ) -> Dict[str, PullRequestFacts]:
     """
@@ -53,7 +55,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
         # map_releases_to_prs is not required because such PRs are already released, by definition
         load_releases(
             repositories, branches, default_branches, time_from, time_to,
-            release_settings, meta_ids, mdb, pdb, cache),
+            release_settings, account, meta_ids, mdb, pdb, rdb, cache),
         PullRequestMiner.fetch_prs(
             time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
             blacklist, meta_ids, mdb, cache, columns=[

@@ -49,7 +49,7 @@ def generate_repo_settings(prs: pd.DataFrame) -> Dict[str, ReleaseMatchSetting]:
 
 
 @with_defer
-async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, pdb, cache):
+async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, pdb, rdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1126),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
@@ -57,7 +57,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
     settings = generate_repo_settings(prs)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
-        (6366825,), mdb, pdb, None)
+        1, (6366825,), mdb, pdb, rdb, None)
     tag = "https://github.com/src-d/go-git/releases/tag/v4.12.0"
     for i in range(2):
         released_prs, facts, _ = await map_prs_to_releases(
@@ -81,7 +81,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
 
 
 @with_defer
-async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb):
+async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb, rdb):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number.in_((1126, 1180))),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
@@ -89,7 +89,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
     settings = generate_repo_settings(prs)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
-        (6366825,), mdb, pdb, None)
+        1, (6366825,), mdb, pdb, rdb, None)
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         (6366825,), mdb, pdb, None)
@@ -119,7 +119,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
 
 
 @with_defer
-async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, pdb, cache):
+async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, pdb, rdb, cache):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1231),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
@@ -127,7 +127,7 @@ async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, p
     settings = generate_repo_settings(prs)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
-        (6366825,), mdb, pdb, None)
+        1, (6366825,), mdb, pdb, rdb, None)
     for i in range(2):
         released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
@@ -144,7 +144,7 @@ async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, p
 
 @with_defer
 async def test_map_prs_to_releases_precomputed_released(
-        branches, default_branches, dag, mdb, pdb, release_match_setting_tag):
+        branches, default_branches, dag, mdb, pdb, rdb, release_match_setting_tag):
     time_to = datetime(year=2019, month=8, day=2, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=2)
 
@@ -160,9 +160,11 @@ async def test_map_prs_to_releases_precomputed_released(
         branches, default_branches,
         False,
         release_match_setting_tag,
+        1,
         (6366825,),
         mdb,
         pdb,
+        rdb,
         None,
     )
     facts_miner = PullRequestFactsMiner(await bots(mdb))
@@ -171,7 +173,7 @@ async def test_map_prs_to_releases_precomputed_released(
     prs = pd.DataFrame([pr.pr for pr in true_prs]).set_index(PullRequest.node_id.key)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
 
     await pdb.execute(delete(GitHubCommitHistory))
     dummy_mdb = Database("sqlite://", force_rollback=True)
@@ -203,14 +205,14 @@ async def test_map_prs_to_releases_precomputed_released(
 
 @with_defer
 async def test_map_releases_to_prs_early_merges(
-        branches, default_branches, mdb, pdb, release_match_setting_tag):
+        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag):
     prs, releases, matched_bys, dag = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=1, day=7, tzinfo=timezone.utc),
         datetime(year=2018, month=1, day=9, tzinfo=timezone.utc),
         [], [], JIRAFilter.empty(),
-        release_match_setting_tag, None, None, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(prs) == 60
     assert (prs[PullRequest.merged_at.key] >
             datetime(year=2017, month=9, day=4, tzinfo=timezone.utc)).all()
@@ -227,7 +229,7 @@ async def test_map_releases_to_prs_early_merges(
 
 @with_defer
 async def test_map_releases_to_prs_smoke(
-        branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
+        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag):
     for _ in range(2):
         prs, releases, matched_bys, dag = await map_releases_to_prs(
             ["src-d/go-git"],
@@ -235,7 +237,7 @@ async def test_map_releases_to_prs_smoke(
             datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
             datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
             [], [], JIRAFilter.empty(),
-            release_match_setting_tag, None, None, (6366825,), mdb, pdb, cache)
+            release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, cache)
         await wait_deferred()
         assert len(prs) == 7
         assert len(dag["src-d/go-git"][0]) == 1508
@@ -253,7 +255,7 @@ async def test_map_releases_to_prs_smoke(
 
 @with_defer
 async def test_map_releases_to_prs_no_truncate(
-        branches, default_branches, mdb, pdb, release_match_setting_tag):
+        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag):
     prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
@@ -261,7 +263,7 @@ async def test_map_releases_to_prs_no_truncate(
         datetime(year=2018, month=12, day=2, tzinfo=timezone.utc),
         [], [], JIRAFilter.empty(),
         release_match_setting_tag, None, None,
-        (6366825,), mdb, pdb, None, truncate=False)
+        1, (6366825,), mdb, pdb, rdb, None, truncate=False)
     assert len(prs) == 8
     assert len(releases) == 5 + 7
     assert releases[Release.published_at.key].is_monotonic_decreasing
@@ -271,14 +273,14 @@ async def test_map_releases_to_prs_no_truncate(
 
 @with_defer
 async def test_map_releases_to_prs_empty(
-        branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
+        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag):
     prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
         [], [], JIRAFilter.empty(), release_match_setting_tag, None, None,
-        (6366825,), mdb, pdb, cache)
+        1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert prs.empty
     assert len(cache.mem) == 3
@@ -296,7 +298,7 @@ async def test_map_releases_to_prs_empty(
         [], [], JIRAFilter.empty(), {
             "github.com/src-d/go-git": ReleaseMatchSetting(
                 branches="master", tags=".*", match=ReleaseMatch.branch),
-        }, None, None, (6366825,), mdb, pdb, cache)
+        }, None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     assert prs.empty
     assert len(cache.mem) == 8
     assert len(releases) == 19
@@ -305,14 +307,14 @@ async def test_map_releases_to_prs_empty(
 
 @with_defer
 async def test_map_releases_to_prs_blacklist(
-        branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
+        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag):
     prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
         [], [], JIRAFilter.empty(), release_match_setting_tag, None, None,
-        (6366825,), mdb, pdb, cache,
+        1, (6366825,), mdb, pdb, rdb, cache,
         pr_blacklist=PullRequest.node_id.notin_([
             "MDExOlB1bGxSZXF1ZXN0Mjk3Mzk1Mzcz", "MDExOlB1bGxSZXF1ZXN0Mjk5NjA3MDM2",
             "MDExOlB1bGxSZXF1ZXN0MzAxODQyNDg2", "MDExOlB1bGxSZXF1ZXN0Mjg2ODczMDAw",
@@ -333,7 +335,7 @@ async def test_map_releases_to_prs_blacklist(
                                                  (["mcuadros"], ["mcuadros"], 7)])
 @with_defer
 async def test_map_releases_to_prs_authors_mergers(
-        branches, default_branches, mdb, pdb, cache,
+        branches, default_branches, mdb, pdb, rdb, cache,
         release_match_setting_tag, authors, mergers, n):
     prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
@@ -341,7 +343,7 @@ async def test_map_releases_to_prs_authors_mergers(
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
         authors, mergers, JIRAFilter.empty(), release_match_setting_tag,
-        None, None, (6366825,), mdb, pdb, cache)
+        None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs) == n
     assert len(releases) == 2
     assert set(releases[Release.sha.key]) == {
@@ -353,14 +355,14 @@ async def test_map_releases_to_prs_authors_mergers(
 
 @with_defer
 async def test_map_releases_to_prs_hard(
-        branches, default_branches, mdb, pdb, cache, release_match_setting_tag):
+        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag):
     prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=6, day=18, tzinfo=timezone.utc),
         datetime(year=2019, month=6, day=30, tzinfo=timezone.utc),
         [], [], JIRAFilter.empty(),
-        release_match_setting_tag, None, None, (6366825,), mdb, pdb, cache)
+        release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs) == 24
     assert len(releases) == 1
     assert set(releases[Release.sha.key]) == {
@@ -371,21 +373,21 @@ async def test_map_releases_to_prs_hard(
 
 @with_defer
 async def test_map_releases_to_prs_future(
-        branches, default_branches, mdb, pdb, release_match_setting_tag):
+        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag):
     prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=7, day=31, tzinfo=timezone.utc),
         datetime(year=2030, month=12, day=2, tzinfo=timezone.utc),
         [], [], JIRAFilter.empty(),
-        release_match_setting_tag, None, None, (6366825,), mdb, pdb, None, truncate=False)
+        release_match_setting_tag, None, None, 1, (6366825,), mdb, pdb, rdb, None, truncate=False)
     assert len(prs) == 8
     assert releases is not None
     assert len(releases) == 12
 
 
 @with_defer
-async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag, mdb, pdb):
+async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag, mdb, pdb, rdb):
     time_from = datetime(year=2015, month=10, day=13, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
     filters = [
@@ -400,7 +402,7 @@ async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag
     settings = generate_repo_settings(prs)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
-        (6366825,), mdb, pdb, None)
+        1, (6366825,), mdb, pdb, rdb, None)
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         (6366825,), mdb, pdb, None)
@@ -442,7 +444,7 @@ def check_branch_releases(releases: pd.DataFrame, n: int, time_from: datetime, t
 
 @pytest.mark.parametrize("branches_", ["{{default}}", "master", "m.*"])
 @with_defer
-async def test_load_releases_branches(branches, default_branches, mdb, pdb, cache, branches_):
+async def test_load_releases_branches(branches, default_branches, mdb, pdb, rdb, cache, branches_):
     time_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
     releases, matched_bys = await load_releases(
@@ -452,9 +454,11 @@ async def test_load_releases_branches(branches, default_branches, mdb, pdb, cach
         time_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches=branches_, tags="", match=ReleaseMatch.branch)},
+        1,
         (6366825,),
         mdb,
         pdb,
+        rdb,
         cache,
     )
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
@@ -462,7 +466,7 @@ async def test_load_releases_branches(branches, default_branches, mdb, pdb, cach
 
 
 @with_defer
-async def test_load_releases_branches_empty(branches, default_branches, mdb, pdb, cache):
+async def test_load_releases_branches_empty(branches, default_branches, mdb, pdb, rdb, cache):
     time_from = datetime(year=2017, month=10, day=13, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
     releases, matched_bys = await load_releases(
@@ -472,9 +476,11 @@ async def test_load_releases_branches_empty(branches, default_branches, mdb, pdb
         time_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="unknown", tags="", match=ReleaseMatch.branch)},
+        1,
         (6366825,),
         mdb,
         pdb,
+        rdb,
         cache,
     )
     assert len(releases) == 0
@@ -489,8 +495,8 @@ async def test_load_releases_branches_empty(branches, default_branches, mdb, pdb
 ])
 @with_defer
 async def test_load_releases_tag_or_branch_dates(
-        branches, default_branches, release_match_setting_tag, mdb, pdb, cache, time_from, n,
-        pretag):
+        branches, default_branches, release_match_setting_tag, mdb, pdb, rdb, cache,
+        time_from, n, pretag):
     time_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
 
     if pretag:
@@ -500,9 +506,11 @@ async def test_load_releases_tag_or_branch_dates(
             time_from,
             time_to,
             release_match_setting_tag,
+            1,
             (6366825,),
             mdb,
             pdb,
+            rdb,
             cache,
         )
         await wait_deferred()
@@ -515,13 +523,15 @@ async def test_load_releases_tag_or_branch_dates(
         time_from,
         time_to,
         settings,
+        1,
         (6366825,),
         mdb,
         pdb,
+        rdb,
         cache,
     )
     await wait_deferred()
-    match_groups, repos_count = group_repos_by_release_match(
+    match_groups, _, repos_count = group_repos_by_release_match(
         ["src-d/go-git"], default_branches, settings)
     spans = (await fetch_precomputed_release_match_spans(match_groups, pdb))["src-d/go-git"]
     assert ReleaseMatch.tag in spans
@@ -541,7 +551,7 @@ async def test_load_releases_tag_or_branch_dates(
 
 
 @with_defer
-async def test_load_releases_tag_or_branch_initial(branches, default_branches, mdb, pdb):
+async def test_load_releases_tag_or_branch_initial(branches, default_branches, mdb, pdb, rdb):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2015, month=10, day=22, tzinfo=timezone.utc)
     releases, matched_bys = await load_releases(
@@ -551,9 +561,11 @@ async def test_load_releases_tag_or_branch_initial(branches, default_branches, m
         time_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags="", match=ReleaseMatch.branch)},
+        1,
         (6366825,),
         mdb,
         pdb,
+        rdb,
         None,
     )
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
@@ -561,7 +573,7 @@ async def test_load_releases_tag_or_branch_initial(branches, default_branches, m
 
 
 @with_defer
-async def test_map_releases_to_prs_branches(branches, default_branches, mdb, pdb):
+async def test_map_releases_to_prs_branches(branches, default_branches, mdb, pdb, rdb):
     time_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
     prs, releases, matched_bys, _ = await map_releases_to_prs(
@@ -572,7 +584,7 @@ async def test_map_releases_to_prs_branches(branches, default_branches, mdb, pdb
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags="", match=ReleaseMatch.branch)},
         None, None,
-        (6366825,), mdb, pdb, None)
+        1, (6366825,), mdb, pdb, rdb, None)
     assert prs.empty
     assert len(releases) == 1
     assert releases[Release.sha.key][0] == "5d7303c49ac984a9fec60523f2d5297682e16646"
@@ -581,7 +593,7 @@ async def test_map_releases_to_prs_branches(branches, default_branches, mdb, pdb
 
 @with_defer
 async def test_map_releases_to_prs_updated_min_max(
-        branches, default_branches, release_match_setting_tag, mdb, pdb):
+        branches, default_branches, release_match_setting_tag, mdb, pdb, rdb):
     prs, releases, matched_bys, _ = await map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
@@ -590,7 +602,7 @@ async def test_map_releases_to_prs_updated_min_max(
         [], [], JIRAFilter.empty(),
         release_match_setting_tag,
         datetime(2018, 7, 20, tzinfo=timezone.utc), datetime(2019, 1, 1, tzinfo=timezone.utc),
-        (6366825,), mdb, pdb, None, truncate=False)
+        1, (6366825,), mdb, pdb, rdb, None, truncate=False)
     assert len(prs) == 5
     assert releases is not None
     assert len(releases) == 12
@@ -598,7 +610,7 @@ async def test_map_releases_to_prs_updated_min_max(
 
 @pytest.mark.parametrize("repos", [["src-d/gitbase"], []])
 @with_defer
-async def test_load_releases_empty(branches, default_branches, mdb, pdb, repos):
+async def test_load_releases_empty(branches, default_branches, mdb, pdb, rdb, repos):
     releases, matched_bys = await load_releases(
         repos,
         branches, default_branches,
@@ -606,9 +618,11 @@ async def test_load_releases_empty(branches, default_branches, mdb, pdb, repos):
         datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
         {"github.com/src-d/gitbase": ReleaseMatchSetting(
             branches=".*", tags=".*", match=ReleaseMatch.branch)},
+        1,
         (6366825,),
         mdb,
         pdb,
+        rdb,
         None,
         index=Release.id.key)
     assert releases.empty
@@ -623,9 +637,11 @@ async def test_load_releases_empty(branches, default_branches, mdb, pdb, repos):
         time_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags="", match=ReleaseMatch.tag)},
+        1,
         (6366825,),
         mdb,
         pdb,
+        rdb,
         None,
     )
     assert releases.empty
@@ -637,9 +653,11 @@ async def test_load_releases_empty(branches, default_branches, mdb, pdb, repos):
         time_to,
         {"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="", tags=".*", match=ReleaseMatch.branch)},
+        1,
         (6366825,),
         mdb,
         pdb,
+        rdb,
         None,
     )
     assert releases.empty
@@ -1014,7 +1032,7 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
 
 @with_defer
 async def test_mark_dag_parents_smoke(
-        branches, default_branches, mdb, pdb, release_match_setting_tag, dag):
+        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, dag):
     hashes, vertexes, edges = dag["src-d/go-git"]
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
@@ -1024,9 +1042,11 @@ async def test_mark_dag_parents_smoke(
         time_from,
         time_to,
         release_match_setting_tag,
+        1,
         (6366825,),
         mdb,
         pdb,
+        rdb,
         None,
     )
     release_hashes = releases[Release.sha.key].values
@@ -1040,7 +1060,7 @@ async def test_mark_dag_parents_smoke(
 
 @with_defer
 async def test_mark_dag_parents_empty(
-        branches, default_branches, mdb, pdb, release_match_setting_tag, dag):
+        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, dag):
     hashes, vertexes, edges = dag["src-d/go-git"]
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
@@ -1050,9 +1070,11 @@ async def test_mark_dag_parents_empty(
         time_from,
         time_to,
         release_match_setting_tag,
+        1,
         (6366825,),
         mdb,
         pdb,
+        rdb,
         None,
     )
     release_hashes = releases[Release.sha.key].values
@@ -1065,12 +1087,12 @@ async def test_mark_dag_parents_empty(
 
 
 @with_defer
-async def test_mine_releases_full_span(mdb, pdb, release_match_setting_tag):
+async def test_mine_releases_full_span(mdb, pdb, rdb, release_match_setting_tag):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, matched_bys = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases) == 53
     assert len(avatars) == 124
     assert matched_bys == {"github.com/src-d/go-git": ReleaseMatch.tag}
@@ -1092,50 +1114,50 @@ async def test_mine_releases_full_span(mdb, pdb, release_match_setting_tag):
 
 @with_defer
 async def test_mine_releases_precomputed_smoke(
-        mdb, pdb, release_match_setting_tag, release_match_setting_branch,
+        mdb, pdb, rdb, release_match_setting_tag, release_match_setting_branch,
         branches, default_branches):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases) == 53
     assert len(avatars) == 124
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_to, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases) == 0
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
-        JIRAFilter.empty(), release_match_setting_branch, (6366825,), mdb, pdb, None)
+        JIRAFilter.empty(), release_match_setting_branch, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases) == 772
     assert len(avatars) == 131
     await wait_deferred()
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
-        JIRAFilter.empty(), release_match_setting_branch, (6366825,), mdb, pdb, None)
+        JIRAFilter.empty(), release_match_setting_branch, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases) == 772
     assert len(avatars) == 131
 
 
 @with_defer
-async def test_mine_releases_precomputed_time_range(mdb, pdb, release_match_setting_tag):
+async def test_mine_releases_precomputed_time_range(mdb, pdb, rdb, release_match_setting_tag):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
 
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     for _, f in releases:
         assert time_from <= f.published < time_to
         assert len(f.prs) > 0
@@ -1145,19 +1167,19 @@ async def test_mine_releases_precomputed_time_range(mdb, pdb, release_match_sett
 
 
 @with_defer
-async def test_mine_releases_precomputed_update(mdb, pdb, release_match_setting_tag):
+async def test_mine_releases_precomputed_update(mdb, pdb, rdb, release_match_setting_tag):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2018, month=11, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
 
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     for _, f in releases:
         assert time_from <= f.published < time_to
         assert len(f.prs) > 0
@@ -1167,52 +1189,52 @@ async def test_mine_releases_precomputed_update(mdb, pdb, release_match_setting_
 
 
 @with_defer
-async def test_mine_releases_jira(mdb, pdb, release_match_setting_tag, cache):
+async def test_mine_releases_jira(mdb, pdb, rdb, release_match_setting_tag, cache):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to,
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
                    set(), set(), False),
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(releases) == 8
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to,
         JIRAFilter.empty(),
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(releases) == 22
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to,
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
                    set(), set(), False),
-        release_match_setting_tag, (6366825,), mdb, pdb, cache)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(releases) == 8
     await wait_deferred()
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to,
         JIRAFilter.empty(),
-        release_match_setting_tag, (6366825,), mdb, pdb, cache)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(releases) == 22
     releases, avatars, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to,
         JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), set(), True),
-        release_match_setting_tag, (6366825,), mdb, pdb, cache)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(releases) == 15
 
 
 @pytest.mark.parametrize("settings_index", [0, 1])
 @with_defer
 async def test_precomputed_releases_low_level(
-        mdb, pdb, branches, default_branches,
+        mdb, pdb, rdb, branches, default_branches,
         release_match_setting_tag, release_match_setting_branch, settings_index):
     settings = [release_match_setting_branch, release_match_setting_tag][settings_index]
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, _ = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        settings, (6366825,), mdb, pdb, None)
+        settings, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     prels = await _fetch_precomputed_releases(
         {ReleaseMatch(settings_index): {["master", ".*"][settings_index]: ["src-d/go-git"]}},
@@ -1223,16 +1245,16 @@ async def test_precomputed_releases_low_level(
 
 @with_defer
 async def test_precomputed_releases_ambiguous(
-        mdb, pdb, branches, default_branches,
+        mdb, pdb, rdb, branches, default_branches,
         release_match_setting_tag, release_match_setting_branch):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases_tag, _ = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     releases_branch, _ = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        release_match_setting_branch, (6366825,), mdb, pdb, None)
+        release_match_setting_branch, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     prels = await _fetch_precomputed_releases(
         {ReleaseMatch.tag: {".*": ["src-d/go-git"]},
@@ -1266,31 +1288,31 @@ async def test_precomputed_release_timespans(pdb):
 
 @with_defer
 async def test_precomputed_releases_append(
-        mdb, pdb, branches, default_branches, release_match_setting_tag):
+        mdb, pdb, rdb, branches, default_branches, release_match_setting_tag):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases_tag1, _ = await load_releases(
         ["src-d/go-git"], branches, default_branches,
         time_from + timedelta(days=300), time_to - timedelta(days=900),
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(releases_tag1) == 39
     releases_tag2, _ = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        release_match_setting_tag, (6366825,), mdb, pdb, None)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases_tag2) == 53
 
 
 @with_defer
 async def test_precomputed_releases_tags_after_branches(
-        mdb, pdb, branches, default_branches, release_match_setting_branch,
+        mdb, pdb, rdb, branches, default_branches, release_match_setting_branch,
         release_match_setting_tag_or_branch):
     # we don't have tags within our reach for this time interval
     time_from = datetime(year=2017, month=3, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=4, day=1, tzinfo=timezone.utc)
     releases_branch, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        release_match_setting_branch, (6366825,), mdb, pdb, None)
+        release_match_setting_branch, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(releases_branch) == 15
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
@@ -1299,20 +1321,20 @@ async def test_precomputed_releases_tags_after_branches(
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases_branch, _ = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        release_match_setting_branch, (6366825,), mdb, pdb, None)
+        release_match_setting_branch, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(releases_branch) == 772
 
     releases_tag, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        release_match_setting_tag_or_branch, (6366825,), mdb, pdb, None)
+        release_match_setting_tag_or_branch, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(releases_tag) == 53
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
 
     releases_tag, matched_bys = await load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        release_match_setting_tag_or_branch, (6366825,), mdb, pdb, None)
+        release_match_setting_tag_or_branch, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases_tag) == 53
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
 
@@ -1320,20 +1342,20 @@ async def test_precomputed_releases_tags_after_branches(
 @pytest.mark.flaky(reruns=3)
 @with_defer
 async def test_mine_releases_by_name(
-        mdb, pdb, branches, default_branches, release_match_setting_branch,
+        mdb, pdb, rdb, branches, default_branches, release_match_setting_branch,
         release_match_setting_tag_or_branch, cache):
     # we don't have tags within our reach for this time interval
     time_from = datetime(year=2017, month=3, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=4, day=1, tzinfo=timezone.utc)
     releases, _, _ = await mine_releases(
         ["src-d/go-git"], {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_branch, (6366825,), mdb, pdb, None)
+        release_match_setting_branch, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(releases) == 15
     names = {"36c78b9d1b1eea682703fb1cbb0f4f3144354389", "v4.0.0"}
     releases, _ = await mine_releases_by_name(
         {"src-d/go-git": names},
-        release_match_setting_tag_or_branch, (6366825,), mdb, pdb, cache)
+        release_match_setting_tag_or_branch, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert len(releases) == 2
     releases_dict = {r[0][Release.name.key]: r for r in releases}
@@ -1343,14 +1365,14 @@ async def test_mine_releases_by_name(
     assert len(releases_dict["v4.0.0"][1].prs[PullRequest.number.key]) == 62
     releases2, _ = await mine_releases_by_name(
         {"src-d/go-git": names},
-        release_match_setting_tag_or_branch, (6366825,), None, None, cache)
+        release_match_setting_tag_or_branch, 1, (6366825,), None, None, None, cache)
     assert str(releases) == str(releases2)
 
 
 """
 https://athenianco.atlassian.net/browse/DEV-250
 
-async def test_map_prs_to_releases_miguel(mdb, pdb, release_match_setting_tag, cache):
+async def test_map_prs_to_releases_miguel(mdb, pdb, rdb, release_match_setting_tag, cache):
     miguel_pr = await read_sql_query(select([PullRequest]).where(PullRequest.number == 907),
                                      mdb, PullRequest, index=PullRequest.node_id.key)
     # https://github.com/src-d/go-git/pull/907
@@ -1359,7 +1381,7 @@ async def test_map_prs_to_releases_miguel(mdb, pdb, release_match_setting_tag, c
     time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
     releases, matched_bys = await load_releases(
         ["src-d/go-git"], None, None, time_from, time_to,
-        release_match_setting_tag, (6366825,), mdb, pdb, cache)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     released_prs, _ = await map_prs_to_releases(
         miguel_pr, releases, matched_bys, pd.DataFrame(), {}, time_to,
         release_match_setting_tag, (6366825,), mdb, pdb, cache)
