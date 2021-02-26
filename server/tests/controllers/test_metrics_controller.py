@@ -1341,7 +1341,7 @@ async def test_release_metrics_nasty_input(
 
 
 async def test_release_metrics_quantiles(client, headers):
-    for q, gt in ((0.95, "2176285s"), (1, "2779256s")):
+    for q, gt in ((0.95, "2093651s"), (1, "2687847s")):
         body = {
             "account": 1,
             "date_from": "2015-01-12",
