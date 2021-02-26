@@ -710,16 +710,12 @@ async def test_load_releases_events_settings(branches, default_branches, mdb, pd
     await wait_deferred()
     assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
     assert len(releases) == 1
-    if rdb.url.dialect == "sqlite":
-        tzinfo = None
-    else:
-        tzinfo = timezone.utc
     assert releases.iloc[0].to_dict() == {
         "repository_full_name": "src-d/go-git",
         "repository_node_id": "MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
         "author": "Vadim Markovtsev",
         "name": "Pushed!",
-        "published_at": pd.Timestamp("2020-01-01 00:00:00", tzinfo=tzinfo),
+        "published_at": pd.Timestamp("2020-01-01 00:00:00", tzinfo=timezone.utc),
         "tag": None,
         "url": "www",
         "sha": "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
@@ -733,6 +729,10 @@ async def test_load_releases_events_settings(branches, default_branches, mdb, pd
     assert values[ReleaseNotification.updated_at.key] > values[ReleaseNotification.created_at.key]
     del values[ReleaseNotification.updated_at.key]
     del values[ReleaseNotification.created_at.key]
+    if rdb.url.dialect == "sqlite":
+        tzinfo = None
+    else:
+        tzinfo = timezone.utc
     assert values == {
         "account_id": 1,
         "repository_node_id": "MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",

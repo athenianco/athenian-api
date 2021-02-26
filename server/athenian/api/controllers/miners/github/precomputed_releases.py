@@ -42,6 +42,8 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
             value = setting.tags
         elif setting.match == ReleaseMatch.branch:
             value = setting.branches.replace(default_branch_alias, default_branches[repo])
+        elif setting.match == ReleaseMatch.event:
+            value = ""
         else:
             raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
         reverse_settings[(setting.match, value)].append(repo)
@@ -72,6 +74,8 @@ def _compose_release_match(match: ReleaseMatch, value: str) -> str:
         return "tag|" + value
     if match == ReleaseMatch.branch:
         return "branch|" + value
+    if match == ReleaseMatch.event:
+        return ReleaseMatch.event.name
     raise AssertionError("Impossible release match: %s" % match)
 
 
@@ -90,6 +94,8 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
             value = setting.tags
         elif setting.match == ReleaseMatch.branch:
             value = setting.branches.replace(default_branch_alias, default_branches[repo])
+        elif setting.match == ReleaseMatch.event:
+            value = ""
         else:
             raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
         values.append(GitHubReleaseFacts(

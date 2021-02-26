@@ -14,8 +14,10 @@ from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.release_mine import mine_releases
+from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
+from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
 from athenian.api.models.web import CommitsList, FilteredLabel, PullRequestEvent, \
@@ -24,6 +26,26 @@ from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache
 from tests.controllers.conftest import with_only_master_branch
+
+
+@pytest.fixture(scope="function")
+async def with_event_releases(sdb, rdb):
+    await sdb.execute(insert(ReleaseSetting).values(
+        ReleaseSetting(repository="github.com/src-d/go-git",
+                       account_id=1,
+                       branches="master",
+                       tags=".*",
+                       match=ReleaseMatch.event.value,
+                       ).create_defaults().explode(with_primary_keys=True)))
+    await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
+        account_id=1,
+        repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        commit_hash_prefix="8d20cc5",
+        name="Pushed!",
+        author="Vadim Markovtsev",
+        url="www",
+        published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    ).create_defaults().explode(with_primary_keys=True)))
 
 
 @pytest.mark.filter_repositories
@@ -102,7 +124,8 @@ async def test_filter_repositories_fuck_up(client, headers, sdb, pdb):
                        account_id=1,
                        branches="master",
                        tags=".*",
-                       match=0).create_defaults().explode(with_primary_keys=True)))
+                       match=ReleaseMatch.branch.value,
+                       ).create_defaults().explode(with_primary_keys=True)))
     await pdb.execute(insert(GitHubRelease).values(
         GitHubRelease(id="1",
                       release_match="branch|whatever",
@@ -461,6 +484,23 @@ async def test_filter_prs_created_timezone(client, headers, timezone, must_match
         if pr.number == 485:  # created 2017-07-17 09:02 GMT+2 = 2017-07-17 07:02 UTC
             matched = True
     assert matched == must_match
+
+
+async def test_filter_prs_event_releases(client, headers, with_event_releases):
+    body = {
+        "date_from": "2018-10-13",
+        "date_to": "2019-02-23",
+        "account": 1,
+        "in": [],
+        "events": [PullRequestEvent.MERGED],
+        "exclude_inactive": True,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    prs = PullRequestSet.from_dict(json.loads(text))
+    assert len(prs.data) == 37
 
 
 async def test_filter_prs_jira(client, headers, app, filter_prs_single_cache):
@@ -1198,6 +1238,24 @@ async def test_filter_releases_by_branch_no_jira(client, headers, client_cache, 
         assert len(releases.data) == 188
     finally:
         await mdb.execute(insert(Release).values(backup))
+
+
+@pytest.mark.filter_releases
+async def test_filter_releases_by_event(client, headers, with_event_releases):
+    body = {
+        "account": 1,
+        "date_from": "2019-01-12",
+        "date_to": "2020-01-12",
+        "timezone": 60,
+        "in": ["{1}"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/releases", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+    releases = ReleaseSet.from_dict(json.loads(response_text))
+    assert len(releases.data) == 1
+    assert len(releases.data[0].prs) == 391
 
 
 @pytest.mark.filter_releases

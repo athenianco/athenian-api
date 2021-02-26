@@ -10,6 +10,7 @@ import re
 import socket
 import struct
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+import warnings
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
@@ -18,7 +19,10 @@ from connexion.decorators.security import get_authorization_info
 from connexion.exceptions import AuthenticationProblem, OAuthProblem, Unauthorized
 from connexion.lifecycle import ConnexionRequest
 from connexion.operations import secure
-from jose import jwt
+with warnings.catch_warnings():
+    # this will suppress all warnings in this block
+    warnings.filterwarnings("ignore", message="int_from_bytes is deprecated")
+    from jose import jwt
 from multidict import CIMultiDict
 import sentry_sdk
 from sqlalchemy import select
