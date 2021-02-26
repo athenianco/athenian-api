@@ -673,6 +673,8 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
                 release_match = "|".join((match.name, release_match.tags))
             elif match == ReleaseMatch.force_push_drop:
                 release_match = ReleaseMatch.force_push_drop.name
+            elif match == ReleaseMatch.event:
+                release_match = ReleaseMatch.event.name
             else:
                 raise AssertionError("Unhandled release match strategy: " + match.name)
         else:
@@ -845,6 +847,8 @@ def _extract_release_match(repo: str,
         branch = release_setting.branches.replace(
             default_branch_alias, default_branches[repo])
         return "branch|" + branch
+    if matched_by == ReleaseMatch.event:
+        return ReleaseMatch.event.name
     raise AssertionError("Unsupported release match %s" % matched_by)
 
 
