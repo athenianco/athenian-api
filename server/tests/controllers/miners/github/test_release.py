@@ -1162,7 +1162,8 @@ async def test_mark_dag_parents_smoke(
     )
     release_hashes = releases[Release.sha.key].values
     release_dates = releases[Release.published_at.key].values
-    parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates)
+    ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
+    parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates, ownership)
     assert (parents == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
                         18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 34, 53,
                         35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 53, 47, 48, 49, 50, 51,
@@ -1171,8 +1172,7 @@ async def test_mark_dag_parents_smoke(
 
 @with_defer
 async def test_mark_dag_parents_empty(
-        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, dag):
-    hashes, vertexes, edges = dag["src-d/go-git"]
+        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, matched_bys = await load_releases(
@@ -1193,7 +1193,8 @@ async def test_mark_dag_parents_empty(
     hashes = np.array([], dtype="U40")
     vertexes = np.array([0], dtype=np.uint32)
     edges = np.array([], dtype=np.uint32)
-    parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates)
+    ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
+    parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates, ownership)
     assert len(parents) == 0
 
 

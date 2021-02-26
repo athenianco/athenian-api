@@ -238,7 +238,8 @@ def mark_dag_parents(hashes: np.ndarray,
                      vertexes: np.ndarray,
                      edges: np.ndarray,
                      heads: np.ndarray,
-                     timestamps: np.ndarray) -> np.ndarray:
+                     timestamps: np.ndarray,
+                     ownership: np.ndarray) -> np.ndarray:
     if len(hashes) == 0:
         return np.array([], dtype=int)
     # we cannot sort heads because the order is important
@@ -250,7 +251,7 @@ def mark_dag_parents(hashes: np.ndarray,
     heads = found_heads.astype(np.uint32)
     timestamps = timestamps.view(np.uint64)
     parents = np.zeros_like(heads, dtype=np.int64)
-    _mark_dag_parents(vertexes, edges, heads, timestamps, parents)
+    _mark_dag_parents(vertexes, edges, heads, timestamps, ownership, parents)
     return parents
 
 
@@ -260,18 +261,13 @@ cdef void _mark_dag_parents(const uint32_t[:] vertexes,
                             const uint32_t[:] edges,
                             const uint32_t[:] heads,
                             const uint64_t[:] timestamps,
+                            const int64_t[:] ownership,
                             int64_t[:] parents) nogil:
-    cdef uint32_t not_found = len(vertexes), head, peek, edge
+    cdef uint32_t not_found = len(vertexes), head, peek, edge, peak_owner
     cdef uint64_t max_timestamp, timestamp, head_timestamp
     cdef int64_t i, j, max_stop
-    cdef unordered_map[uint32_t, int64_t] stops
-    cdef unordered_map[uint32_t, int64_t].iterator stop_it
     cdef vector[char] visited = vector[char](len(vertexes) - 1)
     cdef vector[uint32_t] boilerplate
-    for i in range(len(heads)):
-        head = heads[i]
-        if head < not_found:
-            stops.insert(pair[uint32_t, int64_t](head, i))
     for i in range(len(heads)):
         head = heads[i]
         if head == not_found:
@@ -288,18 +284,17 @@ cdef void _mark_dag_parents(const uint32_t[:] vertexes,
             if visited[peek]:
                 continue
             visited[peek] = 1
-            stop_it = stops.find(peek)
-            if peek != head and stop_it != stops.end():
-                j = dereference(stop_it).second
-                timestamp = timestamps[j]
-                if max_timestamp < timestamp < head_timestamp:
-                    max_timestamp = timestamp
-                    max_stop = j
-            else:
-                for j in range(vertexes[peek], vertexes[peek + 1]):
-                    edge = edges[j]
-                    if not visited[edge]:
+            for j in range(vertexes[peek], vertexes[peek + 1]):
+                edge = edges[j]
+                if not visited[edge]:
+                    peak_owner = ownership[edge]
+                    if peak_owner == i:
                         boilerplate.push_back(edge)
+                    else:
+                        timestamp = timestamps[peak_owner]
+                        if max_timestamp < timestamp < head_timestamp:
+                            max_timestamp = timestamp
+                            max_stop = peak_owner
         parents[i] = max_stop
 
 

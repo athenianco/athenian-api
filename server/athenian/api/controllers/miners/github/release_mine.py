@@ -135,8 +135,9 @@ async def mine_releases(repos: Iterable[str],
             hashes, vertexes, edges = dags[repo]
             release_hashes = repo_releases[Release.sha.key].values
             release_timestamps = repo_releases[Release.published_at.key].values
-            parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_timestamps)
             ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
+            parents = mark_dag_parents(
+                hashes, vertexes, edges, release_hashes, release_timestamps, ownership)
             precomputed_mask = \
                 repo_releases[Release.id.key].isin(unfiltered_precomputed_facts).values
             out_of_range_mask = release_timestamps < np.array(time_from.replace(tzinfo=None),
