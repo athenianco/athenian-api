@@ -72,7 +72,9 @@ def triage_by_release_match(repo: str,
     # DEV-1451: if we don't have this repository in the release settings, then it is deleted
     assert full_repo_name in release_settings, \
         "You must take care of deleted repositories separately."
-    if release_match in (ReleaseMatch.rejected.name, ReleaseMatch.force_push_drop.name):
+    if release_match in (ReleaseMatch.rejected.name,
+                         ReleaseMatch.force_push_drop.name,
+                         ReleaseMatch.event.name):
         return result
     match_name, match_by = release_match.split("|", 1)
     match = ReleaseMatch[match_name]
@@ -570,14 +572,18 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
         repo = pr[ghprt.repository_full_name.key]
         node_id = pr[ghprt.pr_node_id.key]
         release_match = pr[ghprt.release_match.key]
-        if release_match == ReleaseMatch.force_push_drop.name:
-            if node_id in force_push_dropped:
-                continue
-            force_push_dropped.add(node_id)
-            records.append((node_id, pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
-                            pr[ghprt.releaser.key].rstrip(), pr[ghprt.release_url.key],
-                            pr[ghprt.release_node_id.key], pr[ghprt.repository_full_name.key],
-                            ReleaseMatch.force_push_drop))
+        if release_match in (ReleaseMatch.force_push_drop.name, ReleaseMatch.event.name):
+            if release_match == ReleaseMatch.force_push_drop.name:
+                if node_id in force_push_dropped:
+                    continue
+                force_push_dropped.add(node_id)
+            records.append((node_id,
+                            pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
+                            pr[ghprt.releaser.key].rstrip(),
+                            pr[ghprt.release_url.key],
+                            pr[ghprt.release_node_id.key],
+                            pr[ghprt.repository_full_name.key],
+                            ReleaseMatch[release_match]))
             continue
         match_name, match_by = release_match.split("|", 1)
         release_match = ReleaseMatch[match_name]
@@ -598,10 +604,13 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
                 continue
         else:
             raise AssertionError("Unsupported release match in the precomputed DB: " + match_name)
-        records.append((node_id, pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
-                        pr[ghprt.releaser.key].rstrip(), pr[ghprt.release_url.key],
-                        pr[ghprt.release_node_id.key], pr[ghprt.repository_full_name.key],
-                        ReleaseMatch[pr[ghprt.release_match.key].split("|", 1)[0]]))
+        records.append((node_id,
+                        pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
+                        pr[ghprt.releaser.key].rstrip(),
+                        pr[ghprt.release_url.key],
+                        pr[ghprt.release_node_id.key],
+                        pr[ghprt.repository_full_name.key],
+                        release_match))
     return new_released_prs_df(records)
 
 
