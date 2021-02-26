@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
-from sqlalchemy import delete, select, sql
+from sqlalchemy import delete, insert, select, sql
 from sqlalchemy.schema import CreateTable
 
 from athenian.api.async_utils import read_sql_query
@@ -36,6 +36,7 @@ from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, \
     PullRequestLabel, Release
+from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubCommitHistory
 from tests.controllers.conftest import fetch_dag
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
@@ -662,6 +663,116 @@ async def test_load_releases_empty(branches, default_branches, mdb, pdb, rdb, re
     )
     assert releases.empty
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
+
+
+@with_defer
+async def test_load_releases_events_settings(branches, default_branches, mdb, pdb, rdb):
+    await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
+        account_id=1,
+        repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        commit_hash_prefix="8d20cc5",
+        name="Pushed!",
+        author="Vadim Markovtsev",
+        url="www",
+        published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    ).create_defaults().explode(with_primary_keys=True)))
+    releases, _ = await load_releases(
+        ["src-d/go-git"],
+        branches, default_branches,
+        datetime(year=2019, month=1, day=30, tzinfo=timezone.utc),
+        datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
+        {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches=".*", tags=".*", match=ReleaseMatch.tag)},
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+        index=Release.id.key)
+    await wait_deferred()
+    assert len(releases) == 7
+    assert (releases[matched_by_column] == ReleaseMatch.tag).all()
+    releases, matched_bys = await load_releases(
+        ["src-d/go-git"],
+        branches, default_branches,
+        datetime(year=2019, month=1, day=30, tzinfo=timezone.utc),
+        datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
+        {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches=".*", tags=".*", match=ReleaseMatch.event)},
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+        index=Release.id.key)
+    await wait_deferred()
+    assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
+    assert len(releases) == 1
+    if rdb.url.dialect == "sqlite":
+        tzinfo = None
+    else:
+        tzinfo = timezone.utc
+    assert releases.iloc[0].to_dict() == {
+        "repository_full_name": "src-d/go-git",
+        "repository_node_id": "MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        "author": "Vadim Markovtsev",
+        "name": "Pushed!",
+        "published_at": pd.Timestamp("2020-01-01 00:00:00", tzinfo=tzinfo),
+        "tag": None,
+        "url": "www",
+        "sha": "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
+        "commit_id": "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",  # noqa
+        "matched_by": ReleaseMatch.event,
+        "id": "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",
+    }
+    rows = await rdb.fetch_all(select([ReleaseNotification]))
+    assert len(rows) == 1
+    values = dict(rows[0])
+    assert values[ReleaseNotification.updated_at.key] > values[ReleaseNotification.created_at.key]
+    del values[ReleaseNotification.updated_at.key]
+    del values[ReleaseNotification.created_at.key]
+    assert values == {
+        "account_id": 1,
+        "repository_node_id": "MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        "commit_hash_prefix": "8d20cc5",
+        "resolved_commit_hash": "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
+        "resolved_commit_node_id": "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",  # noqa
+        "name": "Pushed!",
+        "author": "Vadim Markovtsev",
+        "url": "www",
+        "published_at": datetime(2020, 1, 1, tzinfo=tzinfo),
+    }
+
+
+@with_defer
+async def test_load_releases_events_unresolved(branches, default_branches, mdb, pdb, rdb):
+    await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
+        account_id=1,
+        repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        commit_hash_prefix="whatever",
+        name="Pushed!",
+        author="Vadim Markovtsev",
+        url="www",
+        published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    ).create_defaults().explode(with_primary_keys=True)))
+    releases, matched_bys = await load_releases(
+        ["src-d/go-git"],
+        branches, default_branches,
+        datetime(year=2019, month=1, day=30, tzinfo=timezone.utc),
+        datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
+        {"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches=".*", tags=".*", match=ReleaseMatch.event)},
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+        index=Release.id.key)
+    assert releases.empty
+    assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
 
 
 @pytest.mark.parametrize("prune", [False, True])

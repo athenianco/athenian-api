@@ -94,14 +94,17 @@ async def load_releases(repos: Iterable[str],
     ]
     spans, releases, event_releases = await gather(*tasks)
 
-    def gather_applied_matches():
+    def gather_applied_matches() -> Dict[str, ReleaseMatch]:
         # nlargest(1) puts `tag` in front of `branch` for `tag_or_branch` repositories with both
         # options precomputed
         # We cannot use nlargest(1) because it produces an inconsistent index:
         # we don't have repository_full_name when there is only one release.
-        return releases[[Release.repository_full_name.key, matched_by_column]].groupby(
+        matches = releases[[Release.repository_full_name.key, matched_by_column]].groupby(
             Release.repository_full_name.key, sort=False,
         )[matched_by_column].apply(lambda s: s[s.astype(int).idxmax()]).to_dict()
+        for repo in event_repos:
+            matches[repo] = ReleaseMatch.event
+        return matches
 
     applied_matches = gather_applied_matches()
     if force_fresh:
@@ -141,6 +144,8 @@ async def load_releases(repos: Iterable[str],
         if applied_match == ReleaseMatch.tag_or_branch:
             matches = (ReleaseMatch.branch, ReleaseMatch.tag)
             ambiguous_branches_scanned.add(repo)
+        elif applied_match == ReleaseMatch.event:
+            continue
         else:
             matches = (applied_match,)
         for match in matches:
@@ -598,15 +603,18 @@ async def _fetch_release_events(repos: Sequence[str],
         repo = row[ReleaseNotification.repository_node_id.key]
         if (commit_node_id := row[ReleaseNotification.resolved_commit_node_id.key]) is None:
             commit_node_id, commit_hash = resolved_commits.get(
-                commit_prefix := row[ReleaseNotification.commit_hash_prefix.key], (None, None))
+                (repo, commit_prefix := row[ReleaseNotification.commit_hash_prefix.key]),
+                (None, None))
             if commit_node_id is not None:
                 updated.append((repo, commit_prefix, commit_node_id, commit_hash))
+            else:
+                continue
         else:
             commit_hash = row[ReleaseNotification.resolved_commit_hash.key]
         releases.append({
             Release.author.key: row[ReleaseNotification.author.key],
             Release.commit_id.key: commit_node_id,
-            Release.id.key: row[ReleaseNotification.resolved_commit_node_id.key],
+            Release.id.key: commit_node_id,
             Release.name.key: row[ReleaseNotification.name.key],
             Release.published_at.key: row[ReleaseNotification.published_at.key],
             Release.repository_full_name.key: repo_ids[repo],
@@ -614,7 +622,7 @@ async def _fetch_release_events(repos: Sequence[str],
             Release.sha.key: commit_hash,
             Release.tag.key: None,
             Release.url.key: row[ReleaseNotification.url.key],
-            matched_by_column: ReleaseMatch.notification.value,
+            matched_by_column: ReleaseMatch.event.value,
         })
     if updated:
         async def update_pushed_release_commits():
