@@ -5,6 +5,7 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
+from athenian.api.models.web.granularity import Granularity
 
 
 class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
@@ -17,6 +18,7 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
         "date_to": date,
         "timezone": int,
         "account": int,
+        "granularities": List[str],
     }
 
     attribute_map = {
@@ -26,6 +28,7 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
         "date_to": "date_to",
         "timezone": "timezone",
         "account": "account",
+        "granularities": "granularities",
     }
 
     def __init__(
@@ -36,6 +39,7 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
         date_to: Optional[date] = None,
         timezone: Optional[int] = None,
         account: Optional[int] = None,
+        granularities: Optional[List[str]] = None,
     ):
         """DeveloperMetricsRequest - a model defined in OpenAPI
 
@@ -45,6 +49,7 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
         :param date_to: The date_to of this DeveloperMetricsRequest.
         :param timezone: The timezone of this DeveloperMetricsRequest.
         :param account: The account of this DeveloperMetricsRequest.
+        :param granularities: The granularities of this DeveloperMetricsRequest.
         """
         self._for_ = for_
         self._metrics = metrics
@@ -52,6 +57,7 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
         self._date_to = date_to
         self._timezone = timezone
         self._account = account
+        self._granularities = granularities
 
     @property
     def for_(self) -> List[ForSetDevelopers]:
@@ -101,3 +107,32 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
             raise ValueError("Unsupported values of `metrics`: %s" % diff)
 
         self._metrics = metrics
+
+    @property
+    def granularities(self) -> List[str]:
+        """Gets the granularities of this DeveloperMetricsRequest.
+
+        Splits of the specified time range `[date_from, date_to)`.
+
+        :return: The granularities of this DeveloperMetricsRequest.
+        """
+        return self._granularities
+
+    @granularities.setter
+    def granularities(self, granularities: List[str]):
+        """Sets the granularities of this DeveloperMetricsRequest.
+
+        Splits of the specified time range `[date_from, date_to)`.
+
+        :param granularities: The granularities of this DeveloperMetricsRequest.
+        """
+        # FIXME(vmarkovtsev): uncomment when the webapp is ready
+        # if granularities is None:
+        #     raise ValueError("Invalid value for `granularities`, must not be `None`")
+        for i, g in enumerate(granularities):
+            if not Granularity.format.match(g):
+                raise ValueError(
+                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/' %
+                    (i, g, Granularity.format.pattern))
+
+        self._granularities = granularities
