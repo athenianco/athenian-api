@@ -6,9 +6,9 @@ import pandas as pd
 import pytest
 
 from athenian.api.controllers.miners.github import developer
-from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedPullRequestMetrics, \
-    CalculatedReleaseMetric, CodeBypassingPRsMeasurement, DeveloperMetricID, PullRequestMetricID, \
-    PullRequestWith, ReleaseMetricID
+from athenian.api.models.web import CalculatedDeveloperMetricsDeprecated, \
+    CalculatedPullRequestMetrics, CalculatedReleaseMetric, CodeBypassingPRsMeasurement, \
+    DeveloperMetricID, PullRequestMetricID, PullRequestWith, ReleaseMetricID
 from athenian.api.serialization import FriendlyJson
 
 
@@ -833,7 +833,7 @@ async def test_developer_metrics_single(client, headers, metric, value):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.metrics == [metric]
     assert result.date_from == date(year=2018, month=1, day=12)
@@ -881,7 +881,7 @@ async def test_developer_metrics_jira_single(client, headers, metric, value):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.metrics == [metric]
     assert result.date_from == date(year=2016, month=1, day=12)
@@ -932,7 +932,7 @@ async def test_developer_metrics_jira_labels_single(client, headers, metric, val
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.metrics == [metric]
     assert result.date_from == date(year=2016, month=1, day=12)
@@ -959,7 +959,7 @@ async def test_developer_metrics_all(client, headers, dev):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200, (await response.read()).decode("utf-8")
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert set(result.metrics) == set(DeveloperMetricID)
     assert result.date_from == date(year=2018, month=1, day=12)
@@ -1001,7 +1001,7 @@ async def test_developer_metrics_repogroups(client, headers):
     finally:
         developer.ACTIVITY_DAYS_THRESHOLD_DENSITY = 0.2
     assert response.status == 200, (await response.read()).decode("utf-8")
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert set(result.metrics) == set(DeveloperMetricID)
     assert len(result.calculated) == 2
@@ -1028,7 +1028,7 @@ async def test_developer_metrics_labels_include(client, headers, metric, value):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].for_.labels_include == ["bug", "enhancement"]
     assert result.calculated[0].values == value
@@ -1051,7 +1051,7 @@ async def test_developer_metrics_aggregate(client, headers):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].values == [[2, 17]]
     body["for"][0]["aggregate_devgroups"][0].append(-1)
@@ -1083,7 +1083,7 @@ async def test_developer_metrics_labels_exclude(client, headers):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert not result.calculated[0].for_.labels_include
     assert result.calculated[0].for_.labels_exclude == ["bug", "enhancement"]
@@ -1108,7 +1108,7 @@ async def test_developer_metrics_labels_include_exclude(client, headers):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].for_.labels_include == ["bug"]
     assert result.calculated[0].for_.labels_exclude == ["enhancement"]
@@ -1133,7 +1133,7 @@ async def test_developer_metrics_labels_contradiction(client, headers):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].for_.labels_include == ["bug"]
     assert result.calculated[0].for_.labels_exclude == ["bug"]
@@ -1181,7 +1181,7 @@ async def test_developer_metrics_order(client, headers):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].for_.developers == body["for"][0]["developers"]
     assert result.calculated[0].values == [[14], [8]]
@@ -1190,7 +1190,7 @@ async def test_developer_metrics_order(client, headers):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetrics.from_dict(
+    result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].for_.developers == body["for"][0]["developers"]
     assert result.calculated[0].values == [[8], [14]]

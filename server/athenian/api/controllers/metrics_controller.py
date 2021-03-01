@@ -21,10 +21,11 @@ from athenian.api.controllers.miners.types import PRParticipants, PRParticipatio
 from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
-    CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
-    CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, \
-    ForbiddenError, ForSet, ForSetDevelopers, ReleaseMetricsRequest
+from athenian.api.models.web import CalculatedDeveloperMetricsDeprecated, \
+    CalculatedDeveloperMetricsItemDeprecated, CalculatedLinearMetricValues, \
+    CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, CalculatedReleaseMetric, \
+    CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, ForbiddenError, ForSet, \
+    ForSetDevelopers, ReleaseMetricsRequest
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.request import AthenianWebRequest
@@ -326,7 +327,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(all_repos)
 
-    met = CalculatedDeveloperMetrics()
+    met = CalculatedDeveloperMetricsDeprecated()
     met.date_from = filt.date_from
     met.date_to = filt.date_to
     met.timezone = filt.timezone
@@ -351,7 +352,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
             else:
                 values = [[getattr(s, DeveloperTopic(t).name) for t in filt.metrics]
                           for s in group]
-            met.calculated.append(CalculatedDeveloperMetricsItem(
+            met.calculated.append(CalculatedDeveloperMetricsItemDeprecated(
                 for_=for_set.select_repogroup(i),
                 values=values,
             ))

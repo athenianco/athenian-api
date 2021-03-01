@@ -2,9 +2,10 @@ from athenian.api.models.web.account import Account
 from athenian.api.models.web.account_user_change_request import AccountUserChangeRequest, \
     UserChangeStatus
 from athenian.api.models.web.base_model_ import AllOf, Enum, Model, Slots
-from athenian.api.models.web.calculated_developer_metrics import CalculatedDeveloperMetrics
-from athenian.api.models.web.calculated_developer_metrics_item import \
-    CalculatedDeveloperMetricsItem
+from athenian.api.models.web.calculated_developer_metrics_deprecated import \
+    CalculatedDeveloperMetricsDeprecated
+from athenian.api.models.web.calculated_developer_metrics_item_deprecated import \
+    CalculatedDeveloperMetricsItemDeprecated
 from athenian.api.models.web.calculated_jira_histogram import CalculatedJIRAHistogram
 from athenian.api.models.web.calculated_jira_metric_values import CalculatedJIRAMetricValues
 from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues

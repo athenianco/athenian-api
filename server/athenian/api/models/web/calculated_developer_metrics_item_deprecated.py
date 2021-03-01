@@ -4,7 +4,7 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
 
 
-class CalculatedDeveloperMetricsItem(Model):
+class CalculatedDeveloperMetricsItemDeprecated(Model):
     """Measured developer metrics for each `DeveloperMetricsRequest.for`."""
 
     openapi_types = {"for_": ForSetDevelopers, "values": List[List[object]]}
@@ -13,27 +13,27 @@ class CalculatedDeveloperMetricsItem(Model):
     def __init__(self,
                  for_: Optional[ForSetDevelopers] = None,
                  values: Optional[List[List[object]]] = None):
-        """CalculatedDeveloperMetricsItem - a model defined in OpenAPI
+        """CalculatedDeveloperMetricsItemDeprecated - a model defined in OpenAPI
 
-        :param for_: The for_ of this CalculatedDeveloperMetricsItem.
-        :param values: The values of this CalculatedDeveloperMetricsItem.
+        :param for_: The for_ of this CalculatedDeveloperMetricsItemDeprecated.
+        :param values: The values of this CalculatedDeveloperMetricsItemDeprecated.
         """
         self._for_ = for_
         self._values = values
 
     @property
     def for_(self) -> ForSetDevelopers:
-        """Gets the for_ of this CalculatedDeveloperMetricsItem.
+        """Gets the for_ of this CalculatedDeveloperMetricsItemDeprecated.
 
-        :return: The for_ of this CalculatedDeveloperMetricsItem.
+        :return: The for_ of this CalculatedDeveloperMetricsItemDeprecated.
         """
         return self._for_
 
     @for_.setter
     def for_(self, for_: ForSetDevelopers):
-        """Sets the for_ of this CalculatedDeveloperMetricsItem.
+        """Sets the for_ of this CalculatedDeveloperMetricsItemDeprecated.
 
-        :param for_: The for_ of this CalculatedDeveloperMetricsItem.
+        :param for_: The for_ of this CalculatedDeveloperMetricsItemDeprecated.
         """
         if for_ is None:
             raise ValueError("Invalid value for `for_`, must not be `None`")
@@ -42,21 +42,21 @@ class CalculatedDeveloperMetricsItem(Model):
 
     @property
     def values(self) -> List[List[object]]:
-        """Gets the values of this CalculatedDeveloperMetricsItem.
+        """Gets the values of this CalculatedDeveloperMetricsItemDeprecated.
 
-        The sequence matches `CalculatedDeveloperMetricsItem.for.developers`.
+        The sequence matches `CalculatedDeveloperMetricsItemDeprecated.for.developers`.
 
-        :return: The values of this CalculatedDeveloperMetricsItem.
+        :return: The values of this CalculatedDeveloperMetricsItemDeprecated.
         """
         return self._values
 
     @values.setter
     def values(self, values: List[List[object]]):
-        """Sets the values of this CalculatedDeveloperMetricsItem.
+        """Sets the values of this CalculatedDeveloperMetricsItemDeprecated.
 
-        The sequence matches `CalculatedDeveloperMetricsItem.for.developers`.
+        The sequence matches `CalculatedDeveloperMetricsItemDeprecated.for.developers`.
 
-        :param values: The values of this CalculatedDeveloperMetricsItem.
+        :param values: The values of this CalculatedDeveloperMetricsItemDeprecated.
         """
         if values is None:
             raise ValueError("Invalid value for `values`, must not be `None`")

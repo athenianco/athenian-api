@@ -1155,7 +1155,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CalculatedDeveloperMetrics'
+                $ref: '#/components/schemas/CalculatedDeveloperMetricsShim'
           description: Calculated metrics.
         400:
           content:
@@ -2347,7 +2347,8 @@ components:
       description: |-
         Regular JSON Web Token authorization powered by Auth0.
         The server expects an `Authorization: Bearer <token>` header and checks `<token>` by
-        sending it to Auth0.
+        sending it to Auth0. Visit [{{ server_url | replace("api", "app") }}/bearer]({{ server_url | replace("api", "app") }}/bearer)
+        to copy your current JWT that will expire within 24 hours.
       type: http
       scheme: bearer
       bearerFormat: JWT
@@ -3283,6 +3284,7 @@ components:
         granularity:
           $ref: '#/components/schemas/Granularity'
         values:
+          description: The sequence steps from `date_from` till `date_to` by `granularity`.
           items:
             $ref: '#/components/schemas/CalculatedLinearMetricValues'
           type: array
@@ -4384,6 +4386,8 @@ components:
         - dev-pr-comments
         date_from: 2019-10-23
         date_to: 2020-05-23
+        granularities:
+        - all
         account: 1
       properties:
         for:
@@ -4410,6 +4414,10 @@ components:
         account:
           description: Session account ID.
           type: integer
+        granularities:
+          items:
+            $ref: '#/components/schemas/Granularity'
+          type: array
       required:
       - account
       - date_from
@@ -4451,7 +4459,70 @@ components:
       - dev-active
       example: dev-prs-created
       type: string
+    CalculatedDeveloperMetricsShim:
+# {% if False %}
+      allOf:
+# {% else %}{{ "\n" }}      oneOf:{% endif %}
+      - $ref: '#/components/schemas/CalculatedDeveloperMetricsDeprecated'
+      - $ref: '#/components/schemas/CalculatedDeveloperMetrics'
     CalculatedDeveloperMetrics:
+      additionalProperties: false
+      description: The dates start from `date_from` and end earlier or equal to `date_to`.
+      properties:
+        calculated:
+          description: Values of the requested metrics through time.
+          items:
+            $ref: '#/components/schemas/CalculatedDeveloperMetricsItem'
+          type: array
+        metrics:
+          description: Repeats `DeveloperMetricsRequest.metrics`.
+          items:
+            $ref: '#/components/schemas/DeveloperMetricID'
+          type: array
+        date_from:
+          description: Repeats `DeveloperMetricsRequest.date_from`.
+          format: date
+          type: string
+        date_to:
+          description: Repeats `DeveloperMetricsRequest.date_to`.
+          format: date
+          type: string
+        timezone:
+          $ref: '#/components/schemas/TimeZone'
+        granularities:
+          items:
+            $ref: '#/components/schemas/Granularity'
+          type: array
+      required:
+      - calculated
+      - date_from
+      - date_to
+      - granularities
+      - metrics
+      type: object
+    CalculatedDeveloperMetricsItem:
+      additionalProperties: false
+      description: Measured developer metrics for each `DeveloperMetricsRequest.for`.
+        Each repository group maps to a distinct `CalculatedDeveloperMetricsItem`.
+      properties:
+        for:
+          $ref: '#/components/schemas/ForSetDevelopers'
+        granularity:
+          $ref: '#/components/schemas/Granularity'
+        values:
+          description: The sequence matches `CalculatedDeveloperMetricsItem.for.developers`.
+          items:
+            description: The sequence steps from `date_from` till `date_to` by `granularity`.
+            items:
+              $ref: '#/components/schemas/CalculatedLinearMetricValues'
+            type: array
+          type: array
+      required:
+      - for
+      - granularity
+      - values
+      type: object
+    CalculatedDeveloperMetricsDeprecated:
       additionalProperties: false
       description: Response from /metrics/developers - calculated metrics over developer
         activities.
@@ -4490,7 +4561,7 @@ components:
         calculated:
           description: Values of the requested metrics on the given time interval.
           items:
-            $ref: '#/components/schemas/CalculatedDeveloperMetricsItem'
+            $ref: '#/components/schemas/CalculatedDeveloperMetricsItemDeprecated'
           type: array
         date_from:
           description: Repeats `DeveloperMetricsRequest.date_from`.
@@ -4513,10 +4584,10 @@ components:
       - date_to
       - metrics
       type: object
-    CalculatedDeveloperMetricsItem:
+    CalculatedDeveloperMetricsItemDeprecated:
       additionalProperties: false
       description: Measured developer metrics for each `DeveloperMetricsRequest.for`.
-        Each repository group maps to a distinct `CalculatedDeveloperMetricsItem`.
+        Each repository group maps to a distinct `CalculatedDeveloperMetricsItemDeprecated`.
       example:
         values:
         - - 20
@@ -4534,17 +4605,17 @@ components:
         for:
           $ref: '#/components/schemas/ForSetDevelopers'
         values:
-          description: The sequence matches `CalculatedDeveloperMetricsItem.for.developers`.
+          description: The sequence matches `CalculatedDeveloperMetricsItemDeprecated.for.developers`.
           items:
-            $ref: '#/components/schemas/CalculatedDeveloperMetricValues'
+            $ref: '#/components/schemas/CalculatedDeveloperMetricValuesDeprecated'
           type: array
       required:
       - for
       - values
       type: object
-    CalculatedDeveloperMetricValues:
+    CalculatedDeveloperMetricValuesDeprecated:
       description: Calculated metrics for the developer at the corresponding place
-        in `CalculatedDeveloperMetricsItem.for.developers`. The sequence of values
+        in `CalculatedDeveloperMetricsItemDeprecated.for.developers`. The sequence of values
         matches `CalculatedDeveloperMetrics.metrics`.
       items:
 # {% if False %}
@@ -6155,6 +6226,7 @@ components:
         granularity:
           $ref: '#/components/schemas/Granularity'
         values:
+          description: The sequence steps from `date_from` till `date_to` by `granularity`.
           items:
             $ref: '#/components/schemas/CalculatedLinearMetricValues'
           type: array
@@ -6481,6 +6553,7 @@ components:
         with:
           $ref: '#/components/schemas/JIRAFilterWith'
         values:
+          description: The sequence steps from `date_from` till `date_to` by `granularity`.
           items:
             $ref: '#/components/schemas/CalculatedLinearMetricValues'
           type: array
