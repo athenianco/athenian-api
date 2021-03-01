@@ -269,8 +269,11 @@ async def _epic_flow(return_: Set[str],
             issue_by_id[child_id] = child
             if len(issue_by_id) % 100 == 0:
                 await asyncio.sleep(0)
-        if epic.resolved is not None and epic.work_began is not None:
-            epic.lead_time = epic.resolved - epic.work_began
+        if epic.work_began is not None:
+            if epic.resolved is not None:
+                epic.lead_time = epic.resolved - epic.work_began
+            else:
+                epic.lead_time = datetime.now(timezone.utc) - epic.work_began
     if JIRAFilterReturn.PRIORITIES in return_:
         priority_ids = np.unique(np.concatenate([epics_df[Issue.priority_id.key].values,
                                                  children_columns[Issue.priority_id.key]]))
@@ -594,6 +597,8 @@ async def _issue_flow(return_: Set[str],
                 issue_work_began, issue_prs_began, issue_resolved, issue_prs_released)
             if resolved:
                 lead_time = resolved - work_began
+            elif work_began:
+                lead_time = datetime.now(timezone.utc) - work_began
             else:
                 lead_time = None
             issue_models.append(JIRAIssue(
