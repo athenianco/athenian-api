@@ -84,6 +84,8 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                             for k, p in zip(keys, vals):
                                 print(k, '"%s"' % p.decode())
                             raise e from None
+                if table == "jira.issue":
+                    kwargs["url"] = "https://athenianco.atlassian.net/browse/" + kwargs["key"]
                 session.add(model(**kwargs))
                 if table == "github.api_pull_requests":
                     session.add(NodePullRequest(id=kwargs["node_id"], acc_id=kwargs["acc_id"]))

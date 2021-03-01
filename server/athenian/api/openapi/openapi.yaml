@@ -5751,6 +5751,10 @@ components:
         status:
           description: Name of the status. The details are returned in `FilteredJIRAStuff.statuses`.
           type: string
+        url:
+          description: Link to the issue in JIRA web application.
+          format: url
+          type: string
       required:
       - comments
       - created
@@ -5761,6 +5765,7 @@ components:
       - status
       - title
       - updated
+      - url
       type: object
     JIRALabel:
       additionalProperties: false

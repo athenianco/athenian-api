@@ -21,6 +21,7 @@ class JIRAEpicIssueCommon(Model):
         "comments": int,
         "priority": str,
         "status": str,
+        "url": str,
     }
 
     attribute_map = {
@@ -37,6 +38,7 @@ class JIRAEpicIssueCommon(Model):
         "comments": "comments",
         "priority": "priority",
         "status": "status",
+        "url": "url",
     }
 
     __enable_slots__ = False
@@ -55,6 +57,7 @@ class JIRAEpicIssueCommon(Model):
                  comments: Optional[int] = None,
                  priority: Optional[str] = None,
                  status: Optional[str] = None,
+                 url: Optional[str] = None,
                  ):
         """JIRAEpicChild - a model defined in OpenAPI
 
@@ -71,6 +74,7 @@ class JIRAEpicIssueCommon(Model):
         :param comments: The comments of this JIRAEpicIssueCommon.
         :param priority: The priority of this JIRAEpicIssueCommon.
         :param status: The status of this JIRAEpicIssueCommon.
+        :param url: The url of this JIRAEpicIssueCommon.
         """
         self._id = id
         self._title = title
@@ -85,6 +89,7 @@ class JIRAEpicIssueCommon(Model):
         self._comments = comments
         self._priority = priority
         self._status = status
+        self._url = url
 
     def __lt__(self, other: "JIRAEpicIssueCommon") -> bool:
         """Support sorting."""
@@ -384,3 +389,26 @@ class JIRAEpicIssueCommon(Model):
             raise ValueError("Invalid value for `status`, must not be `None`")
 
         self._status = status
+
+    @property
+    def url(self) -> str:
+        """Gets the url of this JIRAEpicIssueCommon.
+
+        Link to the issue in JIRA web application.
+
+        :return: The url of this JIRAEpicIssueCommon.
+        """
+        return self._url
+
+    @url.setter
+    def url(self, url: str):
+        """Sets the url of this JIRAEpicIssueCommon.
+
+        Link to the issue in JIRA web application.
+
+        :param url: The url of this JIRAEpicIssueCommon.
+        """
+        if url is None:
+            raise ValueError("Invalid value for `url`, must not be `None`")
+
+        self._url = url
