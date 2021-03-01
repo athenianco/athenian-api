@@ -87,7 +87,7 @@ paths:
       security:
       - bearerAuth: []
       - apiKeyAuth: []
-      summary: List the current user's account members and installed GitHub and JIRA
+      summary: List the calling user's account members and installed GitHub and JIRA
         organizations.
       tags:
       - user
@@ -163,7 +163,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to mutate.
+          description: Calling user is not allowed to mutate.
         404:
           content:
             application/json:
@@ -172,7 +172,7 @@ paths:
           description: Requested user does not exist.
       security:
       - bearerAuth: []
-      summary: '"God mode" ability to turn into any user. The current user must be
+      summary: '"God mode" ability to turn into any user. The calling user must be
         marked internally as a super admin.'
       tags:
       - user
@@ -209,7 +209,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified repositories.
+          description: Calling user is not allowed to access the specified repositories.
         404:
           content:
             application/json:
@@ -260,7 +260,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified repositories.
+          description: Calling user is not allowed to access the specified repositories.
         404:
           content:
             application/json:
@@ -310,7 +310,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified repositories.
+          description: Calling user is not allowed to access the specified repositories.
         404:
           content:
             application/json:
@@ -361,7 +361,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified repositories.
+          description: Calling user is not allowed to access the specified repositories.
         404:
           content:
             application/json:
@@ -451,7 +451,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified repositories.
+          description: Calling user is not allowed to access the specified repositories.
         404:
           content:
             application/json:
@@ -502,7 +502,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified repositories.
+          description: Calling user is not allowed to access the specified repositories.
         404:
           content:
             application/json:
@@ -552,7 +552,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified repositories.
+          description: Calling user is not allowed to access the specified repositories.
         404:
           content:
             application/json:
@@ -604,7 +604,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified repositories.
+          description: Calling user is not allowed to access the specified repositories.
         404:
           content:
             application/json:
@@ -665,7 +665,9 @@ paths:
       summary: List all the contributors belonging to the specified account.
       tags:
       - get
+# {% if False %}
       - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.contributors_controller
       x-codegen-request-body-name: body
   /get/pull_requests:
@@ -695,7 +697,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified pull requests.
+          description: Calling user is not allowed to access the specified pull requests.
         404:
           content:
             application/json:
@@ -745,7 +747,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified pull requests.
+          description: Calling user is not allowed to access the specified pull requests.
         404:
           content:
             application/json:
@@ -1060,7 +1062,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InstallationProgress'
-          description: Status of installing Athenian for the current user and the
+          description: Status of installing Athenian for the calling user and the
             given account.
         404:
           content:
@@ -1382,7 +1384,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: Current user is not allowed to access the specified repositories.
+          description: Calling user is not allowed to access the specified repositories.
         404:
           content:
             application/json:
@@ -1616,7 +1618,7 @@ paths:
       security:
       - bearerAuth: []
       - apiKeyAuth: []
-      summary: List the repository sets belonging to the current user.
+      summary: List the repository sets belonging to the calling user.
       tags:
       - reposet
 # {% if False %}
@@ -1813,7 +1815,7 @@ paths:
       security:
       - bearerAuth: []
       - apiKeyAuth: []
-      summary: List the current enabled JIRA project settings.
+      summary: List the currently enabled JIRA project settings.
       tags:
       - settings
 # {% if False %}
@@ -2121,7 +2123,7 @@ paths:
       security:
       - bearerAuth: []
       - apiKeyAuth: []
-      summary: List the teams belonging to the current user.
+      summary: List the teams belonging to the calling user.
       tags:
       - team
 # {% if False %}
@@ -2161,7 +2163,7 @@ paths:
             user in the account.
       security:
       - bearerAuth: []
-      summary: Create a new Personal Access Token for the current user and the specified
+      summary: Create a new Personal Access Token for the calling user and the specified
         account.
       tags:
       - security
@@ -2311,11 +2313,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
-          description: 'Information about the current user: name, email, login, etc.'
+          description: 'Information about the calling user: name, email, login, etc.'
       security:
       - bearerAuth: []
       - apiKeyAuth: []
-      summary: Show details about the current user.
+      summary: Show details about the calling user.
       tags:
       - user
 # {% if False %}
@@ -2771,7 +2773,7 @@ components:
     User:
       additionalProperties: false
       description: User details. "updated" and "accounts" are populated only for the
-        current user.
+        calling user.
       example:
         id: github|60340680
         native_id: 60340680
