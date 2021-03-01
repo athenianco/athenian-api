@@ -49,6 +49,7 @@ class Issue(Base):
     comments_count = Column(Integer, nullable=False)
     priority_id = Column(Text)  # TODO(vmarkovtsev): make it nullable=False
     priority_name = Column(Text, nullable=False)
+    url = Column(Text, nullable=False)
 
 
 class Component(Base):

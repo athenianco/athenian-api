@@ -97,7 +97,8 @@ async def test_filter_jira_return(client, headers, return_, checked):
                      resolved=datetime(2020, 6, 1, 7, 19, 0, 335),
                      lead_time=timedelta(0), life_time=timedelta(days=181, seconds=61141),
                      reporter="Lou Marvin Caraig", assignee="Waren Long", comments=0,
-                     priority="Medium", status="Done", prs=0, project="10003", children=[]),
+                     priority="Medium", status="Done", prs=0, project="10003", children=[],
+                     url="https://athenianco.atlassian.net/browse/ENG-1"),
             JIRAEpic(id="DEV-70", title="Show the installation progress in the waiting page",
                      created=datetime(2020, 1, 22, 16, 57, 10, 253),
                      updated=datetime(2020, 7, 13, 17, 45, 58, 294),
@@ -105,8 +106,9 @@ async def test_filter_jira_return(client, headers, return_, checked):
                      resolved=datetime(2020, 7, 13, 17, 45, 58, 305),
                      lead_time=timedelta(days=41, seconds=21915),
                      life_time=timedelta(days=173, seconds=2928),
-                     reporter="Lou Marvin Caraig",
-                     assignee="David Pordomingo", comments=8, priority="Low", status="Released",
+                     reporter="Lou Marvin Caraig", assignee="David Pordomingo",
+                     url="https://athenianco.atlassian.net/browse/DEV-70",
+                     comments=8, priority="Low", status="Released",
                      prs=0, project="10009", children=[
                          JIRAEpicChild(
                              id="DEV-183",
@@ -118,7 +120,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                              lead_time=timedelta(0), life_time=timedelta(seconds=1986),
                              reporter="Waren Long", assignee="Vadim Markovtsev",
                              comments=1, priority="Low", status="Closed", prs=0, type="Task",
-                             subtasks=0),
+                             subtasks=0, url="https://athenianco.atlassian.net/browse/DEV-183"),
                          JIRAEpicChild(
                              id="DEV-228",
                              title="Consider installation progress without updates during 3 hours as complete",  # noqa
@@ -130,7 +132,8 @@ async def test_filter_jira_return(client, headers, return_, checked):
                              life_time=timedelta(days=1, seconds=5624),
                              reporter="Vadim Markovtsev", assignee="Vadim Markovtsev",
                              comments=1, priority="Medium",
-                             status="Released", prs=0, type="Task", subtasks=0),
+                             status="Released", prs=0, type="Task", subtasks=0,
+                             url="https://athenianco.atlassian.net/browse/DEV-228"),
                         JIRAEpicChild(
                             id="DEV-315",
                             title="Add a progress bar in the waiting page to show the installation progress",  # noqa
@@ -142,7 +145,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                             life_time=timedelta(days=24, seconds=71520),
                             reporter="Waren Long", assignee="David Pordomingo",
                             comments=4, priority="High", status="Released", prs=0, type="Story",
-                            subtasks=0),
+                            subtasks=0, url="https://athenianco.atlassian.net/browse/DEV-315"),
                         JIRAEpicChild(
                             id="DEV-364",
                             title="Block the access to the Overview page until the installation is 100% complete",  # noqa
@@ -154,7 +157,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                             life_time=timedelta(days=18, seconds=5621),
                             reporter="Waren Long", assignee="David Pordomingo",
                             comments=1, priority="Medium", status="Released", prs=0, type="Story",
-                            subtasks=0),
+                            subtasks=0, url="https://athenianco.atlassian.net/browse/DEV-364"),
                         JIRAEpicChild(
                             id="DEV-365",
                             title="Design the success view telling the user the installation is complete and the account ready to use",  # noqa
@@ -166,7 +169,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                             life_time=timedelta(seconds=62309),
                             reporter="Waren Long", assignee="Zuri Negrin",
                             comments=2, priority="Medium", status="Released", prs=0, type="Story",
-                            subtasks=0),
+                            subtasks=0, url="https://athenianco.atlassian.net/browse/DEV-365"),
                      ]),
         ]
         assert model.epics == true_epics
@@ -276,6 +279,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
             assert issue.status
             assert issue.type
             assert issue.project
+            assert issue.url
             if issue.work_began:
                 assert issue.lead_time is not None
             else:
@@ -417,7 +421,7 @@ async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
                  life_time=timedelta(days=181, seconds=61141),
                  reporter="Lou Marvin Caraig", assignee="Waren Long",
                  comments=0, priority="Medium", status="Done", prs=0, project="10003",
-                 children=[]),
+                 children=[], url="https://athenianco.atlassian.net/browse/ENG-1"),
     ]
     assert model.issue_types == [
         JIRAIssueType(name="Design document", count=10, project="10003",
