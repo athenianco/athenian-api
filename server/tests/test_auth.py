@@ -3,9 +3,11 @@ import pickle
 from aiohttp.web_runner import GracefulExit
 import lz4.frame
 import pytest
+from sqlalchemy import insert
 
 from athenian.api.auth import Auth0
 from athenian.api.cache import gen_cache_key
+from athenian.api.models.state.models import UserToken
 from athenian.api.models.web import User
 
 
@@ -62,3 +64,19 @@ async def test_wrong_token(client, headers, token):
         method="GET", path="/v1/user", headers=headers, json={},
     )
     assert response.status == 401
+
+
+async def test_set_account_from_token(client, headers, sdb):
+    await sdb.execute(insert(UserToken).values(UserToken(
+        account_id=1, user_id="auth0|5e1f6e2e8bfa520ea5290741", name="xxx",
+    ).create_defaults().explode()))
+    body = {
+        "date_from": "2016-01-01",
+        "date_to": "2020-01-01",
+    }
+    headers = headers.copy()
+    headers["X-API-Key"] = "AQAAAAAAAAA="
+    response = await client.request(
+        method="POST", path="/v1//filter/repositories", headers=headers, json=body,
+    )
+    assert response.status == 200
