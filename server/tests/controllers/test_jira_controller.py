@@ -89,12 +89,13 @@ async def test_filter_jira_return(client, headers, return_, checked):
     else:
         assert model.labels is None
     if "epics" in checked:
-        assert model.epics == [
+        true_epics = [
             JIRAEpic(id="ENG-1", title="Evaluate our product and process internally",
                      created=datetime(2019, 12, 2, 14, 19, 58, 762),
                      updated=datetime(2020, 6, 1, 7, 19, 0, 316),
                      work_began=datetime(2020, 6, 1, 7, 19, 0, 335),
-                     resolved=datetime(2020, 6, 1, 7, 19, 0, 335), lead_time=timedelta(0),
+                     resolved=datetime(2020, 6, 1, 7, 19, 0, 335),
+                     lead_time=timedelta(0), life_time=timedelta(days=181, seconds=61141),
                      reporter="Lou Marvin Caraig", assignee="Waren Long", comments=0,
                      priority="Medium", status="Done", prs=0, project="10003", children=[]),
             JIRAEpic(id="DEV-70", title="Show the installation progress in the waiting page",
@@ -102,7 +103,9 @@ async def test_filter_jira_return(client, headers, return_, checked):
                      updated=datetime(2020, 7, 13, 17, 45, 58, 294),
                      work_began=datetime(2020, 6, 2, 11, 40, 42, 905),
                      resolved=datetime(2020, 7, 13, 17, 45, 58, 305),
-                     lead_time=timedelta(days=41, seconds=21915), reporter="Lou Marvin Caraig",
+                     lead_time=timedelta(days=41, seconds=21915),
+                     life_time=timedelta(days=173, seconds=2928),
+                     reporter="Lou Marvin Caraig",
                      assignee="David Pordomingo", comments=8, priority="Low", status="Released",
                      prs=0, project="10009", children=[
                          JIRAEpicChild(
@@ -112,7 +115,8 @@ async def test_filter_jira_return(client, headers, return_, checked):
                              updated=datetime(2020, 6, 2, 11, 40, 42, 891),
                              work_began=datetime(2020, 6, 2, 11, 40, 42, 905),
                              resolved=datetime(2020, 6, 2, 11, 40, 42, 905),
-                             lead_time=None, reporter="Waren Long", assignee="Vadim Markovtsev",
+                             lead_time=timedelta(0), life_time=timedelta(seconds=1986),
+                             reporter="Waren Long", assignee="Vadim Markovtsev",
                              comments=1, priority="Low", status="Closed", prs=0, type="Task",
                              subtasks=0),
                          JIRAEpicChild(
@@ -122,8 +126,10 @@ async def test_filter_jira_return(client, headers, return_, checked):
                              updated=datetime(2020, 6, 16, 18, 12, 38, 634),
                              work_began=datetime(2020, 6, 9, 10, 8, 15, 357),
                              resolved=datetime(2020, 6, 9, 10, 34, 7, 221),
-                             lead_time=None, reporter="Vadim Markovtsev",
-                             assignee="Vadim Markovtsev", comments=1, priority="Medium",
+                             lead_time=timedelta(seconds=1551),
+                             life_time=timedelta(days=1, seconds=5624),
+                             reporter="Vadim Markovtsev", assignee="Vadim Markovtsev",
+                             comments=1, priority="Medium",
                              status="Released", prs=0, type="Task", subtasks=0),
                         JIRAEpicChild(
                             id="DEV-315",
@@ -132,7 +138,9 @@ async def test_filter_jira_return(client, headers, return_, checked):
                             updated=datetime(2020, 7, 27, 16, 56, 20, 144),
                             work_began=datetime(2020, 6, 25, 17, 8, 11, 311),
                             resolved=datetime(2020, 7, 13, 17, 43, 20, 317),
-                            lead_time=None, reporter="Waren Long", assignee="David Pordomingo",
+                            lead_time=timedelta(days=18, seconds=2109),
+                            life_time=timedelta(days=24, seconds=71520),
+                            reporter="Waren Long", assignee="David Pordomingo",
                             comments=4, priority="High", status="Released", prs=0, type="Story",
                             subtasks=0),
                         JIRAEpicChild(
@@ -142,7 +150,9 @@ async def test_filter_jira_return(client, headers, return_, checked):
                             updated=datetime(2020, 7, 27, 16, 56, 22, 968),
                             work_began=datetime(2020, 7, 2, 4, 23, 20, 3),
                             resolved=datetime(2020, 7, 13, 17, 46, 15, 634),
-                            lead_time=None, reporter="Waren Long", assignee="David Pordomingo",
+                            lead_time=timedelta(days=11, seconds=48175),
+                            life_time=timedelta(days=18, seconds=5621),
+                            reporter="Waren Long", assignee="David Pordomingo",
                             comments=1, priority="Medium", status="Released", prs=0, type="Story",
                             subtasks=0),
                         JIRAEpicChild(
@@ -152,11 +162,14 @@ async def test_filter_jira_return(client, headers, return_, checked):
                             updated=datetime(2020, 6, 26, 9, 38, 36, 635),
                             work_began=datetime(2020, 6, 26, 9, 33, 9, 184),
                             resolved=datetime(2020, 6, 26, 9, 35, 43, 579),
-                            lead_time=None, reporter="Waren Long", assignee="Zuri Negrin",
+                            lead_time=timedelta(seconds=154),
+                            life_time=timedelta(seconds=62309),
+                            reporter="Waren Long", assignee="Zuri Negrin",
                             comments=2, priority="Medium", status="Released", prs=0, type="Story",
                             subtasks=0),
                      ]),
         ]
+        assert model.epics == true_epics
     else:
         assert model.epics is None
     if "issue_types" in checked:
@@ -263,6 +276,11 @@ async def test_filter_jira_return(client, headers, return_, checked):
             assert issue.status
             assert issue.type
             assert issue.project
+            if issue.work_began:
+                assert issue.lead_time is not None
+            else:
+                assert issue.lead_time is None
+            assert issue.life_time
             # they are not mapped for this time range
             assert not issue.prs
         assert work_begans == resolveds
@@ -395,7 +413,9 @@ async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
                  updated=datetime(2020, 6, 1, 7, 19, 0, 316),
                  work_began=datetime(2020, 6, 1, 7, 19, 0, 335),
                  resolved=datetime(2020, 6, 1, 7, 19, 0, 335),
-                 lead_time=timedelta(0), reporter="Lou Marvin Caraig", assignee="Waren Long",
+                 lead_time=timedelta(0),
+                 life_time=timedelta(days=181, seconds=61141),
+                 reporter="Lou Marvin Caraig", assignee="Waren Long",
                  comments=0, priority="Medium", status="Done", prs=0, project="10003",
                  children=[]),
     ]

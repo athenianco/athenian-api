@@ -5726,7 +5726,15 @@ components:
           type: string
         lead_time:
           allOf:
-          - description: Issue's time spent between `work_began` and `resolved`.
+          - description: |-
+              Issue's time spent between `work_began` and `resolved`. If not resolved,
+              between `work_began` and `now()`.
+          - $ref: '#/components/schemas/TimeDuration'
+        life_time:
+          allOf:
+          - description: |-
+              Issue's time spent between `created` and `resolved`. If not resolved,
+              between `created` and `now()`.
           - $ref: '#/components/schemas/TimeDuration'
         reporter:
           description: Name of the person who reported the issue.
@@ -5747,6 +5755,7 @@ components:
       - comments
       - created
       - id
+      - life_time
       - priority
       - reporter
       - status

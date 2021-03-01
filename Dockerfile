@@ -67,7 +67,7 @@ lapack_libs = mkl_lapack95_lp64' > /root/.numpy-site.cfg && \
       libfftw3-3 libfftw3-dev gfortran libgfortran5 python3-dev gcc g++ && \
     export NPY_NUM_BUILD_JOBS=$(getconf _NPROCESSORS_ONLN) && \
     echo $NPY_NUM_BUILD_JOBS && \
-    pip3 $VERBOSE install --no-cache-dir scipy==1.6.0 numpy==1.20.0 --no-binary numpy && \
+    pip3 $VERBOSE install --no-cache-dir scipy==1.6.1 numpy==1.20.0 --no-binary numpy && \
     apt-get purge -y libfftw3-dev gfortran python3-dev gcc g++ && \
     apt-get autoremove -y --purge && \
     apt-get clean && \

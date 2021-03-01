@@ -183,6 +183,7 @@ async def _epic_flow(return_: Set[str],
     children_columns[Issue.id.key] = children_df.index.values
     epics = []
     issue_by_id = {}
+    now = datetime.utcnow()
     for epic_id, project_id, epic_key, epic_title, epic_created, epic_updated, epic_prs_began,\
         epic_work_began, epic_prs_released, epic_resolved, epic_reporter, epic_assignee, \
         epic_priority, epic_status, epic_prs, epic_comments in zip(
@@ -248,6 +249,15 @@ async def _epic_flow(return_: Set[str],
                 child_work_began, child_prs_began, child_resolved, child_prs_released)
             if work_began is not None:
                 epic.work_began = min(epic.work_began or work_began, work_began)
+            if resolved is not None:
+                lead_time = resolved - work_began
+                life_time = resolved - child_created
+            else:
+                life_time = now - pd.to_datetime(child_created)
+                if work_began is not None:
+                    lead_time = now - pd.to_datetime(work_began)
+                else:
+                    lead_time = None
             if resolved is None:
                 epic.resolved = None
             epic.children.append(child := JIRAEpicChild(
@@ -256,6 +266,8 @@ async def _epic_flow(return_: Set[str],
                 created=child_created,
                 updated=child_updated,
                 work_began=work_began,
+                lead_time=lead_time,
+                life_time=life_time,
                 resolved=resolved,
                 reporter=child_reporter,
                 assignee=child_assignee,
@@ -269,8 +281,13 @@ async def _epic_flow(return_: Set[str],
             issue_by_id[child_id] = child
             if len(issue_by_id) % 100 == 0:
                 await asyncio.sleep(0)
-        if epic.resolved is not None and epic.work_began is not None:
+        if epic.resolved is not None:
             epic.lead_time = epic.resolved - epic.work_began
+            epic.life_time = epic.resolved - epic.created
+        else:
+            epic.life_time = now - pd.to_datetime(epic.created)
+            if epic.work_began is not None:
+                epic.lead_time = now - pd.to_datetime(epic.work_began)
     if JIRAFilterReturn.PRIORITIES in return_:
         priority_ids = np.unique(np.concatenate([epics_df[Issue.priority_id.key].values,
                                                  children_columns[Issue.priority_id.key]]))
@@ -568,6 +585,7 @@ async def _issue_flow(return_: Set[str],
         labels = sorted(chain(components.values(), labels.values()))
     if JIRAFilterReturn.ISSUE_BODIES in return_:
         issue_models = []
+        now = datetime.utcnow()
         for issue_key, issue_title, issue_created, issue_updated, issue_prs_began, \
             issue_work_began, issue_prs_released, issue_resolved, issue_reporter, \
             issue_assignee, issue_priority, issue_status, issue_prs, issue_type, \
@@ -594,8 +612,13 @@ async def _issue_flow(return_: Set[str],
                 issue_work_began, issue_prs_began, issue_resolved, issue_prs_released)
             if resolved:
                 lead_time = resolved - work_began
+                life_time = resolved - issue_created
             else:
-                lead_time = None
+                life_time = now - pd.to_datetime(issue_created)
+                if work_began:
+                    lead_time = now - pd.to_datetime(work_began)
+                else:
+                    lead_time = None
             issue_models.append(JIRAIssue(
                 id=issue_key,
                 title=issue_title,
@@ -604,6 +627,7 @@ async def _issue_flow(return_: Set[str],
                 work_began=work_began,
                 resolved=resolved,
                 lead_time=lead_time,
+                life_time=life_time,
                 reporter=issue_reporter,
                 assignee=issue_assignee,
                 comments=issue_comments,
