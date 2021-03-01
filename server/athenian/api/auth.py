@@ -16,9 +16,11 @@ import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
 from connexion.decorators.security import get_authorization_info
-from connexion.exceptions import AuthenticationProblem, OAuthProblem, Unauthorized
+from connexion.exceptions import AuthenticationProblem, BadRequestProblem, OAuthProblem, \
+    Unauthorized
 from connexion.lifecycle import ConnexionRequest
 from connexion.operations import secure
+from jsonschema import ValidationError
 with warnings.catch_warnings():
     # this will suppress all warnings in this block
     warnings.filterwarnings("ignore", message="int_from_bytes is deprecated")
@@ -220,6 +222,22 @@ class Auth0:
                     await get_user_account_status(
                         request.context.uid, account, request.context.sdb, request.context.cache)
                 # finish the auth processing and chain forward
+                try:
+                    return await function(request)
+                except BadRequestProblem as e:
+                    # if we are missing an account ID and authorize using APIKey, copy it
+                    missing_account_with_api_key = (
+                        ((account := getattr(request.context, "account", None)) is not None) and
+                        isinstance(e.__context__, ValidationError) and
+                        e.__context__.validator == "required" and
+                        "account" in e.__context__.validator_value and
+                        "account" not in request.json
+                    )
+                    if missing_account_with_api_key:
+                        request.json["account"] = account
+                    else:
+                        raise e from None
+                # the only way to come here is by missing_account_with_api_key
                 return await function(request)
             return wrapper
 

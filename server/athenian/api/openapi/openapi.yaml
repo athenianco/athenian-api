@@ -2344,11 +2344,20 @@ paths:
 components:
   securitySchemes:
     bearerAuth:
+      description: |-
+        Regular JSON Web Token authorization powered by Auth0.
+        The server expects an `Authorization: Bearer <token>` header and checks `<token>` by
+        sending it to Auth0.
       type: http
       scheme: bearer
       bearerFormat: JWT
       x-bearerInfoFunc: athenian.api.controllers.security_controller.info_from_bearerAuth
     apiKeyAuth:
+      description: |-
+        Authorization by the value of `X-API-Key` header aka API token.
+        The tokens are user- and account-specific. Create them by calling `/token/create`.
+        The server automatically inserts `account` in the request's body if it was not
+        supplied by the user.
       type: apiKey
       in: header
       name: X-API-Key
