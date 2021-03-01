@@ -15,6 +15,7 @@ class JIRAEpicIssueCommon(Model):
         "work_began": Optional[datetime],
         "resolved": Optional[datetime],
         "lead_time": Optional[timedelta],
+        "life_time": timedelta,
         "reporter": str,
         "assignee": Optional[str],
         "comments": int,
@@ -30,6 +31,7 @@ class JIRAEpicIssueCommon(Model):
         "work_began": "work_began",
         "resolved": "resolved",
         "lead_time": "lead_time",
+        "life_time": "life_time",
         "reporter": "reporter",
         "assignee": "assignee",
         "comments": "comments",
@@ -47,6 +49,7 @@ class JIRAEpicIssueCommon(Model):
                  work_began: Optional[datetime] = None,
                  resolved: Optional[datetime] = None,
                  lead_time: Optional[timedelta] = None,
+                 life_time: Optional[timedelta] = None,
                  reporter: Optional[str] = None,
                  assignee: Optional[str] = None,
                  comments: Optional[int] = None,
@@ -62,6 +65,7 @@ class JIRAEpicIssueCommon(Model):
         :param work_began: The work_began of this JIRAEpicIssueCommon.
         :param resolved: The resolved of this JIRAEpicIssueCommon.
         :param lead_time: The lead_time of this JIRAEpicIssueCommon.
+        :param life_time: The life_time of this JIRAEpicIssueCommon.
         :param reporter: The reporter of this JIRAEpicIssueCommon.
         :param assignee: The assignee of this JIRAEpicIssueCommon.
         :param comments: The comments of this JIRAEpicIssueCommon.
@@ -75,6 +79,7 @@ class JIRAEpicIssueCommon(Model):
         self._work_began = work_began
         self._resolved = resolved
         self._lead_time = lead_time
+        self._life_time = life_time
         self._reporter = reporter
         self._assignee = assignee
         self._comments = comments
@@ -225,21 +230,48 @@ class JIRAEpicIssueCommon(Model):
     def lead_time(self) -> Optional[timedelta]:
         """Gets the lead_time of this JIRAEpicIssueCommon.
 
-        Issue's time spent between `work_began` and `resolved`.
+        Issue's time spent between `work_began` and `resolved`. If not resolved, \
+        between `work_began` and `now()`.
 
         :return: The lead_time of this JIRAEpicIssueCommon.
         """
         return self._lead_time
 
     @lead_time.setter
-    def lead_time(self, lead_time: Optional[timedelta]):
+    def lead_time(self, lead_time: timedelta):
         """Sets the lead_time of this JIRAEpicIssueCommon.
 
-        Issue's time spent between `work_began` and `resolved`.
+        Issue's time spent between `work_began` and `resolved`. If not resolved, \
+        between `work_began` and `now()`.
 
         :param lead_time: The lead_time of this JIRAEpicIssueCommon.
         """
         self._lead_time = lead_time
+
+    @property
+    def life_time(self) -> Optional[timedelta]:
+        """Gets the life_time of this JIRAEpicIssueCommon.
+
+        Issue's time spent between `created` and `resolved`. If not resolved, \
+        between `created` and `now()`.
+
+        :return: The life_time of this JIRAEpicIssueCommon.
+        """
+        return self._life_time
+
+    @life_time.setter
+    def life_time(self, life_time: timedelta):
+        """Sets the life_time of this JIRAEpicIssueCommon.
+
+        Issue's time spent between `created` and `resolved`. If not resolved, \
+        between `created` and `now()`.
+
+        :param life_time: The life_time of this JIRAEpicIssueCommon.
+        """
+        if life_time is None:
+            raise ValueError("Invalid value for `life_time`, must not be `None`")
+
+        self._life_time = life_time
 
     @property
     def reporter(self) -> str:
