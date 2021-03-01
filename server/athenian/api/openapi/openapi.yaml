@@ -665,7 +665,9 @@ paths:
       summary: List all the contributors belonging to the specified account.
       tags:
       - get
+# {% if False %}
       - default
+# {% endif %}
       x-openapi-router-controller: athenian.api.controllers.contributors_controller
       x-codegen-request-body-name: body
   /get/pull_requests:
