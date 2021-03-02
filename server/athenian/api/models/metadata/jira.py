@@ -121,3 +121,12 @@ class IssueType(Base):
     name = Column(Text, nullable=False)
     description = Column(Text)
     icon_url = Column(Text, nullable=False)
+
+
+class Progress(Base):
+    __tablename__ = "progress"
+
+    event_id = Column(Text, primary_key=True)
+    event_type = Column(Text, primary_key=True)
+    current = Column(BigInteger, nullable=False)
+    total = Column(BigInteger, nullable=False)

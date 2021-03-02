@@ -1,9 +1,11 @@
-from sqlalchemy import delete, distinct, insert, select
+import pytest
+from sqlalchemy import delete, distinct, insert, select, update
 from sqlalchemy.sql.functions import count
 
 from athenian.api.controllers.jira import load_jira_identity_mapping_sentinel, \
     load_mapped_jira_users, match_jira_identities
 from athenian.api.defer import with_defer
+from athenian.api.models.metadata.jira import Progress
 from athenian.api.models.state.models import AccountJiraInstallation, MappedJIRAIdentity
 
 
@@ -68,3 +70,12 @@ async def test_match_jira_identities_incremental(sdb, mdb, slack):
     assert matched == 4
     stored = await sdb.fetch_val(select([count(distinct(MappedJIRAIdentity.github_user_id))]))
     assert matched + 1 == stored
+
+
+@pytest.mark.flaky(reruns=3)
+async def test_match_jira_identities_incomplete_progress(sdb, mdb, slack):
+    await mdb.execute(update(Progress).values({Progress.current.key: 1}))
+    try:
+        assert (await match_jira_identities(1, (6366825,), sdb, mdb, slack, None)) is None
+    finally:
+        await mdb.execute(update(Progress).values({Progress.current.key: 10}))

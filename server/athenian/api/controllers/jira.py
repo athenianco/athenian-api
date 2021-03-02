@@ -6,14 +6,14 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import aiomcache
 from names_matcher import NamesMatcher
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, insert, select, union
+from sqlalchemy import and_, func, insert, select, union
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, CancelCache, max_exptime
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.models.metadata.github import OrganizationMember, PushCommit, User as GitHubUser
-from athenian.api.models.metadata.jira import Project, User as JIRAUser
+from athenian.api.models.metadata.jira import Progress, Project, User as JIRAUser
 from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
     MappedJIRAIdentity, Team
 from athenian.api.models.web import NoSourceDataError
@@ -198,12 +198,18 @@ async def _match_jira_identities(account: int,
                                  mdb: DatabaseLike,
                                  cache: Optional[aiomcache.Client],
                                  ) -> Optional[Tuple[int, int, int, bool]]:
+    log = logging.getLogger("%s.match_jira_identities" % metadata.__package__)
     if (jira_id := await get_jira_installation_or_none(account, sdb, mdb, cache)) is None:
+        return None
+    progress_row = await mdb.fetch_one(
+        select([func.sum(Progress.current), func.sum(Progress.total)])
+        .where(Progress.acc_id == jira_id[0]))
+    if (current := progress_row[0]) < (total := progress_row[1]):
+        log.warning("JIRA fetch progress is not 100%%: %d < %d", current, total)
         return None
     existing_mapping = await sdb.fetch_all(select([MappedJIRAIdentity.github_user_id,
                                                    MappedJIRAIdentity.jira_user_id])
                                            .where(MappedJIRAIdentity.account_id == account))
-    log = logging.getLogger("%s.match_jira_identities" % metadata.__package__)
     user_ids = [
         r[0] for r in await mdb.fetch_all(select([OrganizationMember.child_id])
                                           .where(OrganizationMember.acc_id.in_(meta_ids)))
