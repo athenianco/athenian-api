@@ -204,7 +204,7 @@ async def _match_jira_identities(account: int,
     progress_row = await mdb.fetch_one(
         select([func.sum(Progress.current), func.sum(Progress.total)])
         .where(Progress.acc_id == jira_id[0]))
-    if (current := progress_row[0]) < (total := progress_row[1]):
+    if (current := progress_row[0] or 0) < (total := progress_row[1] or 0):
         log.warning("JIRA fetch progress is not 100%%: %d < %d", current, total)
         return None
     existing_mapping = await sdb.fetch_all(select([MappedJIRAIdentity.github_user_id,
