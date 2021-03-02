@@ -743,6 +743,7 @@ async def test_load_releases_events_settings(branches, default_branches, mdb, pd
         "author": "Vadim Markovtsev",
         "url": "www",
         "published_at": datetime(2020, 1, 1, tzinfo=tzinfo),
+        "cloned": False,
     }
 
 

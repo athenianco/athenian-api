@@ -51,6 +51,7 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token):
         ReleaseNotification.author.key: "yyy",
         ReleaseNotification.url.key: "https://google.com",
         ReleaseNotification.published_at.key: published_at,
+        ReleaseNotification.cloned.key: False,
     }
 
     # check updates and when published_at and author are empty
