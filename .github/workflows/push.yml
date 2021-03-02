@@ -254,7 +254,7 @@ jobs:
     steps:
     - name: actions/checkout
       uses: actions/checkout@v2
-    - uses: satackey/action-docker-layer-caching@v0.0.10
+    - uses: satackey/action-docker-layer-caching@v0.0.11
       continue-on-error: true
     - name: setup postgres
       env:
@@ -320,7 +320,7 @@ jobs:
     - name: install
       run: |
         curl -sL https://sentry.io/get-cli/ | bash
-    - uses: satackey/action-docker-layer-caching@v0.0.10
+    - uses: satackey/action-docker-layer-caching@v0.0.11
       continue-on-error: true
     - name: actions/cache
       uses: actions/cache@v2

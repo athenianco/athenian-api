@@ -338,7 +338,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     tasks = []
     for_sets = []
     for service, (repos, devs, labels, jira, for_set) in filters:
-        tasks.append(METRIC_ENTRIES[service]["developers"](
+        tasks.append(METRIC_ENTRIES[service]["developers_deprecated"](
             devs, repos, time_from, time_to, topics, labels, jira, release_settings,
             filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache))
         for_sets.append(for_set)

@@ -373,21 +373,22 @@ processors = [
 
 
 @sentry_span
-async def calc_developer_metrics_github(devs: Sequence[str],
-                                        repos: Sequence[Collection[str]],
-                                        time_from: datetime,
-                                        time_to: datetime,
-                                        topics: Set[DeveloperTopic],
-                                        labels: LabelFilter,
-                                        jira: JIRAFilter,
-                                        release_settings: Dict[str, ReleaseMatchSetting],
-                                        account: int,
-                                        meta_ids: Tuple[int, ...],
-                                        mdb: databases.Database,
-                                        pdb: databases.Database,
-                                        rdb: databases.Database,
-                                        cache: Optional[aiomcache.Client],
-                                        ) -> List[List[DeveloperStats]]:
+async def calc_developer_metrics_github_deprecated(
+        devs: Sequence[str],
+        repos: Sequence[Collection[str]],
+        time_from: datetime,
+        time_to: datetime,
+        topics: Set[DeveloperTopic],
+        labels: LabelFilter,
+        jira: JIRAFilter,
+        release_settings: Dict[str, ReleaseMatchSetting],
+        account: int,
+        meta_ids: Tuple[int, ...],
+        mdb: databases.Database,
+        pdb: databases.Database,
+        rdb: databases.Database,
+        cache: Optional[aiomcache.Client],
+) -> List[List[DeveloperStats]]:
     """Calculate various statistics about developer activities.
 
     :return: List with calculated stats, the order matches `devs`.
@@ -880,3 +881,26 @@ async def _fetch_developer_regular_pr_comments(devs: Iterable[str],
         query.group_by(*group_by), mdb, [c.key for c in selected], index=[c.key for c in group_by])
     df.fillna(0, inplace=True, downcast="infer")
     return df
+
+
+developer_repository_column = "repository"
+developer_identity_column = "developer"
+
+
+async def mine_developer_activities(devs: Collection[str],
+                                    repos: Collection[str],
+                                    time_from: datetime,
+                                    time_to: datetime,
+                                    topics: Set[DeveloperTopic],
+                                    labels: LabelFilter,
+                                    jira: JIRAFilter,
+                                    release_settings: Dict[str, ReleaseMatchSetting],
+                                    account: int,
+                                    meta_ids: Tuple[int, ...],
+                                    mdb: databases.Database,
+                                    pdb: databases.Database,
+                                    rdb: databases.Database,
+                                    cache: Optional[aiomcache.Client],
+                                    ) -> List[Tuple[pd.DataFrame, List[DeveloperTopic]]]:
+    """Extract pandas DataFrame-s for each topic relationship group."""
+    raise NotImplementedError

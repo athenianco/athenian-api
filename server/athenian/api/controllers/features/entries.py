@@ -16,6 +16,8 @@ from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.code import calc_code_stats
+from athenian.api.controllers.features.github.developer_metrics import \
+    DeveloperBinnedMetricCalculator, group_actions_by_developers
 from athenian.api.controllers.features.github.pull_request_metrics import \
     group_by_lines, group_prs_by_participants, need_jira_mapping, \
     PullRequestBinnedHistogramCalculator, \
@@ -31,7 +33,9 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
-from athenian.api.controllers.miners.github.developer import calc_developer_metrics_github
+from athenian.api.controllers.miners.github.developer import \
+    calc_developer_metrics_github_deprecated, developer_repository_column, DeveloperTopic, \
+    mine_developer_activities
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
     remove_ambiguous_prs, store_merged_unreleased_pull_request_facts, \
@@ -479,11 +483,51 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
     return values, matched_bys
 
 
+@sentry_span
+async def calc_developer_metrics_github(devs: Sequence[Collection[str]],
+                                        repositories: Sequence[Collection[str]],
+                                        time_intervals: Sequence[Sequence[datetime]],
+                                        topics: Set[DeveloperTopic],
+                                        labels: LabelFilter,
+                                        jira: JIRAFilter,
+                                        release_settings: Dict[str, ReleaseMatchSetting],
+                                        account: int,
+                                        meta_ids: Tuple[int, ...],
+                                        mdb: Database,
+                                        pdb: Database,
+                                        rdb: Database,
+                                        cache: Optional[aiomcache.Client],
+                                        ) -> Tuple[np.ndarray, List[DeveloperTopic]]:
+    """
+    Calculate the developer metrics on GitHub.
+
+    :return: repositories x devs x granularities x time intervals x topics.
+    """
+    all_devs = set(chain.from_iterable(devs))
+    all_repos = set(chain.from_iterable(repositories))
+    time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
+    mined_dfs = await mine_developer_activities(
+        all_devs, all_repos, time_from, time_to, topics, labels, jira, release_settings,
+        account, meta_ids, mdb, pdb, rdb, cache)
+    topics_seq = []
+    arrays = []
+    repo_grouper = partial(group_by_repo, developer_repository_column, repositories)
+    developer_grouper = partial(group_actions_by_developers, devs)
+    for mined_df, relevant_topics in mined_dfs:
+        topics_seq.extend(relevant_topics)
+        calc = DeveloperBinnedMetricCalculator([t.value for t in relevant_topics], (0, 1))
+        groups = group_to_indexes(mined_df, developer_grouper, repo_grouper)
+        arrays.append(calc(mined_df, time_intervals, groups))
+    result = np.concatenate(arrays, axis=-1)
+    return result, topics_seq
+
+
 METRIC_ENTRIES = {
     "github": {
         "prs_linear": calc_pull_request_metrics_line_github,
         "prs_histogram": calc_pull_request_histograms_github,
         "code": calc_code_metrics_github,
+        "developers_deprecated": calc_developer_metrics_github_deprecated,
         "developers": calc_developer_metrics_github,
         "releases_linear": calc_release_metrics_line_github,
     },
