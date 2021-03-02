@@ -4472,7 +4472,7 @@ components:
       description: The dates start from `date_from` and end earlier or equal to `date_to`.
       properties:
         calculated:
-          description: Values of the requested metrics through time.
+          description: Values of the requested metrics by developer through time.
           items:
             $ref: '#/components/schemas/CalculatedDeveloperMetricsItem'
           type: array
@@ -4617,8 +4617,8 @@ components:
       type: object
     CalculatedDeveloperMetricValuesDeprecated:
       description: Calculated metrics for the developer at the corresponding place
-        in `CalculatedDeveloperMetricsItemDeprecated.for.developers`. The sequence of values
-        matches `CalculatedDeveloperMetrics.metrics`.
+        in `CalculatedDeveloperMetricsItemDeprecated.for.developers`. The sequence
+        of values matches `CalculatedDeveloperMetrics.metrics`.
       items:
 # {% if False %}
         allOf:
@@ -6995,6 +6995,7 @@ components:
       type: string
     ReleaseNotification:
       additionalProperties: false
+      description: Push message about a custom release event.
       example:
         author: Vadim Markovtsev
         commit: c3f4d3a
@@ -7002,7 +7003,6 @@ components:
         repository: github.com/athenianco/athenian-api
         published_at: 2021-02-23T15:16:07Z
         url: https://github.com/athenianco/athenian-api/releases/tag/v0.8.66
-      description: Push message about a custom release event.
       properties:
         repository:
           $ref: '#/components/schemas/RepositoryID'
