@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from itertools import chain
 import pickle
-from typing import Collection, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Collection, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
 
 import aiomcache
 import databases
@@ -358,7 +358,7 @@ async def _set_active(stats_by_repo_by_dev: StatsByRepoByDev,
                 stats_by_repo_by_dev[repo][dev][topic] = int(active_days / days >= threshold)
 
 
-processors = [
+processors_deprecated = [
     ({DeveloperTopic.commits_pushed, DeveloperTopic.lines_changed}, _set_commits),
     ({DeveloperTopic.prs_created}, _set_prs_created),
     ({DeveloperTopic.prs_reviewed}, _set_prs_reviewed),
@@ -396,11 +396,11 @@ async def calc_developer_metrics_github_deprecated(
     zerotd = timedelta(0)
     assert isinstance(time_from, datetime) and time_from.tzinfo.utcoffset(time_from) == zerotd
     assert isinstance(time_to, datetime) and time_to.tzinfo.utcoffset(time_to) == zerotd
-    dev_ids_map, reverse_dev_ids_map, repo_ids_map = await _fetch_node_ids(
+    dev_ids_map, reverse_dev_ids_map, repo_ids_map = await _fetch_node_ids_deprecated(
         devs, repos, meta_ids, mdb)
     stats_by_repo_by_dev = defaultdict(lambda: defaultdict(dict))
     tasks = []
-    for key, setter in processors:
+    for key, setter in processors_deprecated:
         if key.intersection(topics):
             tasks.append(setter(
                 stats_by_repo_by_dev, topics, time_from, time_to, dev_ids_map, repo_ids_map,
@@ -411,11 +411,11 @@ async def calc_developer_metrics_github_deprecated(
 
 
 @sentry_span
-async def _fetch_node_ids(devs: Collection[str],
-                          repos: Sequence[Collection[str]],
-                          meta_ids: Tuple[int, ...],
-                          mdb: databases.Database,
-                          ) -> Tuple[Dict[str, str], Dict[str, int], Dict[str, str]]:
+async def _fetch_node_ids_deprecated(devs: Collection[str],
+                                     repos: Sequence[Collection[str]],
+                                     meta_ids: Tuple[int, ...],
+                                     mdb: databases.Database,
+                                     ) -> Tuple[Dict[str, str], Dict[str, int], Dict[str, str]]:
     all_repos = set(chain.from_iterable(repos))
     tasks = [
         mdb.fetch_all(select([Repository.node_id, Repository.full_name])
@@ -883,8 +883,53 @@ async def _fetch_developer_regular_pr_comments(devs: Iterable[str],
     return df
 
 
+async def _mine_commits(devs: np.ndarray,
+                        repos: np.ndarray,
+                        time_from: datetime,
+                        time_to: datetime,
+                        topics: Set[DeveloperTopic],
+                        labels: LabelFilter,
+                        jira: JIRAFilter,
+                        release_settings: Dict[str, ReleaseMatchSetting],
+                        account: int,
+                        meta_ids: Tuple[int, ...],
+                        mdb: databases.Database,
+                        pdb: databases.Database,
+                        rdb: databases.Database,
+                        cache: Optional[aiomcache.Client],
+                        ) -> pd.DataFrame:
+    columns = [PushCommit.author_user.label(developer_identity_column),
+               PushCommit.repository_node_id.label(developer_repository_column),
+               PushCommit.committed_date]
+    if DeveloperTopic.lines_changed in topics:
+        columns.append(
+            (PushCommit.additions + PushCommit.deletions).label(developer_changed_lines_column))
+    query = select(columns).where(and_(
+        PushCommit.committed_date.between(time_from, time_to),
+        PushCommit.author_user.in_(devs),
+        PushCommit.repository_node_id.in_(repos),
+        PushCommit.acc_id.in_(meta_ids),
+    ))
+    return await read_sql_query(query, mdb, columns)
+
+
 developer_repository_column = "repository"
 developer_identity_column = "developer"
+developer_changed_lines_column = "lines"
+
+processors = [
+    (frozenset((DeveloperTopic.commits_pushed,
+                DeveloperTopic.lines_changed,
+                DeveloperTopic.active)),
+     _mine_commits),
+    # ({DeveloperTopic.prs_created, DeveloperTopic.prs_reviewed, DeveloperTopic.prs_merged},
+    #  _mine_prs),
+    # ({DeveloperTopic.releases}, _set_releases),
+    # ({DeveloperTopic.reviews, DeveloperTopic.review_approvals, DeveloperTopic.review_neutrals,
+    #   DeveloperTopic.review_rejections}, _mine_reviews),
+    # ({DeveloperTopic.pr_comments, DeveloperTopic.regular_pr_comments,
+    #   DeveloperTopic.review_pr_comments}, _mine_pr_comments),
+]
 
 
 async def mine_developer_activities(devs: Collection[str],
@@ -901,6 +946,48 @@ async def mine_developer_activities(devs: Collection[str],
                                     pdb: databases.Database,
                                     rdb: databases.Database,
                                     cache: Optional[aiomcache.Client],
-                                    ) -> List[Tuple[pd.DataFrame, List[DeveloperTopic]]]:
+                                    ) -> List[Tuple[pd.DataFrame, FrozenSet[DeveloperTopic]]]:
     """Extract pandas DataFrame-s for each topic relationship group."""
-    raise NotImplementedError
+    zerotd = timedelta(0)
+    assert isinstance(time_from, datetime) and time_from.tzinfo is not None and \
+        time_from.tzinfo.utcoffset(time_from) == zerotd
+    assert isinstance(time_to, datetime) and time_to.tzinfo is not None and \
+        time_to.tzinfo.utcoffset(time_to) == zerotd
+    repo_ids, repo_names, dev_ids, dev_names = await _fetch_node_ids(devs, repos, meta_ids, mdb)
+    tasks = {}
+    for key, miner in processors:
+        if key.intersection(topics):
+            tasks[key] = miner(dev_ids, repo_ids, time_from, time_to, topics, labels, jira,
+                               release_settings, account, meta_ids, mdb, pdb, rdb, cache)
+    dfs = await gather(*tasks.values())
+    # convert node IDs to user logins and repository names
+    for df in dfs:
+        df[developer_identity_column] = dev_names[np.searchsorted(
+            dev_ids, df[developer_identity_column].values)]
+        df[developer_repository_column] = repo_names[np.searchsorted(
+            repo_ids, df[developer_repository_column].values)]
+    return list(zip(dfs, tasks.keys()))
+
+
+@sentry_span
+async def _fetch_node_ids(devs: Collection[str],
+                          repos: Collection[str],
+                          meta_ids: Tuple[int, ...],
+                          mdb: databases.Database,
+                          ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    tasks = [
+        mdb.fetch_all(select([Repository.node_id, Repository.full_name])
+                      .where(and_(Repository.full_name.in_(repos),
+                                  Repository.acc_id.in_(meta_ids)))
+                      .order_by(Repository.node_id)),
+        mdb.fetch_all(select([User.node_id, User.login])
+                      .where(and_(User.login.in_(devs),
+                                  User.acc_id.in_(meta_ids)))
+                      .order_by(User.node_id)),
+    ]
+    repo_id_rows, dev_id_rows = await gather(*tasks)
+    repo_ids = np.array([r[0] for r in repo_id_rows], dtype="U")
+    repo_names = np.array([r[1] for r in repo_id_rows], dtype="U")
+    dev_ids = np.array([r[0] for r in dev_id_rows], dtype="U")
+    dev_names = np.array([r[1] for r in dev_id_rows], dtype="U")
+    return repo_ids, repo_names, dev_ids, dev_names

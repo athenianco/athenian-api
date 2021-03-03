@@ -3,22 +3,23 @@ from typing import Collection, Dict, List, Sequence, Type, TypeVar
 import numpy as np
 import pandas as pd
 
+from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import BinnedMetricCalculator, \
-    MetricCalculator, \
-    MetricCalculatorEnsemble, SumMetricCalculator
-from athenian.api.controllers.miners.github.developer import developer_identity_column, \
-    DeveloperTopic
+    MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
+from athenian.api.controllers.miners.github.developer import developer_changed_lines_column, \
+    developer_identity_column, DeveloperTopic
+from athenian.api.models.metadata.github import PushCommit
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 T = TypeVar("T")
 
 
-def register_metric(name: str):
-    """Keep track of the release metric calculators."""
-    assert isinstance(name, str)
+def register_metric(topic: DeveloperTopic):
+    """Keep track of the developer metric calculators."""
+    assert isinstance(topic, DeveloperTopic)
 
     def register_with_name(cls: Type[MetricCalculator]):
-        metric_calculators[name] = cls
+        metric_calculators[topic.value] = cls
         return cls
 
     return register_with_name
@@ -43,7 +44,7 @@ class DeveloperTopicCounter(SumMetricCalculator[int]):
 
     may_have_negative_values = False
     dtype = int
-    topic: str
+    timestamp_column: str
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -51,22 +52,81 @@ class DeveloperTopicCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
         result = np.full((len(min_times), len(facts)), None, object)
-        column = facts[self.topic].values
+        column = facts[self.timestamp_column].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         result[column_in_range] = 1
         return result
 
 
-for developer_topic in DeveloperTopic:
-    class SpecificDeveloperTopicCounter(DeveloperTopicCounter):
-        """Calculate %s metric.""" % developer_topic.value
+class DeveloperTopicSummator(SumMetricCalculator[int]):
+    """Sum all `topic` events in each time interval."""
 
-        topic = developer_topic.name
+    may_have_negative_values = False
+    dtype = int
+    topic_column: str
+    timestamp_column: str
 
-    SpecificDeveloperTopicCounter.__name__ = "%sCounter" % "".join(
-        (s[0].upper() + s[1:]) for s in developer_topic.name.split("_"))
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.array:
+        result = np.full((len(min_times), len(facts)), None, object)
+        topic_column = facts[self.topic_column].values
+        ts_column = facts[self.timestamp_column].values
+        column_in_range = (min_times[:, None] <= ts_column) & (ts_column < max_times[:, None])
+        for result_dim, column_in_range_dim in zip(result, column_in_range):
+            result_dim[column_in_range_dim] = topic_column[column_in_range_dim]
+        return result
 
-    register_metric(developer_topic.value)(SpecificDeveloperTopicCounter)
+
+@register_metric(DeveloperTopic.commits_pushed)
+class CommitsPushedCounter(DeveloperTopicCounter):
+    """Calculate "dev-commits-pushed" metric."""
+
+    timestamp_column = PushCommit.committed_date.key
+
+
+@register_metric(DeveloperTopic.lines_changed)
+class LinesChangedCounter(DeveloperTopicSummator):
+    """Calculate "dev-lines-changed" metric."""
+
+    topic_column = developer_changed_lines_column
+    timestamp_column = PushCommit.committed_date.key
+
+
+@register_metric(DeveloperTopic.active)
+class ActiveCounter(MetricCalculator[int]):
+    """Calculate "dev-active" metric."""
+
+    ACTIVITY_DAYS_THRESHOLD_DENSITY = 0.2
+
+    may_have_negative_values = False
+    dtype = int
+
+    def _value(self, samples: np.ndarray) -> Metric[int]:
+        if len(samples) > 0:
+            days = samples[0] % 1000000
+            active = len(np.unique(samples // 1000000))
+        else:
+            days = 1
+            active = 0
+        value = int(active / days > self.ACTIVITY_DAYS_THRESHOLD_DENSITY)
+        return Metric(True, value, None, None)
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.array:
+        column = facts[PushCommit.committed_date.key].dt.floor(freq="D").values
+        column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
+        timestamps = np.repeat(column[None, :], len(min_times), axis=0)
+        result = timestamps.view(int)
+        lengths = (max_times - min_times).astype("timedelta64[D]").view(int)
+        result += lengths[:, None]
+        result[~column_in_range] = 0
+        return result
 
 
 def group_actions_by_developers(devs: Sequence[Collection[str]],
