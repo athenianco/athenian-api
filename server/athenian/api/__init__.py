@@ -266,7 +266,7 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     if not slack_token:
         return None
     slack_client = SlackWebClient(token=slack_token)
-    slack_client.channel = os.getenv("SLACK_CHANNEL", "#updates-installations")
+    general_channel = os.getenv("SLACK_CHANNEL", "#updates-installations")
     slack_client.jinja2 = jinja2.Environment(
         loader=jinja2.FileSystemLoader(Path(__file__).parent / "slack"),
         autoescape=False, trim_blocks=True, lstrip_blocks=True,
@@ -274,10 +274,10 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     slack_client.jinja2.globals["env"] = os.getenv("SENTRY_ENV", "development")
     slack_client.jinja2.globals["now"] = lambda: datetime.now(timezone.utc)
 
-    async def post(template, **kwargs) -> None:
+    async def post(template, channel="", **kwargs) -> None:
         try:
             response = await slack_client.chat_postMessage(
-                channel=slack_client.channel,
+                channel=channel or general_channel,
                 text=slack_client.jinja2.get_template(template).render(**kwargs))
             error_name = error_data = ""
         except Exception as e:
@@ -289,10 +289,10 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
             error_data = response.data
         if error_name:
             log.error("Could not send a Slack message to %s: %s: %s",
-                      slack_client.channel, error_name, error_data)
+                      channel, error_name, error_data)
 
     slack_client.post = post
-    log.info("Slack messaging to %s is enabled 👍", slack_client.channel)
+    log.info("Slack messaging to %s is enabled 👍", general_channel)
     return slack_client
 
 
