@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 import re
 from typing import List
 
@@ -10,6 +11,7 @@ from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.miners.access_classes import access_classes
+from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PushCommit
 from athenian.api.models.persistentdata.models import ReleaseNotification
@@ -20,6 +22,7 @@ from athenian.api.response import ResponseError
 
 
 commit_hash_re = re.compile(r"[a-f0-9]{7}([a-f0-9]{33})?")
+SLACK_CHANNEL = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL", "")
 
 
 @weight(0)
@@ -83,8 +86,9 @@ async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.R
         await gather(request.user(), main_flow())
 
     inserted = []
+    repos = set()
     for n in notifications:
-        repo = n.repository.split("/", 1)[1]
+        repos.add(repo := n.repository.split("/", 1)[1])
         resolved = (
             resolved_full_commits if len(n.commit) == 40 else resolved_prefixed_commits
         ).get((n.commit, repo), {PushCommit.sha.key: None, PushCommit.node_id.key: None})
@@ -117,4 +121,10 @@ async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.R
     async with rdb.connection() as perdata_conn:
         async with perdata_conn.transaction():
             await perdata_conn.execute_many(sql, inserted)
+    if (slack := request.app["slack"]) is not None:
+        async def report_new_release_event_to_slack():
+            await slack.post("new_release_event.jinja2",
+                             channel=SLACK_CHANNEL, account=account, repos=repos)
+
+        await defer(report_new_release_event_to_slack(), "report_new_release_event_to_slack")
     return web.Response(status=200)
