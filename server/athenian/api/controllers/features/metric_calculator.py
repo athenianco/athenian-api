@@ -83,7 +83,10 @@ class MetricCalculator(Generic[T]):
         self._peek = peek = self._analyze(facts, min_times, max_times, **kwargs)
         assert isinstance(peek, np.ndarray), type(self)
         assert peek.shape[:2] == (len(min_times), len(facts)), (peek.shape, type(self))
-        notnull = peek != np.array(None)
+        if peek.dtype is np.dtype(object):
+            notnull = peek != np.array(None)
+        else:
+            notnull = peek != peek.dtype.type(0)
         gpeek = [peek[:, g] for g in groups]
         gnotnull = [notnull[:, g] for g in groups]
         self._samples = [[p[nn].astype(self.dtype)

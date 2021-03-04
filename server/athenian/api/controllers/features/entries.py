@@ -484,6 +484,21 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
 
 
 @sentry_span
+@sentry_span
+@cached(
+    exptime=5 * 60,  # 5 min
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda devs, repositories, time_intervals, topics, labels, jira, release_settings, **_:  # noqa
+    (
+        ",".join(sorted(topics)),
+        ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+        _compose_cache_key_repositories(repositories),
+        _compose_cache_key_repositories(devs),  # yes, _repositories
+        labels, jira,
+        release_settings,
+    ),
+)
 async def calc_developer_metrics_github(devs: Sequence[Collection[str]],
                                         repositories: Sequence[Collection[str]],
                                         time_intervals: Sequence[Sequence[datetime]],
@@ -516,7 +531,7 @@ async def calc_developer_metrics_github(devs: Sequence[Collection[str]],
     for mined_df, relevant_topics in mined_dfs:
         topics_seq.extend(relevant_topics)
         calc = DeveloperBinnedMetricCalculator([t.value for t in relevant_topics], (0, 1))
-        groups = group_to_indexes(mined_df, developer_grouper, repo_grouper)
+        groups = group_to_indexes(mined_df, repo_grouper, developer_grouper)
         arrays.append(calc(mined_df, time_intervals, groups))
     result = np.concatenate(arrays, axis=-1)
     return result, topics_seq
