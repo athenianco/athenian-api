@@ -473,7 +473,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
                  x time intervals primary \
                  x time intervals secondary \
                  x metrics; \
-                 2D array of List[List[List[Metric]]]] (dtype object).
+                 3D numpy array of List[List[Metric]]] (dtype object).
         """
         assert isinstance(items, pd.DataFrame)
         assert isinstance(groups, np.ndarray)
@@ -490,8 +490,10 @@ class BinnedEnsemblesCalculator(Generic[M]):
         values_dicts = self._aggregate_ensembles(agg_kwargs)
         metrics = self._metrics
 
-        def fill_ensemble_group(ensemble_index: int, group_index: int) -> List[List[List[M]]]:
-            cell = [[[] for _ in range(len(ts) - 1)] for ts in time_intervals]
+        def fill_ensemble_group(ensemble_index: int, group_index: int) -> np.ndarray:
+            """Return Array[List[List[M]]]."""
+            cell = np.full(len(time_intervals), None, object)
+            cell[:] = [[[] for _ in range(len(ts) - 1)] for ts in time_intervals]
             values_dict = values_dicts[ensemble_index]
             for metric in metrics[ensemble_index]:
                 for tix, value in enumerate(values_dict[metric][group_index]):
@@ -499,9 +501,12 @@ class BinnedEnsemblesCalculator(Generic[M]):
                     cell[primary][secondary].append(value)
             return cell
 
-        flat_vals = np.fromfunction(np.vectorize(fill_ensemble_group, otypes=[object]),
-                                    (len(metrics), flat_groups.shape[0]), dtype=object)
-        return flat_vals.reshape((len(metrics),) + effective_groups_shape)
+        flat_vals = np.concatenate([
+            fill_ensemble_group(m, g)
+            for m in range(len(metrics))
+            for g in range(flat_groups.shape[0])
+        ])
+        return flat_vals.reshape((len(metrics), *effective_groups_shape, len(time_intervals)))
 
     @classmethod
     def _make_min_max_times(cls, time_intervals: Sequence[Sequence[datetime]],
