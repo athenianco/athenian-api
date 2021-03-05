@@ -437,7 +437,10 @@ async def _issue_flow(return_: Set[str],
     else:
         issue_type_counts = issue_type_projects = project_counts = None
     if JIRAFilterReturn.ISSUE_BODIES in return_:
-        pr_ids = np.concatenate(issues[ISSUE_PR_IDS].values)
+        if not issues.empty:
+            pr_ids = np.concatenate(issues[ISSUE_PR_IDS].values)
+        else:
+            pr_ids = []
     else:
         pr_ids = None
 
@@ -521,6 +524,8 @@ async def _issue_flow(return_: Set[str],
     async def _fetch_prs() -> Optional[Dict[str, WebPullRequest]]:
         if JIRAFilterReturn.ISSUE_BODIES not in return_:
             return None
+        if len(pr_ids) == 0:
+            return {}
         tasks = [
             read_sql_query(
                 select([PullRequest]).where(and_(
