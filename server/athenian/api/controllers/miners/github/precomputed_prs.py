@@ -73,12 +73,15 @@ def triage_by_release_match(repo: str,
     assert full_repo_name in release_settings, \
         "You must take care of deleted repositories separately."
     if release_match in (ReleaseMatch.rejected.name,
-                         ReleaseMatch.force_push_drop.name,
-                         ReleaseMatch.event.name):
+                         ReleaseMatch.force_push_drop.name):
         return result
+    required_release_match = release_settings[full_repo_name]
+    if release_match == ReleaseMatch.event.name:
+        if required_release_match.match == ReleaseMatch.event:
+            return result
+        return None
     match_name, match_by = release_match.split("|", 1)
     match = ReleaseMatch[match_name]
-    required_release_match = release_settings[full_repo_name]
     if required_release_match.match != ReleaseMatch.tag_or_branch:
         if match != required_release_match.match:
             return None
