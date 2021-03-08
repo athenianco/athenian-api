@@ -8,7 +8,9 @@ from athenian.api.controllers.features.metric_calculator import BinnedMetricCalc
     MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
 from athenian.api.controllers.miners.github.developer import developer_changed_lines_column, \
     developer_identity_column, DeveloperTopic
-from athenian.api.models.metadata.github import PushCommit
+from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
+    PullRequestReviewComment, PushCommit, \
+    Release
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 T = TypeVar("T")
@@ -127,6 +129,48 @@ class ActiveCounter(MetricCalculator[int]):
         result += lengths[:, None]
         result[~column_in_range] = 0
         return result
+
+
+@register_metric(DeveloperTopic.prs_created)
+class PRsCreatedCounter(DeveloperTopicCounter):
+    """Calculate "dev-prs-created" metric."""
+
+    timestamp_column = PullRequest.created_at.key
+
+
+@register_metric(DeveloperTopic.prs_merged)
+class PRsMergedCounter(DeveloperTopicCounter):
+    """Calculate "dev-prs-merged" metric."""
+
+    timestamp_column = PullRequest.merged_at.key
+
+
+@register_metric(DeveloperTopic.releases)
+class ReleasesCounter(DeveloperTopicCounter):
+    """Calculate "dev-releases" metric."""
+
+    timestamp_column = Release.published_at.key
+
+
+@register_metric(DeveloperTopic.regular_pr_comments)
+class RegularPRCommentsCounter(DeveloperTopicCounter):
+    """Calculate "dev-regular-pr-comments" metric."""
+
+    timestamp_column = PullRequestComment.created_at.key
+
+
+@register_metric(DeveloperTopic.review_pr_comments)
+class ReviewPRCommentsCounter(DeveloperTopicCounter):
+    """Calculate "dev-review-pr-comments" metric."""
+
+    timestamp_column = PullRequestReviewComment.created_at.key
+
+
+@register_metric(DeveloperTopic.pr_comments)
+class PRCommentsCounter(DeveloperTopicCounter):
+    """Calculate "dev-pr-comments" metric."""
+
+    timestamp_column = "created_at"
 
 
 def group_actions_by_developers(devs: Sequence[Collection[str]],

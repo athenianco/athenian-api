@@ -420,14 +420,16 @@ async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, Li
     with_grouper = partial(group_prs_by_participants, participants)
     groups = group_to_indexes(df_facts, lines_grouper, repo_grouper, with_grouper)
     hists = calc(df_facts, [[time_from, time_to]], groups, defs)
+    reshaped = np.full(hists.shape[:-1], None, object)
+    reshaped_seq = reshaped.ravel()
+    pos = 0
     for line_groups, metrics in zip(hists, defs.values()):
         for repo_groups in line_groups:
             for participants_groups in repo_groups:
-                for i, group_ts in enumerate(participants_groups):
-                    participants_groups[i] = group_hists = []
-                    for hist, m in zip(group_ts[0][0], metrics):
-                        group_hists.append((m, hist))
-    return hists
+                for group_ts in participants_groups:
+                    reshaped_seq[pos] = [(m, hist) for hist, m in zip(group_ts[0][0], metrics)]
+                    pos += 1
+    return reshaped
 
 
 @sentry_span
@@ -528,12 +530,15 @@ async def calc_developer_metrics_github(devs: Sequence[Collection[str]],
     arrays = []
     repo_grouper = partial(group_by_repo, developer_repository_column, repositories)
     developer_grouper = partial(group_actions_by_developers, devs)
-    for mined_df, relevant_topics in mined_dfs:
-        topics_seq.extend(relevant_topics)
-        calc = DeveloperBinnedMetricCalculator([t.value for t in relevant_topics], (0, 1))
+    for mined_topics, mined_df in mined_dfs:
+        topics_seq.extend(mined_topics)
+        calc = DeveloperBinnedMetricCalculator([t.value for t in mined_topics], (0, 1))
         groups = group_to_indexes(mined_df, repo_grouper, developer_grouper)
         arrays.append(calc(mined_df, time_intervals, groups))
-    result = np.concatenate(arrays, axis=-1)
+    result = np.array([
+        [list(chain.from_iterable(m)) for m in zip(*lists)]
+        for lists in zip(*(arr.ravel() for arr in arrays))
+    ]).reshape(arrays[0].shape)
     return result, topics_seq
 
 

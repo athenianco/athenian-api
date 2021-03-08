@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from itertools import chain
 import pickle
-from typing import Collection, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Collection, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple, \
+    Type, Union
 
 import aiomcache
 import databases
@@ -883,8 +884,10 @@ async def _fetch_developer_regular_pr_comments(devs: Iterable[str],
     return df
 
 
-async def _mine_commits(devs: np.ndarray,
-                        repos: np.ndarray,
+async def _mine_commits(repo_ids: np.ndarray,
+                        repo_names: np.ndarray,
+                        dev_ids: np.ndarray,
+                        dev_names: np.ndarray,
                         time_from: datetime,
                         time_to: datetime,
                         topics: Set[DeveloperTopic],
@@ -906,29 +909,191 @@ async def _mine_commits(devs: np.ndarray,
             (PushCommit.additions + PushCommit.deletions).label(developer_changed_lines_column))
     query = select(columns).where(and_(
         PushCommit.committed_date.between(time_from, time_to),
-        PushCommit.author_user.in_(devs),
-        PushCommit.repository_node_id.in_(repos),
+        PushCommit.author_user.in_(dev_ids),
+        PushCommit.repository_node_id.in_(repo_ids),
         PushCommit.acc_id.in_(meta_ids),
     ))
     return await read_sql_query(query, mdb, columns)
 
 
+async def _mine_prs(attr_user: InstrumentedAttribute,
+                    attr_filter: InstrumentedAttribute,
+                    repo_ids: np.ndarray,
+                    repo_names: np.ndarray,
+                    dev_ids: np.ndarray,
+                    dev_names: np.ndarray,
+                    time_from: datetime,
+                    time_to: datetime,
+                    topics: Set[DeveloperTopic],
+                    labels: LabelFilter,
+                    jira: JIRAFilter,
+                    release_settings: Dict[str, ReleaseMatchSetting],
+                    account: int,
+                    meta_ids: Tuple[int, ...],
+                    mdb: databases.Database,
+                    pdb: databases.Database,
+                    rdb: databases.Database,
+                    cache: Optional[aiomcache.Client],
+                    ) -> pd.DataFrame:
+    selected = [attr_user.label(developer_identity_column),
+                PullRequest.repository_node_id.label(developer_repository_column),
+                attr_filter]
+    filters = [
+        attr_filter.between(time_from, time_to),
+        attr_user.in_(dev_ids),
+        PullRequest.repository_node_id.in_(repo_ids),
+        PullRequest.acc_id.in_(meta_ids),
+    ]
+    if labels:
+        filters.extend([
+            PullRequestLabel.acc_id.in_(meta_ids) if labels.include else True,
+            func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
+            or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
+                PullRequestLabel.name.is_(None),
+                PullRequestLabel.acc_id.notin_(meta_ids)) if labels.exclude else True,
+        ])
+        seed = join(
+            PullRequest, PullRequestLabel,
+            and_(PullRequest.node_id == PullRequestLabel.pull_request_node_id,
+                 PullRequest.acc_id == PullRequestLabel.acc_id),
+            isouter=not labels.include,
+        )
+        if jira:
+            query = await generate_jira_prs_query(
+                filters, jira, mdb, cache, columns=selected, seed=seed)
+        else:
+            query = select(selected).select_from(seed).where(and_(*filters))
+    elif jira:
+        query = await generate_jira_prs_query(
+            filters, jira, mdb, cache, columns=selected)
+    else:
+        query = select(selected).where(and_(*filters))
+    return await read_sql_query(query, mdb, [c.key for c in selected])
+
+
+async def _mine_prs_created(*args, **kwargs) -> pd.DataFrame:
+    return await _mine_prs(PullRequest.user_node_id, PullRequest.created_at, *args, **kwargs)
+
+
+async def _mine_prs_merged(*args, **kwargs) -> pd.DataFrame:
+    return await _mine_prs(PullRequest.merged_by, PullRequest.merged_at, *args, **kwargs)
+
+
+async def _mine_releases(repo_ids: np.ndarray,
+                         repo_names: np.ndarray,
+                         dev_ids: np.ndarray,
+                         dev_names: np.ndarray,
+                         time_from: datetime,
+                         time_to: datetime,
+                         topics: Set[DeveloperTopic],
+                         labels: LabelFilter,
+                         jira: JIRAFilter,
+                         release_settings: Dict[str, ReleaseMatchSetting],
+                         account: int,
+                         meta_ids: Tuple[int, ...],
+                         mdb: databases.Database,
+                         pdb: databases.Database,
+                         rdb: databases.Database,
+                         cache: Optional[aiomcache.Client],
+                         ) -> pd.DataFrame:
+    branches, default_branches = await extract_branches(repo_names, meta_ids, mdb, cache)
+    releases, _ = await load_releases(
+        repo_names, branches, default_branches, time_from, time_to,
+        release_settings, account, meta_ids, mdb, pdb, rdb, cache)
+    release_authors = releases[Release.author.key].values.astype("U")
+    matched_devs_mask = np.in1d(release_authors, dev_names)
+    return pd.DataFrame({
+        developer_identity_column + _dereferenced: release_authors[matched_devs_mask],
+        developer_repository_column + _dereferenced:
+            releases[Release.repository_full_name.key].values[matched_devs_mask],
+        Release.published_at.key: releases[Release.published_at.key].values[matched_devs_mask],
+    })
+
+
+async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequestReviewComment]],
+                            repo_ids: np.ndarray,
+                            repo_names: np.ndarray,
+                            dev_ids: np.ndarray,
+                            dev_names: np.ndarray,
+                            time_from: datetime,
+                            time_to: datetime,
+                            topics: Set[DeveloperTopic],
+                            labels: LabelFilter,
+                            jira: JIRAFilter,
+                            release_settings: Dict[str, ReleaseMatchSetting],
+                            account: int,
+                            meta_ids: Tuple[int, ...],
+                            mdb: databases.Database,
+                            pdb: databases.Database,
+                            rdb: databases.Database,
+                            cache: Optional[aiomcache.Client],
+                            ) -> pd.DataFrame:
+    selected = [model.user_node_id.label(developer_identity_column),
+                model.repository_node_id.label(developer_repository_column),
+                model.created_at]
+    filters = [
+        model.acc_id.in_(meta_ids),
+        model.created_at.between(time_from, time_to),
+        model.user_node_id.in_(dev_ids),
+        model.repository_node_id.in_(repo_ids),
+    ]
+    if labels:
+        filters.extend([
+            PullRequestLabel.acc_id.in_(meta_ids),
+            func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
+            or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
+                PullRequestLabel.name.is_(None)) if labels.exclude else True,
+        ])
+        seed = join(
+            model, PullRequestLabel,
+            and_(model.pull_request_node_id ==
+                 PullRequestLabel.pull_request_node_id,
+                 model.acc_id == PullRequestLabel.acc_id),
+            isouter=not labels.include,
+        )
+        if jira:
+            query = await generate_jira_prs_query(
+                filters, jira, mdb, cache, columns=selected, seed=seed,
+                on=(model.pull_request_node_id,
+                    model.acc_id))
+        else:
+            query = select(selected).select_from(seed).where(and_(*filters))
+    elif jira:
+        query = await generate_jira_prs_query(
+            filters, jira, mdb, cache, columns=selected, seed=model,
+            on=(model.pull_request_node_id, model.acc_id))
+    else:
+        query = select(selected).where(and_(*filters))
+    return await read_sql_query(query, mdb, [c.key for c in selected])
+
+
+async def _mine_pr_comments_regular(*args, **kwargs) -> pd.DataFrame:
+    return await _mine_pr_comments(PullRequestComment, *args, **kwargs)
+
+
+async def _mine_pr_comments_review(*args, **kwargs) -> pd.DataFrame:
+    return await _mine_pr_comments(PullRequestReviewComment, *args, **kwargs)
+
+
 developer_repository_column = "repository"
 developer_identity_column = "developer"
 developer_changed_lines_column = "lines"
+_dereferenced = "_dereferenced"
 
 processors = [
     (frozenset((DeveloperTopic.commits_pushed,
                 DeveloperTopic.lines_changed,
                 DeveloperTopic.active)),
      _mine_commits),
-    # ({DeveloperTopic.prs_created, DeveloperTopic.prs_reviewed, DeveloperTopic.prs_merged},
-    #  _mine_prs),
-    # ({DeveloperTopic.releases}, _set_releases),
+    (frozenset((DeveloperTopic.prs_created,)), _mine_prs_created),
+    (frozenset((DeveloperTopic.prs_merged,)), _mine_prs_merged),
+    (frozenset((DeveloperTopic.releases,)), _mine_releases),
     # ({DeveloperTopic.reviews, DeveloperTopic.review_approvals, DeveloperTopic.review_neutrals,
-    #   DeveloperTopic.review_rejections}, _mine_reviews),
-    # ({DeveloperTopic.pr_comments, DeveloperTopic.regular_pr_comments,
-    #   DeveloperTopic.review_pr_comments}, _mine_pr_comments),
+    #   DeveloperTopic.review_rejections, DeveloperTopic.prs_reviewed}, _mine_reviews),
+    (frozenset((DeveloperTopic.pr_comments, DeveloperTopic.regular_pr_comments)),
+     _mine_pr_comments_regular),
+    (frozenset((DeveloperTopic.pr_comments, DeveloperTopic.review_pr_comments)),
+     _mine_pr_comments_review),
 ]
 
 
@@ -946,7 +1111,7 @@ async def mine_developer_activities(devs: Collection[str],
                                     pdb: databases.Database,
                                     rdb: databases.Database,
                                     cache: Optional[aiomcache.Client],
-                                    ) -> List[Tuple[pd.DataFrame, FrozenSet[DeveloperTopic]]]:
+                                    ) -> List[Tuple[FrozenSet[DeveloperTopic], pd.DataFrame]]:
     """Extract pandas DataFrame-s for each topic relationship group."""
     zerotd = timedelta(0)
     assert isinstance(time_from, datetime) and time_from.tzinfo is not None and \
@@ -957,16 +1122,39 @@ async def mine_developer_activities(devs: Collection[str],
     tasks = {}
     for key, miner in processors:
         if key.intersection(topics):
-            tasks[key] = miner(dev_ids, repo_ids, time_from, time_to, topics, labels, jira,
-                               release_settings, account, meta_ids, mdb, pdb, rdb, cache)
-    dfs = await gather(*tasks.values())
+            tasks[key] = miner(
+                repo_ids, repo_names, dev_ids, dev_names,
+                time_from, time_to, topics, labels, jira, release_settings,
+                account, meta_ids, mdb, pdb, rdb, cache)
+    df_by_topic = dict(zip(tasks.keys(), await gather(*tasks.values())))
+    if DeveloperTopic.pr_comments in topics:
+        regular_pr_comments = df_by_topic[(
+            key := frozenset((DeveloperTopic.pr_comments, DeveloperTopic.regular_pr_comments))
+        )]
+        del df_by_topic[key]
+        if DeveloperTopic.regular_pr_comments in topics:
+            df_by_topic[frozenset((DeveloperTopic.regular_pr_comments,))] = regular_pr_comments
+        review_pr_comments = df_by_topic[(
+            key := frozenset((DeveloperTopic.pr_comments, DeveloperTopic.review_pr_comments))
+        )]
+        del df_by_topic[key]
+        if DeveloperTopic.review_pr_comments in topics:
+            df_by_topic[frozenset((DeveloperTopic.review_pr_comments,))] = review_pr_comments
+        df_by_topic[frozenset((DeveloperTopic.pr_comments,))] = pd.concat([
+            regular_pr_comments, review_pr_comments])
     # convert node IDs to user logins and repository names
-    for df in dfs:
-        df[developer_identity_column] = dev_names[np.searchsorted(
-            dev_ids, df[developer_identity_column].values)]
-        df[developer_repository_column] = repo_names[np.searchsorted(
-            repo_ids, df[developer_repository_column].values)]
-    return list(zip(dfs, tasks.keys()))
+    for df in df_by_topic.values():
+        try:
+            df[developer_identity_column] = dev_names[np.searchsorted(
+                dev_ids, df[developer_identity_column].values)]
+            df[developer_repository_column] = repo_names[np.searchsorted(
+                repo_ids, df[developer_repository_column].values)]
+        except KeyError:
+            df.rename(columns={
+                developer_identity_column + _dereferenced: developer_identity_column,
+                developer_repository_column + _dereferenced: developer_repository_column,
+            }, inplace=True, errors="raise")
+    return list(df_by_topic.items())
 
 
 @sentry_span
