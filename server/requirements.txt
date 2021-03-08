@@ -1,4 +1,4 @@
-aiohttp==3.7.4
+aiohttp==3.7.4.post0
 connexion[aiohttp,swagger-ui]==2.7.0
 openapi-spec-validator==0.2.10
 aiohttp_cors==0.7.0
