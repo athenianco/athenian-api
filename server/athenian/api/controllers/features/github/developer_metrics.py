@@ -8,8 +8,9 @@ from athenian.api.controllers.features.metric_calculator import BinnedMetricCalc
     MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
 from athenian.api.controllers.miners.github.developer import developer_changed_lines_column, \
     developer_identity_column, DeveloperTopic
+from athenian.api.controllers.miners.github.pull_request import ReviewResolution
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestReviewComment, PushCommit, \
+    PullRequestReview, PullRequestReviewComment, PushCommit, \
     Release
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
@@ -171,6 +172,78 @@ class PRCommentsCounter(DeveloperTopicCounter):
     """Calculate "dev-pr-comments" metric."""
 
     timestamp_column = "created_at"
+
+
+@register_metric(DeveloperTopic.prs_reviewed)
+class PRReviewedCounter(SumMetricCalculator[int]):
+    """Calculate "dev-prs-reviewed" metric."""
+
+    may_have_negative_values = False
+    dtype = int
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.array:
+        result = np.full((len(min_times), len(facts)), None, object)
+        column = facts[PullRequestReview.submitted_at.key].values
+        column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
+        duplicated = facts.duplicated([
+            PullRequestReview.pull_request_node_id.key, developer_identity_column,
+        ]).values
+        column_in_range[np.repeat(duplicated[None, :], len(min_times), axis=0)] = False
+        result[column_in_range] = 1
+        return result
+
+
+@register_metric(DeveloperTopic.reviews)
+class ReviewsCounter(DeveloperTopicCounter):
+    """Calculate "dev-reviews" metric."""
+
+    timestamp_column = PullRequestReview.submitted_at.key
+
+
+class ReviewStatesCounter(SumMetricCalculator[int]):
+    """Count reviews with the specified outcome in `state`."""
+
+    may_have_negative_values = False
+    dtype = int
+    state = None
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.array:
+        result = np.full((len(min_times), len(facts)), None, object)
+        column = facts[PullRequestReview.submitted_at.key].values
+        column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
+        wrong_state = facts[PullRequestReview.state.key].values != self.state.value
+        column_in_range[np.repeat(wrong_state[None, :], len(min_times), axis=0)] = False
+        result[column_in_range] = 1
+        return result
+
+
+@register_metric(DeveloperTopic.review_approvals)
+class ApprovalsCounter(ReviewStatesCounter):
+    """Calculate "dev-review-approved" metric."""
+
+    state = ReviewResolution.APPROVED
+
+
+@register_metric(DeveloperTopic.review_rejections)
+class RejectionsCounter(ReviewStatesCounter):
+    """Calculate "dev-review-rejected" metric."""
+
+    state = ReviewResolution.CHANGES_REQUESTED
+
+
+@register_metric(DeveloperTopic.review_neutrals)
+class NeutralReviewsCounter(ReviewStatesCounter):
+    """Calculate "dev-review-neutrals" metric."""
+
+    state = ReviewResolution.COMMENTED
 
 
 def group_actions_by_developers(devs: Sequence[Collection[str]],

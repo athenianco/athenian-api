@@ -1003,11 +1003,69 @@ async def _mine_releases(repo_ids: np.ndarray,
     release_authors = releases[Release.author.key].values.astype("U")
     matched_devs_mask = np.in1d(release_authors, dev_names)
     return pd.DataFrame({
-        developer_identity_column + _dereferenced: release_authors[matched_devs_mask],
-        developer_repository_column + _dereferenced:
+        developer_identity_column + _dereferenced_suffix: release_authors[matched_devs_mask],
+        developer_repository_column + _dereferenced_suffix:
             releases[Release.repository_full_name.key].values[matched_devs_mask],
         Release.published_at.key: releases[Release.published_at.key].values[matched_devs_mask],
     })
+
+
+async def _mine_reviews(repo_ids: np.ndarray,
+                        repo_names: np.ndarray,
+                        dev_ids: np.ndarray,
+                        dev_names: np.ndarray,
+                        time_from: datetime,
+                        time_to: datetime,
+                        topics: Set[DeveloperTopic],
+                        labels: LabelFilter,
+                        jira: JIRAFilter,
+                        release_settings: Dict[str, ReleaseMatchSetting],
+                        account: int,
+                        meta_ids: Tuple[int, ...],
+                        mdb: databases.Database,
+                        pdb: databases.Database,
+                        rdb: databases.Database,
+                        cache: Optional[aiomcache.Client],
+                        ) -> pd.DataFrame:
+    selected = [
+        PullRequestReview.user_node_id.label(developer_identity_column),
+        PullRequestReview.repository_node_id.label(developer_repository_column),
+        PullRequestReview.pull_request_node_id,
+        PullRequestReview.submitted_at,
+        PullRequestReview.state,
+    ]
+    filters = [
+        PullRequestReview.acc_id.in_(meta_ids),
+        PullRequestReview.submitted_at.between(time_from, time_to),
+        PullRequestReview.user_node_id.in_(dev_ids),
+        PullRequestReview.repository_node_id.in_(repo_ids),
+    ]
+    if labels:
+        filters.extend([
+            PullRequestLabel.acc_id.in_(meta_ids),
+            func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
+            or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
+                PullRequestLabel.name.is_(None)) if labels.exclude else True,
+        ])
+        seed = join(
+            PullRequestReview, PullRequestLabel,
+            and_(PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id,
+                 PullRequestReview.acc_id == PullRequestLabel.acc_id),
+            isouter=not labels.include,
+        )
+        if jira:
+            query = await generate_jira_prs_query(
+                filters, jira, mdb, cache, columns=selected, seed=seed,
+                on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id))
+        else:
+            query = select(selected).select_from(seed).where(and_(*filters))
+    elif jira:
+        query = await generate_jira_prs_query(
+            filters, jira, mdb, cache, columns=selected, seed=PullRequestReview,
+            on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id))
+    else:
+        query = select(selected).where(and_(*filters))
+    return await read_sql_query(query, mdb, selected)
 
 
 async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequestReviewComment]],
@@ -1078,7 +1136,7 @@ async def _mine_pr_comments_review(*args, **kwargs) -> pd.DataFrame:
 developer_repository_column = "repository"
 developer_identity_column = "developer"
 developer_changed_lines_column = "lines"
-_dereferenced = "_dereferenced"
+_dereferenced_suffix = "_dereferenced"
 
 processors = [
     (frozenset((DeveloperTopic.commits_pushed,
@@ -1088,8 +1146,12 @@ processors = [
     (frozenset((DeveloperTopic.prs_created,)), _mine_prs_created),
     (frozenset((DeveloperTopic.prs_merged,)), _mine_prs_merged),
     (frozenset((DeveloperTopic.releases,)), _mine_releases),
-    # ({DeveloperTopic.reviews, DeveloperTopic.review_approvals, DeveloperTopic.review_neutrals,
-    #   DeveloperTopic.review_rejections, DeveloperTopic.prs_reviewed}, _mine_reviews),
+    (frozenset((DeveloperTopic.reviews,
+                DeveloperTopic.review_approvals,
+                DeveloperTopic.review_neutrals,
+                DeveloperTopic.review_rejections,
+                DeveloperTopic.prs_reviewed)),
+     _mine_reviews),
     (frozenset((DeveloperTopic.pr_comments, DeveloperTopic.regular_pr_comments)),
      _mine_pr_comments_regular),
     (frozenset((DeveloperTopic.pr_comments, DeveloperTopic.review_pr_comments)),
@@ -1143,7 +1205,9 @@ async def mine_developer_activities(devs: Collection[str],
         df_by_topic[frozenset((DeveloperTopic.pr_comments,))] = pd.concat([
             regular_pr_comments, review_pr_comments])
     # convert node IDs to user logins and repository names
-    for df in df_by_topic.values():
+    effective_df_by_topic = {}
+    for key, df in df_by_topic.items():
+        effective_df_by_topic[key.intersection(topics)] = df
         try:
             df[developer_identity_column] = dev_names[np.searchsorted(
                 dev_ids, df[developer_identity_column].values)]
@@ -1151,10 +1215,10 @@ async def mine_developer_activities(devs: Collection[str],
                 repo_ids, df[developer_repository_column].values)]
         except KeyError:
             df.rename(columns={
-                developer_identity_column + _dereferenced: developer_identity_column,
-                developer_repository_column + _dereferenced: developer_repository_column,
+                developer_identity_column + _dereferenced_suffix: developer_identity_column,
+                developer_repository_column + _dereferenced_suffix: developer_repository_column,
             }, inplace=True, errors="raise")
-    return list(df_by_topic.items())
+    return list(effective_df_by_topic.items())
 
 
 @sentry_span
