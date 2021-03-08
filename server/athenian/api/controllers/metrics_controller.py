@@ -338,22 +338,23 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     tasks = []
     for_sets = []
     for service, (repos, devs, labels, jira, for_set) in filters:
-        tasks.append(METRIC_ENTRIES[service]["developers_deprecated"](
-            devs, repos, time_from, time_to, topics, labels, jira, release_settings,
+        if for_set.aggregate_devgroups:
+            dev_groups = [[devs[i] for i in group] for group in for_set.aggregate_devgroups]
+        else:
+            dev_groups = [[dev] for dev in devs]
+        tasks.append(METRIC_ENTRIES[service]["developers"](
+            dev_groups, repos, [[time_from, time_to]], topics, labels, jira, release_settings,
             filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache))
         for_sets.append(for_set)
     all_stats = await gather(*tasks)
-    for stats, for_set in zip(all_stats, for_sets):
-        for i, group in enumerate(stats):
-            if for_set.aggregate_devgroups:
-                values = [[sum(getattr(group[i], DeveloperTopic(t).name) for i in devgroup)
-                           for t in filt.metrics]
-                          for devgroup in for_set.aggregate_devgroups]
-            else:
-                values = [[getattr(s, DeveloperTopic(t).name) for t in filt.metrics]
-                          for s in group]
+    for (stats_metrics, stats_topics), for_set in zip(all_stats, for_sets):
+        topic_order = [stats_topics.index(DeveloperTopic(t)) for t in filt.metrics]
+        for repogroup_index, repogroup_metrics in enumerate(stats_metrics):
+            values = [arr[0] for arr in repogroup_metrics.ravel()]
+            for v in values:
+                v[:] = [v[i].value for i in topic_order]
             met.calculated.append(CalculatedDeveloperMetricsItemDeprecated(
-                for_=for_set.select_repogroup(i),
+                for_=for_set.select_repogroup(repogroup_index),
                 values=values,
             ))
     return model_response(met)

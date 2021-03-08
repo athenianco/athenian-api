@@ -1005,7 +1005,9 @@ async def test_developer_metrics_repogroups(client, headers):
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert set(result.metrics) == set(DeveloperMetricID)
     assert len(result.calculated) == 2
-    assert all(v > 0 for v in result.calculated[0].values[0])
+    assert all((v > 0 or m == DeveloperMetricID.ACTIVE)
+               for m, v in zip(sorted(sorted(DeveloperMetricID)),
+                               result.calculated[0].values[0]))
     assert all(v == 0 for v in result.calculated[1].values[0])
 
 
@@ -1053,7 +1055,7 @@ async def test_developer_metrics_aggregate(client, headers):
     assert response.status == 200
     result = CalculatedDeveloperMetricsDeprecated.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
-    assert result.calculated[0].values == [[2, 17]]
+    assert result.calculated[0].values == [[1, 17]]
     body["for"][0]["aggregate_devgroups"][0].append(-1)
     response = await client.request(
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
