@@ -34,8 +34,7 @@ from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import \
-    calc_developer_metrics_github_deprecated, developer_repository_column, DeveloperTopic, \
-    mine_developer_activities
+    developer_repository_column, DeveloperTopic, mine_developer_activities
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
     remove_ambiguous_prs, store_merged_unreleased_pull_request_facts, \
@@ -535,10 +534,11 @@ async def calc_developer_metrics_github(devs: Sequence[Collection[str]],
         calc = DeveloperBinnedMetricCalculator([t.value for t in mined_topics], (0, 1))
         groups = group_to_indexes(mined_df, repo_grouper, developer_grouper)
         arrays.append(calc(mined_df, time_intervals, groups))
-    result = np.array([
+    result = np.full(arrays[0].shape, None)
+    result.ravel()[:] = [
         [list(chain.from_iterable(m)) for m in zip(*lists)]
         for lists in zip(*(arr.ravel() for arr in arrays))
-    ]).reshape(arrays[0].shape)
+    ]
     return result, topics_seq
 
 
@@ -547,7 +547,6 @@ METRIC_ENTRIES = {
         "prs_linear": calc_pull_request_metrics_line_github,
         "prs_histogram": calc_pull_request_histograms_github,
         "code": calc_code_metrics_github,
-        "developers_deprecated": calc_developer_metrics_github_deprecated,
         "developers": calc_developer_metrics_github,
         "releases_linear": calc_release_metrics_line_github,
     },
