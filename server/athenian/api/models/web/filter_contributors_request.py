@@ -1,53 +1,34 @@
-from datetime import date
 from typing import List, Optional
 
-from athenian.api.models.web import CommonFilterPropertiesMixin
-from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web import CommonFilterProperties
+from athenian.api.models.web.base_model_ import AllOf, Model
 
 
-class FilterContributorsRequest(Model, CommonFilterPropertiesMixin):
+class _FilterContributorsRequest(Model):
     """Filters for `/filter/contributors`."""
 
     openapi_types = {
-        "account": int,
-        "date_from": date,
-        "date_to": date,
-        "timezone": int,
         "in_": List[str],
         "as_": List[str],
     }
 
     attribute_map = {
-        "account": "account",
-        "date_from": "date_from",
-        "date_to": "date_to",
-        "timezone": "timezone",
         "in_": "in",
         "as_": "as",
     }
 
+    __enable_slots__ = False
+
     def __init__(
             self,
-            account: Optional[int] = None,
-            date_from: Optional[date] = None,
-            date_to: Optional[date] = None,
-            timezone: Optional[int] = None,
             in_: Optional[List[str]] = None,
             as_: List[str] = None,
     ):
         """FilterContributorsRequest - a model defined in OpenAPI
 
-        :param account: The account of this FilterContributorsRequest.
-        :param date_from: The date_from of this FilterContributorsRequest.
-        :param date_to: The date_to of this FilterContributorsRequest.
-        :param timezone: The timezone of this FilterContributorsRequest.
         :param in_: The in_ of this FilterContributorsRequest.
         :param as_: The as_ of this FilterContributorsRequest.
         """
-        self._account = account
-        self._date_from = date_from
-        self._date_to = date_to
-        self._timezone = timezone
         self._in_ = in_
         self._as_ = as_
 
@@ -105,3 +86,7 @@ class FilterContributorsRequest(Model, CommonFilterPropertiesMixin):
             )
 
         self._as_ = as_
+
+
+FilterContributorsRequest = AllOf(_FilterContributorsRequest, CommonFilterProperties,
+                                  name="FilterContributorsRequest", module=__name__)

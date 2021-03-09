@@ -1,62 +1,43 @@
-from datetime import date
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
+from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
 from athenian.api.models.web.granularity import Granularity
 
 
-class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
-    """Request for calculating metrics on top of developer activities."""
+class _DeveloperMetricsRequest(Model):
+    """Request for calculating metrics on developer activities."""
 
     openapi_types = {
         "for_": List[ForSetDevelopers],
         "metrics": List[str],
-        "date_from": date,
-        "date_to": date,
-        "timezone": int,
-        "account": int,
         "granularities": List[str],
     }
 
     attribute_map = {
         "for_": "for",
         "metrics": "metrics",
-        "date_from": "date_from",
-        "date_to": "date_to",
-        "timezone": "timezone",
-        "account": "account",
         "granularities": "granularities",
     }
+
+    __enable_slots__ = False
 
     def __init__(
         self,
         for_: Optional[List[ForSetDevelopers]] = None,
         metrics: Optional[List[str]] = None,
-        date_from: Optional[date] = None,
-        date_to: Optional[date] = None,
-        timezone: Optional[int] = None,
-        account: Optional[int] = None,
         granularities: Optional[List[str]] = None,
     ):
         """DeveloperMetricsRequest - a model defined in OpenAPI
 
         :param for_: The for_ of this DeveloperMetricsRequest.
         :param metrics: The metrics of this DeveloperMetricsRequest.
-        :param date_from: The date_from of this DeveloperMetricsRequest.
-        :param date_to: The date_to of this DeveloperMetricsRequest.
-        :param timezone: The timezone of this DeveloperMetricsRequest.
-        :param account: The account of this DeveloperMetricsRequest.
         :param granularities: The granularities of this DeveloperMetricsRequest.
         """
         self._for_ = for_
         self._metrics = metrics
-        self._date_from = date_from
-        self._date_to = date_to
-        self._timezone = timezone
-        self._account = account
         self._granularities = granularities
 
     @property
@@ -126,9 +107,8 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
 
         :param granularities: The granularities of this DeveloperMetricsRequest.
         """
-        # FIXME(vmarkovtsev): uncomment when the webapp is ready
-        # if granularities is None:
-        #     raise ValueError("Invalid value for `granularities`, must not be `None`")
+        if granularities is None:
+            raise ValueError("Invalid value for `granularities`, must not be `None`")
         for i, g in enumerate(granularities):
             if not Granularity.format.match(g):
                 raise ValueError(
@@ -136,3 +116,7 @@ class DeveloperMetricsRequest(Model, CommonFilterPropertiesMixin):
                     (i, g, Granularity.format.pattern))
 
         self._granularities = granularities
+
+
+DeveloperMetricsRequest = AllOf(_DeveloperMetricsRequest, CommonFilterProperties,
+                                name="DeveloperMetricsRequest", module=__name__)

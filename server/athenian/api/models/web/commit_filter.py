@@ -1,57 +1,38 @@
-from datetime import date
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
+from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 
 
-class CommitFilter(Model, CommonFilterPropertiesMixin):
-    """Common parts of the commit filter."""
+class _CommitFilter(Model):
+    """Specific parts of the commit filter."""
 
     openapi_types = {
-        "account": int,
-        "date_from": date,
-        "date_to": date,
-        "timezone": int,
         "in_": List[str],
         "with_author": List[str],
         "with_committer": List[str],
     }
 
     attribute_map = {
-        "account": "account",
-        "date_from": "date_from",
-        "date_to": "date_to",
-        "timezone": "timezone",
         "in_": "in",
         "with_author": "with_author",
         "with_committer": "with_committer",
     }
 
+    __enable_slots__ = False
+
     def __init__(
         self,
-        account: Optional[int] = None,
-        date_from: Optional[date] = None,
-        date_to: Optional[date] = None,
-        timezone: Optional[int] = None,
         in_: Optional[List[str]] = None,
         with_author: Optional[List[str]] = None,
         with_committer: Optional[List[str]] = None,
     ):
         """CommitFilter - a model defined in OpenAPI
 
-        :param account: The account of this CommitFilter.
-        :param date_from: The date_from of this CommitFilter.
-        :param date_to: The date_to of this CommitFilter.
-        :param timezone: The timezone of this CommitFilter.
         :param in_: The in of this CommitFilter.
         :param with_author: The with_author of this CommitFilter.
         :param with_committer: The with_committer of this CommitFilter.
         """
-        self._account = account
-        self._date_from = date_from
-        self._date_to = date_to
-        self._timezone = timezone
         self._in_ = in_
         self._with_author = with_author
         self._with_committer = with_committer
@@ -124,3 +105,6 @@ class CommitFilter(Model, CommonFilterPropertiesMixin):
         :param with_committer: The with_committer of this CommitFilter.
         """
         self._with_committer = with_committer
+
+
+CommitFilter = AllOf(_CommitFilter, CommonFilterProperties, name="CommitFilter", module=__name__)

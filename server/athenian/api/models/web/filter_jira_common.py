@@ -1,15 +1,13 @@
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
+from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 
 
-class FilterJIRACommon(Model, CommonFilterPropertiesMixin):
+class _FilterJIRACommon(Model):
     """Common properies if a JIRA issue or epic."""
 
     openapi_types = {
-        "account": int,
-        "timezone": int,
         "priorities": Optional[List[str]],
         "types": Optional[List[str]],
         "labels_include": Optional[List[str]],
@@ -18,8 +16,6 @@ class FilterJIRACommon(Model, CommonFilterPropertiesMixin):
     }
 
     attribute_map = {
-        "account": "account",
-        "timezone": "timezone",
         "priorities": "priorities",
         "types": "types",
         "labels_include": "labels_include",
@@ -31,8 +27,6 @@ class FilterJIRACommon(Model, CommonFilterPropertiesMixin):
 
     def __init__(
         self,
-        account: Optional[int] = None,
-        timezone: Optional[int] = None,
         priorities: Optional[List[str]] = None,
         types: Optional[List[str]] = None,
         labels_include: Optional[List[str]] = None,
@@ -41,16 +35,12 @@ class FilterJIRACommon(Model, CommonFilterPropertiesMixin):
     ):
         """FilterJIRACommon - a model defined in OpenAPI
 
-        :param account: The account of this FilterJIRACommon.
-        :param timezone: The timezone of this FilterJIRACommon.
         :param priorities: The priorities of this FilterJIRACommon.
         :param types: The types of this FilterJIRACommon.
         :param labels_include: The labels_include of this FilterJIRACommon.
         :param labels_exclude: The labels_exclude of this FilterJIRACommon.
         :param exclude_inactive: The exclude_inactive of this FilterJIRACommon.
         """
-        self._account = account
-        self._timezone = timezone
         self._priorities = priorities
         self._types = types
         self._labels_include = labels_include
@@ -163,3 +153,7 @@ class FilterJIRACommon(Model, CommonFilterPropertiesMixin):
             raise ValueError("Invalid value for `exclude_inactive`, must not be `None`")
 
         self._exclude_inactive = exclude_inactive
+
+
+FilterJIRACommon = AllOf(_FilterJIRACommon, CommonFilterProperties,
+                         name="FilterJIRACommon", module=__name__, sealed=False)

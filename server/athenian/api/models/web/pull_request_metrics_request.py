@@ -1,26 +1,21 @@
-from datetime import date
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
+from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 from athenian.api.models.web.quantiles import validate_quantiles
 
 
-class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
+class _PullRequestMetricsRequest(Model):
     """TRequest for calculating metrics on top of pull requests data."""
 
     openapi_types = {
         "for_": List[ForSet],
         "metrics": List[PullRequestMetricID],
-        "date_from": date,
-        "date_to": date,
-        "timezone": int,
         "granularities": List[str],
         "quantiles": List[float],
-        "account": int,
         "exclude_inactive": bool,
         "fresh": bool,
     }
@@ -28,26 +23,20 @@ class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
     attribute_map = {
         "for_": "for",
         "metrics": "metrics",
-        "date_from": "date_from",
-        "date_to": "date_to",
-        "timezone": "timezone",
         "granularities": "granularities",
         "quantiles": "quantiles",
-        "account": "account",
         "exclude_inactive": "exclude_inactive",
         "fresh": "fresh",
     }
+
+    __enable_slots__ = False
 
     def __init__(
         self,
         for_: Optional[List[ForSet]] = None,
         metrics: Optional[List[PullRequestMetricID]] = None,
-        date_from: Optional[date] = None,
-        date_to: Optional[date] = None,
-        timezone: Optional[int] = None,
         granularities: Optional[List[str]] = None,
         quantiles: Optional[List[float]] = None,
-        account: Optional[int] = None,
         exclude_inactive: Optional[bool] = None,
         fresh: Optional[bool] = None,
     ):
@@ -55,23 +44,15 @@ class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
 
         :param for_: The for_ of this PullRequestMetricsRequest.
         :param metrics: The metrics of this PullRequestMetricsRequest.
-        :param date_from: The date_from of this PullRequestMetricsRequest.
-        :param date_to: The date_to of this PullRequestMetricsRequest.
-        :param timezone: The timezone of this PullRequestMetricsRequest.
         :param granularities: The granularities of this PullRequestMetricsRequest.
         :param quantiles: The quantiles of this PullRequestMetricsRequest.
-        :param account: The account of this PullRequestMetricsRequest.
         :param exclude_inactive: The exclude_inactive of this PullRequestMetricsRequest.
         :param fresh: The fresh of this PullRequestMetricsRequest.
         """
         self._for_ = for_
         self._metrics = metrics
-        self._date_from = date_from
-        self._date_to = date_to
-        self._timezone = timezone
         self._granularities = granularities
         self._quantiles = quantiles
-        self._account = account
         self._exclude_inactive = exclude_inactive
         self._fresh = fresh
 
@@ -208,3 +189,7 @@ class PullRequestMetricsRequest(Model, CommonFilterPropertiesMixin):
         :param fresh: The fresh of this PullRequestMetricsRequest.
         """
         self._fresh = fresh
+
+
+PullRequestMetricsRequest = AllOf(_PullRequestMetricsRequest, CommonFilterProperties,
+                                  name="PullRequestMetricsRequest", module=__name__)

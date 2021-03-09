@@ -1,22 +1,18 @@
 from datetime import date
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
+from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.pull_request_event import PullRequestEvent
 from athenian.api.models.web.pull_request_stage import PullRequestStage
 from athenian.api.models.web.pull_request_with import PullRequestWith
 
 
-class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
+class _FilterPullRequestsRequest(Model):
     """PR filters for /filter/pull_requests."""
 
     openapi_types = {
-        "account": int,
-        "date_from": date,
-        "date_to": date,
-        "timezone": int,
         "in_": List[str],
         "events": List[str],
         "stages": List[str],
@@ -31,10 +27,6 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
     }
 
     attribute_map = {
-        "account": "account",
-        "date_from": "date_from",
-        "date_to": "date_to",
-        "timezone": "timezone",
         "in_": "in",
         "events": "events",
         "stages": "stages",
@@ -48,12 +40,10 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         "limit": "limit",
     }
 
+    __enable_slots__ = False
+
     def __init__(
         self,
-        account: Optional[int] = None,
-        date_from: Optional[date] = None,
-        date_to: Optional[date] = None,
-        timezone: Optional[int] = None,
         in_: Optional[List[str]] = None,
         events: Optional[List[str]] = None,
         stages: Optional[List[str]] = None,
@@ -68,10 +58,6 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
     ):
         """FilterPullRequestsRequest - a model defined in OpenAPI
 
-        :param account: The account of this FilterPullRequestsRequest.
-        :param date_from: The date_from of this FilterPullRequestsRequest.
-        :param date_to: The date_to of this FilterPullRequestsRequest.
-        :param timezone: The timezone of this FilterPullRequestsRequest.
         :param in_: The in_ of this FilterPullRequestsRequest.
         :param events: The events of this FilterPullRequestsRequest.
         :param stages: The stages of this FilterPullRequestsRequest.
@@ -84,10 +70,6 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
         :param updated_to: The updated_to of this FilterPullRequestsRequest.
         :param limit: The limit of this FilterPullRequestsRequest.
         """
-        self._account = account
-        self._date_from = date_from
-        self._date_to = date_to
-        self._timezone = timezone
         self._in_ = in_
         self._events = events
         self._stages = stages
@@ -306,3 +288,7 @@ class FilterPullRequestsRequest(Model, CommonFilterPropertiesMixin):
             raise ValueError("`limit` must be greater than 0: %s" % limit)
 
         self._limit = limit
+
+
+FilterPullRequestsRequest = AllOf(_FilterPullRequestsRequest, CommonFilterProperties,
+                                  name="FilterPullRequestsRequest", module=__name__)

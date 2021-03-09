@@ -517,7 +517,7 @@ async def calc_developer_metrics_github(devs: Sequence[Collection[str]],
     """
     Calculate the developer metrics on GitHub.
 
-    :return: repositories x devs x granularities x time intervals x topics.
+    :return: repositories x granularities x devs x time intervals x topics.
     """
     all_devs = set(chain.from_iterable(devs))
     all_repos = set(chain.from_iterable(repositories))
@@ -539,6 +539,7 @@ async def calc_developer_metrics_github(devs: Sequence[Collection[str]],
         [list(chain.from_iterable(m)) for m in zip(*lists)]
         for lists in zip(*(arr.ravel() for arr in arrays))
     ]
+    result = result.swapaxes(1, 2)
     return result, topics_seq
 
 

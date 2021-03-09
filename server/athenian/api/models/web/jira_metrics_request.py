@@ -1,4 +1,3 @@
-from datetime import date
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
@@ -13,8 +12,6 @@ class JIRAMetricsRequestSpecials(Model):
     """Request body of `/metrics/jira`."""
 
     openapi_types = {
-        "date_from": date,
-        "date_to": date,
         "with_": List[JIRAFilterWith],
         "metrics": List[str],
         "quantiles": List[float],
@@ -24,8 +21,6 @@ class JIRAMetricsRequestSpecials(Model):
     }
 
     attribute_map = {
-        "date_from": "date_from",
-        "date_to": "date_to",
         "with_": "with",
         "metrics": "metrics",
         "quantiles": "quantiles",
@@ -38,8 +33,6 @@ class JIRAMetricsRequestSpecials(Model):
 
     def __init__(
         self,
-        date_from: Optional[date] = None,
-        date_to: Optional[date] = None,
         with_: Optional[List[JIRAFilterWith]] = None,
         metrics: Optional[List[str]] = None,
         quantiles: Optional[List[float]] = None,
@@ -49,8 +42,6 @@ class JIRAMetricsRequestSpecials(Model):
     ):
         """JIRAMetricsRequest - a model defined in OpenAPI
 
-        :param date_from: The date_from of this JIRAMetricsRequest.
-        :param date_to: The date_to of this JIRAMetricsRequest.
         :param with_: The with of this JIRAMetricsRequest.
         :param metrics: The metrics of this JIRAMetricsRequest.
         :param quantiles: The quantiles of this JIRAMetricsRequest.
@@ -58,8 +49,6 @@ class JIRAMetricsRequestSpecials(Model):
         :param epics: The epics of this JIRAMetricsRequest.
         :param group_by_jira_label: The group_by_jira_label of this JIRAMetricsRequest.
         """
-        self._date_from = date_from
-        self._date_to = date_to
         self._with_ = with_
         self._metrics = metrics
         self._quantiles = quantiles

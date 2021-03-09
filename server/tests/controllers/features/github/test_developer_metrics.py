@@ -8,7 +8,7 @@ from athenian.api.defer import with_defer
 
 
 @with_defer
-async def test_developer_metrics_commits_pushed(
+async def test_developer_metrics_smoke(
         pdb, mdb, rdb, release_match_setting_tag):
     utc = timezone.utc
     requested_topics = {
@@ -40,6 +40,7 @@ async def test_developer_metrics_commits_pushed(
         1,
         (6366825,), mdb, pdb, rdb, None)
     assert set(topics) == requested_topics
+    metrics = metrics.swapaxes(1, 2)  # the test was written before the axes swap
     order = [
         DeveloperTopic.active,
         DeveloperTopic.lines_changed,

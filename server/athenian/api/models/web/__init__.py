@@ -3,12 +3,8 @@ from athenian.api.models.web.account_user_change_request import AccountUserChang
     UserChangeStatus
 from athenian.api.models.web.base_model_ import AllOf, Enum, Model, Slots
 from athenian.api.models.web.calculated_developer_metrics import CalculatedDeveloperMetrics
-from athenian.api.models.web.calculated_developer_metrics_deprecated import \
-    CalculatedDeveloperMetricsDeprecated
 from athenian.api.models.web.calculated_developer_metrics_item import \
     CalculatedDeveloperMetricsItem
-from athenian.api.models.web.calculated_developer_metrics_item_deprecated import \
-    CalculatedDeveloperMetricsItemDeprecated
 from athenian.api.models.web.calculated_jira_histogram import CalculatedJIRAHistogram
 from athenian.api.models.web.calculated_jira_metric_values import CalculatedJIRAMetricValues
 from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues
@@ -24,7 +20,7 @@ from athenian.api.models.web.commit import Commit
 from athenian.api.models.web.commit_filter import CommitFilter
 from athenian.api.models.web.commit_signature import CommitSignature
 from athenian.api.models.web.commits_list import CommitsList
-from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
+from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.contributor import Contributor
 from athenian.api.models.web.create_token_request import CreateTokenRequest
 from athenian.api.models.web.created_identifier import CreatedIdentifier
