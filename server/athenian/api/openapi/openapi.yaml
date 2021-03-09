@@ -1157,7 +1157,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CalculatedDeveloperMetricsShim'
+                $ref: '#/components/schemas/CalculatedDeveloperMetricsDeprecated'
           description: Calculated metrics.
         400:
           content:
@@ -4461,12 +4461,6 @@ components:
       - dev-active
       example: dev-prs-created
       type: string
-    CalculatedDeveloperMetricsShim:
-# {% if False %}
-      allOf:
-# {% else %}{{ "\n" }}      oneOf:{% endif %}
-      - $ref: '#/components/schemas/CalculatedDeveloperMetricsDeprecated'
-      - $ref: '#/components/schemas/CalculatedDeveloperMetrics'
     CalculatedDeveloperMetrics:
       additionalProperties: false
       description: The dates start from `date_from` and end earlier or equal to `date_to`.
