@@ -40,6 +40,10 @@ class DeveloperTopic(Enum):
     review_pr_comments = "dev-review-pr-comments"
     active = "dev-active"
 
+    def __lt__(self, other: "DeveloperTopic") -> bool:
+        """Support sorting."""
+        return self.value < other.value
+
 
 @dataclass(slots=True, frozen=True)
 class DeveloperStats:
