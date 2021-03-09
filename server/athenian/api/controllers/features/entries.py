@@ -492,7 +492,7 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
     deserialize=pickle.loads,
     key=lambda devs, repositories, time_intervals, topics, labels, jira, release_settings, **_:  # noqa
     (
-        ",".join(sorted(topics)),
+        ",".join(t.value for t in sorted(topics)),
         ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
         _compose_cache_key_repositories(repositories),
         _compose_cache_key_repositories(devs),  # yes, _repositories
