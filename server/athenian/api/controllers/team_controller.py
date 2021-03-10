@@ -15,12 +15,8 @@ from athenian.api.controllers.miners.github.users import mine_users
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
-from athenian.api.models.web import BadRequestError, CreatedIdentifier, DatabaseConflict, \
-    NotFoundError
-from athenian.api.models.web.contributor import Contributor
-from athenian.api.models.web.team import Team as TeamListItem
-from athenian.api.models.web.team_create_request import TeamCreateRequest
-from athenian.api.models.web.team_update_request import TeamUpdateRequest
+from athenian.api.models.web import BadRequestError, Contributor, CreatedIdentifier, \
+    DatabaseConflict, NotFoundError, Team as TeamListItem, TeamCreateRequest, TeamUpdateRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.typing_utils import DatabaseLike

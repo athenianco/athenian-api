@@ -109,8 +109,7 @@ class Team(create_time_mixin(created_at=True, updated_at=True),
     """Group of users part of the same team."""
 
     __tablename__ = "teams"
-    __table_args__ = (UniqueConstraint("owner_id", "members_checksum", name="uc_owner_members"),
-                      UniqueConstraint("owner_id", "name", name="uc_owner_name"),
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uc_owner_name"),
                       CheckConstraint("id != parent_id", name="cc_parent_self_reference"),
                       {"sqlite_autoincrement": True})
     BOTS = "Bots"  # the name of the special team which contains bots

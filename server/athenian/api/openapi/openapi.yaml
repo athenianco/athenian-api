@@ -1943,7 +1943,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenericError'
-          description: There is an existing team with the same contents.
+          description: There is an existing team with the same name.
       security:
       - bearerAuth: []
       summary: Create a team. Admin is not required.

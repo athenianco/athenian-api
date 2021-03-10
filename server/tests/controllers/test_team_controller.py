@@ -143,28 +143,12 @@ async def test_create_team_same_members(client, headers, sdb, disable_default_us
     )
 
     body = (await response.read()).decode("utf-8")
-    assert response.status == 409, "Response body is : " + body
-    parsed = json.loads(body)
-    detail = parsed["detail"]
-    del parsed["detail"]
-    assert "Team 'Engineering 2' already exists" in detail
-    assert parsed == {
-        "type": "/errors/DatabaseConflict",
-        "title": "Conflict",
-        "status": 409,
-    }
+    assert response.status == 200, "Response body is : " + body
 
     teams = await sdb.fetch_all(select([Team]))
-    assert len(teams) == 1
-    _test_same_team(teams[0], {
-        "id": 1,
-        "members": ["github.com/se7entyse7en", "github.com/vmarkovtsev"],
-        "members_checksum": 1112332547918387545,
-        "members_count": 2,
-        "name": "Engineering 1",
-        "owner_id": 1,
-        "parent_id": None,
-    })
+    assert len(teams) == 2
+    assert teams[0][Team.members.key] == teams[1][Team.members.key]
+    assert {t[Team.name.key] for t in teams} == {"Engineering 1", "Engineering 2"}
 
 
 async def test_create_team_same_name(client, headers, sdb, disable_default_user):
@@ -334,7 +318,7 @@ async def test_update_team_default_user(client, headers, sdb):
     (2, 1, "Engineering", ["github.com/se7entyse7en"], None, 200),
     (3, 1, "Engineering", ["github.com/se7entyse7en"], None, 404),
     (1, 1, "Dream", ["github.com/se7entyse7en"], None, 409),
-    (1, 1, "Engineering", ["github.com/eiso"], None, 409),
+    (1, 1, "Engineering", ["github.com/eiso"], None, 200),
     (2, 1, "Dream", ["github.com/se7entyse7en"], None, 200),
     (2, 1, "Engineering", ["github.com/eiso"], None, 200),
     (2, 1, "Engineering", ["github.com/eiso"], 2, 400),
