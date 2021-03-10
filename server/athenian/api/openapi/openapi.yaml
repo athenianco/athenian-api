@@ -8,7 +8,7 @@ info:
   license:
     name: CC-BY-4.0
   title: '{{ title }}'
-  version: 1.2.0
+  version: 1.3.0
 servers:
 - description: '{{ server_description }} - {{ server_url }}'
   url: '{{ server_url }}/v1'
@@ -1157,7 +1157,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CalculatedDeveloperMetricsDeprecated'
+                $ref: '#/components/schemas/CalculatedDeveloperMetrics'
           description: Calculated metrics.
         400:
           content:
@@ -4425,6 +4425,7 @@ components:
       - date_from
       - date_to
       - for
+      - granularities
       - metrics
       type: object
     DeveloperMetricID:
@@ -4463,7 +4464,34 @@ components:
       type: string
     CalculatedDeveloperMetrics:
       additionalProperties: false
-      description: The dates start from `date_from` and end earlier or equal to `date_to`.
+      description: Response of `/metrics/developers`. The dates start from `date_from` and end
+        earlier or equal to `date_to`.
+      example:
+        date_from: 2020-01-23
+        date_to: 2020-01-24
+        granularities:
+        - all
+        metrics:
+        - dev-prs-created
+        - dev-reviews
+        calculated:
+        - values:
+          - - date: 2020-01-23
+              values:
+              - 5
+              - 10
+          - - date: 2020-01-23
+              values:
+              - 20
+              - 100
+          for:
+            repositories:
+            - github.com/athenianco/athenian-webapp
+            - github.com/athenianco/athenian-api
+            developers:
+            - github.com/vmarkovtsev
+            - github.com/dpordomingo
+          granularity: all
       properties:
         calculated:
           description: Values of the requested metrics by developer through time.
@@ -4500,6 +4528,24 @@ components:
       additionalProperties: false
       description: Measured developer metrics for each `DeveloperMetricsRequest.for`.
         Each repository group maps to a distinct `CalculatedDeveloperMetricsItem`.
+      example:
+        values:
+        - - date: 2020-01-23
+            values:
+            - 5
+            - 10
+        - - date: 2020-01-23
+            values:
+            - 20
+            - 100
+        for:
+          repositories:
+          - github.com/athenianco/athenian-webapp
+          - github.com/athenianco/athenian-api
+          developers:
+          - github.com/vmarkovtsev
+          - github.com/dpordomingo
+        granularity: all
       properties:
         for:
           $ref: '#/components/schemas/ForSetDevelopers'
@@ -4518,110 +4564,6 @@ components:
       - granularity
       - values
       type: object
-    CalculatedDeveloperMetricsDeprecated:
-      additionalProperties: false
-      description: Response from /metrics/developers - calculated metrics over developer
-        activities.
-      example:
-        date_from: 2020-01-23
-        date_to: 2020-01-24
-        metrics:
-        - dev-prs-created
-        - dev-reviews
-        calculated:
-        - values:
-          - - 20
-            - 5
-          - - 10
-            - 100
-          for:
-            repositories:
-            - github.com/athenianco/athenian-webapp
-            - github.com/athenianco/athenian-api
-            developers:
-            - github.com/vmarkovtsev
-            - github.com/dpordomingo
-        - values:
-          - - 20
-            - 5
-          - - 10
-            - 100
-          for:
-            repositories:
-            - github.com/athenianco/athenian-webapp
-            - github.com/athenianco/athenian-api
-            developers:
-            - github.com/vmarkovtsev
-            - github.com/dpordomingo
-      properties:
-        calculated:
-          description: Values of the requested metrics on the given time interval.
-          items:
-            $ref: '#/components/schemas/CalculatedDeveloperMetricsItemDeprecated'
-          type: array
-        date_from:
-          description: Repeats `DeveloperMetricsRequest.date_from`.
-          format: date
-          type: string
-        date_to:
-          description: Repeats `DeveloperMetricsRequest.date_to`.
-          format: date
-          type: string
-        timezone:
-          $ref: '#/components/schemas/TimeZone'
-        metrics:
-          description: Repeats `DeveloperMetricsRequest.metrics`.
-          items:
-            $ref: '#/components/schemas/DeveloperMetricID'
-          type: array
-      required:
-      - calculated
-      - date_from
-      - date_to
-      - metrics
-      type: object
-    CalculatedDeveloperMetricsItemDeprecated:
-      additionalProperties: false
-      description: Measured developer metrics for each `DeveloperMetricsRequest.for`.
-        Each repository group maps to a distinct `CalculatedDeveloperMetricsItemDeprecated`.
-      example:
-        values:
-        - - 20
-          - 5
-        - - 10
-          - 100
-        for:
-          repositories:
-          - github.com/athenianco/athenian-webapp
-          - github.com/athenianco/athenian-api
-          developers:
-          - github.com/vmarkovtsev
-          - github.com/dpordomingo
-      properties:
-        for:
-          $ref: '#/components/schemas/ForSetDevelopers'
-        values:
-          description: The sequence matches `CalculatedDeveloperMetricsItemDeprecated.for.developers`.
-          items:
-            $ref: '#/components/schemas/CalculatedDeveloperMetricValuesDeprecated'
-          type: array
-      required:
-      - for
-      - values
-      type: object
-    CalculatedDeveloperMetricValuesDeprecated:
-      description: Calculated metrics for the developer at the corresponding place
-        in `CalculatedDeveloperMetricsItemDeprecated.for.developers`. The sequence
-        of values matches `CalculatedDeveloperMetrics.metrics`.
-      items:
-# {% if False %}
-        allOf:
-# {% else %}{{ "\n" }}        oneOf:{% endif %}
-        - type: integer
-        - format: float
-          type: number
-        - type: string
-      type: array
     DeveloperSummaries:
       description: List of developer activity statistics and profile details.
       example:
@@ -6437,8 +6379,6 @@ components:
       description: Common JIRA issue filters.
       example:
         account: 1
-        date_from: 2020-01-01
-        date_to: 2020-12-01
         timezone: 120
         exclude_inactive: true
       properties:

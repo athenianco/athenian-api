@@ -1,12 +1,48 @@
 from datetime import date, datetime, timedelta, timezone
-from typing import Tuple
+from typing import Optional, Tuple
 
+from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.response import ResponseError
 
 
-class CommonFilterPropertiesMixin:
+class CommonFilterProperties(Model):
     """Define `account`, `date_from`, `date_to`, and `timezone` properties."""
+
+    openapi_types = {
+        "date_from": date,
+        "date_to": date,
+        "timezone": int,
+        "account": int,
+    }
+
+    attribute_map = {
+        "date_from": "date_from",
+        "date_to": "date_to",
+        "timezone": "timezone",
+        "account": "account",
+    }
+
+    __enable_slots__ = False
+
+    def __init__(
+        self,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        timezone: Optional[int] = None,
+        account: Optional[int] = None,
+    ):
+        """CommonFilterProperties - a model defined in OpenAPI
+
+        :param date_from: The date_from of this CommonFilterProperties.
+        :param date_to: The date_to of this CommonFilterProperties.
+        :param timezone: The timezone of this CommonFilterProperties.
+        :param account: The account of this CommonFilterProperties.
+        """
+        self._date_from = date_from
+        self._date_to = date_to
+        self._timezone = timezone
+        self._account = account
 
     @property
     def account(self) -> int:

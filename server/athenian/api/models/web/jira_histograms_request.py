@@ -1,13 +1,12 @@
-from datetime import date
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
+from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 from athenian.api.models.web.jira_histogram_definition import JIRAHistogramDefinition
 
 
-class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
+class _JIRAHistogramsRequest(Model):
     """Request of `/histograms/jira`."""
 
     openapi_types = {
@@ -18,12 +17,8 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         "labels_exclude": Optional[List[str]],
         "with_": Optional[List[JIRAFilterWith]],
         "histograms": List[JIRAHistogramDefinition],
-        "date_from": date,
-        "date_to": date,
-        "timezone": int,
         "exclude_inactive": bool,
         "quantiles": Optional[List[float]],
-        "account": int,
     }
 
     attribute_map = {
@@ -34,13 +29,10 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         "labels_exclude": "labels_exclude",
         "with_": "with",
         "histograms": "histograms",
-        "date_from": "date_from",
-        "date_to": "date_to",
-        "timezone": "timezone",
         "exclude_inactive": "exclude_inactive",
         "quantiles": "quantiles",
-        "account": "account",
     }
+    __enable_slots__ = False
 
     def __init__(
         self,
@@ -51,12 +43,8 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         labels_exclude: Optional[List[str]] = None,
         with_: Optional[List[JIRAFilterWith]] = None,
         histograms: Optional[List[JIRAHistogramDefinition]] = None,
-        date_from: Optional[date] = None,
-        date_to: Optional[date] = None,
-        timezone: Optional[int] = None,
         exclude_inactive: Optional[bool] = None,
         quantiles: Optional[List[float]] = None,
-        account: Optional[int] = None,
     ):
         """JIRAHistogramsRequest - a model defined in OpenAPI
 
@@ -67,12 +55,8 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         :param labels_exclude: The labels_exclude of this JIRAHistogramsRequest.
         :param with_: The with of this JIRAHistogramsRequest.
         :param histograms: The histograms of this JIRAHistogramsRequest.
-        :param date_from: The date_from of this JIRAHistogramsRequest.
-        :param date_to: The date_to of this JIRAHistogramsRequest.
-        :param timezone: The timezone of this JIRAHistogramsRequest.
         :param exclude_inactive: The exclude_inactive of this JIRAHistogramsRequest.
         :param quantiles: The quantiles of this JIRAHistogramsRequest.
-        :param account: The account of this JIRAHistogramsRequest.
         """
         self._priorities = priorities
         self._types = types
@@ -81,12 +65,8 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         self._labels_exclude = labels_exclude
         self._with_ = with_
         self._histograms = histograms
-        self._date_from = date_from
-        self._date_to = date_to
-        self._timezone = timezone
         self._exclude_inactive = exclude_inactive
         self._quantiles = quantiles
-        self._account = account
 
     @property
     def priorities(self) -> Optional[List[str]]:
@@ -278,3 +258,7 @@ class JIRAHistogramsRequest(Model, CommonFilterPropertiesMixin):
         :param quantiles: The quantiles of this JIRAHistogramsRequest.
         """
         self._quantiles = quantiles
+
+
+JIRAHistogramsRequest = AllOf(_JIRAHistogramsRequest, CommonFilterProperties,
+                              name="JIRAHistogramsRequest", module=__name__)

@@ -1,8 +1,7 @@
-from datetime import date
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.common_filter_properties import CommonFilterPropertiesMixin
+from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.jira_filter import JIRAFilter
 from athenian.api.models.web.quantiles import validate_quantiles
@@ -10,19 +9,15 @@ from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_with import ReleaseWith
 
 
-class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
+class _ReleaseMetricsRequest(Model):
     """Request of `/metrics/releases` to calculate metrics on releases."""
 
     openapi_types = {
         "for_": List[List[str]],
         "with_": Optional[List[ReleaseWith]],
         "metrics": List[str],
-        "date_from": date,
-        "date_to": date,
         "granularities": List[str],
         "quantiles": List[float],
-        "timezone": int,
-        "account": int,
         "jira": Optional[JIRAFilter],
     }
 
@@ -30,26 +25,20 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         "for_": "for",
         "with_": "with",
         "metrics": "metrics",
-        "date_from": "date_from",
-        "date_to": "date_to",
         "granularities": "granularities",
         "quantiles": "quantiles",
-        "timezone": "timezone",
-        "account": "account",
         "jira": "jira",
     }
+
+    __enable_slots__ = False
 
     def __init__(
         self,
         for_: Optional[List[List[str]]] = None,
         with_: Optional[List[ReleaseWith]] = None,
         metrics: Optional[List[str]] = None,
-        date_from: Optional[date] = None,
-        date_to: Optional[date] = None,
         granularities: Optional[List[str]] = None,
         quantiles: Optional[List[float]] = None,
-        timezone: Optional[int] = None,
-        account: Optional[int] = None,
         jira: Optional[JIRAFilter] = None,
     ):
         """ReleaseMetricsRequest - a model defined in OpenAPI
@@ -57,22 +46,14 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         :param for_: The for of this ReleaseMetricsRequest.
         :param with_: The with of this ReleaseMetricsRequest.
         :param metrics: The metrics of this ReleaseMetricsRequest.
-        :param date_from: The date_from of this ReleaseMetricsRequest.
-        :param date_to: The date_to of this ReleaseMetricsRequest.
         :param granularities: The granularities of this ReleaseMetricsRequest.
-        :param timezone: The timezone of this ReleaseMetricsRequest.
-        :param account: The account of this ReleaseMetricsRequest.
         :param jira: The jira of this ReleaseMetricsRequest.
         """
         self._for_ = for_
         self._with_ = with_
         self._metrics = metrics
-        self._date_from = date_from
-        self._date_to = date_to
         self._granularities = granularities
         self._quantiles = quantiles
-        self._timezone = timezone
-        self._account = account
         self._jira = jira
 
     @property
@@ -204,3 +185,7 @@ class ReleaseMetricsRequest(Model, CommonFilterPropertiesMixin):
         :param jira: The jira of this ReleaseMetricsRequest.
         """
         self._jira = jira
+
+
+ReleaseMetricsRequest = AllOf(_ReleaseMetricsRequest, CommonFilterProperties,
+                              name="ReleaseMetricsRequest", module=__name__)

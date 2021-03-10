@@ -11,15 +11,11 @@ class FilterJIRAStuffSpecials(Model):
     """Request of `/filter/jira` to retrieve epics and labels."""
 
     openapi_types = {
-        "date_from": Optional[date],
-        "date_to": Optional[date],
         "with_": Optional[JIRAFilterWith],
         "return_": Optional[List[str]],
     }
 
     attribute_map = {
-        "date_from": "date_from",
-        "date_to": "date_to",
         "with_": "with",
         "return_": "return",
     }
@@ -27,24 +23,18 @@ class FilterJIRAStuffSpecials(Model):
     __enable_slots__ = False
 
     def __init__(self,
-                 date_from: Optional[date] = None,
-                 date_to: Optional[date] = None,
                  with_: Optional[JIRAFilterWith] = None,
                  return_: Optional[List[str]] = None,
                  ):
         """FilterJIRAStuff - a model defined in OpenAPI
 
-        :param date_from: The date_from of this FilterJIRAStuff.
-        :param date_to: The date_to of this FilterJIRAStuff.
         :param with_: The with_ of this FilterJIRAStuff.
         :param return_: The return of this FilterJIRAStuff.
         """
-        self._date_from = date_from
-        self._date_to = date_to
         self._with_ = with_
         self._return_ = return_
 
-    # We have to redefine `date_from` and `date_to` to assign Optional.
+    # We have to redefine `date_from` and `date_to` to assign Optional and allow null-s.
 
     @property
     def date_from(self) -> Optional[date]:
@@ -133,5 +123,5 @@ class FilterJIRAStuffSpecials(Model):
         self._with_ = with_
 
 
-FilterJIRAStuff = AllOf(FilterJIRACommon, FilterJIRAStuffSpecials,
+FilterJIRAStuff = AllOf(FilterJIRAStuffSpecials, FilterJIRACommon,
                         name="FilterJIRAStuff", module=__name__)

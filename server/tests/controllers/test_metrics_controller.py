@@ -6,8 +6,9 @@ import pandas as pd
 import pytest
 
 from athenian.api.controllers.miners.github import developer
-from athenian.api.models.web import CalculatedDeveloperMetricsDeprecated, \
-    CalculatedPullRequestMetrics, CalculatedReleaseMetric, CodeBypassingPRsMeasurement, \
+from athenian.api.models.web import CalculatedDeveloperMetrics, \
+    CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedReleaseMetric, \
+    CodeBypassingPRsMeasurement, \
     DeveloperMetricID, PullRequestMetricID, PullRequestWith, ReleaseMetricID
 from athenian.api.serialization import FriendlyJson
 
@@ -824,6 +825,7 @@ async def test_developer_metrics_single(client, headers, metric, value):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
+        "granularities": ["all"],
         "for": [
             {"repositories": ["{1}"], "developers": ["github.com/mcuadros"]},
         ],
@@ -833,7 +835,7 @@ async def test_developer_metrics_single(client, headers, metric, value):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.metrics == [metric]
     assert result.date_from == date(year=2018, month=1, day=12)
@@ -841,7 +843,7 @@ async def test_developer_metrics_single(client, headers, metric, value):
     assert len(result.calculated) == 1
     assert result.calculated[0].for_.repositories == ["{1}"]
     assert result.calculated[0].for_.developers == ["github.com/mcuadros"]
-    assert result.calculated[0].values == [[value]]
+    assert result.calculated[0].values[0][0].values == [value]
 
 
 developer_metric_mcuadros_jira_stats = {
@@ -865,6 +867,7 @@ async def test_developer_metrics_jira_single(client, headers, metric, value):
         "account": 1,
         "date_from": "2016-01-12",
         "date_to": "2020-03-01",
+        "granularities": ["all"],
         "for": [
             {"repositories": ["{1}"], "developers": ["github.com/mcuadros"],
              "jira": {
@@ -881,7 +884,7 @@ async def test_developer_metrics_jira_single(client, headers, metric, value):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.metrics == [metric]
     assert result.date_from == date(year=2016, month=1, day=12)
@@ -889,7 +892,7 @@ async def test_developer_metrics_jira_single(client, headers, metric, value):
     assert len(result.calculated) == 1
     assert result.calculated[0].for_.repositories == ["{1}"]
     assert result.calculated[0].for_.developers == ["github.com/mcuadros"]
-    assert result.calculated[0].values == [[value]]
+    assert result.calculated[0].values[0][0].values == [value]
 
 
 developer_metric_mcuadros_jira_labels_stats = {
@@ -914,6 +917,7 @@ async def test_developer_metrics_jira_labels_single(client, headers, metric, val
         "account": 1,
         "date_from": "2016-01-12",
         "date_to": "2020-03-01",
+        "granularities": ["all"],
         "for": [
             {"repositories": ["{1}"], "developers": ["github.com/mcuadros"],
              "labels_include": ["enhancement", "bug", "plumbing", "performance", "ssh",
@@ -932,7 +936,7 @@ async def test_developer_metrics_jira_labels_single(client, headers, metric, val
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.metrics == [metric]
     assert result.date_from == date(year=2016, month=1, day=12)
@@ -940,7 +944,7 @@ async def test_developer_metrics_jira_labels_single(client, headers, metric, val
     assert len(result.calculated) == 1
     assert result.calculated[0].for_.repositories == ["{1}"]
     assert result.calculated[0].for_.developers == ["github.com/mcuadros"]
-    assert result.calculated[0].values == [[value]]
+    assert result.calculated[0].values[0][0].values == [value]
 
 
 @pytest.mark.parametrize("dev", ["mcuadros", "vmarkovtsev", "xxx", "EmrysMyrddin"])
@@ -950,6 +954,7 @@ async def test_developer_metrics_all(client, headers, dev):
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "timezone": 60,
+        "granularities": ["all"],
         "for": [
             {"repositories": ["{1}"], "developers": ["github.com/" + dev]},
         ],
@@ -959,7 +964,7 @@ async def test_developer_metrics_all(client, headers, dev):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200, (await response.read()).decode("utf-8")
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert set(result.metrics) == set(DeveloperMetricID)
     assert result.date_from == date(year=2018, month=1, day=12)
@@ -968,15 +973,15 @@ async def test_developer_metrics_all(client, headers, dev):
     assert result.calculated[0].for_.repositories == ["{1}"]
     assert result.calculated[0].for_.developers == ["github.com/" + dev]
     assert len(result.calculated[0].values) == 1
-    assert len(result.calculated[0].values[0]) == len(DeveloperMetricID)
+    assert len(result.calculated[0].values[0][0].values) == len(DeveloperMetricID)
     if dev == "mcuadros":
-        for v, m in zip(result.calculated[0].values[0], sorted(DeveloperMetricID)):
+        for v, m in zip(result.calculated[0].values[0][0].values, sorted(DeveloperMetricID)):
             assert v == developer_metric_mcuadros_stats[m], m
     elif dev == "xxx":
-        assert all(v == 0 for v in result.calculated[0].values[0]), \
+        assert all(v == 0 for v in result.calculated[0].values[0][0].values), \
             "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID))
     else:
-        assert all(isinstance(v, int) for v in result.calculated[0].values[0]), \
+        assert all(isinstance(v, int) for v in result.calculated[0].values[0][0].values), \
             "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID))
 
 
@@ -986,6 +991,7 @@ async def test_developer_metrics_repogroups(client, headers):
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "timezone": 60,
+        "granularities": ["all"],
         "for": [
             {"repositories": ["github.com/src-d/go-git", "github.com/src-d/gitbase"],
              "repogroups": [[0], [1]],
@@ -1001,14 +1007,14 @@ async def test_developer_metrics_repogroups(client, headers):
     finally:
         developer.ACTIVITY_DAYS_THRESHOLD_DENSITY = 0.2
     assert response.status == 200, (await response.read()).decode("utf-8")
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert set(result.metrics) == set(DeveloperMetricID)
     assert len(result.calculated) == 2
     assert all((v > 0 or m == DeveloperMetricID.ACTIVE)
                for m, v in zip(sorted(sorted(DeveloperMetricID)),
-                               result.calculated[0].values[0]))
-    assert all(v == 0 for v in result.calculated[1].values[0])
+                               result.calculated[0].values[0][0].values))
+    assert all(v == 0 for v in result.calculated[1].values[0][0].values)
 
 
 @pytest.mark.parametrize("metric, value", sorted((m, developer_metric_be_stats[m])
@@ -1018,6 +1024,7 @@ async def test_developer_metrics_labels_include(client, headers, metric, value):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
+        "granularities": ["all"],
         "for": [{
             "repositories": ["{1}"],
             "developers": ["github.com/mcuadros", "github.com/smola",
@@ -1030,10 +1037,10 @@ async def test_developer_metrics_labels_include(client, headers, metric, value):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].for_.labels_include == ["bug", "enhancement"]
-    assert result.calculated[0].values == value
+    assert [m[0].values for m in result.calculated[0].values] == value
 
 
 async def test_developer_metrics_aggregate(client, headers):
@@ -1041,6 +1048,7 @@ async def test_developer_metrics_aggregate(client, headers):
         "account": 1,
         "date_from": "2018-07-12",
         "date_to": "2018-09-15",
+        "granularities": ["all"],
         "for": [{
             "repositories": ["{1}"],
             "developers": ["github.com/mcuadros", "github.com/erizocosmico",
@@ -1053,9 +1061,9 @@ async def test_developer_metrics_aggregate(client, headers):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
-    assert result.calculated[0].values == [[1, 17]]
+    assert [m[0].values for m in result.calculated[0].values] == [[1, 17]]
     body["for"][0]["aggregate_devgroups"][0].append(-1)
     response = await client.request(
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
@@ -1068,11 +1076,62 @@ async def test_developer_metrics_aggregate(client, headers):
     assert response.status == 400
 
 
+async def test_developer_metrics_granularities(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-07-12",
+        "date_to": "2018-09-15",
+        "granularities": ["all", "2 week"],
+        "for": [{
+            "repositories": ["{1}"],
+            "developers": ["github.com/mcuadros", "github.com/erizocosmico",
+                           "github.com/jfontan"],
+        }],
+        "metrics": [DeveloperMetricID.ACTIVE, DeveloperMetricID.PRS_CREATED],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    assert response.status == 200
+    result = CalculatedDeveloperMetrics.from_dict(
+        FriendlyJson.loads((await response.read()).decode("utf-8")))
+    assert len(result.calculated) == 2
+    assert result.calculated[0].values == [
+        [CalculatedLinearMetricValues(date=date(2018, 7, 12), values=[1, 0])],
+        [CalculatedLinearMetricValues(date=date(2018, 7, 12), values=[0, 4])],
+        [CalculatedLinearMetricValues(date=date(2018, 7, 12), values=[1, 11])],
+    ]
+    assert result.calculated[0].granularity == "all"
+    assert result.calculated[1].values == [
+        [
+            CalculatedLinearMetricValues(date=date(2018, 7, 12), values=[0, 0]),
+            CalculatedLinearMetricValues(date=date(2018, 7, 26), values=[0, 0]),
+            CalculatedLinearMetricValues(date=date(2018, 8, 9), values=[1, 0]),
+            CalculatedLinearMetricValues(date=date(2018, 8, 23), values=[1, 0]),
+            CalculatedLinearMetricValues(date=date(2018, 9, 6), values=[1, 0]),
+        ], [
+            CalculatedLinearMetricValues(date=date(2018, 7, 12), values=[0, 2]),
+            CalculatedLinearMetricValues(date=date(2018, 7, 26), values=[1, 2]),
+            CalculatedLinearMetricValues(date=date(2018, 8, 9), values=[0, 0]),
+            CalculatedLinearMetricValues(date=date(2018, 8, 23), values=[0, 0]),
+            CalculatedLinearMetricValues(date=date(2018, 9, 6), values=[0, 0]),
+        ], [
+            CalculatedLinearMetricValues(date=date(2018, 7, 12), values=[1, 2]),
+            CalculatedLinearMetricValues(date=date(2018, 7, 26), values=[0, 2]),
+            CalculatedLinearMetricValues(date=date(2018, 8, 9), values=[1, 4]),
+            CalculatedLinearMetricValues(date=date(2018, 8, 23), values=[1, 3]),
+            CalculatedLinearMetricValues(date=date(2018, 9, 6), values=[0, 0]),
+        ],
+    ]
+    assert result.calculated[1].granularity == "2 week"
+
+
 async def test_developer_metrics_labels_exclude(client, headers):
     body = {
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
+        "granularities": ["all"],
         "for": [{
             "repositories": ["{1}"],
             "developers": ["github.com/mcuadros", "github.com/smola",
@@ -1085,11 +1144,11 @@ async def test_developer_metrics_labels_exclude(client, headers):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert not result.calculated[0].for_.labels_include
     assert result.calculated[0].for_.labels_exclude == ["bug", "enhancement"]
-    assert result.calculated[0].values == [[14], [8], [26], [7]]
+    assert [m[0].values for m in result.calculated[0].values] == [[14], [8], [26], [7]]
 
 
 async def test_developer_metrics_labels_include_exclude(client, headers):
@@ -1097,6 +1156,7 @@ async def test_developer_metrics_labels_include_exclude(client, headers):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
+        "granularities": ["all"],
         "for": [{
             "repositories": ["{1}"],
             "developers": ["github.com/mcuadros", "github.com/smola",
@@ -1110,11 +1170,11 @@ async def test_developer_metrics_labels_include_exclude(client, headers):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].for_.labels_include == ["bug"]
     assert result.calculated[0].for_.labels_exclude == ["enhancement"]
-    assert result.calculated[0].values == [[0], [0], [1], [0]]
+    assert [m[0].values for m in result.calculated[0].values] == [[0], [0], [1], [0]]
 
 
 async def test_developer_metrics_labels_contradiction(client, headers):
@@ -1122,6 +1182,7 @@ async def test_developer_metrics_labels_contradiction(client, headers):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
+        "granularities": ["all"],
         "for": [{
             "repositories": ["{1}"],
             "developers": ["github.com/mcuadros", "github.com/smola",
@@ -1135,11 +1196,11 @@ async def test_developer_metrics_labels_contradiction(client, headers):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].for_.labels_include == ["bug"]
     assert result.calculated[0].for_.labels_exclude == ["bug"]
-    assert result.calculated[0].values == [[0], [0], [0], [0]]
+    assert [m[0].values for m in result.calculated[0].values] == [[0], [0], [0], [0]]
 
 
 @pytest.mark.parametrize("account, date_to, in_, code",
@@ -1156,6 +1217,7 @@ async def test_developer_metrics_nasty_input(client, headers, account, date_to, 
         "account": account,
         "date_from": "2018-01-12",
         "date_to": date_to,
+        "granularities": ["all"],
         "for": [
             {"repositories": [in_], "developers": ["github.com/mcuadros"]},
         ],
@@ -1173,6 +1235,7 @@ async def test_developer_metrics_order(client, headers):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
+        "granularities": ["all"],
         "for": [
             {"repositories": ["{1}"], "developers": [
                 "github.com/mcuadros", "github.com/smola"]},
@@ -1183,19 +1246,19 @@ async def test_developer_metrics_order(client, headers):
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].for_.developers == body["for"][0]["developers"]
-    assert result.calculated[0].values == [[14], [8]]
+    assert [m[0].values for m in result.calculated[0].values] == [[14], [8]]
     body["for"][0]["developers"] = list(reversed(body["for"][0]["developers"]))
     response = await client.request(
         method="POST", path="/v1/metrics/developers", headers=headers, json=body,
     )
     assert response.status == 200
-    result = CalculatedDeveloperMetricsDeprecated.from_dict(
+    result = CalculatedDeveloperMetrics.from_dict(
         FriendlyJson.loads((await response.read()).decode("utf-8")))
     assert result.calculated[0].for_.developers == body["for"][0]["developers"]
-    assert result.calculated[0].values == [[8], [14]]
+    assert [m[0].values for m in result.calculated[0].values] == [[8], [14]]
 
 
 async def test_release_metrics_smoke(client, headers):

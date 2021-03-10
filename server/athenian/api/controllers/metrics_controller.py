@@ -21,11 +21,10 @@ from athenian.api.controllers.miners.types import PRParticipants, PRParticipatio
 from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.web import CalculatedDeveloperMetricsDeprecated, \
-    CalculatedDeveloperMetricsItemDeprecated, CalculatedLinearMetricValues, \
-    CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, CalculatedReleaseMetric, \
-    CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, ForbiddenError, ForSet, \
-    ForSetDevelopers, ReleaseMetricsRequest
+from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
+    CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
+    CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, \
+    ForbiddenError, ForSet, ForSetDevelopers, ReleaseMetricsRequest
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.request import AthenianWebRequest
@@ -324,17 +323,19 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
             detail="date_from may not be greater than date_to",
             pointer=".date_from",
         ))
+    time_intervals, tzoffset = split_to_time_intervals(
+        filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(all_repos)
 
-    met = CalculatedDeveloperMetricsDeprecated()
+    met = CalculatedDeveloperMetrics()
     met.date_from = filt.date_from
     met.date_to = filt.date_to
     met.timezone = filt.timezone
     met.metrics = filt.metrics
+    met.granularities = filt.granularities
     met.calculated = []
     topics = {DeveloperTopic(t) for t in filt.metrics}
-    time_from, time_to = filt.resolve_time_from_and_to()
     tasks = []
     for_sets = []
     for service, (repos, devs, labels, jira, for_set) in filters:
@@ -343,20 +344,38 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
         else:
             dev_groups = [[dev] for dev in devs]
         tasks.append(METRIC_ENTRIES[service]["developers"](
-            dev_groups, repos, [[time_from, time_to]], topics, labels, jira, release_settings,
+            dev_groups, repos, time_intervals, topics, labels, jira, release_settings,
             filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache))
         for_sets.append(for_set)
     all_stats = await gather(*tasks)
     for (stats_metrics, stats_topics), for_set in zip(all_stats, for_sets):
         topic_order = [stats_topics.index(DeveloperTopic(t)) for t in filt.metrics]
         for repogroup_index, repogroup_metrics in enumerate(stats_metrics):
-            values = [arr[0] for arr in repogroup_metrics.ravel()]
-            for v in values:
-                v[:] = [v[i].value for i in topic_order]
-            met.calculated.append(CalculatedDeveloperMetricsItemDeprecated(
-                for_=for_set.select_repogroup(repogroup_index),
-                values=values,
-            ))
+            for granularity, ts, dev_metrics in zip(
+                    filt.granularities, time_intervals, repogroup_metrics):
+                values = []
+                for ts_metrics in dev_metrics:
+                    values.append(ts_values := [])
+                    for date, metrics in zip(ts, ts_metrics):
+                        metrics = [metrics[i] for i in topic_order]
+                        confidence_mins = [m.confidence_min for m in metrics]
+                        if any(confidence_mins):
+                            confidence_maxs = [m.confidence_max for m in metrics]
+                            confidence_scores = [m.confidence_score() for m in metrics]
+                        else:
+                            confidence_mins = confidence_maxs = confidence_scores = None
+                        ts_values.append(CalculatedLinearMetricValues(
+                            date=(date - tzoffset).date(),
+                            values=[m.value for m in metrics],
+                            confidence_mins=confidence_mins,
+                            confidence_maxs=confidence_maxs,
+                            confidence_scores=confidence_scores,
+                        ))
+                met.calculated.append(CalculatedDeveloperMetricsItem(
+                    for_=for_set.select_repogroup(repogroup_index),
+                    granularity=granularity,
+                    values=values,
+                ))
     return model_response(met)
 
 
