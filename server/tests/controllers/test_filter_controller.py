@@ -587,6 +587,13 @@ force_push_dropped_go_git_pr_numbers = {
     224, 227, 229, 230, 237, 240, 241, 233, 235, 244,
 }
 
+rebased_resolved_pr_numbers = {
+    1, 2, 5, 6, 7, 9, 10, 11, 12, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28, 30, 32,
+    34, 35, 37, 39, 47, 54, 56, 227, 229, 907,
+}
+
+force_push_dropped_go_git_pr_numbers -= rebased_resolved_pr_numbers
+
 will_never_be_released_go_git_pr_numbers = {
     1180, 1195, 1204, 1205, 1206, 1208, 1214, 1225, 1226, 1235, 1231,
 }

@@ -17,7 +17,8 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
+from athenian.api.controllers.miners.github.branches import load_branch_commit_dates
+from athenian.api.controllers.miners.github.commit import DAG, \
     fetch_precomputed_commit_history_dags, \
     fetch_repository_commits, RELEASE_FETCH_COMMITS_COLUMNS
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
@@ -34,7 +35,7 @@ from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepository, PullRequest, \
+from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
     PullRequestLabel, PushCommit, Release
 from athenian.api.models.precomputed.models import GitHubRepository
 from athenian.api.tracing import sentry_span
@@ -47,7 +48,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               branches: pd.DataFrame,
                               default_branches: Dict[str, str],
                               time_to: datetime,
-                              dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
+                              dags: Dict[str, DAG],
                               release_settings: Dict[str, ReleaseMatchSetting],
                               meta_ids: Tuple[int, ...],
                               mdb: databases.Database,
@@ -71,18 +72,15 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     if prs.empty:
         unreleased_prs_event.set()
         return pr_releases, {}, unreleased_prs_event
-    branch_commit_ids = branches[Branch.commit_id.key].values
     tasks = [
-        mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
-                      .where(and_(NodeCommit.id.in_(branch_commit_ids),
-                                  NodeCommit.acc_id.in_(meta_ids)))),
+        load_branch_commit_dates(branches, meta_ids, mdb),
         load_merged_unreleased_pull_request_facts(
             prs, nonemax(releases[Release.published_at.key].nonemax(), time_to),
             LabelFilter.empty(), matched_bys, default_branches, release_settings, pdb),
         load_precomputed_pr_releases(
             prs.index, time_to, matched_bys, default_branches, release_settings, pdb, cache),
     ]
-    branch_commit_dates, unreleased_prs, precomputed_pr_releases = await gather(*tasks)
+    _, unreleased_prs, precomputed_pr_releases = await gather(*tasks)
     add_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
     add_pdb_hits(pdb, "map_prs_to_releases/unreleased", len(unreleased_prs))
     pr_releases = precomputed_pr_releases
@@ -90,17 +88,10 @@ async def map_prs_to_releases(prs: pd.DataFrame,
     if merged_prs.empty:
         unreleased_prs_event.set()
         return pr_releases, unreleased_prs, unreleased_prs_event
-    branch_commit_dates = {r[0]: r[1] for r in branch_commit_dates}
-    if mdb.url.dialect == "sqlite":
-        branch_commit_dates = {k: v.replace(tzinfo=timezone.utc)
-                               for k, v in branch_commit_dates.items()}
-    now = datetime.now(timezone.utc)
-    branches[Branch.commit_date] = [branch_commit_dates.get(commit_id, now)
-                                    for commit_id in branch_commit_ids]
     tasks = [
         _fetch_labels(merged_prs.index, meta_ids, mdb),
-        _find_dead_merged_prs(merged_prs, dags, branches, meta_ids, mdb, pdb, cache),
         _map_prs_to_releases(merged_prs, dags, releases),
+        _find_dead_merged_prs(merged_prs),
     ]
     labels, dead_prs, missed_released_prs = await gather(*tasks)
     # PRs may wrongly classified as dead although they are really released; remove the conflicts
@@ -122,7 +113,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
 
 
 async def _map_prs_to_releases(prs: pd.DataFrame,
-                               dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
+                               dags: Dict[str, DAG],
                                releases: pd.DataFrame,
                                ) -> pd.DataFrame:
     if prs.empty:
@@ -173,39 +164,13 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
 
 
 @sentry_span
-async def _find_dead_merged_prs(prs: pd.DataFrame,
-                                dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
-                                branches: pd.DataFrame,
-                                meta_ids: Tuple[int, ...],
-                                mdb: databases.Database,
-                                pdb: databases.Database,
-                                cache: Optional[aiomcache.Client]) -> pd.DataFrame:
-    if branches.empty:
-        return new_released_prs_df()
-    prs = prs.take(np.where(
-        prs[PullRequest.merged_at.key] <= datetime.now(timezone.utc) - timedelta(hours=1))[0])
-    # timedelta(hours=1) must match the `exptime` of `fetch_repository_commits()`
-    # commits DAGs are cached and may be not fully up to date, so otherwise some PRs may appear in
-    # dead_prs and missed_released_prs at the same time
-    # see also: DEV-554
-    if prs.empty:
-        return new_released_prs_df()
-    rfnkey = PullRequest.repository_full_name.key
-    mchkey = PullRequest.merge_commit_sha.key
-    dead_prs = []
-    dags = await fetch_repository_commits(
-        dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, meta_ids, mdb, pdb, cache)
-    with sentry_sdk.start_span(op="_find_dead_merged_prs/search"):
-        for repo, repo_prs in prs[[mchkey, rfnkey]].groupby(rfnkey, sort=False):
-            hashes, _, _ = dags[repo]
-            if len(hashes) == 0:
-                # no branches found in `fetch_repository_commits()`
-                continue
-            pr_merge_hashes = repo_prs[mchkey].values.astype("U40")
-            indexes = searchsorted_inrange(hashes, pr_merge_hashes)
-            dead_indexes = np.where(pr_merge_hashes != hashes[indexes])[0]
-            dead_prs.extend((pr_id, None, None, None, None, repo, ReleaseMatch.force_push_drop)
-                            for pr_id in repo_prs.index.values[dead_indexes])
+async def _find_dead_merged_prs(prs: pd.DataFrame) -> pd.DataFrame:
+    dead_indexes = np.nonzero(prs["dead"].values)[0]
+    dead_prs = [
+        (pr_id, None, None, None, None, repo, ReleaseMatch.force_push_drop)
+        for repo, pr_id in zip(prs[PullRequest.repository_full_name.key].take(dead_indexes).values,
+                               prs.index.take(dead_indexes).values)
+    ]
     return new_released_prs_df(dead_prs)
 
 
@@ -230,7 +195,7 @@ async def load_commit_dags(releases: pd.DataFrame,
                            mdb: databases.Database,
                            pdb: databases.Database,
                            cache: Optional[aiomcache.Client],
-                           ) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+                           ) -> Dict[str, DAG]:
     """Produce the commit history DAGs which should contain the specified releases."""
     pdags = await fetch_precomputed_commit_history_dags(
         releases[Release.repository_full_name.key].unique(), pdb, cache)
@@ -291,7 +256,7 @@ async def _find_old_released_prs(commits: np.ndarray,
 
 
 def _extract_released_commits(releases: pd.DataFrame,
-                              dag: Tuple[np.ndarray, np.ndarray, np.ndarray],
+                              dag: DAG,
                               time_boundary: datetime,
                               ) -> np.ndarray:
     time_mask = releases[Release.published_at.key] >= time_boundary
@@ -327,6 +292,7 @@ async def map_releases_to_prs(repos: Collection[str],
                               release_settings: Dict[str, ReleaseMatchSetting],
                               updated_min: Optional[datetime],
                               updated_max: Optional[datetime],
+                              pdags: Optional[Dict[str, DAG]],
                               account: int,
                               meta_ids: Tuple[int, ...],
                               mdb: databases.Database,
@@ -335,8 +301,10 @@ async def map_releases_to_prs(repos: Collection[str],
                               cache: Optional[aiomcache.Client],
                               pr_blacklist: Optional[BinaryExpression] = None,
                               truncate: bool = True,
-                              ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, ReleaseMatch],
-                                         Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]]:
+                              ) -> Tuple[pd.DataFrame,
+                                         pd.DataFrame,
+                                         Dict[str, ReleaseMatch],
+                                         Dict[str, DAG]]:
     """Find pull requests which were released between `time_from` and `time_to` but merged before \
     `time_from`.
 
@@ -349,7 +317,9 @@ async def map_releases_to_prs(repos: Collection[str],
              pd.DataFrame with the discovered releases between \
              `time_from` and `time_to` (today if not `truncate`) \
              + \
-             `matched_bys` so that we don't have to compute that mapping again.
+             `matched_bys` so that we don't have to compute that mapping again. \
+             + \
+             commit DAGs that contain the relevant releases.
     """
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
@@ -358,14 +328,18 @@ async def map_releases_to_prs(repos: Collection[str],
     assert isinstance(pr_blacklist, (BinaryExpression, type(None)))
     assert (updated_min is None) == (updated_max is None)
 
+    async def fetch_pdags():
+        if pdags is None:
+            return await fetch_precomputed_commit_history_dags(repos, pdb, cache)
+        return pdags
+
     tasks = [
         _find_releases_for_matching_prs(
-            repos, branches, default_branches, time_from, time_to,
-            not truncate, release_settings, account, meta_ids, mdb, pdb, rdb, cache),
-        fetch_precomputed_commit_history_dags(repos, pdb, cache),
+            repos, branches, default_branches, time_from, time_to, not truncate,
+            release_settings, account, meta_ids, mdb, pdb, rdb, cache),
+        fetch_pdags(),
     ]
     (matched_bys, releases, releases_in_time_range, release_settings), pdags = await gather(*tasks)
-
     # ensure that our DAGs contain all the mentioned releases
     rpak = Release.published_at.key
     rrfnk = Release.repository_full_name.key
@@ -394,6 +368,7 @@ async def map_releases_to_prs(repos: Collection[str],
         prs = pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
                                     if c.name != PullRequest.node_id.key])
         prs.index = pd.Index([], name=PullRequest.node_id.key)
+    prs["dead"] = False
     return prs, releases_in_time_range, matched_bys, dags
 
 

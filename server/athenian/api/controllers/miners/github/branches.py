@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import logging
 import pickle
 from typing import Dict, Iterable, Optional, Tuple
@@ -108,6 +109,30 @@ async def extract_branches(repos: Iterable[str],
                     default_branches[full_name] = "master"
                     reported_repos.add(full_name)
     return branches, default_branches
+
+
+async def load_branch_commit_dates(branches: pd.DataFrame,
+                                   meta_ids: Tuple[int, ...],
+                                   mdb: DatabaseLike,
+                                   ) -> None:
+    """Fetch the branch head commit dates if needed. The operation executes in-place."""
+    if Branch.commit_date in branches:
+        return
+    if branches.empty:
+        branches[Branch.commit_date] = []
+        return
+    branch_commit_ids = branches[Branch.commit_id.key].values
+    rows = await mdb.fetch_all(
+        select([NodeCommit.id, NodeCommit.committed_date])
+        .where(and_(NodeCommit.id.in_(branch_commit_ids),
+                    NodeCommit.acc_id.in_(meta_ids))))
+    branch_commit_dates = {r[0]: r[1] for r in rows}
+    if mdb.url.dialect == "sqlite":
+        branch_commit_dates = {k: v.replace(tzinfo=timezone.utc)
+                               for k, v in branch_commit_dates.items()}
+    now = datetime.now(timezone.utc)
+    branches[Branch.commit_date] = [branch_commit_dates.get(commit_id, now)
+                                    for commit_id in branch_commit_ids]
 
 
 def dummy_branches_df() -> pd.DataFrame:

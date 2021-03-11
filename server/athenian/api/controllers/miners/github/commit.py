@@ -18,6 +18,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
+from athenian.api.controllers.miners.github.branches import load_branch_commit_dates
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents, \
     extract_subdag, join_dags, partition_dag, searchsorted_inrange
 from athenian.api.db import add_pdb_hits, add_pdb_misses
@@ -34,6 +35,10 @@ class FilterCommitsProperty(Enum):
 
     NO_PR_MERGES = "no_pr_merges"
     BYPASSING_PRS = "bypassing_prs"
+
+
+# hashes, vertex offsets in edges, edge indexes
+DAG = Tuple[np.ndarray, np.ndarray, np.ndarray]
 
 
 @sentry_span
@@ -141,7 +146,7 @@ async def extract_commits(prop: FilterCommitsProperty,
     ),
     refresh_on_access=True,
 )
-async def fetch_repository_commits(repos: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
+async def fetch_repository_commits(repos: Dict[str, DAG],
                                    branches: pd.DataFrame,
                                    columns: Tuple[str, str, str, str],
                                    prune: bool,
@@ -239,6 +244,28 @@ RELEASE_FETCH_COMMITS_COLUMNS = (
 
 
 @sentry_span
+async def fetch_repository_commits_no_branch_dates(
+        repos: Dict[str, DAG],
+        branches: pd.DataFrame,
+        columns: Tuple[str, str, str, str],
+        prune: bool,
+        meta_ids: Tuple[int, ...],
+        mdb: databases.Database,
+        pdb: databases.Database,
+        cache: Optional[aiomcache.Client],
+) -> Dict[str, Tuple[np.ndarray, np.array, np.array]]:
+    """
+    Load full commit DAGs for the given repositories.
+
+    The difference with fetch_repository_commits is that `branches` may possibly miss the commit \
+    dates. If that is the case, we fetch the commit dates.
+    """
+    await load_branch_commit_dates(branches, meta_ids, mdb)
+    return await fetch_repository_commits(
+        repos, branches, columns, prune, meta_ids, mdb, pdb, cache)
+
+
+@sentry_span
 @cached(
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,
@@ -249,7 +276,7 @@ async def fetch_precomputed_commit_history_dags(
         repos: Iterable[str],
         pdb: databases.Database,
         cache: Optional[aiomcache.Client],
-) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+) -> Dict[str, DAG]:
     """Load commit DAGs from the pdb."""
     ghrc = GitHubCommitHistory
     with sentry_sdk.start_span(op="fetch_precomputed_commit_history_dags/pdb"):
@@ -266,7 +293,7 @@ async def fetch_precomputed_commit_history_dags(
     return dags
 
 
-def _empty_dag() -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _empty_dag() -> DAG:
     return np.array([], dtype="U40"), np.array([0], dtype=np.uint32), np.array([], dtype=np.uint32)
 
 

@@ -20,7 +20,8 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import extract_branches, \
+    load_branch_commit_dates
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, \
     fetch_repository_commits
@@ -35,9 +36,8 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
     ReleaseMatchSetting
 from athenian.api.db import add_pdb_hits, greatest
 from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, \
-    PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
-    PullRequestReviewRequest, Release
+from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
+    PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewRequest, Release
 from athenian.api.models.precomputed.models import Base, GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
 from athenian.api.tracing import sentry_span
@@ -1230,22 +1230,16 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
                                         pdb: databases.Database,
                                         cache: Optional[aiomcache.Client],
                                         ) -> Collection[str]:
-    """Load all released precomputed PRs and re-check that they are still accessible from \
-    the branch heads. Mark inaccessible as force push dropped."""
+    """
+    Load all released precomputed PRs and re-check that they are still accessible from \
+    the branch heads. Mark inaccessible as force push dropped.
+
+    We don't try to resolve rebased PRs here due to the intended use case.
+    """
     @sentry_span
     async def fetch_branches():
         branches, _ = await extract_branches(repos, meta_ids, mdb, cache)
-        commit_ids = branches[Branch.commit_id.key].values
-        commit_dates = await mdb.fetch_all(
-            select([NodeCommit.id, NodeCommit.committed_date])
-            .where(and_(NodeCommit.id.in_(commit_ids),
-                        NodeCommit.acc_id.in_(meta_ids))))
-        commit_dates = {r[0]: r[1] for r in commit_dates}
-        if mdb.url.dialect == "sqlite":
-            commit_dates = {k: v.replace(tzinfo=timezone.utc) for k, v in commit_dates.items()}
-        now = datetime.now(timezone.utc)
-        branches[Branch.commit_date] = [
-            commit_dates.get(commit_id, now) for commit_id in commit_ids]
+        await load_branch_commit_dates(branches, meta_ids, mdb)
         return branches
 
     ghdprf = GitHubDonePullRequestFacts

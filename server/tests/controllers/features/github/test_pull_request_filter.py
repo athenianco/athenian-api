@@ -29,7 +29,7 @@ def time_from_to():
     (PullRequestStage.MERGING, 4),
     (PullRequestStage.RELEASING, 130),
     (PullRequestStage.DONE, 529),
-    (PullRequestStage.FORCE_PUSH_DROPPED, 40),
+    (PullRequestStage.FORCE_PUSH_DROPPED, 10),
 ])
 @with_defer
 async def test_pr_list_miner_stages(
@@ -332,7 +332,7 @@ async def test_pr_list_miner_filter_open_precomputed(mdb, pdb, rdb, release_matc
 
     # the following is offtopic but saves the precious execution time
     done_facts = await pdb.fetch_all(select([GitHubDonePullRequestFacts]))
-    assert len(done_facts) == 292
+    assert len(done_facts) == 293
     merged_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
     assert len(merged_facts) == 245
     # offtopic ends
