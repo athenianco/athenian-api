@@ -2511,7 +2511,7 @@ components:
         The format matches the repository URL without the protocol part. No ".git" should be appended.
         We support a special syntax for repository sets: "{reposet id}" adds all the repositories
         from the given set.
-      example: github.com/src-d/go-git
+      example: github.com/athenianco/athenian-webapp
       type: string
     DeveloperSet:
       description: A set of developers. An empty list disables the filter and includes
@@ -3753,32 +3753,64 @@ components:
             key:
               avatar: https://avatars0.githubusercontent.com/u/60340680?v=4
         data:
-        - repository: github.com/src-d/go-git
-          number: 1152
-          title: 'Fix an edge case when fetching remotes with unrelated incomplete
-            history. Fixes #1151'
-          size_added: 37
-          size_removed: 1
-          files_changed: 2
-          created: 2019-05-17T01:14:00Z
-          updated: 2019-09-18T10:49:00Z
-          stages_now:
-          - wip
-          stages_time_machine:
-          - wip
-          events_now:
-          - created
-          - committed
-          events_time_machine:
-          - created
-          - committed
+        - repository: github.com/athenianco/athenian-webapp
+          number: 1111
+          title: '[DEV-1802] epic search'
+          size_added: 128
+          size_removed: 30
+          files_changed: 5
+          created: '2021-03-02T11:47:42Z'
+          updated: '2021-03-03T13:55:33Z'
+          closed: '2021-03-03T13:55:32Z'
+          comments: 5
+          commits: 17
+          review_requested: '2021-03-02T12:14:35Z'
+          first_review: '2021-03-02T15:09:58Z'
+          approved: '2021-03-03T13:15:58Z'
+          review_comments: 2
+          reviews: 2
+          merged: '2021-03-03T13:55:32Z'
           stage_timings:
-            wip: 2000s
+            wip: 12085s
+            review: 86690s
+            merge: 2374s
+          events_now:
+          - approved
+          - changes_requested
+          - committed
+          - created
+          - merged
+          - review_requested
+          - reviewed
+          stages_now:
+          - done
+          - force_push_dropped
           participants:
-          - id: github.com/NonLogicalDev
-            status: author
-          - id: github.com/mcuadros
-            status: commenter
+          - id: github.com/akbarik
+            status:
+            - author
+            - commit_author
+            - commit_committer
+            - merger
+          - id: github.com/se7entyse7en
+            status:
+            - reviewer
+            - commenter
+          - id: github.com/warenlg
+            status:
+            - commenter
+          - id: github.com/znegrin
+            status:
+            - commit_author
+            - commit_committer
+          jira:
+          - id: DEV-1802
+            title: FE - Add search capability to Epics table
+            epic: DEV-1474
+            labels:
+            - functionality
+            - webapp
+            type: Task
       properties:
         include:
           $ref: '#/components/schemas/IncludedNativeUsers'
@@ -3826,35 +3858,64 @@ components:
         correspond to "today", not `date_to`, *except for the PR stages `wip`, `reviewing`,
         `merging`, `releasing`*, which correspond to `date_to`.
       example:
-        # https://github.com/src-d/go-git/pull/1152
-        repository: github.com/src-d/go-git
-        number: 1152
-        title: 'Fix an edge case when fetching remotes with unrelated incomplete history.
-          Fixes #1151'
-        size_added: 37
-        size_removed: 1
-        files_changed: 2
-        created: 2019-05-17T01:14:00Z
-        updated: 2019-09-18T10:49:00Z
-        comments: 1
-        commits: 2
-        stages_now:
-        - wip
-        stages_time_machine:
-        - wip
-        events_now:
-        - created
-        - committed
-        events_time_machine:
-        - created
-        - committed
+        repository: github.com/athenianco/athenian-webapp
+        number: 1111
+        title: '[DEV-1802] epic search'
+        size_added: 128
+        size_removed: 30
+        files_changed: 5
+        created: '2021-03-02T11:47:42Z'
+        updated: '2021-03-03T13:55:33Z'
+        closed: '2021-03-03T13:55:32Z'
+        comments: 5
+        commits: 17
+        review_requested: '2021-03-02T12:14:35Z'
+        first_review: '2021-03-02T15:09:58Z'
+        approved: '2021-03-03T13:15:58Z'
+        review_comments: 2
+        reviews: 2
+        merged: '2021-03-03T13:55:32Z'
         stage_timings:
-          wip: 2000s
+          wip: 12085s
+          review: 86690s
+          merge: 2374s
+        events_now:
+        - approved
+        - changes_requested
+        - committed
+        - created
+        - merged
+        - review_requested
+        - reviewed
+        stages_now:
+        - done
+        - force_push_dropped
         participants:
-        - id: github.com/NonLogicalDev
-          status: author
-        - id: github.com/mcuadros
-          status: commenter
+        - id: github.com/akbarik
+          status:
+          - author
+          - commit_author
+          - commit_committer
+          - merger
+        - id: github.com/se7entyse7en
+          status:
+          - reviewer
+          - commenter
+        - id: github.com/warenlg
+          status:
+          - commenter
+        - id: github.com/znegrin
+          status:
+          - commit_author
+          - commit_committer
+        jira:
+        - id: DEV-1802
+          title: FE - Add search capability to Epics table
+          epic: DEV-1474
+          labels:
+          - functionality
+          - webapp
+          type: Task
       properties:
         repository:
           description: PR is/was open in this repository.
