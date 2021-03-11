@@ -15,11 +15,11 @@ from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PushCommit
 from athenian.api.models.persistentdata.models import ReleaseNotification
-from athenian.api.models.web import ForbiddenError, InvalidRequestError, \
+from athenian.api.models.web import BadRequestError, ForbiddenError, InvalidRequestError, \
     ReleaseNotification as WebReleaseNotification
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
-
+from athenian.api.serialization import ParseError
 
 commit_hash_re = re.compile(r"[a-f0-9]{7}([a-f0-9]{33})?")
 SLACK_CHANNEL = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL", "")
@@ -29,7 +29,10 @@ SLACK_CHANNEL = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL", "")
 async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.Response:
     """Notify about new releases. The release settings must be set to "notification"."""
     # account is automatically checked at this point
-    notifications = [WebReleaseNotification.from_dict(n) for n in body]
+    try:
+        notifications = [WebReleaseNotification.from_dict(n) for n in body]
+    except ParseError as e:
+        raise ResponseError(BadRequestError("%s: %s" % (type(e).__name__, e)))
     account = request.account
     sdb, mdb, rdb = request.sdb, request.mdb, request.rdb
     prefix = PREFIXES["github"]
