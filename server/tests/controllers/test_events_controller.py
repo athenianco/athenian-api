@@ -104,6 +104,14 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token):
             "repository": "github.com/src-d/go-git",
         },
     ]),
+    # bad date
+    (400, [
+        {
+            "commit": "abcdef0",
+            "repository": "github.com/src-d/go-git",
+            "published_at": "date",
+        },
+    ]),
 ])
 async def test_notify_release_nasty_input(client, headers, token, rdb, body, status):
     headers = headers.copy()
