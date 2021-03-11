@@ -1,6 +1,7 @@
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from itertools import chain
+import logging
 import pickle
 from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
@@ -13,6 +14,7 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
+from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -218,10 +220,17 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
     :param commenters: List of lower-case issue commenters.
     :param extra_columns: Additional `Issue` or `AthenianIssue` columns to fetch.
     """
+    log = logging.getLogger("%s.jira" % metadata.__package__)
     issues = await _fetch_issues(
         installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics,
         reporters, assignees, commenters, mdb, cache,
         extra_columns=extra_columns)
+    if not exclude_inactive:
+        # DEV-1899: exclude and report issues with empty AthenianIssue
+        if (missing_updated := issues[AthenianIssue.updated.key].isnull().values).any():
+            log.error("JIRA issues are missing in jira.athenian_issue: %s",
+                      ", ".join(issues[Issue.key.key].take(np.nonzero(missing_updated)[0])))
+            issues = issues.take(np.nonzero(~missing_updated)[0])
     pr_rows = await mdb.fetch_all(
         sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
         .where(sql.and_(NodePullRequestJiraIssues.jira_acc == installation_ids[0],
