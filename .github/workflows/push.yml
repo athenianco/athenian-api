@@ -190,7 +190,7 @@ jobs:
       run: |
         set -x
         if [ ${{ matrix.db }} = "sqlite" ]; then
-          export LIMIT="--limit 0.8"
+          export LIMIT="--limit 0.9"
         fi
         if [ ${{ matrix.db }} = "postgres" ]; then
           export SLACK_API_TOKEN=

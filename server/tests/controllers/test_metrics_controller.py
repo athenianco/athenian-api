@@ -1229,6 +1229,28 @@ async def test_developer_metrics_nasty_input(client, headers, account, date_to, 
     assert response.status == code
 
 
+@pytest.mark.parametrize("repos, devs", [
+    ([], ["github.com/mcuadros"]),
+    (["github.com/src-d/go-git"], []),
+])
+async def test_developer_metrics_empty(client, headers, repos, devs):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-01-01",
+        "granularities": ["all"],
+        "for": [
+            {"repositories": repos, "developers": devs},
+        ],
+        "metrics": sorted(DeveloperMetricID),
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/developers", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 400, rbody
+
+
 async def test_developer_metrics_order(client, headers):
     """https://athenianco.atlassian.net/browse/DEV-247"""
     body = {

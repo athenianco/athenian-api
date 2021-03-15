@@ -521,6 +521,8 @@ async def calc_developer_metrics_github(devs: Sequence[Collection[str]],
     """
     all_devs = set(chain.from_iterable(devs))
     all_repos = set(chain.from_iterable(repositories))
+    if not all_devs or not all_repos:
+        return np.array([]), list(topics)
     time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
     mined_dfs = await mine_developer_activities(
         all_devs, all_repos, time_from, time_to, topics, labels, jira, release_settings,
