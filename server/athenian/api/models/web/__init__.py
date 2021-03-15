@@ -25,6 +25,7 @@ from athenian.api.models.web.contributor import Contributor
 from athenian.api.models.web.create_token_request import CreateTokenRequest
 from athenian.api.models.web.created_identifier import CreatedIdentifier
 from athenian.api.models.web.created_token import CreatedToken
+from athenian.api.models.web.delete_events_cache_request import DeleteEventsCacheRequest
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.developer_metrics_request import DeveloperMetricsRequest
 from athenian.api.models.web.developer_summary import DeveloperSummary

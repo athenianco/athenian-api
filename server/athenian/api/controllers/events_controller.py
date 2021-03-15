@@ -4,22 +4,27 @@ import re
 from typing import List
 
 from aiohttp import web
-from sqlalchemy import and_, func, insert, select, union
+from sqlalchemy import and_, delete, func, insert, select, union
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.miners.access_classes import access_classes
+from athenian.api.controllers.reposet import resolve_repos
+from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.defer import defer
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PushCommit
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.web import BadRequestError, ForbiddenError, InvalidRequestError, \
     ReleaseNotification as WebReleaseNotification
+from athenian.api.models.web.delete_events_cache_request import DeleteEventsCacheRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.serialization import ParseError
+from athenian.precomputer.db.models import GitHubDonePullRequestFacts, \
+    GitHubMergedPullRequestFacts, GitHubReleaseFacts
 
 commit_hash_re = re.compile(r"[a-f0-9]{7}([a-f0-9]{33})?")
 SLACK_CHANNEL = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL", "")
@@ -130,4 +135,29 @@ async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.R
                              channel=SLACK_CHANNEL, account=account, repos=repos)
 
         await defer(report_new_release_event_to_slack(), "report_new_release_event_to_slack")
+    return web.Response(status=200)
+
+
+@weight(0)
+async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Reset the precomputed data related to the pushed events."""
+    model = DeleteEventsCacheRequest.from_dict(body)
+
+    async def login_loader() -> str:
+        return (await request.user()).login
+
+    repos, _ = await resolve_repos(
+        model.repositories, model.account, request.uid, login_loader,
+        request.sdb, request.mdb, request.cache, request.app["slack"])
+    pdb = request.pdb
+    if "release" in model.targets:
+        await gather(*(
+            pdb.execute(delete(table).where(and_(
+                table.release_match == ReleaseMatch.event.name,
+                table.repository_full_name.in_(repos),
+            )))
+            for table in (GitHubDonePullRequestFacts,
+                          GitHubMergedPullRequestFacts,
+                          GitHubReleaseFacts)
+        ), op="delete precomputed releases")
     return web.Response(status=200)

@@ -5,6 +5,8 @@ from sqlalchemy import insert, select
 
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.state.models import UserToken
+from athenian.precomputer.db.models import GitHubDonePullRequestFacts, \
+    GitHubMergedPullRequestFacts, GitHubReleaseFacts
 
 
 @pytest.fixture(scope="function")
@@ -142,3 +144,64 @@ async def test_notify_release_422(client, headers, sdb):
         method="POST", path="/v1/events/releases", headers=headers, json=body,
     )
     assert response.status == 422
+
+
+async def test_clear_precomputed_events_smoke(client, headers, pdb):
+    await pdb.execute(insert(GitHubDonePullRequestFacts).values(GitHubDonePullRequestFacts(
+        release_match="event",
+        pr_node_id="xxx",
+        repository_full_name="src-d/go-git",
+        pr_created_at=datetime.now(timezone.utc),
+        pr_done_at=datetime.now(timezone.utc),
+        number=1,
+        reviewers={},
+        commenters={},
+        commit_authors={},
+        commit_committers={},
+        labels={},
+        activity_days=[],
+        data=b"data",
+    ).create_defaults().explode(with_primary_keys=True)))
+    await pdb.execute(insert(GitHubMergedPullRequestFacts).values(GitHubMergedPullRequestFacts(
+        release_match="event",
+        pr_node_id="yyy",
+        repository_full_name="src-d/go-git",
+        merged_at=datetime.now(timezone.utc),
+        checked_until=datetime.now(timezone.utc),
+        labels={},
+        activity_days=[],
+    ).create_defaults().explode(with_primary_keys=True)))
+    await pdb.execute(insert(GitHubReleaseFacts).values(GitHubReleaseFacts(
+        id="zzz",
+        release_match="event",
+        repository_full_name="src-d/go-git",
+        published_at=datetime.now(timezone.utc),
+        data=b"data",
+    ).create_defaults().explode(with_primary_keys=True)))
+    body = {
+        "account": 1,
+        "repositories": ["{1}"],
+        "targets": ["release"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
+    )
+    assert response.status == 200
+    for table in (GitHubDonePullRequestFacts,
+                  GitHubMergedPullRequestFacts,
+                  GitHubReleaseFacts):
+        assert not await pdb.fetch_all(select([table]))
+
+
+@pytest.mark.parametrize("status, body", [
+    (200, {"account": 1, "repositories": ["github.com/src-d/go-git"], "targets": []}),
+    (400, {"account": 1, "repositories": ["github.com/src-d/go-git"], "targets": ["wrong"]}),
+    (422, {"account": 2, "repositories": ["github.com/src-d/go-git"], "targets": []}),
+    (404, {"account": 3, "repositories": ["github.com/src-d/go-git"], "targets": []}),
+    (403, {"account": 1, "repositories": ["github.com/athenianco/athenian-api"], "targets": []}),
+])
+async def test_clear_precomputed_events_nasty_input(client, headers, body, status):
+    response = await client.request(
+        method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
+    )
+    assert response.status == status
