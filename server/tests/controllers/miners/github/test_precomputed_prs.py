@@ -617,6 +617,7 @@ async def test_discover_update_unreleased_prs_released(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
         mdb, PullRequest, index=PullRequest.node_id.key)
+    prs["dead"] = False
     prs[prs[PullRequest.merged_at.key].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
     time_from = datetime(2018, 10, 1, tzinfo=utc)
@@ -657,6 +658,7 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
         mdb, PullRequest, index=PullRequest.node_id.key)
+    prs["dead"] = False
     prs[prs[PullRequest.merged_at.key].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
     time_from = datetime(2018, 10, 1, tzinfo=utc)
@@ -730,6 +732,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
         ["src-d/go-git"], None, None, metrics_time_from, unreleased_time_to,
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
+    unreleased_prs["dead"] = False
     released_prs, _, _ = await map_prs_to_releases(
         unreleased_prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {},
         unreleased_time_to, dag, release_match_setting_tag, (6366825,), mdb, pdb, cache)

@@ -66,16 +66,13 @@ def wrap_sql_query(data: Iterable[Mapping],
                    ) -> pd.DataFrame:
     """Turn the fetched DB records to a pandas DataFrame."""
     try:
-        probe = columns[0]
+        columns[0]
     except TypeError:
         dt_columns = _extract_datetime_columns(columns.__table__.columns)
         columns = [c.name for c in columns.__table__.columns]
     else:
-        if not isinstance(probe, str):
-            dt_columns = _extract_datetime_columns(columns)
-            columns = [c.key for c in columns]
-        else:
-            dt_columns = None
+        dt_columns = _extract_datetime_columns(columns)
+        columns = [(c.key if not isinstance(c, str) else c) for c in columns]
     frame = pd.DataFrame.from_records((r.values() for r in data),
                                       columns=columns, coerce_float=True)
     if index is not None:
@@ -83,9 +80,14 @@ def wrap_sql_query(data: Iterable[Mapping],
     return postprocess_datetime(frame, columns=dt_columns)
 
 
-def _extract_datetime_columns(columns: Iterable[Column]) -> Collection[str]:
-    return [c.name for c in columns if isinstance(c.type, DateTime)
-            or (isinstance(c.type, type) and issubclass(c.type, DateTime))]
+def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> Collection[str]:
+    return [
+        c.name for c in columns
+        if not isinstance(c, str) and (
+            isinstance(c.type, DateTime) or
+            (isinstance(c.type, type) and issubclass(c.type, DateTime))
+        )
+    ]
 
 
 def postprocess_datetime(frame: pd.DataFrame,

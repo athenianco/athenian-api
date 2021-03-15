@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass, fields as dataclass_fields
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from itertools import chain
 import logging
@@ -22,6 +22,9 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
+    DAG, fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
+from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
     load_open_pull_request_facts, update_unreleased_prs
@@ -36,7 +39,7 @@ from athenian.api.db import add_pdb_misses
 from athenian.api.defer import AllEvents, defer
 from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, PullRequest, \
     PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
-    PullRequestReviewComment, PullRequestReviewRequest, Release
+    PullRequestReviewComment, PullRequestReviewRequest, PushCommit, Release
 from athenian.api.models.metadata.jira import Component, Issue
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
@@ -199,6 +202,9 @@ class PullRequestMiner:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
         assert isinstance(repositories, set)
+        assert isinstance(mdb, databases.Database)
+        assert isinstance(pdb, databases.Database)
+        assert isinstance(rdb, databases.Database)
         assert (updated_min is None) == (updated_max is None)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
         if pr_blacklist is not None:
@@ -207,6 +213,7 @@ class PullRequestMiner:
                 pr_blacklist = PullRequest.node_id.notin_any_values(pr_blacklist)
             else:
                 pr_blacklist = None
+        pdags = await fetch_precomputed_commit_history_dags(repositories, pdb, cache)
         # the heaviest task should always go first
         tasks = [
             map_releases_to_prs(
@@ -214,10 +221,10 @@ class PullRequestMiner:
                 participants.get(PRParticipationKind.AUTHOR, []),
                 participants.get(PRParticipationKind.MERGER, []),
                 jira, release_settings, updated_min, updated_max,
-                account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist, truncate),
+                pdags, account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
                 time_from, time_to, repositories, participants, labels, jira,
-                exclude_inactive, pr_blacklist, meta_ids, mdb, cache,
+                exclude_inactive, pr_blacklist, branches, pdags, meta_ids, mdb, pdb, cache,
                 updated_min=updated_min, updated_max=updated_max),
         ]
         # the following is a very rough approximation regarding updated_min/max:
@@ -230,7 +237,8 @@ class PullRequestMiner:
             async def dummy_unreleased():
                 return pd.DataFrame()
             tasks.append(dummy_unreleased())
-        (released_prs, releases, matched_bys, dags), prs, unreleased = await gather(*tasks)
+        (released_prs, releases, matched_bys, release_dags), (prs, branch_dags), unreleased = \
+            await gather(*tasks)
         concatenated = [prs, released_prs, unreleased]
         missed_prs = {}
         if pr_blacklist is not None:
@@ -250,14 +258,14 @@ class PullRequestMiner:
                     missed_prs, branches, default_branches, time_from, time_to,
                     participants.get(PRParticipationKind.AUTHOR, []),
                     participants.get(PRParticipationKind.MERGER, []),
-                    jira, release_settings, updated_min, updated_max,
+                    jira, release_settings, updated_min, updated_max, pdags,
                     account, meta_ids, mdb, pdb, rdb, cache, inverse_pr_blacklist, truncate),
                 cls.fetch_prs(
                     time_from, time_to, missed_prs, participants, labels, jira,
-                    exclude_inactive, inverse_pr_blacklist, meta_ids, mdb, cache,
-                    updated_min=updated_min, updated_max=updated_max),
+                    exclude_inactive, inverse_pr_blacklist, branches, branch_dags,
+                    meta_ids, mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max),
             ]
-            (missed_released_prs, _, _, _), missed_prs = await gather(*tasks)
+            (missed_released_prs, _, _, _), (missed_prs, _) = await gather(*tasks)
             concatenated.extend([missed_released_prs, missed_prs])
         prs = pd.concat(concatenated, copy=False)
         prs = prs[~prs.index.duplicated()]
@@ -267,7 +275,7 @@ class PullRequestMiner:
             # bypass the useless inner caching by calling _mine_by_ids directly
             cls._mine_by_ids(
                 prs, unreleased.index, time_to, releases, matched_bys, branches,
-                default_branches, dags, release_settings, meta_ids,
+                default_branches, release_dags, release_settings, meta_ids,
                 mdb, pdb, cache, truncate=truncate),
             load_open_pull_request_facts(prs, pdb),
         ]
@@ -320,7 +328,7 @@ class PullRequestMiner:
                           matched_bys: Dict[str, ReleaseMatch],
                           branches: pd.DataFrame,
                           default_branches: Dict[str, str],
-                          dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
+                          dags: Dict[str, DAG],
                           release_settings: Dict[str, ReleaseMatchSetting],
                           meta_ids: Tuple[int, ...],
                           mdb: databases.Database,
@@ -359,7 +367,7 @@ class PullRequestMiner:
                            matched_bys: Dict[str, ReleaseMatch],
                            branches: pd.DataFrame,
                            default_branches: Dict[str, str],
-                           dags: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
+                           dags: Dict[str, DAG],
                            release_settings: Dict[str, ReleaseMatchSetting],
                            meta_ids: Tuple[int, ...],
                            mdb: databases.Database,
@@ -417,7 +425,8 @@ class PullRequestMiner:
             if truncate:
                 merged_mask = (prs[PullRequest.merged_at.key] < time_to).values
                 nonlocal merged_unreleased_indexes
-                merged_unreleased_indexes = np.where(prs[PullRequest.merged_at.key] >= time_to)[0]
+                merged_unreleased_indexes = \
+                    np.nonzero((prs[PullRequest.merged_at.key] >= time_to).values)[0]
             else:
                 merged_mask = prs[PullRequest.merged_at.key].notnull()
             merged_mask &= ~prs.index.isin(unreleased)
@@ -618,20 +627,185 @@ class PullRequestMiner:
                         jira: JIRAFilter,
                         exclude_inactive: bool,
                         pr_blacklist: Optional[BinaryExpression],
+                        branches: pd.DataFrame,
+                        dags: Optional[Dict[str, DAG]],
                         meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
+                        pdb: databases.Database,
                         cache: Optional[aiomcache.Client],
                         columns=PullRequest,
                         updated_min: Optional[datetime] = None,
                         updated_max: Optional[datetime] = None,
-                        ) -> pd.DataFrame:
+                        ) -> Tuple[pd.DataFrame, Dict[str, DAG]]:
         """
         Query pull requests from mdb that satisfy the given filters.
 
         Note: we cannot filter by regular PR labels here due to the DB schema limitations,
         so the caller is responsible for fetching PR labels and filtering by them afterward.
         Besides, we cannot filter by participation roles different from AUTHOR and MERGER.
+
+        We have to resolve the merge commits of rebased PRs so that they do not appear
+        force-push-dropped.
+
+        :return: pandas DataFrame with the PRs indexed by node_id; \
+                 commit DAGs that contain the branch heads.
         """
+        assert isinstance(mdb, databases.Database)
+        assert isinstance(pdb, databases.Database)
+        pr_list_coro = cls._fetch_prs_by_filters(
+            time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
+            pr_blacklist, meta_ids, mdb, cache, columns=columns,
+            updated_min=updated_min, updated_max=updated_max,
+        )
+        if columns is not PullRequest and PullRequest.merge_commit_id not in columns and \
+                PullRequest.merge_commit_sha not in columns:
+            return await pr_list_coro, dags
+
+        async def fetch_commits():
+            nonlocal dags
+            if dags is None:
+                dags = await fetch_precomputed_commit_history_dags(repositories, pdb, cache)
+            return await fetch_repository_commits_no_branch_dates(
+                dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, meta_ids, mdb, pdb, cache)
+
+        dags, prs = await gather(fetch_commits(), pr_list_coro)
+        prs = await cls.mark_dead_prs(prs, branches, dags, meta_ids, mdb, columns)
+        return prs, dags
+
+    @classmethod
+    async def mark_dead_prs(cls,
+                            prs: pd.DataFrame,
+                            branches: pd.DataFrame,
+                            dags: Dict[str, DAG],
+                            meta_ids: Tuple[int, ...],
+                            mdb: databases.Database,
+                            columns=PullRequest,
+                            ) -> pd.DataFrame:
+        """
+        Add and fill "dead" column in the `prs` DataFrame.
+
+        A PR is considered dead (force-push-dropped) if it does not exit in the commit DAG and \
+        we cannot detect its rebased clone.
+        """
+        prs["dead"] = False
+        if branches.empty:
+            return prs
+        merged_prs = prs.take(np.nonzero((
+            prs[PullRequest.merged_at.key] <= datetime.now(timezone.utc) - timedelta(hours=1)
+        ).values)[0])
+        # timedelta(hours=1) must match the `exptime` of `fetch_repository_commits()`
+        # commits DAGs are cached and may be not fully up to date, so otherwise some PRs may
+        # appear as wrongly force push dropped; see also: DEV-554
+        if merged_prs.empty:
+            return prs
+        pr_numbers = merged_prs[PullRequest.number.key].values
+        pr_node_ids = merged_prs.index.values
+        pr_repos = merged_prs[PullRequest.repository_full_name.key].values
+        repo_order = np.argsort(pr_repos)
+        unique_pr_repos, pr_repo_counts = np.unique(pr_repos, return_counts=True)
+        pr_merge_hashes = \
+            merged_prs[PullRequest.merge_commit_sha.key].values.astype("U")[repo_order]
+        pos = 0
+        queries = []
+        dead = []
+        acc_id_cond = PushCommit.acc_id.in_(meta_ids)
+        min_commit_date = merged_prs[PullRequest.merged_at.key].min()
+        committed_date_cond = PushCommit.committed_date >= min_commit_date
+        substr = sql.func.substr(PushCommit.message, 1, 32)
+        sqlite = mdb.url.dialect == "sqlite"
+        for repo, n_prs in zip(unique_pr_repos, pr_repo_counts):
+            begin_pos = pos
+            end_pos = pos + n_prs
+            pos += n_prs
+            repo_pr_merge_hashes = pr_merge_hashes[begin_pos:end_pos]
+            dag_hashes = dags[repo][0]
+            if len(dag_hashes) == 0:
+                # no branches found in `fetch_repository_commits()`
+                continue
+            not_found = dag_hashes[
+                searchsorted_inrange(dag_hashes, repo_pr_merge_hashes)
+            ] != repo_pr_merge_hashes
+            indexes = repo_order[begin_pos:end_pos][not_found]
+            dead.extend(dead_node_ids := pr_node_ids[indexes])
+            repo_cond = PushCommit.repository_full_name == repo
+            for pr_node_id, n in zip(dead_node_ids, pr_numbers[indexes]):
+                if sqlite:
+                    # SQLite does not support parameter recycling
+                    acc_id_cond = PushCommit.acc_id.in_(meta_ids)
+                    committed_date_cond = PushCommit.committed_date >= min_commit_date
+                    substr = sql.func.substr(PushCommit.message, 1, 32)
+                    repo_cond = PushCommit.repository_full_name == repo
+                queries.append(
+                    sql.select([PushCommit.node_id.label("commit_node_id"),
+                                PushCommit.sha.label("sha"),
+                                sql.literal_column("'" + repo + "'").label("repo"),
+                                sql.literal_column("'" + pr_node_id + "'").label("pr_node_id"),
+                                PushCommit.committed_date,
+                                PushCommit.pushed_date])
+                    .where(sql.and_(acc_id_cond,
+                                    repo_cond,
+                                    committed_date_cond,
+                                    substr.like("Merge pull request #%d from %%" % n))))
+        if not queries:
+            return prs
+        prs.loc[dead, "dead"] = True
+        query = queries[0] if len(queries) == 1 else sql.union_all(*queries)
+        resolved = await read_sql_query(query, mdb, [
+            "commit_node_id", "sha", "repo", "pr_node_id",
+            PushCommit.committed_date, PushCommit.pushed_date,
+        ])
+        # look up the candidates in the DAGs
+        pr_repos = resolved["repo"].values
+        repo_order = np.argsort(pr_repos)
+        unique_pr_repos, pr_repo_counts = np.unique(pr_repos, return_counts=True)
+        pr_merge_hashes = resolved["sha"].values.astype("U")[repo_order]
+        pos = 0
+        alive_indexes = []
+        for repo, n_prs in zip(unique_pr_repos, pr_repo_counts):
+            begin_pos = pos
+            end_pos = pos + n_prs
+            pos += n_prs
+            repo_pr_merge_hashes = pr_merge_hashes[begin_pos:end_pos]
+            dag_hashes = dags[repo][0]
+            found = dag_hashes[
+                searchsorted_inrange(dag_hashes, repo_pr_merge_hashes)
+            ] == repo_pr_merge_hashes
+            alive_indexes.extend(repo_order[begin_pos:end_pos][found])
+        if (resolved := resolved.take(alive_indexes)).empty:
+            return prs
+        # take the commit that was committed the latest; if there are multiple, prefer the one
+        # with pushed_date = null
+        resolved.sort_values([PushCommit.committed_date.key, PushCommit.pushed_date.key],
+                             ascending=False, inplace=True, na_position="first")
+        resolved.drop_duplicates("pr_node_id", inplace=True)
+        # patch the commit IDs and the hashes
+        alive_node_ids = resolved["pr_node_id"]
+        if columns is PullRequest or PullRequest.merge_commit_id in columns:
+            prs.loc[alive_node_ids, PullRequest.merge_commit_id.key] = \
+                resolved["commit_node_id"].values
+        if columns is PullRequest or PullRequest.merge_commit_sha in columns:
+            prs.loc[alive_node_ids, PullRequest.merge_commit_sha.key] = resolved["sha"].values
+        prs.loc[alive_node_ids, "dead"] = False
+        return prs
+
+    @classmethod
+    @sentry_span
+    async def _fetch_prs_by_filters(cls,
+                                    time_from: datetime,
+                                    time_to: datetime,
+                                    repositories: Set[str],
+                                    participants: PRParticipants,
+                                    labels: LabelFilter,
+                                    jira: JIRAFilter,
+                                    exclude_inactive: bool,
+                                    pr_blacklist: Optional[BinaryExpression],
+                                    meta_ids: Tuple[int, ...],
+                                    mdb: databases.Database,
+                                    cache: Optional[aiomcache.Client],
+                                    columns=PullRequest,
+                                    updated_min: Optional[datetime] = None,
+                                    updated_max: Optional[datetime] = None,
+                                    ) -> pd.DataFrame:
         assert (updated_min is None) == (updated_max is None)
         filters = [
             sql.case(
@@ -671,6 +845,10 @@ class PullRequestMiner:
             selected_columns = columns = list(columns)
             if remove_acc_id := (PullRequest.acc_id not in selected_columns):
                 selected_columns.append(PullRequest.acc_id)
+            if PullRequest.merge_commit_id in columns or PullRequest.merge_commit_sha in columns:
+                # needed to resolve rebased merge commits
+                if PullRequest.number not in selected_columns:
+                    selected_columns.append(PullRequest.number)
         if not jira:
             query = sql.select(selected_columns).where(sql.and_(*filters))
         else:

@@ -19,6 +19,7 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
+from athenian.api.controllers.miners.github.branches import load_branch_commit_dates
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, \
     fetch_repository_commits
@@ -714,19 +715,11 @@ async def _match_releases_by_branch(repos: Iterable[str],
     if not branches_matched:
         return dummy_releases_df()
     branches = pd.concat(branches_matched.values())
-    commit_ids = branches[Branch.commit_id.key].values
     tasks = [
-        mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
-                      .where(and_(NodeCommit.id.in_(commit_ids),
-                                  NodeCommit.acc_id.in_(meta_ids)))),
+        load_branch_commit_dates(branches, meta_ids, mdb),
         fetch_precomputed_commit_history_dags(branches_matched, pdb, cache),
     ]
-    commit_dates, dags = await gather(*tasks)
-    commit_dates = {r[0]: r[1] for r in commit_dates}
-    if mdb.url.dialect == "sqlite":
-        commit_dates = {k: v.replace(tzinfo=timezone.utc) for k, v in commit_dates.items()}
-    now = datetime.now(timezone.utc)
-    branches[Branch.commit_date] = [commit_dates.get(commit_id, now) for commit_id in commit_ids]
+    _, dags = await gather(*tasks)
     dags = await fetch_repository_commits(
         dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, False, meta_ids, mdb, pdb, cache)
     first_shas = [extract_first_parents(*dags[repo], branches[Branch.commit_sha.key].values)

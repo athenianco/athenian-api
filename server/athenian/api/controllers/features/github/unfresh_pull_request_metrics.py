@@ -58,7 +58,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
             release_settings, account, meta_ids, mdb, pdb, rdb, cache),
         PullRequestMiner.fetch_prs(
             time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
-            blacklist, meta_ids, mdb, cache, columns=[
+            blacklist, branches, None, meta_ids, mdb, pdb, cache, columns=[
                 PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
                 PullRequest.user_login,
             ]),
@@ -79,7 +79,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
             return pd.DataFrame()
 
         tasks.append(dummy_inactive_prs())
-    (releases, matched_bys), unreleased_prs, done_facts, inactive_merged_prs = await gather(
+    (releases, matched_bys), (unreleased_prs, _), done_facts, inactive_merged_prs = await gather(
         *tasks, op="discover PRs")
     add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
                    remove_ambiguous_prs(done_facts, ambiguous, matched_bys))

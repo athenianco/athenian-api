@@ -10,18 +10,18 @@ from athenian.api.serialization import FriendlyJson
     "metric, cached, result",
     itertools.chain(zip((PullRequestMetricID.PR_CYCLE_TIME,
                          PullRequestMetricID.PR_LEAD_TIME), itertools.repeat(False),
-                        [(["60s", "122s", "249s", "507s", "1033s", "2105s", "4288s", "8737s",
-                           "17799s", "36261s", "73870s", "150489s", "306576s", "624554s",
-                           "1272338s", "2591999s"],
-                          [4, 4, 10, 18, 15, 22, 20, 20, 17, 27, 34, 53, 63, 73, 298],
-                          {"left": "87510s", "right": "2592000s"}),
-                         (["1368s", "1874s", "2567s", "3516s", "4815s", "6594s", "9030s",
-                           "12366s", "16936s", "23193s", "31762s", "43497s", "59568s", "81577s",
-                           "111717s", "152993s", "209519s", "286929s", "392940s", "538119s",
-                           "736935s", "1009208s", "1382077s", "1892708s", "2591999s"],
-                          [1, 0, 1, 1, 1, 2, 0, 1, 1, 2, 5, 0, 3, 4, 2, 7, 13, 16, 8, 22, 28, 17,
-                           33, 216],
-                          {"left": "801217s", "right": "2592000s"})]),
+                        [(["60s", "116s", "227s", "443s", "865s", "1685s", "3284s", "6399s",
+                           "12470s", "24300s", "47350s", "92266s", "179789s", "350333s", "682652s",
+                           "1330200s", "2591999s"],
+                          [4, 4, 7, 14, 12, 15, 21, 19, 18, 17, 29, 25, 57, 63, 69, 304],
+                          {"left": "123003s", "right": "2592000s"}),
+                         (["1368s", "1929s", "2718s", "3830s", "5398s", "7607s", "10719s",
+                           "15106s", "21287s", "29997s", "42272s", "59568s", "83942s", "118290s",
+                           "166691s", "234898s", "331012s", "466454s", "657316s", "926274s",
+                           "1305283s", "1839373s", "2591999s"],
+                          [1, 0, 7, 1, 2, 3, 0, 1, 4, 5, 0, 4, 5, 5, 8, 17, 10, 27, 30, 20, 31,
+                           233],
+                          {"left": "691126s", "right": "2592000s"})]),
                     [(PullRequestMetricID.PR_WIP_TIME,
                       True,
                       (["60s", "128s", "275s", "590s", "1266s", "2714s", "5818s", "12470s",
@@ -242,7 +242,7 @@ async def test_calc_histogram_prs_ticks(client, headers):
     assert body == [
         {"for": {"repositories": ["github.com/src-d/go-git"]}, "metric": "pr-release-time",
          "scale": "linear", "ticks": ["60s", "10000s", "100000s", "2592000s"],
-         "frequencies": [31, 26, 327], "interquartile": {"left": "346338s", "right": "2592000s"}}]
+         "frequencies": [39, 29, 346], "interquartile": {"left": "322517s", "right": "2592000s"}}]
 
 
 async def test_calc_histogram_prs_groups(client, headers):

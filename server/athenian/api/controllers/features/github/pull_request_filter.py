@@ -25,7 +25,8 @@ from athenian.api.controllers.features.metric_calculator import df_from_dataclas
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags
+from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
+    fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_merged_unreleased_pull_request_facts, load_precomputed_done_facts_filters, \
     load_precomputed_done_facts_reponums, remove_ambiguous_prs, \
@@ -718,6 +719,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
                                pdb: databases.Database,
                                rdb: databases.Database,
                                cache: Optional[aiomcache.Client],
+                               resolve_rebased: bool = True,
                                ) -> Tuple[List[MinedPullRequest],
                                           PRDataFrames,
                                           Dict[str, PullRequestFacts],
@@ -740,6 +742,13 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
     """
     if prs_df.empty:
         return [], PRDataFrames(*(pd.DataFrame() for _ in range(9))), {}, {}
+    if resolve_rebased:
+        dags = await fetch_precomputed_commit_history_dags(
+            prs_df[PullRequest.repository_full_name.key].unique(), pdb, cache)
+        dags = await fetch_repository_commits_no_branch_dates(
+            dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, meta_ids, mdb, pdb, cache)
+        prs_df = await PullRequestMiner.mark_dead_prs(
+            prs_df, branches, dags, meta_ids, mdb, PullRequest)
     facts, ambiguous = precomputed_done_facts, precomputed_ambiguous_done_facts
     PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
     now = datetime.now(timezone.utc)

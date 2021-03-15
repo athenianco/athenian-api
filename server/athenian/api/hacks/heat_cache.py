@@ -178,7 +178,7 @@ def main():
                     1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
                 releases_count = len(releases)
                 del releases
-                if not reposet.precomputed:
+                if reposet.precomputed:
                     log.info("Scanning for force push dropped PRs")
                     await delete_force_push_dropped_prs(repos, meta_ids, mdb, pdb, None)
                 log.info("Extracting PR facts")

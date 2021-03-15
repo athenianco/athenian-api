@@ -657,7 +657,7 @@ async def test_calc_pull_request_facts_github_jira(
             1, (6366825,), mdb, pdb, rdb, cache]
     facts = await calc_pull_request_facts_github(*args)
     await wait_deferred()
-    assert sum(bool(f.released) for f in facts) == 233
+    assert sum(bool(f.released) for f in facts) == 234
     args[5] = JIRAFilter(1, ["10003", "10009"], LabelFilter({"performance", "task"}, set()),
                          set(), set(), False)
     facts = await calc_pull_request_facts_github(*args)
