@@ -2682,8 +2682,8 @@ components:
         $ref: '#/components/schemas/Team'
       type: array
     RepositorySet:
-      description: A set of repositories. An empty list results an empty response
-        in contrary to DeveloperSet. Duplicates are automatically ignored.
+      description: Set of repositories. An empty list raises a bad response 400.
+        Duplicates are automatically ignored.
       example:
       - github.com/athenianco/athenian-webapp
       - github.com/athenianco/athenian-api
@@ -3128,7 +3128,10 @@ components:
         repositories:
           $ref: '#/components/schemas/RepositorySet'
         developers:
-          $ref: '#/components/schemas/DeveloperSet'
+          allOf:
+          - description: List of developers. Must contain at least one item.
+              Duplicates are not ignored.
+          - $ref: '#/components/schemas/DeveloperSet'
         repogroups:
           allOf:
           - description: Split metrics per defined repository groups.

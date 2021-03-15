@@ -72,6 +72,8 @@ class ForSetDevelopers(Model, RepositoryGroupsMixin):
         """
         if repositories is None:
             raise ValueError("Invalid value for `repositories`, must not be `None`")
+        if len(repositories) == 0:
+            raise ValueError("Invalid value for `repositories`, must not be an empty list")
 
         self._repositories = repositories
 
@@ -91,6 +93,8 @@ class ForSetDevelopers(Model, RepositoryGroupsMixin):
         """
         if developers is None:
             raise ValueError("Invalid value for `developers`, must not be `None`")
+        if len(developers) == 0:
+            raise ValueError("Invalid value for `developers`, must not be an empty list")
 
         self._developers = developers
 
