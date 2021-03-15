@@ -233,6 +233,51 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
       x-codegen-request-body-name: body
+  /events/clear_cache:
+    post:
+      operationId: clear_precomputed_events
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteEventsCacheRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+          description: Empty response indicates a successful operation.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Calling user is not allowed to access the specified repositories.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: Reset the precomputed data related to the pushed events.
+      tags:
+      - events
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.events_controller
+      x-codegen-request-body-name: body
   /events/releases:
     post:
       operationId: notify_release
@@ -2682,8 +2727,8 @@ components:
         $ref: '#/components/schemas/Team'
       type: array
     RepositorySet:
-      description: Set of repositories. An empty list raises a bad response 400.
-        Duplicates are automatically ignored.
+      description: Set of repositories. An empty list raises a bad response 400. Duplicates
+        are automatically ignored.
       example:
       - github.com/athenianco/athenian-webapp
       - github.com/athenianco/athenian-api
@@ -3129,8 +3174,8 @@ components:
           $ref: '#/components/schemas/RepositorySet'
         developers:
           allOf:
-          - description: List of developers. Must contain at least one item.
-              Duplicates are not ignored.
+          - description: List of developers. Must contain at least one item. Duplicates
+              are not ignored.
           - $ref: '#/components/schemas/DeveloperSet'
         repogroups:
           allOf:
@@ -3762,17 +3807,17 @@ components:
           size_added: 128
           size_removed: 30
           files_changed: 5
-          created: '2021-03-02T11:47:42Z'
-          updated: '2021-03-03T13:55:33Z'
-          closed: '2021-03-03T13:55:32Z'
+          created: 2021-03-02T11:47:42Z
+          updated: 2021-03-03T13:55:33Z
+          closed: 2021-03-03T13:55:32Z
           comments: 5
           commits: 17
-          review_requested: '2021-03-02T12:14:35Z'
-          first_review: '2021-03-02T15:09:58Z'
-          approved: '2021-03-03T13:15:58Z'
+          review_requested: 2021-03-02T12:14:35Z
+          first_review: 2021-03-02T15:09:58Z
+          approved: 2021-03-03T13:15:58Z
           review_comments: 2
           reviews: 2
-          merged: '2021-03-03T13:55:32Z'
+          merged: 2021-03-03T13:55:32Z
           stage_timings:
             wip: 12085s
             review: 86690s
@@ -3867,17 +3912,17 @@ components:
         size_added: 128
         size_removed: 30
         files_changed: 5
-        created: '2021-03-02T11:47:42Z'
-        updated: '2021-03-03T13:55:33Z'
-        closed: '2021-03-03T13:55:32Z'
+        created: 2021-03-02T11:47:42Z
+        updated: 2021-03-03T13:55:33Z
+        closed: 2021-03-03T13:55:32Z
         comments: 5
         commits: 17
-        review_requested: '2021-03-02T12:14:35Z'
-        first_review: '2021-03-02T15:09:58Z'
-        approved: '2021-03-03T13:15:58Z'
+        review_requested: 2021-03-02T12:14:35Z
+        first_review: 2021-03-02T15:09:58Z
+        approved: 2021-03-03T13:15:58Z
         review_comments: 2
         reviews: 2
-        merged: '2021-03-03T13:55:32Z'
+        merged: 2021-03-03T13:55:32Z
         stage_timings:
           wip: 12085s
           review: 86690s
@@ -4528,8 +4573,8 @@ components:
       type: string
     CalculatedDeveloperMetrics:
       additionalProperties: false
-      description: Response of `/metrics/developers`. The dates start from `date_from` and end
-        earlier or equal to `date_to`.
+      description: Response of `/metrics/developers`. The dates start from `date_from`
+        and end earlier or equal to `date_to`.
       example:
         date_from: 2020-01-23
         date_to: 2020-01-24
@@ -7023,4 +7068,27 @@ components:
       required:
       - commit
       - repository
+      type: object
+    DeleteEventsCacheRequest:
+      additionalProperties: false
+      description: Definition of the cache reset operation.
+      example:
+        releases: true
+      properties:
+        account:
+          description: Account ID.
+          type: integer
+        repositories:
+          $ref: '#/components/schemas/RepositorySet'
+        targets:
+          description: Parts of the precomputed cache to reset.
+          items:
+            enum:
+            - release
+            type: string
+          type: array
+      required:
+      - account
+      - repositories
+      - targets
       type: object
