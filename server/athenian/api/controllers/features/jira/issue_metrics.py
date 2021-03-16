@@ -77,8 +77,9 @@ class ResolvedCounter(SumMetricCalculator[int]):
         result = np.full((len(min_times), len(facts)), None, object)
         resolved = facts[AthenianIssue.resolved.key].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
-        released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)[prs_began == prs_began]
-        resolved[prs_began == prs_began][released != released] = np.datetime64("nat")
+        have_prs_mask = prs_began == prs_began
+        released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)[have_prs_mask]
+        resolved[have_prs_mask][released != released] = np.datetime64("nat")
         result[(min_times[:, None] <= resolved) & (resolved < max_times[:, None])] = 1
         return result
 
@@ -98,8 +99,9 @@ class OpenCounter(SumMetricCalculator[int]):
         created = facts[Issue.created.key].values
         resolved = facts[AthenianIssue.resolved.key].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
-        released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)[prs_began == prs_began]
-        resolved[prs_began == prs_began][released != released] = np.datetime64("nat")
+        have_prs_mask = prs_began == prs_began
+        released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)[have_prs_mask]
+        resolved[have_prs_mask][released != released] = np.datetime64("nat")
         not_resolved = resolved != resolved
         resolved_later = resolved >= max_times[:, None]
         created_earlier = created < max_times[:, None]

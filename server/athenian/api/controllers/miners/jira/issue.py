@@ -391,7 +391,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
         Issue.project_id.in_(ids[1]),
     ]
     if time_from is not None:
-        and_filters.append(sql.func.coalesce(Issue.resolved, far_away_future) >= time_from)
+        and_filters.append(sql.func.coalesce(AthenianIssue.resolved, far_away_future) >= time_from)
     if time_to is not None:
         and_filters.append(Issue.created < time_to)
     if exclude_inactive and time_from is not None:
