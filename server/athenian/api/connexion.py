@@ -202,7 +202,7 @@ class AthenianApp(connexion.AioHttpApp):
             r"/objgraph/?$",
         ], cache=cache)
         with self._auth0:
-            api = self.add_api(
+            self.add_api(
                 "openapi.yaml",
                 base_path="/v1",
                 arguments={
@@ -217,17 +217,11 @@ class AthenianApp(connexion.AioHttpApp):
                 options={"middlewares": [
                     self.i_will_survive, self.with_db, self.postprocess_response, self.manhole]},
             )
-            for k, v in api.subapp.items():
-                self.app[k] = v
-            api.subapp._state = self.app._state
-            components = api.specification.raw["components"]
-            components["schemas"] = dict(sorted(components["schemas"].items()))
         if kms_cls is not None:
             self.app["kms"] = self._kms = kms_cls()
         else:
             self.log.warning("Google Key Management Service is disabled, PATs will not work")
             self.app["kms"] = self._kms = None
-        api.jsonifier.json = FriendlyJson
         self._max_load = max_load
         prometheus_registry = setup_status(self.app)
         self._setup_survival()
@@ -344,11 +338,6 @@ class AthenianApp(connexion.AioHttpApp):
         """Override create_app to control the lower-level class."""
         return AthenianWebApplication(**self.server_args)
 
-    @property
-    def auth0(self):
-        """Return the own Auth0 class instance."""
-        return self._auth0
-
     @aiohttp.web.middleware
     async def with_db(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
         """Add "mdb", "pdb", "sdb", "rdb", and "cache" attributes to every incoming request."""
@@ -414,6 +403,7 @@ class AthenianApp(connexion.AioHttpApp):
                         request: aiohttp.web.Request,
                         handler: Callable[..., Coroutine],
                         ) -> aiohttp.web.Response:
+        start_time = time.time()
         asyncio.current_task().set_name("shield %s %s" % (request.method, request.path))
 
         load = extract_handler_weight(handler)
@@ -427,7 +417,6 @@ class AthenianApp(connexion.AioHttpApp):
         self._requests += 1
         self._load = new_load
 
-        start_time = time.time()
         enable_defer(explicit_launch=not self._devenv)
         traced = self._set_request_sentry_context(request)
         try:
@@ -536,6 +525,27 @@ class AthenianApp(connexion.AioHttpApp):
         loop.add_signal_handler(signal.SIGTERM, raise_graceful_exit)
         os.kill(os.getpid(), signal.SIGTERM)
 
+    def add_api(self, specification: str, **kwargs):
+        """Load the API spec and add the defined routes."""
+        api = super().add_api(specification, **kwargs)
+        api.jsonifier.json = FriendlyJson
+        for k, v in api.subapp.items():
+            self.app[k] = v
+        api.subapp._state = self.app._state
+        components = api.specification.raw["components"]
+        components["schemas"] = dict(sorted(components["schemas"].items()))
+        # map from canonical path to the API spec of the handler
+        route_spec = {}
+        base_offset = len(api.base_path)
+        for route in api.subapp.router.routes():
+            method = route.method.lower()
+            path = route.resource.canonical
+            try:
+                route_spec[path] = api.specification.get_operation(path[base_offset:], method)
+            except KeyError:
+                continue
+        self.app["route_spec"] = route_spec
+
     async def _sample_stack(self):
         blacklist = {
             "_run_app",
@@ -572,6 +582,12 @@ class AthenianApp(connexion.AioHttpApp):
             scope.set_extra("concurrent requests", self._requests)
             scope.set_extra("load", self._load)
             scope.set_extra("uptime", timedelta(seconds=time.time() - self._boot_time))
+            canonical = request.match_info.route.resource.canonical
+            try:
+                for tag in self.app["route_spec"][canonical].get("tags", []):
+                    scope.set_tag(tag, True)
+            except KeyError:
+                pass
         return traced
 
     def _set_stack_samples_sentry_context(self,

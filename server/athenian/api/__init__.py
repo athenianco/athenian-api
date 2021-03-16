@@ -151,8 +151,7 @@ def setup_context(log: logging.Logger) -> None:
     username = getpass.getuser()
     hostname = socket.getfqdn()
     log.info("%s@%s -> %d", username, hostname, os.getpid())
-    dev_id = os.getenv("ATHENIAN_DEV_ID")
-    if dev_id:
+    if dev_id := os.getenv("ATHENIAN_DEV_ID"):
         log.info("Developer: %s", dev_id)
     pandas.set_option("display.max_rows", 20)
     pandas.set_option("display.large_repr", "info")
@@ -219,8 +218,8 @@ def setup_context(log: logging.Logger) -> None:
     sentry_sdk.utils.MAX_STRING_LENGTH = MAX_SENTRY_STRING_LENGTH
     sentry_sdk.serializer.MAX_DATABAG_BREADTH = 16  # e.g., max number of locals in a stack frame
     with sentry_sdk.configure_scope() as scope:
-        scope.set_tag("version", metadata.__version__)
-        scope.set_tag("username", username)
+        if sentry_env == "development":
+            scope.set_tag("username", username)
         if dev_id:
             scope.set_tag("developer", dev_id)
         if commit is not None:
