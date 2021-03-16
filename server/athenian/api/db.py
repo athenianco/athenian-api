@@ -7,6 +7,7 @@ import re
 import sys
 import time
 from typing import Any, Callable, List, Mapping, Tuple, Union
+from urllib.parse import quote_plus
 
 import aiohttp.web
 import aiosqlite
@@ -248,6 +249,27 @@ _sql_str_re = re.compile(r"'[^']+'(, )?")
 _log_sql_re = re.compile(r"SELECT|\(SELECT|WITH RECURSIVE")
 
 
+def _generate_tags() -> str:
+    with sentry_sdk.configure_scope() as scope:
+        if (transaction := scope.transaction) is None:
+            return ""
+        values = [
+            f"application='{metadata.__package__}'",
+            f"route='{quote_plus(transaction.name)}'",
+            f"traceparent='{transaction.trace_id}'",
+            f"tracestate='{scope.span.span_id}'",
+            f"version='{metadata.__version__}'",
+        ]
+        try:
+            values.append(f"account='{scope._tags['account']}'")
+        except KeyError:
+            pass
+        for tag in scope._tags:
+            if tag != "account":
+                values.append(f"{tag}='1'")
+    return " /*" + ",".join(sorted(values)) + "*/"
+
+
 async def _asyncpg_execute(self,
                            query: str,
                            args,
@@ -265,6 +287,8 @@ async def _asyncpg_execute(self,
                 brief = _sql_str_re.sub("", query)
                 description = "%s\n%s" % (query_id, brief[:MAX_SENTRY_STRING_LENGTH])
     with sentry_sdk.start_span(op="sql", description=description) as span:
+        if not _testing:
+            query += _generate_tags()
         result = await self._execute_original(query, args, limit, timeout, **kwargs)
         try:
             span.description = "=> %d\n%s" % (len(result[0]), span.description)

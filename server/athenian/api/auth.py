@@ -16,11 +16,10 @@ import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
 from connexion.decorators.security import get_authorization_info
-from connexion.exceptions import AuthenticationProblem, BadRequestProblem, OAuthProblem, \
-    Unauthorized
+from connexion.exceptions import AuthenticationProblem, OAuthProblem, Unauthorized
 from connexion.lifecycle import ConnexionRequest
 from connexion.operations import secure
-from jsonschema import ValidationError
+from connexion.utils import deep_get
 with warnings.catch_warnings():
     # this will suppress all warnings in this block
     warnings.filterwarnings("ignore", message="int_from_bytes is deprecated")
@@ -214,30 +213,30 @@ class Auth0:
                 # invoke security_controller.info_from_*Auth
                 token_info = get_authorization_info(auth_funcs, request, required_scopes)
                 # token_info = {"token": <token>, "method": "bearer" or "apikey"}
-                await self._set_user(request.context, **token_info)
+                await self._set_user(context := request.context, **token_info)
                 # check whether the user may access the specified account
-                if isinstance(request.json, dict) and \
-                        (account := request.json.get("account")) is not None:
-                    assert isinstance(account, int)
-                    await get_user_account_status(
-                        request.context.uid, account, request.context.sdb, request.context.cache)
+                if isinstance(request.json, dict):
+                    if (account := request.json.get("account")) is not None:
+                        assert isinstance(account, int)
+                        with sentry_sdk.configure_scope() as scope:
+                            scope.set_tag("account", account)
+                        await get_user_account_status(
+                            context.uid, account, context.sdb, context.cache)
+                    elif (account := getattr(context, "account", None)) is not None:
+                        canonical = context.match_info.route.resource.canonical
+                        route_specs = context.app["route_spec"]
+                        if (spec := route_specs.get(canonical, None)) is not None:
+                            try:
+                                required = "account" in deep_get(spec, [
+                                    "requestBody", "content", "application/json", "schema",
+                                    "required",
+                                ])
+                            except KeyError:
+                                required = False
+                            if required:
+                                request.json["account"] = account
+
                 # finish the auth processing and chain forward
-                try:
-                    return await function(request)
-                except BadRequestProblem as e:
-                    # if we are missing an account ID and authorize using APIKey, copy it
-                    missing_account_with_api_key = (
-                        ((account := getattr(request.context, "account", None)) is not None) and
-                        isinstance(e.__context__, ValidationError) and
-                        e.__context__.validator == "required" and
-                        "account" in e.__context__.validator_value and
-                        "account" not in request.json
-                    )
-                    if missing_account_with_api_key:
-                        request.json["account"] = account
-                    else:
-                        raise e from None
-                # the only way to come here is by missing_account_with_api_key
                 return await function(request)
             return wrapper
 
