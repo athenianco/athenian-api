@@ -317,40 +317,38 @@ async def test_filter_jira_no_time(client, headers):
 
 
 @pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [
-    [False, 38, 54, [
-        JIRAIssueType(name="Bug", count=260, project="10009",
+    [False, 33, 34, [
+        JIRAIssueType(name="Bug", count=96, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Design Document", count=10, project="10009",
+        JIRAIssueType(name="Design Document", count=7, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Design document", count=1, project="10003",
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=54, project="10009",
-                      image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
-        JIRAIssueType(name="Incident", count=7, project="10009",
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Story", count=81, project="10009",
-                      image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
-        JIRAIssueType(name="Sub-task", count=75, project="10009",
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Subtask", count=1, project="10003",
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Task", count=516, project="10009",
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
-     15, 6],
-    [True, 36, 41, [
-        JIRAIssueType(name="Bug", count=139, project="10009",
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Design Document", count=5, project="10009",
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=41, project="10009",
+        JIRAIssueType(name="Epic", count=34, project="10009",
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
         JIRAIssueType(name="Incident", count=3, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Story", count=30, project="10009",
+        JIRAIssueType(name="Story", count=26, project="10009",
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
-        JIRAIssueType(name="Sub-task", count=49, project="10009",
+        JIRAIssueType(name="Sub-task", count=26, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Task", count=265, project="10009",
+        JIRAIssueType(name="Subtask", count=1, project="10003",
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Task", count=194, project="10009",
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
+     15, 6],
+    [True, 32, 32, [
+        JIRAIssueType(name="Bug", count=85, project="10009",
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Design Document", count=4, project="10009",
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Epic", count=32, project="10009",
+                      image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
+        JIRAIssueType(name="Incident", count=3, project="10009",
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Story", count=14, project="10009",
+                      image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
+        JIRAIssueType(name="Sub-task", count=26, project="10009",
+                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
+        JIRAIssueType(name="Task", count=156, project="10009",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
      13, 6],
 ])
@@ -514,7 +512,7 @@ async def test_filter_jira_issue_prs_comments(client, headers):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     model = FilteredJIRAStuff.from_dict(json.loads(body))
-    assert len(model.issues) == 562
+    assert len(model.issues) == 389
     prs = 0
     comments = 0
     for issue in model.issues:
@@ -523,8 +521,8 @@ async def test_filter_jira_issue_prs_comments(client, headers):
         for pr in issue.prs:
             assert pr.number > 0
             assert not pr.jira
-    assert prs == 15
-    assert comments == 1606
+    assert prs == 6
+    assert comments == 1113
 
 
 @pytest.mark.parametrize("account, date_to, timezone, status", [
@@ -572,7 +570,7 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     assert items[0].with_ is None
     assert items[0].values == [CalculatedLinearMetricValues(
         date=date(2020, 1, 1),
-        values=[1765, 1623],
+        values=[1765, 1628],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
@@ -876,7 +874,7 @@ async def test_jira_metrics_disabled_projects(client, headers, disabled_dev):
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in json.loads(body)]
     assert items[0].values == [CalculatedLinearMetricValues(
         date=date(2020, 1, 1),
-        values=[768, 824],
+        values=[768, 829],
         confidence_mins=[None] * 2,
         confidence_maxs=[None] * 2,
         confidence_scores=[None] * 2,
