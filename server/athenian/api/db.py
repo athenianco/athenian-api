@@ -7,7 +7,7 @@ import re
 import sys
 import time
 from typing import Any, Callable, List, Mapping, Tuple, Union
-from urllib.parse import quote_plus
+from urllib.parse import quote
 
 import aiohttp.web
 import aiosqlite
@@ -255,18 +255,17 @@ def _generate_tags() -> str:
             return ""
         values = [
             f"application='{metadata.__package__}'",
-            f"route='{quote_plus(transaction.name)}'",
+            f"framework='{metadata.__version__}'",
+            f"route='{quote(transaction.name)}'",
             f"traceparent='{transaction.trace_id}'",
             f"tracestate='{scope.span.span_id}'",
-            f"version='{metadata.__version__}'",
         ]
         try:
-            values.append(f"account='{scope._tags['account']}'")
+            values.append(f"controller='{scope._tags['account']}'")
         except KeyError:
             pass
-        for tag in scope._tags:
-            if tag != "account":
-                values.append(f"{tag}='1'")
+        values.append(
+            f"action='{';'.join(k for k, v in scope._tags.items() if isinstance(v, bool))}'")
     return " /*" + ",".join(sorted(values)) + "*/"
 
 
