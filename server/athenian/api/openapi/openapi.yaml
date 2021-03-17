@@ -6597,7 +6597,8 @@ components:
           $ref: '#/components/schemas/Granularity'
         jira_label:
           description: Title of the assigned JIRA label, if `group_by_jira_label`
-            was previously set to `true`.
+            was previously set to `true`. If is missing and `group_by_jira_label`
+            was set to `true` then the metrics are calculated for issues without labels.
           type: string
         with:
           $ref: '#/components/schemas/JIRAFilterWith'

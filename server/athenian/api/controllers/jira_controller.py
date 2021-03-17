@@ -879,15 +879,23 @@ class _IssuesLabelSplitter:
             mask = np.in1d(unique_labels, exclude, assume_unique=True, invert=True)
             unique_labels = unique_labels[mask]
             groups = groups[mask]
-        if self._filter.include and len(unique_labels):
-            singles, multiples = LabelFilter.split(self._filter.include)
-            include = set(singles)
-            for labels in multiples:
-                include.update(labels)
-            include = np.array(sorted(self._filter.include), dtype="U")
-            mask = np.in1d(unique_labels, include, assume_unique=True)
-            unique_labels = unique_labels[mask]
-            groups = groups[mask]
+        if self._filter.include:
+            if len(unique_labels):
+                singles, multiples = LabelFilter.split(self._filter.include)
+                include = set(singles)
+                for labels in multiples:
+                    include.update(labels)
+                include = np.array(sorted(self._filter.include), dtype="U")
+                mask = np.in1d(unique_labels, include, assume_unique=True)
+                unique_labels = unique_labels[mask]
+                groups = groups[mask]
+        else:
+            # no include filter => append another group of issues with empty labels
+            unique_labels = np.concatenate([unique_labels, [None]])
+            empty_labels_group = np.nonzero(~issues[Issue.labels.key].astype(bool).values)[0]
+            groups = list(groups) + [empty_labels_group]
+        if not isinstance(groups, list):
+            groups = groups.tolist()
         self._labels = unique_labels
         return groups
 

@@ -564,7 +564,7 @@ class BinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
         """
         Override the parent's method to reduce the level of nesting.
 
-        :return: array of List[List[List[Metric]]]].
+        :return: array of List[List[Metric]]].
         """
         return super().__call__(items, time_intervals, groups, [{}])[0]
 
