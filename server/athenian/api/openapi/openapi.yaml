@@ -5285,9 +5285,13 @@ components:
         project:
           description: Bound project identifier.
           type: string
+        is_subtask:
+          description: Value indicating whether this issue type refers to a sub-task.
+          type: boolean
       required:
       - count
       - image
+      - is_subtask
       - name
       - project
       type: object

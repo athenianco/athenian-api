@@ -483,7 +483,8 @@ async def _issue_flow(return_: Set[str],
         if JIRAFilterReturn.ISSUE_TYPES not in return_:
             return []
         queries = [
-            select([IssueType.name, IssueType.project_id, IssueType.icon_url])
+            select([IssueType.name, IssueType.project_id,
+                    IssueType.icon_url, IssueType.is_subtask])
             .where(and_(
                 IssueType.name.in_(names),
                 IssueType.acc_id == jira_ids[0],
@@ -573,15 +574,21 @@ async def _issue_flow(return_: Set[str],
     max_issue_types = {}
     for row in issue_types:
         name = row[IssueType.name.key]
-        max_count, _, _ = max_issue_types.get(name, (0, "", ""))
+        max_count = max_issue_types.get(name, (0, "", ""))[0]
         if (count := project_counts[row[IssueType.project_id.key]]) > max_count:
-            max_issue_types[name] = \
-                count, row[IssueType.icon_url.key], row[IssueType.project_id.key]
-    issue_types = [JIRAIssueType(name=name,
-                                 image=image,
-                                 count=issue_type_counts[name],
-                                 project=project)
-                   for name, (_, image, project) in sorted(max_issue_types.items())] or None
+            max_issue_types[name] = (
+                count,
+                row[IssueType.icon_url.key],
+                row[IssueType.project_id.key],
+                row[IssueType.is_subtask.key],
+            )
+    issue_types = [
+        JIRAIssueType(name=name,
+                      image=image,
+                      count=issue_type_counts[name],
+                      project=project,
+                      is_subtask=is_subtask)
+        for name, (_, image, project, is_subtask) in sorted(max_issue_types.items())] or None
     if JIRAFilterReturn.LABELS in return_:
         for updated, issue_components in zip(issues[Issue.updated.key],
                                              issues[Issue.components.key].values):
