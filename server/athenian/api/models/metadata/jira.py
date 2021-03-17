@@ -121,6 +121,7 @@ class IssueType(Base):
     name = Column(Text, nullable=False)
     description = Column(Text)
     icon_url = Column(Text, nullable=False)
+    is_subtask = Column(Boolean, nullable=False)
 
 
 class Progress(Base):
