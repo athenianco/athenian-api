@@ -12,6 +12,7 @@ import traceback
 from typing import Collection, Optional, Set, Tuple
 
 import aiomcache
+from databases import Database
 from flogging import flogging
 import numpy as np
 import sentry_sdk
@@ -39,7 +40,7 @@ from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 import athenian.api.db
-from athenian.api.db import ParallelDatabase
+from athenian.api.db import measure_db_overhead_and_retry, ParallelDatabase
 from athenian.api.defer import enable_defer, wait_deferred
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas, \
     PREFIXES
@@ -68,6 +69,32 @@ def _parse_args():
     parser.add_argument("--memcached", required=True,
                         help="memcached address, e.g. 0.0.0.0:11211")
     return parser.parse_args()
+
+
+async def _connect_to_dbs(args: argparse.Namespace,
+                          ) -> Tuple[Database, Database, Database, Database]:
+    db_opts = compose_db_options(
+        args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db)
+    sdb = measure_db_overhead_and_retry(
+        ParallelDatabase(args.state_db, **db_opts["sdb_options"]))
+    await sdb.connect()
+    mdb = measure_db_overhead_and_retry(
+        ParallelDatabase(args.metadata_db, **db_opts["mdb_options"]))
+    await mdb.connect()
+    pdb = measure_db_overhead_and_retry(
+        ParallelDatabase(args.precomputed_db, **db_opts["pdb_options"]))
+    await pdb.connect()
+    rdb = measure_db_overhead_and_retry(
+        ParallelDatabase(args.persistentdata_db, **db_opts["rdb_options"]))
+    await rdb.connect()
+    pdb.metrics = {
+        "hits": ContextVar("pdb_hits", default=defaultdict(int)),
+        "misses": ContextVar("pdb_misses", default=defaultdict(int)),
+    }
+    if mdb.url.dialect == "sqlite":
+        dereference_metadata_schemas()
+        dereference_persistentdata_schemas()
+    return sdb, mdb, pdb, rdb
 
 
 def main():
@@ -99,24 +126,7 @@ def main():
         setup_cache_metrics(cache, {}, None)
         for v in cache.metrics["context"].values():
             v.set(defaultdict(int))
-        db_opts = compose_db_options(
-            args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db)
-        sdb = ParallelDatabase(args.state_db, **db_opts["sdb_options"])
-        await sdb.connect()
-        mdb = ParallelDatabase(args.metadata_db, **db_opts["mdb_options"])
-        await mdb.connect()
-        pdb = ParallelDatabase(args.precomputed_db, **db_opts["pdb_options"])
-        await pdb.connect()
-        rdb = ParallelDatabase(args.persistentdata_db, **db_opts["rdb_options"])
-        await rdb.connect()
-        pdb.metrics = {
-            "hits": ContextVar("pdb_hits", default=defaultdict(int)),
-            "misses": ContextVar("pdb_misses", default=defaultdict(int)),
-        }
-        if mdb.url.dialect == "sqlite":
-            dereference_metadata_schemas()
-            dereference_persistentdata_schemas()
-
+        sdb, mdb, pdb, rdb = await _connect_to_dbs(args)
         account_progress_settings = {}
         accounts = [r[0] for r in await sdb.fetch_all(select([Account.id]))]
         log.info("Checking progress of %d accounts", len(accounts))
