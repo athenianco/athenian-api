@@ -582,12 +582,12 @@ class AthenianApp(connexion.AioHttpApp):
             scope.set_extra("concurrent requests", self._requests)
             scope.set_extra("load", self._load)
             scope.set_extra("uptime", timedelta(seconds=time.time() - self._boot_time))
-            canonical = request.match_info.route.resource.canonical
-            try:
-                for tag in self.app["route_spec"][canonical].get("tags", []):
-                    scope.set_tag(tag, True)
-            except KeyError:
-                pass
+            if (resource := request.match_info.route.resource) is not None:
+                try:
+                    for tag in self.app["route_spec"][resource.canonical].get("tags", []):
+                        scope.set_tag(tag, True)
+                except KeyError:
+                    pass
         return traced
 
     def _set_stack_samples_sentry_context(self,
