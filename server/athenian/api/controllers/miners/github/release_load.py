@@ -556,6 +556,7 @@ async def _fetch_release_events(repos: Sequence[str],
         .where(and_(
             ReleaseNotification.account_id == account,
             ReleaseNotification.published_at.between(time_from, time_to),
+            ReleaseNotification.repository_node_id.in_(repo_ids),
         ))
         .order_by(desc(ReleaseNotification.published_at)))
     unresolved_commits_short = defaultdict(list)
