@@ -135,6 +135,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         ",".join("%s:%s" % db for db in sorted(default_branches.items())),
         release_settings,
     ),
+    version=2,
 )
 async def _epic_flow(return_: Set[str],
                      jira_ids: Tuple[int, List[str]],
@@ -343,6 +344,7 @@ async def _epic_flow(return_: Set[str],
         ",".join("%s:%s" % db for db in sorted(default_branches.items())),
         release_settings,
     ),
+    version=2,
 )
 async def _issue_flow(return_: Set[str],
                       account: int,
