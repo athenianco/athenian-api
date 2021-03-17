@@ -12,13 +12,13 @@ services:
           python3 -m athenian.api.models.persistentdata \
             postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/persistentdata &&
           python3 -m athenian.api.models.metadata \
-            postgresql://${REMOTE_POSTGRES_USER}:${REMOTE_POSTGRES_PASSWORD}@cloud_sql_proxy:5432/metadata &&
+            postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata &&
           python3 -m athenian.api \
             --log-level=${API_LOG_LEVEL:-INFO} \
             --host=0.0.0.0 \
             --port=8080 \
             --memcached=memcached:11211 \
-            --metadata-db=postgresql://${REMOTE_POSTGRES_USER}:${REMOTE_POSTGRES_PASSWORD}@cloud_sql_proxy:5432/metadata \
+            --metadata-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata \
             --state-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state \
             --precomputed-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed \
             --persistentdata-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/persistentdata \
@@ -50,6 +50,7 @@ services:
       - ${POSTGRES_HOST_PORT:-5432}:5432
     volumes:
       - postgres:/var/lib/postgresql/data
+      - ${POSTGRES_DUMPS_PATH:-./server/tests/dumps}:/db_dumps
       - ${POSTGRES_LOADER_SCRIPT_PATH:-./server/tests/load_pg_data.sh}:/load_data.sh
     depends_on:
       - cloud_sql_proxy
