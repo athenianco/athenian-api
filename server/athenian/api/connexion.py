@@ -11,6 +11,7 @@ import re
 import signal
 import socket
 import time
+import traceback
 from typing import Any, Callable, Coroutine, Dict, Optional
 
 import aiohttp.web
@@ -19,7 +20,7 @@ from aiohttp.web_exceptions import HTTPClientError, HTTPFound, HTTPNoContent, HT
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
-from asyncpg import ConnectionDoesNotExistError, InterfaceError
+from asyncpg import InterfaceError, PostgresConnectionError
 from connexion.apis import aiohttp_api
 from connexion.exceptions import ConnexionException
 import connexion.lifecycle
@@ -358,8 +359,10 @@ class AthenianApp(connexion.AioHttpApp):
             request.cache = None
         try:
             return await handler(request)
-        except (ConnectionError, ConnectionDoesNotExistError, InterfaceError) as e:
-            event_id = sentry_sdk.capture_exception(e)
+        except (ConnectionError, PostgresConnectionError, InterfaceError) as e:
+            sentry_sdk.add_breadcrumb(message=traceback.format_exc(), level="error")
+            event_id = sentry_sdk.capture_message(
+                "DB connectivity error: %s" % type(e).__name__, level="error")
             return ResponseError(ServiceUnavailableError(
                 type="/errors/InternalConnectivityError",
                 detail="%s: %s" % (type(e).__name__, e),
