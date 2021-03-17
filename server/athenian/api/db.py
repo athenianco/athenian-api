@@ -6,7 +6,7 @@ import pickle
 import re
 import sys
 import time
-from typing import Any, Callable, List, Mapping, Tuple, Union
+from typing import Any, Callable, List, Mapping, Optional, Tuple, Union
 from urllib.parse import quote
 
 import aiohttp.web
@@ -25,8 +25,9 @@ from athenian.api.typing_utils import wraps
 
 
 def measure_db_overhead_and_retry(db: databases.Database,
-                                  db_id: str,
-                                  app: aiohttp.web.Application) -> databases.Database:
+                                  db_id: Optional[str] = None,
+                                  app: Optional[aiohttp.web.Application] = None,
+                                  ) -> databases.Database:
     """
     Instrument Database to measure the time spent inside DB i/o.
 
@@ -52,18 +53,19 @@ def measure_db_overhead_and_retry(db: databases.Database,
                 for i, wait_time in enumerate(wait_intervals):
                     try:
                         return await func(*args, **kwargs)
-                    except OSError as e:
+                    except (OSError, asyncpg.PostgresConnectionError) as e:
                         if wait_time is None:
                             raise e from None
                         log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
                         await asyncio.sleep(wait_time)
                     finally:
-                        elapsed = app["db_elapsed"].get()
-                        if elapsed is None:
-                            log.warning("Cannot record the %s overhead", db_id)
-                        else:
-                            delta = time.time() - start_time
-                            elapsed[db_id] += delta
+                        if app is not None:
+                            elapsed = app["db_elapsed"].get()
+                            if elapsed is None:
+                                log.warning("Cannot record the %s overhead", db_id)
+                            else:
+                                delta = time.time() - start_time
+                                elapsed[db_id] += delta
 
             return wraps(wrapped_measure_method_overhead_and_retry, func)
 
