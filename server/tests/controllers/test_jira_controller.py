@@ -880,7 +880,7 @@ async def test_jira_metrics_disabled_projects(client, headers, disabled_dev):
     )]
 
 
-async def test_jira_metrics_group_by_label(client, headers):
+async def test_jira_metrics_group_by_label_smoke(client, headers):
     body = {
         "date_from": "2020-01-01",
         "date_to": "2020-10-20",
@@ -897,13 +897,15 @@ async def test_jira_metrics_group_by_label(client, headers):
     rbody = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + rbody
     rbody = json.loads(rbody)
-    assert len(rbody) == 48
+    assert len(rbody) == 49
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in rbody]
     assert items[0].granularity == "all"
     assert items[0].jira_label == "performance"
     assert items[0].values[0].values == [148]
     assert items[1].jira_label == "webapp"
     assert items[1].values[0].values == [143]
+    assert items[-1].jira_label is None
+    assert items[-1].values[0].values == [749]
 
     body["labels_include"] = ["performance"]
     body["labels_exclude"] = ["security"]
@@ -918,6 +920,45 @@ async def test_jira_metrics_group_by_label(client, headers):
     assert items[0].granularity == "all"
     assert items[0].jira_label == "performance"
     assert items[0].values[0].values == [147]
+
+
+async def test_jira_metrics_group_by_label_empty(client, headers):
+    body = {
+        "date_from": "2019-12-02",
+        "date_to": "2019-12-03",
+        "timezone": 0,
+        "account": 1,
+        "metrics": [JIRAMetricID.JIRA_RAISED],
+        "exclude_inactive": True,
+        "granularities": ["all"],
+        "group_by_jira_label": True,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    rbody = json.loads(rbody)
+    assert len(rbody) == 1
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in rbody]
+    assert len(items) == 1
+    assert items[0].granularity == "all"
+    assert items[0].jira_label is None
+    assert items[0].values[0].values == [9]
+
+    body["labels_include"] = ["whatever"]
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    rbody = json.loads(rbody)
+    assert len(rbody) == 1
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in rbody]
+    assert len(items) == 1
+    assert items[0].granularity == "all"
+    assert items[0].jira_label is None
+    assert items[0].values[0].values == [0]
 
 
 @pytest.mark.parametrize("with_, ticks, frequencies, interquartile", [
