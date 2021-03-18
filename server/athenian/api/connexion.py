@@ -362,7 +362,7 @@ class AthenianApp(connexion.AioHttpApp):
         except (ConnectionError, PostgresConnectionError, InterfaceError) as e:
             sentry_sdk.add_breadcrumb(message=traceback.format_exc(), level="error")
             event_id = sentry_sdk.capture_message(
-                "DB connectivity error: %s" % type(e).__name__, level="error")
+                "Internal connectivity error: %s" % type(e).__name__, level="error")
             return ResponseError(ServiceUnavailableError(
                 type="/errors/InternalConnectivityError",
                 detail="%s: %s" % (type(e).__name__, e),
