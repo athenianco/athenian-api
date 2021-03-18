@@ -3,7 +3,7 @@ from sqlalchemy import delete, distinct, insert, select, update
 from sqlalchemy.sql.functions import count
 
 from athenian.api.controllers.jira import load_jira_identity_mapping_sentinel, \
-    load_mapped_jira_users, match_jira_identities
+    load_mapped_jira_users, match_jira_identities, normalize_issue_type
 from athenian.api.defer import with_defer
 from athenian.api.models.metadata.jira import Progress
 from athenian.api.models.state.models import AccountJiraInstallation, MappedJIRAIdentity
@@ -79,3 +79,13 @@ async def test_match_jira_identities_incomplete_progress(sdb, mdb, slack):
         assert (await match_jira_identities(1, (6366825,), sdb, mdb, slack, None)) is None
     finally:
         await mdb.execute(update(Progress).values({Progress.current.key: 10}))
+
+
+@pytest.mark.parametrize("orig, norm", [
+    ("Súb-tasks", "subtask"),
+    ("Stories", "story"),
+    ("", ""),
+    ("BUG", "bug"),
+])
+def test_normalize_issue_type(orig, norm):
+    assert normalize_issue_type(orig) == norm

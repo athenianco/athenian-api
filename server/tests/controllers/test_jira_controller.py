@@ -179,7 +179,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
             JIRAIssueType(name="Design document", count=10, project="10003", is_subtask=False,
                           normalized_name="Design document",
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Epic", count=2, project="10003", is_subtask=False,
+            JIRAIssueType(name="Epic", count=1, project="10003", is_subtask=False,
                           normalized_name="Epic",
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype"),  # noqa
             JIRAIssueType(name="Story", count=49, project="10003", is_subtask=False,
@@ -188,7 +188,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
             JIRAIssueType(name="Subtask", count=98, project="10003", is_subtask=True,
                           normalized_name="Subtask",
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Task", count=9, project="10003", is_subtask=False,
+            JIRAIssueType(name="Task", count=4, project="10003", is_subtask=False,
                           normalized_name="Task",
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype"),  # noqa
         ]
@@ -322,13 +322,13 @@ async def test_filter_jira_no_time(client, headers):
 
 @pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [
     [False, 33, 34, [
-        JIRAIssueType(name="Bug", count=96, project="10009", is_subtask=False,
+        JIRAIssueType(name="Bug", count=94, project="10009", is_subtask=False,
                       normalized_name="Bug",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Design Document", count=7, project="10009", is_subtask=False,
                       normalized_name="Design Document",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=34, project="10009", is_subtask=False,
+        JIRAIssueType(name="Epic", count=31, project="10009", is_subtask=False,
                       normalized_name="Epic",
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
         JIRAIssueType(name="Incident", count=3, project="10009", is_subtask=False,
@@ -348,13 +348,13 @@ async def test_filter_jira_no_time(client, headers):
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
      15, 6],
     [True, 32, 32, [
-        JIRAIssueType(name="Bug", count=85, project="10009", is_subtask=False,
+        JIRAIssueType(name="Bug", count=84, project="10009", is_subtask=False,
                       normalized_name="Bug",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Design Document", count=4, project="10009", is_subtask=False,
                       normalized_name="Design Document",
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=32, project="10009", is_subtask=False,
+        JIRAIssueType(name="Epic", count=31, project="10009", is_subtask=False,
                       normalized_name="Epic",
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
         JIRAIssueType(name="Incident", count=3, project="10009", is_subtask=False,

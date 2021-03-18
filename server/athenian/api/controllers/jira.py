@@ -1,12 +1,15 @@
 from collections import defaultdict
 import logging
 import marshal
+import re
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import aiomcache
 from names_matcher import NamesMatcher
+from pluralizer import Pluralizer
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, func, insert, select, union
+from unidecode import unidecode
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
@@ -306,3 +309,12 @@ async def _match_jira_identities(account: int,
                 await sdb_conn.execute_many(insert(MappedJIRAIdentity), db_records)
         await load_jira_identity_mapping_sentinel.reset_cache(account, cache)
     return len(db_records), len(github_users), len(jira_users), len(existing_mapping) == 0
+
+
+nonalphanum_re = re.compile(r"[^a-zA-Z0-9]+")
+pluralizer = Pluralizer()
+
+
+def normalize_issue_type(name: str) -> str:
+    """Normalize the JIRA issue type name."""
+    return pluralizer.singular(nonalphanum_re.sub("", unidecode(name.lower())))
