@@ -589,7 +589,8 @@ async def _issue_flow(return_: Set[str],
                       image=image,
                       count=issue_type_counts[name],
                       project=project,
-                      is_subtask=is_subtask)
+                      is_subtask=is_subtask,
+                      normalized_name=name)
         for name, (_, image, project, is_subtask) in sorted(max_issue_types.items())] or None
     if JIRAFilterReturn.LABELS in return_:
         for updated, issue_components in zip(issues[Issue.updated.key],
