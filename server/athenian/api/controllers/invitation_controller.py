@@ -234,8 +234,13 @@ async def _accept_invitation(iid: int,
         ).create_defaults().explode(with_primary_keys=True)))
         log.info("Assigned user %s to account %d (admin: %s)", request.uid, acc_id, is_admin)
         if slack is not None:
-            await defer(slack.post("new_user.jinja2", user=user, account=acc_id),
-                        "report_new_user_to_slack")
+            async def report_new_user_to_slack():
+                repos = await request.sdb.fetch_val(select([RepositorySet.items]).where(and_(
+                    RepositorySet.owner_id == acc_id, RepositorySet.name == RepositorySet.ALL)))
+                prefixes = {r.split("/", 2)[1] for r in repos}
+                await slack.post("new_user.jinja2", user=user, account=acc_id, prefixes=prefixes)
+
+            await defer(report_new_user_to_slack(), "report_new_user_to_slack")
         values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
         await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
     if user is None:
