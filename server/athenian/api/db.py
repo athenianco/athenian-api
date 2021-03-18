@@ -49,7 +49,7 @@ def measure_db_overhead_and_retry(db: databases.Database,
                 ):
                     wait_intervals = [None]
                 else:
-                    wait_intervals = [0.1, 0.5, 1.4, None]
+                    wait_intervals = [0, 0.1, 0.5, 1.4, None]
                 need_acquire = False
                 for i, wait_time in enumerate(wait_intervals):
                     try:
@@ -61,7 +61,11 @@ def measure_db_overhead_and_retry(db: databases.Database,
                             raise e from None
                         log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
                         if need_acquire := isinstance(e, asyncpg.PostgresConnectionError):
-                            await connection.release()
+                            try:
+                                await connection.release()
+                            except Exception as e:
+                                log.warning("connection.release() raised %s: %s",
+                                            type(e).__name__, e)
                         await asyncio.sleep(wait_time)
                     finally:
                         if app is not None:
