@@ -5280,6 +5280,9 @@ components:
         name:
           description: Name of the issue type.
           type: string
+        normalized_name:
+          description: Normalized name of the issue type. For example, "Sub-tásks" becomes "subtask".
+          type: string
         count:
           description: Number of issues that satisfy the filters and belong to this
             type.
@@ -5300,6 +5303,7 @@ components:
       - image
       - is_subtask
       - name
+      - normalized_name
       - project
       type: object
     ProductFeatures:

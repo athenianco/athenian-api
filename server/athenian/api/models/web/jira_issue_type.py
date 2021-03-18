@@ -12,6 +12,7 @@ class JIRAIssueType(Model):
         "image": str,
         "project": str,
         "is_subtask": bool,
+        "normalized_name": str,
     }
     attribute_map = {
         "name": "name",
@@ -19,6 +20,7 @@ class JIRAIssueType(Model):
         "image": "image",
         "project": "project",
         "is_subtask": "is_subtask",
+        "normalized_name": "normalized_name",
     }
 
     def __init__(self,
@@ -26,19 +28,22 @@ class JIRAIssueType(Model):
                  count: Optional[int] = None,
                  image: Optional[str] = None,
                  project: Optional[str] = None,
-                 is_subtask: Optional[bool] = None):
+                 is_subtask: Optional[bool] = None,
+                 normalized_name: Optional[str] = None):
         """JIRAIssueType - a model defined in OpenAPI
 
         :param name: The name of this JIRAIssueType.
         :param count: The count of this JIRAIssueType.
         :param image: The image of this JIRAIssueType.
-        :param is_subtask: The is_subtask os this JIRAIssueType.
+        :param is_subtask: The is_subtask of this JIRAIssueType.
+        :param normalized_name: The normalized_name of this JIRAIssueType.
         """
         self._name = name
         self._count = count
         self._image = image
         self._project = project
         self._is_subtask = is_subtask
+        self._normalized_name = normalized_name
 
     @property
     def name(self) -> str:
@@ -157,3 +162,26 @@ class JIRAIssueType(Model):
             raise ValueError("Invalid value for `is_subtask`, must not be `None`")
 
         self._is_subtask = is_subtask
+
+    @property
+    def normalized_name(self) -> str:
+        """Gets the normalized_name of this JIRAIssueType.
+
+        Normalized name of the issue type. For example, "Sub-tásks" becomes "subtask".
+
+        :return: The normalized_name of this JIRAIssueType.
+        """
+        return self._normalized_name
+
+    @normalized_name.setter
+    def normalized_name(self, normalized_name: str):
+        """Sets the normalized_name of this JIRAIssueType.
+
+        Normalized name of the issue type. For example, "Sub-tásks" becomes "subtask".
+
+        :param normalized_name: The normalized_name of this JIRAIssueType.
+        """
+        if normalized_name is None:
+            raise ValueError("Invalid value for `normalized_name`, must not be `None`")
+
+        self._normalized_name = normalized_name
