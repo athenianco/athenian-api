@@ -3228,15 +3228,17 @@ components:
         - repositories:
           - github.com/athenianco/athenian-webapp
           - github.com/athenianco/athenian-api
-          developers:
-          - github.com/vmarkovtsev
-          - github.com/dpordomingo
+          with:
+            author:
+            - github.com/vmarkovtsev
+            - github.com/dpordomingo
         - repositories:
-          - github.com/athenianco/athenian-webapp
+          - github.com/athenianco/metadata
           - github.com/athenianco/athenian-api
-          developers:
-          - github.com/vmarkovtsev
-          - github.com/dpordomingo
+          with:
+            author:
+            - github.com/vmarkovtsev
+            - github.com/se7entyse7en
         metrics:
         - pr-lead-time
         - pr-wip-time
