@@ -422,7 +422,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
             branches=setting.branches,
             match=match,
         )
-        if match == ReleaseMatch.tag:
+        if match in (ReleaseMatch.tag, ReleaseMatch.event):
             repos_matched_by_tag.append(repo)
         elif match == ReleaseMatch.branch:
             repos_matched_by_branch.append(repo)
