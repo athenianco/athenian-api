@@ -33,8 +33,7 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_facts_ids
 from athenian.api.controllers.miners.jira.epic import filter_epics
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PR_IDS, \
-    ISSUE_PRS_BEGAN, \
-    ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
+    ISSUE_PRS_BEGAN, ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
@@ -385,6 +384,7 @@ async def _issue_flow(return_: Set[str],
         Issue.commenters_ids,
         Issue.priority_id,
         Issue.status_id,
+        Issue.type_id,
         Issue.comments_count,
     ]
     if JIRAFilterReturn.ISSUE_BODIES in return_:
@@ -429,13 +429,15 @@ async def _issue_flow(return_: Set[str],
         statuses = []
         status_project_map = {}
     if JIRAFilterReturn.ISSUE_TYPES in return_:
-        issue_type_counts = Counter(issues[Issue.type.key].values)
+        issue_type_counts = defaultdict(int)
         issue_type_projects = defaultdict(set)
         project_counts = defaultdict(int)
-        for project_id, issue_type in zip(issues[Issue.project_id.key].values,
-                                          issues[Issue.type.key].values):
+        for project_id, issue_type, issue_name in zip(issues[Issue.project_id.key].values,
+                                                      issues[Issue.type_id.key].values,
+                                                      issues[Issue.type.key].values):
             issue_type_projects[project_id].add(issue_type)
             project_counts[project_id] += 1
+            issue_type_counts[(project_id, issue_name)] += 1
     else:
         issue_type_counts = issue_type_projects = project_counts = None
     if JIRAFilterReturn.ISSUE_BODIES in return_:
@@ -488,11 +490,11 @@ async def _issue_flow(return_: Set[str],
             select([IssueType.name, IssueType.project_id,
                     IssueType.icon_url, IssueType.is_subtask])
             .where(and_(
-                IssueType.name.in_(names),
+                IssueType.id.in_(ids),
                 IssueType.acc_id == jira_ids[0],
                 IssueType.project_id == project_id,
             ))
-            for project_id, names in issue_type_projects.items()
+            for project_id, ids in issue_type_projects.items()
         ]
         return await mdb.fetch_all(union_all(*queries))
 
@@ -587,7 +589,7 @@ async def _issue_flow(return_: Set[str],
     issue_types = [
         JIRAIssueType(name=name,
                       image=image,
-                      count=issue_type_counts[name],
+                      count=issue_type_counts[(project, name)],
                       project=project,
                       is_subtask=is_subtask,
                       normalized_name=name)

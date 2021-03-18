@@ -30,6 +30,7 @@ class Issue(Base):
     key = Column(Text, nullable=False)
     title = Column(Text, nullable=False)
     type = Column(Text, nullable=False)
+    type_id = Column(Text, nullable=False)
     status = Column(Text)
     status_id = Column(Text)
     labels = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
