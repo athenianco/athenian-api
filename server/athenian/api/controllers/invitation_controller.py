@@ -20,6 +20,7 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, func, insert, select, update
 
 from athenian.api import metadata
+from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import generate_jira_invitation_link, \
@@ -28,7 +29,7 @@ from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
-    FetchProgress
+    FetchProgress, NodeUser, OrganizationMember
 from athenian.api.models.state.models import Account, Invitation, RepositorySet, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
     NoSourceDataError, NotFoundError, User
@@ -139,7 +140,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
             async with conn.transaction():
                 acc_id, user = await _accept_invitation(iid, salt, request, conn)
         except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
-            return ResponseError(DatabaseConflict(detail=str(e))).response
+            raise ResponseError(DatabaseConflict(detail=str(e)))
     return model_response(InvitedUser(account=acc_id, user=user))
 
 
@@ -149,6 +150,8 @@ async def _accept_invitation(iid: int,
                              conn: databases.core.Connection,
                              ) -> Tuple[int, User]:
     log = logging.getLogger(metadata.__package__)
+    mdb = request.mdb
+    cache = request.cache
     inv = await conn.fetch_one(
         select([Invitation.account_id, Invitation.accepted, Invitation.is_active])
         .where(and_(Invitation.id == iid, Invitation.salt == salt)))
@@ -196,24 +199,49 @@ async def _accept_invitation(iid: int,
         status = await conn.fetch_one(select([UserAccount.is_admin])
                                       .where(and_(UserAccount.user_id == request.uid,
                                                   UserAccount.account_id == acc_id)))
+    user = None
     if status is None:
+        if not is_admin:
+            # check whether the user is a member of the GitHub org
+            async def load_org_members():
+                meta_ids = await get_metadata_account_ids(acc_id, conn, cache)
+                user_node_ids = [
+                    r[0] for r in await mdb.fetch_all(
+                        select([OrganizationMember.child_id])
+                        .where(OrganizationMember.acc_id.in_(meta_ids)))
+                ]
+                log.debug("Discovered %d organization members", len(user_node_ids))
+                return meta_ids, user_node_ids
+            user, (meta_ids, user_node_ids) = await gather(request.user(), load_org_members())
+            try:
+                udbid = int((await request.user()).native_id)
+            except (IndexError, ValueError):
+                raise ResponseError(BadRequestError(
+                    detail="Cannot resolve user %s." % request.uid))
+            user_node_id = await mdb.fetch_val(select([NodeUser.node_id])
+                                               .where(and_(NodeUser.acc_id.in_(meta_ids),
+                                                           NodeUser.database_id == udbid)))
+            if user_node_id not in user_node_ids:
+                raise ResponseError(ForbiddenError(
+                    detail="User %s does not belong to the GitHub organization." % request.uid))
+        else:
+            user = await request.user()
         # create the user<>account record
-        user = UserAccount(
+        await conn.execute(insert(UserAccount).values(UserAccount(
             user_id=request.uid,
             account_id=acc_id,
             is_admin=is_admin,
-        ).create_defaults()
-        await conn.execute(insert(UserAccount).values(user.explode(with_primary_keys=True)))
+        ).create_defaults().explode(with_primary_keys=True)))
         log.info("Assigned user %s to account %d (admin: %s)", request.uid, acc_id, is_admin)
         if slack is not None:
-            async def report_new_user_to_slack():
-                await slack.post("new_user.jinja2", user=await request.user(), account=acc_id)
-
-            await defer(report_new_user_to_slack(), "report_new_user_to_slack")
+            await defer(slack.post("new_user.jinja2", user=user, account=acc_id),
+                        "report_new_user_to_slack")
         values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
         await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
-    user = await (await request.user()).load_accounts(conn)
-    return acc_id, user
+    if user is None:
+        user = await request.user()
+    full_user = await user.load_accounts(conn)
+    return acc_id, full_user
 
 
 async def create_new_account(conn: DatabaseLike, secret: str) -> int:

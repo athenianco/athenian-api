@@ -251,10 +251,14 @@ async def lazy_gkwillie(app) -> User:
 @pytest.fixture(scope="function")
 def disable_default_user(app):
     _extract_token = app._auth0._extract_bearer_token
-    default_user_id = app._auth0._default_user_id
+    default_user_id = None
 
     async def hacked_extract_token(token: str):
-        app._auth0._default_user_id = default_user_id
+        nonlocal default_user_id
+        if default_user_id is None:
+            default_user_id = app._auth0._default_user_id
+        else:
+            app._auth0._default_user_id = default_user_id
         r = await _extract_token(token)
         app._auth0._default_user_id = "xxx"
         return r
