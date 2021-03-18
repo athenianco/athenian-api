@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import os
 import re
 from typing import List
@@ -10,16 +10,19 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
+from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.miners.access_classes import access_classes
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.reposet import resolve_repos
-from athenian.api.controllers.settings import ReleaseMatch
-from athenian.api.defer import defer
+from athenian.api.controllers.settings import ReleaseMatch, Settings
+from athenian.api.defer import defer, wait_deferred
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PushCommit
 from athenian.api.models.persistentdata.models import ReleaseNotification
-from athenian.api.models.web import BadRequestError, ForbiddenError, InvalidRequestError, \
-    ReleaseNotification as WebReleaseNotification
-from athenian.api.models.web.delete_events_cache_request import DeleteEventsCacheRequest
+from athenian.api.models.web import BadRequestError, DeleteEventsCacheRequest, ForbiddenError, \
+    InvalidRequestError, ReleaseNotification as WebReleaseNotification
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.serialization import ParseError
@@ -146,9 +149,10 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
     async def login_loader() -> str:
         return (await request.user()).login
 
-    repos, _ = await resolve_repos(
+    prefixed_repos, _ = await resolve_repos(
         model.repositories, model.account, request.uid, login_loader,
-        request.sdb, request.mdb, request.cache, request.app["slack"])
+        request.sdb, request.mdb, request.cache, request.app["slack"], strip_prefix=False)
+    repos = [r.split("/", 1)[1] for r in prefixed_repos]
     pdb = request.pdb
     if "release" in model.targets:
         await gather(*(
@@ -160,4 +164,26 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
                           GitHubMergedPullRequestFacts,
                           GitHubReleaseFacts)
         ), op="delete precomputed releases")
+
+        # preheat these repos
+        sdb, mdb, pdb, rdb, cache = \
+            request.sdb, request.mdb, request.pdb, request.rdb, request.cache
+        meta_ids = await get_metadata_account_ids(model.account, sdb, request.cache)
+        time_to = datetime.combine(date.today() + timedelta(days=1),
+                                   datetime.min.time(),
+                                   tzinfo=timezone.utc)
+        no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        time_from = (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
+        branches, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
+        settings = await Settings.from_account(
+            model.account, sdb, mdb, cache, None).list_release_matches(prefixed_repos)
+        await mine_releases(
+            repos, {}, branches, default_branches, no_time_from, time_to,
+            JIRAFilter.empty(), settings, model.account, meta_ids, mdb, pdb, rdb, None,
+            force_fresh=True)
+        await wait_deferred()
+        await calc_pull_request_facts_github(
+            time_from, time_to, set(repos), {}, LabelFilter.empty(), JIRAFilter.empty(),
+            False, settings, True, False, model.account, meta_ids, mdb, pdb, rdb, None)
+        await wait_deferred()
     return web.Response(status=200)

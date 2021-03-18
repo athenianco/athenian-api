@@ -116,8 +116,8 @@ def main():
     time_to = datetime.combine(date.today() + timedelta(days=1),
                                datetime.min.time(),
                                tzinfo=timezone.utc)
-    time_from = time_to - timedelta(days=365 * (20 if os.getenv("CI") else 2))
     no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    time_from = (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
     return_code = 0
 
     async def async_run():

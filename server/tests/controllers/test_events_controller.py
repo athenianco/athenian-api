@@ -187,10 +187,10 @@ async def test_clear_precomputed_events_smoke(client, headers, pdb):
         method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
     )
     assert response.status == 200
-    for table in (GitHubDonePullRequestFacts,
-                  GitHubMergedPullRequestFacts,
-                  GitHubReleaseFacts):
-        assert not await pdb.fetch_all(select([table]))
+    for table, n in ((GitHubDonePullRequestFacts, 531),
+                     (GitHubMergedPullRequestFacts, 554),
+                     (GitHubReleaseFacts, 53)):
+        assert len(await pdb.fetch_all(select([table]))) == n
 
 
 @pytest.mark.parametrize("status, body", [
