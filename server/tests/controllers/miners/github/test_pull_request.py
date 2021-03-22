@@ -1036,7 +1036,7 @@ async def test_pr_miner_jira_fetch(
                       "code-quality", "accuracy", "bug", "performance", "functionality",
                       "sentry", "test"}
     assert epics == {"DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140", "DEV-818", None}
-    assert types == {"Task", "Story", "Epic", "Bug"}
+    assert types == {"task", "story", "epic", "bug"}
 
 
 @with_defer
@@ -1076,7 +1076,7 @@ async def test_pr_miner_jira_cache(
     for pr in miner:
         assert "enhancement" in pr.jiras["labels"].iloc[0]
         assert pr.jiras["epic"].iloc[0] == "DEV-149"
-        assert pr.jiras[Issue.type.key].iloc[0] == "Task"
+        assert pr.jiras[Issue.type.key].iloc[0] == "task"
     args[7] = JIRAFilter(1, ["10003", "10009"], LabelFilter({"enhancement,performance"}, set()),
                          {"DEV-149"}, {"task"}, False)
     miner, _, _, _ = await PullRequestMiner.mine(*args)
