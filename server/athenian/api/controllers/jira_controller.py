@@ -5,7 +5,7 @@ from functools import partial
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Dict, List, Optional, Set, Tuple, Type, Union
+from typing import Any, Collection, Dict, List, Mapping, Optional, Set, Tuple, Type, Union
 
 from aiohttp import web
 import aiomcache
@@ -13,6 +13,7 @@ import databases
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, select, union_all
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import list_with_yield, metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -27,7 +28,7 @@ from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHisto
     JIRABinnedMetricCalculator
 from athenian.api.controllers.features.metric_calculator import group_to_indexes
 from athenian.api.controllers.filter_controller import web_pr_from_struct
-from athenian.api.controllers.jira import get_jira_installation
+from athenian.api.controllers.jira import get_jira_installation, normalize_issue_type
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_facts_ids
@@ -75,7 +76,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     else:
         reporters = assignees = commenters = []
     filt.priorities = [p.lower() for p in (filt.priorities or [])]
-    filt.types = [p.lower() for p in (filt.types or [])]
+    filt.types = {normalize_issue_type(p) for p in (filt.types or [])}
     return_ = set(filt.return_ or JIRAFilterReturn)
     sdb, mdb, pdb, rdb = request.sdb, request.mdb, request.pdb, request.rdb
     cache = request.cache
@@ -170,6 +171,7 @@ async def _epic_flow(return_: Set[str],
         Issue.commenters_ids,
         Issue.priority_id,
         Issue.status_id,
+        Issue.type_id,
         Issue.comments_count,
         Issue.url,
     ]
@@ -184,6 +186,8 @@ async def _epic_flow(return_: Set[str],
     children_columns[Issue.id.key] = children_df.index.values
     epics = []
     issue_by_id = {}
+    issue_type_ids = {}
+    children_by_type = defaultdict(list)
     now = datetime.utcnow()
     for epic_id, project_id, epic_key, epic_title, epic_created, epic_updated, epic_prs_began,\
         epic_work_began, epic_prs_released, epic_resolved, epic_reporter, epic_assignee, \
@@ -226,6 +230,7 @@ async def _epic_flow(return_: Set[str],
             url=epic_url,
         ))
         children_indexes = epic_children_map.get(epic_id, [])
+        project_type_ids = issue_type_ids.setdefault(project_id, set())
         for child_id, child_key, child_title, child_created, child_updated, child_prs_began, \
             child_work_began, child_prs_released, child_resolved, child_comments, child_reporter, \
             child_assignee, child_priority, child_status, child_prs, child_type, child_url \
@@ -245,7 +250,7 @@ async def _epic_flow(return_: Set[str],
                 Issue.priority_name.key,
                 Issue.status.key,
                 ISSUE_PRS_COUNT,
-                Issue.type.key,
+                Issue.type_id.key,
                 Issue.url.key,
                 ))):  # noqa(E123)
             epic.prs += child_prs
@@ -264,6 +269,7 @@ async def _epic_flow(return_: Set[str],
                     lead_time = None
             if resolved is None:
                 epic.resolved = None
+            project_type_ids.add(child_type)
             epic.children.append(child := JIRAEpicChild(
                 id=child_key,
                 title=child_title,
@@ -284,6 +290,7 @@ async def _epic_flow(return_: Set[str],
                 url=child_url,
             ))
             issue_by_id[child_id] = child
+            children_by_type[(project_id, child_type)].append(child)
             if len(issue_by_id) % 200 == 0:
                 await asyncio.sleep(0)
         if epic.resolved is not None:
@@ -312,10 +319,16 @@ async def _epic_flow(return_: Set[str],
         subtask_coro,
         _fetch_priorities(priority_ids, jira_ids[0], return_, mdb),
         _fetch_statuses(status_ids, status_project_map, jira_ids[0], return_, mdb),
+        _fetch_types(issue_type_ids, jira_ids[0], return_, mdb,
+                     columns=[IssueType.id, IssueType.project_id, IssueType.name]),
     ]
-    subtask_counts, priorities, statuses = await gather(*tasks, op="epic epilog")
+    subtask_counts, priorities, statuses, types = await gather(*tasks, op="epic epilog")
     for row in subtask_counts:
         issue_by_id[row[Issue.parent_id.key]].subtasks = row["subtasks"]
+    for row in types:
+        name = row[IssueType.name.key]
+        for child in children_by_type[(row[IssueType.project_id.key], row[IssueType.id.key])]:
+            child.type = name
     return epics, priorities, statuses
 
 
@@ -428,18 +441,15 @@ async def _issue_flow(return_: Set[str],
     else:
         statuses = []
         status_project_map = {}
-    if JIRAFilterReturn.ISSUE_TYPES in return_:
+    if JIRAFilterReturn.ISSUE_TYPES in return_ or JIRAFilterReturn.ISSUE_BODIES in return_:
         issue_type_counts = defaultdict(int)
         issue_type_projects = defaultdict(set)
-        project_counts = defaultdict(int)
-        for project_id, issue_type, issue_name in zip(issues[Issue.project_id.key].values,
-                                                      issues[Issue.type_id.key].values,
-                                                      issues[Issue.type.key].values):
-            issue_type_projects[project_id].add(issue_type)
-            project_counts[project_id] += 1
-            issue_type_counts[(project_id, issue_name)] += 1
+        for project_id, issue_type_id in zip(issues[Issue.project_id.key].values,
+                                             issues[Issue.type_id.key].values):
+            issue_type_projects[project_id].add(issue_type_id)
+            issue_type_counts[(project_id, issue_type_id)] += 1
     else:
-        issue_type_counts = issue_type_projects = project_counts = None
+        issue_type_counts = issue_type_projects = None
     if JIRAFilterReturn.ISSUE_BODIES in return_:
         if not issues.empty:
             pr_ids = np.concatenate(issues[ISSUE_PR_IDS].values)
@@ -481,22 +491,6 @@ async def _issue_flow(return_: Set[str],
                 MappedJIRAIdentity.account_id == account,
                 MappedJIRAIdentity.jira_user_id.in_(people),
             )))
-
-    @sentry_span
-    async def fetch_types():
-        if JIRAFilterReturn.ISSUE_TYPES not in return_:
-            return []
-        queries = [
-            select([IssueType.name, IssueType.project_id,
-                    IssueType.icon_url, IssueType.is_subtask])
-            .where(and_(
-                IssueType.id.in_(ids),
-                IssueType.acc_id == jira_ids[0],
-                IssueType.project_id == project_id,
-            ))
-            for project_id, ids in issue_type_projects.items()
-        ]
-        return await mdb.fetch_all(union_all(*queries))
 
     @sentry_span
     async def extract_labels():
@@ -559,7 +553,8 @@ async def _issue_flow(return_: Set[str],
             _fetch_prs(), fetch_components(), fetch_users(), fetch_mapped_identities(),
             _fetch_priorities(priorities, jira_ids[0], return_, mdb),
             _fetch_statuses(statuses, status_project_map, jira_ids[0], return_, mdb),
-            fetch_types(), extract_labels())
+            _fetch_types(issue_type_projects, jira_ids[0], return_, mdb),
+            extract_labels())
     components = {
         row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
         for row in component_names
@@ -574,26 +569,26 @@ async def _issue_flow(return_: Set[str],
                       developer=mapped_identities.get(row[User.id.key]),
                       )
              for row in users] or None
-    # take the issue type URL corresponding to the project with the most issues
-    max_issue_types = {}
-    for row in issue_types:
-        name = row[IssueType.name.key]
-        max_count = max_issue_types.get(name, (0, "", ""))[0]
-        if (count := project_counts[row[IssueType.project_id.key]]) > max_count:
-            max_issue_types[name] = (
-                count,
-                row[IssueType.icon_url.key],
-                row[IssueType.project_id.key],
-                row[IssueType.is_subtask.key],
-            )
+    if issue_types is not None:
+        issue_types.sort(key=lambda row: (
+            row[IssueType.normalized_name.key],
+            issue_type_counts[(row[IssueType.project_id.key], row[IssueType.id.key])],
+        ))
+    else:
+        issue_types = []
+    issue_type_names = {
+        (row[IssueType.project_id.key], row[IssueType.id.key]): row[IssueType.name.key]
+        for row in issue_types
+    }
     issue_types = [
-        JIRAIssueType(name=name,
-                      image=image,
-                      count=issue_type_counts[(project, name)],
-                      project=project,
-                      is_subtask=is_subtask,
-                      normalized_name=name)
-        for name, (_, image, project, is_subtask) in sorted(max_issue_types.items())] or None
+        JIRAIssueType(name=row[IssueType.name.key],
+                      image=row[IssueType.icon_url.key],
+                      count=issue_type_counts[(row[IssueType.project_id.key],
+                                               row[IssueType.id.key])],
+                      project=row[IssueType.project_id.key],
+                      is_subtask=row[IssueType.is_subtask.key],
+                      normalized_name=row[IssueType.normalized_name.key])
+        for row in issue_types] or None
     if JIRAFilterReturn.LABELS in return_:
         for updated, issue_components in zip(issues[Issue.updated.key],
                                              issues[Issue.components.key].values):
@@ -631,7 +626,7 @@ async def _issue_flow(return_: Set[str],
                 Issue.priority_name.key,
                 Issue.status.key,
                 ISSUE_PR_IDS,
-                Issue.type.key,
+                Issue.type_id.key,
                 Issue.project_id.key,
                 Issue.comments_count.key,
                 Issue.url.key,
@@ -662,7 +657,7 @@ async def _issue_flow(return_: Set[str],
                 priority=issue_priority,
                 status=issue_status,
                 project=issue_project,
-                type=issue_type,
+                type=issue_type_names[(issue_project, issue_type)],
                 prs=[prs[node_id] for node_id in issue_prs if node_id in prs],
                 url=issue_url,
             ))
@@ -679,6 +674,8 @@ async def _fetch_priorities(priorities: Collection[str],
                             ) -> Optional[List[JIRAPriority]]:
     if JIRAFilterReturn.PRIORITIES not in return_:
         return None
+    if len(priorities) == 0:
+        return []
     rows = await mdb.fetch_all(
         select([Priority.name, Priority.icon_url, Priority.rank, Priority.status_color])
         .where(and_(
@@ -702,6 +699,8 @@ async def _fetch_statuses(statuses: Collection[str],
                           ) -> Optional[List[JIRAStatus]]:
     if JIRAFilterReturn.STATUSES not in return_:
         return None
+    if len(statuses) == 0:
+        return []
     rows = await mdb.fetch_all(
         select([Status.id, Status.name, Status.category_name])
         .where(and_(
@@ -713,6 +712,37 @@ async def _fetch_statuses(statuses: Collection[str],
                        stage=row[Status.category_name.key],
                        project=status_project_map[row[Status.id.key]])
             for row in rows]
+
+
+@sentry_span
+async def _fetch_types(issue_type_projects: Mapping[str, Collection[str]],
+                       acc_id: int,
+                       return_: Set[str],
+                       mdb: databases.Database,
+                       columns: Optional[List[InstrumentedAttribute]] = None,
+                       ) -> Optional[List[Mapping[str, Any]]]:
+    if JIRAFilterReturn.ISSUE_TYPES not in return_ and \
+            JIRAFilterReturn.ISSUE_BODIES not in return_ and \
+            JIRAFilterReturn.EPICS not in return_:
+        return None
+    if len(issue_type_projects) == 0:
+        return []
+    if columns is None:
+        columns = [
+            IssueType.name, IssueType.normalized_name,
+            IssueType.id, IssueType.project_id,
+            IssueType.icon_url, IssueType.is_subtask,
+        ]
+    queries = [
+        select(columns)
+        .where(and_(
+            IssueType.id.in_(ids),
+            IssueType.acc_id == acc_id,
+            IssueType.project_id == project_id,
+        ))
+        for project_id, ids in issue_type_projects.items()
+    ]
+    return await mdb.fetch_all(union_all(*queries))
 
 
 _participant_columns = [
@@ -782,7 +812,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         time_intervals[0][0], time_intervals[0][-1], filt.exclude_inactive,
         label_filter,
         [p.lower() for p in (filt.priorities or [])],
-        [p.lower() for p in (filt.types or [])],
+        {normalize_issue_type(p) for p in (filt.types or [])},
         filt.epics or [],
         reporters, assignees, commenters,
         default_branches, release_settings,
