@@ -22,6 +22,7 @@ from athenian.api.models.web.commit_signature import CommitSignature
 from athenian.api.models.web.commits_list import CommitsList
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.contributor import Contributor
+from athenian.api.models.web.contributor_identity import ContributorIdentity
 from athenian.api.models.web.create_token_request import CreateTokenRequest
 from athenian.api.models.web.created_identifier import CreatedIdentifier
 from athenian.api.models.web.created_token import CreatedToken
@@ -85,6 +86,8 @@ from athenian.api.models.web.linked_jira_issue import LinkedJIRAIssue
 from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.mapped_jira_identity import MappedJIRAIdentity
 from athenian.api.models.web.mapped_jira_identity_change import MappedJIRAIdentityChange
+from athenian.api.models.web.match_identities_request import MatchIdentitiesRequest
+from athenian.api.models.web.matched_identity import MatchedIdentity
 from athenian.api.models.web.no_source_data_error import NoSourceDataError
 from athenian.api.models.web.organization import Organization
 from athenian.api.models.web.paginate_pull_requests_request import PaginatePullRequestsRequest
