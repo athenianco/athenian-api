@@ -1138,6 +1138,53 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.invitation_controller
+  /match/identities:
+    post:
+      operationId: match_identities
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchIdentitiesRequest'
+        required: true
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchedIdentities'
+          description: Computed identities mapping.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request is invalid.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: Match provided people names/logins/emails to the account's GitHub organization
+        members.
+      tags:
+      - integrations
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.integrations_controller
+      x-codegen-request-body-name: body
   /metrics/code_bypassing_prs:
     post:
       operationId: calc_code_bypassing_prs
@@ -7109,4 +7156,91 @@ components:
       - account
       - repositories
       - targets
+      type: object
+    MatchIdentitiesRequest:
+      additionalProperties: false
+      description: Request body of `/match/identities`.
+      example:
+        account: 1
+        identities:
+        - emails:
+          - eiso@athenian.co
+        - names:
+          - Vadim Markovtsev
+          - vmarkovtsev
+      properties:
+        account:
+          description: User's account ID.
+          type: integer
+        identities:
+          items:
+            $ref: '#/components/schemas/ContributorIdentity'
+          type: array
+      required:
+      - account
+      - identities
+      type: object
+    ContributorIdentity:
+      additionalProperties: false
+      description: Information about a contributor that may be utilized to match identities.
+      example:
+        emails:
+        - vadim@athenian.co
+        names:
+        - Vadim Markovtsev
+        - vmarkovtsev
+        - Vadim
+      properties:
+        emails:
+          description: Email addresses belonging to the person.
+          items:
+            format: email
+            type: string
+          type: array
+        names:
+          description: The person is known as each of these full names. The format
+            is arbitrary.
+          items:
+            type: string
+          type: array
+      type: object
+    MatchedIdentities:
+      description: Response from `/match/identities` - mapping from supplied identities
+        to GitHub organization members. The order matches the order of `MatchIdentitiesRequest.identities`.
+      example:
+      - from:
+          emails:
+          - gkwillie@athenian.co
+        to: null
+      - from:
+          names:
+          - Vadim Markovtsev
+        to: github.com/vmarkovtsev
+      items:
+        $ref: '#/components/schemas/MatchedIdentity'
+      type: array
+    MatchedIdentity:
+      description: Identity mapping of a specific contributor.
+      example:
+        from:
+          names:
+          - Vadim Markovtsev
+        to: github.com/vmarkovtsev
+      properties:
+        from:
+          $ref: '#/components/schemas/ContributorIdentity'
+        to:
+          allOf:
+          - nullable: true
+          - $ref: '#/components/schemas/DeveloperID'
+        confidence:
+          description: Value from 0 to 1 indicating how similar are the users.
+          format: float
+          maximum: 1
+          minimum: 0
+          type: number
+      required:
+      - confidence
+      - from
+      - to
       type: object
