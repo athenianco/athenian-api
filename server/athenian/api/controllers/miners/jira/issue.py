@@ -426,24 +426,40 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
             if all(c.key != "commenters" for c in extra_columns):
                 columns.append(Issue.commenters_display_names.label("commenters"))
 
-    def query_start():
-        seed = Issue
+    def query_starts():
+        seeds = [Issue]
         if len(epics):
-            seed = sql.join(Issue, Epic, sql.and_(Issue.epic_id == Epic.id,
-                                                  Issue.acc_id == Epic.acc_id))
-        return sql.select(columns).select_from(sql.outerjoin(
+            seeds = (
+                sql.join(Issue, Epic, sql.and_(Issue.epic_id == Epic.id,
+                                               Issue.acc_id == Epic.acc_id)),
+                sql.join(Issue, Epic, sql.and_(Issue.parent_id == Epic.id,
+                                               Issue.acc_id == Epic.acc_id)),
+            )
+        return tuple(sql.select(columns).select_from(sql.outerjoin(
             seed, AthenianIssue, sql.and_(Issue.acc_id == AthenianIssue.acc_id,
                                           Issue.id == AthenianIssue.id)))
+                     for seed in seeds)
 
     if or_filters:
         if postgres:
-            query = sql.union(*(query_start().where(sql.and_(or_filter, *and_filters))
-                                for or_filter in or_filters))
+            query = [start.where(sql.and_(or_filter, *and_filters))
+                     for or_filter in or_filters
+                     for start in query_starts()]
         else:
-            query = query_start().where(sql.and_(sql.or_(*or_filters), *and_filters))
+            query = [start.where(sql.and_(sql.or_(*or_filters), *and_filters))
+                     for start in query_starts()]
     else:
-        query = query_start().where(sql.and_(*and_filters))
-    df = await read_sql_query(query, mdb, columns, index=Issue.id.key)
+        query = [start.where(sql.and_(*and_filters)) for start in query_starts()]
+    if postgres:
+        if len(query) == 1:
+            query = query[0]
+        else:
+            query = sql.union(*query)
+        df = await read_sql_query(query, mdb, columns, index=Issue.id.key)
+    else:
+        # SQLite does not allow to use parameters multiple times
+        df = pd.concat(await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.key)
+                                      for q in query)))
     df.sort_index(inplace=True)
     if postgres or not commenters:
         return df
