@@ -1,6 +1,7 @@
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain
+import logging
 import marshal
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
@@ -12,12 +13,14 @@ from sqlalchemy.sql.functions import coalesce
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
+from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.release_load import load_releases
 from athenian.api.controllers.settings import ReleaseMatchSetting
-from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
-    PullRequestComment, PullRequestReview, Release, User
+from athenian.api.models.metadata.github import NodeCommit, NodeRepository, OrganizationMember, \
+    PullRequest, PullRequestComment, PullRequestReview, PushCommit, Release, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
+from athenian.api.models.state.models import Team
 from athenian.api.tracing import sentry_span
 
 
@@ -232,3 +235,80 @@ async def mine_contributors(repos: Collection[str],
         contribs.append(c)
 
     return contribs
+
+
+async def load_organization_members(account: int,
+                                    meta_ids: Tuple[int, ...],
+                                    mdb: databases.Database,
+                                    sdb: databases.Database,
+                                    log: logging.Logger,
+                                    ) -> Tuple[Dict[str, set], Dict[str, set], Dict[str, str]]:
+    """
+    Fetch the mapping from account's GitHub organization member IDs to their signatures.
+
+    :return: 1. Map from user node IDs to full names. \
+             2. Map from user node IDs to emails. \
+             3. Map from user node IDs to logins.
+    """
+    user_ids = [
+        r[0] for r in await mdb.fetch_all(select([OrganizationMember.child_id])
+                                          .where(OrganizationMember.acc_id.in_(meta_ids)))
+    ]
+    log.info("Discovered %d organization members", len(user_ids))
+    tasks = [
+        mdb.fetch_all(select([User.node_id, User.name, User.login, User.email])
+                      .where(and_(User.acc_id.in_(meta_ids),
+                                  User.node_id.in_(user_ids),
+                                  User.name.isnot(None)))),
+        Bots()(mdb),
+        sdb.fetch_val(select([Team.members]).where(and_(
+            Team.owner_id == account,
+            Team.name == Team.BOTS,
+        ))),
+    ]
+    user_rows, bots, team_bots = await gather(*tasks)
+    if team_bots:
+        bots = bots.copy()
+        bots.update(u.split("/", 1)[1] for u in team_bots)
+    log.info("Detailed %d GitHub users", len(user_rows))
+    bot_ids = set()
+    new_user_rows = []
+    for row in user_rows:
+        if row[User.login.key] in bots:
+            bot_ids.add(row[User.node_id.key])
+        else:
+            new_user_rows.append(row)
+    user_rows = new_user_rows
+    user_ids = [uid for uid in user_ids if uid not in bot_ids]
+    log.info("Excluded %d bots", len(bot_ids))
+    if not user_ids:
+        return {}, {}, {}
+    signature_rows = await mdb.fetch_all(union(
+        select([PushCommit.author_user, PushCommit.author_name, PushCommit.author_email])
+        .where(and_(PushCommit.acc_id.in_(meta_ids),
+                    PushCommit.author_user.in_(user_ids)))
+        .distinct(),
+        select([PushCommit.committer_user, PushCommit.committer_name, PushCommit.author_email])
+        .where(and_(PushCommit.acc_id.in_(meta_ids),
+                    PushCommit.committer_user.in_(user_ids)))
+        .distinct(),
+    ))
+    log.info("Loaded %d signatures", len(signature_rows))
+    github_names = defaultdict(set)
+    github_emails = defaultdict(set)
+    for row in signature_rows:
+        node_id = row[PushCommit.author_user.key]
+        if name := row[PushCommit.author_name.key]:
+            github_names[node_id].add(name)
+        if email := row[PushCommit.author_email.key]:
+            github_emails[node_id].add(email)
+    github_logins = {}
+    for row in user_rows:
+        node_id = row[User.node_id.key]
+        github_logins[node_id] = row[User.login.key]
+        if name := row[User.name.key]:
+            github_names[node_id].add(name)
+        if email := row[User.email.key]:
+            github_emails[node_id].add(email)
+    log.info("GitHub set size: %d", len(github_names))
+    return github_names, github_emails, github_logins

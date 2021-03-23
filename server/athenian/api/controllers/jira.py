@@ -1,4 +1,3 @@
-from collections import defaultdict
 import logging
 import marshal
 import re
@@ -8,17 +7,16 @@ import aiomcache
 from names_matcher import NamesMatcher
 from pluralizer import Pluralizer
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, func, insert, select, union
+from sqlalchemy import and_, func, insert, select
 from unidecode import unidecode
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, CancelCache, max_exptime
-from athenian.api.controllers.miners.github.bots import Bots
-from athenian.api.models.metadata.github import OrganizationMember, PushCommit, User as GitHubUser
+from athenian.api.controllers.miners.github.contributors import load_organization_members
 from athenian.api.models.metadata.jira import Progress, Project, User as JIRAUser
 from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
-    MappedJIRAIdentity, Team
+    MappedJIRAIdentity
 from athenian.api.models.web import NoSourceDataError
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
@@ -213,58 +211,9 @@ async def _match_jira_identities(account: int,
     existing_mapping = await sdb.fetch_all(select([MappedJIRAIdentity.github_user_id,
                                                    MappedJIRAIdentity.jira_user_id])
                                            .where(MappedJIRAIdentity.account_id == account))
-    user_ids = [
-        r[0] for r in await mdb.fetch_all(select([OrganizationMember.child_id])
-                                          .where(OrganizationMember.acc_id.in_(meta_ids)))
-    ]
-    log.info("Discovered %d organization members", len(user_ids))
-    tasks = [
-        mdb.fetch_all(select([GitHubUser.node_id, GitHubUser.name, GitHubUser.login])
-                      .where(and_(GitHubUser.acc_id.in_(meta_ids),
-                                  GitHubUser.node_id.in_(user_ids),
-                                  GitHubUser.name.isnot(None)))),
-        Bots()(mdb),
-        sdb.fetch_val(select([Team.members]).where(and_(
-            Team.owner_id == account,
-            Team.name == Team.BOTS,
-        ))),
-    ]
-    user_rows, bots, team_bots = await gather(*tasks)
-    if team_bots:
-        bots = bots.copy()
-        bots.update(u.split("/", 1)[1] for u in team_bots)
-    log.info("Detailed %d GitHub users", len(user_rows))
-    bot_ids = set()
-    new_user_rows = []
-    for row in user_rows:
-        if row[GitHubUser.login.key] in bots:
-            bot_ids.add(row[GitHubUser.node_id.key])
-        else:
-            new_user_rows.append(row)
-    user_rows = new_user_rows
-    user_ids = [uid for uid in user_ids if uid not in bot_ids]
-    log.info("Excluded %d bots", len(bot_ids))
-    if not user_ids:
+    if not (github_users :=
+            (await load_organization_members(account, meta_ids, mdb, sdb, log))[0]):
         return 0, 0, 0, len(existing_mapping) == 0
-    signature_rows = await mdb.fetch_all(union(
-        select([PushCommit.author_user, PushCommit.author_name])
-        .where(and_(PushCommit.acc_id.in_(meta_ids),
-                    PushCommit.author_user.in_(user_ids),
-                    PushCommit.author_name.isnot(None)))
-        .distinct(),
-        select([PushCommit.committer_user, PushCommit.committer_name])
-        .where(and_(PushCommit.acc_id.in_(meta_ids),
-                    PushCommit.committer_user.in_(user_ids),
-                    PushCommit.committer_name.isnot(None)))
-        .distinct(),
-    ))
-    log.info("Loaded %d signatures", len(signature_rows))
-    github_users = defaultdict(set)
-    for row in signature_rows:
-        github_users[row[0]].add(row[1])
-    for row in user_rows:
-        github_users[row[GitHubUser.node_id.key]].add(row[GitHubUser.name.key])
-    log.info("GitHub set size: %d", len(github_users))
     if existing_mapping:
         for row in existing_mapping:
             try:
