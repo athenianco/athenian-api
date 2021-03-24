@@ -1,6 +1,12 @@
-import pytest
+import io
+from zipfile import ZipFile
 
-from athenian.api.models.web import ContributorIdentity, MatchedIdentity
+import pandas as pd
+import pytest
+from sqlalchemy import delete
+
+from athenian.api.models.state.models import UserAccount
+from athenian.api.models.web import ContributorIdentity, MatchedIdentity, PullRequestMetricID
 from athenian.api.serialization import FriendlyJson
 
 
@@ -51,3 +57,68 @@ async def test_match_identities_nasty_input(client, headers, body, code):
     )
     rbody = (await response.read()).decode("utf-8")
     assert response.status == code, "Response body is : " + rbody
+
+
+async def test_get_everything_smoke(client, headers):
+    # preheat
+    body = {
+        "for": [
+            {
+                "with": {},
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+            },
+        ],
+        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularities": ["all"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+
+    response = await client.request(
+        method="GET", path="/v1/get/everything?account=1", headers=headers,
+    )
+    assert response.status == 200
+    body = await response.read()
+    with ZipFile(io.BytesIO(body)) as zipf:
+        with zipf.open("prs.parquet") as prsf:
+            df = pd.read_parquet(prsf)
+    assert len(df) == 679
+    assert set(df) == {
+        "first_comment_on_first_review", "merged_by_login", "first_commit", "stage_time_review",
+        "title", "updated_at", "acc_id", "base_ref", "last_commit", "stage_time_wip", "deletions",
+        "repository_node_id", "author", "hidden", "merged", "merged_at", "number", "created",
+        "merge_commit_sha", "first_review_request_exact", "stage_time_release", "released",
+        "stage_time_merge", "created_at", "user_login", "htmlurl", "approved", "closed_at",
+        "changed_files", "last_commit_before_first_review", "force_push_dropped", "additions",
+        "work_began", "releaser", "merged_by", "user_node_id", "repository_full_name",
+        "first_review_request", "last_review", "activity_days", "closed", "merge_commit_id",
+        "head_ref", "jira_id", "merger", "done", "size", "reviews", "release_url",
+        "release_node_id",
+    }
+
+
+@pytest.mark.parametrize("query, code", [
+    ("?account=2", 422),
+    ("?account=3", 404),
+    ("?account=1&format=other", 400),
+    ("?account=1&format=parquet", 200),
+    ("", 400),
+    ("<empty>", 200),
+])
+async def test_get_everything_nasty_input(client, headers, query, code, sdb):
+    if query == "<empty>":
+        query = ""
+        await sdb.execute(delete(UserAccount).where(UserAccount.account_id == 2))
+    response = await client.request(
+        method="GET", path=f"/v1/get/everything{query}", headers=headers,
+    )
+    assert response.status == code

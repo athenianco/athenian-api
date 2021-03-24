@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
-from typing import Callable, Dict, Generator, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, Generator, Iterable, List, Optional, Sequence, Set, Tuple
 
 import aiomcache
 import databases
@@ -21,7 +21,8 @@ from athenian.api.controllers.features.github.pull_request_metrics import AllCou
     ReviewTimeCalculator, StagePendingDependencyCalculator, WorkInProgressPendingCounter, \
     WorkInProgressTimeCalculator
 from athenian.api.controllers.features.metric import Metric
-from athenian.api.controllers.features.metric_calculator import df_from_dataclasses
+from athenian.api.controllers.features.metric_calculator import df_from_dataclasses, \
+    MetricCalculator
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -53,6 +54,7 @@ class PullRequestListMiner:
     """Collect various PR metadata for displaying PRs on the frontend."""
 
     _prefix = PREFIXES["github"]
+    _no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
     log = logging.getLogger("%s.PullRequestListMiner" % metadata.__version__)
 
     class DummyAllCounter(AllCounter):
@@ -85,10 +87,19 @@ class PullRequestListMiner:
         self._facts = facts
         self._events = events
         self._stages = stages
-        all_counter = self.DummyAllCounter(quantiles=(0, 1))
+        self._calcs, self._counter_deps = self.create_stage_calcs()
+        assert isinstance(time_from, datetime)
+        self._time_from = time_from
+        self._time_to = time_to
+        self._with_time_machine = with_time_machine
+
+    @classmethod
+    def create_stage_calcs(cls) -> Tuple[Dict[str, Dict[str, MetricCalculator[int]]],
+                                         Iterable[MetricCalculator]]:
+        """Intialize PR metric calculators needed to calculate the stage timings."""
+        all_counter = cls.DummyAllCounter(quantiles=(0, 1))
         pending_counter = StagePendingDependencyCalculator(all_counter, quantiles=(0, 1))
-        self._counter_deps = [all_counter, pending_counter]
-        self._calcs = {
+        return {
             "wip": {
                 "time": WorkInProgressTimeCalculator(quantiles=(0, 1)),
                 "pending_count": WorkInProgressPendingCounter(
@@ -109,13 +120,7 @@ class PullRequestListMiner:
                 "pending_count": ReleasePendingCounter(
                     pending_counter, quantiles=(0, 1)),
             },
-        }
-        self._no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
-        assert isinstance(time_from, datetime)
-        self._time_from = time_from
-        self._time_to = time_to
-        self._now = datetime.now(tz=timezone.utc)
-        self._with_time_machine = with_time_machine
+        }, (all_counter, pending_counter)
 
     @classmethod
     def _collect_events_and_stages(cls,
@@ -261,21 +266,35 @@ class PullRequestListMiner:
         )
 
     @sentry_span
-    def _calc_stage_details(self) -> Dict[str, Sequence[int]]:
+    def _calc_stage_timings(self) -> Dict[str, Sequence[int]]:
         facts = self._facts
         if len(facts) == 0 or len(self._prs) == 0:
             return {k: [] for k in self._calcs}
         node_id_key = PullRequest.node_id.key
         df_facts = df_from_dataclasses((facts[pr.pr[node_id_key]] for pr in self._prs),
                                        length=len(self._prs))
+        return self.calc_stage_timings(df_facts, self._calcs, self._counter_deps)
+
+    @classmethod
+    def calc_stage_timings(cls,
+                           df_facts: pd.DataFrame,
+                           calcs: Dict[str, Dict[str, MetricCalculator[int]]],
+                           counter_deps: Iterable[MetricCalculator],
+                           ) -> Dict[str, Sequence[int]]:
+        """
+        Calculate PR stage timings.
+
+        :return: Map from PR node IDs to stage timings (in seconds).
+        """
+        now = datetime.now(tz=timezone.utc)
         dtype = df_facts["created"].dtype
-        no_time_from = np.array([self._no_time_from.replace(tzinfo=None)], dtype=dtype)
-        now = np.array([self._now.replace(tzinfo=None)], dtype=dtype)
+        no_time_from = np.array([cls._no_time_from.replace(tzinfo=None)], dtype=dtype)
+        now = np.array([now.replace(tzinfo=None)], dtype=dtype)
         stage_timings = {}
         empty_group = [np.array([], dtype=int)]  # makes `samples` empty, we don't need them
-        for dep in self._counter_deps:
+        for dep in counter_deps:
             dep(df_facts, no_time_from, now, empty_group)
-        for k, calcs in self._calcs.items():
+        for k, calcs in calcs.items():
             time_calc, pending_counter = calcs["time"], calcs["pending_count"]
             pending_counter(df_facts, no_time_from, now, empty_group)
 
@@ -343,7 +362,7 @@ class PullRequestListMiner:
         """Iterate over individual pull requests."""
         if not self._prs:
             return
-        stage_timings = self._calc_stage_details()
+        stage_timings = self._calc_stage_timings()
         hard_events_time_machine, hard_events_now = self._calc_hard_events()
         facts = self._facts
         node_id_key = PullRequest.node_id.key
