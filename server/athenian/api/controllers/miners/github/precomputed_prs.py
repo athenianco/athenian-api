@@ -43,17 +43,19 @@ from athenian.api.models.precomputed.models import Base, GitHubDonePullRequestFa
 from athenian.api.tracing import sentry_span
 
 
-def _create_common_filters(time_from: datetime,
-                           time_to: datetime,
+def _create_common_filters(time_from: Optional[datetime],
+                           time_to: Optional[datetime],
                            repos: Optional[Collection[str]]) -> List[ClauseElement]:
-    assert isinstance(time_from, datetime)
-    assert isinstance(time_to, datetime)
+    assert isinstance(time_from, (datetime, type(None)))
+    assert isinstance(time_to, (datetime, type(None)))
     ghprt = GitHubDonePullRequestFacts
     items = [
         ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
-        ghprt.pr_created_at < time_to,
-        ghprt.pr_done_at >= time_from,
     ]
+    if time_to is not None:
+        items.append(ghprt.pr_created_at < time_to)
+    if time_from is not None:
+        items.append(ghprt.pr_done_at >= time_from)
     if repos is not None:
         items.append(ghprt.repository_full_name.in_(repos))
     return items
@@ -109,11 +111,11 @@ async def load_precomputed_done_candidates(time_from: datetime,
                                            pdb: databases.Database,
                                            ) -> Tuple[Set[str], Dict[str, List[str]]]:
     """
-    Load the set of released PR identifiers.
+    Load the set of done PR identifiers and specifically ambiguous PR node IDs.
 
-    We find all the released PRs for a given time frame, repositories, and release match settings.
+    We find all the done PRs for a given time frame, repositories, and release match settings.
 
-    :return: 1. Released PR node IDs. \
+    :return: 1. Done PR node IDs. \
              2. Map from repository name to ambiguous PR node IDs which are released by \
              branch with tag_or_branch strategy and without tags on the time interval.
     """
@@ -240,11 +242,13 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
     """
     Fetch precomputed done PR facts.
 
-    :return: 1. map from PR node IDs to repo names and facts. \
+    :return: 1. Map from PR node IDs to repo names and facts. \
              2. Map from repository name to ambiguous PR node IDs which are released by \
              branch with tag_or_branch strategy and without tags on the time interval.
     """
     ghdprf = GitHubDonePullRequestFacts
+    assert time_from is not None
+    assert time_to is not None
     result, ambiguous = await _load_precomputed_done_filters(
         [ghdprf.data, ghdprf.author, ghdprf.merger, ghdprf.releaser],
         time_from, time_to, repos, participants, labels,
@@ -252,6 +256,36 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
     for node_id, row in result.items():
         result[node_id] = _done_pr_facts_from_row(row)
     return result, ambiguous
+
+
+async def load_precomputed_done_facts_all(repos: Collection[str],
+                                          default_branches: Dict[str, str],
+                                          release_settings: Dict[str, ReleaseMatchSetting],
+                                          pdb: databases.Database,
+                                          extra: Iterable[InstrumentedAttribute] = (),
+                                          ) -> Tuple[Dict[str, PullRequestFacts],
+                                                     Dict[str, Mapping[str, Any]]]:
+    """
+    Fetch all the precomputed done PR facts we have.
+
+    We don't set the repository, the author, and the merger!
+
+    :param extra: Additional columns to fetch.
+
+    :return: 1. Map from PR node IDs to repo names and facts. \
+             2. Map from PR node IDs to raw returned rows.
+    """
+    ghdprf = GitHubDonePullRequestFacts
+    result, _ = await _load_precomputed_done_filters(
+        [ghdprf.data, ghdprf.releaser, *extra],
+        None, None, repos, {}, LabelFilter.empty(),
+        default_branches, False, release_settings, pdb)
+    raw = {}
+    for node_id, row in result.items():
+        result[node_id] = pickle.loads(row[ghdprf.data.key]) \
+            .with_releaser(row[ghdprf.releaser.key])
+        raw[node_id] = row
+    return result, raw
 
 
 def _done_pr_facts_from_row(row: Mapping[str, Any]) -> PullRequestFacts:
@@ -316,8 +350,8 @@ def remove_ambiguous_prs(prs: Dict[str, Any],
 
 @sentry_span
 async def _load_precomputed_done_filters(columns: List[InstrumentedAttribute],
-                                         time_from: datetime,
-                                         time_to: datetime,
+                                         time_from: Optional[datetime],
+                                         time_to: Optional[datetime],
                                          repos: Collection[str],
                                          participants: PRParticipants,
                                          labels: LabelFilter,
@@ -844,6 +878,50 @@ async def load_merged_unreleased_pull_request_facts(
     return facts
 
 
+@sentry_span
+async def load_merged_pull_request_facts_all(repos: Collection[str],
+                                             pr_node_id_blacklist: Collection[str],
+                                             pdb: databases.Database,
+                                             ) -> Dict[str, PullRequestFacts]:
+    """
+    Load the precomputed merged PR facts through all the time.
+
+    We do not load the repository, the author, and the merger!
+
+    :return: Map from PR node IDs to their facts.
+    """
+    log = logging.getLogger("%s.load_merged_pull_request_facts_all" % metadata.__package__)
+    ghmprf = GitHubMergedPullRequestFacts
+    selected = [
+        ghmprf.pr_node_id,
+        ghmprf.data,
+    ]
+    default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
+    filters = [
+        ghmprf.pr_node_id.notin_(pr_node_id_blacklist),
+        ghmprf.repository_full_name.in_(repos),
+        ghmprf.format_version == default_version,
+    ]
+    query = select(selected).where(and_(*filters))
+    with sentry_sdk.start_span(op="load_merged_pull_request_facts_all/fetch"):
+        rows = await pdb.fetch_all(query)
+    facts = {}
+    for row in rows:
+        if (node_id := row[ghmprf.pr_node_id.key]) in facts:
+            # different release match settings, we don't care because the facts are the same
+            continue
+        data = row[ghmprf.data.key]
+        if data is None:
+            # There are two known cases:
+            # 1. When we load all PRs without a blacklist (/filter/pull_requests) so some merged PR
+            #    is matched to releases but exists in `github_done_pull_request_facts`.
+            # 2. "Impossible" PRs that are merged.
+            log.warning("No precomputed facts for merged %s", node_id)
+            continue
+        facts[node_id] = pickle.loads(data)
+    return facts
+
+
 def _extract_release_match(repo: str,
                            matched_bys: Dict[str, ReleaseMatch],
                            default_branches: Dict[str, str],
@@ -1042,27 +1120,29 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   ) -> Tuple[List[str], List[str]]:
     """Discover PRs which were merged before `time_from` and still not released."""
     postgres = pdb.url.dialect in ("postgres", "postgresql")
-    selected = [GitHubMergedPullRequestFacts.pr_node_id,
-                GitHubMergedPullRequestFacts.repository_full_name,
-                GitHubMergedPullRequestFacts.release_match]
+    ghmprf = GitHubMergedPullRequestFacts
+    ghdprf = GitHubDonePullRequestFacts
+    selected = [ghmprf.pr_node_id,
+                ghmprf.repository_full_name,
+                ghmprf.release_match]
     filters = [
-        or_(GitHubDonePullRequestFacts.pr_done_at.is_(None),
-            GitHubDonePullRequestFacts.pr_done_at >= time_to),
-        GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
-        GitHubMergedPullRequestFacts.merged_at < time_from,
+        or_(ghdprf.pr_done_at.is_(None),
+            ghdprf.pr_done_at >= time_to),
+        ghmprf.repository_full_name.in_(repos),
+        ghmprf.merged_at < time_from,
     ]
-    for role, col in ((PRParticipationKind.AUTHOR, GitHubMergedPullRequestFacts.author),
-                      (PRParticipationKind.MERGER, GitHubMergedPullRequestFacts.merger)):
+    for role, col in ((PRParticipationKind.AUTHOR, ghmprf.author),
+                      (PRParticipationKind.MERGER, ghmprf.merger)):
         people = participants.get(role)
         if people:
             filters.append(col.in_(people))
     if labels:
-        _build_labels_filters(GitHubMergedPullRequestFacts, labels, filters, selected, postgres)
-    body = join(GitHubMergedPullRequestFacts, GitHubDonePullRequestFacts, and_(
-        GitHubDonePullRequestFacts.pr_node_id == GitHubMergedPullRequestFacts.pr_node_id,
-        GitHubDonePullRequestFacts.release_match == GitHubMergedPullRequestFacts.release_match,
-        GitHubDonePullRequestFacts.repository_full_name.in_(repos),
-        GitHubDonePullRequestFacts.pr_created_at < time_from,
+        _build_labels_filters(ghmprf, labels, filters, selected, postgres)
+    body = join(ghmprf, ghdprf, and_(
+        ghdprf.pr_node_id == ghmprf.pr_node_id,
+        ghdprf.release_match == ghmprf.release_match,
+        ghdprf.repository_full_name.in_(repos),
+        ghdprf.pr_created_at < time_from,
     ), isouter=True)
     with sentry_sdk.start_span(op="load_inactive_merged_unreleased_prs/fetch"):
         rows = await pdb.fetch_all(select(selected)
@@ -1174,6 +1254,36 @@ async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
         facts[node_id] = pickle.loads(row[ghoprf.data.key]) \
             .with_repository_full_name(row[ghoprf.repository_full_name.key]) \
             .with_author(authors[node_id])
+    return facts
+
+
+@sentry_span
+async def load_open_pull_request_facts_all(repos: Collection[str],
+                                           pr_node_id_blacklist: Collection[str],
+                                           pdb: databases.Database,
+                                           ) -> Dict[str, PullRequestFacts]:
+    """
+    Load the precomputed open PR facts through all the time.
+
+    We do not load the repository and the author!
+
+    :return: Map from PR node IDs to their facts.
+    """
+    ghoprf = GitHubOpenPullRequestFacts
+    selected = [
+        ghoprf.pr_node_id,
+        ghoprf.data,
+    ]
+    default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
+    filters = [
+        ghoprf.pr_node_id.notin_(pr_node_id_blacklist),
+        ghoprf.repository_full_name.in_(repos),
+        ghoprf.format_version == default_version,
+    ]
+    query = select(selected).where(and_(*filters))
+    with sentry_sdk.start_span(op="load_open_pull_request_facts_all/fetch"):
+        rows = await pdb.fetch_all(query)
+    facts = {row[ghoprf.pr_node_id.key]: pickle.loads(row[ghoprf.data.key]) for row in rows}
     return facts
 
 

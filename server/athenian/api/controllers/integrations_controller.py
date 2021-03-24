@@ -1,13 +1,26 @@
+from datetime import timedelta
 import logging
+import os
+from tempfile import NamedTemporaryFile
+from typing import Optional
+from zipfile import ZipFile
 
 from aiohttp import web
+from aiohttp.abc import AbstractStreamWriter
 from names_matcher import NamesMatcher
+import numpy as np
+import pandas as pd
+from sqlalchemy import select
 
 from athenian.api import metadata
+from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
-from athenian.api.controllers.account import get_metadata_account_ids
+from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
+from athenian.api.controllers.features.everything import mine_everything, MineTopic
 from athenian.api.controllers.miners.github.contributors import load_organization_members
+from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata import PREFIXES
+from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import InvalidRequestError, MatchedIdentity, MatchIdentitiesRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
@@ -71,3 +84,66 @@ async def match_identities(request: AthenianWebRequest, body: dict) -> web.Respo
     log.debug("matched by name: %d", matched_by_name)
     log.info("matched %d / %d", sum(1 for m in matches if m.to is not None), len(matches))
     return model_response(matches)
+
+
+class RemovingFileResponse(web.FileResponse):
+    """Remove the served file when finished."""
+
+    async def prepare(self, request: web.BaseRequest) -> Optional[AbstractStreamWriter]:
+        """Serve the file response."""
+        try:
+            return await super().prepare(request)
+        finally:
+            os.remove(self._path)
+
+
+def _df_to_parquet(df: pd.DataFrame, fout) -> None:
+    for col in df:
+        try:
+            df[col] = df[col].dt.tz_localize(None)
+        except AttributeError:
+            if df[col].dtype.type is np.timedelta64:
+                df[col] = df[col].fillna(timedelta(-1)).astype(int)
+    df.to_parquet(fout, engine="pyarrow")
+
+
+_get_everything_formats = {
+    "parquet": _df_to_parquet,
+}
+
+
+@weight(4.0)
+async def get_everything(request: AthenianWebRequest,
+                         account: int = 0,
+                         format: str = "parquet",
+                         ) -> web.FileResponse:
+    """Download all the data collected by Athenian for custom analysis."""
+    if account == 0:
+        rows = await request.sdb.fetch_all(select([UserAccount.account_id])
+                                           .where(UserAccount.user_id == request.uid))
+        if len(rows) != 1:
+            raise ResponseError(InvalidRequestError(
+                detail="User belongs to %d accounts, must specify `account` URL query argument." %
+                len(rows),
+                pointer="account",
+            ))
+        account = rows[0][0]
+    else:
+        await get_user_account_status(request.uid, account, request.sdb, request.cache)
+    tasks = [
+        get_metadata_account_ids(account, request.sdb, request.cache),
+        Settings.from_request(request, account).list_release_matches(),
+    ]
+    meta_ids, settings = await gather(*tasks)
+    data = await mine_everything(
+        set(MineTopic), settings, account, meta_ids,
+        request.mdb, request.pdb, request.rdb, request.cache)
+    serialize = _get_everything_formats[format]
+    with NamedTemporaryFile(prefix=f"athenian_get_everything_{account}_",
+                            suffix=".zip",
+                            delete=False) as tmpf:
+        with ZipFile(tmpf, "w") as zipf:
+            for key, df in data.items():
+                with zipf.open(f"{key.value}.{format}", mode="w") as pf:
+                    serialize(df, pf)
+        return RemovingFileResponse(tmpf.name)

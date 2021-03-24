@@ -180,7 +180,6 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.user_controller
-      x-codegen-request-body-name: body
   /diff/releases:
     post:
       operationId: diff_releases
@@ -715,6 +714,65 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.contributors_controller
       x-codegen-request-body-name: body
+  /get/everything:
+    get:
+      operationId: get_everything
+      parameters:
+      - description: Numeric identifier of the account. Raises HTTP 400 if the user
+          belongs to more than one account.
+        explode: false
+        in: query
+        name: account
+        required: false
+        schema:
+          type: integer
+        style: form
+      - description: Output file format. The default is `parquet`.
+        explode: false
+        in: query
+        name: format
+        required: false
+        schema:
+          enum:
+          - parquet
+          type: string
+        style: form
+      responses:
+        200:
+          content:
+            application/zip:
+              schema:
+                format: binary
+                type: string
+          description: Uncompressed ZIP archive with binary files in the configured format.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Invalid query parameter values.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user does not belong to the specified account.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The installation has not started yet.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: Download all the data collected by Athenian for custom analysis.
+      tags:
+      - integrations
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.integrations_controller
   /get/pull_requests:
     post:
       operationId: get_prs
@@ -7138,7 +7196,11 @@ components:
       additionalProperties: false
       description: Definition of the cache reset operation.
       example:
-        releases: true
+        account: 1
+        repositories:
+        - github.com/athenianco/athenian-api
+        targets:
+        - release
       properties:
         account:
           description: Account ID.
