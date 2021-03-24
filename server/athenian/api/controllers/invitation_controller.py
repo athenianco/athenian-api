@@ -237,7 +237,10 @@ async def _accept_invitation(iid: int,
             async def report_new_user_to_slack():
                 repos = await request.sdb.fetch_val(select([RepositorySet.items]).where(and_(
                     RepositorySet.owner_id == acc_id, RepositorySet.name == RepositorySet.ALL)))
-                prefixes = {r.split("/", 2)[1] for r in repos}
+                if repos is not None:
+                    prefixes = {r.split("/", 2)[1] for r in repos}
+                else:
+                    prefixes = {"N/A"}
                 await slack.post("new_user.jinja2", user=user, account=acc_id, prefixes=prefixes)
 
             await defer(report_new_user_to_slack(), "report_new_user_to_slack")
