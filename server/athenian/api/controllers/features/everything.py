@@ -24,6 +24,7 @@ class MineTopic(Enum):
     """Possible extracted item types."""
 
     prs = "prs"
+    # developers = "developers"
     # releases = "releases"
     # jira_epics = "jira_epics"
     # jira_issues = "jira_issues"
@@ -46,6 +47,7 @@ async def mine_prs(repos: Collection[str],
     merged_facts = await load_merged_pull_request_facts_all(repos, done_facts, pdb)
     merged_node_ids = list(chain(done_facts.keys(), merged_facts.keys()))
     open_facts = await load_open_pull_request_facts_all(repos, merged_node_ids, pdb)
+    del merged_node_ids
     facts = {**open_facts, **merged_facts, **done_facts}
     del open_facts
     del merged_facts
@@ -62,13 +64,16 @@ async def mine_prs(repos: Collection[str],
     dummy = {ghdprf.release_url.key: None, ghdprf.release_node_id.key: None}
     for col in (ghdprf.release_url.key, ghdprf.release_node_id.key):
         df_facts[col] = [raw_done_rows.get(k, dummy)[col] for k in facts]
+    del raw_done_rows
     df_facts[PullRequest.node_id.key] = list(facts)
+    del facts
     df_facts.set_index(PullRequest.node_id.key, inplace=True)
     if not df_facts.empty:
         stage_timings = PullRequestListMiner.calc_stage_timings(
             df_facts, *PullRequestListMiner.create_stage_calcs())
         for stage, timings in stage_timings.items():
             df_facts[f"stage_time_{stage}"] = pd.to_timedelta(timings, unit="s")
+        del stage_timings
     for col in df_prs:
         if col in df_facts:
             del df_facts[col]
@@ -92,8 +97,8 @@ async def mine_everything(topics: Set[MineTopic],
     """Mine all the specified data topics."""
     repos = [r.split("/", 1)[1] for r in settings]
     branches, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
-    return {
-        t: await miners[t](repos, branches, default_branches, settings,
-                           account, meta_ids, mdb, pdb, rdb, cache)
-        for t in topics
-    }
+    tasks = [miners[t](repos, branches, default_branches, settings,
+                       account, meta_ids, mdb, pdb, rdb, cache)
+             for t in topics]
+    results = await gather(*tasks, op="mine_everything")
+    return dict(zip(topics, results))
