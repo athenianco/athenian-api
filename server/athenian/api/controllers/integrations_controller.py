@@ -100,11 +100,11 @@ class RemovingFileResponse(web.FileResponse):
 def _df_to_parquet(df: pd.DataFrame, fout) -> None:
     for col in df:
         try:
-            df[col] = df[col].dt.tz_localize(None).astype("datetime64[s]")
+            df[col] = df[col].dt.tz_localize(None)
         except AttributeError:
             if df[col].dtype.type is np.timedelta64:
                 df[col] = df[col].fillna(timedelta(-1)).astype(int)
-    df.to_parquet(fout, engine="pyarrow")
+    df.to_parquet(fout, engine="pyarrow", version="2.0")
 
 
 _get_everything_formats = {
