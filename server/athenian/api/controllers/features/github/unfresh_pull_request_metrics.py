@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
 import aiomcache
@@ -95,8 +95,10 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
     tasks = [
         load_open_pull_request_facts_unfresh(
             open_prs, time_from, time_to, exclude_inactive, open_pr_authors, pdb),
+        # require `checked_until` to be after `time_to` or now() - 1 hour (heater interval)
         load_merged_unreleased_pull_request_facts(
-            merged_prs, time_to, LabelFilter.empty(), matched_bys,
+            merged_prs, min(time_to, datetime.now(timezone.utc) - timedelta(hours=1)),
+            LabelFilter.empty(), matched_bys,
             default_branches, release_settings, pdb,
             time_from=time_from, exclude_inactive=exclude_inactive),
     ]
