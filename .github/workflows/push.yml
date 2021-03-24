@@ -151,6 +151,9 @@ jobs:
         PDB: postgresql://postgres:postgres@0.0.0.0:5432/precomputed_%s?min_size=2&max_size=6
         RDB: postgresql://postgres:postgres@0.0.0.0:5432/persistentdata_%s?min_size=2&max_size=5
       run: |
+        docker exec ${{ job.services.postgres.id }} sh -c 'echo "max_connections=200" >> /var/lib/postgresql/data/postgresql.conf'
+        docker exec ${{ job.services.postgres.id }} sh -c 'echo "shared_buffers=200MB" >> /var/lib/postgresql/data/postgresql.conf'
+        docker kill --signal=SIGHUP ${{ job.services.postgres.id }}
         psql -c "create database state_gw0 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
         psql -c "create database state_gw1 template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432
         psql -c "create database state_master template 'template0' lc_collate 'C.UTF-8';" -U postgres -h 0.0.0.0 -p 5432

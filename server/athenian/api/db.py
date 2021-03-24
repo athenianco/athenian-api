@@ -38,43 +38,57 @@ def measure_db_overhead_and_retry(db: databases.Database,
 
     def wrapped_backend_connection() -> ConnectionBackend:
         connection = backend_connection()
+        connection._retry_lock = asyncio.Lock()
 
         def measure_method_overhead_and_retry(func) -> callable:
             async def wrapped_measure_method_overhead_and_retry(*args, **kwargs):
                 start_time = time.time()
-                if (
-                    (isinstance(connection, asyncpg.Connection) and connection.is_in_transaction())
-                    or
-                    (isinstance(connection, aiosqlite.Connection) and connection.in_transaction)
-                ):
-                    wait_intervals = [None]
-                else:
+                wait_intervals = []
+                try:
+                    raw_connection = connection.raw_connection
+                    if (
+                        (isinstance(raw_connection, asyncpg.Connection) and
+                         raw_connection.is_in_transaction())
+                        or
+                        (isinstance(raw_connection, aiosqlite.Connection) and
+                         raw_connection.in_transaction)
+                    ):
+                        wait_intervals = [None]
+                except AssertionError:
+                    pass  # Connection is not acquired
+                if not wait_intervals:
                     wait_intervals = [0, 0.1, 0.5, 1.4, None]
-                need_acquire = False
-                for i, wait_time in enumerate(wait_intervals):
-                    try:
-                        if need_acquire:
-                            await connection.acquire()
-                        return await func(*args, **kwargs)
-                    except (OSError, asyncpg.PostgresConnectionError) as e:
-                        if wait_time is None:
-                            raise e from None
-                        log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
-                        if need_acquire := isinstance(e, asyncpg.PostgresConnectionError):
-                            try:
-                                await connection.release()
-                            except Exception as e:
-                                log.warning("connection.release() raised %s: %s",
-                                            type(e).__name__, e)
-                        await asyncio.sleep(wait_time)
-                    finally:
-                        if app is not None:
-                            elapsed = app["db_elapsed"].get()
-                            if elapsed is None:
-                                log.warning("Cannot record the %s overhead", db_id)
-                            else:
-                                delta = time.time() - start_time
-                                elapsed[db_id] += delta
+
+                async def execute():
+                    need_acquire = False
+                    for i, wait_time in enumerate(wait_intervals):
+                        try:
+                            if need_acquire:
+                                await connection.acquire()
+                            return await func(*args, **kwargs)
+                        except (OSError, asyncpg.PostgresConnectionError) as e:
+                            if wait_time is None:
+                                raise e from None
+                            log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
+                            if need_acquire := isinstance(e, asyncpg.PostgresConnectionError):
+                                try:
+                                    await connection.release()
+                                except Exception as e:
+                                    log.warning("connection.release() raised %s: %s",
+                                                type(e).__name__, e)
+                            await asyncio.sleep(wait_time)
+                        finally:
+                            if app is not None:
+                                elapsed = app["db_elapsed"].get()
+                                if elapsed is None:
+                                    log.warning("Cannot record the %s overhead", db_id)
+                                else:
+                                    delta = time.time() - start_time
+                                    elapsed[db_id] += delta
+                if db.url.dialect == "sqlite":
+                    return await execute()
+                async with connection._retry_lock:
+                    return await execute()
 
             return wraps(wrapped_measure_method_overhead_and_retry, func)
 
