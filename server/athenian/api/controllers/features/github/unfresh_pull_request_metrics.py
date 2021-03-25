@@ -50,7 +50,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
     :return: Map from PR node IDs to their facts.
     """
     add_pdb_hits(pdb, "fresh", 1)
-    blacklist = PullRequest.node_id.notin_(done_facts)
+    blacklist = PullRequest.node_id.notin_any_values(done_facts)
     tasks = [
         # map_releases_to_prs is not required because such PRs are already released, by definition
         load_releases(
