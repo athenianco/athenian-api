@@ -84,15 +84,17 @@ async def test_get_everything_smoke(client, headers):
     assert response.status == 200, "Response body is : " + body
 
     response = await client.request(
-        method="GET", path="/v1/get/everything?account=1", headers=headers,
+        method="GET", path="/v1/get/export?account=1", headers=headers,
     )
     assert response.status == 200
     body = await response.read()
     with ZipFile(io.BytesIO(body)) as zipf:
         with zipf.open("prs.parquet") as prsf:
-            df = pd.read_parquet(prsf)
-    assert len(df) == 679
-    assert set(df) == {
+            prs_df = pd.read_parquet(prsf)
+        with zipf.open("releases.parquet") as releasesf:
+            releases_df = pd.read_parquet(releasesf)
+    assert len(prs_df) == 679
+    assert set(prs_df) == {
         "first_comment_on_first_review", "merged_by_login", "first_commit", "stage_time_review",
         "title", "updated_at", "acc_id", "base_ref", "last_commit", "stage_time_wip", "deletions",
         "repository_node_id", "author", "hidden", "merged", "merged_at", "number", "created",
@@ -103,6 +105,12 @@ async def test_get_everything_smoke(client, headers):
         "first_review_request", "last_review", "activity_days", "closed", "merge_commit_id",
         "head_ref", "jira_id", "merger", "done", "size", "reviews", "release_url",
         "release_node_id",
+    }
+    assert len(releases_df) == 53
+    assert set(releases_df) == {
+        "additions", "age", "commit_authors", "commits_count", "deletions", "matched_by", "name",
+        "prs_additions", "prs_deletions", "prs_node_id", "prs_number", "prs_title",
+        "prs_user_login", "published", "publisher", "repository_full_name", "sha", "url",
     }
 
 
@@ -119,6 +127,6 @@ async def test_get_everything_nasty_input(client, headers, query, code, sdb):
         query = ""
         await sdb.execute(delete(UserAccount).where(UserAccount.account_id == 2))
     response = await client.request(
-        method="GET", path=f"/v1/get/everything{query}", headers=headers,
+        method="GET", path=f"/v1/get/export{query}", headers=headers,
     )
     assert response.status == code

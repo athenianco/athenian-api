@@ -79,6 +79,9 @@ async def mine_releases(repos: Iterable[str],
                         the pdb is.
     :param with_avatars: Indicates whether to return the fetched user avatars or just an array of \
                          unique mentioned logins.
+    :return: 1. List of releases (general info, computed facts). \
+             2. User avatars. \
+             3. Release matched_by-s.
     """
     prefix = PREFIXES["github"]
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
