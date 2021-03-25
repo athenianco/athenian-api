@@ -61,6 +61,9 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
                 noop(),
                 {})
     # discover the issues belonging to those epics
+    extra_columns = list(extra_columns)
+    if Issue.parent_id not in extra_columns:
+        extra_columns.append(Issue.parent_id)
     children = await fetch_jira_issues(
         jira_ids, None, None, False, LabelFilter.empty(),
         [], [], epics[Issue.key.key].values, [], [], [],
@@ -73,6 +76,9 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
                                          Issue.parent_id.in_(children.index)))
                              .group_by(Issue.parent_id))
     await asyncio.sleep(0)
+    empty_epic_ids_mask = children[Issue.epic_id.key].isnull()
+    children.loc[empty_epic_ids_mask, Issue.epic_id.key] = \
+        children[Issue.parent_id.key][empty_epic_ids_mask]
     children_epic_ids = children[Issue.epic_id.key].values
     order = np.argsort(children_epic_ids)
     children_epic_ids = children_epic_ids[order]
