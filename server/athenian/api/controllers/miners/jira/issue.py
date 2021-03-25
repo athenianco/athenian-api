@@ -485,13 +485,17 @@ async def append_pr_jira_mapping(prs: Dict[str, PullRequestFacts],
 
 
 @sentry_span
-async def load_pr_jira_mapping(prs: Iterable[str],
+async def load_pr_jira_mapping(prs: Collection[str],
                                meta_ids: Tuple[int, ...],
                                mdb: DatabaseLike) -> Dict[str, str]:
     """Fetch the mapping from PR node IDs to JIRA issue IDs."""
     nprji = NodePullRequestJiraIssues
+    if len(prs) >= 100:
+        node_id_cond = nprji.node_id.in_any_values(prs)
+    else:
+        node_id_cond = nprji.node_id.in_(prs)
     rows = await mdb.fetch_all(sql.select([nprji.node_id, nprji.jira_id])
-                               .where(sql.and_(nprji.node_id.in_(prs),
+                               .where(sql.and_(node_id_cond,
                                                nprji.node_acc.in_(meta_ids))))
     return {r[0]: r[1] for r in rows}
 
