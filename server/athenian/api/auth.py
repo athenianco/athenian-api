@@ -428,9 +428,15 @@ class Auth0:
 
         async def get_user_info():
             if method != "bearer" or (god is not None and request.god_id is not None):
-                user_info = await self.get_user(request.uid)
+                user_info = await self.get_user(key := request.uid)
             else:
-                user_info = await self._get_user_info(token)
+                user_info = await self._get_user_info(key := token)
+            if user_info is None:
+                raise ResponseError(GenericError(
+                    "/errors/Auth0", title="Failed to retrieve user details from Auth0",
+                    status=HTTPStatus.SERVICE_UNAVAILABLE,
+                    detail=key,
+                ))
             sentry_sdk.set_user({"username": user_info.login, "email": user_info.email})
             return user_info
 
