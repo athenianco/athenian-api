@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:groovy-20210325
 
 ENV BROWSER=/browser \
     LC_ALL=en_US.UTF-8 \
