@@ -128,6 +128,7 @@ async def test_filter_repositories_fuck_up(client, headers, sdb, pdb):
                        ).create_defaults().explode(with_primary_keys=True)))
     await pdb.execute(insert(GitHubRelease).values(
         GitHubRelease(id="1",
+                      acc_id=1,
                       release_match="branch|whatever",
                       repository_full_name="src-d/go-git",
                       repository_node_id="repository_node_id",

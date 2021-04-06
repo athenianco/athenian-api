@@ -150,6 +150,7 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
                                    branches: pd.DataFrame,
                                    columns: Tuple[str, str, str, str],
                                    prune: bool,
+                                   account: int,
                                    meta_ids: Tuple[int, ...],
                                    mdb: databases.Database,
                                    pdb: databases.Database,
@@ -206,6 +207,7 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
         for repo, hashes, vertexes, edges in new_dags:
             assert (hashes[1:] > hashes[:-1]).all(), repo
             sql_values.append(GitHubCommitHistory(
+                acc_id=account,
                 repository_full_name=repo,
                 dag=lz4.frame.compress(pickle.dumps((hashes, vertexes, edges))),
             ).create_defaults().explode(with_primary_keys=True))
@@ -249,6 +251,7 @@ async def fetch_repository_commits_no_branch_dates(
         branches: pd.DataFrame,
         columns: Tuple[str, str, str, str],
         prune: bool,
+        account: int,
         meta_ids: Tuple[int, ...],
         mdb: databases.Database,
         pdb: databases.Database,
@@ -262,7 +265,7 @@ async def fetch_repository_commits_no_branch_dates(
     """
     await load_branch_commit_dates(branches, meta_ids, mdb)
     return await fetch_repository_commits(
-        repos, branches, columns, prune, meta_ids, mdb, pdb, cache)
+        repos, branches, columns, prune, account, meta_ids, mdb, pdb, cache)
 
 
 @sentry_span
@@ -274,6 +277,7 @@ async def fetch_repository_commits_no_branch_dates(
 )
 async def fetch_precomputed_commit_history_dags(
         repos: Iterable[str],
+        account: int,
         pdb: databases.Database,
         cache: Optional[aiomcache.Client],
 ) -> Dict[str, DAG]:
@@ -285,6 +289,7 @@ async def fetch_precomputed_commit_history_dags(
             .where(and_(
                 ghrc.format_version == ghrc.__table__.columns[ghrc.format_version.key].default.arg,
                 ghrc.repository_full_name.in_(repos),
+                ghrc.acc_id == account,
             )))
     dags = {row[0]: pickle.loads(lz4.frame.decompress(row[1])) for row in rows}
     for repo in repos:

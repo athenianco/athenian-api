@@ -626,6 +626,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
         default_branches,
         dag,
         release_settings,
+        1,
         (6366825,),
         mdb,
         pdb,
@@ -641,6 +642,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
         default_branches,
         dag,
         release_settings,
+        1,
         (6366825,),
         mdb,
         pdb,
@@ -917,13 +919,13 @@ async def test_pr_miner_unreleased_facts(
     }))
     discovered = await load_merged_unreleased_pull_request_facts(
         miner._dfs.prs, time_to, LabelFilter.empty(), matched_bys, default_branches,
-        release_match_setting_tag, pdb)
+        release_match_setting_tag, 1, pdb)
     assert {pr.pr[PullRequest.node_id.key] for pr, _ in merged_unreleased_prs_and_facts} == \
         set(discovered)
-    await store_open_pull_request_facts(open_prs_and_facts, pdb)
+    await store_open_pull_request_facts(open_prs_and_facts, 1, pdb)
     await store_merged_unreleased_pull_request_facts(
         merged_unreleased_prs_and_facts, matched_bys, default_branches,
-        release_match_setting_tag, pdb, event)
+        release_match_setting_tag, 1, pdb, event)
     miner, unreleased_facts, _, _ = await PullRequestMiner.mine(*args)
     true_pr_node_set = {pr.pr[PullRequest.node_id.key] for pr, _ in chain(
         open_prs_and_facts, merged_unreleased_prs_and_facts)}
@@ -1101,13 +1103,13 @@ async def test_fetch_prs_no_branches(mdb, pdb, dag):
         datetime(2015, 1, 1, tzinfo=timezone.utc),
         datetime(2021, 1, 1, tzinfo=timezone.utc),
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        False, None, branches, dags, (6366825,), mdb, pdb, None,
+        False, None, branches, dags, 1, (6366825,), mdb, pdb, None,
     ]
     prs, xdags = await PullRequestMiner.fetch_prs(*args)
     assert prs["dead"].sum() == 0
     assert xdags["src-d/go-git"]
     branches = branches.iloc[:0]
-    args[-6] = branches
+    args[-7] = branches
     prs, _ = await PullRequestMiner.fetch_prs(*args)
     assert prs["dead"].sum() == 0
 
@@ -1121,7 +1123,7 @@ async def test_fetch_prs_dead(mdb, pdb):
         datetime(2015, 1, 1, tzinfo=timezone.utc),
         datetime(2021, 1, 1, tzinfo=timezone.utc),
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        False, None, branches, None, (6366825,), mdb, pdb, None,
+        False, None, branches, None, 1, (6366825,), mdb, pdb, None,
     ]
     prs, xdags = await PullRequestMiner.fetch_prs(*args)
     assert prs["dead"].sum() == len(force_push_dropped_go_git_pr_numbers)

@@ -50,8 +50,9 @@ from athenian.api.models import check_collation, metadata, persistentdata
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import Base as PersistentdataBase
-from athenian.api.models.precomputed.models import Base as PrecomputedBase
+from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
+from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 from tests.sample_db_data import fill_metadata_session, fill_state_session
 
 
@@ -359,8 +360,11 @@ def init_own_db(letter: str,
     driver = engine.url.drivername
     if driver == "postgres":
         driver = "postgresql"
-    if letter == "r" and driver == "sqlite":
-        persistentdata.dereference_schemas()
+    if letter in ("r", "p") and driver == "sqlite":
+        if letter == "r":
+            persistentdata.dereference_schemas()
+        if letter == "p":
+            dereference_precomputed_schemas()
     base.metadata.drop_all(engine)
     if init_sql:
         try:
@@ -399,7 +403,7 @@ def persistentdata_db(worker_id) -> str:
 @pytest.fixture(scope="function")
 def precomputed_db(worker_id) -> str:
     return init_own_db("p", PrecomputedBase, worker_id, {
-        "postgresql": "create extension if not exists hstore;",
+        "postgresql": "create extension if not exists hstore; create schema if not exists github;",
     })
 
 

@@ -108,11 +108,11 @@ async def _calc_pull_request_facts_github(time_from: datetime,
     precomputed_tasks = [
         load_precomputed_done_facts_filters(
             time_from, time_to, repositories, participants, labels,
-            default_branches, exclude_inactive, release_settings, pdb),
+            default_branches, exclude_inactive, release_settings, account, pdb),
     ]
     if exclude_inactive:
         precomputed_tasks.append(load_precomputed_done_candidates(
-            time_from, time_to, repositories, default_branches, release_settings, pdb))
+            time_from, time_to, repositories, default_branches, release_settings, account, pdb))
         (precomputed_facts, _), blacklist = await gather(*precomputed_tasks)
     else:
         (precomputed_facts, _) = blacklist = await precomputed_tasks[0]
@@ -198,15 +198,15 @@ async def _calc_pull_request_facts_github(time_from: datetime,
         # we don't care if exclude_inactive is True or False here
         # also, we dump all the `mined_facts`, the called function will figure out who's released
         await defer(store_precomputed_done_facts(
-            mined_prs, mined_facts, default_branches, release_settings, pdb),
+            mined_prs, mined_facts, default_branches, release_settings, account, pdb),
             "store_precomputed_done_facts(%d/%d)" % (done_count, len(miner)))
     if len(open_pr_facts) > 0:
-        await defer(store_open_pull_request_facts(open_pr_facts, pdb),
+        await defer(store_open_pull_request_facts(open_pr_facts, account, pdb),
                     "store_open_pull_request_facts(%d)" % len(open_pr_facts))
     if len(merged_unreleased_pr_facts) > 0:
         await defer(store_merged_unreleased_pull_request_facts(
-            merged_unreleased_pr_facts, matched_bys, default_branches, release_settings, pdb,
-            unreleased_prs_event),
+            merged_unreleased_pr_facts, matched_bys, default_branches, release_settings,
+            account, pdb, unreleased_prs_event),
             "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts))
     if with_jira_map:
         _, _, new_jira_map = await gather(

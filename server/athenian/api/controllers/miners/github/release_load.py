@@ -85,12 +85,12 @@ async def load_releases(repos: Iterable[str],
     # strictly speaking, there is still no guarantee with our order, but it is enough for
     # passing the unit tests
     tasks = [
-        fetch_precomputed_release_match_spans(match_groups, pdb),
+        fetch_precomputed_release_match_spans(match_groups, account, pdb),
         _fetch_precomputed_releases(
             match_groups,
             time_from - tag_by_branch_probe_lookaround,
             time_to + tag_by_branch_probe_lookaround,
-            pdb, index=index),
+            account, pdb, index=index),
         _fetch_release_events(event_repos, account, meta_ids, time_from, time_to, mdb, rdb),
     ]
     spans, releases, event_releases = await gather(*tasks)
@@ -181,18 +181,18 @@ async def load_releases(repos: Iterable[str],
         missing_high.sort()
         tasks.append(_load_releases(
             [r for _, r in missing_high], branches, default_branches, missing_high[0][0], time_to,
-            settings, meta_ids, mdb, pdb, cache, index=index))
+            settings, account, meta_ids, mdb, pdb, cache, index=index))
         add_pdb_misses(pdb, "releases/high", len(missing_high))
     if missing_low:
         missing_low.sort()
         tasks.append(_load_releases(
             [r for _, r in missing_low], branches, default_branches, time_from, missing_low[-1][0],
-            settings, meta_ids, mdb, pdb, cache, index=index))
+            settings, account, meta_ids, mdb, pdb, cache, index=index))
         add_pdb_misses(pdb, "releases/low", len(missing_low))
     if missing_all:
         tasks.append(_load_releases(
             missing_all, branches, default_branches, time_from, time_to,
-            settings, meta_ids, mdb, pdb, cache, index=index))
+            settings, account, meta_ids, mdb, pdb, cache, index=index))
         add_pdb_misses(pdb, "releases/all", len(missing_all))
     if tasks:
         missings = await gather(*tasks)
@@ -220,14 +220,14 @@ async def load_releases(repos: Iterable[str],
                 # the updates must be integer so we take a transaction
                 async with pdb_conn.transaction():
                     await _store_precomputed_releases(
-                        missings, default_branches, settings, pdb_conn)
+                        missings, default_branches, settings, account, pdb_conn)
                     # if we know that we've scanned branches for `tag_or_branch`, no matter if
                     # we loaded tags or not, we should update the span
                     matches = applied_matches.copy()
                     for repo in ambiguous_branches_scanned:
                         matches[repo] = ReleaseMatch.branch
                     await _store_precomputed_release_match_spans(
-                        match_groups, matches, time_from, time_to, pdb_conn)
+                        match_groups, matches, time_from, time_to, account, pdb_conn)
 
         await defer(store_precomputed_releases(),
                     "store_precomputed_releases(%d, %d)" % (len(missings), repos_count))
@@ -259,6 +259,7 @@ async def _load_releases(repos: Iterable[Tuple[str, ReleaseMatch]],
                          time_from: datetime,
                          time_to: datetime,
                          settings: Dict[str, ReleaseMatchSetting],
+                         account: int,
                          meta_ids: Tuple[int, ...],
                          mdb: databases.Database,
                          pdb: databases.Database,
@@ -281,7 +282,7 @@ async def _load_releases(repos: Iterable[Tuple[str, ReleaseMatch]],
     if repos_by_branch:
         result.append(_match_releases_by_branch(
             repos_by_branch, branches, default_branches, time_from, time_to, settings,
-            meta_ids, mdb, pdb, cache))
+            account, meta_ids, mdb, pdb, cache))
     result = await gather(*result)
     result = pd.concat(result) if result else dummy_releases_df()
     if index is not None:
@@ -379,6 +380,7 @@ def remove_ambigous_precomputed_releases(df: pd.DataFrame, repo_column: str) -> 
 async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
                                       time_from: datetime,
                                       time_to: datetime,
+                                      account: int,
                                       pdb: databases.Database,
                                       index: Optional[Union[str, Sequence[str]]] = None,
                                       ) -> pd.DataFrame:
@@ -387,13 +389,17 @@ async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str,
     if pdb.url.dialect == "sqlite":
         query = (
             select([prel])
-            .where(and_(or_(*or_items), prel.published_at.between(time_from, time_to)))
+            .where(and_(or_(*or_items),
+                        prel.published_at.between(time_from, time_to),
+                        prel.acc_id == account))
             .order_by(desc(prel.published_at))
         )
     else:
         query = union_all(*(
             select([prel])
-            .where(and_(item, prel.published_at.between(time_from, time_to)))
+            .where(and_(item,
+                        prel.published_at.between(time_from, time_to),
+                        prel.acc_id == account))
             .order_by(desc(prel.published_at))
             for item in or_items))
     df = await read_sql_query(query, pdb, prel)
@@ -408,6 +414,7 @@ async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str,
 @sentry_span
 async def fetch_precomputed_release_match_spans(
         match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+        account: int,
         pdb: databases.Database) -> Dict[str, Dict[str, Tuple[datetime, datetime]]]:
     """Find out the precomputed time intervals for each release match group of repositories."""
     ghrts = GitHubReleaseMatchTimespan
@@ -417,13 +424,13 @@ async def fetch_precomputed_release_match_spans(
         query = (
             select([ghrts.repository_full_name, ghrts.release_match,
                     ghrts.time_from, ghrts.time_to])
-            .where(or_(*or_items))
+            .where(and_(or_(*or_items), ghrts.acc_id == account))
         )
     else:
         query = union_all(*(
             select([ghrts.repository_full_name, ghrts.release_match,
                     ghrts.time_from, ghrts.time_to])
-            .where(item)
+            .where(and_(item, ghrts.acc_id == account))
             for item in or_items))
     rows = await pdb.fetch_all(query)
     spans = {}
@@ -445,6 +452,7 @@ async def _store_precomputed_release_match_spans(
         matched_bys: Dict[str, ReleaseMatch],
         time_from: datetime,
         time_to: datetime,
+        account: int,
         pdb: databases.core.Connection) -> None:
     assert isinstance(pdb, databases.core.Connection)
     inserted = []
@@ -463,6 +471,7 @@ async def _store_precomputed_release_match_spans(
                 # and the release settings are ambiguous. See DEV-1137.
                 if rm == matched_bys[repo] or rm == ReleaseMatch.tag:
                     inserted.append(GitHubReleaseMatchTimespan(
+                        acc_id=account,
                         repository_full_name=repo,
                         release_match=rms,
                         time_from=time_from,
@@ -491,6 +500,7 @@ async def _store_precomputed_release_match_spans(
 async def _store_precomputed_releases(releases: pd.DataFrame,
                                       default_branches: Dict[str, str],
                                       settings: Dict[str, ReleaseMatchSetting],
+                                      account: int,
                                       pdb: databases.core.Connection) -> None:
     assert isinstance(pdb, databases.core.Connection)
     inserted = []
@@ -509,6 +519,7 @@ async def _store_precomputed_releases(releases: pd.DataFrame,
     for row in zip(*(releases[c].values for c in columns[:-1]),
                    releases[Release.published_at.key]):
         obj = {columns[i]: v for i, v in enumerate(row)}
+        obj[Release.acc_id.key] = account
         repo = row[1]
         if obj[matched_by_column] == ReleaseMatch.branch:
             obj[PrecomputedRelease.release_match.key] = "branch|" + \
@@ -706,6 +717,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
                                     time_from: datetime,
                                     time_to: datetime,
                                     settings: Dict[str, ReleaseMatchSetting],
+                                    account: int,
                                     meta_ids: Tuple[int, ...],
                                     mdb: databases.Database,
                                     pdb: databases.Database,
@@ -718,11 +730,11 @@ async def _match_releases_by_branch(repos: Iterable[str],
     branches = pd.concat(branches_matched.values())
     tasks = [
         load_branch_commit_dates(branches, meta_ids, mdb),
-        fetch_precomputed_commit_history_dags(branches_matched, pdb, cache),
+        fetch_precomputed_commit_history_dags(branches_matched, account, pdb, cache),
     ]
     _, dags = await gather(*tasks)
     dags = await fetch_repository_commits(
-        dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, False, meta_ids, mdb, pdb, cache)
+        dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, False, account, meta_ids, mdb, pdb, cache)
     first_shas = [extract_first_parents(*dags[repo], branches[Branch.commit_sha.key].values)
                   for repo, branches in branches_matched.items()]
     first_shas = np.sort(np.concatenate(first_shas))

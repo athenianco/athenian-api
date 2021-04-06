@@ -58,7 +58,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
             release_settings, account, meta_ids, mdb, pdb, rdb, cache),
         PullRequestMiner.fetch_prs(
             time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
-            blacklist, branches, None, meta_ids, mdb, pdb, cache, columns=[
+            blacklist, branches, None, account, meta_ids, mdb, pdb, cache, columns=[
                 PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
                 PullRequest.user_login,
             ]),
@@ -73,7 +73,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
     if not exclude_inactive:
         tasks.append(_fetch_inactive_merged_unreleased_prs(
             time_from, time_to, repositories, participants, labels, jira, default_branches,
-            release_settings, meta_ids, mdb, pdb, cache))
+            release_settings, account, meta_ids, mdb, pdb, cache))
     else:
         async def dummy_inactive_prs():
             return pd.DataFrame()
@@ -94,12 +94,12 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
         merged_prs = pd.concat([merged_prs, inactive_merged_prs])
     tasks = [
         load_open_pull_request_facts_unfresh(
-            open_prs, time_from, time_to, exclude_inactive, open_pr_authors, pdb),
+            open_prs, time_from, time_to, exclude_inactive, open_pr_authors, account, pdb),
         # require `checked_until` to be after `time_to` or now() - 1 hour (heater interval)
         load_merged_unreleased_pull_request_facts(
             merged_prs, min(time_to, datetime.now(timezone.utc) - timedelta(hours=1)),
             LabelFilter.empty(), matched_bys,
-            default_branches, release_settings, pdb,
+            default_branches, release_settings, account, pdb,
             time_from=time_from, exclude_inactive=exclude_inactive),
     ]
     open_facts, merged_facts = await gather(*tasks)
@@ -130,6 +130,7 @@ async def _fetch_inactive_merged_unreleased_prs(time_from: datetime,
                                                 jira: JIRAFilter,
                                                 default_branches: Dict[str, str],
                                                 release_settings: Dict[str, ReleaseMatchSetting],
+                                                account: int,
                                                 meta_ids: Tuple[int, ...],
                                                 mdb: databases.Database,
                                                 pdb: databases.Database,
@@ -137,7 +138,7 @@ async def _fetch_inactive_merged_unreleased_prs(time_from: datetime,
                                                 ) -> pd.DataFrame:
     node_ids, repos = await discover_inactive_merged_unreleased_prs(
         time_from, time_to, repos, participants, labels, default_branches, release_settings,
-        pdb, cache)
+        account, pdb, cache)
     if not jira:
         df = pd.DataFrame.from_dict({PullRequest.node_id.key: node_ids,
                                      PullRequest.repository_full_name.key: repos})

@@ -101,7 +101,7 @@ async def mine_releases(repos: Iterable[str],
     if releases_in_time_range.empty:
         return [], [], {r: v.match for r, v in settings.items()}
     precomputed_facts = await load_precomputed_release_facts(
-        releases_in_time_range, default_branches, settings, pdb)
+        releases_in_time_range, default_branches, settings, account, pdb)
     # uncomment this to compute releases from scratch
     # precomputed_facts = {}
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
@@ -128,8 +128,9 @@ async def mine_releases(repos: Iterable[str],
             settings, account, meta_ids, mdb, pdb, rdb, cache,
             releases_in_time_range=releases_in_time_range)
         tasks = [
-            load_commit_dags(releases, meta_ids, mdb, pdb, cache),
-            _fetch_repository_first_commit_dates(missing_repos, meta_ids, mdb, pdb, cache),
+            load_commit_dags(releases, account, meta_ids, mdb, pdb, cache),
+            _fetch_repository_first_commit_dates(
+                missing_repos, account, meta_ids, mdb, pdb, cache),
         ]
         dags, first_commit_dates = await gather(*tasks, op="mine_releases/commits")
 
@@ -319,8 +320,10 @@ async def mine_releases(repos: Iterable[str],
                                           repository_full_name=repo)))
             await asyncio.sleep(0)
         if data:
-            await defer(store_precomputed_release_facts(data, default_branches, settings, pdb),
-                        "store_precomputed_release_facts(%d)" % len(data))
+            await defer(
+                store_precomputed_release_facts(
+                    data, default_branches, settings, account, pdb),
+                "store_precomputed_release_facts(%d)" % len(data))
         return data
 
     if with_avatars:
@@ -531,8 +534,10 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     branch_releases = releases.take(np.nonzero(
         releases[matched_by_column].values == ReleaseMatch.branch)[0])
     precomputed_facts_tags, precomputed_facts_branches = await gather(
-        load_precomputed_release_facts(tag_releases, default_branches, settings_tags, pdb),
-        load_precomputed_release_facts(branch_releases, default_branches, settings_branches, pdb),
+        load_precomputed_release_facts(
+            tag_releases, default_branches, settings_tags, account, pdb),
+        load_precomputed_release_facts(
+            branch_releases, default_branches, settings_branches, account, pdb),
     )
     precomputed_facts = {**precomputed_facts_tags, **precomputed_facts_branches}
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
@@ -579,7 +584,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
     names = await _complete_commit_hashes(names, meta_ids, mdb)
     tasks = [
         extract_branches(names, meta_ids, mdb, cache),
-        fetch_precomputed_releases_by_name(names, pdb),
+        fetch_precomputed_releases_by_name(names, account, pdb),
     ]
     (branches, default_branches), releases = await gather(*tasks)
     prenames = defaultdict(set)
@@ -596,7 +601,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
         match_groups, event_releases, repos_count = group_repos_by_release_match(
             missing, default_branches, settings)
         # event releases will be loaded in any case
-        spans = await fetch_precomputed_release_match_spans(match_groups, pdb)
+        spans = await fetch_precomputed_release_match_spans(match_groups, account, pdb)
         offset = timedelta(hours=2)
         max_offset = timedelta(days=5 * 365)
         for repo in missing:
@@ -717,9 +722,10 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
 
     async def fetch_dags():
         nonlocal border_releases
-        dags = await fetch_precomputed_commit_history_dags(repos, pdb, cache)
+        dags = await fetch_precomputed_commit_history_dags(repos, account, pdb, cache)
         return await fetch_repository_commits(
-            dags, border_releases, RELEASE_FETCH_COMMITS_COLUMNS, True, meta_ids, mdb, pdb, cache)
+            dags, border_releases, RELEASE_FETCH_COMMITS_COLUMNS, True, account, meta_ids,
+            mdb, pdb, cache)
 
     tasks = [
         mine_releases(

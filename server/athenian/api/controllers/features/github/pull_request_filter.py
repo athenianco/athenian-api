@@ -561,7 +561,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
             truncate=False, updated_min=updated_min, updated_max=updated_max),
         load_precomputed_done_facts_filters(
             time_from, time_to, repos, participants, labels, default_branches,
-            exclude_inactive, release_settings, pdb),
+            exclude_inactive, release_settings, account, pdb),
     )
     (pr_miner, unreleased_facts, matched_bys, unreleased_prs_event), (facts, ambiguous) = \
         await gather(*tasks)
@@ -583,13 +583,13 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
         async def store_missed_done_facts():
             nonlocal missed_done_facts
             await defer(store_precomputed_done_facts(
-                *zip(*missed_done_facts), default_branches, release_settings, pdb),
+                *zip(*missed_done_facts), default_branches, release_settings, account, pdb),
                 "store_precomputed_done_facts(%d)" % len(missed_done_facts))
             missed_done_facts = []
 
         async def store_missed_open_facts():
             nonlocal missed_open_facts
-            await defer(store_open_pull_request_facts(missed_open_facts, pdb),
+            await defer(store_open_pull_request_facts(missed_open_facts, account, pdb),
                         "store_open_pull_request_facts(%d)" % len(missed_open_facts))
             missed_open_facts = []
 
@@ -597,7 +597,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
             nonlocal missed_merged_unreleased_facts
             await defer(store_merged_unreleased_pull_request_facts(
                 missed_merged_unreleased_facts, matched_bys, default_branches,
-                release_settings, pdb, unreleased_prs_event),
+                release_settings, account, pdb, unreleased_prs_event),
                 "store_merged_unreleased_pull_request_facts(%d)" %
                 len(missed_merged_unreleased_facts))
             missed_merged_unreleased_facts = []
@@ -717,7 +717,8 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
     tasks = [
         read_sql_query(union_all(*queries) if len(queries) > 1 else queries[0],  # sqlite sucks
                        mdb, PullRequest, index=PullRequest.node_id.key),
-        load_precomputed_done_facts_reponums(prs, default_branches, release_settings, pdb),
+        load_precomputed_done_facts_reponums(
+            prs, default_branches, release_settings, account, pdb),
     ]
     prs_df, (facts, ambiguous) = await gather(*tasks)
     return await unwrap_pull_requests(
@@ -753,6 +754,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
     :param branches: Branches of the relevant repositories.
     :param default_branches: Default branches of the relevant repositories.
     :param release_settings: Account's release settings.
+    :param account: State DB account ID.
     :param meta_ids: GitHub account IDs.
     :param mdb: Metadata DB.
     :param pdb: Precomputed DB.
@@ -763,9 +765,9 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         return [], PRDataFrames(*(pd.DataFrame() for _ in range(9))), {}, {}
     if resolve_rebased:
         dags = await fetch_precomputed_commit_history_dags(
-            prs_df[PullRequest.repository_full_name.key].unique(), pdb, cache)
+            prs_df[PullRequest.repository_full_name.key].unique(), account, pdb, cache)
         dags = await fetch_repository_commits_no_branch_dates(
-            dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, meta_ids, mdb, pdb, cache)
+            dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids, mdb, pdb, cache)
         prs_df = await PullRequestMiner.mark_dead_prs(
             prs_df, branches, dags, meta_ids, mdb, PullRequest)
     facts, ambiguous = precomputed_done_facts, precomputed_ambiguous_done_facts
@@ -789,20 +791,21 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         add_pdb_misses(pdb, "load_precomputed_done_facts_reponums/ambiguous",
                        remove_ambiguous_prs(facts, ambiguous, matched_bys))
         tasks = [
-            load_commit_dags(releases.append(milestone_releases), meta_ids, mdb, pdb, cache),
+            load_commit_dags(
+                releases.append(milestone_releases), account, meta_ids, mdb, pdb, cache),
             # not nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
             load_merged_unreleased_pull_request_facts(
                 prs_df, releases[Release.published_at.key].max(), LabelFilter.empty(),
-                matched_bys, default_branches, release_settings, pdb),
+                matched_bys, default_branches, release_settings, account, pdb),
         ]
         dags, unreleased = await gather(*tasks)
     else:
         releases, matched_bys, unreleased = dummy_releases_df(), {}, {}
         dags = await fetch_precomputed_commit_history_dags(
-            prs_df[PullRequest.repository_full_name.key].unique(), pdb, cache)
+            prs_df[PullRequest.repository_full_name.key].unique(), account, pdb, cache)
     dfs, _, _ = await PullRequestMiner.mine_by_ids(
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
-        release_settings, meta_ids, mdb, pdb, cache, with_jira=with_jira)
+        release_settings, account, meta_ids, mdb, pdb, cache, with_jira=with_jira)
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
     for k, v in unreleased.items():
         if k not in facts:

@@ -24,6 +24,7 @@ from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata import \
     dereference_schemas as dereference_persistentdata_schemas
 from athenian.api.models.persistentdata.models import ReleaseNotification
+from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 
 
 def _parse_args():
@@ -81,7 +82,10 @@ def main():
         }
         if mdb.url.dialect == "sqlite":
             dereference_metadata_schemas()
+        if rdb.url.dialect == "sqlite":
             dereference_persistentdata_schemas()
+        if pdb.url.dialect == "sqlite":
+            dereference_precomputed_schemas()
 
         meta_ids = await get_metadata_account_ids(args.account, sdb, None)
         prefix = PREFIXES["github"]

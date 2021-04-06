@@ -37,6 +37,7 @@ async def mine_repositories(repos: Collection[str],
                             time_to: datetime,
                             exclude_inactive: bool,
                             release_settings: Dict[str, ReleaseMatchSetting],
+                            account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
                             pdb: databases.Database,
@@ -57,6 +58,7 @@ async def mine_repositories(repos: Collection[str],
         query_released = [
             select([distinct(GitHubDonePullRequestFacts.repository_full_name)])
             .where(and_(GitHubDonePullRequestFacts.repository_full_name.in_(repos),
+                        GitHubDonePullRequestFacts.acc_id == account,
                         col.between(time_from, time_to)))
             for col in (GitHubDonePullRequestFacts.pr_done_at,
                         GitHubDonePullRequestFacts.pr_created_at)
@@ -64,10 +66,12 @@ async def mine_repositories(repos: Collection[str],
         query_merged = \
             select([distinct(GitHubMergedPullRequestFacts.repository_full_name)]) \
             .where(and_(GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
+                        GitHubMergedPullRequestFacts.acc_id == account,
                         GitHubMergedPullRequestFacts.merged_at.between(time_from, time_to)))
         query_open = [
             select([distinct(GitHubOpenPullRequestFacts.repository_full_name)])
             .where(and_(GitHubOpenPullRequestFacts.repository_full_name.in_(repos),
+                        GitHubOpenPullRequestFacts.acc_id == account,
                         col.between(time_from, time_to)))
             for col in (GitHubOpenPullRequestFacts.pr_updated_at,
                         GitHubOpenPullRequestFacts.pr_created_at)
@@ -89,7 +93,7 @@ async def mine_repositories(repos: Collection[str],
         _, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
         _, inactive_repos = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, {}, LabelFilter.empty(), default_branches,
-            release_settings, pdb, cache)
+            release_settings, account, pdb, cache)
         return [(r,) for r in set(inactive_repos)]
 
     @sentry_span
@@ -131,7 +135,8 @@ async def mine_repositories(repos: Collection[str],
             # We experienced a huge fuck-up without this condition.
             return []
         or_items = or_(*(and_(GitHubRelease.release_match == "tag|" + m,
-                              GitHubRelease.repository_full_name.in_(r))
+                              GitHubRelease.repository_full_name.in_(r),
+                              GitHubRelease.acc_id == account)
                          for m, r in match_groups.items()))
         return await pdb.fetch_all(
             select([distinct(GitHubRelease.repository_full_name)])
