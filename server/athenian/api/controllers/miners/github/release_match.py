@@ -50,6 +50,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               time_to: datetime,
                               dags: Dict[str, DAG],
                               release_settings: Dict[str, ReleaseMatchSetting],
+                              account: int,
                               meta_ids: Tuple[int, ...],
                               mdb: databases.Database,
                               pdb: databases.Database,
@@ -76,9 +77,11 @@ async def map_prs_to_releases(prs: pd.DataFrame,
         load_branch_commit_dates(branches, meta_ids, mdb),
         load_merged_unreleased_pull_request_facts(
             prs, nonemax(releases[Release.published_at.key].nonemax(), time_to),
-            LabelFilter.empty(), matched_bys, default_branches, release_settings, pdb),
+            LabelFilter.empty(), matched_bys, default_branches, release_settings,
+            account, pdb),
         load_precomputed_pr_releases(
-            prs.index, time_to, matched_bys, default_branches, release_settings, pdb, cache),
+            prs.index, time_to, matched_bys, default_branches, release_settings,
+            account, pdb, cache),
     ]
     _, unreleased_prs, precomputed_pr_releases = await gather(*tasks)
     add_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
@@ -107,7 +110,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
             missed_released_prs = dead_prs
     await defer(update_unreleased_prs(
         merged_prs, missed_released_prs, time_to, labels, matched_bys, default_branches,
-        release_settings, pdb, unreleased_prs_event),
+        release_settings, account, pdb, unreleased_prs_event),
         "update_unreleased_prs(%d, %d)" % (len(merged_prs), len(missed_released_prs)))
     return pr_releases.append(missed_released_prs), unreleased_prs, unreleased_prs_event
 
@@ -191,6 +194,7 @@ async def _fetch_labels(node_ids: Iterable[str],
 
 
 async def load_commit_dags(releases: pd.DataFrame,
+                           account: int,
                            meta_ids: Tuple[int, ...],
                            mdb: databases.Database,
                            pdb: databases.Database,
@@ -198,9 +202,9 @@ async def load_commit_dags(releases: pd.DataFrame,
                            ) -> Dict[str, DAG]:
     """Produce the commit history DAGs which should contain the specified releases."""
     pdags = await fetch_precomputed_commit_history_dags(
-        releases[Release.repository_full_name.key].unique(), pdb, cache)
+        releases[Release.repository_full_name.key].unique(), account, pdb, cache)
     return await fetch_repository_commits(
-        pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, meta_ids, mdb, pdb, cache)
+        pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, account, meta_ids, mdb, pdb, cache)
 
 
 @sentry_span
@@ -330,7 +334,7 @@ async def map_releases_to_prs(repos: Collection[str],
 
     async def fetch_pdags():
         if pdags is None:
-            return await fetch_precomputed_commit_history_dags(repos, pdb, cache)
+            return await fetch_precomputed_commit_history_dags(repos, account, pdb, cache)
         return pdags
 
     tasks = [
@@ -344,7 +348,7 @@ async def map_releases_to_prs(repos: Collection[str],
     rpak = Release.published_at.key
     rrfnk = Release.repository_full_name.key
     dags = await fetch_repository_commits(
-        pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, meta_ids, mdb, pdb, cache)
+        pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, account, meta_ids, mdb, pdb, cache)
     all_observed_repos = []
     all_observed_commits = []
     # find the released commit hashes by two DAG traversals
@@ -465,7 +469,8 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
         load_releases(repos_matched_by_tag, branches, default_branches,
                       tag_lookbehind_time_from, time_from, consistent_release_settings,
                       account, meta_ids, mdb, pdb, rdb, cache),
-        _fetch_repository_first_commit_dates(repos_matched_by_branch, meta_ids, mdb, pdb, cache),
+        _fetch_repository_first_commit_dates(repos_matched_by_branch, account, meta_ids,
+                                             mdb, pdb, cache),
     ]
     releases_today, releases_old_branches, releases_old_tags, repo_births = await gather(*tasks)
     releases_today = releases_today[0]
@@ -515,6 +520,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
     refresh_on_access=True,
 )
 async def _fetch_repository_first_commit_dates(repos: Iterable[str],
+                                               account: int,
                                                meta_ids: Tuple[int, ...],
                                                mdb: databases.Database,
                                                pdb: databases.Database,
@@ -523,7 +529,8 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
     rows = await pdb.fetch_all(
         select([GitHubRepository.repository_full_name,
                 GitHubRepository.first_commit.label("min")])
-        .where(GitHubRepository.repository_full_name.in_(repos)))
+        .where(and_(GitHubRepository.repository_full_name.in_(repos),
+                    GitHubRepository.acc_id == account)))
     add_pdb_hits(pdb, "_fetch_repository_first_commit_dates", len(rows))
     missing = set(repos) - {r[0] for r in rows}
     add_pdb_misses(pdb, "_fetch_repository_first_commit_dates", len(missing))
@@ -540,9 +547,15 @@ async def _fetch_repository_first_commit_dates(repos: Iterable[str],
                         NodeRepository.acc_id.in_(meta_ids)))
             .group_by(NodeRepository.id))
         if computed:
-            values = [GitHubRepository(repository_full_name=r[0], first_commit=r[1], node_id=r[2])
-                      .create_defaults().explode(with_primary_keys=True)
-                      for r in computed]
+            values = [
+                GitHubRepository(
+                    acc_id=account,
+                    repository_full_name=r[0],
+                    first_commit=r[1],
+                    node_id=r[2],
+                ).create_defaults().explode(with_primary_keys=True)
+                for r in computed
+            ]
             if mdb.url.dialect == "sqlite":
                 for v in values:
                     v[GitHubRepository.first_commit.key] = \

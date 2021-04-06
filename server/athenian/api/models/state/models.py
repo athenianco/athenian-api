@@ -4,8 +4,8 @@ import enum
 import json
 
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Enum, Float, ForeignKey, \
-    ForeignKeyConstraint, func, \
-    Integer, JSON, SmallInteger, String, Text, TIMESTAMP, UniqueConstraint
+    ForeignKeyConstraint, func, Integer, JSON, SmallInteger, String, Text, TIMESTAMP, \
+    UniqueConstraint
 import xxhash
 
 from athenian.api.models import always_unequal, create_base

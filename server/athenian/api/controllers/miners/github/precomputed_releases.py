@@ -25,6 +25,7 @@ from athenian.precomputer.db.models import GitHubRelease as PrecomputedRelease
 async def load_precomputed_release_facts(releases: pd.DataFrame,
                                          default_branches: Dict[str, str],
                                          settings: Dict[str, ReleaseMatchSetting],
+                                         account: int,
                                          pdb: databases.Database,
                                          ) -> Dict[str, ReleaseFacts]:
     """
@@ -57,6 +58,7 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
     queries = [
         select([GitHubReleaseFacts.id, GitHubReleaseFacts.data])
         .where(and_(GitHubReleaseFacts.format_version == default_version,
+                    GitHubReleaseFacts.acc_id == account,
                     GitHubReleaseFacts.id.in_(chain.from_iterable(
                         grouped_releases[i] for i in r if i in grouped_releases)),
                     GitHubReleaseFacts.release_match == _compose_release_match(m, v)))
@@ -83,6 +85,7 @@ def _compose_release_match(match: ReleaseMatch, value: str) -> str:
 async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                                           default_branches: Dict[str, str],
                                           settings: Dict[str, ReleaseMatchSetting],
+                                          account: int,
                                           pdb: databases.Database) -> None:
     """Put the new release facts to the pdb."""
     values = []
@@ -100,6 +103,7 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
             raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
         values.append(GitHubReleaseFacts(
             id=dikt[Release.id.key],
+            acc_id=account,
             release_match=_compose_release_match(setting.match, value),
             repository_full_name=repo,
             published_at=facts.published,
@@ -117,6 +121,7 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
 
 @sentry_span
 async def fetch_precomputed_releases_by_name(names: Dict[str, Iterable[str]],
+                                             account: int,
                                              pdb: databases.Database,
                                              ) -> pd.DataFrame:
     """Load precomputed release facts given the mapping from repository names to release names."""
@@ -125,6 +130,7 @@ async def fetch_precomputed_releases_by_name(names: Dict[str, Iterable[str]],
         query = (
             select([prel])
             .where(or_(*(and_(prel.repository_full_name == k,
+                              prel.acc_id == account,
                               prel.name.in_(v)) for k, v in names.items())))
             .order_by(desc(prel.published_at))
         )
@@ -132,7 +138,8 @@ async def fetch_precomputed_releases_by_name(names: Dict[str, Iterable[str]],
         query = union_all(*(
             select([prel])
             .where(and_(prel.repository_full_name == k,
-                        prel.name.in_(v)))
+                        prel.name.in_(v),
+                        prel.acc_id == account))
             .order_by(desc(prel.published_at))
             for k, v in names.items()))
     df = await read_sql_query(query, pdb, prel)

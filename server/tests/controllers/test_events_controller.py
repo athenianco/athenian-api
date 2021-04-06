@@ -148,6 +148,7 @@ async def test_notify_release_422(client, headers, sdb):
 
 async def test_clear_precomputed_events_smoke(client, headers, pdb):
     await pdb.execute(insert(GitHubDonePullRequestFacts).values(GitHubDonePullRequestFacts(
+        acc_id=1,
         release_match="event",
         pr_node_id="xxx",
         repository_full_name="src-d/go-git",
@@ -163,6 +164,7 @@ async def test_clear_precomputed_events_smoke(client, headers, pdb):
         data=b"data",
     ).create_defaults().explode(with_primary_keys=True)))
     await pdb.execute(insert(GitHubMergedPullRequestFacts).values(GitHubMergedPullRequestFacts(
+        acc_id=1,
         release_match="event",
         pr_node_id="yyy",
         repository_full_name="src-d/go-git",
@@ -172,6 +174,7 @@ async def test_clear_precomputed_events_smoke(client, headers, pdb):
         activity_days=[],
     ).create_defaults().explode(with_primary_keys=True)))
     await pdb.execute(insert(GitHubReleaseFacts).values(GitHubReleaseFacts(
+        acc_id=1,
         id="zzz",
         release_match="event",
         repository_full_name="src-d/go-git",

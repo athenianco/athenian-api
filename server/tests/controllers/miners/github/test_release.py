@@ -62,7 +62,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
     for i in range(2):
         released_prs, facts, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-            (6366825,), mdb, pdb, cache)
+            1, (6366825,), mdb, pdb, cache)
         await wait_deferred()
         assert isinstance(facts, dict)
         assert len(facts) == 0
@@ -74,7 +74,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
         assert released_prs.iloc[0][Release.author.key] == "mcuadros"
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        (6366825,), mdb, pdb, None)
+        1, (6366825,), mdb, pdb, None)
     # the PR was merged and released in the past, we must detect that
     assert len(released_prs) == 1
     assert released_prs.iloc[0][Release.url.key] == tag
@@ -93,7 +93,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
         1, (6366825,), mdb, pdb, rdb, None)
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        (6366825,), mdb, pdb, None)
+        1, (6366825,), mdb, pdb, None)
     await wait_deferred()
     assert len(released_prs) == 1
     dummy_mdb = Database("sqlite://", force_rollback=True)
@@ -107,7 +107,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
             await dummy_mdb.execute(CreateTable(table.__table__))
         released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-            (6366825,), dummy_mdb, pdb, None)
+            1, (6366825,), dummy_mdb, pdb, None)
         assert len(released_prs) == 1
     finally:
         if "." in prlt.name:
@@ -129,13 +129,13 @@ async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, p
     for i in range(2):
         released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-            (6366825,), mdb, pdb, cache)
+            1, (6366825,), mdb, pdb, cache)
         assert len(cache.mem) == 1, i
         assert released_prs.empty
     prs = prs.iloc[:0]
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        (6366825,), mdb, pdb, cache)
+        1, (6366825,), mdb, pdb, cache)
     assert len(cache.mem) == 1
     assert released_prs.empty
 
@@ -185,11 +185,11 @@ async def test_map_prs_to_releases_precomputed_released(
             await dummy_mdb.execute(CreateTable(table.__table__))
 
         await store_precomputed_done_facts(
-            true_prs, facts, default_branches, release_match_setting_tag, pdb)
+            true_prs, facts, default_branches, release_match_setting_tag, 1, pdb)
 
         released_prs, _, _ = await map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag,
-            release_match_setting_tag, (6366825,), dummy_mdb, pdb, None)
+            release_match_setting_tag, 1, (6366825,), dummy_mdb, pdb, None)
         assert len(released_prs) == len(prs)
     finally:
         if "." in prlt.name:
@@ -401,7 +401,7 @@ async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag
         1, (6366825,), mdb, pdb, rdb, None)
     released_prs, _, _ = await map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        (6366825,), mdb, pdb, None)
+        1, (6366825,), mdb, pdb, None)
     assert set(released_prs[Release.url.key].unique()) == {
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc10",
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc11",
@@ -528,7 +528,7 @@ async def test_load_releases_tag_or_branch_dates(
     await wait_deferred()
     match_groups, _, repos_count = group_repos_by_release_match(
         ["src-d/go-git"], default_branches, settings)
-    spans = (await fetch_precomputed_release_match_spans(match_groups, pdb))["src-d/go-git"]
+    spans = (await fetch_precomputed_release_match_spans(match_groups, 1, pdb))["src-d/go-git"]
     assert ReleaseMatch.tag in spans
     if n > 1:
         assert ReleaseMatch.branch in spans
@@ -787,7 +787,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        prune, (6366825,), mdb, pdb, None)
+        prune, 1, (6366825,), mdb, pdb, None)
     assert isinstance(dags, dict)
     assert len(dags) == 1
     hashes, vertexes, edges = dags["src-d/go-git"]
@@ -822,7 +822,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        prune, (6366825,), Database("sqlite://"), pdb, None)
+        prune, 1, (6366825,), Database("sqlite://"), pdb, None)
     assert pickle.dumps(dags2) == pickle.dumps(dags)
     with pytest.raises(Exception):
         await fetch_repository_commits(
@@ -839,7 +839,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
                 columns=["1", "2", "3", "4"],
             ),
             ("1", "2", "3", "4"),
-            prune, (6366825,), Database("sqlite://"), pdb, None)
+            prune, 1, (6366825,), Database("sqlite://"), pdb, None)
 
 
 @pytest.mark.parametrize("prune", [False, True])
@@ -855,7 +855,7 @@ async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        prune, (6366825,), mdb, pdb, None)
+        prune, 1, (6366825,), mdb, pdb, None)
     hashes, vertexes, edges = dags["src-d/go-git"]
     assert hashes == np.array(["5d7303c49ac984a9fec60523f2d5297682e16646"], dtype="U40")
     assert (vertexes == np.array([0, 0], dtype=np.uint32)).all()
@@ -878,7 +878,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        False, (6366825,), mdb, pdb, cache)
+        False, 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     dags2 = await fetch_repository_commits(
         {"src-d/go-git": _empty_dag()},
@@ -894,7 +894,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        False, (6366825,), None, None, cache)
+        False, 1, (6366825,), None, None, cache)
     assert pickle.dumps(dags1) == pickle.dumps(dags2)
     fake_pdb = Database("sqlite://")
 
@@ -918,7 +918,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache):
                 columns=["1", "2", "3", "4"],
             ),
             ("1", "2", "3", "4"),
-            True, (6366825,), None, fake_pdb, cache)
+            True, 1, (6366825,), None, fake_pdb, cache)
 
 
 @with_defer
@@ -937,7 +937,7 @@ async def test__fetch_repository_commits_many(mdb, pdb):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        False, (6366825,), mdb, pdb, None)
+        False, 1, (6366825,), mdb, pdb, None)
     assert len(dags["src-d/go-git"][0]) == 9
 
 
@@ -955,18 +955,18 @@ async def test__fetch_repository_commits_full(mdb, pdb, dag, cache):
     cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
             Branch.repository_full_name.key)
     commits = await fetch_repository_commits(
-        dag, branches, cols, False, (6366825,), mdb, pdb, cache)
+        dag, branches, cols, False, 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     assert len(commits) == 1
     assert len(commits["src-d/go-git"][0]) == 1919
     branches = branches[branches[Branch.branch_name.key] == "master"]
     commits = await fetch_repository_commits(
-        commits, branches, cols, False, (6366825,), mdb, pdb, cache)
+        commits, branches, cols, False, 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     assert len(commits) == 1
     assert len(commits["src-d/go-git"][0]) == 1919  # with force-pushed commits
     commits = await fetch_repository_commits(
-        commits, branches, cols, True, (6366825,), mdb, pdb, cache)
+        commits, branches, cols, True, 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     assert len(commits) == 1
     assert len(commits["src-d/go-git"][0]) == 1538  # without force-pushed commits
@@ -991,12 +991,12 @@ async def test__find_dead_merged_prs_smoke(mdb):
 @with_defer
 async def test__fetch_repository_first_commit_dates_pdb_cache(mdb, pdb, cache):
     fcd1 = await _fetch_repository_first_commit_dates(
-        ["src-d/go-git"], (6366825,), mdb, pdb, cache)
+        ["src-d/go-git"], 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     fcd2 = await _fetch_repository_first_commit_dates(
-        ["src-d/go-git"], (6366825,), Database("sqlite://"), pdb, None)
+        ["src-d/go-git"], 1, (6366825,), Database("sqlite://"), pdb, None)
     fcd3 = await _fetch_repository_first_commit_dates(
-        ["src-d/go-git"], (6366825,), Database("sqlite://"), Database("sqlite://"), cache)
+        ["src-d/go-git"], 1, (6366825,), Database("sqlite://"), Database("sqlite://"), cache)
     assert len(fcd1) == len(fcd2) == len(fcd3) == 1
     assert fcd1["src-d/go-git"] == fcd2["src-d/go-git"] == fcd3["src-d/go-git"]
     assert fcd1["src-d/go-git"].tzinfo == timezone.utc
@@ -1326,7 +1326,7 @@ async def test_precomputed_releases_low_level(
     await wait_deferred()
     prels = await _fetch_precomputed_releases(
         {ReleaseMatch(settings_index): {["master", ".*"][settings_index]: ["src-d/go-git"]}},
-        time_from, time_to, pdb)
+        time_from, time_to, 1, pdb)
     prels = prels[releases.columns]
     assert_frame_equal(releases, prels)
 
@@ -1347,7 +1347,7 @@ async def test_precomputed_releases_ambiguous(
     prels = await _fetch_precomputed_releases(
         {ReleaseMatch.tag: {".*": ["src-d/go-git"]},
          ReleaseMatch.branch: {"master": ["src-d/go-git"]}},
-        time_from, time_to, pdb)
+        time_from, time_to, 1, pdb)
     prels = prels[releases_tag.columns]
     assert_frame_equal(releases_tag, prels)
 
@@ -1359,14 +1359,14 @@ async def test_precomputed_release_timespans(pdb):
     async with pdb.connection() as pdb_conn:
         async with pdb_conn.transaction():
             await _store_precomputed_release_match_spans(
-                mg1, {"src-d/go-git": ReleaseMatch.tag}, time_from, time_to, pdb_conn)
+                mg1, {"src-d/go-git": ReleaseMatch.tag}, time_from, time_to, 1, pdb_conn)
             mg2 = {ReleaseMatch.branch: {"master": ["src-d/go-git"]}}
             await _store_precomputed_release_match_spans(
-                mg2, {"src-d/go-git": ReleaseMatch.branch}, time_from, time_to, pdb_conn)
+                mg2, {"src-d/go-git": ReleaseMatch.branch}, time_from, time_to, 1, pdb_conn)
             await _store_precomputed_release_match_spans(
                 mg1, {"src-d/go-git": ReleaseMatch.tag},
-                time_from - timedelta(days=300), time_to + timedelta(days=200), pdb_conn)
-    spans = await fetch_precomputed_release_match_spans({**mg1, **mg2}, pdb)
+                time_from - timedelta(days=300), time_to + timedelta(days=200), 1, pdb_conn)
+    spans = await fetch_precomputed_release_match_spans({**mg1, **mg2}, 1, pdb)
     assert len(spans) == 1
     assert len(spans["src-d/go-git"]) == 2
     assert spans["src-d/go-git"][ReleaseMatch.tag][0] == time_from - timedelta(days=300)
@@ -1472,6 +1472,6 @@ async def test_map_prs_to_releases_miguel(mdb, pdb, rdb, release_match_setting_t
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     released_prs, _ = await map_prs_to_releases(
         miguel_pr, releases, matched_bys, pd.DataFrame(), {}, time_to,
-        release_match_setting_tag, (6366825,), mdb, pdb, cache)
+        release_match_setting_tag, 1, (6366825,), mdb, pdb, cache)
     assert len(released_prs) == 1
 """

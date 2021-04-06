@@ -196,6 +196,7 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
                             commenters: Collection[str],
                             default_branches: Dict[str, str],
                             release_settings: Dict[str, ReleaseMatchSetting],
+                            account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
                             pdb: databases.Database,
@@ -238,7 +239,8 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
                         NodePullRequestJiraIssues.node_acc.in_(meta_ids))))
     pr_to_issue = {r[0]: r[1] for r in pr_rows}
     # TODO(vmarkovtsev): load the "fresh" released PRs
-    released_prs = await _fetch_released_prs(pr_to_issue, default_branches, release_settings, pdb)
+    released_prs = await _fetch_released_prs(
+        pr_to_issue, default_branches, release_settings, account, pdb)
     unreleased_prs = pr_to_issue.keys() - released_prs.keys()
     issue_to_index = {iid: i for i, iid in enumerate(issues.index.values)}
     prs_count = np.full(len(issues), 0, int)
@@ -313,6 +315,7 @@ async def _fetch_pr_created_ats_and_repos(pr_node_ids: Iterable[str],
 async def _fetch_released_prs(pr_node_ids: Iterable[str],
                               default_branches: Dict[str, str],
                               release_settings: Dict[str, ReleaseMatchSetting],
+                              account: int,
                               pdb: databases.Database,
                               ) -> Dict[str, Mapping[str, Any]]:
     ghdprf = GitHubDonePullRequestFacts
@@ -322,7 +325,8 @@ async def _fetch_released_prs(pr_node_ids: Iterable[str],
                     ghdprf.pr_done_at,
                     ghdprf.repository_full_name,
                     ghdprf.release_match])
-        .where(ghdprf.pr_node_id.in_(pr_node_ids)))
+        .where(sql.and_(ghdprf.pr_node_id.in_(pr_node_ids),
+                        ghdprf.acc_id == account)))
     released_by_repo = defaultdict(lambda: defaultdict(dict))
     for r in released_rows:
         released_by_repo[

@@ -49,6 +49,7 @@ from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
 from athenian.api.tracing import InfiniteString, MAX_SENTRY_STRING_LENGTH
+from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 
 
 class AthenianConnexionRequest(connexion.lifecycle.ConnexionRequest):
@@ -247,11 +248,13 @@ class AthenianApp(connexion.AioHttpApp):
                 if shortcut == "pdb":
                     db.metrics = pdbctx
                     self._pdb_schema_task_box = schedule_pdb_schema_check(db, self.app)
-                elif db.url.dialect == "sqlite":
+                if db.url.dialect == "sqlite":
                     if shortcut == "mdb":
                         dereference_metadata_schemas()
                     elif shortcut == "rdb":
                         dereference_persistentdata_schemas()
+                    elif shortcut == "pdb":
+                        dereference_precomputed_schemas()
             except Exception as e:
                 if isinstance(e, asyncio.CancelledError):
                     return

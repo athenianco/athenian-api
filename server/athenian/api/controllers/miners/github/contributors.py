@@ -89,6 +89,7 @@ async def mine_contributors(repos: Collection[str],
             pdb.fetch_all(select([ghdprf.author, ghdprf.pr_node_id])
                           .where(and_(ghdprf.format_version == format_version,
                                       ghdprf.repository_full_name.in_(repos),
+                                      ghdprf.acc_id == account,
                                       ghdprf.pr_done_at.between(time_from, time_to)
                                       if has_times else True))
                           .distinct()),

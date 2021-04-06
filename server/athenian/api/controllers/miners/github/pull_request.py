@@ -213,7 +213,7 @@ class PullRequestMiner:
                 pr_blacklist = PullRequest.node_id.notin_any_values(pr_blacklist)
             else:
                 pr_blacklist = None
-        pdags = await fetch_precomputed_commit_history_dags(repositories, pdb, cache)
+        pdags = await fetch_precomputed_commit_history_dags(repositories, account, pdb, cache)
         # the heaviest task should always go first
         tasks = [
             map_releases_to_prs(
@@ -224,15 +224,15 @@ class PullRequestMiner:
                 pdags, account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist, truncate),
             cls.fetch_prs(
                 time_from, time_to, repositories, participants, labels, jira,
-                exclude_inactive, pr_blacklist, branches, pdags, meta_ids, mdb, pdb, cache,
-                updated_min=updated_min, updated_max=updated_max),
+                exclude_inactive, pr_blacklist, branches, pdags, account, meta_ids,
+                mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max),
         ]
         # the following is a very rough approximation regarding updated_min/max:
         # we load all of none of the inactive merged PRs
         if not exclude_inactive and (updated_min is None or updated_min <= time_from):
             tasks.append(cls._fetch_inactive_merged_unreleased_prs(
                 time_from, time_to, repositories, participants, labels, jira, default_branches,
-                release_settings, meta_ids, mdb, pdb, cache))
+                release_settings, account, meta_ids, mdb, pdb, cache))
         else:
             async def dummy_unreleased():
                 return pd.DataFrame()
@@ -261,9 +261,9 @@ class PullRequestMiner:
                     jira, release_settings, updated_min, updated_max, pdags,
                     account, meta_ids, mdb, pdb, rdb, cache, inverse_pr_blacklist, truncate),
                 cls.fetch_prs(
-                    time_from, time_to, missed_prs, participants, labels, jira,
-                    exclude_inactive, inverse_pr_blacklist, branches, branch_dags,
-                    meta_ids, mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max),
+                    time_from, time_to, missed_prs, participants, labels, jira, exclude_inactive,
+                    inverse_pr_blacklist, branches, branch_dags, account, meta_ids,
+                    mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max),
             ]
             (missed_released_prs, _, _, _), (missed_prs, _) = await gather(*tasks)
             concatenated.extend([missed_released_prs, missed_prs])
@@ -275,9 +275,9 @@ class PullRequestMiner:
             # bypass the useless inner caching by calling _mine_by_ids directly
             cls._mine_by_ids(
                 prs, unreleased.index, time_to, releases, matched_bys, branches,
-                default_branches, release_dags, release_settings, meta_ids,
+                default_branches, release_dags, release_settings, account, meta_ids,
                 mdb, pdb, cache, truncate=truncate),
-            load_open_pull_request_facts(prs, pdb),
+            load_open_pull_request_facts(prs, account, pdb),
         ]
         (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
             *tasks, op="PullRequestMiner.mine/external_data")
@@ -330,6 +330,7 @@ class PullRequestMiner:
                           default_branches: Dict[str, str],
                           dags: Dict[str, DAG],
                           release_settings: Dict[str, ReleaseMatchSetting],
+                          account: int,
                           meta_ids: Tuple[int, ...],
                           mdb: databases.Database,
                           pdb: databases.Database,
@@ -352,7 +353,7 @@ class PullRequestMiner:
         """
         return await cls._mine_by_ids(
             prs, unreleased, time_to, releases, matched_bys, branches, default_branches,
-            dags, release_settings, meta_ids, mdb, pdb, cache,
+            dags, release_settings, account, meta_ids, mdb, pdb, cache,
             truncate=truncate, with_jira=with_jira)
 
     _deserialize_mine_by_ids_cache = staticmethod(_deserialize_mine_by_ids_cache)
@@ -369,6 +370,7 @@ class PullRequestMiner:
                            default_branches: Dict[str, str],
                            dags: Dict[str, DAG],
                            release_settings: Dict[str, ReleaseMatchSetting],
+                           account: int,
                            meta_ids: Tuple[int, ...],
                            mdb: databases.Database,
                            pdb: databases.Database,
@@ -433,11 +435,12 @@ class PullRequestMiner:
             merged_prs = prs.take(np.where(merged_mask)[0])
             subtasks = [map_prs_to_releases(
                 merged_prs, releases, matched_bys, branches, default_branches, time_to,
-                dags, release_settings, meta_ids, mdb, pdb, cache),
+                dags, release_settings, account, meta_ids, mdb, pdb, cache),
                 load_merged_unreleased_pull_request_facts(
                     prs.take(np.where(~merged_mask)[0]),
                     nonemax(releases[Release.published_at.key].nonemax(), time_to),
-                    LabelFilter.empty(), matched_bys, default_branches, release_settings, pdb)]
+                    LabelFilter.empty(), matched_bys, default_branches, release_settings,
+                    account, pdb)]
             df_facts, other_facts = await gather(*subtasks)
             nonlocal facts
             nonlocal unreleased_prs_event
@@ -537,7 +540,7 @@ class PullRequestMiner:
             unreleased_prs_event = combined_unreleased_prs_event
             await defer(update_unreleased_prs(
                 merged_unreleased_prs, pd.DataFrame(), time_to, labels, matched_bys,
-                default_branches, release_settings, pdb, other_unreleased_prs_event),
+                default_branches, release_settings, account, pdb, other_unreleased_prs_event),
                 "update_unreleased_prs/truncate(%d)" % len(merged_unreleased_indexes))
         return dfs, facts, unreleased_prs_event
 
@@ -629,6 +632,7 @@ class PullRequestMiner:
                         pr_blacklist: Optional[BinaryExpression],
                         branches: pd.DataFrame,
                         dags: Optional[Dict[str, DAG]],
+                        account: int,
                         meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
                         pdb: databases.Database,
@@ -664,9 +668,11 @@ class PullRequestMiner:
         async def fetch_commits():
             nonlocal dags
             if dags is None:
-                dags = await fetch_precomputed_commit_history_dags(repositories, pdb, cache)
+                dags = await fetch_precomputed_commit_history_dags(
+                    repositories, account, pdb, cache)
             return await fetch_repository_commits_no_branch_dates(
-                dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, meta_ids, mdb, pdb, cache)
+                dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids,
+                mdb, pdb, cache)
 
         dags, prs = await gather(fetch_commits(), pr_list_coro)
         prs = await cls.mark_dead_prs(prs, branches, dags, meta_ids, mdb, columns)
@@ -916,13 +922,14 @@ class PullRequestMiner:
             jira: JIRAFilter,
             default_branches: Dict[str, str],
             release_settings: Dict[str, ReleaseMatchSetting],
+            account: int,
             meta_ids: Tuple[int, ...],
             mdb: databases.Database,
             pdb: databases.Database,
             cache: Optional[aiomcache.Client]) -> pd.DataFrame:
         node_ids, _ = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, participants, labels, default_branches, release_settings,
-            pdb, cache)
+            account, pdb, cache)
         if not jira:
             return await read_sql_query(sql.select([PullRequest])
                                         .where(PullRequest.node_id.in_(node_ids)),

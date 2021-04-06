@@ -52,6 +52,7 @@ from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
 from athenian.api.models.state.models import Account, RepositorySet, Team, UserAccount
 from athenian.api.models.web import InstallationProgress, NoSourceDataError, NotFoundError
 from athenian.api.response import ResponseError
+from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 
 
 def _parse_args():
@@ -93,7 +94,10 @@ async def _connect_to_dbs(args: argparse.Namespace,
     }
     if mdb.url.dialect == "sqlite":
         dereference_metadata_schemas()
+    if rdb.url.dialect == "sqlite":
         dereference_persistentdata_schemas()
+    if pdb.url.dialect == "sqlite":
+        dereference_precomputed_schemas()
     return sdb, mdb, pdb, rdb
 
 
@@ -190,7 +194,8 @@ def main():
                 del releases
                 if reposet.precomputed:
                     log.info("Scanning for force push dropped PRs")
-                    await delete_force_push_dropped_prs(repos, meta_ids, mdb, pdb, None)
+                    await delete_force_push_dropped_prs(
+                        repos, reposet.owner_id, meta_ids, mdb, pdb, None)
                 log.info("Extracting PR facts")
                 facts = await calc_pull_request_facts_github(
                     time_from,

@@ -83,7 +83,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     tasks = [
         _epic_flow(return_, jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
                    filt.priorities, reporters, assignees, commenters, default_branches,
-                   release_settings, meta_ids, mdb, pdb, cache),
+                   release_settings, filt.account, meta_ids, mdb, pdb, cache),
         _issue_flow(return_, filt.account, jira_ids, time_from, time_to, filt.exclude_inactive,
                     label_filter, filt.priorities, filt.types, reporters, assignees, commenters,
                     branches, default_branches, release_settings, meta_ids,
@@ -149,6 +149,7 @@ async def _epic_flow(return_: Set[str],
                      commenters: Collection[str],
                      default_branches: Dict[str, str],
                      release_settings: Dict[str, ReleaseMatchSetting],
+                     account: int,
                      meta_ids: Tuple[int, ...],
                      mdb: databases.Database,
                      pdb: databases.Database,
@@ -180,7 +181,7 @@ async def _epic_flow(return_: Set[str],
     epics_df, children_df, subtask_coro, epic_children_map = await filter_epics(
         jira_ids, time_from, time_to, exclude_inactive, label_filter,
         priorities, reporters, assignees, commenters, default_branches,
-        release_settings, meta_ids, mdb, pdb, cache, extra_columns=extra_columns,
+        release_settings, account, meta_ids, mdb, pdb, cache, extra_columns=extra_columns,
     )
     children_columns = {k: children_df[k].values for k in children_df.columns}
     children_columns[Issue.id.key] = children_df.index.values
@@ -414,7 +415,7 @@ async def _issue_flow(return_: Set[str],
         jira_ids, time_from, time_to, exclude_inactive, label_filter,
         # priorities are already lower-cased and de-None-d
         priorities, types, [], reporters, assignees, commenters,
-        default_branches, release_settings, meta_ids, mdb, pdb, cache,
+        default_branches, release_settings, account, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
     if JIRAFilterReturn.LABELS in return_:
         components = Counter(chain.from_iterable(
@@ -532,7 +533,8 @@ async def _issue_flow(return_: Set[str],
                     PullRequest.node_id.in_(pr_ids),
                 )).order_by(PullRequest.node_id.key),
                 mdb, PullRequest, index=PullRequest.node_id.key),
-            load_precomputed_done_facts_ids(pr_ids, default_branches, release_settings, pdb),
+            load_precomputed_done_facts_ids(
+                pr_ids, default_branches, release_settings, account, pdb),
         ]
         prs_df, (facts, ambiguous) = await gather(*tasks)
         related_branches = branches.take(np.nonzero(np.in1d(
@@ -816,7 +818,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         filt.epics or [],
         reporters, assignees, commenters,
         default_branches, release_settings,
-        meta_ids, request.mdb, request.pdb, request.cache,
+        filt.account, meta_ids, request.mdb, request.pdb, request.cache,
         extra_columns=_participant_columns if len(filt.with_ or []) > 1 else (),
     )
     return filt, time_intervals, issues, tzoffset, label_filter

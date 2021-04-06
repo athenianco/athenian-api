@@ -15,6 +15,7 @@ from sqlalchemy import and_, delete, desc, insert, join, not_, or_, select, unio
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
+from sqlalchemy.sql.functions import coalesce
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
@@ -38,19 +39,22 @@ from athenian.api.db import add_pdb_hits, greatest
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewRequest, Release
-from athenian.api.models.precomputed.models import Base, GitHubDonePullRequestFacts, \
+from athenian.api.models.precomputed.models import GitHubBase, GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
 from athenian.api.tracing import sentry_span
 
 
 def _create_common_filters(time_from: Optional[datetime],
                            time_to: Optional[datetime],
-                           repos: Optional[Collection[str]]) -> List[ClauseElement]:
+                           repos: Optional[Collection[str]],
+                           account: int,
+                           ) -> List[ClauseElement]:
     assert isinstance(time_from, (datetime, type(None)))
     assert isinstance(time_to, (datetime, type(None)))
     ghprt = GitHubDonePullRequestFacts
     items = [
         ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
+        ghprt.acc_id == account,
     ]
     if time_to is not None:
         items.append(ghprt.pr_created_at < time_to)
@@ -108,6 +112,7 @@ async def load_precomputed_done_candidates(time_from: datetime,
                                            repos: Collection[str],
                                            default_branches: Dict[str, str],
                                            release_settings: Dict[str, ReleaseMatchSetting],
+                                           account: int,
                                            pdb: databases.Database,
                                            ) -> Tuple[Set[str], Dict[str, List[str]]]:
     """
@@ -123,7 +128,7 @@ async def load_precomputed_done_candidates(time_from: datetime,
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
                 ghprt.release_match]
-    filters = _create_common_filters(time_from, time_to, repos)
+    filters = _create_common_filters(time_from, time_to, repos, account)
     with sentry_sdk.start_span(op="load_precomputed_done_candidates/fetch"):
         rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
     prefix = PREFIXES["github"]
@@ -176,7 +181,7 @@ def _build_participants_filters(participants: PRParticipants,
             ghdprf.commit_authors, ghdprf.commit_committers])
 
 
-def _build_labels_filters(model: Base,
+def _build_labels_filters(model: GitHubBase,
                           labels: LabelFilter,
                           filters: list,
                           selected: list,
@@ -236,6 +241,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
                                               default_branches: Dict[str, str],
                                               exclude_inactive: bool,
                                               release_settings: Dict[str, ReleaseMatchSetting],
+                                              account: int,
                                               pdb: databases.Database,
                                               ) -> Tuple[Dict[str, PullRequestFacts],
                                                          Dict[str, List[str]]]:
@@ -252,7 +258,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
     result, ambiguous = await _load_precomputed_done_filters(
         [ghdprf.data, ghdprf.author, ghdprf.merger, ghdprf.releaser],
         time_from, time_to, repos, participants, labels,
-        default_branches, exclude_inactive, release_settings, pdb)
+        default_branches, exclude_inactive, release_settings, account, pdb)
     for node_id, row in result.items():
         result[node_id] = _done_pr_facts_from_row(row)
     return result, ambiguous
@@ -261,6 +267,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
 async def load_precomputed_done_facts_all(repos: Collection[str],
                                           default_branches: Dict[str, str],
                                           release_settings: Dict[str, ReleaseMatchSetting],
+                                          account: int,
                                           pdb: databases.Database,
                                           extra: Iterable[InstrumentedAttribute] = (),
                                           ) -> Tuple[Dict[str, PullRequestFacts],
@@ -279,7 +286,7 @@ async def load_precomputed_done_facts_all(repos: Collection[str],
     result, _ = await _load_precomputed_done_filters(
         [ghdprf.data, ghdprf.releaser, *extra],
         None, None, repos, {}, LabelFilter.empty(),
-        default_branches, False, release_settings, pdb)
+        default_branches, False, release_settings, account, pdb)
     raw = {}
     for node_id, row in result.items():
         result[node_id] = pickle.loads(row[ghdprf.data.key]) \
@@ -306,6 +313,7 @@ async def load_precomputed_done_timestamp_filters(time_from: datetime,
                                                   default_branches: Dict[str, str],
                                                   exclude_inactive: bool,
                                                   release_settings: Dict[str, ReleaseMatchSetting],
+                                                  account: int,
                                                   pdb: databases.Database,
                                                   ) -> Tuple[Dict[str, datetime],
                                                              Dict[str, List[str]]]:
@@ -318,7 +326,7 @@ async def load_precomputed_done_timestamp_filters(time_from: datetime,
     """
     result, ambiguous = await _load_precomputed_done_filters(
         [GitHubDonePullRequestFacts.pr_done_at], time_from, time_to, repos, participants, labels,
-        default_branches, exclude_inactive, release_settings, pdb)
+        default_branches, exclude_inactive, release_settings, account, pdb)
     sqlite = pdb.url.dialect == "sqlite"
     for node_id, row in result.items():
         dt = row[GitHubDonePullRequestFacts.pr_done_at.key]
@@ -358,6 +366,7 @@ async def _load_precomputed_done_filters(columns: List[InstrumentedAttribute],
                                          default_branches: Dict[str, str],
                                          exclude_inactive: bool,
                                          release_settings: Dict[str, ReleaseMatchSetting],
+                                         account: int,
                                          pdb: databases.Database,
                                          ) -> Tuple[Dict[str, Mapping[str, Any]],
                                                     Dict[str, List[str]]]:
@@ -381,7 +390,7 @@ async def _load_precomputed_done_filters(columns: List[InstrumentedAttribute],
     if event_repos:
         match_groups[ReleaseMatch.event] = {"": event_repos}
     or_items, _ = match_groups_to_sql(match_groups, ghprt)
-    filters = _create_common_filters(time_from, time_to, None)
+    filters = _create_common_filters(time_from, time_to, None, account)
     if len(participants) > 0:
         _build_participants_filters(participants, filters, selected, postgres)
     if labels:
@@ -465,6 +474,7 @@ def _append_activity_days_filter(time_from: datetime, time_to: datetime,
 async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
                                                default_branches: Dict[str, str],
                                                release_settings: Dict[str, ReleaseMatchSetting],
+                                               account: int,
                                                pdb: databases.Database,
                                                ) -> Tuple[Dict[str, PullRequestFacts],
                                                           Dict[str, List[str]]]:
@@ -491,7 +501,9 @@ async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
     if pdb.url.dialect == "sqlite":
         filters = [
             format_version_filter,
-            or_(*[and_(ghprt.repository_full_name == repo, ghprt.number.in_(numbers))
+            or_(*[and_(ghprt.repository_full_name == repo,
+                       ghprt.number.in_(numbers),
+                       ghprt.acc_id == account)
                   for repo, numbers in repos.items()]),
         ]
         query = select(selected).where(and_(*filters))
@@ -505,7 +517,9 @@ async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
         or_items, or_repos = match_groups_to_sql(match_groups, ghprt)
         query = union_all(*(
             select(selected).where(and_(item, format_version_filter, or_(
-                *[and_(ghprt.repository_full_name == repo, ghprt.number.in_(repos[repo]))
+                *[and_(ghprt.repository_full_name == repo,
+                       ghprt.number.in_(repos[repo]),
+                       ghprt.acc_id == account)
                   for repo in item_repos],
             )))
             for item, item_repos in zip(or_items, or_repos)))
@@ -529,6 +543,7 @@ async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
 async def load_precomputed_done_facts_ids(node_ids: Iterable[str],
                                           default_branches: Dict[str, str],
                                           release_settings: Dict[str, ReleaseMatchSetting],
+                                          account: int,
                                           pdb: databases.Database,
                                           ) -> Tuple[Dict[str, PullRequestFacts],
                                                      Dict[str, List[str]]]:
@@ -553,6 +568,7 @@ async def load_precomputed_done_facts_ids(node_ids: Iterable[str],
     filters = [
         ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
         ghprt.pr_node_id.in_(node_ids),
+        ghprt.acc_id == account,
     ]
     query = select(selected).where(and_(*filters))
     with sentry_sdk.start_span(op="load_precomputed_done_facts_ids/fetch"):
@@ -585,6 +601,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
                                        matched_bys: Dict[str, ReleaseMatch],
                                        default_branches: Dict[str, str],
                                        release_settings: Dict[str, ReleaseMatchSetting],
+                                       account: int,
                                        pdb: databases.Database,
                                        cache: Optional[aiomcache.Client]) -> pd.DataFrame:
     """
@@ -599,6 +616,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
             select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
                     ghprt.release_node_id, ghprt.repository_full_name, ghprt.release_match])
             .where(and_(ghprt.pr_node_id.in_(prs),
+                        ghprt.acc_id == account,
                         ghprt.releaser.isnot(None),
                         ghprt.pr_done_at < time_to)))
     prefix = PREFIXES["github"]
@@ -682,6 +700,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
                                        pr_facts: Iterable[Optional[PullRequestFacts]],
                                        default_branches: Dict[str, str],
                                        release_settings: Dict[str, ReleaseMatchSetting],
+                                       account: int,
                                        pdb: databases.Database,
                                        ) -> None:
     """Store PullRequestFacts belonging to released or rejected PRs to the precomputed DB."""
@@ -727,6 +746,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             release_match = ReleaseMatch.rejected.name
         participants = pr.participants()
         inserted.append(GitHubDonePullRequestFacts(
+            acc_id=account,
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,
             repository_full_name=repo,
@@ -789,6 +809,7 @@ async def load_merged_unreleased_pull_request_facts(
         matched_bys: Dict[str, ReleaseMatch],
         default_branches: Dict[str, str],
         release_settings: Dict[str, ReleaseMatchSetting],
+        account: int,
         pdb: databases.Database,
         time_from: Optional[datetime] = None,
         exclude_inactive: bool = False,
@@ -819,6 +840,7 @@ async def load_merged_unreleased_pull_request_facts(
     common_filters = [
         ghmprf.checked_until >= time_to,
         ghmprf.format_version == default_version,
+        ghmprf.acc_id == account,
     ]
     if labels:
         _build_labels_filters(ghmprf, labels, common_filters, selected, postgres)
@@ -881,6 +903,7 @@ async def load_merged_unreleased_pull_request_facts(
 @sentry_span
 async def load_merged_pull_request_facts_all(repos: Collection[str],
                                              pr_node_id_blacklist: Collection[str],
+                                             account: int,
                                              pdb: databases.Database,
                                              ) -> Dict[str, PullRequestFacts]:
     """
@@ -901,6 +924,7 @@ async def load_merged_pull_request_facts_all(repos: Collection[str],
         ghmprf.pr_node_id.notin_(pr_node_id_blacklist),
         ghmprf.repository_full_name.in_(repos),
         ghmprf.format_version == default_version,
+        ghmprf.acc_id == account,
     ]
     query = select(selected).where(and_(*filters))
     with sentry_sdk.start_span(op="load_merged_pull_request_facts_all/fetch"):
@@ -950,6 +974,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                                 matched_bys: Dict[str, ReleaseMatch],
                                 default_branches: Dict[str, str],
                                 release_settings: Dict[str, ReleaseMatchSetting],
+                                account: int,
                                 pdb: databases.Database,
                                 unreleased_prs_event: asyncio.Event) -> None:
     """
@@ -989,6 +1014,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                     else:
                         checked_until = merged_at  # force_push_drop
                 values.append(GitHubMergedPullRequestFacts(
+                    acc_id=account,
                     pr_node_id=node_id,
                     release_match=release_match,
                     repository_full_name=repo,
@@ -1035,6 +1061,7 @@ async def store_merged_unreleased_pull_request_facts(
         matched_bys: Dict[str, ReleaseMatch],
         default_branches: Dict[str, str],
         release_settings: Dict[str, ReleaseMatchSetting],
+        account: int,
         pdb: databases.Database,
         unreleased_prs_event: asyncio.Event) -> None:
     """
@@ -1055,6 +1082,7 @@ async def store_merged_unreleased_pull_request_facts(
             # no new releases
             continue
         values.append(GitHubMergedPullRequestFacts(
+            acc_id=account,
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,
             data=pickle.dumps(facts),
@@ -1115,6 +1143,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   labels: LabelFilter,
                                                   default_branches: Dict[str, str],
                                                   release_settings: Dict[str, ReleaseMatchSetting],
+                                                  account: int,
                                                   pdb: databases.Database,
                                                   cache: Optional[aiomcache.Client],
                                                   ) -> Tuple[List[str], List[str]]:
@@ -1126,10 +1155,10 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                 ghmprf.repository_full_name,
                 ghmprf.release_match]
     filters = [
-        or_(ghdprf.pr_done_at.is_(None),
-            ghdprf.pr_done_at >= time_to),
+        coalesce(ghdprf.pr_done_at, datetime(3000, 1, 1, tzinfo=timezone.utc)) >= time_to,
         ghmprf.repository_full_name.in_(repos),
         ghmprf.merged_at < time_from,
+        ghmprf.acc_id == account,
     ]
     for role, col in ((PRParticipationKind.AUTHOR, ghmprf.author),
                       (PRParticipationKind.MERGER, ghmprf.merger)):
@@ -1139,9 +1168,9 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
     if labels:
         _build_labels_filters(ghmprf, labels, filters, selected, postgres)
     body = join(ghmprf, ghdprf, and_(
+        ghdprf.acc_id == ghmprf.acc_id,
         ghdprf.pr_node_id == ghmprf.pr_node_id,
         ghdprf.release_match == ghmprf.release_match,
-        ghdprf.repository_full_name.in_(repos),
         ghdprf.pr_created_at < time_from,
     ), isouter=True)
     with sentry_sdk.start_span(op="load_inactive_merged_unreleased_prs/fetch"):
@@ -1175,6 +1204,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
 
 @sentry_span
 async def load_open_pull_request_facts(prs: pd.DataFrame,
+                                       account: int,
                                        pdb: databases.Database,
                                        ) -> Dict[str, PullRequestFacts]:
     """
@@ -1196,7 +1226,8 @@ async def load_open_pull_request_facts(prs: pd.DataFrame,
     rows = await pdb.fetch_all(
         select(selected)
         .where(and_(ghoprf.pr_node_id.in_(node_ids),
-                    ghoprf.format_version == default_version)))
+                    ghoprf.format_version == default_version,
+                    ghoprf.acc_id == account)))
     if not rows:
         return {}
     found_node_ids = [r[0].rstrip() for r in rows]
@@ -1222,6 +1253,7 @@ async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
                                                time_to: datetime,
                                                exclude_inactive: bool,
                                                authors: Mapping[str, str],
+                                               account: int,
                                                pdb: databases.Database,
                                                ) -> Dict[str, PullRequestFacts]:
     """
@@ -1236,7 +1268,11 @@ async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
     ghoprf = GitHubOpenPullRequestFacts
     selected = [ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data]
     default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
-    filters = [ghoprf.pr_node_id.in_(prs), ghoprf.format_version == default_version]
+    filters = [
+        ghoprf.pr_node_id.in_(prs),
+        ghoprf.format_version == default_version,
+        ghoprf.acc_id == account,
+    ]
     if exclude_inactive:
         date_range = _append_activity_days_filter(
             time_from, time_to, selected, filters, ghoprf.activity_days, postgres)
@@ -1260,6 +1296,7 @@ async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
 @sentry_span
 async def load_open_pull_request_facts_all(repos: Collection[str],
                                            pr_node_id_blacklist: Collection[str],
+                                           account: int,
                                            pdb: databases.Database,
                                            ) -> Dict[str, PullRequestFacts]:
     """
@@ -1279,6 +1316,7 @@ async def load_open_pull_request_facts_all(repos: Collection[str],
         ghoprf.pr_node_id.notin_(pr_node_id_blacklist),
         ghoprf.repository_full_name.in_(repos),
         ghoprf.format_version == default_version,
+        ghoprf.acc_id == account,
     ]
     query = select(selected).where(and_(*filters))
     with sentry_sdk.start_span(op="load_open_pull_request_facts_all/fetch"):
@@ -1290,6 +1328,7 @@ async def load_open_pull_request_facts_all(repos: Collection[str],
 @sentry_span
 async def store_open_pull_request_facts(
         open_prs_and_facts: Iterable[Tuple[MinedPullRequest, PullRequestFacts]],
+        account: int,
         pdb: databases.Database) -> None:
     """
     Persist the facts about open pull requests to the database.
@@ -1306,6 +1345,7 @@ async def store_open_pull_request_facts(
         if updated_at != updated_at:
             continue
         values.append(GitHubOpenPullRequestFacts(
+            acc_id=account,
             pr_node_id=pr.pr[PullRequest.node_id.key],
             repository_full_name=pr.pr[PullRequest.repository_full_name.key],
             pr_created_at=pr.pr[PullRequest.created_at.key],
@@ -1335,6 +1375,7 @@ async def store_open_pull_request_facts(
 
 @sentry_span
 async def delete_force_push_dropped_prs(repos: Iterable[str],
+                                        account: int,
                                         meta_ids: Tuple[int, ...],
                                         mdb: databases.Database,
                                         pdb: databases.Database,
@@ -1356,9 +1397,10 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
     tasks = [
         pdb.fetch_all(select([ghdprf.pr_node_id])
                       .where(and_(ghdprf.repository_full_name.in_(repos),
+                                  ghdprf.acc_id == account,
                                   ghdprf.release_match.like("%|%")))),
         fetch_branches(),
-        fetch_precomputed_commit_history_dags(repos, pdb, cache),
+        fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
     ]
     rows, branches, dags = await gather(*tasks, op="fetch prs + branches + dags")
     pr_node_ids = [r[0] for r in rows]
@@ -1368,7 +1410,8 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
                       .where(and_(PullRequest.node_id.in_(pr_node_ids),
                                   PullRequest.acc_id.in_(meta_ids)))),
         fetch_repository_commits(
-            dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, meta_ids, mdb, pdb, cache),
+            dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids,
+            mdb, pdb, cache),
     ]
     del pr_node_ids
     pr_merges, dags = await gather(*tasks, op="fetch merges + prune dags")

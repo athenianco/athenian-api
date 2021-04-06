@@ -159,6 +159,7 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
             pdb.execute(delete(table).where(and_(
                 table.release_match == ReleaseMatch.event.name,
                 table.repository_full_name.in_(repos),
+                table.acc_id == model.account,
             )))
             for table in (GitHubDonePullRequestFacts,
                           GitHubMergedPullRequestFacts,

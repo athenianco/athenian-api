@@ -46,10 +46,11 @@ async def mine_all_prs(repos: Collection[str],
     """Extract everything we know about pull requests."""
     ghdprf = GitHubDonePullRequestFacts
     done_facts, raw_done_rows = await load_precomputed_done_facts_all(
-        repos, default_branches, settings, pdb, extra=[ghdprf.release_url, ghdprf.release_node_id])
-    merged_facts = await load_merged_pull_request_facts_all(repos, done_facts, pdb)
+        repos, default_branches, settings, account, pdb,
+        extra=[ghdprf.release_url, ghdprf.release_node_id])
+    merged_facts = await load_merged_pull_request_facts_all(repos, done_facts, account, pdb)
     merged_node_ids = list(chain(done_facts.keys(), merged_facts.keys()))
-    open_facts = await load_open_pull_request_facts_all(repos, merged_node_ids, pdb)
+    open_facts = await load_open_pull_request_facts_all(repos, merged_node_ids, account, pdb)
     del merged_node_ids
     facts = {**open_facts, **merged_facts, **done_facts}
     del open_facts
