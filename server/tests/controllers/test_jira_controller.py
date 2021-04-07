@@ -4,7 +4,9 @@ import json
 from dateutil.tz import tzutc
 import numpy as np
 import pytest
+from sqlalchemy import delete, insert
 
+from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
     CalculatedLinearMetricValues, FilteredJIRAStuff, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, \
     JIRAIssueType, JIRALabel, JIRAMetricID, JIRAPriority, JIRAStatus, JIRAUser
@@ -567,18 +569,61 @@ async def test_filter_jira_issue_prs_comments(client, headers):
     assert comments == 1113
 
 
-@pytest.mark.parametrize("account, date_to, timezone, status", [
+async def test_filter_jira_deleted_repositories(client, headers, mdb):
+    # DEV-2082
+    await mdb.execute(insert(NodePullRequestJiraIssues).values(dict(
+        node_id="tmp",
+        node_acc=6366825,
+        jira_acc=1,
+        jira_id="12541",
+    )))
+    await mdb.execute(insert(PullRequest).values(dict(
+        node_id="tmp",
+        acc_id=6366825,
+        repository_full_name="athenianco/athenian-api",
+        repository_node_id="whatever",
+        base_ref="base_ref",
+        head_ref="head_ref",
+        number=100500,
+        closed=True,
+    )))
+    try:
+        body = {
+            "date_from": "2020-11-01",
+            "date_to": "2020-12-01",
+            "timezone": 120,
+            "account": 1,
+            "exclude_inactive": True,
+            "return": ["issues", "issue_bodies"],
+        }
+        response = await client.request(
+            method="POST", path="/v1/filter/jira", headers=headers, json=body,
+        )
+        body = (await response.read()).decode("utf-8")
+        assert response.status == 200, "Response body is : " + body
+        model = FilteredJIRAStuff.from_dict(json.loads(body))
+        prs = sum(bool(issue.prs) for issue in model.issues)
+        assert len(model.issues) == 112
+        assert prs == 1
+    finally:
+        await mdb.execute(delete(NodePullRequestJiraIssues)
+                          .where(NodePullRequestJiraIssues.node_id == "tmp"))
+        await mdb.execute(delete(PullRequest)
+                          .where(PullRequest.node_id == "tmp"))
+
+
+@pytest.mark.parametrize("account, date_to, tz, status", [
     (1, "2015-10-12", 0, 400),
     (1, None, 0, 400),
     (2, "2020-10-12", 0, 422),
     (3, "2020-10-12", 0, 404),
     (1, "2020-10-12", 100500, 400),
 ])
-async def test_filter_jira_nasty_input(client, headers, account, date_to, timezone, status):
+async def test_filter_jira_nasty_input(client, headers, account, date_to, tz, status):
     body = {
         "date_from": "2015-10-13",
         "date_to": date_to,
-        "timezone": timezone,
+        "timezone": tz,
         "account": account,
         "exclude_inactive": True,
     }

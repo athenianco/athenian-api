@@ -537,6 +537,10 @@ async def _issue_flow(return_: Set[str],
                 pr_ids, default_branches, release_settings, account, pdb),
         ]
         prs_df, (facts, ambiguous) = await gather(*tasks)
+        repos = [r.split("/", 1)[1] for r in release_settings]
+        existing_mask = prs_df[PullRequest.repository_full_name.key].isin(repos).values
+        if not existing_mask.all():
+            prs_df = prs_df.take(np.nonzero(existing_mask)[0])
         related_branches = branches.take(np.nonzero(np.in1d(
             branches[Branch.repository_full_name.key].values.astype("U"),
             prs_df[PullRequest.repository_full_name.key].unique().astype("U")))[0])
