@@ -11,7 +11,9 @@ from athenian.api.controllers.invitation_controller import admin_backdoor, decod
     encode_slug, jira_url_template, url_prefix
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
-    AccountJiraInstallation, God, Invitation, ReleaseSetting, RepositorySet, UserAccount, UserToken
+    AccountJiraInstallation, Feature, FeatureComponent, God, Invitation, ReleaseSetting, \
+    RepositorySet, UserAccount, \
+    UserToken
 
 
 async def clean_state(sdb: databases.Database) -> int:
@@ -154,6 +156,52 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
     }
     num_accounts_after = len(await sdb.fetch_all(select([Account])))
     assert num_accounts_after == num_accounts_before
+
+
+async def test_accept_invitation_disabled_membership_check(
+        client, headers, sdb, disable_default_user, app):
+    app._auth0._default_user = app._auth0._default_user.copy()
+    app._auth0._default_user.native_id = "2793551"
+    check_fid = await sdb.fetch_val(
+        select([Feature.id])
+        .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
+                    Feature.component == FeatureComponent.server)))
+    await sdb.execute(insert(AccountFeature).values(AccountFeature(
+        account_id=3,
+        feature_id=check_fid,
+        enabled=False,
+    ).create_defaults().explode(with_primary_keys=True)))
+    body = {
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
+    }
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+    rbody = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 200, rbody
+
+
+async def test_accept_invitation_enabled_membership_check(
+        client, headers, sdb, disable_default_user, app):
+    app._auth0._default_user = app._auth0._default_user.copy()
+    app._auth0._default_user.native_id = "2793551"
+    check_fid = await sdb.fetch_val(
+        select([Feature.id])
+        .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
+                    Feature.component == FeatureComponent.server)))
+    await sdb.execute(insert(AccountFeature).values(AccountFeature(
+        account_id=3,
+        feature_id=check_fid,
+        enabled=True,
+    ).create_defaults().explode(with_primary_keys=True)))
+    body = {
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
+    }
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+    rbody = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 422, rbody
 
 
 async def test_accept_invitation_unsupported(client, headers, sdb, disable_default_user, app):

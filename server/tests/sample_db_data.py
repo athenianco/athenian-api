@@ -4,6 +4,7 @@ from lzma import LZMAFile
 import os
 from pathlib import Path
 
+from sqlalchemy import and_
 from sqlalchemy.cprocessors import str_to_date, str_to_datetime
 import sqlalchemy.orm
 from sqlalchemy.sql.type_api import Variant
@@ -130,9 +131,17 @@ def fill_state_session(session: sqlalchemy.orm.Session):
         owner_id=3,
         items=["github.com/athenianco/athenian-webapp", "github.com/athenianco/athenian-api"]))
     session.add(Invitation(salt=777, account_id=3, created_by="auth0|5e1f6e2e8bfa520ea5290741"))
-    session.add(Feature(id=1, name="jira", component=FeatureComponent.webapp, enabled=True,
+    session.add(Feature(id=1000, name="jira", component=FeatureComponent.webapp, enabled=True,
                         default_parameters={"a": "b", "c": "d"}))
     session.flush()
-    session.add(AccountFeature(account_id=1, feature_id=1, enabled=True,
+    feature = session.query(Feature).filter(and_(
+        Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
+        Feature.component == FeatureComponent.server,
+    )).one_or_none()
+    if feature is None:
+        session.add(Feature(name=Feature.USER_ORG_MEMBERSHIP_CHECK,
+                            component=FeatureComponent.server,
+                            enabled=True))
+    session.add(AccountFeature(account_id=1, feature_id=1000, enabled=True,
                                parameters={"a": "x"}))
     session.add(AccountJiraInstallation(id=1, account_id=1))

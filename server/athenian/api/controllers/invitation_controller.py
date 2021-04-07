@@ -30,7 +30,10 @@ from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
     FetchProgress, NodeUser, OrganizationMember
-from athenian.api.models.state.models import Account, Invitation, RepositorySet, UserAccount
+from athenian.api.models.state.models import Account, AccountFeature, Feature, FeatureComponent, \
+    Invitation, \
+    RepositorySet, \
+    UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
     NoSourceDataError, NotFoundError, User
 from athenian.api.models.web.generic_error import DatabaseConflict, TooManyRequestsError
@@ -147,12 +150,10 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
 async def _accept_invitation(iid: int,
                              salt: int,
                              request: AthenianWebRequest,
-                             conn: databases.core.Connection,
+                             sdb_conn: databases.core.Connection,
                              ) -> Tuple[int, User]:
     log = logging.getLogger(metadata.__package__)
-    mdb = request.mdb
-    cache = request.cache
-    inv = await conn.fetch_one(
+    inv = await sdb_conn.fetch_one(
         select([Invitation.account_id, Invitation.accepted, Invitation.is_active])
         .where(and_(Invitation.id == iid, Invitation.salt == salt)))
     if inv is None:
@@ -163,12 +164,13 @@ async def _accept_invitation(iid: int,
     is_admin = acc_id == admin_backdoor
     slack = request.app["slack"]  # type: SlackWebClient
     if is_admin:
-        other_accounts = await conn.fetch_all(select([UserAccount.account_id])
-                                              .where(and_(UserAccount.user_id == request.uid,
-                                                          UserAccount.is_admin)))
+        other_accounts = await sdb_conn.fetch_all(
+            select([UserAccount.account_id])
+            .where(and_(UserAccount.user_id == request.uid,
+                        UserAccount.is_admin)))
         if other_accounts:
             other_accounts = {row[0] for row in other_accounts}
-            installed_accounts = await conn.fetch_all(
+            installed_accounts = await sdb_conn.fetch_all(
                 select([RepositorySet.owner_id])
                 .where(and_(RepositorySet.owner_id.in_(other_accounts),
                             RepositorySet.name == RepositorySet.ALL,
@@ -180,9 +182,9 @@ async def _accept_invitation(iid: int,
                     detail="You cannot accept new admin invitations until your account's "
                            "installation finishes."))
         # create a new account for the admin user
-        acc_id = await create_new_account(conn, request.app["auth"].key)
+        acc_id = await create_new_account(sdb_conn, request.app["auth"].key)
         if acc_id >= admin_backdoor:
-            await conn.execute(delete(Account).where(Account.id == acc_id))
+            await sdb_conn.execute(delete(Account).where(Account.id == acc_id))
             raise ResponseError(GenericError(
                 type="/errors/LockedError",
                 title=HTTPStatus.LOCKED.phrase,
@@ -196,38 +198,16 @@ async def _accept_invitation(iid: int,
             await defer(report_new_account_to_slack(), "report_new_account_to_slack")
         status = None
     else:
-        status = await conn.fetch_one(select([UserAccount.is_admin])
-                                      .where(and_(UserAccount.user_id == request.uid,
-                                                  UserAccount.account_id == acc_id)))
+        status = await sdb_conn.fetch_one(select([UserAccount.is_admin])
+                                          .where(and_(UserAccount.user_id == request.uid,
+                                                      UserAccount.account_id == acc_id)))
     user = None
     if status is None:
-        if not is_admin:
-            # check whether the user is a member of the GitHub org
-            async def load_org_members():
-                meta_ids = await get_metadata_account_ids(acc_id, conn, cache)
-                user_node_ids = [
-                    r[0] for r in await mdb.fetch_all(
-                        select([OrganizationMember.child_id])
-                        .where(OrganizationMember.acc_id.in_(meta_ids)))
-                ]
-                log.debug("Discovered %d organization members", len(user_node_ids))
-                return meta_ids, user_node_ids
-            user, (meta_ids, user_node_ids) = await gather(request.user(), load_org_members())
-            try:
-                udbid = int((await request.user()).native_id)
-            except (IndexError, ValueError):
-                raise ResponseError(BadRequestError(
-                    detail="Cannot resolve user %s." % request.uid))
-            user_node_id = await mdb.fetch_val(select([NodeUser.node_id])
-                                               .where(and_(NodeUser.acc_id.in_(meta_ids),
-                                                           NodeUser.database_id == udbid)))
-            if user_node_id not in user_node_ids:
-                raise ResponseError(ForbiddenError(
-                    detail="User %s does not belong to the GitHub organization." % request.uid))
-        else:
+        if is_admin or \
+                (user := await _check_user_org_membership(request, acc_id, sdb_conn, log)) is None:
             user = await request.user()
         # create the user<>account record
-        await conn.execute(insert(UserAccount).values(UserAccount(
+        await sdb_conn.execute(insert(UserAccount).values(UserAccount(
             user_id=request.uid,
             account_id=acc_id,
             is_admin=is_admin,
@@ -245,11 +225,60 @@ async def _accept_invitation(iid: int,
 
             await defer(report_new_user_to_slack(), "report_new_user_to_slack")
         values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
-        await conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
+        await sdb_conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
     if user is None:
         user = await request.user()
-    full_user = await user.load_accounts(conn)
+    full_user = await user.load_accounts(sdb_conn)
     return acc_id, full_user
+
+
+async def _check_user_org_membership(request: AthenianWebRequest,
+                                     acc_id: int,
+                                     sdb_conn: DatabaseLike,
+                                     log: logging.Logger,
+                                     ) -> Optional[User]:
+    user_org_membership_check_row = await sdb_conn.fetch_one(
+        select([Feature.id, Feature.enabled])
+        .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
+                    Feature.component == FeatureComponent.server)))
+    if user_org_membership_check_row is not None:
+        user_org_membership_check_feature_id = user_org_membership_check_row[Feature.id.key]
+        global_enabled = user_org_membership_check_row[Feature.enabled.key]
+        enabled = await sdb_conn.fetch_val(
+            select([AccountFeature.enabled]).where(and_(
+                AccountFeature.account_id == acc_id,
+                AccountFeature.feature_id == user_org_membership_check_feature_id,
+            )))
+        if (enabled is None and not global_enabled) or (enabled is not None and not enabled):
+            return None
+
+    mdb = request.mdb
+    cache = request.cache
+
+    # check whether the user is a member of the GitHub org
+    async def load_org_members():
+        meta_ids = await get_metadata_account_ids(acc_id, sdb_conn, cache)
+        user_node_ids = [
+            r[0] for r in await mdb.fetch_all(
+                select([OrganizationMember.child_id])
+                .where(OrganizationMember.acc_id.in_(meta_ids)))
+        ]
+        log.debug("Discovered %d organization members", len(user_node_ids))
+        return meta_ids, user_node_ids
+
+    user, (meta_ids, user_node_ids) = await gather(request.user(), load_org_members())
+    try:
+        udbid = int((await request.user()).native_id)
+    except (IndexError, ValueError):
+        raise ResponseError(BadRequestError(
+            detail="Cannot resolve user %s." % request.uid))
+    user_node_id = await mdb.fetch_val(select([NodeUser.node_id])
+                                       .where(and_(NodeUser.acc_id.in_(meta_ids),
+                                                   NodeUser.database_id == udbid)))
+    if user_node_id not in user_node_ids:
+        raise ResponseError(ForbiddenError(
+            detail="User %s does not belong to the GitHub organization." % request.uid))
+    return user
 
 
 async def create_new_account(conn: DatabaseLike, secret: str) -> int:

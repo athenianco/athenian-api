@@ -191,6 +191,8 @@ class Feature(create_time_mixin(updated_at=True), Base):
     __table_args__ = (UniqueConstraint("name", "component", name="uc_feature_name_component"),
                       {"sqlite_autoincrement": True})
 
+    USER_ORG_MEMBERSHIP_CHECK = "user_org_membership_check"
+
     id = Column(Integer(), primary_key=True)
     name = Column(String(128), nullable=False)
     component = Column(Enum(FeatureComponent), nullable=False)
