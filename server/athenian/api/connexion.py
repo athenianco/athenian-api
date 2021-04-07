@@ -281,12 +281,13 @@ class AthenianApp(connexion.AioHttpApp):
 
     def __del__(self):
         """Check that shutdown() was called."""
+        err = "shutdown() was not called or not await-ed"
         try:
-            assert not self._pdb_schema_task_box
-            assert not self._db_futures
-            assert self.mdb is None
-            assert self.sdb is None
-            assert self.pdb is None
+            assert not self._pdb_schema_task_box, err
+            assert not self._db_futures, err
+            assert self.mdb is None, err
+            assert self.sdb is None, err
+            assert self.pdb is None, err
         except AttributeError:
             return
 

@@ -8,8 +8,10 @@ import os
 from pathlib import Path
 import random
 import shutil
+import sys
 import tempfile
 import time
+import traceback
 from typing import Dict, List, Optional, Union
 
 from filelock import FileLock
@@ -339,10 +341,22 @@ def metadata_db(worker_id) -> str:
     return conn_str
 
 
-def init_own_db(letter: str,
-                base: DeclarativeMeta,
-                worker_id: str,
-                init_sql: Optional[dict] = None):
+def _init_own_db(letter: str,
+                 base: DeclarativeMeta,
+                 worker_id: str,
+                 init_sql: Optional[dict] = None) -> str:
+    try:
+        return _init_own_db_unchecked(letter, base, worker_id, init_sql)
+    except Exception:
+        print(f"Unable to initialize {letter}db", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)
+
+
+def _init_own_db_unchecked(letter: str,
+                           base: DeclarativeMeta,
+                           worker_id: str,
+                           init_sql: Optional[dict] = None) -> str:
     override_db = globals()["override_%sdb" % letter]
     backup_path = globals()["%sdb_backup" % letter].name
     if override_db:
@@ -390,73 +404,62 @@ def init_own_db(letter: str,
 
 @pytest.fixture(scope="function")
 def state_db(worker_id) -> str:
-    return init_own_db("s", StateBase, worker_id)
+    return _init_own_db("s", StateBase, worker_id)
 
 
 @pytest.fixture(scope="function")
 def persistentdata_db(worker_id) -> str:
-    return init_own_db("r", PersistentdataBase, worker_id, {
+    return _init_own_db("r", PersistentdataBase, worker_id, {
         "postgresql": "create schema if not exists athenian;",
     })
 
 
 @pytest.fixture(scope="function")
 def precomputed_db(worker_id) -> str:
-    return init_own_db("p", PrecomputedBase, worker_id, {
+    return _init_own_db("p", PrecomputedBase, worker_id, {
         "postgresql": "create extension if not exists hstore; create schema if not exists github;",
     })
 
 
-@pytest.fixture(scope="function")
-async def mdb(metadata_db, loop, request):
-    db = ParallelDatabase(metadata_db)
-    await db.connect()
+async def _connect_to_db(addr, loop, request):
+    db = ParallelDatabase(addr)
+    try:
+        await db.connect()
+    except Exception:
+        print(f"Unable to connect to {addr}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)
 
     def shutdown():
         loop.run_until_complete(db.disconnect())
 
     request.addfinalizer(shutdown)
     return db
+
+
+@pytest.fixture(scope="function")
+async def mdb(metadata_db, loop, request):
+    return await _connect_to_db(metadata_db, loop, request)
 
 
 @pytest.fixture(scope="function")
 async def sdb(state_db, loop, request):
-    db = ParallelDatabase(state_db)
-    await db.connect()
-
-    def shutdown():
-        loop.run_until_complete(db.disconnect())
-
-    request.addfinalizer(shutdown)
-    return db
+    return await _connect_to_db(state_db, loop, request)
 
 
 @pytest.fixture(scope="function")
 async def pdb(precomputed_db, loop, request):
-    db = ParallelDatabase(precomputed_db)
+    db = await _connect_to_db(precomputed_db, loop, request)
     db.metrics = {
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
     }
-    await db.connect()
-
-    def shutdown():
-        loop.run_until_complete(db.disconnect())
-
-    request.addfinalizer(shutdown)
     return db
 
 
 @pytest.fixture(scope="function")
 async def rdb(persistentdata_db, loop, request):
-    db = ParallelDatabase(persistentdata_db)
-    await db.connect()
-
-    def shutdown():
-        loop.run_until_complete(db.disconnect())
-
-    request.addfinalizer(shutdown)
-    return db
+    return await _connect_to_db(persistentdata_db, loop, request)
 
 
 @pytest.fixture(scope="session")
