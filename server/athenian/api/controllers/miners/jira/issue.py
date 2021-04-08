@@ -54,8 +54,11 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
             seed, _map, sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
         )).where(sql.and_(*filters, _map.node_id.is_(None)))
     _issue = aliased(Issue, name="j")
-    filters.append(_issue.acc_id == jira.account)
-    filters.append(_issue.project_id.in_(jira.projects))
+    filters.extend((
+        _issue.acc_id == jira.account,
+        _issue.project_id.in_(jira.projects),
+        _issue.is_deleted.is_(False),
+    ))
     if jira.labels:
         components = await _load_components(jira.labels, jira.account, mdb, cache)
         _append_label_filters(
@@ -393,6 +396,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
     and_filters = [
         Issue.acc_id == ids[0],
         Issue.project_id.in_(ids[1]),
+        Issue.is_deleted.is_(False),
     ]
     if time_from is not None:
         and_filters.append(sql.func.coalesce(AthenianIssue.resolved, far_away_future) >= time_from)

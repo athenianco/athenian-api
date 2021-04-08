@@ -481,7 +481,8 @@ class PullRequestMiner:
                     sql.and_(PullRequest.node_id == _map.node_id,
                              PullRequest.acc_id == _map.node_acc),
                 )).where(sql.and_(PullRequest.node_id.in_(node_ids),
-                                  PullRequest.acc_id.in_(meta_ids))),
+                                  PullRequest.acc_id.in_(meta_ids),
+                                  _issue.is_deleted.is_(False))),
                 mdb, columns=selected, index=[PullRequest.node_id.key, _issue.key.key])
             if df.empty:
                 df.drop([Issue.acc_id.key, Issue.components.key], inplace=True, axis=1)

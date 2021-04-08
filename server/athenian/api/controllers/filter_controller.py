@@ -352,7 +352,8 @@ async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
                           epiciss.acc_id == regiss.acc_id)))
         .where(and_(prmap.node_id.in_(pr_to_ix),
                     prmap.node_acc.in_(meta_ids),
-                    regiss.project_id.in_(jira_ids[1]))))
+                    regiss.project_id.in_(jira_ids[1]),
+                    regiss.is_deleted.is_(False))))
     issues = {}
     for r in rows:
         key = r["key"]

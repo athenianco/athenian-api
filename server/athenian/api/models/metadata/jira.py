@@ -51,6 +51,7 @@ class Issue(Base):
     priority_id = Column(Text)  # TODO(vmarkovtsev): make it nullable=False
     priority_name = Column(Text, nullable=False)
     url = Column(Text, nullable=False)
+    is_deleted = Column(Boolean, nullable=False, default=False, server_default="false")
 
 
 class Component(Base):
