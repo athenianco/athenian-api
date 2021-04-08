@@ -4,9 +4,10 @@ import json
 from dateutil.tz import tzutc
 import numpy as np
 import pytest
-from sqlalchemy import delete, insert
+from sqlalchemy import delete, insert, update
 
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
+from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
     CalculatedLinearMetricValues, FilteredJIRAStuff, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, \
     JIRAIssueType, JIRALabel, JIRAMetricID, JIRAPriority, JIRAStatus, JIRAUser
@@ -308,7 +309,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
         assert not model.issues
 
 
-async def test_filter_jira_no_time(client, headers):
+async def test_filter_jira_epics_no_time(client, headers):
     body = {
         "date_from": None,
         "date_to": None,
@@ -326,6 +327,36 @@ async def test_filter_jira_no_time(client, headers):
     assert len(model.epics) == 81
     assert len(model.priorities) == 6
     assert len(model.statuses) == 7
+
+
+@pytest.mark.parametrize("ikey", ("DEV-162", "DEV-163"))
+async def test_filter_jira_epics_deleted(client, headers, ikey, mdb):
+    await mdb.execute(update(Issue).where(Issue.key == ikey).values({Issue.is_deleted: True}))
+    try:
+        body = {
+            "date_from": "2020-04-09",
+            "date_to": "2020-04-09",
+            "timezone": 120,
+            "account": 1,
+            "exclude_inactive": True,
+            "return": ["epics"],
+        }
+        response = await client.request(
+            method="POST", path="/v1/filter/jira", headers=headers, json=body,
+        )
+        body = (await response.read()).decode("utf-8")
+        assert response.status == 200, "Response body is : " + body
+        model = FilteredJIRAStuff.from_dict(json.loads(body))
+        noticed_epic = False
+        for epic in model.epics:
+            if epic.id == "DEV-163":
+                noticed_epic = True
+                assert not epic.children
+        if ikey == "DEV-163":
+            assert not noticed_epic
+        assert len(model.epics) == 17 + noticed_epic
+    finally:
+        await mdb.execute(update(Issue).where(Issue.key == ikey).values({Issue.is_deleted: False}))
 
 
 @pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [
@@ -567,6 +598,29 @@ async def test_filter_jira_issue_prs_comments(client, headers):
             assert not pr.jira
     assert prs == 6
     assert comments == 1113
+
+
+async def test_filter_jira_issue_disabled(client, headers, mdb):
+    ikey = "ENG-303"
+    await mdb.execute(update(Issue).where(Issue.key == ikey).values({Issue.is_deleted: True}))
+    try:
+        body = {
+            "date_from": "2020-09-01",
+            "date_to": "2021-01-01",
+            "timezone": 120,
+            "account": 1,
+            "exclude_inactive": True,
+            "return": ["issues", "issue_bodies"],
+        }
+        response = await client.request(
+            method="POST", path="/v1/filter/jira", headers=headers, json=body,
+        )
+        body = (await response.read()).decode("utf-8")
+        assert response.status == 200, "Response body is : " + body
+        model = FilteredJIRAStuff.from_dict(json.loads(body))
+        assert len(model.issues) == 389 - 1
+    finally:
+        await mdb.execute(update(Issue).where(Issue.key == ikey).values({Issue.is_deleted: False}))
 
 
 async def test_filter_jira_deleted_repositories(client, headers, mdb):

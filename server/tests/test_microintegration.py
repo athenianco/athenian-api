@@ -48,7 +48,7 @@ def _test_integration_micro(metadata_db, aiohttp_unused_port, worker_id):
 
     def kill():
         with kill_cond:
-            kill_cond.wait(10)
+            kill_cond.wait(20)
         if proc.poll() is None:
             proc.terminate()
 
