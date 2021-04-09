@@ -131,6 +131,13 @@ def main():
         for v in cache.metrics["context"].values():
             v.set(defaultdict(int))
         sdb, mdb, pdb, rdb = await _connect_to_dbs(args)
+
+        nonlocal return_code
+        return_code = await sync_labels(log, mdb, pdb)
+
+        bots = await Bots()(mdb)
+        log.info("Loaded %d bots", len(bots))
+
         account_progress_settings = {}
         accounts = [r[0] for r in await sdb.fetch_all(select([Account.id]))]
         log.info("Checking progress of %d accounts", len(accounts))
@@ -138,12 +145,6 @@ def main():
             state = await load_account_state(account, log, sdb, mdb, cache, slack)
             if state is not None:
                 account_progress_settings[account] = state
-
-        nonlocal return_code
-        return_code = await sync_labels(log, mdb, pdb)
-        bots = await Bots()(mdb)
-        log.info("Loaded %d bots", len(bots))
-
         reposets = await sdb.fetch_all(select([RepositorySet])
                                        .where(RepositorySet.name == RepositorySet.ALL))
         reposets = [RepositorySet(**r) for r in reposets]
@@ -391,7 +392,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     del order
     unique_acc_ids, acc_id_counts = np.unique(unique_pr_acc_ids, return_counts=True)
     del unique_pr_acc_ids
-    node_id_by_acc_id = np.split(unique_prs, acc_id_counts)
+    node_id_by_acc_id = np.split(unique_prs, np.cumsum(acc_id_counts))
     del unique_prs
     del acc_id_counts
     for acc_id, node_ids in zip(unique_acc_ids, node_id_by_acc_id):

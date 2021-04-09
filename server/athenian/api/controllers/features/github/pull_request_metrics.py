@@ -62,7 +62,7 @@ def group_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.ndarray
     order = np.argsort(line_group_assignments)
     line_groups = np.split(
         np.arange(len(items))[order],
-        np.unique(line_group_assignments[order], return_index=True)[1][1:])
+        np.cumsum(np.unique(line_group_assignments[order], return_index=True)[1][1:]))
     if line_group_assignments[order[0]] < 0:
         line_groups = line_groups[1:]
     return line_groups
