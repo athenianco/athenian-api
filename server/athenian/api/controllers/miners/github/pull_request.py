@@ -756,11 +756,22 @@ class PullRequestMiner:
         if not queries:
             return prs
         prs.loc[dead, "dead"] = True
-        query = queries[0] if len(queries) == 1 else sql.union_all(*queries)
-        resolved = await read_sql_query(query, mdb, [
-            "commit_node_id", "sha", "repo", "pr_node_id",
-            PushCommit.committed_date, PushCommit.pushed_date,
-        ])
+        # we may have MANY queries here and Postgres responds with StatementTooComplexError
+        # split them by 1k batches to stay below the stack size limit
+        batch_size = 1000
+        tasks = []
+        for batch_index in range(0, len(queries), batch_size):
+            batch = queries[batch_index:batch_index + batch_size]
+            if len(batch) == 1:
+                query = batch[0]
+            else:
+                query = sql.union_all(*batch)
+            tasks.append(read_sql_query(query, mdb, [
+                "commit_node_id", "sha", "repo", "pr_node_id",
+                PushCommit.committed_date, PushCommit.pushed_date,
+            ]))
+        resolveds = await gather(*tasks, op="mark_dead_prs commit SQL UNION ALL-s")
+        resolved = pd.concat(resolveds)
         # look up the candidates in the DAGs
         pr_repos = resolved["repo"].values
         repo_order = np.argsort(pr_repos)
