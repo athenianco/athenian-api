@@ -716,7 +716,7 @@ async def test_calc_metrics_prs_lines_smoke(client, headers):
         ],
         "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2017-10-13",
-        "date_to": "2018-01-23",
+        "date_to": "2018-03-23",
         "granularities": ["all"],
         "exclude_inactive": False,
         "account": 1,
@@ -728,9 +728,9 @@ async def test_calc_metrics_prs_lines_smoke(client, headers):
     assert response.status == 200, "Response body is : " + body
     cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
     assert len(cm.calculated) == 2
-    assert cm.calculated[0].values[0].values[0] == "3561521s"
+    assert cm.calculated[0].values[0].values[0] == "3004941s"
     assert cm.calculated[0].for_.lines == [0, 500]
-    assert cm.calculated[1].values[0].values[0] == "4194716s"
+    assert cm.calculated[1].values[0].values[0] == "3771952s"
     assert cm.calculated[1].for_.lines == [500, 100500]
 
 
