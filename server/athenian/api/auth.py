@@ -7,7 +7,6 @@ import os
 import pickle
 from random import random
 import re
-import socket
 import struct
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import warnings
@@ -275,13 +274,13 @@ class Auth0:
                         "https://%s/api/v2/users?q=%s" % (self._domain, query),
                         headers={"Authorization": "Bearer " + token})
                 except aiohttp.ClientConnectorError as e:
-                    if isinstance(e.__cause__, socket.gaierror) and e.__cause__.errno == -3:
+                    if isinstance(e.__cause__, OSError) and e.__cause__.errno in (-3, 101):
                         self.log.warning("Auth0 Management API: %s", e)
-                        # Temporary failure in name resolution
+                        # -3: Temporary failure in name resolution
+                        # 101: Network is unreachable
                         await asyncio.sleep(0.1)
                         continue
-                    else:
-                        raise e from None
+                    raise e from None
                 except RuntimeError:
                     # our loop is closed and we are doomed
                     return []
