@@ -1,7 +1,9 @@
 import asyncio
 from datetime import datetime
 from functools import partial, reduce
+import importlib
 from itertools import chain
+import logging
 import pickle
 from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -547,6 +549,50 @@ async def calc_developer_metrics_github(devs: Sequence[Collection[str]],
     ]
     result = result.swapaxes(1, 2)
     return result, topics_seq
+
+
+def get_calculator(
+    service: str,
+    calculator: str,
+    variation: Optional[str] = None,
+    raise_err: Optional[bool] = False,
+):
+    """Get the metrics calculator function."""
+    log = logging.getLogger(__name__)
+    default_implementation = METRIC_ENTRIES[service][calculator]
+    if not variation:
+        return default_implementation
+
+    try:
+        mod = importlib.import_module(f"athenian.api.experiments.{variation}")
+    except ModuleNotFoundError:
+        if raise_err:
+            raise
+
+        log.warning(
+            "Invalid variation '%s' for calculator '%s', using default implementation",
+            variation,
+            calculator,
+        )
+        return default_implementation
+    else:
+        calc = getattr(mod, default_implementation.__name__, None)
+        if not calc:
+            if raise_err:
+                raise RuntimeError(
+                    f"Missing implementation of calculator {calculator} "
+                    f"for variation {variation}",
+                )
+
+            log.warning(
+                "Variation '%s' doesn't provide an implementation for '%s', "
+                "using default implementation",
+                variation,
+                calculator,
+            )
+            return default_implementation
+
+        return calc
 
 
 METRIC_ENTRIES = {
