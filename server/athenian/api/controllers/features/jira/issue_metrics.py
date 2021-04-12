@@ -5,11 +5,11 @@ import numpy as np
 import pandas as pd
 
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedHistogramCalculator, BinnedMetricCalculator, HistogramCalculator, \
+    BinnedHistogramCalculator, BinnedMetricCalculator, Counter, HistogramCalculator, \
     HistogramCalculatorEnsemble, make_register_metric, MetricCalculator, \
-    MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator
+    MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.controllers.miners.jira.issue import ISSUE_PRS_BEGAN, ISSUE_PRS_RELEASED
-from athenian.api.models.metadata.jira import AthenianIssue, Issue
+from athenian.api.models.metadata.jira import AthenianIssue, Issue, Status
 from athenian.api.models.web import JIRAMetricID
 
 
@@ -198,8 +198,9 @@ class AcknowledgeTimeCalculator(AverageMetricCalculator[timedelta]):
     """
     Issue Acknowledge Time calculator.
 
-    Acknowledge time is the time it takes for the work to actually being after the issue is \
-    created.
+    Acknowledge time is the time it takes for the work to actually start after the issue is \
+    created. We calculate the metric only for those issues that are currently In Progress or \
+    Resolved.
 
     * If the work began before the creation time, the acknowledge time is 0.
     """
@@ -216,6 +217,9 @@ class AcknowledgeTimeCalculator(AverageMetricCalculator[timedelta]):
         work_began = facts[AthenianIssue.work_began.key].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         acknowledged = np.fmin(work_began, prs_began)
+        statuses = facts[Status.category_name.key].values
+        acknowledged[(statuses != Status.CATEGORY_IN_PROGRESS) &
+                     (statuses != Status.CATEGORY_DONE)] = None
         created = facts[Issue.created.key].values.astype(min_times.dtype)
         ack_times = acknowledged - created
         ack_times = np.maximum(ack_times, ack_times.dtype.type(0))
@@ -223,3 +227,19 @@ class AcknowledgeTimeCalculator(AverageMetricCalculator[timedelta]):
         result[:] = ack_times.astype(self.dtype).view(int)
         result[~focus_mask] = None
         return result
+
+
+@register_metric(JIRAMetricID.JIRA_ACKNOWLEDGED)
+class AcknowledgedCounter(WithoutQuantilesMixin, Counter):
+    """Count the number of PRs that were used to calculate JIRA_ACKNOWLEDGED disregarding \
+    the quantiles."""
+
+    deps = (AcknowledgeTimeCalculator,)
+
+
+@register_metric(JIRAMetricID.JIRA_ACKNOWLEDGED_Q)
+class AcknowledgedWithQuantiles(Counter):
+    """Count the number of PRs that were used to calculate JIRA_ACKNOWLEDGED respecting \
+    the quantiles."""
+
+    deps = (AcknowledgeTimeCalculator,)
