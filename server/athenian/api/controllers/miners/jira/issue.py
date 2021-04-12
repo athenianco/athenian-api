@@ -23,7 +23,7 @@ from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
 from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
-from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue
+from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue, Status
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
@@ -388,6 +388,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
         Issue.priority_name,
         Issue.epic_id,
         Issue.status,
+        Status.category_name,
         Issue.labels,
     ]
     columns.extend(extra_columns)
@@ -435,14 +436,15 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
                 columns.append(Issue.commenters_display_names.label("commenters"))
 
     def query_starts():
-        seeds = [Issue]
+        seeds = [seed := sql.join(Issue, Status, sql.and_(Issue.status_id == Status.id,
+                                                          Issue.acc_id == Status.acc_id))]
         if len(epics):
-            seeds = (
-                sql.join(Issue, Epic, sql.and_(Issue.epic_id == Epic.id,
-                                               Issue.acc_id == Epic.acc_id)),
-                sql.join(Issue, Epic, sql.and_(Issue.parent_id == Epic.id,
-                                               Issue.acc_id == Epic.acc_id)),
-            )
+            seeds = [
+                sql.join(seed, Epic, sql.and_(Issue.epic_id == Epic.id,
+                                              Issue.acc_id == Epic.acc_id)),
+                sql.join(seed, Epic, sql.and_(Issue.parent_id == Epic.id,
+                                              Issue.acc_id == Epic.acc_id)),
+            ]
         return tuple(sql.select(columns).select_from(sql.outerjoin(
             seed, AthenianIssue, sql.and_(Issue.acc_id == AthenianIssue.acc_id,
                                           Issue.id == AthenianIssue.id)))

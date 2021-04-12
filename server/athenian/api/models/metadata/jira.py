@@ -84,6 +84,10 @@ class Priority(Base):
 class Status(Base):
     __tablename__ = "api_statuses"
 
+    CATEGORY_TODO = "To Do"
+    CATEGORY_IN_PROGRESS = "In Progress"
+    CATEGORY_DONE = "Done"
+
     id = Column(Text, primary_key=True)
     name = Column(Text, nullable=False)
     category_name = Column(Text, nullable=False)

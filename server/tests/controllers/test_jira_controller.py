@@ -932,6 +932,8 @@ async def test_jira_metrics_teams(client, headers):
     (JIRAMetricID.JIRA_OPEN, True, 199),
     (JIRAMetricID.JIRA_RESOLVED, False, 850),
     (JIRAMetricID.JIRA_RESOLVED, True, 850),
+    (JIRAMetricID.JIRA_ACKNOWLEDGED, False, 805),
+    (JIRAMetricID.JIRA_ACKNOWLEDGED_Q, False, 805),
     (JIRAMetricID.JIRA_RESOLUTION_RATE, False, 0.9594137542277339),
 ])
 async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n):
@@ -965,7 +967,7 @@ async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n)
 @pytest.mark.parametrize("metric, value, score, cmin, cmax", [
     (JIRAMetricID.JIRA_LIFE_TIME, "758190s", 72, "654210s", "868531s"),
     (JIRAMetricID.JIRA_LEAD_TIME, "304289s", 51, "226105s", "375748s"),
-    (JIRAMetricID.JIRA_ACKNOWLEDGE_TIME, "458094s", 66, "380403s", "539884s"),
+    (JIRAMetricID.JIRA_ACKNOWLEDGE_TIME, "448797s", 64, "367966s", "529559s"),
 ])
 async def test_jira_metrics_bug_times(client, headers, metric, value, score, cmin, cmax):
     np.random.seed(7)
