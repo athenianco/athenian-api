@@ -561,6 +561,7 @@ async def get_calculator_for_user(
     user_id: str,
     sdb: DatabaseLike,
     raise_err: Optional[bool] = False,
+    base_module: Optional[str] = "athenian.api.experiments",
 ):
     """Get the metrics calculator function for the given user."""
     feature_name_prefix = METRIC_ENTRIES_VARIATIONS_PREFIX[service]
@@ -575,7 +576,9 @@ async def get_calculator_for_user(
     )
 
     if not all_metrics_variations_features:
-        return get_calculator(service, calculator, raise_err=raise_err)
+        return get_calculator(
+            service, calculator, raise_err=raise_err, base_module=base_module,
+        )
 
     all_metrics_variations_features = {
         row[0]: {"name": row[1][len(feature_name_prefix):], "params": row[2] or {}}
@@ -593,7 +596,9 @@ async def get_calculator_for_user(
     )
 
     if not metrics_variation_feature:
-        return get_calculator(service, calculator, raise_err=raise_err)
+        return get_calculator(
+            service, calculator, raise_err=raise_err, base_module=base_module,
+        )
 
     selected_metrics_variation = all_metrics_variations_features[
         metrics_variation_feature[0]
@@ -605,10 +610,18 @@ async def get_calculator_for_user(
 
     is_god = await sdb.fetch_one(select([God.user_id]).where(God.user_id == user_id))
     if metrics_variation_params.get("god_only") and not is_god:
-        return get_calculator(service, calculator, raise_err=raise_err)
+        return get_calculator(
+            service, calculator, raise_err=raise_err, base_module=base_module,
+        )
 
     variation = selected_metrics_variation["name"]
-    return get_calculator(service, calculator, variation=variation, raise_err=raise_err)
+    return get_calculator(
+        service,
+        calculator,
+        variation=variation,
+        raise_err=raise_err,
+        base_module=base_module,
+    )
 
 
 def get_calculator(
@@ -616,6 +629,7 @@ def get_calculator(
     calculator: str,
     variation: Optional[str] = None,
     raise_err: Optional[bool] = False,
+    base_module: Optional[str] = "athenian.api.experiments",
 ):
     """Get the metrics calculator function."""
     log = logging.getLogger(__name__)
@@ -624,7 +638,7 @@ def get_calculator(
         return default_implementation
 
     try:
-        mod = importlib.import_module(f"athenian.api.experiments.{variation}")
+        mod = importlib.import_module(f"{base_module}.{variation}")
     except ModuleNotFoundError:
         if raise_err:
             raise
