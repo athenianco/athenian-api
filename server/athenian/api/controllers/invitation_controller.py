@@ -267,14 +267,9 @@ async def _check_user_org_membership(request: AthenianWebRequest,
         return meta_ids, user_node_ids
 
     user, (meta_ids, user_node_ids) = await gather(request.user(), load_org_members())
-    try:
-        udbid = int((await request.user()).native_id)
-    except (IndexError, ValueError):
-        raise ResponseError(BadRequestError(
-            detail="Cannot resolve user %s." % request.uid))
     user_node_id = await mdb.fetch_val(select([NodeUser.node_id])
                                        .where(and_(NodeUser.acc_id.in_(meta_ids),
-                                                   NodeUser.database_id == udbid)))
+                                                   NodeUser.login == user.login)))
     if user_node_id not in user_node_ids:
         raise ResponseError(ForbiddenError(
             detail="User %s does not belong to the GitHub organization." % request.uid))
