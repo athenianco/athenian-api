@@ -123,7 +123,7 @@ async def test_gen_invitation_existing(client, eiso, headers, app):
 
 async def test_accept_invitation_smoke(client, headers, sdb, disable_default_user, app):
     app._auth0._default_user = app._auth0._default_user.copy()
-    app._auth0._default_user.native_id = "2793551"
+    app._auth0._default_user.login = "vmarkovtsev"
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     body = {
         "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
@@ -147,8 +147,8 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
         "user": {
             "id": "auth0|5e1f6dfb57bc640ea390557b",
             "name": "Vadim Markovtsev",
-            "login": "vadim",
-            "native_id": "2793551",
+            "login": "vmarkovtsev",
+            "native_id": "5e1f6dfb57bc640ea390557b",
             "email": "vadim@athenian.co",
             "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
             "accounts": {"1": True, "2": False, "3": False},
@@ -161,7 +161,7 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
 async def test_accept_invitation_disabled_membership_check(
         client, headers, sdb, disable_default_user, app):
     app._auth0._default_user = app._auth0._default_user.copy()
-    app._auth0._default_user.native_id = "2793551"
+    app._auth0._default_user.login = "vmarkovtsev"
     check_fid = await sdb.fetch_val(
         select([Feature.id])
         .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
@@ -184,7 +184,7 @@ async def test_accept_invitation_disabled_membership_check(
 async def test_accept_invitation_enabled_membership_check(
         client, headers, sdb, disable_default_user, app):
     app._auth0._default_user = app._auth0._default_user.copy()
-    app._auth0._default_user.native_id = "2793551"
+    app._auth0._default_user.login = "vmarkovtsev"
     check_fid = await sdb.fetch_val(
         select([Feature.id])
         .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
@@ -202,18 +202,6 @@ async def test_accept_invitation_enabled_membership_check(
     )
     rbody = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 422, rbody
-
-
-async def test_accept_invitation_unsupported(client, headers, sdb, disable_default_user, app):
-    await sdb.execute(update(AccountGitHubAccount).values({AccountGitHubAccount.account_id: 3}))
-    body = {
-        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
-    }
-    response = await client.request(
-        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
-    )
-    rbody = json.loads((await response.read()).decode("utf-8"))
-    assert response.status == 400, rbody
 
 
 async def test_accept_invitation_default_user(client, headers, app):
