@@ -12,7 +12,7 @@ import signal
 import socket
 import time
 import traceback
-from typing import Any, Callable, Coroutine, Dict, Optional
+from typing import Any, Callable, Collection, Coroutine, Dict, Optional
 
 import aiohttp.web
 from aiohttp.web_exceptions import HTTPClientError, HTTPFound, HTTPNoContent, HTTPRedirection, \
@@ -167,6 +167,7 @@ class AthenianApp(connexion.AioHttpApp):
                  sdb_options: Optional[Dict[str, Any]] = None,
                  pdb_options: Optional[Dict[str, Any]] = None,
                  rdb_options: Optional[Dict[str, Any]] = None,
+                 on_startup_callbacks: Optional[Collection[Callable[..., None]]] = None,
                  auth0_cls: Callable[..., Auth0] = Auth0,
                  kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
                  cache: Optional[aiomcache.Client] = None,
@@ -270,6 +271,8 @@ class AthenianApp(connexion.AioHttpApp):
                 self.log.exception("Failed to connect to the %s DB at %s", name, db_conn)
                 raise GracefulExit() from None
 
+        if on_startup_callbacks:
+            self.app.on_startup.extend(on_startup_callbacks)
         self.app.on_shutdown.append(self.shutdown)
         # schedule the DB connections when the server starts
         self._db_futures = {
