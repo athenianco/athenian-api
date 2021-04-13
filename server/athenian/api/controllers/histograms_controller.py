@@ -5,7 +5,7 @@ from aiohttp import web
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.features.entries import METRIC_ENTRIES
+from athenian.api.controllers.features.entries import get_calculator_for_user
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import compile_repos_and_devs_prs
 from athenian.api.controllers.settings import Settings
@@ -41,8 +41,11 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 bins=h.bins,
                 ticks=tuple(h.ticks) if h.ticks is not None else None,
             )].append(h.metric)
+        calculator = await get_calculator_for_user(
+            service, "prs_histogram", filt.account, (await request.user()).id, request.sdb,
+        )
         try:
-            histograms = await METRIC_ENTRIES[service]["prs_histogram"](
+            histograms = await calculator(
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
                 repos, withgroups, labels, jira, filt.exclude_inactive, release_settings,
                 filt.fresh, filt.account, meta_ids,

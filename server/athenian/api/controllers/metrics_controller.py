@@ -10,7 +10,7 @@ from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.code import CodeStats
-from athenian.api.controllers.features.entries import METRIC_ENTRIES
+from athenian.api.controllers.features.entries import get_calculator_for_user
 from athenian.api.controllers.jira import get_jira_installation, get_jira_installation_or_none
 from athenian.api.controllers.miners.access_classes import access_classes, AccessChecker
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -85,7 +85,10 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
 
     @sentry_span
     async def calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_set):
-        metric_values = await METRIC_ENTRIES[service]["prs_linear"](
+        calculator = await get_calculator_for_user(
+            service, "prs_linear", filt.account, (await request.user()).id, request.sdb,
+        )
+        metric_values = await calculator(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
             for_set.lines or [], repos, withgroups, labels, jira,
             filt.exclude_inactive, release_settings, filt.fresh,
@@ -294,7 +297,10 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         filt.date_from, filt.date_to, filt.granularity, filt.timezone)
     with_author = [s.rsplit("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.rsplit("/", 1)[1] for s in (filt.with_committer or [])]
-    stats = await METRIC_ENTRIES["github"]["code"](
+    calculator = await get_calculator_for_user(
+        "github", "code", filt.account, (await request.user()).id, request.sdb,
+    )
+    stats = await calculator(
         FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
         with_committer, meta_ids, request.mdb, request.cache)  # type: List[CodeStats]
     model = [
@@ -345,7 +351,10 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
             dev_groups = [[devs[i] for i in group] for group in for_set.aggregate_devgroups]
         else:
             dev_groups = [[dev] for dev in devs]
-        tasks.append(METRIC_ENTRIES[service]["developers"](
+        calculator = await get_calculator_for_user(
+            service, "developers", filt.account, (await request.user()).id, request.sdb,
+        )
+        tasks.append(calculator(
             dev_groups, repos, time_intervals, topics, labels, jira, release_settings,
             filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache))
         for_sets.append(for_set)
@@ -432,7 +441,10 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
                               ("pr_author", ReleaseParticipationKind.PR_AUTHOR),
                               ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
         } for with_ in (filt.with_ or [])]
-        release_metric_values, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
+        calculator = await get_calculator_for_user(
+            service, "releases_linear", filt.account, (await request.user()).id, request.sdb,
+        )
+        release_metric_values, release_matches = await calculator(
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
             JIRAFilter.from_web(filt.jira, jira_ids), release_settings, prefixer,
             filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
