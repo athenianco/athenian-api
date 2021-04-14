@@ -1,12 +1,12 @@
 from datetime import datetime
 from itertools import chain
 import marshal
-from typing import Collection, Dict, List, Optional, Tuple
+from typing import Collection, List, Optional, Tuple
 
 import aiomcache
 import databases
 import sentry_sdk
-from sqlalchemy import and_, distinct, join, or_, select, union
+from sqlalchemy import and_, distinct, join, select, union, union_all
 from sqlalchemy.sql.functions import coalesce
 
 from athenian.api.async_utils import gather
@@ -15,8 +15,7 @@ from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
-from athenian.api.models.metadata import PREFIXES
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
     PullRequestComment, PullRequestReview, PushCommit, Repository
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
@@ -36,17 +35,20 @@ async def mine_repositories(repos: Collection[str],
                             time_from: datetime,
                             time_to: datetime,
                             exclude_inactive: bool,
-                            release_settings: Dict[str, ReleaseMatchSetting],
+                            release_settings: ReleaseSettings,
                             account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
                             pdb: databases.Database,
                             cache: Optional[aiomcache.Client],
                             ) -> List[str]:
-    """Discover repositories from the given set which were updated in the given time frame."""
+    """
+    Discover repositories from the given set which were updated in the given time frame.
+
+    :return: Repository names without prefixes (e.g., "github.com/").
+    """
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
-    prefix = PREFIXES["github"]
     with sentry_sdk.start_span(op="mine_repositories/nodes", description=str(len(repos))):
         rows = await mdb.fetch_all(select([NodeRepository.id])
                                    .where(and_(NodeRepository.name_with_owner.in_(repos),
@@ -128,19 +130,25 @@ async def mine_repositories(repos: Collection[str],
         # fetch_commits()
         match_groups = {}
         for repo in repos:
-            rms = release_settings[prefix + repo]
+            rms = release_settings.native[repo]
             if rms.match in (ReleaseMatch.tag, ReleaseMatch.tag_or_branch):
                 match_groups.setdefault(rms.tags, []).append(repo)
         if not match_groups:
             # We experienced a huge fuck-up without this condition.
             return []
-        or_items = or_(*(and_(GitHubRelease.release_match == "tag|" + m,
-                              GitHubRelease.repository_full_name.in_(r),
-                              GitHubRelease.acc_id == account)
-                         for m, r in match_groups.items()))
-        return await pdb.fetch_all(
+        queries = [
             select([distinct(GitHubRelease.repository_full_name)])
-            .where(and_(or_items, GitHubRelease.published_at.between(time_from, time_to))))
+            .where(and_(GitHubRelease.release_match == "tag|" + m,
+                        GitHubRelease.repository_full_name.in_(r),
+                        GitHubRelease.acc_id == account,
+                        GitHubRelease.published_at.between(time_from, time_to)))
+            for m, r in match_groups.items()
+        ]
+        if len(queries) == 1:
+            query = queries[0]
+        else:
+            query = union_all(*queries)
+        return await pdb.fetch_all(query)
 
     tasks = [
         fetch_commits_comments_reviews(),
@@ -159,5 +167,4 @@ async def mine_repositories(repos: Collection[str],
                                                 Repository.full_name.in_(repos),
                                                 Repository.acc_id.in_(meta_ids)))
                                     .order_by(Repository.full_name))
-    repos = [prefix + r[0] for r in repos]
-    return repos
+    return [r[0] for r in repos]

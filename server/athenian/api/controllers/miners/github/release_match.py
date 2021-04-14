@@ -31,10 +31,9 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
     new_released_prs_df
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import nonemax, PullRequestFacts
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
     PullRequestLabel, PushCommit, Release
 from athenian.api.models.precomputed.models import GitHubRepository
@@ -49,7 +48,7 @@ async def map_prs_to_releases(prs: pd.DataFrame,
                               default_branches: Dict[str, str],
                               time_to: datetime,
                               dags: Dict[str, DAG],
-                              release_settings: Dict[str, ReleaseMatchSetting],
+                              release_settings: ReleaseSettings,
                               account: int,
                               meta_ids: Tuple[int, ...],
                               mdb: databases.Database,
@@ -293,7 +292,7 @@ async def map_releases_to_prs(repos: Collection[str],
                               authors: Collection[str],
                               mergers: Collection[str],
                               jira: JIRAFilter,
-                              release_settings: Dict[str, ReleaseMatchSetting],
+                              release_settings: ReleaseSettings,
                               updated_min: Optional[datetime],
                               updated_max: Optional[datetime],
                               pdags: Optional[Dict[str, DAG]],
@@ -383,7 +382,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                                           time_from: datetime,
                                           time_to: datetime,
                                           until_today: bool,
-                                          release_settings: Dict[str, ReleaseMatchSetting],
+                                          release_settings: ReleaseSettings,
                                           account: int,
                                           meta_ids: Tuple[int, ...],
                                           mdb: databases.Database,
@@ -394,7 +393,7 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
                                           ) -> Tuple[Dict[str, ReleaseMatch],
                                                      pd.DataFrame,
                                                      pd.DataFrame,
-                                                     Dict[str, ReleaseMatchSetting]]:
+                                                     ReleaseSettings]:
     """
     Load releases with sufficient history depth.
 
@@ -414,18 +413,17 @@ async def _find_releases_for_matching_prs(repos: Iterable[str],
     else:
         matched_bys = {}
     # these matching rules must be applied in the past to stay consistent
-    prefix = PREFIXES["github"]
-    consistent_release_settings = {}
+    consistent_release_settings = release_settings.copy()
     repos_matched_by_tag = []
     repos_matched_by_branch = []
     for repo in repos:
-        setting = release_settings[prefix + repo]
+        setting = release_settings.native[repo]
         match = ReleaseMatch(matched_bys.setdefault(repo, setting.match))
-        consistent_release_settings[prefix + repo] = ReleaseMatchSetting(
+        consistent_release_settings.set_by_native(repo, ReleaseMatchSetting(
             tags=setting.tags,
             branches=setting.branches,
             match=match,
-        )
+        ))
         if match in (ReleaseMatch.tag, ReleaseMatch.event):
             repos_matched_by_tag.append(repo)
         elif match == ReleaseMatch.branch:

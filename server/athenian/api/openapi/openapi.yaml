@@ -3764,6 +3764,7 @@ components:
         in:
           $ref: '#/components/schemas/RepositorySet'
         as:
+          description: Filter by contribution type. A `null` or an empty list select all.
           items:
             enum:
             - author

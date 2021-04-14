@@ -24,7 +24,7 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestFacts
 from athenian.api.controllers.miners.github.release_load import load_releases
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipationKind, \
     PullRequestFacts
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 import athenian.api.db
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, PullRequest
@@ -565,8 +565,8 @@ async def test_pr_facts_miner_empty_releases(branches, default_branches, mdb, pd
         JIRAFilter.empty(),
         branches, default_branches,
         False,
-        {"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="unknown", tags="", match=ReleaseMatch.branch)},
+        ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="unknown", tags="", match=ReleaseMatch.branch)}),
         1,
         (6366825,),
         mdb,
@@ -586,10 +586,10 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
     date_to = date(year=2018, month=1, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
     time_to = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
-    release_settings = {
+    release_settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
             branches="unknown", tags="", match=ReleaseMatch.branch),
-    }
+    })
     miner, _, _, _ = await PullRequestMiner.mine(
         date_from,
         date_to,

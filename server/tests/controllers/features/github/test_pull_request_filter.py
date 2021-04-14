@@ -236,7 +236,8 @@ async def test_pr_list_miner_filter_labels_pdb(mdb, pdb, rdb, release_match_sett
     await calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
-        False, release_match_setting_tag, False, False, 1, (6366825,), mdb, pdb, rdb, None,
+        False, release_match_setting_tag,
+        False, False, 1, (6366825,), mdb, pdb, rdb, None,
     )
     await wait_deferred()
     prs = await filter_pull_requests(
@@ -264,7 +265,8 @@ async def test_fetch_pull_requests_smoke(mdb, pdb, rdb, release_match_setting_ta
     await calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
-        False, release_match_setting_tag, False, False, 1, (6366825,), mdb, pdb, rdb, None,
+        False, release_match_setting_tag,
+        False, False, 1, (6366825,), mdb, pdb, rdb, None,
     )
     await wait_deferred()
     prs1 = await filter_pull_requests(

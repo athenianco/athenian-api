@@ -274,7 +274,7 @@ class Repository(Base,
     disabled = Column(Boolean)
     fork = Column(Boolean)
     full_name = Column(Text, nullable=False)
-    html_url = Column(Text)
+    html_url = Column(Text, nullable=False)
 
 
 class User(Base,
@@ -288,6 +288,7 @@ class User(Base,
     email = Column(Text)
     login = Column(Text, nullable=False)
     name = Column(Text)
+    html_url = Column(Text, nullable=False)
 
 
 class Release(Base,

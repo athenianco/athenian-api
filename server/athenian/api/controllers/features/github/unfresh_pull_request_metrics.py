@@ -15,7 +15,7 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import load_releases
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import PRParticipants, PullRequestFacts
-from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.tracing import sentry_span
@@ -33,7 +33,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
                                            exclude_inactive: bool,
                                            branches: pd.DataFrame,
                                            default_branches: Dict[str, str],
-                                           release_settings: Dict[str, ReleaseMatchSetting],
+                                           release_settings: ReleaseSettings,
                                            account: int,
                                            meta_ids: Tuple[int, ...],
                                            mdb: databases.Database,
@@ -129,7 +129,7 @@ async def _fetch_inactive_merged_unreleased_prs(time_from: datetime,
                                                 labels: LabelFilter,
                                                 jira: JIRAFilter,
                                                 default_branches: Dict[str, str],
-                                                release_settings: Dict[str, ReleaseMatchSetting],
+                                                release_settings: ReleaseSettings,
                                                 account: int,
                                                 meta_ids: Tuple[int, ...],
                                                 mdb: databases.Database,

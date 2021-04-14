@@ -16,7 +16,7 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.release_load import load_releases
-from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, OrganizationMember, \
     PullRequest, PullRequestComment, PullRequestReview, PushCommit, Release, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
@@ -41,7 +41,7 @@ async def mine_contributors(repos: Collection[str],
                             time_to: Optional[datetime],
                             with_stats: bool,
                             user_roles: List[str],
-                            release_settings: Dict[str, ReleaseMatchSetting],
+                            release_settings: ReleaseSettings,
                             account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
@@ -249,7 +249,7 @@ async def load_organization_members(account: int,
 
     :return: 1. Map from user node IDs to full names. \
              2. Map from user node IDs to emails. \
-             3. Map from user node IDs to logins.
+             3. Map from user node IDs to prefixed logins.
     """
     user_ids = [
         r[0] for r in await mdb.fetch_all(select([OrganizationMember.child_id])
@@ -257,7 +257,7 @@ async def load_organization_members(account: int,
     ]
     log.info("Discovered %d organization members", len(user_ids))
     tasks = [
-        mdb.fetch_all(select([User.node_id, User.name, User.login, User.email])
+        mdb.fetch_all(select([User.node_id, User.name, User.login, User.html_url, User.email])
                       .where(and_(User.acc_id.in_(meta_ids),
                                   User.node_id.in_(user_ids),
                                   User.name.isnot(None)))),
@@ -303,13 +303,13 @@ async def load_organization_members(account: int,
             github_names[node_id].add(name)
         if email := row[PushCommit.author_email.key]:
             github_emails[node_id].add(email)
-    github_logins = {}
+    github_prefixed_logins = {}
     for row in user_rows:
         node_id = row[User.node_id.key]
-        github_logins[node_id] = row[User.login.key]
+        github_prefixed_logins[node_id] = row[User.html_url.key].split("/", 2)[2]
         if name := row[User.name.key]:
             github_names[node_id].add(name)
         if email := row[User.email.key]:
             github_emails[node_id].add(email)
     log.info("GitHub set size: %d", len(github_names))
-    return github_names, github_emails, github_logins
+    return github_names, github_emails, github_prefixed_logins

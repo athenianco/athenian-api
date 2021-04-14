@@ -12,7 +12,6 @@ from athenian.api.controllers.account import get_metadata_account_ids, get_user_
 from athenian.api.controllers.jira import get_jira_id, load_jira_identity_mapping_sentinel
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.settings import ReleaseMatch, Settings
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import User as GitHubUser
 from athenian.api.models.metadata.jira import Project, User as JIRAUser
 from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity
@@ -32,12 +31,14 @@ async def list_release_match_settings(request: AthenianWebRequest, id: int) -> w
         Settings.from_request(request, id).list_release_matches(),
     ]
     meta_ids, settings = await gather(*tasks, op="sdb")
-    model = {k: ReleaseMatchSetting.from_dataclass(m).to_dict() for k, m in settings.items()}
-    repos = [r.split("/", 1)[1] for r in settings]
-    _, default_branches = await extract_branches(repos, meta_ids, request.mdb, request.cache)
-    prefix = PREFIXES["github"]
+    model = {
+        k: ReleaseMatchSetting.from_dataclass(m).to_dict()
+        for k, m in settings.prefixed.items()
+    }
+    _, default_branches = await extract_branches(
+        settings.native, meta_ids, request.mdb, request.cache)
     for repo, name in default_branches.items():
-        model[prefix + repo]["default_branch"] = name
+        model[settings.prefixed_for_native(repo)]["default_branch"] = name
     return web.json_response(model)
 
 
@@ -205,7 +206,7 @@ async def get_jira_identities(request: AthenianWebRequest,
     github_ids = [r[MappedJIRAIdentity.github_user_id.key] for r in map_rows]
     tasks = [
         request.mdb.fetch_all(
-            select([GitHubUser.node_id, GitHubUser.login, GitHubUser.name])
+            select([GitHubUser.node_id, GitHubUser.html_url, GitHubUser.name])
             .where(and_(GitHubUser.node_id.in_(github_ids),
                         GitHubUser.acc_id.in_(meta_ids)))),
         request.mdb.fetch_all(
@@ -218,7 +219,6 @@ async def get_jira_identities(request: AthenianWebRequest,
     github_details = {r[GitHubUser.node_id.key]: r for r in github_rows}
     jira_details = {r[JIRAUser.id.key]: r for r in jira_rows}
     models = []
-    prefix = PREFIXES["github"]
     log = logging.getLogger("%s.get_jira_identities" % metadata.__package__)
     mentioned_jira_user_ids = set()
     for map_row in map_rows:
@@ -234,7 +234,7 @@ async def get_jira_identities(request: AthenianWebRequest,
             continue
         mentioned_jira_user_ids.add(jira_user_id)
         models.append(WebMappedJIRAIdentity(
-            developer_id=prefix + github_user[GitHubUser.login.key],
+            developer_id=github_user[GitHubUser.html_url.key].split("/", 2)[2],
             developer_name=github_user[GitHubUser.name.key],
             jira_name=jira_user[JIRAUser.display_name.key],
             confidence=map_row[MappedJIRAIdentity.confidence.key],

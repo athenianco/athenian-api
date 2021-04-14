@@ -28,7 +28,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipationKind, \
     PullRequestFacts
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestCommit, Release
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
@@ -55,8 +55,9 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
         kwargs["released"] = kwargs["merged"] = None
         samples[-i] = PullRequestFacts(**kwargs)
     names = ["one", "two", "three"]
-    settings = {"github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch(i))
-                for i, k in enumerate(names)}
+    settings = ReleaseSettings({
+        "github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch(i))
+        for i, k in enumerate(names)})
     default_branches = {k: "master" for k in names}
     prs = [MinedPullRequest(
         pr={PullRequest.created_at.key: s.created,
@@ -65,7 +66,7 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
             PullRequest.merged_by_login.key: "yyy",
             PullRequest.number.key: i + 1,
             PullRequest.node_id.key: uuid.uuid4().hex},
-        release={matched_by_column: settings["github.com/" + names[i % len(names)]].match % 2,
+        release={matched_by_column: settings.native[names[i % len(names)]].match % 2,
                  Release.author.key: "zzz",
                  Release.url.key: "https://release",
                  Release.id.key: "MD%d" % i},
@@ -122,8 +123,9 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
 async def test_load_store_precomputed_done_filters(pr_samples, pdb):
     samples = pr_samples(102)  # type: Sequence[PullRequestFacts]
     names = ["one", "two", "three"]
-    settings = {"github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch(i))
-                for i, k in enumerate(names)}
+    settings = ReleaseSettings({
+        "github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch(i))
+        for i, k in enumerate(names)})
     default_branches = {k: "master" for k in names}
     prs = [MinedPullRequest(
         pr={PullRequest.created_at.key: s.created,
@@ -132,7 +134,7 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
             PullRequest.merged_by_login.key: "yyy",
             PullRequest.number.key: i + 1,
             PullRequest.node_id.key: uuid.uuid4().hex},
-        release={matched_by_column: settings["github.com/" + names[i % len(names)]].match % 2,
+        release={matched_by_column: settings.native[names[i % len(names)]].match % 2,
                  Release.author.key: ["foo", "zzz"][i % 2],
                  Release.url.key: "https://release",
                  Release.id.key: "MD%d" % i},
@@ -199,24 +201,24 @@ async def test_load_store_precomputed_done_match_by(pr_samples, default_branches
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == 1
-    settings = {
+    settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
-    }
+    })
     loaded_prs, _ = await load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == 1
-    settings = {
+    settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting("nope", ".*", ReleaseMatch.tag_or_branch),
-    }
+    })
     loaded_prs, ambiguous = await load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == 0
     assert len(ambiguous) == 0
-    settings = {
+    settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag),
-    }
+    })
     loaded_prs, _ = await load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
@@ -231,9 +233,9 @@ async def test_load_store_precomputed_done_match_by(pr_samples, default_branches
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == 1
-    settings = {
+    settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", "xxx", ReleaseMatch.tag),
-    }
+    })
     loaded_prs, _ = await load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
@@ -250,7 +252,9 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_
                   samples[1].created - samples[0].created]
         if all(d > timedelta(days=2) for d in deltas):
             break
-    settings = {"github.com/one": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag)}
+    settings = ReleaseSettings({
+        "github.com/one": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag),
+    })
     prs = [MinedPullRequest(
         pr={PullRequest.created_at.key: s.created,
             PullRequest.repository_full_name.key: "one",
@@ -258,7 +262,7 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_
             PullRequest.merged_by_login.key: "yyy",
             PullRequest.number.key: 777,
             PullRequest.node_id.key: uuid.uuid4().hex},
-        release={matched_by_column: settings["github.com/one"].match,
+        release={matched_by_column: settings.native["one"].match,
                  Release.author.key: "zzz",
                  Release.url.key: "https://release",
                  Release.id.key: "MDwhatever="},
@@ -309,8 +313,10 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_
 async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
     samples = pr_samples(12)  # type: Sequence[PullRequestFacts]
     names = ["one", "two", "three"]
-    settings = {"github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch(i))
-                for i, k in enumerate(names)}
+    settings = ReleaseSettings({
+        "github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch(i))
+        for i, k in enumerate(names)
+    })
     default_branches = {k: "master" for k in names}
     prs = [MinedPullRequest(
         pr={PullRequest.created_at.key: s.created,
@@ -319,7 +325,7 @@ async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
             PullRequest.merged_by_login.key: "yyy",
             PullRequest.number.key: i + 1,
             PullRequest.node_id.key: uuid.uuid4().hex},
-        release={matched_by_column: settings["github.com/" + names[i % len(names)]].match % 2,
+        release={matched_by_column: settings.native[names[i % len(names)]].match % 2,
                  Release.author.key: ["foo", "zzz"][i % 2],
                  Release.url.key: "https://release",
                  Release.id.key: "MD%d" % i},
@@ -368,10 +374,10 @@ async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
 def _gen_one_pr(pr_samples):
     samples = pr_samples(1)  # type: Sequence[PullRequestFacts]
     s = samples[0]
-    settings = {
+    settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
             "{{default}}", ".*", ReleaseMatch.tag_or_branch),
-    }
+    })
     prs = [MinedPullRequest(
         pr={PullRequest.created_at.key: s.created,
             PullRequest.repository_full_name.key: "src-d/go-git",
@@ -421,7 +427,8 @@ async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branch
         time_from, time_to, ["src-d/go-git"], default_branches, settings, 1, pdb)
     assert loaded_prs == {prs[0].pr[PullRequest.node_id.key]}
     loaded_prs, _ = await load_precomputed_done_candidates(
-        time_from, time_from, ["src-d/go-git"], default_branches, settings, 1, pdb)
+        time_from, time_from, ["src-d/go-git"],
+        default_branches, settings, 1, pdb)
     assert len(loaded_prs) == 0
 
 
@@ -527,9 +534,9 @@ async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pd
         [pr.pr[PullRequest.node_id.key] for pr in prs],
         max(s.released for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
-        {}, {"github.com/src-d/go-git": ReleaseMatchSetting(
+        {}, ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
             tags="v.*", branches="", match=ReleaseMatch.tag),
-        }, 1, pdb, None)
+        }), 1, pdb, None)
     assert released_prs.empty
 
 
@@ -592,8 +599,8 @@ async def test_discover_update_unreleased_prs_smoke(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     unreleased_prs = await load_merged_unreleased_pull_request_facts(
         prs, datetime(2018, 11, 1, tzinfo=utc), LabelFilter.empty(), matched_bys, default_branches,
-        {"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="", tags="v.*", match=ReleaseMatch.tag)},
+        ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
+            branches="", tags="v.*", match=ReleaseMatch.tag)}),
         1, pdb)
     assert len(unreleased_prs) == 0
     releases, matched_bys = await load_releases(
@@ -780,7 +787,9 @@ async def test_discover_old_merged_unreleased_prs_labels(
 
 async def test_store_precomputed_done_none_assert(pdb, pr_samples):
     samples = pr_samples(1)  # type: Sequence[PullRequestFacts]
-    settings = {"github.com/one": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag)}
+    settings = ReleaseSettings({
+        "github.com/one": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag),
+    })
     default_branches = {"one": "master"}
     prs = [MinedPullRequest(
         pr={PullRequest.created_at.key: samples[0].merged,
@@ -789,7 +798,7 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
             PullRequest.merged_by_login.key: "yyy",
             PullRequest.number.key: 1,
             PullRequest.node_id.key: uuid.uuid4().hex},
-        release={matched_by_column: settings["github.com/one"],
+        release={matched_by_column: settings.native["one"],
                  Release.author.key: "foo",
                  Release.url.key: "https://release",
                  Release.id.key: "MDwhatever="},

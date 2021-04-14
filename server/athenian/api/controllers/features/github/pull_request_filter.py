@@ -40,10 +40,9 @@ from athenian.api.controllers.miners.github.release_match import load_commit_dag
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, PRParticipants, \
     PullRequestEvent, PullRequestFacts, PullRequestJIRAIssueItem, PullRequestListItem, \
     PullRequestStage
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_misses, set_pdb_hits, set_pdb_misses
 from athenian.api.defer import defer
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, PullRequestLabel, \
     PullRequestReview, PullRequestReviewComment, Release
 from athenian.api.models.metadata.jira import Issue
@@ -53,7 +52,6 @@ from athenian.api.tracing import sentry_span
 class PullRequestListMiner:
     """Collect various PR metadata for displaying PRs on the frontend."""
 
-    _prefix = PREFIXES["github"]
     _no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
     log = logging.getLogger("%s.PullRequestListMiner" % metadata.__version__)
 
@@ -236,7 +234,7 @@ class PullRequestListMiner:
             ]
         return PullRequestListItem(
             node_id=pr_node_id,
-            repository=self._prefix + pr.pr[PullRequest.repository_full_name.key],
+            repository=pr.pr[PullRequest.repository_full_name.key],
             number=pr.pr[PullRequest.number.key],
             title=pr.pr[PullRequest.title.key],
             size_added=pr.pr[PullRequest.additions.key],
@@ -388,7 +386,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
                                labels: LabelFilter,
                                jira: JIRAFilter,
                                exclude_inactive: bool,
-                               release_settings: Dict[str, ReleaseMatchSetting],
+                               release_settings: ReleaseSettings,
                                updated_min: Optional[datetime],
                                updated_max: Optional[datetime],
                                account: int,
@@ -533,7 +531,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                                 labels: LabelFilter,
                                 jira: JIRAFilter,
                                 exclude_inactive: bool,
-                                release_settings: Dict[str, ReleaseMatchSetting],
+                                release_settings: ReleaseSettings,
                                 updated_min: Optional[datetime],
                                 updated_max: Optional[datetime],
                                 account: int,
@@ -673,7 +671,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     ),
 )
 async def fetch_pull_requests(prs: Dict[str, Set[int]],
-                              release_settings: Dict[str, ReleaseMatchSetting],
+                              release_settings: ReleaseSettings,
                               account: int,
                               meta_ids: Tuple[int, ...],
                               mdb: databases.Database,
@@ -697,7 +695,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
 
 
 async def _fetch_pull_requests(prs: Dict[str, Set[int]],
-                               release_settings: Dict[str, ReleaseMatchSetting],
+                               release_settings: ReleaseSettings,
                                account: int,
                                meta_ids: Tuple[int, ...],
                                mdb: databases.Database,
@@ -732,7 +730,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
                                with_jira: bool,
                                branches: pd.DataFrame,
                                default_branches: Dict[str, str],
-                               release_settings: Dict[str, ReleaseMatchSetting],
+                               release_settings: ReleaseSettings,
                                account: int,
                                meta_ids: Tuple[int, ...],
                                mdb: databases.Database,

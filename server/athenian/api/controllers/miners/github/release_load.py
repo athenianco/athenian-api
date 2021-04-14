@@ -26,10 +26,9 @@ from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_C
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
-    ReleaseMatchSetting
+    ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, greatest, least
 from athenian.api.defer import defer
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, Repository
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
@@ -48,7 +47,7 @@ async def load_releases(repos: Iterable[str],
                         default_branches: Dict[str, str],
                         time_from: datetime,
                         time_to: datetime,
-                        settings: Dict[str, ReleaseMatchSetting],
+                        settings: ReleaseSettings,
                         account: int,
                         meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
@@ -116,7 +115,7 @@ async def load_releases(repos: Iterable[str],
             log.warning("Activated the unfresh mode for a set of %d repositories", repos_count)
             max_time_to -= timedelta(hours=1)
     settings = settings.copy()
-    for full_repo, setting in settings.items():
+    for full_repo, setting in settings.prefixed.items():
         repo = full_repo.split("/", 1)[1]
         try:
             match = applied_matches[repo]
@@ -126,15 +125,14 @@ async def load_releases(repos: Iterable[str],
         else:
             if setting.match == ReleaseMatch.tag_or_branch:
                 if match == ReleaseMatch.tag:
-                    settings[full_repo] = ReleaseMatchSetting(
-                        tags=setting.tags, branches=setting.branches, match=ReleaseMatch.tag)
+                    settings.set_by_prefixed(full_repo, ReleaseMatchSetting(
+                        tags=setting.tags, branches=setting.branches, match=ReleaseMatch.tag))
                     applied_matches[repo] = ReleaseMatch.tag
                 else:
                     # having precomputed branch releases when we want tags does not mean anything
                     applied_matches[repo] = ReleaseMatch.tag_or_branch
             else:
                 applied_matches[repo] = ReleaseMatch(match)
-    prefix = PREFIXES["github"]
     missing_high = []
     missing_low = []
     missing_all = []
@@ -209,7 +207,7 @@ async def load_releases(repos: Iterable[str],
         if r in applied_matches:
             continue
         # no releases were loaded for this repository
-        match = settings[prefix + r].match
+        match = settings.native[r].match
         if match == ReleaseMatch.tag_or_branch:
             match = ReleaseMatch.branch
         applied_matches[r] = match
@@ -238,7 +236,7 @@ async def load_releases(repos: Iterable[str],
     matched_by_vec = releases[matched_by_column].values
     errors = np.full(len(releases), False)
     for repo, match in applied_matches.items():
-        if settings[prefix + repo].match == ReleaseMatch.tag_or_branch:
+        if settings.native[repo].match == ReleaseMatch.tag_or_branch:
             errors |= (repos_vec == repo) & (matched_by_vec != match)
     include = ~errors & (published_at >= time_from).values & (published_at < time_to).values
     releases = releases.take(np.nonzero(include)[0])
@@ -258,7 +256,7 @@ async def _load_releases(repos: Iterable[Tuple[str, ReleaseMatch]],
                          default_branches: Dict[str, str],
                          time_from: datetime,
                          time_to: datetime,
-                         settings: Dict[str, ReleaseMatchSetting],
+                         settings: ReleaseSettings,
                          account: int,
                          meta_ids: Tuple[int, ...],
                          mdb: databases.Database,
@@ -301,7 +299,7 @@ def dummy_releases_df() -> pd.DataFrame:
 
 def group_repos_by_release_match(repos: Iterable[str],
                                  default_branches: Dict[str, str],
-                                 settings: Dict[str, ReleaseMatchSetting],
+                                 settings: ReleaseSettings,
                                  ) -> Tuple[Dict[ReleaseMatch, Dict[str, List[str]]],
                                             List[str],
                                             int]:
@@ -316,12 +314,11 @@ def group_repos_by_release_match(repos: Iterable[str],
         ReleaseMatch.tag: {},
         ReleaseMatch.branch: {},
     }
-    prefix = PREFIXES["github"]
     count = 0
     event_repos = []
     for repo in repos:
         count += 1
-        rms = settings[prefix + repo]
+        rms = settings.native[repo]
         if rms.match in (ReleaseMatch.tag, ReleaseMatch.tag_or_branch):
             match_groups[ReleaseMatch.tag].setdefault(rms.tags, []).append(repo)
         if rms.match in (ReleaseMatch.branch, ReleaseMatch.tag_or_branch):
@@ -499,12 +496,11 @@ async def _store_precomputed_release_match_spans(
 @sentry_span
 async def _store_precomputed_releases(releases: pd.DataFrame,
                                       default_branches: Dict[str, str],
-                                      settings: Dict[str, ReleaseMatchSetting],
+                                      settings: ReleaseSettings,
                                       account: int,
                                       pdb: databases.core.Connection) -> None:
     assert isinstance(pdb, databases.core.Connection)
     inserted = []
-    prefix = PREFIXES["github"]
     columns = [Release.id.key,
                Release.repository_full_name.key,
                Release.repository_node_id.key,
@@ -523,10 +519,11 @@ async def _store_precomputed_releases(releases: pd.DataFrame,
         repo = row[1]
         if obj[matched_by_column] == ReleaseMatch.branch:
             obj[PrecomputedRelease.release_match.key] = "branch|" + \
-                settings[prefix + repo].branches.replace(default_branch_alias,
-                                                         default_branches[repo])
+                settings.native[repo].branches.replace(
+                    default_branch_alias, default_branches[repo])
         elif obj[matched_by_column] == ReleaseMatch.tag:
-            obj[PrecomputedRelease.release_match.key] = "tag|" + settings[prefix + row[1]].tags
+            obj[PrecomputedRelease.release_match.key] = \
+                "tag|" + settings.native[row[1]].tags
         else:
             raise AssertionError("Impossible release match: %s" % obj)
         del obj[matched_by_column]
@@ -661,7 +658,7 @@ async def _fetch_release_events(repos: Sequence[str],
 async def _match_releases_by_tag(repos: Iterable[str],
                                  time_from: datetime,
                                  time_to: datetime,
-                                 settings: Dict[str, ReleaseMatchSetting],
+                                 settings: ReleaseSettings,
                                  meta_ids: Tuple[int, ...],
                                  mdb: databases.Database,
                                  releases: Optional[pd.DataFrame] = None,
@@ -683,7 +680,6 @@ async def _match_releases_by_tag(repos: Iterable[str],
                    releases[Release.id.key].values[missing_sha].tolist()))
     regexp_cache = {}
     matched = []
-    prefix = PREFIXES["github"]
     for repo in repos:
         try:
             repo_releases = releases.loc[repo]
@@ -691,7 +687,7 @@ async def _match_releases_by_tag(repos: Iterable[str],
             continue
         if repo_releases.empty:
             continue
-        regexp = settings[prefix + repo].tags
+        regexp = settings.native[repo].tags
         if not regexp.endswith("$"):
             regexp += "$"
         # note: dict.setdefault() is not good here because re.compile() will be evaluated
@@ -716,7 +712,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
                                     default_branches: Dict[str, str],
                                     time_from: datetime,
                                     time_to: datetime,
-                                    settings: Dict[str, ReleaseMatchSetting],
+                                    settings: ReleaseSettings,
                                     account: int,
                                     meta_ids: Tuple[int, ...],
                                     mdb: databases.Database,
@@ -770,13 +766,12 @@ async def _match_releases_by_branch(repos: Iterable[str],
 
 def _match_branches_by_release_settings(branches: pd.DataFrame,
                                         default_branches: Dict[str, str],
-                                        settings: Dict[str, ReleaseMatchSetting],
+                                        settings: ReleaseSettings,
                                         ) -> Dict[str, pd.DataFrame]:
-    prefix = PREFIXES["github"]
     branches_matched = {}
     regexp_cache = {}
     for repo, repo_branches in branches.groupby(Branch.repository_full_name.key, sort=False):
-        regexp = settings[prefix + repo].branches
+        regexp = settings.native[repo].branches
         default_branch = default_branches[repo]
         regexp = regexp.replace(default_branch_alias, default_branch)
         if not regexp.endswith("$"):

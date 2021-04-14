@@ -18,7 +18,8 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     load_precomputed_done_facts_all
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.jira.issue import append_pr_jira_mapping
-from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
+from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest, Release
 from athenian.precomputer.db.models import GitHubDonePullRequestFacts
 
@@ -36,7 +37,8 @@ class MineTopic(Enum):
 async def mine_all_prs(repos: Collection[str],
                        branches: pd.DataFrame,
                        default_branches: Dict[str, str],
-                       settings: Dict[str, ReleaseMatchSetting],
+                       settings: ReleaseSettings,
+                       prefixer: PrefixerPromise,
                        account: int,
                        meta_ids: Tuple[int, ...],
                        mdb: databases.Database,
@@ -87,7 +89,8 @@ async def mine_all_prs(repos: Collection[str],
 async def mine_all_releases(repos: Collection[str],
                             branches: pd.DataFrame,
                             default_branches: Dict[str, str],
-                            settings: Dict[str, ReleaseMatchSetting],
+                            settings: ReleaseSettings,
+                            prefixer: PrefixerPromise,
                             account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
@@ -97,7 +100,7 @@ async def mine_all_releases(repos: Collection[str],
     """Extract everything we know about releases."""
     releases = (await mine_releases(
         repos, {}, branches, default_branches, datetime(1970, 1, 1, tzinfo=timezone.utc),
-        datetime.now(timezone.utc), JIRAFilter.empty(), settings, account, meta_ids,
+        datetime.now(timezone.utc), JIRAFilter.empty(), settings, prefixer, account, meta_ids,
         mdb, pdb, rdb, cache, with_avatars=False))[0]
     df_gen = pd.DataFrame.from_records([r[0] for r in releases])
     df_facts = df_from_dataclasses([r[1] for r in releases])
@@ -131,7 +134,7 @@ miners = {
 
 
 async def mine_everything(topics: Set[MineTopic],
-                          settings: Dict[str, ReleaseMatchSetting],
+                          settings: ReleaseSettings,
                           account: int,
                           meta_ids: Tuple[int, ...],
                           mdb: databases.Database,
@@ -140,9 +143,10 @@ async def mine_everything(topics: Set[MineTopic],
                           cache: Optional[aiomcache.Client],
                           ) -> Dict[MineTopic, pd.DataFrame]:
     """Mine all the specified data topics."""
-    repos = [r.split("/", 1)[1] for r in settings]
+    repos = settings.native.keys()
+    prefixer = Prefixer.schedule_load(meta_ids, mdb)
     branches, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
-    tasks = [miners[t](repos, branches, default_branches, settings,
+    tasks = [miners[t](repos, branches, default_branches, settings, prefixer,
                        account, meta_ids, mdb, pdb, rdb, cache)
              for t in topics]
     results = await gather(*tasks, op="mine_everything")

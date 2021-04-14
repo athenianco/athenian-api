@@ -15,11 +15,11 @@ from athenian.api import check_schema_versions, compose_db_options, patch_pandas
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.release_load import load_releases
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import Settings
 from athenian.api.db import ParallelDatabase
 from athenian.api.defer import enable_defer
-from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas, \
-    PREFIXES
+from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata import \
     dereference_schemas as dereference_persistentdata_schemas
@@ -88,10 +88,10 @@ def main():
             dereference_precomputed_schemas()
 
         meta_ids = await get_metadata_account_ids(args.account, sdb, None)
-        prefix = PREFIXES["github"]
+        prefixer = await Prefixer.load(meta_ids, mdb)
         settings = await Settings \
             .from_account(args.account, sdb, mdb, None, None) \
-            .list_release_matches([(prefix + r) for r in args.repos])
+            .list_release_matches(prefixer.prefix_repo_names(args.repos))
         branches, default_branches = await extract_branches(args.repos, meta_ids, mdb, None)
         now = datetime.now(timezone.utc)
         log.info("Loading releases in %s", args.repos)

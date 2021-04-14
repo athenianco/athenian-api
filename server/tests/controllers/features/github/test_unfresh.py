@@ -7,8 +7,7 @@ from athenian.api.defer import wait_deferred, with_defer
 
 
 @with_defer
-async def test_fetch_pull_request_facts_unfresh_smoke(
-        release_match_setting_tag, mdb, pdb, rdb):
+async def test_fetch_pull_request_facts_unfresh_smoke(release_match_setting_tag, mdb, pdb, rdb):
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     facts_fresh = await calc_pull_request_facts_github(
@@ -38,8 +37,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
 
 
 @with_defer
-async def test_fetch_pull_request_facts_unfresh_labels(
-        release_match_setting_tag, mdb, pdb, rdb):
+async def test_fetch_pull_request_facts_unfresh_labels(release_match_setting_tag, mdb, pdb, rdb):
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     label_filter = LabelFilter({"enhancement", "bug"}, set())
@@ -68,8 +66,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
 
 
 @with_defer
-async def test_fetch_pull_request_facts_unfresh_jira(
-        release_match_setting_tag, mdb, pdb, rdb):
+async def test_fetch_pull_request_facts_unfresh_jira(release_match_setting_tag, mdb, pdb, rdb):
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     jira_filter = JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), {"task"}, False)

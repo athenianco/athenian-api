@@ -12,9 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from athenian.api.async_utils import read_sql_query
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import ReleaseFacts
-from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
-    ReleaseMatchSetting
-from athenian.api.models.metadata import PREFIXES
+from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.precomputed.models import GitHubReleaseFacts
 from athenian.api.tracing import sentry_span
@@ -24,7 +22,7 @@ from athenian.precomputer.db.models import GitHubRelease as PrecomputedRelease
 @sentry_span
 async def load_precomputed_release_facts(releases: pd.DataFrame,
                                          default_branches: Dict[str, str],
-                                         settings: Dict[str, ReleaseMatchSetting],
+                                         settings: ReleaseSettings,
                                          account: int,
                                          pdb: databases.Database,
                                          ) -> Dict[str, ReleaseFacts]:
@@ -36,9 +34,8 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
     if releases.empty:
         return {}
     reverse_settings = defaultdict(list)
-    prefix = PREFIXES["github"]
     for repo in releases[Release.repository_full_name.key].unique():
-        setting = settings[prefix + repo]
+        setting = settings.native[repo]
         if setting.match == ReleaseMatch.tag:
             value = setting.tags
         elif setting.match == ReleaseMatch.branch:
@@ -84,14 +81,14 @@ def _compose_release_match(match: ReleaseMatch, value: str) -> str:
 @sentry_span
 async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                                           default_branches: Dict[str, str],
-                                          settings: Dict[str, ReleaseMatchSetting],
+                                          settings: ReleaseSettings,
                                           account: int,
                                           pdb: databases.Database) -> None:
     """Put the new release facts to the pdb."""
     values = []
     for dikt, facts in releases:
         repo = dikt[Release.repository_full_name.key]
-        setting = settings[repo]
+        setting = settings.prefixed[repo]
         repo = repo.split("/", 1)[1]
         if setting.match == ReleaseMatch.tag:
             value = setting.tags
