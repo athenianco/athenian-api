@@ -5,7 +5,7 @@ import importlib
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Collection, Dict, List, Optional, Sequence, Set, Tuple
 
 import aiomcache
 from databases import Database
@@ -562,7 +562,7 @@ async def get_calculator_for_user(
     sdb: DatabaseLike,
     raise_err: Optional[bool] = False,
     base_module: Optional[str] = "athenian.api.experiments",
-):
+) -> Callable:
     """Get the metrics calculator function for the given user."""
     feature_name_prefix = METRIC_ENTRIES_VARIATIONS_PREFIX[service]
     all_metrics_variations_features = await sdb.fetch_all(
@@ -630,7 +630,7 @@ def get_calculator(
     variation: Optional[str] = None,
     raise_err: Optional[bool] = False,
     base_module: Optional[str] = "athenian.api.experiments",
-):
+) -> Callable:
     """Get the metrics calculator function."""
     log = logging.getLogger(__name__)
     default_implementation = METRIC_ENTRIES[service][calculator]
