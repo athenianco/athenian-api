@@ -8,9 +8,9 @@ import databases.core
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
+from athenian.api.controllers.calculator_selector import get_calculator_for_user
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.code import CodeStats
-from athenian.api.controllers.features.entries import get_calculator_for_user
 from athenian.api.controllers.jira import get_jira_installation, get_jira_installation_or_none
 from athenian.api.controllers.miners.access_classes import access_classes, AccessChecker
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter

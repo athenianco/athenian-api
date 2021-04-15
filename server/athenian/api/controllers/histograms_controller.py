@@ -5,7 +5,7 @@ from aiohttp import web
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.features.entries import get_calculator_for_user
+from athenian.api.controllers.calculator_selector import get_calculator_for_user
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import compile_repos_and_devs_prs
 from athenian.api.controllers.settings import Settings
