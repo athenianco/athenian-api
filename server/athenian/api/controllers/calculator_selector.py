@@ -1,5 +1,6 @@
 from typing import Callable, Optional
 
+import aiomcache
 from sqlalchemy import and_, select
 
 from athenian.api.controllers.features.entries import get_calculator
@@ -10,14 +11,24 @@ from athenian.api.typing_utils import DatabaseLike
 
 async def get_calculator_for_user(
     service: str,
-    calculator: str,
     account_id: int,
     user_id: str,
     sdb: DatabaseLike,
+    mdb: DatabaseLike,
+    pdb: DatabaseLike,
+    rdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
     raise_err: Optional[bool] = False,
     base_module: Optional[str] = "athenian.api.experiments",
 ) -> Callable:
     """Get the metrics calculator function for the given user."""
+
+    def _get_calculator(variation=None):
+        return get_calculator(
+            service, mdb, pdb, rdb, cache, variation=variation, raise_err=raise_err,
+            base_module=base_module,
+        )
+
     feature_name_prefix = METRIC_ENTRIES_VARIATIONS_PREFIX[service]
     all_metrics_variations_features = await sdb.fetch_all(
         select([Feature.id, Feature.name, Feature.default_parameters]).where(
@@ -30,9 +41,7 @@ async def get_calculator_for_user(
     )
 
     if not all_metrics_variations_features:
-        return get_calculator(
-            service, calculator, raise_err=raise_err, base_module=base_module,
-        )
+        return _get_calculator()
 
     all_metrics_variations_features = {
         row[Feature.id.key]: {
@@ -53,9 +62,7 @@ async def get_calculator_for_user(
     )
 
     if metrics_variation_feature is None:
-        return get_calculator(
-            service, calculator, raise_err=raise_err, base_module=base_module,
-        )
+        return _get_calculator()
 
     selected_metrics_variation = all_metrics_variations_features[
         metrics_variation_feature[0]
@@ -67,18 +74,10 @@ async def get_calculator_for_user(
 
     is_god = await sdb.fetch_one(select([God.user_id]).where(God.user_id == user_id))
     if metrics_variation_params.get("god_only") and not is_god:
-        return get_calculator(
-            service, calculator, raise_err=raise_err, base_module=base_module,
-        )
+        return _get_calculator()
 
     variation = selected_metrics_variation["name"]
-    return get_calculator(
-        service,
-        calculator,
-        variation=variation,
-        raise_err=raise_err,
-        base_module=base_module,
-    )
+    return _get_calculator(variation=variation)
 
 
 METRIC_ENTRIES_VARIATIONS_PREFIX = {"github": "github_features_entries_"}

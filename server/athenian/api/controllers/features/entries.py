@@ -5,7 +5,7 @@ import importlib
 from itertools import chain
 import logging
 import pickle
-from typing import Callable, Collection, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
 
 import aiomcache
 from databases import Database
@@ -553,16 +553,18 @@ def _compose_cache_key_participants(participants: List[PRParticipants]) -> str:
 
 def get_calculator(
     service: str,
-    calculator: str,
+    mdb: Database,
+    pdb: Database,
+    rdb: Database,
+    cache: Optional[aiomcache.Client],
     variation: Optional[str] = None,
     raise_err: Optional[bool] = False,
     base_module: Optional[str] = "athenian.api.experiments",
-) -> Callable:
-    """Get the metrics calculator function."""
+) -> MetricEntriesCalculator:
+    """Get the metrics calculator."""
     log = logging.getLogger(__name__)
-    default_implementation = METRIC_ENTRIES[service][calculator]
     if not variation:
-        return default_implementation
+        return MetricEntriesCalculator(mdb, pdb, rdb, cache)
 
     try:
         mod = importlib.import_module(f"{base_module}.{variation}")
@@ -571,37 +573,24 @@ def get_calculator(
             raise
 
         log.warning(
-            "Invalid variation '%s' for calculator '%s', using default implementation",
+            "Invalid variation '%s' calculator, using default implementation",
             variation,
-            calculator,
         )
-        return default_implementation
+        return MetricEntriesCalculator(mdb, pdb, rdb, cache)
     else:
-        calc = getattr(mod, default_implementation.__name__, None)
-        if not calc:
+        try:
+            cls = mod.MetricEntriesCalculator
+        except AttributeError:
             if raise_err:
                 raise RuntimeError(
-                    f"Missing implementation of calculator {calculator} "
-                    f"for variation {variation}",
+                    f"Missing `MetricEntriesCalculator` for variation {variation}",
                 )
 
             log.warning(
-                "Variation '%s' doesn't provide an implementation for '%s', "
+                "Variation '%s' doesn't provide `MetricEntriesCalculator`, "
                 "using default implementation",
                 variation,
-                calculator,
             )
-            return default_implementation
-
-        return calc
-
-
-METRIC_ENTRIES = {
-    "github": {
-        "prs_linear": calc_pull_request_metrics_line_github,
-        "prs_histogram": calc_pull_request_histograms_github,
-        "code": calc_code_metrics_github,
-        "developers": calc_developer_metrics_github,
-        "releases_linear": calc_release_metrics_line_github,
-    },
-}
+            return MetricEntriesCalculator(mdb, pdb, rdb, cache)
+        else:
+            return cls(mdb, pdb, rdb, cache)

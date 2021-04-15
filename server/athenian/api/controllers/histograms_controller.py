@@ -42,14 +42,14 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 ticks=tuple(h.ticks) if h.ticks is not None else None,
             )].append(h.metric)
         calculator = await get_calculator_for_user(
-            service, "prs_histogram", filt.account, (await request.user()).id, request.sdb,
+            service, filt.account, request.uid,
+            request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
         )
         try:
-            histograms = await calculator(
+            histograms = await calculator.calc_pull_request_histograms_github(
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
                 repos, withgroups, labels, jira, filt.exclude_inactive, release_settings,
-                filt.fresh, filt.account, meta_ids,
-                request.mdb, request.pdb, request.rdb, request.cache)
+                filt.fresh, filt.account, meta_ids)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(str(e))) from None
         for line_groups in histograms:
