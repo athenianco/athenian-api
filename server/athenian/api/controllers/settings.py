@@ -57,6 +57,44 @@ class ReleaseMatchSetting:
         return self.branches < other.branches
 
 
+class ReleaseSettings:
+    """Mapping from prefixed repository full names to their release settings."""
+
+    def __init__(self, map_prefixed: Dict[str, ReleaseMatchSetting]):
+        """Initialize a new instance of ReleaseSettings class."""
+        self._map_prefixed = map_prefixed
+        self._map_native = {k.split("/", 1)[1]: v for k, v in map_prefixed.items()}
+        self._coherence = dict(zip(self._map_native, self._map_prefixed))
+
+    def copy(self) -> "ReleaseSettings":
+        """Shallow copy the settings."""
+        return ReleaseSettings(self._map_prefixed.copy())
+
+    @property
+    def prefixed(self) -> Dict[str, ReleaseMatchSetting]:
+        """View the release settings with repository name prefixes."""
+        return self._map_prefixed
+
+    @property
+    def native(self) -> Dict[str, ReleaseMatchSetting]:
+        """View the release settings without repository name prefixes."""
+        return self._map_native
+
+    def prefixed_for_native(self, name_without_prefix: str) -> str:
+        """Return the prefixed repository name for an unprefixed name."""
+        return self._coherence[name_without_prefix]
+
+    def set_by_native(self, name_without_prefix: str, value: ReleaseMatchSetting) -> None:
+        """Update release settings given a repository name without prefix."""
+        self._map_prefixed[self.prefixed_for_native(name_without_prefix)] = \
+            self._map_native[name_without_prefix] = value
+
+    def set_by_prefixed(self, name_with_prefix: str, value: ReleaseMatchSetting) -> None:
+        """Update release settings given a repository name with prefix."""
+        self._map_prefixed[name_with_prefix] = \
+            self._map_native[name_with_prefix.split("/", 1)[1]] = value
+
+
 class Settings:
     """User's settings."""
 
@@ -120,15 +158,16 @@ class Settings:
                                                    ReleaseSetting.repository.in_(repos)))
 
     async def list_release_matches(self, repos: Optional[Collection[str]] = None,
-                                   ) -> Dict[str, ReleaseMatchSetting]:
+                                   ) -> ReleaseSettings:
         """
         List the current release matching settings for all related repositories.
 
         Repository names must be prefixed!
+        If `repos` is None, we load all the repositories belonging to the account.
         """
         async with self._sdb.connection() as conn:
             if repos is None:
-                repos = await get_account_repositories(self._account, conn)
+                repos = await get_account_repositories(self._account, True, conn)
             repos = frozenset(repos)
             rows = await conn.fetch_all(self._cached_release_settings_sql(self._account, repos))
             settings = []
@@ -154,7 +193,7 @@ class Settings:
                         )))
             settings.sort()
             settings = dict(settings)
-        return settings
+        return ReleaseSettings(settings)
 
     async def set_release_matches(self,
                                   repos: List[str],

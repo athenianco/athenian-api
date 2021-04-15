@@ -15,10 +15,10 @@ from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.release_mine import mine_releases
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.defer import defer, wait_deferred
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PushCommit
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.web import BadRequestError, DeleteEventsCacheRequest, ForbiddenError, \
@@ -43,7 +43,6 @@ async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.R
         raise ResponseError(BadRequestError("%s: %s" % (type(e).__name__, e)))
     account = request.account
     sdb, mdb, rdb = request.sdb, request.mdb, request.rdb
-    prefix = PREFIXES["github"]
 
     async def main_flow():
         repos = set()
@@ -71,8 +70,8 @@ async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.R
         checker = await access_classes["github"](account, meta_ids, sdb, mdb, request.cache).load()
         if denied := await checker.check(repos):
             raise ResponseError(ForbiddenError(
-                detail="the following repositories are access denied for %s: %s" %
-                       (prefix, denied),
+                detail="the following repositories are access denied for account %d: %s" %
+                       (account, denied),
             ))
 
         # the commit may not exist yet in the metadata, but let's try to resolve what we can
@@ -103,11 +102,11 @@ async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.R
         resolved = (
             resolved_full_commits if len(n.commit) == 40 else resolved_prefixed_commits
         ).get((n.commit, repo), {PushCommit.sha.key: None, PushCommit.node_id.key: None})
-        if (author := (n.author or user.login)).startswith(prefix):
-            author = author[len(prefix):]  # remove github.com/
+        if "/" in (author := (n.author or user.login)):
+            author = author.split("/", 1)[1]  # remove github.com/ or any other prefix
         inserted.append(ReleaseNotification(
             account_id=account,
-            repository_node_id=installed_repos[n.repository],
+            repository_node_id=installed_repos[repo],
             commit_hash_prefix=resolved[PushCommit.sha.key] or n.commit,
             resolved_commit_hash=resolved[PushCommit.sha.key],
             resolved_commit_node_id=resolved[PushCommit.node_id.key],
@@ -149,9 +148,10 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
     async def login_loader() -> str:
         return (await request.user()).login
 
-    prefixed_repos, _ = await resolve_repos(
+    prefixed_repos, meta_ids = await resolve_repos(
         model.repositories, model.account, request.uid, login_loader,
         request.sdb, request.mdb, request.cache, request.app["slack"], strip_prefix=False)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb)
     repos = [r.split("/", 1)[1] for r in prefixed_repos]
     pdb = request.pdb
     if "release" in model.targets:
@@ -169,18 +169,18 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
         # preheat these repos
         sdb, mdb, pdb, rdb, cache = \
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache
-        meta_ids = await get_metadata_account_ids(model.account, sdb, request.cache)
         time_to = datetime.combine(date.today() + timedelta(days=1),
                                    datetime.min.time(),
                                    tzinfo=timezone.utc)
         no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
         time_from = (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
-        branches, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
-        settings = await Settings.from_account(
-            model.account, sdb, mdb, cache, None).list_release_matches(prefixed_repos)
+        (branches, default_branches), settings = await gather(
+            extract_branches(repos, meta_ids, mdb, cache),
+            Settings.from_account(model.account, sdb, mdb, cache, None)
+            .list_release_matches(prefixed_repos))
         await mine_releases(
             repos, {}, branches, default_branches, no_time_from, time_to,
-            JIRAFilter.empty(), settings, model.account, meta_ids, mdb, pdb, rdb, None,
+            JIRAFilter.empty(), settings, prefixer, model.account, meta_ids, mdb, pdb, rdb, None,
             force_fresh=True)
         await wait_deferred()
         await calc_pull_request_facts_github(

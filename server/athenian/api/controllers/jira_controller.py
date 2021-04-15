@@ -35,7 +35,8 @@ from athenian.api.controllers.miners.github.precomputed_prs import load_precompu
 from athenian.api.controllers.miners.jira.epic import filter_epics
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PR_IDS, \
     ISSUE_PRS_BEGAN, ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
-from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
+from athenian.api.controllers.prefixer import Prefixer
+from athenian.api.controllers.settings import ReleaseSettings, Settings
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
     Priority, Status, User
@@ -148,7 +149,7 @@ async def _epic_flow(return_: Set[str],
                      assignees: Collection[Optional[str]],
                      commenters: Collection[str],
                      default_branches: Dict[str, str],
-                     release_settings: Dict[str, ReleaseMatchSetting],
+                     release_settings: ReleaseSettings,
                      account: int,
                      meta_ids: Tuple[int, ...],
                      mdb: databases.Database,
@@ -178,7 +179,7 @@ async def _epic_flow(return_: Set[str],
     ]
     if JIRAFilterReturn.USERS in return_:
         extra_columns.extend(_participant_columns)
-    epics_df, children_df, subtask_coro, epic_children_map = await filter_epics(
+    epics_df, children_df, subtask_task, epic_children_map = await filter_epics(
         jira_ids, time_from, time_to, exclude_inactive, label_filter,
         priorities, reporters, assignees, commenters, default_branches,
         release_settings, account, meta_ids, mdb, pdb, cache, extra_columns=extra_columns,
@@ -317,14 +318,14 @@ async def _epic_flow(return_: Set[str],
         status_ids = []
         status_project_map = {}
     tasks = [
-        subtask_coro,
+        subtask_task,
         _fetch_priorities(priority_ids, jira_ids[0], return_, mdb),
         _fetch_statuses(status_ids, status_project_map, jira_ids[0], return_, mdb),
         _fetch_types(issue_type_ids, jira_ids[0], return_, mdb,
                      columns=[IssueType.id, IssueType.project_id, IssueType.name]),
     ]
-    subtask_counts, priorities, statuses, types = await gather(*tasks, op="epic epilog")
-    for row in subtask_counts:
+    _, priorities, statuses, types = await gather(*tasks, op="epic epilog")
+    for row in subtask_task.result():
         issue_by_id[row[Issue.parent_id.key]].subtasks = row["subtasks"]
     for row in types:
         name = row[IssueType.name.key]
@@ -373,7 +374,7 @@ async def _issue_flow(return_: Set[str],
                       commenters: Collection[str],
                       branches: pd.DataFrame,
                       default_branches: Dict[str, str],
-                      release_settings: Dict[str, ReleaseMatchSetting],
+                      release_settings: ReleaseSettings,
                       meta_ids: Tuple[int, ...],
                       sdb: databases.Database,
                       mdb: databases.Database,
@@ -402,6 +403,7 @@ async def _issue_flow(return_: Set[str],
         Issue.comments_count,
     ]
     if JIRAFilterReturn.ISSUE_BODIES in return_:
+        prefixer = Prefixer.schedule_load(meta_ids, mdb)
         extra_columns.extend([
             Issue.key,
             Issue.title,
@@ -537,8 +539,8 @@ async def _issue_flow(return_: Set[str],
                 pr_ids, default_branches, release_settings, account, pdb),
         ]
         prs_df, (facts, ambiguous) = await gather(*tasks)
-        repos = [r.split("/", 1)[1] for r in release_settings]
-        existing_mask = prs_df[PullRequest.repository_full_name.key].isin(repos).values
+        existing_mask = prs_df[PullRequest.repository_full_name.key].isin(
+            release_settings.native).values
         if not existing_mask.all():
             prs_df = prs_df.take(np.nonzero(existing_mask)[0])
         related_branches = branches.take(np.nonzero(np.in1d(
@@ -551,8 +553,10 @@ async def _issue_flow(return_: Set[str],
             mined_prs, dfs, facts, set(), set(),
             datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc), False)
         pr_list_items = await list_with_yield(miner, "PullRequestListMiner.__iter__")
+        nonlocal prefixer
+        prefixer = await prefixer.load()
         return dict(zip((pr.node_id for pr in pr_list_items),
-                        (web_pr_from_struct(pr) for pr in pr_list_items)))
+                        (web_pr_from_struct(pr, prefixer) for pr in pr_list_items)))
 
     prs, component_names, users, mapped_identities, priorities, statuses, issue_types, labels = \
         await gather(
@@ -771,9 +775,9 @@ async def _collect_ids(account: int,
                                   Tuple[int, List[str]],
                                   pd.DataFrame,
                                   Dict[str, str],
-                                  Dict[str, ReleaseMatchSetting]]:
+                                  ReleaseSettings]:
     tasks = [
-        get_account_repositories(account, sdb),
+        get_account_repositories(account, True, sdb),
         get_jira_installation(account, sdb, mdb, cache),
         get_metadata_account_ids(account, sdb, cache),
     ]

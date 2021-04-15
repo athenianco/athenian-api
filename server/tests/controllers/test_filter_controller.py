@@ -42,7 +42,7 @@ async def with_event_releases(sdb, rdb):
         repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
         commit_hash_prefix="8d20cc5",
         name="Pushed!",
-        author="Vadim Markovtsev",
+        author="vmarkovtsev",
         url="www",
         published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
     ).create_defaults().explode(with_primary_keys=True)))
@@ -70,7 +70,8 @@ async def test_filter_repositories_smoke(
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False, 1, (6366825,), mdb, pdb, rdb, None)
+            False, release_match_setting_tag,
+            False, False, 1, (6366825,), mdb, pdb, rdb, None)
     await calc_pull_request_facts_github(*args)
     await wait_deferred()
     body = {
@@ -1354,7 +1355,7 @@ async def test_get_prs_smoke(client, headers):
 
 
 @pytest.mark.parametrize("account, repo, numbers, status",
-                         [(1, "bitbucket.org/whatever", [1, 2, 3], 400),
+                         [(1, "bitbucket.org", [1, 2, 3], 400),
                           (2, "github.com/src-d/go-git", [1, 2, 3], 422),
                           (3, "github.com/src-d/go-git", [1, 2, 3], 404),
                           (4, "github.com/src-d/go-git", [1, 2, 3], 404),
@@ -1791,7 +1792,8 @@ async def test_diff_releases_smoke(client, headers):
 @pytest.mark.flaky(reruns=3)
 @with_defer
 async def test_diff_releases_commits(
-        client, headers, mdb, pdb, rdb, release_match_setting_branch, branches, default_branches):
+        client, headers, mdb, pdb, rdb, release_match_setting_branch, prefixer_promise,
+        branches, default_branches):
     # d105e15d91e7553d9d40d6e9fffe0a5008cf8afe
     # 31a249d0d5b71bc0f374d3297247d89808263a8b
     body = {
@@ -1811,7 +1813,7 @@ async def test_diff_releases_commits(
     time_to = datetime(year=2017, month=4, day=1, tzinfo=timezone.utc)
     releases, _, _ = await mine_releases(
         ["src-d/go-git"], {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_branch, 1, (6366825,), mdb, pdb, rdb, None)
+        release_match_setting_branch, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
 
     response = await client.request(

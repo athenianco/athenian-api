@@ -19,7 +19,6 @@ from athenian.api.controllers.account import get_metadata_account_ids, get_user_
 from athenian.api.controllers.features.everything import mine_everything, MineTopic
 from athenian.api.controllers.miners.github.contributors import load_organization_members
 from athenian.api.controllers.settings import Settings
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import InvalidRequestError, MatchedIdentity, MatchIdentitiesRequest
 from athenian.api.request import AthenianWebRequest
@@ -50,14 +49,13 @@ async def match_identities(request: AthenianWebRequest, body: dict) -> web.Respo
                 pointer=".identities[%d]" % i))
     log.debug("to match by email: %d", len(match_by_email))
     meta_ids = await get_metadata_account_ids(model.account, request.sdb, request.cache)
-    github_names, github_emails, github_logins = await load_organization_members(
+    github_names, github_emails, github_prefixed_logins = await load_organization_members(
         model.account, meta_ids, request.mdb, request.sdb, log)
     inverted_github_emails = {}
     for node_id, emails in github_emails.items():
         for email in emails:
             if email not in inverted_github_emails:
                 inverted_github_emails[email] = node_id
-    prefix = PREFIXES["github"]
     matches = [MatchedIdentity(from_=item, to=None, confidence=1) for item in model.identities]
     matched_by_email = 0
     for i, emails in match_by_email.items():
@@ -68,7 +66,7 @@ async def match_identities(request: AthenianWebRequest, body: dict) -> web.Respo
             if names := model.identities[i].names:
                 match_by_name[i] = set(names)
         else:
-            matches[i].to = prefix + github_logins[next(iter(node_ids))]
+            matches[i].to = github_prefixed_logins[next(iter(node_ids))]
             matched_by_email += 1
     log.debug("matched by email: %d", matched_by_email)
     log.debug("to match by name: %d", len(match_by_name))
@@ -78,7 +76,7 @@ async def match_identities(request: AthenianWebRequest, body: dict) -> web.Respo
     for github_user, match_index, confidence in zip(github_names, name_matches, confidences):
         if match_index >= 0 and confidence > 0:
             m = matches[match_users_keys[match_index]]
-            m.to = prefix + github_logins[github_user]
+            m.to = github_prefixed_logins[github_user]
             m.confidence = confidence
             matched_by_name += 1
     log.debug("matched by name: %d", matched_by_name)

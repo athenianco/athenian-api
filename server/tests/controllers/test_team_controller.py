@@ -2,7 +2,7 @@ import json
 from operator import attrgetter
 
 import pytest
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 
 from athenian.api.models.state.models import AccountGitHubAccount, Team
 from athenian.api.models.web import TeamUpdateRequest
@@ -12,6 +12,9 @@ from athenian.api.models.web.team_create_request import TeamCreateRequest
 
 @pytest.mark.parametrize("account", [1, 2], ids=["as admin", "as non-admin"])
 async def test_create_team_smoke(client, headers, sdb, account, disable_default_user):
+    await sdb.execute(update(AccountGitHubAccount)
+                      .where(AccountGitHubAccount.id == 6366825)
+                      .values({AccountGitHubAccount.account_id: account}))
     body = TeamCreateRequest(account, "Engineering", ["github.com/se7entyse7en"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/team/create", headers=headers, json=body,
@@ -210,6 +213,9 @@ async def test_list_teams_smoke(client, headers, initial_teams, sdb, account):
         # No further details because didn't contribute to repos
         "github.com/se7entyse7en": {
             "login": "github.com/se7entyse7en",
+            "email": "loumarvincaraig@gmail.com",
+            "name": "Lou Marvin Caraig",
+            "picture": "https://avatars.githubusercontent.com/u/5599208?s=600&u=46e13fb429c44109e0b125f133c4e694a6d2646e&v=4",  # noqa
         },
         "github.com/vmarkovtsev": {
             "login": "github.com/vmarkovtsev",
@@ -326,6 +332,9 @@ async def test_update_team_default_user(client, headers, sdb):
 ])
 async def test_update_team_nasty_input(
         client, headers, sdb, disable_default_user, owner, id, name, members, parent, status):
+    await sdb.execute(update(AccountGitHubAccount)
+                      .where(AccountGitHubAccount.id == 6366825)
+                      .values({AccountGitHubAccount.account_id: owner}))
     await sdb.execute(insert(Team).values(Team(
         owner_id=owner,
         name="Engineering",
@@ -443,7 +452,10 @@ async def test_get_team_smoke(client, headers, sdb):
          "name": "Máximo Cuadros",
          "email": "mcuadros@gmail.com",
          "picture": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4"},
-        {"login": "github.com/se7entyse7en"},
+        {"login": "github.com/se7entyse7en",
+         "email": "loumarvincaraig@gmail.com",
+         "name": "Lou Marvin Caraig",
+         "picture": "https://avatars.githubusercontent.com/u/5599208?s=600&u=46e13fb429c44109e0b125f133c4e694a6d2646e&v=4"},  # noqa
     ]}
 
 

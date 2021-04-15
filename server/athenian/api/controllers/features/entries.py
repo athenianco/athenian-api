@@ -46,7 +46,8 @@ from athenian.api.controllers.miners.jira.issue import append_pr_jira_mapping, \
     load_pr_jira_mapping
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestFacts, ReleaseParticipants
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import PullRequest, PushCommit, Release
@@ -93,7 +94,7 @@ async def _calc_pull_request_facts_github(time_from: datetime,
                                           labels: LabelFilter,
                                           jira: JIRAFilter,
                                           exclude_inactive: bool,
-                                          release_settings: Dict[str, ReleaseMatchSetting],
+                                          release_settings: ReleaseSettings,
                                           fresh: bool,
                                           with_jira_map: bool,
                                           account: int,
@@ -112,7 +113,8 @@ async def _calc_pull_request_facts_github(time_from: datetime,
     ]
     if exclude_inactive:
         precomputed_tasks.append(load_precomputed_done_candidates(
-            time_from, time_to, repositories, default_branches, release_settings, account, pdb))
+            time_from, time_to, repositories,
+            default_branches, release_settings, account, pdb))
         (precomputed_facts, _), blacklist = await gather(*precomputed_tasks)
     else:
         (precomputed_facts, _) = blacklist = await precomputed_tasks[0]
@@ -224,7 +226,7 @@ async def calc_pull_request_facts_github(time_from: datetime,
                                          labels: LabelFilter,
                                          jira: JIRAFilter,
                                          exclude_inactive: bool,
-                                         release_settings: Dict[str, ReleaseMatchSetting],
+                                         release_settings: ReleaseSettings,
                                          fresh: bool,
                                          with_jira_map: bool,
                                          account: int,
@@ -312,7 +314,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
                                                 labels: LabelFilter,
                                                 jira: JIRAFilter,
                                                 exclude_inactive: bool,
-                                                release_settings: Dict[str, ReleaseMatchSetting],
+                                                release_settings: ReleaseSettings,
                                                 fresh: bool,
                                                 account: int,
                                                 meta_ids: Tuple[int, ...],
@@ -390,7 +392,7 @@ async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, Li
                                               labels: LabelFilter,
                                               jira: JIRAFilter,
                                               exclude_inactive: bool,
-                                              release_settings: Dict[str, ReleaseMatchSetting],
+                                              release_settings: ReleaseSettings,
                                               fresh: bool,
                                               account: int,
                                               meta_ids: Tuple[int, ...],
@@ -412,7 +414,8 @@ async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, Li
         raise ValueError("Unsupported metric") from e
     mined_facts = await calc_pull_request_facts_github(
         time_from, time_to, all_repositories, all_participants, labels, jira,
-        exclude_inactive, release_settings, fresh, False, account, meta_ids, mdb, pdb, rdb, cache)
+        exclude_inactive, release_settings,
+        fresh, False, account, meta_ids, mdb, pdb, rdb, cache)
     df_facts = df_from_dataclasses(mined_facts)
     lines_grouper = partial(group_by_lines, lines)
     repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
@@ -454,7 +457,8 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
                                            repositories: Sequence[Collection[str]],
                                            participants: List[ReleaseParticipants],
                                            jira: JIRAFilter,
-                                           release_settings: Dict[str, ReleaseMatchSetting],
+                                           release_settings: ReleaseSettings,
+                                           prefixer: PrefixerPromise,
                                            account: int,
                                            meta_ids: Tuple[int, ...],
                                            mdb: Database,
@@ -474,8 +478,8 @@ async def calc_release_metrics_line_github(metrics: Sequence[str],
     branches, default_branches = await extract_branches(all_repositories, meta_ids, mdb, cache)
     all_participants = merge_release_participants(participants)
     releases, _, matched_bys = await mine_releases(
-        all_repositories, all_participants, branches, default_branches,
-        time_from, time_to, jira, release_settings, account, meta_ids, mdb, pdb, rdb, cache)
+        all_repositories, all_participants, branches, default_branches, time_from, time_to, jira,
+        release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     df_facts = df_from_dataclasses([f for _, f in releases])
     repo_grouper = partial(group_by_repo, Release.repository_full_name.key, repositories)
     participant_grouper = partial(group_releases_by_participants, participants)
@@ -506,7 +510,7 @@ async def calc_developer_metrics_github(devs: Sequence[Collection[str]],
                                         topics: Set[DeveloperTopic],
                                         labels: LabelFilter,
                                         jira: JIRAFilter,
-                                        release_settings: Dict[str, ReleaseMatchSetting],
+                                        release_settings: ReleaseSettings,
                                         account: int,
                                         meta_ids: Tuple[int, ...],
                                         mdb: Database,

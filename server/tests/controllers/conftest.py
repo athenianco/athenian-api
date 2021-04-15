@@ -12,8 +12,9 @@ from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_edges
 from athenian.api.controllers.miners.github.dag_accelerated import join_dags
 from athenian.api.controllers.miners.types import nonemin, PullRequestFacts
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
-    ReleaseMatchSetting
+    ReleaseMatchSetting, ReleaseSettings
 from athenian.api.models.metadata.github import Branch
 from athenian.api.models.state.models import JIRAProjectSetting
 from athenian.api.typing_utils import wraps
@@ -26,26 +27,26 @@ def no_deprecation_warnings():
 
 @pytest.fixture(scope="module")
 def release_match_setting_tag_or_branch():
-    return {
+    return ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
             branches="master", tags=".*", match=ReleaseMatch.tag_or_branch),
-    }
+    })
 
 
 @pytest.fixture(scope="module")
 def release_match_setting_tag():
-    return {
+    return ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
             branches="", tags=".*", match=ReleaseMatch.tag),
-    }
+    })
 
 
 @pytest.fixture(scope="module")
 def release_match_setting_branch():
-    return {
+    return ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
             branches=default_branch_alias, tags=".*", match=ReleaseMatch.branch),
-    }
+    })
 
 
 @pytest.fixture(scope="module")
@@ -63,6 +64,11 @@ async def branches(mdb):
     if _branches is None:
         _branches, _ = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
     return _branches
+
+
+@pytest.fixture(scope="function")
+async def prefixer_promise(mdb):
+    return Prefixer.schedule_load((6366825,), mdb)
 
 
 @pytest.fixture(scope="function")

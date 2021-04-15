@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Collection, Dict, FrozenSet, List, Optional, Set, Tuple, Type, Union
+from typing import Collection, FrozenSet, List, Optional, Set, Tuple, Type, Union
 
 import aiomcache
 import databases
@@ -14,7 +14,7 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.release_load import load_releases
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
-from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestLabel, PullRequestReview, PullRequestReviewComment, PushCommit, Release, \
     Repository, User
@@ -74,7 +74,7 @@ async def _mine_commits(repo_ids: np.ndarray,
                         topics: Set[DeveloperTopic],
                         labels: LabelFilter,
                         jira: JIRAFilter,
-                        release_settings: Dict[str, ReleaseMatchSetting],
+                        release_settings: ReleaseSettings,
                         account: int,
                         meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
@@ -108,7 +108,7 @@ async def _mine_prs(attr_user: InstrumentedAttribute,
                     topics: Set[DeveloperTopic],
                     labels: LabelFilter,
                     jira: JIRAFilter,
-                    release_settings: Dict[str, ReleaseMatchSetting],
+                    release_settings: ReleaseSettings,
                     account: int,
                     meta_ids: Tuple[int, ...],
                     mdb: databases.Database,
@@ -169,7 +169,7 @@ async def _mine_releases(repo_ids: np.ndarray,
                          topics: Set[DeveloperTopic],
                          labels: LabelFilter,
                          jira: JIRAFilter,
-                         release_settings: Dict[str, ReleaseMatchSetting],
+                         release_settings: ReleaseSettings,
                          account: int,
                          meta_ids: Tuple[int, ...],
                          mdb: databases.Database,
@@ -200,7 +200,7 @@ async def _mine_reviews(repo_ids: np.ndarray,
                         topics: Set[DeveloperTopic],
                         labels: LabelFilter,
                         jira: JIRAFilter,
-                        release_settings: Dict[str, ReleaseMatchSetting],
+                        release_settings: ReleaseSettings,
                         account: int,
                         meta_ids: Tuple[int, ...],
                         mdb: databases.Database,
@@ -259,7 +259,7 @@ async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequ
                             topics: Set[DeveloperTopic],
                             labels: LabelFilter,
                             jira: JIRAFilter,
-                            release_settings: Dict[str, ReleaseMatchSetting],
+                            release_settings: ReleaseSettings,
                             account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
@@ -347,7 +347,7 @@ async def mine_developer_activities(devs: Collection[str],
                                     topics: Set[DeveloperTopic],
                                     labels: LabelFilter,
                                     jira: JIRAFilter,
-                                    release_settings: Dict[str, ReleaseMatchSetting],
+                                    release_settings: ReleaseSettings,
                                     account: int,
                                     meta_ids: Tuple[int, ...],
                                     mdb: databases.Database,

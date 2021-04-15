@@ -1,5 +1,5 @@
 import marshal
-from typing import Dict, Iterable, Set
+from typing import Dict, Iterable, KeysView, Set, Union
 
 from sqlalchemy import select
 
@@ -18,8 +18,6 @@ class GitHubAccessChecker(AccessChecker):
 
     Do not use this to load all the repos for the account! get_account_repositories() instead.
     """
-
-    SERVICE = "github"
 
     @sentry_span
     async def load(self) -> "AccessChecker":
@@ -42,10 +40,10 @@ class GitHubAccessChecker(AccessChecker):
         node_key = AccountRepository.repo_node_id.key
         return {r[name_key]: r[node_key] for r in rows}
 
-    async def check(self, repos: Set[str]) -> Set[str]:
+    async def check(self, repos: Union[Set[str], KeysView[str]]) -> Set[str]:
         """Return repositories which do not belong to the metadata installation.
 
         The names must be *without* the service prefix.
         """
-        assert isinstance(repos, set)
+        assert isinstance(repos, (set, KeysView))
         return repos - self._installed_repos.keys()

@@ -7,12 +7,11 @@ from aiohttp import web
 import aiomcache
 from asyncpg import UniqueViolationError
 import databases
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.miners.github.users import mine_users
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import BadRequestError, Contributor, CreatedIdentifier, \
@@ -33,7 +32,8 @@ async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
     parent = body.parent
     name = _check_name(body.name)
     async with request.sdb.connection() as sdb_conn:
-        members = _check_members(body.members)
+        meta_ids = await get_metadata_account_ids(body.account, sdb_conn, request.cache)
+        members = await _check_members(body.members, meta_ids, request.mdb)
         await _check_parent(account, parent, sdb_conn)
         t = Team(owner_id=account, name=name, members=members, parent_id=parent).create_defaults()
         try:
@@ -128,7 +128,8 @@ async def update_team(request: AthenianWebRequest, id: int,
         await get_user_account_status(user, account, sdb_conn, request.cache)
         if id == body.parent:
             raise ResponseError(BadRequestError(detail="Team cannot be a the parent of itself."))
-        members = _check_members(body.members)
+        meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
+        members = await _check_members(body.members, meta_ids, request.mdb)
         await _check_parent(account, body.parent, sdb_conn)
         await _check_parent_cycle(id, body.parent, sdb_conn)
         t = Team(
@@ -155,20 +156,29 @@ def _check_name(name: str) -> str:
     return name
 
 
-def _check_members(members: List[str]) -> List[str]:
-    invalid_members = []
-    prefix = PREFIXES["github"]
+async def _check_members(members: List[str],
+                         meta_ids: Tuple[int, ...],
+                         mdb: DatabaseLike,
+                         ) -> List[str]:
+    to_fetch = set()
+    members = set(members)
     for m in members:
-        # Very basic check
-        splitted = m.split("/")
-        if not m.startswith(prefix) or len(splitted) > 2 or not splitted[1]:
-            invalid_members.append(m)
+        # very basic check
+        splitted = m.split("/", 1)
+        if len(splitted) == 2 and splitted[1]:
+            to_fetch.add(splitted[1])
+
+    rows = await mdb.fetch_all(select([User.html_url])
+                               .where(and_(User.acc_id.in_(meta_ids),
+                                           User.login.in_(to_fetch))))
+    exist = {r[0].split("/", 2)[2] for r in rows}
+    invalid_members = sorted(members - exist)
 
     if invalid_members or len(members) == 0:
         raise ResponseError(BadRequestError(
             detail="Invalid members of the team: %s" % ", ".join(invalid_members)))
 
-    return sorted(set(members))
+    return sorted(members)
 
 
 async def _check_parent(account: int, parent_id: Optional[int], sdb: DatabaseLike) -> None:
@@ -192,16 +202,15 @@ async def _get_all_members(teams: Iterable[Mapping],
                            meta_ids: Tuple[int, ...],
                            mdb: databases.Database,
                            cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
-    prefix = PREFIXES["github"]
     all_members = set(chain.from_iterable([t[Team.members.key] for t in teams]))
-    all_members = {m.split("/", 1)[1] for m in all_members if m.startswith(prefix)}
+    all_members = {m.split("/", 1)[1] for m in all_members}
     user_by_login = {
         u[User.login.key]: u for u in await mine_users(all_members, meta_ids, mdb, cache)
     }
     all_contributors = {}
     for m in all_members:
         ud = user_by_login.get(m)
-        login = prefix + m
+        login = ud[User.html_url.key].split("/", 2)[2]
         if ud is not None:
             c = Contributor(login=login,
                             name=ud[User.name.key],

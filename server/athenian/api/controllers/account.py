@@ -9,13 +9,12 @@ from typing import List, Optional, Tuple
 import aiomcache
 from asyncpg import UniqueViolationError
 import networkx as nx
-from sqlalchemy import and_, func, insert, join, select
+from sqlalchemy import and_, func, insert, select
 
 from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
-from athenian.api.models.metadata import PREFIXES
-from athenian.api.models.metadata.github import NodeUser, Organization, Team as MetadataTeam, \
-    TeamMember
+from athenian.api.controllers.prefixer import Prefixer
+from athenian.api.models.metadata.github import Organization, Team as MetadataTeam, TeamMember
 from athenian.api.models.state.models import Account, AccountGitHubAccount, RepositorySet, \
     Team as StateTeam, UserAccount
 from athenian.api.models.web import NoSourceDataError, NotFoundError
@@ -72,8 +71,9 @@ async def get_user_account_status(user: str,
 
 
 async def get_account_repositories(account: int,
+                                   with_prefix: bool,
                                    sdb: DatabaseLike,
-                                   with_prefix=True) -> List[str]:
+                                   ) -> List[str]:
     """Fetch all the repositories belonging to the account."""
     repos = await sdb.fetch_one(select([RepositorySet.items]).where(and_(
         RepositorySet.owner_id == account,
@@ -117,6 +117,7 @@ async def copy_teams_as_needed(account: int,
     :return: List of created team names.
     """
     log = logging.getLogger("%s.create_teams_as_needed" % metadata.__package__)
+    prefixer = Prefixer.schedule_load(meta_ids, mdb)
     existing = await sdb.fetch_val(select([func.count(StateTeam.id)])
                                    .where(and_(StateTeam.owner_id == account,
                                                StateTeam.name != StateTeam.BOTS)))
@@ -146,14 +147,16 @@ async def copy_teams_as_needed(account: int,
         return []
     teams = {t[MetadataTeam.id.key]: t for t in team_rows}
     member_rows = await mdb.fetch_all(
-        select([TeamMember.parent_id, NodeUser.login]).select_from(
-            join(TeamMember, NodeUser, and_(TeamMember.child_id == NodeUser.id,
-                                            TeamMember.acc_id == NodeUser.acc_id)),
-        ).where(and_(TeamMember.parent_id.in_(teams), TeamMember.acc_id.in_(meta_ids))))
+        select([TeamMember.parent_id, TeamMember.child_id])
+        .where(and_(TeamMember.parent_id.in_(teams), TeamMember.acc_id.in_(meta_ids))))
     members = defaultdict(list)
-    prefix = PREFIXES["github"]
+    prefixer = await prefixer.load()
     for row in member_rows:
-        members[row[TeamMember.parent_id.key]].append(prefix + row[NodeUser.login.key])
+        try:
+            members[row[TeamMember.parent_id.key]].append(
+                prefixer.user_node_map[row[TeamMember.child_id.key]])
+        except KeyError:
+            log.error("Could not resolve user %s", row[TeamMember.child_id.key])
     db_ids = {}
     created_teams = []
     for node_id in reversed(list(nx.topological_sort(dig))):

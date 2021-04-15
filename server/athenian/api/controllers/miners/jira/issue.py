@@ -20,8 +20,7 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import triage_by_release_match
 from athenian.api.controllers.miners.types import PullRequestFacts
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
-from athenian.api.models.metadata import PREFIXES
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue, Status
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
@@ -198,7 +197,7 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
                             assignees: Collection[Optional[str]],
                             commenters: Collection[str],
                             default_branches: Dict[str, str],
-                            release_settings: Dict[str, ReleaseMatchSetting],
+                            release_settings: ReleaseSettings,
                             account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
@@ -280,7 +279,6 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
         pr_created_ats_and_repos, err = await gather(
             _fetch_pr_created_ats_and_repos(unreleased_prs, meta_ids, mdb), released_flow(),
             op="released and unreleased")
-        prefix = PREFIXES["github"]
         for row in pr_created_ats_and_repos:
             pr_created_at = row[PullRequest.created_at.key]
             repo = row[PullRequest.repository_full_name.key]
@@ -290,7 +288,7 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
                 work_began[i] = pr_created_at
             else:
                 work_began[i] = min(dt, np.datetime64(pr_created_at))
-            if (prefix + repo) not in release_settings:
+            if repo not in release_settings.native:
                 # deleted repository, consider the PR as force push dropped
                 released[i] = work_began[i]
             else:
@@ -317,7 +315,7 @@ async def _fetch_pr_created_ats_and_repos(pr_node_ids: Iterable[str],
 @sentry_span
 async def _fetch_released_prs(pr_node_ids: Iterable[str],
                               default_branches: Dict[str, str],
-                              release_settings: Dict[str, ReleaseMatchSetting],
+                              release_settings: ReleaseSettings,
                               account: int,
                               pdb: databases.Database,
                               ) -> Dict[str, Mapping[str, Any]]:
@@ -338,10 +336,9 @@ async def _fetch_released_prs(pr_node_ids: Iterable[str],
             r[ghdprf.pr_node_id.key]] = r
     released_prs = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
-    prefix = PREFIXES["github"]
     for repo, matches in released_by_repo.items():
         for match, prs in matches.items():
-            if (prefix + repo) not in release_settings:
+            if repo not in release_settings.native:
                 for node_id, row in prs.items():
                     try:
                         if released_prs[node_id][ghdprf.pr_done_at] < row[ghdprf.pr_done_at]:
@@ -349,8 +346,8 @@ async def _fetch_released_prs(pr_node_ids: Iterable[str],
                     except KeyError:
                         released_prs[node_id] = row
                 continue
-            dump = triage_by_release_match(repo, match, release_settings, default_branches,
-                                           prefix, released_prs, ambiguous)
+            dump = triage_by_release_match(
+                repo, match, release_settings, default_branches, released_prs, ambiguous)
             if dump is None:
                 continue
             dump.update(prs)

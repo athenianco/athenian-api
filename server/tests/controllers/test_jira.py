@@ -43,7 +43,7 @@ async def test_load_mapped_jira_users_no_jira(sdb, mdb):
 
 async def test_match_jira_identities_from_scratch(sdb, mdb, slack):
     matched = await match_jira_identities(1, (6366825,), sdb, mdb, slack, None)
-    assert matched == 5
+    assert matched == 9
     stored = await sdb.fetch_all(select([MappedJIRAIdentity.github_user_id,
                                          MappedJIRAIdentity.jira_user_id,
                                          MappedJIRAIdentity.confidence]))
@@ -51,7 +51,10 @@ async def test_match_jira_identities_from_scratch(sdb, mdb, slack):
     github_users = set()
     jira_users = set()
     for row in stored:
-        assert row[MappedJIRAIdentity.confidence.key] == 1
+        if row[MappedJIRAIdentity.github_user_id.key] != "MDQ6VXNlcjc0NTM2Ng==":
+            assert row[MappedJIRAIdentity.confidence.key] == 1
+        else:
+            assert row[MappedJIRAIdentity.confidence.key] == 0.75
         github_users.add(row[MappedJIRAIdentity.github_user_id.key])
         jira_users.add(row[MappedJIRAIdentity.jira_user_id.key])
     assert len(github_users) == len(jira_users) == matched
@@ -67,7 +70,7 @@ async def test_match_jira_identities_incremental(sdb, mdb, slack):
         ).create_defaults().explode(with_primary_keys=True),
     ))
     matched = await match_jira_identities(1, (6366825,), sdb, mdb, slack, None)
-    assert matched == 4
+    assert matched == 8
     stored = await sdb.fetch_val(select([count(distinct(MappedJIRAIdentity.github_user_id))]))
     assert matched + 1 == stored
 

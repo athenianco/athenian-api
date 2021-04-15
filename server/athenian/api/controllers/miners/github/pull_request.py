@@ -34,7 +34,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import MinedPullRequest, nonemax, nonemin, \
     PRParticipants, PRParticipationKind, PullRequestFacts
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_misses
 from athenian.api.defer import AllEvents, defer
 from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, PullRequest, \
@@ -180,7 +180,7 @@ class PullRequestMiner:
                     branches: pd.DataFrame,
                     default_branches: Dict[str, str],
                     exclude_inactive: bool,
-                    release_settings: Dict[str, ReleaseMatchSetting],
+                    release_settings: ReleaseSettings,
                     updated_min: Optional[datetime],
                     updated_max: Optional[datetime],
                     pr_blacklist: Optional[Tuple[Collection[str], Dict[str, List[str]]]],
@@ -329,7 +329,7 @@ class PullRequestMiner:
                           branches: pd.DataFrame,
                           default_branches: Dict[str, str],
                           dags: Dict[str, DAG],
-                          release_settings: Dict[str, ReleaseMatchSetting],
+                          release_settings: ReleaseSettings,
                           account: int,
                           meta_ids: Tuple[int, ...],
                           mdb: databases.Database,
@@ -369,7 +369,7 @@ class PullRequestMiner:
                            branches: pd.DataFrame,
                            default_branches: Dict[str, str],
                            dags: Dict[str, DAG],
-                           release_settings: Dict[str, ReleaseMatchSetting],
+                           release_settings: ReleaseSettings,
                            account: int,
                            meta_ids: Tuple[int, ...],
                            mdb: databases.Database,
@@ -559,7 +559,7 @@ class PullRequestMiner:
                    branches: pd.DataFrame,
                    default_branches: Dict[str, str],
                    exclude_inactive: bool,
-                   release_settings: Dict[str, ReleaseMatchSetting],
+                   release_settings: ReleaseSettings,
                    account: int,
                    meta_ids: Tuple[int, ...],
                    mdb: databases.Database,
@@ -933,7 +933,7 @@ class PullRequestMiner:
             labels: LabelFilter,
             jira: JIRAFilter,
             default_branches: Dict[str, str],
-            release_settings: Dict[str, ReleaseMatchSetting],
+            release_settings: ReleaseSettings,
             account: int,
             meta_ids: Tuple[int, ...],
             mdb: databases.Database,

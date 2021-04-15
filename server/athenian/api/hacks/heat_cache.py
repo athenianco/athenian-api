@@ -37,13 +37,13 @@ from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_
 from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs
 from athenian.api.controllers.miners.github.release_mine import mine_releases
+from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 import athenian.api.db
 from athenian.api.db import measure_db_overhead_and_retry, ParallelDatabase
 from athenian.api.defer import enable_defer, wait_deferred
-from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas, \
-    PREFIXES
+from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
 from athenian.api.models.metadata.github import NodePullRequest, NodeUser, PullRequestLabel, User
 from athenian.api.models.persistentdata import \
     dereference_schemas as dereference_persistentdata_schemas
@@ -161,12 +161,14 @@ def main():
                             reposet.owner_id, reposet.id)
                 continue
             meta_ids = await get_metadata_account_ids(reposet.owner_id, sdb, cache)
+            prefixer = Prefixer.schedule_load(meta_ids, mdb)
             if not reposet.precomputed:
                 log.info("Considering account %d as brand new, creating the Bots team",
                          reposet.owner_id)
                 try:
                     num_teams, num_bots = await create_teams(
-                        reposet.owner_id, meta_ids, reposet.items, bots, sdb, mdb, pdb, rdb, cache)
+                        reposet.owner_id, meta_ids, reposet.items, bots, prefixer,
+                        sdb, mdb, pdb, rdb, cache)
                 except Exception as e:
                     log.warning("bots %d: %s: %s", reposet.owner_id, type(e).__name__, e)
                     sentry_sdk.capture_exception(e)
@@ -183,8 +185,8 @@ def main():
                 branches, default_branches = await extract_branches(repos, meta_ids, mdb, None)
                 releases, _, _ = await mine_releases(
                     repos, {}, branches, default_branches, no_time_from, time_to,
-                    JIRAFilter.empty(), settings, reposet.owner_id, meta_ids, mdb, pdb, rdb, None,
-                    force_fresh=True)
+                    JIRAFilter.empty(), settings, prefixer, reposet.owner_id, meta_ids,
+                    mdb, pdb, rdb, None, force_fresh=True)
                 branches_count = len(branches)
                 del branches
                 releases_by_tag = sum(
@@ -328,6 +330,7 @@ async def create_teams(account: int,
                        meta_ids: Tuple[int, ...],
                        repos: Collection[str],
                        all_bots: Set[str],
+                       prefixer: PrefixerPromise,
                        sdb: ParallelDatabase,
                        mdb: ParallelDatabase,
                        pdb: ParallelDatabase,
@@ -350,7 +353,7 @@ async def create_teams(account: int,
         {r.split("/", 1)[1] for r in repos}, None, None, False, [],
         release_settings, account, meta_ids, mdb, pdb, rdb, None, force_fresh_releases=True)
     if bots := {u[User.login.key] for u in contributors}.intersection(all_bots):
-        bots = [PREFIXES["github"] + login for login in bots]
+        bots = (await prefixer.load()).prefix_user_logins(bots)
         await sdb.execute(insert(Team).values(
             Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
             .create_defaults().explode()))

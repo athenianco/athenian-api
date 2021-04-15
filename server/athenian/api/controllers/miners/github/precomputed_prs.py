@@ -33,10 +33,8 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
     PRParticipationKind, PullRequestFacts
-from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
-    ReleaseMatchSetting
+from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, greatest
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestLabel, PullRequestReview, PullRequestReviewRequest, Release
 from athenian.api.models.precomputed.models import GitHubBase, GitHubDonePullRequestFacts, \
@@ -67,21 +65,19 @@ def _create_common_filters(time_from: Optional[datetime],
 
 def triage_by_release_match(repo: str,
                             release_match: str,
-                            release_settings: Dict[str, ReleaseMatchSetting],
+                            release_settings: ReleaseSettings,
                             default_branches: Dict[str, str],
-                            prefix: str,
                             result: Any,
                             ambiguous: Dict[str, Any]) -> Optional[Any]:
     """Check the release match of the specified `repo` and return `None` if it is not effective \
     or decide between `result` and `ambiguous`, depending on the settings."""
-    full_repo_name = prefix + repo
     # DEV-1451: if we don't have this repository in the release settings, then it is deleted
-    assert full_repo_name in release_settings, \
+    assert repo in release_settings.native, \
         "You must take care of deleted repositories separately."
     if release_match in (ReleaseMatch.rejected.name,
                          ReleaseMatch.force_push_drop.name):
         return result
-    required_release_match = release_settings[full_repo_name]
+    required_release_match = release_settings.native[repo]
     if release_match == ReleaseMatch.event.name:
         if required_release_match.match == ReleaseMatch.event:
             return result
@@ -111,7 +107,7 @@ async def load_precomputed_done_candidates(time_from: datetime,
                                            time_to: datetime,
                                            repos: Collection[str],
                                            default_branches: Dict[str, str],
-                                           release_settings: Dict[str, ReleaseMatchSetting],
+                                           release_settings: ReleaseSettings,
                                            account: int,
                                            pdb: databases.Database,
                                            ) -> Tuple[Set[str], Dict[str, List[str]]]:
@@ -131,13 +127,12 @@ async def load_precomputed_done_candidates(time_from: datetime,
     filters = _create_common_filters(time_from, time_to, repos, account)
     with sentry_sdk.start_span(op="load_precomputed_done_candidates/fetch"):
         rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
-    prefix = PREFIXES["github"]
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     for row in rows:
         dump = triage_by_release_match(
             row[ghprt.repository_full_name.key], row[ghprt.release_match.key],
-            release_settings, default_branches, prefix, result, ambiguous)
+            release_settings, default_branches, result, ambiguous)
         if dump is None:
             continue
         dump[row[ghprt.pr_node_id.key]] = row
@@ -240,7 +235,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
                                               labels: LabelFilter,
                                               default_branches: Dict[str, str],
                                               exclude_inactive: bool,
-                                              release_settings: Dict[str, ReleaseMatchSetting],
+                                              release_settings: ReleaseSettings,
                                               account: int,
                                               pdb: databases.Database,
                                               ) -> Tuple[Dict[str, PullRequestFacts],
@@ -266,7 +261,7 @@ async def load_precomputed_done_facts_filters(time_from: datetime,
 
 async def load_precomputed_done_facts_all(repos: Collection[str],
                                           default_branches: Dict[str, str],
-                                          release_settings: Dict[str, ReleaseMatchSetting],
+                                          release_settings: ReleaseSettings,
                                           account: int,
                                           pdb: databases.Database,
                                           extra: Iterable[InstrumentedAttribute] = (),
@@ -312,7 +307,7 @@ async def load_precomputed_done_timestamp_filters(time_from: datetime,
                                                   labels: LabelFilter,
                                                   default_branches: Dict[str, str],
                                                   exclude_inactive: bool,
-                                                  release_settings: Dict[str, ReleaseMatchSetting],
+                                                  release_settings: ReleaseSettings,
                                                   account: int,
                                                   pdb: databases.Database,
                                                   ) -> Tuple[Dict[str, datetime],
@@ -365,7 +360,7 @@ async def _load_precomputed_done_filters(columns: List[InstrumentedAttribute],
                                          labels: LabelFilter,
                                          default_branches: Dict[str, str],
                                          exclude_inactive: bool,
-                                         release_settings: Dict[str, ReleaseMatchSetting],
+                                         release_settings: ReleaseSettings,
                                          account: int,
                                          pdb: databases.Database,
                                          ) -> Tuple[Dict[str, Mapping[str, Any]],
@@ -404,7 +399,6 @@ async def _load_precomputed_done_filters(columns: List[InstrumentedAttribute],
         query = union_all(*(select(selected).where(and_(item, *filters)) for item in or_items))
     with sentry_sdk.start_span(op="_load_precomputed_done_filters/fetch"):
         rows = await pdb.fetch_all(query)
-    prefix = PREFIXES["github"]
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     if labels and not postgres:
@@ -414,7 +408,7 @@ async def _load_precomputed_done_filters(columns: List[InstrumentedAttribute],
     for row in rows:
         repo, rm = row[ghprt.repository_full_name.key], row[ghprt.release_match.key]
         dump = triage_by_release_match(
-            repo, rm, release_settings, default_branches, prefix, result, ambiguous)
+            repo, rm, release_settings, default_branches, result, ambiguous)
         if dump is None:
             continue
         if not postgres:
@@ -473,7 +467,7 @@ def _append_activity_days_filter(time_from: datetime, time_to: datetime,
 @sentry_span
 async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
                                                default_branches: Dict[str, str],
-                                               release_settings: Dict[str, ReleaseMatchSetting],
+                                               release_settings: ReleaseSettings,
                                                account: int,
                                                pdb: databases.Database,
                                                ) -> Tuple[Dict[str, PullRequestFacts],
@@ -526,13 +520,12 @@ async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
 
     with sentry_sdk.start_span(op="load_precomputed_done_facts_reponums/fetch"):
         rows = await pdb.fetch_all(query)
-    prefix = PREFIXES["github"]
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     for row in rows:
         dump = triage_by_release_match(
             row[ghprt.repository_full_name.key], row[ghprt.release_match.key],
-            release_settings, default_branches, prefix, result, ambiguous)
+            release_settings, default_branches, result, ambiguous)
         if dump is None:
             continue
         dump[row[ghprt.pr_node_id.key]] = _done_pr_facts_from_row(row)
@@ -542,7 +535,7 @@ async def load_precomputed_done_facts_reponums(repos: Dict[str, Set[int]],
 @sentry_span
 async def load_precomputed_done_facts_ids(node_ids: Iterable[str],
                                           default_branches: Dict[str, str],
-                                          release_settings: Dict[str, ReleaseMatchSetting],
+                                          release_settings: ReleaseSettings,
                                           account: int,
                                           pdb: databases.Database,
                                           ) -> Tuple[Dict[str, PullRequestFacts],
@@ -573,13 +566,12 @@ async def load_precomputed_done_facts_ids(node_ids: Iterable[str],
     query = select(selected).where(and_(*filters))
     with sentry_sdk.start_span(op="load_precomputed_done_facts_ids/fetch"):
         rows = await pdb.fetch_all(query)
-    prefix = PREFIXES["github"]
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     for row in rows:
         dump = triage_by_release_match(
             row[ghprt.repository_full_name.key], row[ghprt.release_match.key],
-            release_settings, default_branches, prefix, result, ambiguous)
+            release_settings, default_branches, result, ambiguous)
         if dump is None:
             continue
         dump[row[ghprt.pr_node_id.key]] = _done_pr_facts_from_row(row)
@@ -600,7 +592,7 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
                                        time_to: datetime,
                                        matched_bys: Dict[str, ReleaseMatch],
                                        default_branches: Dict[str, str],
-                                       release_settings: Dict[str, ReleaseMatchSetting],
+                                       release_settings: ReleaseSettings,
                                        account: int,
                                        pdb: databases.Database,
                                        cache: Optional[aiomcache.Client]) -> pd.DataFrame:
@@ -619,7 +611,6 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
                         ghprt.acc_id == account,
                         ghprt.releaser.isnot(None),
                         ghprt.pr_done_at < time_to)))
-    prefix = PREFIXES["github"]
     records = []
     utc = timezone.utc
     force_push_dropped = set()
@@ -650,10 +641,10 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
             log.warning("Alternative release matching detected: %s", dict(pr))
             continue
         if release_match == ReleaseMatch.tag:
-            if match_by != release_settings[prefix + repo].tags:
+            if match_by != release_settings.native[repo].tags:
                 continue
         elif release_match == ReleaseMatch.branch:
-            branches = release_settings[prefix + repo].branches.replace(
+            branches = release_settings.native[repo].branches.replace(
                 default_branch_alias, default_branches[repo])
             if match_by != branches:
                 continue
@@ -699,14 +690,13 @@ def _collect_activity_days(pr: MinedPullRequest, facts: PullRequestFacts, sqlite
 async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
                                        pr_facts: Iterable[Optional[PullRequestFacts]],
                                        default_branches: Dict[str, str],
-                                       release_settings: Dict[str, ReleaseMatchSetting],
+                                       release_settings: ReleaseSettings,
                                        account: int,
                                        pdb: databases.Database,
                                        ) -> None:
     """Store PullRequestFacts belonging to released or rejected PRs to the precomputed DB."""
     log = logging.getLogger("%s.store_precomputed_done_facts" % metadata.__package__)
     inserted = []
-    prefix = PREFIXES["github"]
     sqlite = pdb.url.dialect == "sqlite"
     for pr, facts in zip(prs, pr_facts):
         if facts is None:
@@ -728,7 +718,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
                 continue
         repo = pr.pr[PullRequest.repository_full_name.key]
         if pr.release[matched_by_column] is not None:
-            release_match = release_settings[prefix + repo]
+            release_match = release_settings.native[repo]
             match = ReleaseMatch(pr.release[matched_by_column])
             if match == ReleaseMatch.branch:
                 branch = release_match.branches.replace(
@@ -808,7 +798,7 @@ async def load_merged_unreleased_pull_request_facts(
         labels: LabelFilter,
         matched_bys: Dict[str, ReleaseMatch],
         default_branches: Dict[str, str],
-        release_settings: Dict[str, ReleaseMatchSetting],
+        release_settings: ReleaseSettings,
         account: int,
         pdb: databases.Database,
         time_from: Optional[datetime] = None,
@@ -949,12 +939,13 @@ async def load_merged_pull_request_facts_all(repos: Collection[str],
 def _extract_release_match(repo: str,
                            matched_bys: Dict[str, ReleaseMatch],
                            default_branches: Dict[str, str],
-                           release_settings: Dict[str, ReleaseMatchSetting]) -> Optional[str]:
+                           release_settings: ReleaseSettings,
+                           ) -> Optional[str]:
     try:
         matched_by = matched_bys[repo]
     except KeyError:
         return None
-    release_setting = release_settings[PREFIXES["github"] + repo]
+    release_setting = release_settings.native[repo]
     if matched_by == ReleaseMatch.tag:
         return "tag|" + release_setting.tags
     if matched_by == ReleaseMatch.branch:
@@ -973,7 +964,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                                 labels: Dict[str, List[str]],
                                 matched_bys: Dict[str, ReleaseMatch],
                                 default_branches: Dict[str, str],
-                                release_settings: Dict[str, ReleaseMatchSetting],
+                                release_settings: ReleaseSettings,
                                 account: int,
                                 pdb: databases.Database,
                                 unreleased_prs_event: asyncio.Event) -> None:
@@ -1060,7 +1051,7 @@ async def store_merged_unreleased_pull_request_facts(
         merged_prs_and_facts: Iterable[Tuple[MinedPullRequest, PullRequestFacts]],
         matched_bys: Dict[str, ReleaseMatch],
         default_branches: Dict[str, str],
-        release_settings: Dict[str, ReleaseMatchSetting],
+        release_settings: ReleaseSettings,
         account: int,
         pdb: databases.Database,
         unreleased_prs_event: asyncio.Event) -> None:
@@ -1142,7 +1133,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   participants: PRParticipants,
                                                   labels: LabelFilter,
                                                   default_branches: Dict[str, str],
-                                                  release_settings: Dict[str, ReleaseMatchSetting],
+                                                  release_settings: ReleaseSettings,
                                                   account: int,
                                                   pdb: databases.Database,
                                                   cache: Optional[aiomcache.Client],
@@ -1178,7 +1169,6 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                    .select_from(body)
                                    .where(and_(*filters))
                                    .order_by(desc(GitHubMergedPullRequestFacts.merged_at)))
-    prefix = PREFIXES["github"]
     ambiguous = {ReleaseMatch.tag.name: set(), ReleaseMatch.branch.name: set()}
     node_ids = []
     repos = []
@@ -1188,7 +1178,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
         include_multiples = [set(m) for m in include_multiples]
     for row in rows:
         dump = triage_by_release_match(
-            row[1], row[2], release_settings, default_branches, prefix, "whatever", ambiguous)
+            row[1], row[2], release_settings, default_branches, "whatever", ambiguous)
         if dump is None:
             continue
         # we do not care about the exact release match

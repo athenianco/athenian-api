@@ -2,7 +2,6 @@ from typing import Dict, Optional, Set, Tuple
 
 import aiomcache
 
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.typing_utils import DatabaseLike
 
 
@@ -10,7 +9,6 @@ class AccessChecker:
     """Interface for all repository access checkers."""
 
     CACHE_TTL = 60  # 1 minute
-    SERVICE = ""
 
     def __init__(self,
                  account: int,
@@ -33,10 +31,9 @@ class AccessChecker:
         self.cache_ttl = cache_ttl
         self._installed_repos = {}
 
-    def installed_repos(self, with_prefix: bool = True) -> Dict[str, str]:
-        """Get the currently installed repository names."""
-        prefix = PREFIXES[self.SERVICE] if with_prefix else ""
-        return {f"{prefix}{k}": v for k, v in self._installed_repos.items()}
+    def installed_repos(self) -> Dict[str, str]:
+        """Get the currently installed repository names *without* the service prefix."""
+        return self._installed_repos
 
     async def load(self) -> "AccessChecker":
         """Fetch the list of accessible repositories."""

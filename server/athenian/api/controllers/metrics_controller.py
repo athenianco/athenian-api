@@ -18,9 +18,9 @@ from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     ReleaseParticipationKind
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.controllers.settings import Settings
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
     CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, \
@@ -145,14 +145,13 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
     all_repos = set()
     async with request.sdb.connection() as sdb_conn:
         for i, for_set in enumerate(for_sets):
-            repos, service = await _extract_repos(
+            repos, prefix, service = await _extract_repos(
                 request, account, meta_ids, for_set.repositories, i, all_repos, checkers, sdb_conn)
             if for_set.repogroups is not None:
                 repogroups = [set(chain.from_iterable(repos[i] for i in group))
                               for group in for_set.repogroups]
             else:
                 repogroups = [set(chain.from_iterable(repos))]
-            prefix = PREFIXES[service]
             withgroups = []
             for with_ in (for_set.withgroups or []) + ([for_set.with_] if for_set.with_ else []):
                 withgroup = {}
@@ -161,12 +160,13 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
                         continue
                     withgroup[PRParticipationKind[k.upper()]] = dk = set()
                     for dev in v:
-                        if not dev.startswith(prefix):
+                        dev_prefix, dev_login = dev.split("/", 1)
+                        if dev_prefix != prefix[:-1]:
                             raise ResponseError(InvalidRequestError(
                                 detail='providers in "with" and "repositories" do not match',
                                 pointer=".for[%d].with" % i,
                             ))
-                        dk.add(dev[len(prefix):])
+                        dk.add(dev_login)
                 if withgroup:
                     withgroups.append(withgroup)
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
@@ -202,22 +202,22 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
     all_repos = set()
     async with request.sdb.connection() as sdb_conn:
         for i, for_set in enumerate(for_sets):
-            repos, service = await _extract_repos(
+            repos, prefix, service = await _extract_repos(
                 request, account, meta_ids, for_set.repositories, i, all_repos, checkers, sdb_conn)
             if for_set.repogroups is not None:
                 repogroups = [set(chain.from_iterable(repos[i] for i in group))
                               for group in for_set.repogroups]
             else:
                 repogroups = [set(chain.from_iterable(repos))]
-            prefix = PREFIXES[service]
             devs = []
             for dev in for_set.developers:
-                if not dev.startswith(prefix):
+                dev_prefix, dev_login = dev.split("/", 1)
+                if dev_prefix != prefix[:-1]:
                     raise ResponseError(InvalidRequestError(
                         detail='providers in "developers" and "repositories" do not match',
                         pointer=".for[%d].developers" % i,
                     ))
-                devs.append(dev[len(prefix):])
+                devs.append(dev_login)
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
             try:
                 jira = JIRAFilter.from_web(
@@ -236,31 +236,31 @@ async def _extract_repos(request: AthenianWebRequest,
                          for_set_index: int,
                          all_repos: Set[str],
                          checkers: Dict[str, AccessChecker],
-                         sdb: databases.core.Connection) -> Tuple[Sequence[Set[str]], str]:
+                         sdb: databases.core.Connection,
+                         ) -> Tuple[Sequence[Set[str]], str, str]:
     user = request.uid
-    service = None
+    prefix = None
     resolved = await gather(*[
         resolve_reposet(r, ".for[%d].repositories[%d]" % (
             for_set_index, j), user, account, sdb, request.cache)
         for j, r in enumerate(for_set)], op="resolve_reposet-s")
     for repos in resolved:
         for i, repo in enumerate(repos):
-            for key, prefix in PREFIXES.items():
-                if repo.startswith(prefix):
-                    if service is None:
-                        service = key
-                    elif service != key:
-                        raise ResponseError(InvalidRequestError(
-                            detail='mixed providers are not allowed in the same "for" element',
-                            pointer=".for[%d].repositories" % for_set_index,
-                        ))
-                    repos[i] = repo[len(prefix):]
-                    all_repos.add(repo)
-    if service is None:
+            repo_prefix, repos[i] = repo.split("/", 1)
+            if prefix is None:
+                prefix = repo_prefix
+            elif prefix != repo_prefix:
+                raise ResponseError(InvalidRequestError(
+                    detail='mixed providers are not allowed in the same "for" element',
+                    pointer=".for[%d].repositories" % for_set_index,
+                ))
+            all_repos.add(repo)
+    if prefix is None:
         raise ResponseError(InvalidRequestError(
             detail='the provider of a "for" element is unsupported or the set is empty',
             pointer=".for[%d].repositories" % for_set_index,
         ))
+    service = "github"  # hardcode "github" because we do not really support others
     if (checker := checkers.get(service)) is None:
         checkers[service] = (checker := await access_classes[service](
             account, meta_ids, sdb, request.mdb, request.cache,
@@ -270,7 +270,7 @@ async def _extract_repos(request: AthenianWebRequest,
             detail="some repositories in .for[%d].repositories are access denied on %s: %s" % (
                 for_set_index, service, denied),
         ))
-    return resolved, service
+    return resolved, prefix + "/", service
 
 
 @weight(1.5)
@@ -383,16 +383,16 @@ async def _compile_repos_releases(request: AthenianWebRequest,
                                   for_sets: List[List[str]],
                                   account: int,
                                   meta_ids: Tuple[int, ...],
-                                  ) -> Tuple[List[Tuple[str, Tuple[Set[str], List[str]]]],
+                                  ) -> Tuple[List[Tuple[str, str, Tuple[Set[str], List[str]]]],
                                              Set[str]]:
     filters = []
     checkers = {}
     all_repos = set()
     async with request.sdb.connection() as sdb_conn:
         for i, for_set in enumerate(for_sets):
-            repos, service = await _extract_repos(
+            repos, prefix, service = await _extract_repos(
                 request, account, meta_ids, for_set, i, all_repos, checkers, sdb_conn)
-            filters.append((service, (set(chain.from_iterable(repos)), for_set)))
+            filters.append((service, prefix, (set(chain.from_iterable(repos)), for_set)))
     return filters, all_repos
 
 
@@ -405,11 +405,12 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb)
     filters, repos = await _compile_repos_releases(request, filt.for_, filt.account, meta_ids)
     grouped_for_sets = defaultdict(list)
     grouped_repos = defaultdict(list)
-    for service, (for_set_repos, for_set) in filters:
-        grouped_for_sets[service].append(for_set)
+    for service, prefix, (for_set_repos, for_set) in filters:
+        grouped_for_sets[service].append((prefix, for_set))
         grouped_repos[service].append(for_set_repos)
     del filters
     time_intervals, tzoffset = split_to_time_intervals(
@@ -431,16 +432,16 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
         } for with_ in (filt.with_ or [])]
         release_metric_values, release_matches = await METRIC_ENTRIES[service]["releases_linear"](
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
-            JIRAFilter.from_web(filt.jira, jira_ids), release_settings,
+            JIRAFilter.from_web(filt.jira, jira_ids), release_settings, prefixer,
             filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
         release_matches = {k: v.name for k, v in release_matches.items()}
         mrange = range(len(filt.metrics))
         for with_, repos_mvs in zip((filt.with_ or [None]), release_metric_values):
-            for for_set, repo_group, granular_mvs in zip(for_sets, repos, repos_mvs):
+            for (prefix, for_set), repo_group, granular_mvs in zip(for_sets, repos, repos_mvs):
                 for granularity, ts, mvs in zip(filt.granularities, time_intervals, granular_mvs):
                     my_release_matches = {}
                     for r in repo_group:
-                        r = PREFIXES[service] + r
+                        r = prefix + r
                         try:
                             my_release_matches[r] = release_matches[r]
                         except KeyError:

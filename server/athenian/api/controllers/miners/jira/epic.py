@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime
-from typing import Collection, Coroutine, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Collection, Dict, List, Optional, Sequence, Tuple
 
 import aiomcache
 import databases
@@ -11,7 +11,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
-from athenian.api.controllers.settings import ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.tracing import sentry_span
 
@@ -27,7 +27,7 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
                        assignees: Collection[Optional[str]],
                        commenters: Collection[str],
                        default_branches: Dict[str, str],
-                       release_settings: Dict[str, ReleaseMatchSetting],
+                       release_settings: ReleaseSettings,
                        account: int,
                        meta_ids: Tuple[int, ...],
                        mdb: databases.Database,
@@ -36,14 +36,14 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
                        extra_columns: Collection[InstrumentedAttribute] = (),
                        ) -> Tuple[pd.DataFrame,
                                   pd.DataFrame,
-                                  Coroutine[None, None, List[Mapping[str, Union[str, int]]]],
+                                  asyncio.Task,  # -> List[Mapping[str, Union[str, int]]]
                                   Dict[str, Sequence[int]]]:
     """
     Fetch JIRA epics and their children issues according to the given filters.
 
     :return: 1. epics \
              2. children \
-             3. awaitable coroutine to fetch the subtask counts \
+             3. asyncio Task to fetch the subtask counts \
              4. map from epic_id to the indexes of the corresponding children in (2)
     """
     # filter the epics according to the passed filters
@@ -59,7 +59,7 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
         return (epics,
                 pd.DataFrame(columns=[
                     Issue.priority_id.key, Issue.status_id.key, Issue.project_id.key]),
-                noop(),
+                asyncio.create_task(noop()),
                 {})
     # discover the issues belonging to those epics
     extra_columns = list(extra_columns)
@@ -71,12 +71,15 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
         default_branches, release_settings, account, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
     # plan to fetch the subtask counts, but not await it now
-    subtasks = mdb.fetch_all(select([Issue.parent_id, func.count(Issue.id).label("subtasks")])
-                             .where(and_(Issue.acc_id == jira_ids[0],
-                                         Issue.project_id.in_(jira_ids[1]),
-                                         Issue.is_deleted.is_(False),
-                                         Issue.parent_id.in_(children.index)))
-                             .group_by(Issue.parent_id))
+    subtasks = asyncio.create_task(
+        mdb.fetch_all(select([Issue.parent_id, func.count(Issue.id).label("subtasks")])
+                      .where(and_(Issue.acc_id == jira_ids[0],
+                                  Issue.project_id.in_(jira_ids[1]),
+                                  Issue.is_deleted.is_(False),
+                                  Issue.parent_id.in_(children.index)))
+                      .group_by(Issue.parent_id)),
+        name="fetch JIRA subtask counts",
+    )
     await asyncio.sleep(0)
     empty_epic_ids_mask = children[Issue.epic_id.key].isnull()
     children.loc[empty_epic_ids_mask, Issue.epic_id.key] = \

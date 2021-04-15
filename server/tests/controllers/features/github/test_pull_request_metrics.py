@@ -25,7 +25,7 @@ from athenian.api.controllers.features.metric_calculator import df_from_dataclas
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import PullRequestFacts
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts, \
     GitHubOpenPullRequestFacts
@@ -366,9 +366,9 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, False, 1, (6366825,), mdb, pdb, rdb, cache]
     metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
-    release_match_setting_tag = {
+    release_match_setting_tag = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
-    }
+    })
     args[-8] = release_match_setting_tag
     metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
     assert metrics1 != metrics2
@@ -476,7 +476,8 @@ async def test_calc_pull_request_metrics_deep_filters(
         mdb, pdb, rdb, cache, release_match_setting_tag_or_branch):
     settings = release_match_setting_tag_or_branch.copy()
     for r in ("gitbase", "hercules"):
-        settings["github.com/src-d/" + r] = settings["github.com/src-d/go-git"]
+        settings.native["src-d/" + r] = settings.prefixed["github.com/src-d/" + r] = \
+            settings.native["src-d/go-git"]
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2018, month=1, day=12, tzinfo=timezone.utc)
     metrics = [
@@ -484,11 +485,13 @@ async def test_calc_pull_request_metrics_deep_filters(
         PullRequestMetricID.PR_CLOSED,
         PullRequestMetricID.PR_MERGED,
     ]
-    args = [metrics,
-            [[date_from, date_to], [date_from, date_from + (date_to - date_from) / 2, date_to]],
-            [0, 1], [0, 50, 10000], [{"src-d/go-git"}, {"src-d/gitbase"}, {"src-d/hercules"}],
-            {}, LabelFilter.empty(), JIRAFilter.empty(),
-            False, settings, False, 1, (6366825,), mdb, pdb, rdb, cache]
+    args = [
+        metrics,
+        [[date_from, date_to], [date_from, date_from + (date_to - date_from) / 2, date_to]],
+        [0, 1], [0, 50, 10000], [{"src-d/go-git"}, {"src-d/gitbase"}, {"src-d/hercules"}],
+        {}, LabelFilter.empty(), JIRAFilter.empty(),
+        False, settings, False, 1, (6366825,), mdb, pdb, rdb, cache,
+    ]
     # 1. line: 2 groups
     # 2. repository: 3 groups
     # 3. participants: 1 group

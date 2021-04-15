@@ -11,9 +11,8 @@ from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
-from athenian.api.models.metadata import PREFIXES
 from athenian.api.models.state.models import RepositorySet
-from athenian.api.models.web import BadRequestError, CreatedIdentifier, DatabaseConflict, \
+from athenian.api.models.web import CreatedIdentifier, DatabaseConflict, \
     ForbiddenError, RepositorySetWithName
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
@@ -84,30 +83,16 @@ async def _check_reposet(request: AthenianWebRequest,
                          account: int,
                          body: List[str],
                          ) -> List[str]:
-    service = None
-    repos = set()
-    for repo in body:
-        for key, prefix in PREFIXES.items():
-            if repo.startswith(prefix):
-                if service is None:
-                    service = key
-                elif service != key:
-                    raise ResponseError(BadRequestError(
-                        detail="mixed services: %s, %s" % (service, key),
-                    ))
-                repos.add(repo[len(prefix):])
-    if service is None:
-        raise ResponseError(BadRequestError(
-            detail="repository prefixes do not match to any supported service",
-        ))
+    repos = {repo.split("/", 1)[1] for repo in body}
     meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
-    checker = await access_classes[service](
+    checker = await access_classes["github"](
         account, meta_ids, sdb_conn, request.mdb, request.cache,
     ).load()
     denied = await checker.check(repos)
     if denied:
         raise ResponseError(ForbiddenError(
-            detail="the following repositories are access denied for %s: %s" % (service, denied),
+            detail="the following repositories are access denied for account %d: %s" %
+                   (account, denied),
         ))
     return sorted(set(body))
 
