@@ -138,6 +138,7 @@ class PrefixerPromise:
     async def load(self) -> Prefixer:
         """Block until the referenced Prefixer loads and return it."""
         if self._prefixer is None:
+            assert self._task is not None
             await self._task
             self._prefixer = self._task.result()
             self._task = None

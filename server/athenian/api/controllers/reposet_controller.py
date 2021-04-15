@@ -13,7 +13,7 @@ from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import CreatedIdentifier, DatabaseConflict, \
-    ForbiddenError, RepositorySetWithName
+    ForbiddenError, InvalidRequestError, RepositorySetWithName
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.request import AthenianWebRequest
@@ -106,15 +106,28 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
     :param body: New reposet definition.
     """
     body = RepositorySetWithName.from_dict(body)
+    if body.items is not None and len(body.items) == 0:
+        raise ResponseError(InvalidRequestError(
+            detail="Reposet may not be empty (did you mean DELETE?).",
+            pointer=".items",
+        ))
+    if body.name is not None and body.name == "":
+        raise ResponseError(InvalidRequestError(
+            detail="Reposet may not be named as an empty string.",
+            pointer=".name",
+        ))
     async with request.sdb.connection() as sdb_conn:
         rs, is_admin = await fetch_reposet(
             id, [RepositorySet], request.uid, sdb_conn, request.cache)
         if not is_admin:
             raise ResponseError(ForbiddenError(
                 detail="User %s may not modify reposet %d" % (request.uid, id)))
-        new_items = await _check_reposet(request, sdb_conn, id, body.items)
+        if body.items is not None:
+            new_items = await _check_reposet(request, sdb_conn, rs.owner_id, body.items)
+        else:
+            new_items = None
         changed = False
-        if body.name != rs.name:
+        if body.name is not None and body.name != rs.name:
             dupe_id = await sdb_conn.fetch_val(select([RepositorySet.id])
                                                .where(and_(RepositorySet.owner_id == rs.owner_id,
                                                            RepositorySet.name == body.name)))
@@ -123,7 +136,7 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
                     detail="there is an existing reposet %s with the same name" % dupe_id))
             rs.name = body.name
             changed = True
-        if new_items != rs.items:
+        if new_items is not None and new_items != rs.items:
             rs.items = new_items
             rs.precomputed = False
             rs.refresh()
@@ -136,7 +149,11 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
             except (UniqueViolationError, IntegrityError, OperationalError):
                 raise ResponseError(DatabaseConflict(
                     detail="there is an existing reposet with the same items"))
-        return model_response(body)
+        return model_response(RepositorySetWithName(
+            name=rs.name,
+            items=rs.items,
+            precomputed=rs.precomputed,
+        ))
 
 
 async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
