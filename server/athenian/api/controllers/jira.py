@@ -191,6 +191,7 @@ async def match_jira_identities(account: int,
 
 
 ID_MATCH_MIN_CONFIDENCE = 0.5
+ALLOWED_USER_TYPES = ("atlassian", "on-prem")
 
 
 async def _match_jira_identities(account: int,
@@ -221,10 +222,11 @@ async def _match_jira_identities(account: int,
             except KeyError:
                 continue
         log.info("Effective GitHub set size: %d", len(github_users))
-    jira_user_rows = await mdb.fetch_all(select([JIRAUser.id, JIRAUser.display_name])
-                                         .where(and_(JIRAUser.acc_id == jira_id[0],
-                                                     JIRAUser.type == "atlassian",
-                                                     JIRAUser.display_name.isnot(None))))
+    jira_user_rows = await mdb.fetch_all(
+        select([JIRAUser.id, JIRAUser.display_name])
+        .where(and_(JIRAUser.acc_id == jira_id[0],
+                    JIRAUser.type.in_(ALLOWED_USER_TYPES),
+                    JIRAUser.display_name.isnot(None))))
     jira_users = {row[JIRAUser.id.key]: [row[JIRAUser.display_name.key]] for row in jira_user_rows}
     log.info("JIRA set size: %d", len(jira_users))
     if existing_mapping:
@@ -267,3 +269,10 @@ pluralizer = Pluralizer()
 def normalize_issue_type(name: str) -> str:
     """Normalize the JIRA issue type name."""
     return pluralizer.singular(nonalphanum_re.sub("", unidecode(name.lower())))
+
+
+def normalize_user_type(type_: str) -> str:
+    """Normalize the JIRA user type name."""
+    if type_ == "on-prem":
+        return "atlassian"
+    return type_

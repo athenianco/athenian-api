@@ -7,6 +7,7 @@ from sqlalchemy import and_, create_engine
 from sqlalchemy.orm import load_only, Session, sessionmaker
 from tqdm import tqdm
 
+from athenian.api.controllers.jira import ALLOWED_USER_TYPES
 from athenian.api.models.metadata.github import OrganizationMember, PushCommit, User as GitHubUser
 from athenian.api.models.metadata.jira import User as JIRAUser
 from athenian.api.models.state.models import AccountGitHubAccount, AccountJiraInstallation
@@ -83,7 +84,7 @@ def main():
                  .scalar()
     bar.update(1)
     jira_users = mdb.query(JIRAUser).filter(and_(JIRAUser.acc_id == jira_id,
-                                                 JIRAUser.type == "atlassian"))
+                                                 JIRAUser.type.in_(ALLOWED_USER_TYPES)))
     bar.update(1)
     df = pd.DataFrame([{
         "name": u.display_name,
