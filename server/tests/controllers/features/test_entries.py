@@ -2,7 +2,8 @@ import sys
 
 import pytest
 
-from athenian.api.controllers.features.entries import get_calculator
+from athenian.api.controllers.features.entries import \
+    get_calculator, MetricEntriesCalculator as OriginalMetricEntriesCalculator
 
 
 @pytest.fixture
@@ -15,46 +16,51 @@ def base_testing_module(current_module):
     return current_module[: current_module.rfind(".")]
 
 
-def calc_pull_request_metrics_line_github():
-    """This is a fake function for testing."""
-    return True
+class MetricEntriesCalculator:
+    """Fake calculator for different metrics."""
+
+    def __init__(self, *args) -> "MetricEntriesCalculator":
+        """Create a `MetricEntriesCalculator`."""
+        pass
 
 
-def test_get_calculator_no_variation(base_testing_module):
-    calc = get_calculator("github", "prs_linear", base_module=base_testing_module)
-    expected = "athenian.api.controllers.features.entries:calc_pull_request_metrics_line_github"
-    actual = f"{calc.__module__}:{calc.__name__}"
-    assert actual == expected
-
-
-def test_get_calculator_missing_module_no_error():
+def test_get_calculator_no_variation(base_testing_module, mdb, pdb, rdb, cache):
     calc = get_calculator(
-        "github", "prs_linear", variation="test_entries", base_module="missing_module",
+        "github", mdb, pdb, rdb, cache, base_module=base_testing_module,
     )
-    expected = "athenian.api.controllers.features.entries:calc_pull_request_metrics_line_github"
-    actual = f"{calc.__module__}:{calc.__name__}"
-    assert actual == expected
+    assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
-def test_get_calculator_missing_implementation_no_error(base_testing_module):
+def test_get_calculator_missing_module_no_error(mdb, pdb, rdb, cache):
     calc = get_calculator(
         "github",
-        "prs_histogram",
+        mdb,
+        pdb,
+        rdb,
+        cache,
         variation="test_entries",
-        base_module=base_testing_module,
+        base_module="missing_module",
     )
-    expected = (
-        "athenian.api.controllers.features.entries:calc_pull_request_histograms_github"
-    )
-    actual = f"{calc.__module__}:{calc.__name__}"
-    assert actual == expected
+    assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
-def test_get_calculator_raise_error(base_testing_module):
+def test_get_calculator_missing_implementation_no_error(
+    base_testing_module, mdb, pdb, rdb, cache,
+):
+    calc = get_calculator(
+        "github", mdb, pdb, rdb, cache, variation="api", base_module="athenian",
+    )
+    assert isinstance(calc, OriginalMetricEntriesCalculator)
+
+
+def test_get_calculator_raise_error(base_testing_module, mdb, pdb, rdb, cache):
     try:
         get_calculator(
             "github",
-            "prs_linear",
+            mdb,
+            pdb,
+            rdb,
+            cache,
             variation="test_entries",
             base_module="missing_module",
             raise_err=True,
@@ -67,10 +73,13 @@ def test_get_calculator_raise_error(base_testing_module):
     try:
         get_calculator(
             "github",
-            "prs_histogram",
-            variation="test_entries",
+            mdb,
+            pdb,
+            rdb,
+            cache,
+            variation="api",
+            base_module="athenian",
             raise_err=True,
-            base_module=base_testing_module,
         )
     except RuntimeError:
         assert True
@@ -78,14 +87,16 @@ def test_get_calculator_raise_error(base_testing_module):
         raise AssertionError("Expected RuntimeError not raised")
 
 
-def test_get_calculator_variation_found(base_testing_module, current_module):
+def test_get_calculator_variation_found(
+    base_testing_module, current_module, mdb, pdb, rdb, cache,
+):
     calc = get_calculator(
         "github",
-        "prs_linear",
+        mdb,
+        pdb,
+        rdb,
+        cache,
         variation="test_entries",
         base_module=base_testing_module,
     )
-    expected = f"{current_module}:calc_pull_request_metrics_line_github"
-    actual = f"{calc.__module__}:{calc.__name__}"
-    assert actual == expected
-    assert calc()
+    assert isinstance(calc, MetricEntriesCalculator)

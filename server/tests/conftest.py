@@ -46,6 +46,7 @@ from athenian.api.auth import Auth0, User
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.connexion import AthenianApp
 from athenian.api.controllers import account, invitation_controller
+from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.db import ParallelDatabase
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata, persistentdata
@@ -461,6 +462,26 @@ async def pdb(precomputed_db, loop, request):
 @pytest.fixture(scope="function")
 async def rdb(persistentdata_db, loop, request):
     return await _connect_to_db(persistentdata_db, loop, request)
+
+
+@pytest.fixture(scope="function")
+async def metrics_calculator(mdb, pdb, rdb, cache):
+    return MetricEntriesCalculator(mdb, pdb, rdb, cache)
+
+
+@pytest.fixture(scope="function")
+async def metrics_calculator_memcached(mdb, pdb, rdb, memcached):
+    return MetricEntriesCalculator(mdb, pdb, rdb, memcached)
+
+
+@pytest.fixture(scope="function")
+async def metrics_calculator_no_cache(mdb, pdb, rdb):
+    return MetricEntriesCalculator(mdb, pdb, rdb, None)
+
+
+@pytest.fixture(scope="function")
+async def metrics_calculator_cache_only(cache):
+    return MetricEntriesCalculator(None, None, None, cache)
 
 
 @pytest.fixture(scope="session")

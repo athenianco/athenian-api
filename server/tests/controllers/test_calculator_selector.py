@@ -5,6 +5,8 @@ from sqlalchemy import insert
 
 from athenian.api.controllers.calculator_selector import get_calculator_for_user, \
     METRIC_ENTRIES_VARIATIONS_PREFIX
+from athenian.api.controllers.features.entries import \
+    MetricEntriesCalculator as OriginalMetricEntriesCalculator
 from athenian.api.models.state.models import AccountFeature, Feature, \
     FeatureComponent, God
 
@@ -19,12 +21,16 @@ def base_testing_module(current_module):
     return current_module[: current_module.rfind(".")]
 
 
-def calc_pull_request_metrics_line_github():
-    """This is a fake function for testing."""
-    return True
+class MetricEntriesCalculator:
+    """Fake calculator for different metrics."""
+
+    def __init__(self, *args) -> "MetricEntriesCalculator":
+        """Create a `MetricEntriesCalculator`."""
+        pass
 
 
-async def test_get_calculator_for_user_no_global_feature(sdb, base_testing_module):
+async def test_get_calculator_for_user_no_global_feature(sdb, mdb, pdb, rdb, cache,
+                                                         base_testing_module):
     await sdb.execute(
         insert(Feature).values(
             Feature(
@@ -38,14 +44,13 @@ async def test_get_calculator_for_user_no_global_feature(sdb, base_testing_modul
     )
 
     calc = await get_calculator_for_user(
-        "github", "prs_linear", 1, "1", sdb, base_module=base_testing_module,
+        "github", 1, "1", sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
     )
-    expected = "athenian.api.controllers.features.entries:calc_pull_request_metrics_line_github"
-    actual = f"{calc.__module__}:{calc.__name__}"
-    assert actual == expected
+    assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
-async def test_get_calculator_for_user_disabled_global_feature(sdb, base_testing_module):
+async def test_get_calculator_for_user_disabled_global_feature(sdb, mdb, pdb, rdb, cache,
+                                                               base_testing_module):
     await sdb.execute(
         insert(Feature).values(
             Feature(
@@ -59,14 +64,13 @@ async def test_get_calculator_for_user_disabled_global_feature(sdb, base_testing
     )
 
     calc = await get_calculator_for_user(
-        "github", "prs_linear", 1, "1", sdb, base_module=base_testing_module,
+        "github", 1, "1", sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
     )
-    expected = "athenian.api.controllers.features.entries:calc_pull_request_metrics_line_github"
-    actual = f"{calc.__module__}:{calc.__name__}"
-    assert actual == expected
+    assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
-async def test_get_calculator_for_user_no_feature_for_account(sdb, base_testing_module):
+async def test_get_calculator_for_user_no_feature_for_account(sdb, mdb, pdb, rdb, cache,
+                                                              base_testing_module):
     await sdb.execute(
         insert(Feature).values(
             Feature(
@@ -80,15 +84,13 @@ async def test_get_calculator_for_user_no_feature_for_account(sdb, base_testing_
     )
 
     calc = await get_calculator_for_user(
-        "github", "prs_linear", 1, "1", sdb, base_module=base_testing_module,
+        "github", 1, "1", sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
     )
-    expected = "athenian.api.controllers.features.entries:calc_pull_request_metrics_line_github"
-    actual = f"{calc.__module__}:{calc.__name__}"
-    assert actual == expected
+    assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
 async def test_get_calculator_for_user_with_feature(
-    sdb, base_testing_module, current_module,
+        sdb, mdb, pdb, rdb, cache, base_testing_module, current_module,
 ):
     feature_id = await sdb.execute(
         insert(Feature).values(
@@ -110,17 +112,14 @@ async def test_get_calculator_for_user_with_feature(
     )
 
     calc = await get_calculator_for_user(
-        "github", "prs_linear", 1, "1", sdb, base_module=base_testing_module,
+        "github", 1, "1", sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
     )
-    expected = f"{current_module}:calc_pull_request_metrics_line_github"
-    actual = f"{calc.__module__}:{calc.__name__}"
-    assert actual == expected
-    assert calc()
+    assert isinstance(calc, MetricEntriesCalculator)
 
 
 @pytest.mark.parametrize("is_god", (True, False))
 async def test_get_calculator_for_user_with_feature_god_only(
-    sdb, is_god, base_testing_module, current_module,
+        sdb, mdb, pdb, rdb, cache, is_god, base_testing_module, current_module,
 ):
     if is_god:
         await sdb.execute(
@@ -154,17 +153,8 @@ async def test_get_calculator_for_user_with_feature_god_only(
     )
 
     calc = await get_calculator_for_user(
-        "github", "prs_linear", 1, "1", sdb, base_module=base_testing_module,
+        "github", 1, "1", sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
     )
 
-    if is_god:
-        expected = f"{current_module}:calc_pull_request_metrics_line_github"
-        actual = f"{calc.__module__}:{calc.__name__}"
-    else:
-        expected = (
-            "athenian.api.controllers.features.entries:"
-            "calc_pull_request_metrics_line_github"
-        )
-        actual = f"{calc.__module__}:{calc.__name__}"
-
-    assert actual == expected
+    expected_cls = MetricEntriesCalculator if is_god else OriginalMetricEntriesCalculator
+    assert isinstance(calc, expected_cls)
