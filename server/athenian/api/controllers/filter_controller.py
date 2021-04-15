@@ -155,7 +155,7 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
         raise ResponseError(InvalidRequestError(
             detail="Either `events` or `stages` must be specified and be not empty.",
             pointer=".stages"))
-    participants = {PRParticipationKind[k.upper()]: {d.split("/", 1)[1] for d in v}
+    participants = {PRParticipationKind[k.upper()]: {d.rsplit("/", 1)[1] for d in v}
                     for k, v in (filt.with_ or {}).items() if v}
     settings = await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = {r.split("/", 1)[1] for r in repos}
@@ -245,8 +245,8 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     repos, meta_ids, prefixer = await _common_filter_preprocess(filt, request)
-    with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
-    with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
+    with_author = [s.rsplit("/", 1)[1] for s in (filt.with_author or [])]
+    with_committer = [s.rsplit("/", 1)[1] for s in (filt.with_committer or [])]
     log = logging.getLogger("filter_commits")
     commits = await extract_commits(
         FilterCommitsProperty(filt.property), filt.date_from, filt.date_to, repos,

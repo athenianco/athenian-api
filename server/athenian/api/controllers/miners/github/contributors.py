@@ -270,7 +270,7 @@ async def load_organization_members(account: int,
     user_rows, bots, team_bots = await gather(*tasks)
     if team_bots:
         bots = bots.copy()
-        bots.update(u.split("/", 1)[1] for u in team_bots)
+        bots.update(u.rsplit("/", 1)[1] for u in team_bots)
     log.info("Detailed %d GitHub users", len(user_rows))
     bot_ids = set()
     new_user_rows = []

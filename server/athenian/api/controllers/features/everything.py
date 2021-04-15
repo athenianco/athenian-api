@@ -108,7 +108,7 @@ async def mine_all_releases(repos: Collection[str],
     result = df_gen.join(df_facts)
     result.set_index(Release.id.key, inplace=True)
     for authors in result["commit_authors"].values:
-        authors[:] = [s.split("/", 1)[1] for s in authors]
+        authors[:] = [s.rsplit("/", 1)[1] for s in authors]
     pr_column_names = [c.key for c in (
         PullRequest.node_id,
         PullRequest.number,

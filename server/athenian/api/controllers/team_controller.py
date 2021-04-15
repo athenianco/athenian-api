@@ -61,8 +61,7 @@ async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
                                .where(Team.parent_id == id)
                                .values({Team.parent_id: None,
                                         Team.updated_at: datetime.now(timezone.utc),
-                                        Team.members_count: Team.members_count,
-                                        Team.members_checksum: Team.members_checksum}))
+                                        Team.members_count: Team.members_count}))
         await sdb_conn.execute(delete(Team).where(Team.id == id))
     return web.Response()
 
@@ -203,21 +202,23 @@ async def _get_all_members(teams: Iterable[Mapping],
                            mdb: databases.Database,
                            cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
     all_members = set(chain.from_iterable([t[Team.members.key] for t in teams]))
-    all_members = {m.split("/", 1)[1] for m in all_members}
+    all_members = {m.rsplit("/", 1)[1]: m for m in all_members}
     user_by_login = {
         u[User.login.key]: u for u in await mine_users(all_members, meta_ids, mdb, cache)
     }
     all_contributors = {}
     for m in all_members:
-        ud = user_by_login.get(m)
-        login = ud[User.html_url.key].split("/", 2)[2]
-        if ud is not None:
+        try:
+            ud = user_by_login[m]
+        except KeyError:
+            login = all_members[m]
+            c = Contributor(login=login)
+        else:
+            login = ud[User.html_url.key].split("/", 2)[2]
             c = Contributor(login=login,
                             name=ud[User.name.key],
                             email=ud[User.email.key],
                             picture=ud[User.avatar_url.key])
-        else:
-            c = Contributor(login=login)
         all_contributors[login] = c
 
     return all_contributors
