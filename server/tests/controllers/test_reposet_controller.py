@@ -82,14 +82,41 @@ async def test_get_repository_set_bad_account(client, headers):
     assert response.status == 404, "Response body is : " + body
 
 
-async def test_set_repository_set_smoke(client, headers, disable_default_user):
-    body = {"name": "xxx", "items": ["github.com/src-d/hercules"]}
+@pytest.mark.parametrize("name, items, new_name, new_items", [
+    ("xxx", ["github.com/src-d/hercules"], "xxx", ["github.com/src-d/hercules"]),
+    (None, ["github.com/src-d/hercules"], "all", ["github.com/src-d/hercules"]),
+    ("xxx", None, "xxx", ["github.com/src-d/gitbase", "github.com/src-d/go-git"]),
+])
+async def test_set_repository_set_smoke(
+        client, headers, disable_default_user, name, items, new_name, new_items):
+    body = {}
+    if name is not None:
+        body["name"] = name
+    if not (precomputed := items is None):
+        body["items"] = items
     response = await client.request(
         method="PUT", path="/v1/reposet/1", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    assert json.loads(body) == {"name": "xxx", "items": ["github.com/src-d/hercules"]}
+    assert json.loads(body) == {"name": new_name, "items": new_items, "precomputed": precomputed}
+
+
+@pytest.mark.parametrize("name, items", [
+    ("", ["github.com/src-d/gitbase"]),
+    (None, []),
+])
+async def test_set_repository_set_400(client, headers, disable_default_user, name, items):
+    body = {}
+    if name is not None:
+        body["name"] = name
+    if items is not None:
+        body["items"] = items
+    response = await client.request(
+        method="PUT", path="/v1/reposet/1", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 400, "Response body is : " + body
 
 
 async def test_set_repository_set_default_user(client, headers):
