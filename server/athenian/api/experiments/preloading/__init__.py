@@ -1,3 +1,3 @@
-from .entries import calc_pull_request_metrics_line_github
+from .entries import MetricEntriesCalculator
 
-__all__ = ["calc_pull_request_metrics_line_github"]
+__all__ = ["MetricEntriesCalculator"]

@@ -1,3 +1,8 @@
-async def calc_pull_request_metrics_line_github():
-    """Calculate facts about pull request on GitHub."""
+from athenian.api.controllers.features.entries import \
+    MetricEntriesCalculator as OriginalMetricEntriesCalculator
+
+
+class MetricEntriesCalculator(OriginalMetricEntriesCalculator):
+    """Calculator for different metrics using preloaded DataFrames."""
+
     pass

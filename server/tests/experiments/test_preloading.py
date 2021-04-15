@@ -1,9 +1,9 @@
 from athenian.api.controllers.features.entries import get_calculator
+from athenian.api.experiments.preloading import MetricEntriesCalculator
 
 
-def test_get_calculator_variation_found():
-    calc = get_calculator("github", "prs_linear", variation="preloading")
-    expected = "athenian.api.experiments.preloading.entries:calc_pull_request_metrics_line_github"
-    actual = f"{calc.__module__}:{calc.__name__}"
-    assert actual == expected
-    assert calc()
+def test_get_calculator_variation_found(
+    mdb, pdb, rdb, cache,
+):
+    calc = get_calculator("github", mdb, pdb, rdb, cache, variation="preloading")
+    assert isinstance(calc, MetricEntriesCalculator)
