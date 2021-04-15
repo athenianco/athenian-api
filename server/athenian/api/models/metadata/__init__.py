@@ -9,13 +9,7 @@ from athenian.api.models.metadata.github import Base as GithubBase, SchemaMigrat
 from athenian.api.models.metadata.jira import Base as JiraBase
 
 
-# Canonical repository URL prefixes.
-PREFIXES = {
-    "github": "github.com/",
-}
-
-
-__min_version__ = 135
+__min_version__ = 139
 
 
 def dereference_schemas():
