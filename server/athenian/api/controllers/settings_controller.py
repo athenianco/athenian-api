@@ -9,7 +9,8 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
-from athenian.api.controllers.jira import get_jira_id, load_jira_identity_mapping_sentinel
+from athenian.api.controllers.jira import ALLOWED_USER_TYPES, get_jira_id, \
+    load_jira_identity_mapping_sentinel
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata.github import User as GitHubUser
@@ -212,7 +213,7 @@ async def get_jira_identities(request: AthenianWebRequest,
         request.mdb.fetch_all(
             select([JIRAUser.id, JIRAUser.display_name])
             .where(and_(JIRAUser.acc_id == jira_acc,
-                        JIRAUser.type == "atlassian")),
+                        JIRAUser.type.in_(ALLOWED_USER_TYPES))),
         ),
     ]
     github_rows, jira_rows = await gather(*tasks)

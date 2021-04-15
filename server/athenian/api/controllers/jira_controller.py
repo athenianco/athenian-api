@@ -28,7 +28,8 @@ from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHisto
     JIRABinnedMetricCalculator
 from athenian.api.controllers.features.metric_calculator import group_to_indexes
 from athenian.api.controllers.filter_controller import web_pr_from_struct
-from athenian.api.controllers.jira import get_jira_installation, normalize_issue_type
+from athenian.api.controllers.jira import get_jira_installation, normalize_issue_type, \
+    normalize_user_type
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_facts_ids
@@ -575,7 +576,7 @@ async def _issue_flow(return_: Set[str],
     }
     users = [JIRAUser(avatar=row[User.avatar_url.key],
                       name=row[User.display_name.key],
-                      type=row[User.type.key],
+                      type=normalize_user_type(row[User.type.key]),
                       developer=mapped_identities.get(row[User.id.key]),
                       )
              for row in users] or None
