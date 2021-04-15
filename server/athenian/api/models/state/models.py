@@ -14,7 +14,7 @@ from athenian.api.models import always_unequal, create_base
 Base = create_base()
 
 
-def create_collection_mixin(name: str) -> type:
+def create_collection_mixin(name: str, with_checksum: bool) -> type:
     """Create the collections mixin according to the required column name."""
 
     class CollectionMixin:
@@ -25,20 +25,22 @@ def create_collection_mixin(name: str) -> type:
             """Return the number of items in the collection."""
             return len(ctx.get_current_parameters()[name])
 
-        @staticmethod
-        def calc_items_checksum(ctx):
-            """Calculate the checksum of the items in the collection."""
-            return ctypes.c_longlong(xxhash.xxh64_intdigest(json.dumps(
-                ctx.get_current_parameters()[name]))).value
+        if with_checksum:
+            @staticmethod
+            def calc_items_checksum(ctx):
+                """Calculate the checksum of the items in the collection."""
+                return ctypes.c_longlong(xxhash.xxh64_intdigest(json.dumps(
+                    ctx.get_current_parameters()[name]))).value
 
     setattr(CollectionMixin, name, Column(always_unequal(JSON()), nullable=False))
     setattr(CollectionMixin, f"{name}_count",
             Column(always_unequal(Integer()), nullable=False, default=CollectionMixin.count_items,
                    onupdate=CollectionMixin.count_items))
-    setattr(CollectionMixin, f"{name}_checksum",
-            Column(always_unequal(BigInteger()), nullable=False,
-                   default=CollectionMixin.calc_items_checksum,
-                   onupdate=CollectionMixin.calc_items_checksum))
+    if with_checksum:
+        setattr(CollectionMixin, f"{name}_checksum",
+                Column(always_unequal(BigInteger()), nullable=False,
+                       default=CollectionMixin.calc_items_checksum,
+                       onupdate=CollectionMixin.calc_items_checksum))
 
     return CollectionMixin
 
@@ -63,7 +65,7 @@ def create_time_mixin(created_at: bool = False, updated_at: bool = False) -> typ
 
 
 class RepositorySet(create_time_mixin(created_at=True, updated_at=True),
-                    create_collection_mixin("items"), Base):
+                    create_collection_mixin("items", with_checksum=True), Base):
     """A group of repositories identified by an integer."""
 
     __tablename__ = "repository_sets"
@@ -105,7 +107,7 @@ class Account(create_time_mixin(created_at=True), Base):
 
 
 class Team(create_time_mixin(created_at=True, updated_at=True),
-           create_collection_mixin("members"), Base):
+           create_collection_mixin("members", with_checksum=False), Base):
     """Group of users part of the same team."""
 
     __tablename__ = "teams"

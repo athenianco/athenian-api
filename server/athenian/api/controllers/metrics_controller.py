@@ -160,7 +160,8 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
                         continue
                     withgroup[PRParticipationKind[k.upper()]] = dk = set()
                     for dev in v:
-                        dev_prefix, dev_login = dev.split("/", 1)
+                        parts = dev.split("/")
+                        dev_prefix, dev_login = parts[0], parts[-1]
                         if dev_prefix != prefix[:-1]:
                             raise ResponseError(InvalidRequestError(
                                 detail='providers in "with" and "repositories" do not match',
@@ -211,7 +212,8 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
                 repogroups = [set(chain.from_iterable(repos))]
             devs = []
             for dev in for_set.developers:
-                dev_prefix, dev_login = dev.split("/", 1)
+                parts = dev.split("/")
+                dev_prefix, dev_login = parts[0], parts[-1]
                 if dev_prefix != prefix[:-1]:
                     raise ResponseError(InvalidRequestError(
                         detail='providers in "developers" and "repositories" do not match',
@@ -290,8 +292,8 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         request.sdb, request.mdb, request.cache, request.app["slack"])
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularity, filt.timezone)
-    with_author = [s.split("/", 1)[1] for s in (filt.with_author or [])]
-    with_committer = [s.split("/", 1)[1] for s in (filt.with_committer or [])]
+    with_author = [s.rsplit("/", 1)[1] for s in (filt.with_author or [])]
+    with_committer = [s.rsplit("/", 1)[1] for s in (filt.with_committer or [])]
     stats = await METRIC_ENTRIES["github"]["code"](
         FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
         with_committer, meta_ids, request.mdb, request.cache)  # type: List[CodeStats]

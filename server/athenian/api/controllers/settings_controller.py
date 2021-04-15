@@ -122,7 +122,7 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
     github_logins = []
     for i, c in enumerate(request_model.changes):
         try:
-            github_logins.append(c.developer_id.split("/", 1)[1])
+            github_logins.append(c.developer_id.rsplit("/", 1)[1])
         except IndexError:
             raise ResponseError(InvalidRequestError(detail="Invalid developer identifier.",
                                                     pointer=".changes[%d].developer_id" % i))
@@ -142,7 +142,7 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
     updated_maps = []
     for i, change in enumerate(request_model.changes):
         try:
-            github_id = github_id_map[change.developer_id.split("/", 1)[1]]
+            github_id = github_id_map[change.developer_id.rsplit("/", 1)[1]]
         except KeyError:
             raise ResponseError(InvalidRequestError(detail="Developer was not found.",
                                                     pointer=".changes[%d].developer_id" % i))

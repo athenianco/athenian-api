@@ -103,7 +103,7 @@ async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.R
             resolved_full_commits if len(n.commit) == 40 else resolved_prefixed_commits
         ).get((n.commit, repo), {PushCommit.sha.key: None, PushCommit.node_id.key: None})
         if "/" in (author := (n.author or user.login)):
-            author = author.split("/", 1)[1]  # remove github.com/ or any other prefix
+            author = author.rsplit("/", 1)[1]  # remove github.com/ or any other prefix
         inserted.append(ReleaseNotification(
             account_id=account,
             repository_node_id=installed_repos[repo],
