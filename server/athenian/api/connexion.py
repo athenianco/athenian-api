@@ -32,6 +32,7 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from werkzeug.exceptions import Unauthorized
 
 from athenian.api import metadata
+from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0
 from athenian.api.balancing import extract_handler_weight
 from athenian.api.cache import setup_cache_metrics
@@ -290,6 +291,19 @@ class AthenianApp(connexion.AioHttpApp):
             self.server_name = node_name + "/" + self.server_name
         self._slack = self.app["slack"] = slack
         self._boot_time = psutil.boot_time()
+
+    def on_dbs_conected(self, callback):
+        """Register a callback on dbs connected."""
+
+        def callback_wrapper(*_):
+            dbs = {
+                db: getattr(self, db)
+                for db in self._db_futures
+            }
+            callback(**dbs)
+
+        task = asyncio.ensure_future(gather(*self._db_futures.values()))
+        task.add_done_callback(callback_wrapper)
 
     def __del__(self):
         """Check that shutdown() was called."""
