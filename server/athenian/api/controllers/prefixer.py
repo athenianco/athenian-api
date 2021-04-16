@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
 from athenian.api.models.metadata.github import Repository, User
@@ -57,7 +57,8 @@ class Prefixer:
         repo_rows, user_rows = await gather(
             mdb.fetch_all(
                 select([Repository.node_id, Repository.full_name, Repository.html_url])
-                .where(Repository.acc_id.in_(meta_ids)),
+                .where(and_(Repository.acc_id.in_(meta_ids),
+                            Repository.full_name.isnot(None))),
             ),
             mdb.fetch_all(
                 select([User.node_id, User.login, User.html_url])
