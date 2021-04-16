@@ -6,7 +6,7 @@ from typing import Optional
 import aiomcache
 import pytest
 
-from athenian.api.cache import cached, gen_cache_key
+from athenian.api.cache import cached, cached_methods, gen_cache_key
 from athenian.api.defer import wait_deferred, with_defer
 from tests.conftest import has_memcached
 
@@ -95,3 +95,32 @@ async def test_cache_serialization_errors(cache):
     await test(cache)
     await wait_deferred()
     await test(cache)
+
+
+@cached_methods
+class Foo:
+    def bar_postprocess(self, result, arg_used, **_) -> str:
+        return f"cache is used {arg_used}"
+
+    @cached(
+        exptime=100500,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda arg_used, **_: (arg_used,),
+        postprocess=bar_postprocess,
+    )
+    async def bar(self, arg_used, arg_unused, cache) -> str:
+        return f"cache is not used {arg_used} {arg_unused}"
+
+
+@with_defer
+async def test_cached_methods(cache):
+    foo = Foo()
+    r = await foo.bar("yes", "whatever", cache)
+    assert r == "cache is not used yes whatever"
+    await wait_deferred()
+    r = await foo.bar("yes", "no", cache)
+    assert r == "cache is used yes"
+    assert foo.bar.__cached__
+    await foo.bar.reset_cache("yes", "whatever", cache)
+    assert isinstance(foo.bar.cache_key("yes", "whatever", cache), bytes)
