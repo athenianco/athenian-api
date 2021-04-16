@@ -39,7 +39,7 @@ class ReleaseNotification(create_time_mixin(created_at=True, updated_at=True), B
     resolved_commit_hash = Column(Text())  # de-referenced commit hash in metadata DB
     resolved_commit_node_id = Column(Text())  # de-referenced commit node ID in metadata DB
     name = Column(Text())
-    author = Column(Text())
+    author_node_id = Column(Text())
     url = Column(Text())
     published_at = Column(TIMESTAMP(timezone=True), nullable=False)
     cloned = Column(Boolean(), nullable=False, default=False, server_default="false")

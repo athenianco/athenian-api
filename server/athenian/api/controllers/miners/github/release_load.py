@@ -12,7 +12,7 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, func, insert, or_, select, union_all, update
+from sqlalchemy import and_, desc, false, func, insert, or_, select, union_all, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
 
@@ -29,7 +29,8 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
     ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, greatest, least
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, Repository
+from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, \
+    Repository, User
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan
@@ -386,7 +387,7 @@ async def _fetch_precomputed_releases(match_groups: Dict[ReleaseMatch, Dict[str,
     if pdb.url.dialect == "sqlite":
         query = (
             select([prel])
-            .where(and_(or_(*or_items),
+            .where(and_(or_(*or_items) if or_items else false(),
                         prel.published_at.between(time_from, time_to),
                         prel.acc_id == account))
             .order_by(desc(prel.published_at))
@@ -500,6 +501,8 @@ async def _store_precomputed_releases(releases: pd.DataFrame,
                                       account: int,
                                       pdb: databases.core.Connection) -> None:
     assert isinstance(pdb, databases.core.Connection)
+    if not isinstance(releases.index, pd.RangeIndex):
+        releases = releases.reset_index()
     inserted = []
     columns = [Release.id.key,
                Release.repository_full_name.key,
@@ -577,6 +580,7 @@ async def _fetch_release_events(repos: Sequence[str],
                 unresolved_commits_short[repo].append(commit)
             else:
                 unresolved_commits_long[repo].append(commit)
+    author_node_ids = {r[ReleaseNotification.author_node_id.key] for r in release_rows} - {None}
     queries = []
     queries.extend(
         select([PushCommit.repository_node_id, PushCommit.node_id, PushCommit.sha])
@@ -599,14 +603,30 @@ async def _fetch_release_events(repos: Sequence[str],
     else:
         sql = None
     resolved_commits = {}
+    user_map = {}
+    tasks = []
     if sql is not None:
-        commit_rows = await mdb.fetch_all(sql)
-        for row in commit_rows:
-            repo = row[PushCommit.repository_node_id.key]
-            node_id = row[PushCommit.node_id.key]
-            sha = row[PushCommit.sha.key]
-            resolved_commits[(repo, sha)] = node_id, sha
-            resolved_commits[(repo, sha[:7])] = node_id, sha
+        async def resolve_commits():
+            commit_rows = await mdb.fetch_all(sql)
+            for row in commit_rows:
+                repo = row[PushCommit.repository_node_id.key]
+                node_id = row[PushCommit.node_id.key]
+                sha = row[PushCommit.sha.key]
+                resolved_commits[(repo, sha)] = node_id, sha
+                resolved_commits[(repo, sha[:7])] = node_id, sha
+
+        tasks.append(resolve_commits())
+    if author_node_ids:
+        async def resolve_users():
+            user_rows = await mdb.fetch_all(select([User.node_id, User.login])
+                                            .where(and_(User.acc_id.in_(meta_ids),
+                                                        User.node_id.in_(author_node_ids))))
+            nonlocal user_map
+            user_map = {r[User.node_id.key]: r[User.login.key] for r in user_rows}
+
+        tasks.append(resolve_users())
+    await gather(*tasks)
+
     releases = []
     updated = []
     for row in release_rows:
@@ -621,8 +641,9 @@ async def _fetch_release_events(repos: Sequence[str],
                 continue
         else:
             commit_hash = row[ReleaseNotification.resolved_commit_hash.key]
+        author = row[ReleaseNotification.author_node_id.key]
         releases.append({
-            Release.author.key: row[ReleaseNotification.author.key],
+            Release.author.key: user_map.get(author, author),
             Release.commit_id.key: commit_node_id,
             Release.id.key: commit_node_id,
             Release.name.key: row[ReleaseNotification.name.key],

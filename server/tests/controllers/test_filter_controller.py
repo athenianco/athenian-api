@@ -42,7 +42,7 @@ async def with_event_releases(sdb, rdb):
         repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
         commit_hash_prefix="8d20cc5",
         name="Pushed!",
-        author="vmarkovtsev",
+        author_node_id="MDQ6VXNlcjI3OTM1NTE=",
         url="www",
         published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
     ).create_defaults().explode(with_primary_keys=True)))

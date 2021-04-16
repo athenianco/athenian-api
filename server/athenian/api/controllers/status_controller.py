@@ -85,7 +85,7 @@ def _after_response(request: web.Request,
     request.app["request_in_progress"] \
         .labels(__package__, __version__, request.path, request.method) \
         .dec()
-    elapsed = time.time() - start_time
+    elapsed = (time.time() - start_time) or 0.001
     request.app["request_latency"] \
         .labels(__package__, __version__, request.path) \
         .observe(elapsed)

@@ -66,6 +66,10 @@ class ReleaseSettings:
         self._map_native = {k.split("/", 1)[1]: v for k, v in map_prefixed.items()}
         self._coherence = dict(zip(self._map_native, self._map_prefixed))
 
+    def __repr__(self) -> str:
+        """Implement repr()."""
+        return "ReleaseSettings(%r)" % self._map_prefixed
+
     def copy(self) -> "ReleaseSettings":
         """Shallow copy the settings."""
         return ReleaseSettings(self._map_prefixed.copy())

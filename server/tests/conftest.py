@@ -295,7 +295,8 @@ async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack) -
                        kms_cls=FakeKMS,
                        slack=slack,
                        client_max_size=256 * 1024,
-                       max_load=15)
+                       max_load=15,
+                       with_pdb_schema_checks=False)
 
 
 @pytest.fixture(scope="function")
