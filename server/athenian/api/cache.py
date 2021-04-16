@@ -204,11 +204,40 @@ def cached(exptime: Union[int, Callable[..., int]],
             args_dict = signature.bind(*args, **kwargs).arguments
             return _gen_cache_key(args_dict)
 
+        wrapped_cached.__cached__ = True
         wrapped_cached.reset_cache = reset_cache
         wrapped_cached.cache_key = cache_key
         return wraps(wrapped_cached, func)
 
     return wrapper_cached
+
+
+def cached_methods(cls):
+    """Decorate class to properly support cached instance methods."""
+    for name, func in inspect.getmembers(cls, predicate=inspect.isfunction):
+        if getattr(func, "__cached__", False) and not getattr(func, "__cached_method__", False):
+            def generate_cls_method_shim(func):
+                def cls_method_shim(self):
+                    async def cached_wrapper(*args, **kwargs):
+                        return await func(self, *args, **kwargs)
+
+                    async def reset_cache(*args, **kwargs):
+                        return await func.reset_cache(self, *args, **kwargs)
+
+                    @functools.wraps(func.cache_key)
+                    def cache_key(*args, **kwargs):
+                        return func.cache_key(self, *args, **kwargs)
+
+                    cached_wrapper.__cached__ = True
+                    cached_wrapper.__cached_method__ = True  # do not screw inheritance
+                    cached_wrapper.reset_cache = wraps(reset_cache, func.reset_cache)
+                    cached_wrapper.cache_key = cache_key
+                    return wraps(cached_wrapper, func)
+
+                return cls_method_shim
+
+            setattr(cls, name, property(generate_cls_method_shim(func)))
+    return cls
 
 
 def setup_cache_metrics(cache: Optional[aiomcache.Client],
