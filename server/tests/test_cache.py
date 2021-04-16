@@ -8,6 +8,7 @@ import pytest
 
 from athenian.api.cache import cached, cached_methods, gen_cache_key
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.tracing import sentry_span
 from tests.conftest import has_memcached
 
 
@@ -112,15 +113,29 @@ class Foo:
     async def bar(self, arg_used, arg_unused, cache) -> str:
         return f"cache is not used {arg_used} {arg_unused}"
 
+    @sentry_span
+    @cached(
+        exptime=100500,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda arg_used, **_: (arg_used,),
+        postprocess=bar_postprocess,
+    )
+    async def bar_traced(self, arg_used, arg_unused, cache) -> str:
+        return f"cache is not used {arg_used} {arg_unused}"
 
+
+@pytest.mark.parametrize("met_name", ("bar", "bar_traced"))
 @with_defer
-async def test_cached_methods(cache):
+async def test_cached_methods(cache, met_name):
     foo = Foo()
-    r = await foo.bar("yes", "whatever", cache)
+
+    met = getattr(foo, met_name)
+    r = await met("yes", "whatever", cache)
     assert r == "cache is not used yes whatever"
     await wait_deferred()
-    r = await foo.bar("yes", "no", cache)
+    r = await met("yes", "no", cache)
     assert r == "cache is used yes"
-    assert foo.bar.__cached__
-    await foo.bar.reset_cache("yes", "whatever", cache)
-    assert isinstance(foo.bar.cache_key("yes", "whatever", cache), bytes)
+    assert met.__cached__
+    await met.reset_cache("yes", "whatever", cache)
+    assert isinstance(met.cache_key("yes", "whatever", cache), bytes)
