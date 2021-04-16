@@ -665,7 +665,7 @@ async def test_load_releases_events_settings(branches, default_branches, mdb, pd
         repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
         commit_hash_prefix="8d20cc5",
         name="Pushed!",
-        author="Vadim Markovtsev",
+        author_node_id="MDQ6VXNlcjI3OTM1NTE=",
         url="www",
         published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
     ).create_defaults().explode(with_primary_keys=True)))
@@ -702,11 +702,12 @@ async def test_load_releases_events_settings(branches, default_branches, mdb, pd
         index=Release.id.key)
     await wait_deferred()
     assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
+    assert (releases[matched_by_column] == ReleaseMatch.event).all()
     assert len(releases) == 1
     assert releases.iloc[0].to_dict() == {
         "repository_full_name": "src-d/go-git",
         "repository_node_id": "MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
-        "author": "Vadim Markovtsev",
+        "author": "vmarkovtsev",
         "name": "Pushed!",
         "published_at": pd.Timestamp("2020-01-01 00:00:00", tzinfo=timezone.utc),
         "tag": None,
@@ -733,7 +734,7 @@ async def test_load_releases_events_settings(branches, default_branches, mdb, pd
         "resolved_commit_hash": "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
         "resolved_commit_node_id": "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",  # noqa
         "name": "Pushed!",
-        "author": "Vadim Markovtsev",
+        "author_node_id": "MDQ6VXNlcjI3OTM1NTE=",
         "url": "www",
         "published_at": datetime(2020, 1, 1, tzinfo=tzinfo),
         "cloned": False,
@@ -747,7 +748,7 @@ async def test_load_releases_events_unresolved(branches, default_branches, mdb, 
         repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
         commit_hash_prefix="whatever",
         name="Pushed!",
-        author="Vadim Markovtsev",
+        author_node_id="MDQ6VXNlcjI3OTM1NTE=",
         url="www",
         published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
     ).create_defaults().explode(with_primary_keys=True)))

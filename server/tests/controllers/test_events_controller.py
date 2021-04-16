@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
+from freezegun import freeze_time
 import pytest
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.state.models import UserToken
@@ -17,7 +18,7 @@ async def token(sdb):
     return "AQAAAAAAAAA="  # unencrypted
 
 
-async def test_notify_release_smoke(client, headers, sdb, rdb, token):
+async def test_notify_release_smoke(client, headers, sdb, rdb, token, app):
     body = [{
         "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
         "repository": "github.com/src-d/go-git",
@@ -50,7 +51,7 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token):
         ReleaseNotification.resolved_commit_hash.key: "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
         ReleaseNotification.resolved_commit_node_id.key: "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",  # noqa
         ReleaseNotification.name.key: "xxx",
-        ReleaseNotification.author.key: "yyy",
+        ReleaseNotification.author_node_id.key: None,
         ReleaseNotification.url.key: "https://google.com",
         ReleaseNotification.published_at.key: published_at,
         ReleaseNotification.cloned.key: False,
@@ -58,7 +59,7 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token):
 
     # check updates and when published_at and author are empty
     del body[0]["published_at"]
-    del body[0]["author"]
+    body[0]["author"] = "github.com/vmarkovtsev"
     body[0]["commit"] = "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12"
     response = await client.request(
         method="POST", path="/v1/events/releases", headers=headers, json=body,
@@ -70,7 +71,28 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token):
     if rdb.url.dialect != "sqlite":
         yesterday = published_at.replace(tzinfo=timezone.utc)
     assert rows[0][ReleaseNotification.published_at.key] > yesterday
-    assert rows[0][ReleaseNotification.author.key] == "vadim"
+    assert rows[0][ReleaseNotification.author_node_id.key] == "MDQ6VXNlcjI3OTM1NTE="
+
+    del body[0]["author"]
+    response = await client.request(
+        method="POST", path="/v1/events/releases", headers=headers, json=body,
+    )
+    assert response.status == 200
+    rows = await rdb.fetch_all(select([ReleaseNotification]))
+    assert len(rows) == 1
+    assert rows[0][ReleaseNotification.author_node_id.key] is None
+
+    await sdb.execute(update(UserToken).values({
+        UserToken.user_id: "auth0|5e1f6e2e8bfa520ea5290741",
+        UserToken.updated_at: datetime.now(timezone.utc),
+    }))
+    response = await client.request(
+        method="POST", path="/v1/events/releases", headers=headers, json=body,
+    )
+    assert response.status == 200
+    rows = await rdb.fetch_all(select([ReleaseNotification]))
+    assert len(rows) == 1
+    assert rows[0][ReleaseNotification.author_node_id.key] == "MDQ6VXNlcjEyNDc2MDg="
 
 
 @pytest.mark.parametrize("status, body", [
@@ -146,6 +168,7 @@ async def test_notify_release_422(client, headers, sdb):
     assert response.status == 422
 
 
+@freeze_time("2020-01-01")
 async def test_clear_precomputed_events_smoke(client, headers, pdb):
     await pdb.execute(insert(GitHubDonePullRequestFacts).values(GitHubDonePullRequestFacts(
         acc_id=1,
@@ -190,10 +213,10 @@ async def test_clear_precomputed_events_smoke(client, headers, pdb):
         method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
     )
     assert response.status == 200
-    for table, n in ((GitHubDonePullRequestFacts, 531),
-                     (GitHubMergedPullRequestFacts, 554),
+    for table, n in ((GitHubDonePullRequestFacts, 292),
+                     (GitHubMergedPullRequestFacts, 245),
                      (GitHubReleaseFacts, 53)):
-        assert len(await pdb.fetch_all(select([table]))) == n
+        assert len(await pdb.fetch_all(select([table]))) == n, table
 
 
 @pytest.mark.parametrize("status, body", [

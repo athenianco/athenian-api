@@ -164,7 +164,8 @@ class AthenianApp(connexion.AioHttpApp):
                  auth0_cls: Callable[..., Auth0] = Auth0,
                  kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
                  cache: Optional[aiomcache.Client] = None,
-                 slack: Optional[SlackWebClient] = None):
+                 slack: Optional[SlackWebClient] = None,
+                 with_pdb_schema_checks: bool = True):
         """
         Initialize the underlying connexion -> aiohttp application.
 
@@ -185,6 +186,7 @@ class AthenianApp(connexion.AioHttpApp):
                         `None` disables KMS and, effectively, API Key authentication.
         :param cache: memcached client for caching auxiliary data.
         :param slack: Slack API client to post messages.
+        :param with_pdb_schema_checks: Enable or disable periodic pdb schema version checks.
         """
         options = {"swagger_ui": ui}
         specification_dir = str(Path(__file__).parent / "openapi")
@@ -247,7 +249,8 @@ class AthenianApp(connexion.AioHttpApp):
                 setattr(self, shortcut, measure_db_overhead_and_retry(db, shortcut, self.app))
                 if shortcut == "pdb":
                     db.metrics = pdbctx
-                    self._pdb_schema_task_box = schedule_pdb_schema_check(db, self.app)
+                    if with_pdb_schema_checks:
+                        self._pdb_schema_task_box = schedule_pdb_schema_check(db, self.app)
                 if db.url.dialect == "sqlite":
                     if shortcut == "mdb":
                         dereference_metadata_schemas()
