@@ -2,7 +2,7 @@ coverage==5.5
 pytest==6.2.3
 pytest-aiohttp==0.3.0
 pytest-cov==2.11.1
-pytest-benchmark==3.2.3
+pytest-benchmark==3.4.1
 pytest-rerunfailures==9.1.1
 pytest-xdist==2.2.1
 filelock==3.0.12
