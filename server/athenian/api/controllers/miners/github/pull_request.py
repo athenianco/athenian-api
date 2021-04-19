@@ -1473,7 +1473,7 @@ class PullRequestFactsMiner:
         ]).astype(ts_dtype).astype("datetime64[D]")
         activity_days = \
             np.unique(activity_days[activity_days == activity_days]).astype(ts_dtype)
-        facts = PullRequestFacts(
+        facts = PullRequestFacts.from_fields(
             created=created,
             first_commit=first_commit,
             work_began=work_began,
@@ -1502,7 +1502,7 @@ class PullRequestFactsMiner:
 
     def _validate(self, facts: PullRequestFacts, url: str) -> None:
         """Run sanity checks to ensure consistency."""
-        facts.validate()
+        assert facts.created == facts.created
         if not facts.closed:
             return
         if facts.last_commit and facts.last_commit > facts.closed:

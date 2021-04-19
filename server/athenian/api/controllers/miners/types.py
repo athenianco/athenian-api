@@ -8,7 +8,7 @@ import pandas as pd
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, Release
-from athenian.api.typing_utils import dataclass
+from athenian.api.typing_utils import dataclass, numpy_struct
 
 
 class PRParticipationKind(IntEnum):
@@ -120,18 +120,18 @@ class PullRequestListItem:
     size_added: int
     size_removed: int
     files_changed: int
-    created: pd.Timestamp
-    updated: pd.Timestamp
-    closed: Optional[pd.Timestamp]
+    created: datetime
+    updated: datetime
+    closed: Optional[datetime]
     comments: int
     commits: int
-    review_requested: Optional[pd.Timestamp]
-    first_review: Optional[pd.Timestamp]
-    approved: Optional[pd.Timestamp]
+    review_requested: Optional[datetime]
+    first_review: Optional[datetime]
+    approved: Optional[datetime]
     review_comments: int
     reviews: int
-    merged: Optional[pd.Timestamp]
-    released: Optional[pd.Timestamp]
+    merged: Optional[datetime]
+    released: Optional[datetime]
     release_url: str
     stage_timings: Dict[str, timedelta]
     events_time_machine: Optional[Set[PullRequestEvent]]
@@ -193,7 +193,7 @@ class MinedPullRequest:
 
 
 @dataclass(slots=True, frozen=True, eq=False, first_mutable="jira_id")
-class PullRequestFacts:
+class PullRequestFactsLegacy:
     """Various PR event timestamps and other properties."""
 
     created: pd.Timestamp
@@ -231,7 +231,7 @@ class PullRequestFacts:
                                self.first_review_request, self.last_review)
                    if t is not None)
 
-    def truncate(self, dt: Union[pd.Timestamp, datetime]) -> "PullRequestFacts":
+    def truncate(self, dt: Union[pd.Timestamp, datetime]) -> "PullRequestFactsLegacy":
         """Create a copy of the facts without timestamps bigger than or equal to `dt`."""
         changed = []
         for k, v in self.items():  # do not use dataclasses.asdict() - very slow
@@ -244,7 +244,7 @@ class PullRequestFacts:
             dikt[k] = None
         dikt["done"] = dikt["released"] or dikt["force_push_dropped"] or (
             dikt["closed"] and not dikt["merged"])
-        return PullRequestFacts(**dikt)
+        return PullRequestFactsLegacy(**dikt)
 
     def validate(self) -> None:
         """Ensure that there are no NaNs."""
@@ -280,6 +280,85 @@ class PullRequestFacts:
         """Format for human-readability."""
         # do not use dataclasses.asdict() - very slow
         return "{\n\t%s\n}" % ",\n\t".join("%s: %s" % (k, v) for k, v in self.items())
+
+    def __lt__(self, other: "PullRequestFactsLegacy") -> bool:
+        """Order by `work_began`."""
+        if self.work_began != other.work_began:
+            return self.work_began < other.work_began
+        return self.created < other.created
+
+
+# avoid F821 in the annotations
+datetime64 = List
+s = None
+
+
+@numpy_struct
+class PullRequestFacts:
+    """Various PR event timestamps and other properties."""
+
+    class dtype:
+        """Immutable fields, we store them in `_data` and mirror in `_arr`."""
+
+        created: "datetime64[s]"
+        first_commit: "datetime64[s]"
+        work_began: "datetime64[s]"
+        last_commit_before_first_review: "datetime64[s]"
+        last_commit: "datetime64[s]"
+        merged: "datetime64[s]"
+        closed: "datetime64[s]"
+        first_comment_on_first_review: "datetime64[s]"
+        first_review_request: "datetime64[s]"
+        first_review_request_exact: "datetime64[s]"
+        approved: "datetime64[s]"
+        last_review: "datetime64[s]"
+        released: "datetime64[s]"
+        done: np.bool_
+        reviews: ["datetime64[s]"]
+        activity_days: ["datetime64[s]"]
+        size: np.int64
+        force_push_dropped: np.bool_
+
+    class optional:
+        """Mutable fields, we do not serialize them."""
+
+        jira_id: str
+        repository_full_name: str
+        author: str
+        merger: str
+        releaser: str
+
+    def max_timestamp(self) -> pd.Timestamp:
+        """Find the maximum timestamp contained in the struct."""
+        if self.released is not None:
+            return self.released
+        if self.closed is not None:
+            return self.closed
+        return max(t for t in (self.created, self.first_commit, self.last_commit,
+                               self.first_review_request, self.last_review)
+                   if t is not None)
+
+    def truncate(self, after_dt: Union[pd.Timestamp, datetime]) -> "PullRequestFacts":
+        """Create a copy of the facts without timestamps bigger than or equal to `dt`."""
+        changed = []
+        if after_dt.tzinfo is not None:
+            after_dt = after_dt.replace(tzinfo=None)
+        for field_name, (field_dtype, _) in self.dtype.fields.items():
+            if np.issubdtype(field_dtype, np.datetime64):
+                if (dt := getattr(self, field_name)) is not None and dt >= after_dt:
+                    changed.append(field_name)
+        if not changed:
+            return self
+        arr = self._arr.copy()
+        for k in changed:
+            arr[k] = None
+        arr["done"] = (
+            (released := arr["released"]) == released or
+            arr["force_push_dropped"] or
+            ((closed := arr["closed"]) == closed and (merged := arr["merged"]) != merged)
+        )
+        data = b"".join([arr.view(np.byte).data, self.data[self.dtype.itemsize:]])
+        return PullRequestFacts(data)
 
     def __lt__(self, other: "PullRequestFacts") -> bool:
         """Order by `work_began`."""

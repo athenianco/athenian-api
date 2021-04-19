@@ -1,8 +1,6 @@
 import asyncio
-import dataclasses
 from datetime import datetime, timedelta, timezone
 import math
-import pickle
 from typing import Sequence
 import uuid
 
@@ -46,14 +44,14 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
     samples = pr_samples(200)  # type: Sequence[PullRequestFacts]
     for i in range(1, 6):
         # merged but unreleased
-        kwargs = dataclasses.asdict(samples[-i])
+        kwargs = dict(**samples[-i])
         kwargs["released"] = None
-        samples[-i] = PullRequestFacts(**kwargs)
+        samples[-i] = PullRequestFacts.from_fields(**kwargs)
     for i in range(6, 11):
         # rejected
-        kwargs = dataclasses.asdict(samples[-i])
+        kwargs = dict(**samples[-i])
         kwargs["released"] = kwargs["merged"] = None
-        samples[-i] = PullRequestFacts(**kwargs)
+        samples[-i] = PullRequestFacts.from_fields(**kwargs)
     names = ["one", "two", "three"]
     settings = ReleaseSettings({
         "github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch(i))
@@ -85,29 +83,36 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
         labels=pd.DataFrame.from_records(([["bug"]], [["feature"]])[i % 2], columns=["name"]),
         jiras=pd.DataFrame(),
     ) for i, s in enumerate(samples)]
+
+    def with_mutables(s, repo):
+        s.repository_full_name = repo
+        s.author = "xxx"
+        s.merger = "yyy"
+        s.releaser = "zzz"
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name(names[i % len(names)])
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
+        prs, [with_mutables(s, names[i % len(names)])
               for i, s in enumerate(samples)],
         default_branches, settings, 1, pdb)
     # we should not crash on repeat
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name(names[i % len(names)])
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
+        prs, [with_mutables(s, names[i % len(names)])
               for i, s in enumerate(samples)],
         default_branches, settings, 1, pdb)
     released_ats = sorted((t.released, i) for i, t in enumerate(samples[:-10]))
-    time_from = released_ats[len(released_ats) // 2][0]
-    time_to = released_ats[-1][0]
+    time_from = released_ats[len(released_ats) // 2][0].item().replace(tzinfo=timezone.utc)
+    time_to = released_ats[-1][0].item().replace(tzinfo=timezone.utc)
     n = len(released_ats) - len(released_ats) // 2 + \
-        sum(1 for s in samples[-10:-5] if s.closed >= time_from)
+        sum(1 for s in samples[-10:-5]
+            if s.closed.item().replace(tzinfo=timezone.utc) >= time_from)
     loaded_prs, _ = await load_precomputed_done_facts_filters(
         time_from, time_to, names, {}, LabelFilter.empty(), default_branches,
         False, settings, 1, pdb)
     assert len(loaded_prs) == n
     true_prs = {prs[i].pr[PullRequest.node_id.key]: samples[i] for _, i in released_ats[-n:]}
     for i, s in enumerate(samples[-10:-5]):
-        if s.closed >= time_from:
+        if s.closed.item().replace(tzinfo=timezone.utc) >= time_from:
             true_prs[prs[-10 + i].pr[PullRequest.node_id.key]] = s
     diff_keys = set(loaded_prs) - set(true_prs)
     assert not diff_keys
@@ -156,15 +161,19 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
                                           [["feature"], ["bad"]])[i % 4], columns=["name"]),
         jiras=pd.DataFrame(),
     ) for i, s in enumerate(samples)]
+
+    def with_mutables(s, i):
+        s.repository_full_name = names[i % len(names)]
+        s.author = ["xxx", "wow"][i % 2]
+        s.merger = "yyy"
+        s.releaser = ["foo", "zzz"][i % 2]
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name(names[i % len(names)])
-               .with_author(["xxx", "wow"][i % 2])
-               .with_merger("yyy")
-               .with_releaser(["foo", "zzz"][i % 2])
-              for i, s in enumerate(samples)],
+        prs, [with_mutables(s, i) for i, s in enumerate(samples)],
         default_branches, settings, 1, pdb)
-    time_from = min(s.created for s in samples)
-    time_to = max(s.max_timestamp() for s in samples)
+    time_from = min(s.created for s in samples).item().replace(tzinfo=timezone.utc)
+    time_to = max(s.max_timestamp() for s in samples).item().replace(tzinfo=timezone.utc)
     loaded_prs, _ = await load_precomputed_done_facts_filters(
         time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
         False, settings, 1, pdb)
@@ -190,13 +199,19 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
 
 async def test_load_store_precomputed_done_match_by(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
+
+    def with_mutables(s):
+        s.repository_full_name = "src-d/go-git"
+        s.author = "xxx"
+        s.merger = "yyy"
+        s.releaser = "zzz"
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name("src-d/go-git")
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
-              for s in samples],
+        prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
-    time_from = samples[0].created - timedelta(days=365)
-    time_to = samples[0].released + timedelta(days=1)
+    time_from = samples[0].created.item().replace(tzinfo=timezone.utc) - timedelta(days=365)
+    time_to = samples[0].released.item().replace(tzinfo=timezone.utc) + timedelta(days=1)
     loaded_prs, _ = await load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
@@ -224,10 +239,16 @@ async def test_load_store_precomputed_done_match_by(pr_samples, default_branches
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == 0
     prs[0].release[matched_by_column] = 1
+
+    def with_mutables(s):
+        s.repository_full_name = "src-d/go-git"
+        s.author = "xxx"
+        s.merger = "yyy"
+        s.releaser = "zzz"
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name("src-d/go-git")
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
-              for s in samples],
+        prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
     loaded_prs, _ = await load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
@@ -281,33 +302,31 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_
         labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
         jiras=pd.DataFrame(),
     ) for s in samples]
+
+    def with_mutables(s):
+        s.repository_full_name = "one"
+        s.author = "xxx"
+        s.merger = "yyy"
+        s.releaser = "zzz"
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name("one")
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
-              for s in samples],
+        prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
-    time_from = samples[1].created + timedelta(days=1)
-    time_to = samples[0].first_comment_on_first_review
+    time_from = samples[1].created.item().replace(tzinfo=timezone.utc) + timedelta(days=1)
+    time_to = samples[0].first_comment_on_first_review.item().replace(tzinfo=timezone.utc)
     loaded_prs, _ = await load_precomputed_done_facts_filters(
         time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
         True, settings, 1, pdb)
     assert len(loaded_prs) == 1
-    assert loaded_prs[prs[0].pr[PullRequest.node_id.key]] == \
-           samples[0].with_repository_full_name("one") \
-                     .with_author("xxx") \
-                     .with_merger("yyy") \
-                     .with_releaser("zzz")
-    time_from = samples[1].created - timedelta(days=1)
-    time_to = samples[1].created + timedelta(seconds=1)
+    assert loaded_prs[prs[0].pr[PullRequest.node_id.key]] == with_mutables(samples[0])
+    time_from = samples[1].created.item().replace(tzinfo=timezone.utc) - timedelta(days=1)
+    time_to = samples[1].created.item().replace(tzinfo=timezone.utc) + timedelta(seconds=1)
     loaded_prs, _ = await load_precomputed_done_facts_filters(
         time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
         True, settings, 1, pdb)
     assert len(loaded_prs) == 1
-    assert loaded_prs[prs[1].pr[PullRequest.node_id.key]] == \
-           samples[1].with_repository_full_name("one") \
-                     .with_author("xxx") \
-                     .with_merger("yyy")\
-                     .with_releaser("zzz")
+    assert loaded_prs[prs[1].pr[PullRequest.node_id.key]] == with_mutables(samples[1])
 
 
 async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
@@ -344,12 +363,16 @@ async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
         labels=pd.DataFrame.from_records(([["bug"]], [["feature"]])[i % 2], columns=["name"]),
         jiras=pd.DataFrame(),
     ) for i, s in enumerate(samples)]
+
+    def with_mutables(s, i):
+        s.repository_full_name = names[i % len(names)]
+        s.author = ["xxx", "wow"][i % 2]
+        s.merger = "yyy"
+        s.releaser = ["foo", "zzz"][i % 2]
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name(names[i % len(names)])
-               .with_author(["xxx", "wow"][i % 2])
-               .with_merger("yyy")
-               .with_releaser(["foo", "zzz"][i % 2])
-              for i, s in enumerate(samples)],
+        prs, [with_mutables(s, i) for i, s in enumerate(samples)],
         default_branches, settings, 1, pdb)
     query1 = {"one": {pr.pr[PullRequest.number.key] for pr in prs
                       if pr.pr[PullRequest.repository_full_name.key] == "one"}}
@@ -413,13 +436,19 @@ async def test_store_precomputed_done_facts_empty(pdb):
 
 async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
+
+    def with_mutables(s):
+        s.repository_full_name = "src-d/go-git"
+        s.author = "xxx"
+        s.merger = "yyy"
+        s.releaser = "zzz"
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name("src-d/go-git")
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
-              for s in samples],
+        prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
-    time_from = samples[0].created
-    time_to = samples[0].released
+    time_from = samples[0].created.item().replace(tzinfo=timezone.utc)
+    time_to = samples[0].released.item().replace(tzinfo=timezone.utc)
     loaded_prs, _ = await load_precomputed_done_candidates(
         time_from, time_to, ["one"], {"one": "master"}, settings, 1, pdb)
     assert len(loaded_prs) == 0
@@ -434,13 +463,19 @@ async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branch
 
 async def test_load_precomputed_done_candidates_ambiguous(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
+
+    def with_mutables(s):
+        s.repository_full_name = "src-d/go-git"
+        s.author = "xxx"
+        s.merger = "yyy"
+        s.releaser = "zzz"
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name("src-d/go-git")
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
-              for s in samples],
+        prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
-    time_from = samples[0].created
-    time_to = samples[0].released
+    time_from = samples[0].created.item().replace(tzinfo=timezone.utc)
+    time_to = samples[0].released.item().replace(tzinfo=timezone.utc)
     loaded_prs, ambiguous = await load_precomputed_done_candidates(
         time_from, time_to, ["src-d/go-git"], default_branches, settings, 1, pdb)
     assert len(loaded_prs) == 1
@@ -448,9 +483,7 @@ async def test_load_precomputed_done_candidates_ambiguous(pr_samples, default_br
 
     prs[0].release[matched_by_column] = ReleaseMatch.tag
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name("src-d/go-git")
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
-              for s in samples],
+        prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
     loaded_prs, ambiguous = await load_precomputed_done_candidates(
         time_from, time_to, ["src-d/go-git"], default_branches, settings, 1, pdb)
@@ -461,15 +494,22 @@ async def test_load_precomputed_done_candidates_ambiguous(pr_samples, default_br
 @with_defer
 async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, pdb, cache):
     samples, prs, settings = _gen_one_pr(pr_samples)
+
+    def with_mutables(s):
+        s.repository_full_name = "src-d/go-git"
+        s.author = "xxx"
+        s.merger = "yyy"
+        s.releaser = "zzz"
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name("src-d/go-git")
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
-              for s in samples],
+        prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
     for i in range(2):
         released_prs = await load_precomputed_pr_releases(
             [pr.pr[PullRequest.node_id.key] for pr in prs],
-            max(s.released for s in samples) + timedelta(days=1),
+            max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) +
+            timedelta(days=1),
             {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
             default_branches, settings, 1, pdb if i == 0 else None, cache)
         await wait_deferred()
@@ -477,21 +517,27 @@ async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, 
             rpr = released_prs.loc[pr.pr[PullRequest.node_id.key]]
             for col in (Release.author.key, Release.url.key, Release.id.key, matched_by_column):
                 assert rpr[col] == pr.release[col], i
-            assert rpr[Release.published_at.key] == s.released, i
+            assert rpr[Release.published_at.key].replace(tzinfo=None) == s.released, i
             assert rpr[Release.repository_full_name.key] == \
                 pr.pr[PullRequest.repository_full_name.key], i
 
 
 async def test_load_precomputed_pr_releases_time_to(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
+
+    def with_mutables(s):
+        s.repository_full_name = "src-d/go-git"
+        s.author = "xxx"
+        s.merger = "yyy"
+        s.releaser = "zzz"
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name("src-d/go-git")
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
-              for s in samples],
+        prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
-        min(s.released for s in samples),
+        min(s.released.item().replace(tzinfo=timezone.utc) for s in samples),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
         default_branches, settings, 1, pdb, None)
     assert released_prs.empty
@@ -499,20 +545,26 @@ async def test_load_precomputed_pr_releases_time_to(pr_samples, default_branches
 
 async def test_load_precomputed_pr_releases_release_mismatch(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
+
+    def with_mutables(s):
+        s.repository_full_name = "src-d/go-git"
+        s.author = "xxx"
+        s.merger = "yyy"
+        s.releaser = "zzz"
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name("src-d/go-git")
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
-              for s in samples],
+        prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
-        max(s.released for s in samples) + timedelta(days=1),
+        max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
         default_branches, settings, 1, pdb, None)
     assert released_prs.empty
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
-        max(s.released for s in samples) + timedelta(days=1),
+        max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
         {"src-d/go-git": "xxx"}, settings, 1, pdb, None)
     assert released_prs.empty
@@ -521,18 +573,23 @@ async def test_load_precomputed_pr_releases_release_mismatch(pr_samples, default
 async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pdb):
     samples, prs, settings = _gen_one_pr(pr_samples)
     prs[0].release[matched_by_column] = ReleaseMatch.tag
+
+    def with_repository_full_name(s):
+        s.repository_full_name = "src-d/go-git"
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name("src-d/go-git") for s in samples],
+        prs, [with_repository_full_name(s) for s in samples],
         default_branches, settings, 1, pdb)
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
-        max(s.released for s in samples) + timedelta(days=1),
+        max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
         {}, settings, 1, pdb, None)
     assert len(released_prs) == len(prs)
     released_prs = await load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
-        max(s.released for s in samples) + timedelta(days=1),
+        max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
         {}, ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
             tags="v.*", branches="", match=ReleaseMatch.tag),
@@ -581,7 +638,7 @@ async def test_discover_update_unreleased_prs_smoke(
         default_branches, release_match_setting_tag, 1, pdb)
     assert len(unreleased_prs) == 0
     await pdb.execute(update(GitHubMergedPullRequestFacts).values({
-        GitHubMergedPullRequestFacts.data: pickle.dumps(FakeFacts()),
+        GitHubMergedPullRequestFacts.data: FakeFacts().data,
         GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
     }))
     unreleased_prs = await load_merged_unreleased_pull_request_facts(
@@ -643,7 +700,7 @@ async def test_discover_update_unreleased_prs_released(
         prs, released_prs, time_to, {},
         matched_bys, default_branches, release_match_setting_tag, 1, pdb, asyncio.Event())
     await pdb.execute(update(GitHubMergedPullRequestFacts).values({
-        GitHubMergedPullRequestFacts.data: pickle.dumps(FakeFacts()),
+        GitHubMergedPullRequestFacts.data: FakeFacts().data,
         GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
     }))
     unreleased_prs = await load_merged_unreleased_pull_request_facts(
@@ -685,7 +742,7 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
         matched_bys, default_branches, release_match_setting_tag, 1, pdb, asyncio.Event())
 
     await pdb.execute(update(GitHubMergedPullRequestFacts).values({
-        GitHubMergedPullRequestFacts.data: pickle.dumps(FakeFacts()),
+        GitHubMergedPullRequestFacts.data: FakeFacts().data,
         GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
         GitHubMergedPullRequestFacts.activity_days: [
             datetime(2018, 10, 15, tzinfo=timezone.utc) if postgres else "2018-10-15",
@@ -818,9 +875,14 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
         jiras=pd.DataFrame(),
     )]
     await store_precomputed_done_facts(prs, [None], default_branches, settings, 1, pdb)
+
+    def with_repository_full_name(s):
+        s.repository_full_name = "one"
+        return s
+
     with pytest.raises(AssertionError):
         await store_precomputed_done_facts(
-            prs, [s.with_repository_full_name("one") for s in samples],
+            prs, [with_repository_full_name(s) for s in samples],
             default_branches, settings, 1, pdb)
 
 
@@ -849,7 +911,7 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
             "released": None,
             "releaser": None,
         })
-        samples_good.append(PullRequestFacts(**fields))
+        samples_good.append(PullRequestFacts.from_fields(**fields))
         samples_bad.append(f)
     with pytest.raises(AssertionError):
         await store_merged_unreleased_pull_request_facts(
@@ -865,11 +927,13 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
     for row in rows:
         assert isinstance(row[ghmprf.activity_days.key], list)
         assert len(row[ghmprf.activity_days.key]) > 0
+
     new_dict = {
-        r[ghmprf.pr_node_id.key]: pickle.loads(r[ghmprf.data.key])
-        .with_repository_full_name("src-d/go-git")
-        .with_author(r[ghmprf.author.key])
-        .with_merger(r[ghmprf.merger.key])
+        r[ghmprf.pr_node_id.key]: PullRequestFacts(
+            data=r[ghmprf.data.key],
+            repository_full_name="src-d/go-git",
+            author=r[ghmprf.author.key],
+            merger=r[ghmprf.merger.key])
         for r in rows
     }
     assert true_dict == new_dict
@@ -898,7 +962,7 @@ async def test_store_open_pull_request_facts_smoke(
             "releaser": None,
         })
         fields["closed"] = None
-        f = PullRequestFacts(**fields)
+        f = PullRequestFacts.from_fields(**fields)
         samples.append(f)
         true_dict[pr.pr[PullRequest.node_id.key]] = f
     dfs.prs[PullRequest.closed_at.key] = None
@@ -910,10 +974,10 @@ async def test_store_open_pull_request_facts_smoke(
     for row in rows:
         assert isinstance(row[ghoprf.activity_days.key], list)
         assert len(row[ghoprf.activity_days.key]) > 0
-        new_dict[row[ghoprf.pr_node_id.key]] = \
-            pickle.loads(row[ghoprf.data.key]) \
-            .with_repository_full_name("src-d/go-git") \
-            .with_author(authors[row[ghoprf.pr_node_id.key]])
+        new_dict[row[ghoprf.pr_node_id.key]] = PullRequestFacts(
+            data=row[ghoprf.data.key],
+            repository_full_name="src-d/go-git",
+            author=authors[row[ghoprf.pr_node_id.key]])
     assert true_dict == new_dict
 
     loaded_facts = await load_open_pull_request_facts(dfs.prs, 1, pdb)
@@ -937,10 +1001,16 @@ async def test_store_open_pull_request_facts_smoke(
 async def test_rescan_prs_mark_force_push_dropped(mdb, pdb, default_branches, pr_samples):
     samples, prs, settings = _gen_one_pr(pr_samples)
     prs[0].pr[PullRequest.node_id.key] = "MDExOlB1bGxSZXF1ZXN0NTc5NDcxODA="
+
+    def with_mutables(s):
+        s.repository_full_name = "src-d/go-git"
+        s.author = "xxx"
+        s.merger = "yyy"
+        s.releaser = "zzz"
+        return s
+
     await store_precomputed_done_facts(
-        prs, [s.with_repository_full_name("src-d/go-git")
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
-              for s in samples],
+        prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
     release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
     assert release_match == "branch|master"
@@ -953,9 +1023,15 @@ async def test_rescan_prs_mark_force_push_dropped(mdb, pdb, default_branches, pr
 
 async def test_load_precomputed_done_facts_ids(pdb, default_branches, pr_samples):
     sfacts, prs, settings = _gen_one_pr(pr_samples)
-    sfacts = [s.with_repository_full_name("src-d/go-git")
-               .with_author("xxx").with_merger("yyy").with_releaser("zzz")
-              for s in sfacts]
+
+    def with_mutables(s):
+        s.repository_full_name = "src-d/go-git"
+        s.author = "xxx"
+        s.merger = "yyy"
+        s.releaser = "zzz"
+        return s
+
+    sfacts = [with_mutables(s) for s in sfacts]
     await store_precomputed_done_facts(prs, sfacts, default_branches, settings, 1, pdb)
     pfacts, ambiguous = await load_precomputed_done_facts_ids(
         [prs[0].pr[PullRequest.node_id.key]], default_branches, settings, 1, pdb)

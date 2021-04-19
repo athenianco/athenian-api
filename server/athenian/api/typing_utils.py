@@ -1,7 +1,9 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
 import dataclasses
-from typing import Any, Iterator, Mapping, Optional, Tuple, Type, TypeVar, Union
+from itertools import chain
+from typing import Any, Callable, Iterator, List, Mapping, NamedTuple, Optional, Tuple, Type, \
+    TypeVar, Union
 
 import databases
 import numpy as np
@@ -189,3 +191,152 @@ def _add_slots_to_dataclass(cls: T,
     if qualname is not None:
         cls.__qualname__ = qualname
     return cls
+
+
+NST = TypeVar("NST")
+
+
+class NumpyStruct(Mapping[str, Any]):
+    """
+    Constrained dataclass based on numpy structured array.
+
+    We divide the fields into two groups: mutable and immutable.
+    The mutable fields are stored as regular class members and discarded from serialization.
+    The immutable fields are not materialized explicitly. Instead, they are taken from numpy
+    structured array (`_arr`) that references an arbitrary memory buffer (`_data`).
+    Serialization of the class is as simple as exposing the underlying memory buffer outside.
+
+    We support variable-length sub-arrays using the special notation `[<array dtype>]`. That way
+    the arrays are appended to `_data`, and `_arr` points to them by pairs (offset, length).
+    """
+
+    dtype: np.dtype
+    nested_dtypes: Mapping[str, np.dtype]
+
+    def __init__(self, data: Union[bytes, bytearray, memoryview], **optional: Any):
+        """Initialize a new instance of NumpyStruct from raw memory and the (perhaps incomplete) \
+        mapping of mutable field values."""
+        self._data = data
+        self._arr: Optional[np.ndarray] = None
+        for attr in self.__slots__[2:]:
+            setattr(self, attr, optional.get(attr))
+
+    @classmethod
+    def from_fields(cls: NST, **kwargs: Any) -> NST:
+        """Initialize a new instance of NumpyStruct from the mapping of immutable field \
+        values."""
+        arr = np.zeros(1, cls.dtype)
+        extra_bytes = []
+        offset = cls.dtype.itemsize
+        for field_name, (field_dtype, _) in cls.dtype.fields.items():
+            value = kwargs.pop(field_name)
+            try:
+                array_dtype = cls.nested_dtypes[field_name]
+            except KeyError:
+                arr[field_name] = np.asarray(value, field_dtype)
+            else:
+                value = np.asarray(value, array_dtype)
+                extra_bytes.append(data := value.view(np.byte).data)
+                arr[field_name] = [offset, len(value)]
+                offset += len(data)
+        if not extra_bytes:
+            return cls(arr.view(np.byte).data)
+        return cls(b"".join(chain([arr.view(np.byte).data], extra_bytes)), **kwargs)
+
+    @property
+    def data(self):
+        """Return the underlying memory."""
+        return self._data
+
+    @property
+    def coerced_data(self) -> memoryview:
+        """Return prefix of `data` with nested immutable objects excluded."""
+        return memoryview(self.data)[:self.dtype.itemsize]
+
+    def __getitem__(self, item: str) -> Any:
+        """Implement []."""
+        return getattr(self, item)
+
+    def __len__(self) -> int:
+        """Implement len()."""
+        return len(self.dtype) + len(self.__slots__) - 2
+
+    def __iter__(self) -> Iterator[str]:
+        """Implement iter()."""
+        return iter(chain(self.dtype.names, self.__slots__[2:]))
+
+    def __hash__(self) -> int:
+        """Implement hash()."""
+        return hash(self._data)
+
+    def __str__(self) -> str:
+        """Format for human-readability."""
+        return "{\n\t%s\n}" % ",\n\t".join("%s: %s" % (k, v) for k, v in self.items())
+
+    def __eq__(self, other) -> bool:
+        """Compare this object to another."""
+        if self is other:
+            return True
+
+        if self.__class__ is not other.__class__:
+            raise NotImplementedError(
+                f"Cannot compare {self.__class__} and {other.__class__}")
+
+        return self.data == other.data
+
+    @staticmethod
+    def _generate_get(name: str,
+                      type_: Union[str, np.dtype, List[Union[str, np.dtype]]],
+                      ) -> Callable[["NumpyStruct"], Any]:
+        if isinstance(type_, list):
+            type_ = np.ndarray
+
+        def get_field(self) -> Optional[type_]:
+            if self._arr is None:
+                self._arr = np.frombuffer(self.data, self.dtype, count=1)
+            value = self._arr[name]
+            if len(value.shape) == 1:
+                value = value[0]
+                if value != value:
+                    return None
+                return value
+            offset, count = value[0]
+            return np.frombuffer(self.data, self.nested_dtypes[name], offset=offset, count=count)
+
+        get_field.__name__ = name
+        return get_field
+
+
+def numpy_struct(cls):
+    """
+    Decorate a class to transform it to a NumpyStruct.
+
+    The decorated class must define two sub-classes: `dtype` and `optional`.
+    The former annotates numpy-friendly immutable fields. The latter annotates mutable fields.
+    """
+    dtype = cls.dtype.__annotations__
+    dtype_tuples = []
+    nested_dtypes = {}
+    for k, v in dtype.items():
+        if isinstance(v, list):
+            assert len(v) == 1, "Array must be specified as `[dtype]`."
+            nested_dtypes[k] = v[0]
+            dtype_tuples.append((k, np.int32, 2))
+        else:
+            dtype_tuples.append((k, v))
+    optional = cls.optional.__annotations__
+    field_names = NamedTuple(
+        f"{cls.__name__}FieldNames",
+        [(k, str) for k in chain(dtype, optional)],
+    )(*chain(dtype, optional))
+    body = {
+        "__slots__": ("_data", "_arr", *optional),
+        **{k: property(NumpyStruct._generate_get(k, v)) for k, v in dtype.items()},
+        "dtype": np.dtype(dtype_tuples),
+        "nested_dtypes": {k: np.dtype(v) for k, v in nested_dtypes.items()},
+        "f": field_names,
+    }
+    struct_cls = type(cls.__name__, (NumpyStruct, cls), body)
+    struct_cls.__module__ = cls.__module__
+    cls.__name__ += "Origin"
+    return struct_cls

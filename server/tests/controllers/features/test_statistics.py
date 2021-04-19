@@ -7,7 +7,7 @@ import pytest
 
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    df_from_dataclasses, MedianMetricCalculator
+    df_from_structs, MedianMetricCalculator
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
 
@@ -138,7 +138,7 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
     calc = LeadTimeCalculator(quantiles=(0, 0.99))
     assert len(calc.values) == 0 and isinstance(calc.values, list)
     calc = LeadTimeCalculator(quantiles=(0, 1))
-    calc(df_from_dataclasses(pr_samples(100)),
+    calc(df_from_structs(pr_samples(100)),
          dt64arr(datetime.utcnow()),
          dt64arr(datetime.utcnow()),
          [np.arange(100)])

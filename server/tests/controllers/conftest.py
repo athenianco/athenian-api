@@ -118,7 +118,7 @@ def pr_samples():
                 created_at, closed_at, released_at, first_review_request, first_commit,
                 last_commit_before_first_review, last_commit,
             ]] + reviews.tolist(), dtype="datetime64[D]").astype("datetime64[ns]"))
-            return PullRequestFacts(
+            return PullRequestFacts.from_fields(
                 created=pd.Timestamp(created_at),
                 first_commit=pd.Timestamp(first_commit or created_at),
                 work_began=nonemin(first_commit, created_at),
@@ -146,18 +146,9 @@ def pr_samples():
 _dag = None
 
 
-class FakeFacts:
-    def with_repository_full_name(self, _):
-        return self
-
-    def with_author(self, _):
-        return self
-
-    def with_merger(self, _):
-        return self
-
-    def with_releaer(self, _):
-        return self
+class FakeFacts(PullRequestFacts):
+    def __init__(self):
+        super().__init__(b"\0" * PullRequestFacts.dtype.itemsize)
 
 
 async def fetch_dag(mdb, heads=None):
