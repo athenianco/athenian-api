@@ -5,7 +5,7 @@ from sqlalchemy import and_, select
 
 from athenian.api.controllers.features.entries import get_calculator
 from athenian.api.models.state.models import AccountFeature, Feature, \
-    FeatureComponent, God
+    FeatureComponent
 from athenian.api.typing_utils import DatabaseLike
 
 
@@ -13,6 +13,7 @@ async def get_calculator_for_user(
     service: str,
     account_id: int,
     user_id: str,
+    god_id: Optional[str],
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     pdb: DatabaseLike,
@@ -72,8 +73,7 @@ async def get_calculator_for_user(
         **(metrics_variation_feature[1] or {}),
     }
 
-    is_god = await sdb.fetch_one(select([God.user_id]).where(God.user_id == user_id))
-    if metrics_variation_params.get("god_only") and not is_god:
+    if metrics_variation_params.get("god_only") and not god_id:
         return _get_calculator()
 
     variation = selected_metrics_variation["name"]

@@ -86,7 +86,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     @sentry_span
     async def calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_set):
         calculator = await get_calculator_for_user(
-            service, filt.account, request.uid,
+            service, filt.account, request.uid, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
         )
         metric_values = await calculator.calc_pull_request_metrics_line_github(
@@ -299,7 +299,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     with_author = [s.rsplit("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.rsplit("/", 1)[1] for s in (filt.with_committer or [])]
     calculator = await get_calculator_for_user(
-        "github", filt.account, request.uid,
+        "github", filt.account, request.uid, getattr(request, "god_id", None),
         request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
     )
     stats = await calculator.calc_code_metrics_github(
@@ -354,7 +354,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
         else:
             dev_groups = [[dev] for dev in devs]
         calculator = await get_calculator_for_user(
-            service, filt.account, request.uid,
+            service, filt.account, request.uid, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
         )
         tasks.append(calculator.calc_developer_metrics_github(
@@ -445,7 +445,7 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
                               ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
         } for with_ in (filt.with_ or [])]
         calculator = await get_calculator_for_user(
-            service, filt.account, request.uid,
+            service, filt.account, request.uid, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
         )
         release_metric_values, release_matches = await calculator.calc_release_metrics_line_github(

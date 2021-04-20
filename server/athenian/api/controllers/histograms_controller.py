@@ -42,7 +42,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 ticks=tuple(h.ticks) if h.ticks is not None else None,
             )].append(h.metric)
         calculator = await get_calculator_for_user(
-            service, filt.account, request.uid,
+            service, filt.account, request.uid, request.god_id,
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
         )
         try:

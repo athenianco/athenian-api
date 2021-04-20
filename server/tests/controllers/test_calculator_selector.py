@@ -44,7 +44,8 @@ async def test_get_calculator_for_user_no_global_feature(sdb, mdb, pdb, rdb, cac
     )
 
     calc = await get_calculator_for_user(
-        "github", 1, "1", sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
+        "github", 1, "1", None, sdb, mdb, pdb, rdb, cache,
+        base_module=base_testing_module,
     )
     assert isinstance(calc, OriginalMetricEntriesCalculator)
 
@@ -64,7 +65,8 @@ async def test_get_calculator_for_user_disabled_global_feature(sdb, mdb, pdb, rd
     )
 
     calc = await get_calculator_for_user(
-        "github", 1, "1", sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
+        "github", 1, "1", None, sdb, mdb, pdb, rdb, cache,
+        base_module=base_testing_module,
     )
     assert isinstance(calc, OriginalMetricEntriesCalculator)
 
@@ -84,7 +86,8 @@ async def test_get_calculator_for_user_no_feature_for_account(sdb, mdb, pdb, rdb
     )
 
     calc = await get_calculator_for_user(
-        "github", 1, "1", sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
+        "github", 1, "1", None,
+        sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
     )
     assert isinstance(calc, OriginalMetricEntriesCalculator)
 
@@ -112,7 +115,8 @@ async def test_get_calculator_for_user_with_feature(
     )
 
     calc = await get_calculator_for_user(
-        "github", 1, "1", sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
+        "github", 1, "1", None, sdb, mdb, pdb, rdb, cache,
+        base_module=base_testing_module,
     )
     assert isinstance(calc, MetricEntriesCalculator)
 
@@ -121,13 +125,6 @@ async def test_get_calculator_for_user_with_feature(
 async def test_get_calculator_for_user_with_feature_god_only(
         sdb, mdb, pdb, rdb, cache, is_god, base_testing_module, current_module,
 ):
-    if is_god:
-        await sdb.execute(
-            insert(God).values(
-                God(user_id="1").create_defaults().explode(with_primary_keys=True),
-            ),
-        )
-
     feature_id = await sdb.execute(
         insert(Feature).values(
             Feature(
@@ -153,7 +150,8 @@ async def test_get_calculator_for_user_with_feature_god_only(
     )
 
     calc = await get_calculator_for_user(
-        "github", 1, "1", sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
+        "github", 1, "1", "1" if is_god else None, sdb, mdb, pdb, rdb, cache,
+        base_module=base_testing_module,
     )
 
     expected_cls = MetricEntriesCalculator if is_god else OriginalMetricEntriesCalculator
