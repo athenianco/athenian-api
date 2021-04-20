@@ -207,6 +207,7 @@ def test_mean_confidence_interval_timedelta_positive_zeros():
     assert mean > 0
 
 
+@pytest.mark.flaky(reruns=3)
 def test_mean_confidence_interval_nonnegative_overflow():
     arr = np.array([5689621, 5448983, 5596389, 5468130, 4722905, 5000224, 4723318,  # noqa
                     4063452, 4406564, 3728378, 4064774, 3874963, 3693545, 3618715,  # noqa
