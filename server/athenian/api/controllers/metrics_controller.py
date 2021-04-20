@@ -86,14 +86,13 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     @sentry_span
     async def calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_set):
         calculator = await get_calculator_for_user(
-            service, filt.account, request.uid, getattr(request, "god_id", None),
+            service, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
         )
         metric_values = await calculator.calc_pull_request_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
             for_set.lines or [], repos, withgroups, labels, jira,
-            filt.exclude_inactive, release_settings, filt.fresh,
-            filt.account, meta_ids)
+            filt.exclude_inactive, release_settings, filt.fresh)
         mrange = range(len(met.metrics))
         for lines_group_index, lines_group in enumerate(metric_values):
             for repos_group_index, with_groups in enumerate(lines_group):
@@ -299,12 +298,12 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     with_author = [s.rsplit("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.rsplit("/", 1)[1] for s in (filt.with_committer or [])]
     calculator = await get_calculator_for_user(
-        "github", filt.account, request.uid, getattr(request, "god_id", None),
+        "github", filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
         request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
     )
     stats = await calculator.calc_code_metrics_github(
         FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
-        with_committer, meta_ids)  # type: List[CodeStats]
+        with_committer)  # type: List[CodeStats]
     model = [
         CodeBypassingPRsMeasurement(
             date=(d - tzoffset).date(),
@@ -354,12 +353,11 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
         else:
             dev_groups = [[dev] for dev in devs]
         calculator = await get_calculator_for_user(
-            service, filt.account, request.uid, getattr(request, "god_id", None),
+            service, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
         )
         tasks.append(calculator.calc_developer_metrics_github(
-            dev_groups, repos, time_intervals, topics, labels, jira, release_settings,
-            filt.account, meta_ids))
+            dev_groups, repos, time_intervals, topics, labels, jira, release_settings))
         for_sets.append(for_set)
     all_stats = await gather(*tasks)
     for (stats_metrics, stats_topics), for_set in zip(all_stats, for_sets):
@@ -445,13 +443,12 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
                               ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
         } for with_ in (filt.with_ or [])]
         calculator = await get_calculator_for_user(
-            service, filt.account, request.uid, getattr(request, "god_id", None),
+            service, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
         )
         release_metric_values, release_matches = await calculator.calc_release_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
-            JIRAFilter.from_web(filt.jira, jira_ids), release_settings, prefixer,
-            filt.account, meta_ids)
+            JIRAFilter.from_web(filt.jira, jira_ids), release_settings, prefixer)
         release_matches = {k: v.name for k, v in release_matches.items()}
         mrange = range(len(filt.metrics))
         for with_, repos_mvs in zip((filt.with_ or [None]), release_metric_values):
