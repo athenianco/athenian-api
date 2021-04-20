@@ -10,7 +10,8 @@ from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner
-from athenian.api.controllers.features.metric_calculator import df_from_dataclasses
+from athenian.api.controllers.features.metric_calculator import \
+    df_from_dataclasses, df_from_structs
 from athenian.api.controllers.miners.filters import JIRAFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -66,7 +67,7 @@ async def mine_all_prs(repos: Collection[str],
         append_pr_jira_mapping(facts, meta_ids, mdb),
     ]
     df_prs, _ = await gather(*tasks, op="fetch raw data")
-    df_facts = df_from_dataclasses(facts.values())
+    df_facts = df_from_structs(facts.values())
     dummy = {ghdprf.release_url.key: None, ghdprf.release_node_id.key: None}
     for col in (ghdprf.release_url.key, ghdprf.release_node_id.key):
         df_facts[col] = [raw_done_rows.get(k, dummy)[col] for k in facts]

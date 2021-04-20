@@ -28,7 +28,7 @@ from athenian.api.controllers.features.github.unfresh_pull_request_metrics impor
     fetch_pull_request_facts_unfresh
 from athenian.api.controllers.features.histogram import HistogramParameters
 from athenian.api.controllers.features.metric_calculator import df_from_dataclasses, \
-    group_by_repo, group_to_indexes
+    df_from_structs, group_by_repo, group_to_indexes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -337,7 +337,7 @@ async def calc_pull_request_metrics_line_github(metrics: Sequence[str],
         time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
         release_settings, fresh, need_jira_mapping(metrics),
         account, meta_ids, mdb, pdb, rdb, cache)
-    df_facts = df_from_dataclasses(mined_facts)
+    df_facts = df_from_structs(mined_facts)
     repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
     with_grouper = partial(group_prs_by_participants, participants)
     groups = group_to_indexes(df_facts, partial(group_by_lines, lines), repo_grouper, with_grouper)
@@ -416,7 +416,7 @@ async def calc_pull_request_histograms_github(defs: Dict[HistogramParameters, Li
         time_from, time_to, all_repositories, all_participants, labels, jira,
         exclude_inactive, release_settings,
         fresh, False, account, meta_ids, mdb, pdb, rdb, cache)
-    df_facts = df_from_dataclasses(mined_facts)
+    df_facts = df_from_structs(mined_facts)
     lines_grouper = partial(group_by_lines, lines)
     repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
     with_grouper = partial(group_prs_by_participants, participants)

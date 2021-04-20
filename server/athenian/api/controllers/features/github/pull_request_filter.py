@@ -16,13 +16,11 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
-    MergingPendingCounter, \
-    MergingTimeCalculator, ReleasePendingCounter, ReleaseTimeCalculator, ReviewPendingCounter, \
-    ReviewTimeCalculator, StagePendingDependencyCalculator, WorkInProgressPendingCounter, \
-    WorkInProgressTimeCalculator
+    MergingPendingCounter, MergingTimeCalculator, ReleasePendingCounter, ReleaseTimeCalculator, \
+    ReviewPendingCounter, ReviewTimeCalculator, StagePendingDependencyCalculator, \
+    WorkInProgressPendingCounter, WorkInProgressTimeCalculator
 from athenian.api.controllers.features.metric import Metric
-from athenian.api.controllers.features.metric_calculator import df_from_dataclasses, \
-    MetricCalculator
+from athenian.api.controllers.features.metric_calculator import df_from_structs, MetricCalculator
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -52,7 +50,7 @@ from athenian.api.tracing import sentry_span
 class PullRequestListMiner:
     """Collect various PR metadata for displaying PRs on the frontend."""
 
-    _no_time_from = datetime(year=1970, month=1, day=1, tzinfo=timezone.utc)
+    _no_time_from = datetime(year=1970, month=1, day=1)
     log = logging.getLogger("%s.PullRequestListMiner" % metadata.__version__)
 
     class DummyAllCounter(AllCounter):
@@ -87,8 +85,11 @@ class PullRequestListMiner:
         self._stages = stages
         self._calcs, self._counter_deps = self.create_stage_calcs()
         assert isinstance(time_from, datetime)
-        self._time_from = time_from
-        self._time_to = time_to
+        assert time_from.tzinfo == timezone.utc
+        assert isinstance(time_to, datetime)
+        assert time_to.tzinfo == timezone.utc
+        self._time_from = time_from.replace(tzinfo=None)
+        self._time_to = time_to.replace(tzinfo=None)
         self._with_time_machine = with_time_machine
 
     @classmethod
@@ -193,8 +194,8 @@ class PullRequestListMiner:
             self._no_time_from)
         author = pr.pr[PullRequest.user_login.key]
         external_reviews_mask = pr.reviews[PullRequestReview.user_login.key].values != author
-        external_review_times = pr.reviews[PullRequestReview.created_at.key].values[
-            external_reviews_mask]
+        external_review_times = \
+            pr.reviews[PullRequestReview.created_at.key].values[external_reviews_mask]
         first_review = pd.Timestamp(external_review_times.min(), tz=timezone.utc) \
             if len(external_review_times) > 0 else None
         review_comments = (
@@ -242,16 +243,16 @@ class PullRequestListMiner:
             files_changed=pr.pr[PullRequest.changed_files.key],
             created=pr.pr[PullRequest.created_at.key],
             updated=updated_at,
-            closed=facts_now.closed,
+            closed=self._dt64_to_pydt(facts_now.closed),
             comments=len(pr.comments) + delta_comments,
             commits=len(pr.commits),
-            review_requested=facts_now.first_review_request_exact,
+            review_requested=self._dt64_to_pydt(facts_now.first_review_request_exact),
             first_review=first_review,
-            approved=facts_now.approved,
+            approved=self._dt64_to_pydt(facts_now.approved),
             review_comments=review_comments,
             reviews=reviews,
-            merged=facts_now.merged,
-            released=facts_now.released,
+            merged=self._dt64_to_pydt(facts_now.merged),
+            released=self._dt64_to_pydt(facts_now.released),
             release_url=pr.release[Release.url.key],
             events_now=events_now,
             stages_now=stages_now,
@@ -263,14 +264,33 @@ class PullRequestListMiner:
             jira=jira,
         )
 
+    def __iter__(self) -> Generator[PullRequestListItem, None, None]:
+        """Iterate over individual pull requests."""
+        if not self._prs:
+            return
+        stage_timings = self._calc_stage_timings()
+        hard_events_time_machine, hard_events_now = self._calc_hard_events()
+        facts = self._facts
+        node_id_key = PullRequest.node_id.key
+        for i, pr in enumerate(self._prs):
+            pr_stage_timings = {}
+            for k in self._calcs:
+                seconds = stage_timings[k][i]
+                if seconds is not None:
+                    pr_stage_timings[k] = timedelta(seconds=seconds)
+            item = self._compile(pr, facts[pr.pr[node_id_key]], pr_stage_timings,
+                                 hard_events_time_machine, hard_events_now)
+            if item is not None:
+                yield item
+
     @sentry_span
     def _calc_stage_timings(self) -> Dict[str, Sequence[int]]:
         facts = self._facts
         if len(facts) == 0 or len(self._prs) == 0:
             return {k: [] for k in self._calcs}
         node_id_key = PullRequest.node_id.key
-        df_facts = df_from_dataclasses((facts[pr.pr[node_id_key]] for pr in self._prs),
-                                       length=len(self._prs))
+        df_facts = df_from_structs(
+            (facts[pr.pr[node_id_key]] for pr in self._prs), length=len(self._prs))
         return self.calc_stage_timings(df_facts, self._calcs, self._counter_deps)
 
     @classmethod
@@ -286,7 +306,7 @@ class PullRequestListMiner:
         """
         now = datetime.now(tz=timezone.utc)
         dtype = df_facts["created"].dtype
-        no_time_from = np.array([cls._no_time_from.replace(tzinfo=None)], dtype=dtype)
+        no_time_from = np.array([cls._no_time_from], dtype=dtype)
         now = np.array([now.replace(tzinfo=None)], dtype=dtype)
         stage_timings = {}
         empty_group = [np.array([], dtype=int)]  # makes `samples` empty, we don't need them
@@ -312,8 +332,8 @@ class PullRequestListMiner:
         events_time_machine = {}
         events_now = {}
         dfs = self._dfs
-        time_from = np.datetime64(self._time_from.replace(tzinfo=None))
-        time_to = np.datetime64(self._time_to.replace(tzinfo=None))
+        time_from = np.datetime64(self._time_from)
+        time_to = np.datetime64(self._time_to)
 
         index = dfs.commits.index.get_level_values(0).values
         committed_date = dfs.commits[PullRequestCommit.committed_date.key].values
@@ -356,24 +376,11 @@ class PullRequestListMiner:
 
         return events_time_machine, events_now
 
-    def __iter__(self) -> Generator[PullRequestListItem, None, None]:
-        """Iterate over individual pull requests."""
-        if not self._prs:
-            return
-        stage_timings = self._calc_stage_timings()
-        hard_events_time_machine, hard_events_now = self._calc_hard_events()
-        facts = self._facts
-        node_id_key = PullRequest.node_id.key
-        for i, pr in enumerate(self._prs):
-            pr_stage_timings = {}
-            for k in self._calcs:
-                seconds = stage_timings[k][i]
-                if seconds is not None:
-                    pr_stage_timings[k] = timedelta(seconds=seconds)
-            item = self._compile(pr, facts[pr.pr[node_id_key]], pr_stage_timings,
-                                 hard_events_time_machine, hard_events_now)
-            if item is not None:
-                yield item
+    @staticmethod
+    def _dt64_to_pydt(dt: Optional[np.datetime64]) -> Optional[datetime]:
+        if dt is None:
+            return None
+        return dt.item().replace(tzinfo=timezone.utc)
 
 
 @sentry_span

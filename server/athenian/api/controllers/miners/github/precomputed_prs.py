@@ -284,19 +284,21 @@ async def load_precomputed_done_facts_all(repos: Collection[str],
         default_branches, False, release_settings, account, pdb)
     raw = {}
     for node_id, row in result.items():
-        result[node_id] = pickle.loads(row[ghdprf.data.key]) \
-            .with_releaser(row[ghdprf.releaser.key])
+        result[node_id] = PullRequestFacts(
+            data=row[ghdprf.data.key],
+            releaser=row[ghdprf.releaser.key])
         raw[node_id] = row
     return result, raw
 
 
 def _done_pr_facts_from_row(row: Mapping[str, Any]) -> PullRequestFacts:
     ghdprf = GitHubDonePullRequestFacts
-    return pickle.loads(row[ghdprf.data.key]) \
-        .with_repository_full_name(row[ghdprf.repository_full_name.key]) \
-        .with_author(row[ghdprf.author.key]) \
-        .with_merger(row[ghdprf.merger.key]) \
-        .with_releaser(row[ghdprf.releaser.key])
+    return PullRequestFacts(
+        data=row[ghdprf.data.key],
+        repository_full_name=row[ghdprf.repository_full_name.key],
+        author=row[ghdprf.author.key],
+        merger=row[ghdprf.merger.key],
+        releaser=row[ghdprf.releaser.key])
 
 
 @sentry_span
@@ -602,6 +604,8 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
     Each PR is represented by a node_id, a repository name, and a required release match.
     """
     log = logging.getLogger("%s.load_precomputed_pr_releases" % metadata.__package__)
+    assert isinstance(time_to, datetime)
+    assert time_to.tzinfo is not None
     ghprt = GitHubDonePullRequestFacts
     with sentry_sdk.start_span(op="load_precomputed_pr_releases/fetch"):
         prs = await pdb.fetch_all(
@@ -663,10 +667,10 @@ async def load_precomputed_pr_releases(prs: Iterable[str],
 def _collect_activity_days(pr: MinedPullRequest, facts: PullRequestFacts, sqlite: bool):
     activity_days = set()
     if facts.released is not None:
-        activity_days.add(facts.released.date())
+        activity_days.add(facts.released.item().date())
     if facts.closed is not None:
-        activity_days.add(facts.closed.date())
-    activity_days.add(facts.created.date())
+        activity_days.add(facts.closed.item().date())
+    activity_days.add(facts.created.item().date())
     # if they are empty the column dtype is sometimes an object so .dt raises an exception
     if not pr.review_requests.empty:
         activity_days.update(
@@ -702,13 +706,17 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
         if facts is None:
             # ImpossiblePullRequest
             continue
-        assert pr.pr[PullRequest.created_at.key] == facts.created
+        pr_created = pr.pr[PullRequest.created_at.key]
+        try:
+            assert pr_created == facts.created
+        except TypeError:
+            assert pr_created.to_numpy() == facts.created
         if not facts.released:
             if not (facts.force_push_dropped or (facts.closed and not facts.merged)):
                 continue
-            done_at = facts.closed
+            done_at = facts.closed.item().replace(tzinfo=timezone.utc)
         else:
-            done_at = facts.released
+            done_at = facts.released.item().replace(tzinfo=timezone.utc)
             if not facts.closed:
                 log.error("[DEV-508] PR %s (%s#%d) is released but not closed:\n%s",
                           pr.pr[PullRequest.node_id.key],
@@ -740,7 +748,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,
             repository_full_name=repo,
-            pr_created_at=facts.created,
+            pr_created_at=facts.created.item().replace(tzinfo=timezone.utc),
             pr_done_at=done_at,
             number=pr.pr[PullRequest.number.key],
             release_url=pr.release[Release.url.key],
@@ -754,7 +762,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             commit_committers={k: "" for k in participants[PRParticipationKind.COMMIT_COMMITTER]},
             labels={label: "" for label in pr.labels[PullRequestLabel.name.key].values},
             activity_days=_collect_activity_days(pr, facts, sqlite),
-            data=pickle.dumps(facts),
+            data=facts.data,
         ).create_defaults().explode(with_primary_keys=True))
     if not inserted:
         return
@@ -806,7 +814,7 @@ async def load_merged_unreleased_pull_request_facts(
 ) -> Dict[str, PullRequestFacts]:
     """
     Load the mapping from PR node identifiers which we are sure are not released in one of \
-    `releases` to the `pickle`-d facts.
+    `releases` to the serialized facts.
 
     For each merged PR we maintain the set of releases that do include that PR.
 
@@ -883,10 +891,11 @@ async def load_merged_unreleased_pull_request_facts(
         if labels and not _labels_are_compatible(
                 include_singles, include_multiples, labels.exclude, row[ghmprf.labels.key]):
             continue
-        facts[node_id] = pickle.loads(data) \
-            .with_repository_full_name(row[ghmprf.repository_full_name.key]) \
-            .with_author(row[ghmprf.author.key]) \
-            .with_merger(row[ghmprf.merger.key])
+        facts[node_id] = PullRequestFacts(
+            data=data,
+            repository_full_name=row[ghmprf.repository_full_name.key],
+            author=row[ghmprf.author.key],
+            merger=row[ghmprf.merger.key])
     return facts
 
 
@@ -932,7 +941,7 @@ async def load_merged_pull_request_facts_all(repos: Collection[str],
             # 2. "Impossible" PRs that are merged.
             log.warning("No precomputed facts for merged %s", node_id)
             continue
-        facts[node_id] = pickle.loads(data)
+        facts[node_id] = PullRequestFacts(data)
     return facts
 
 
@@ -1076,7 +1085,7 @@ async def store_merged_unreleased_pull_request_facts(
             acc_id=account,
             pr_node_id=pr.pr[PullRequest.node_id.key],
             release_match=release_match,
-            data=pickle.dumps(facts),
+            data=facts.data,
             activity_days=_collect_activity_days(pr, facts, not postgres),
             # the following does not matter, are not updated so we set to 0xdeadbeef
             repository_full_name="",
@@ -1231,9 +1240,10 @@ async def load_open_pull_request_facts(prs: pd.DataFrame,
     for row in rows:
         node_id = row[ghoprf.pr_node_id.key]
         if node_id in passed_node_ids:
-            facts[node_id] = pickle.loads(row[ghoprf.data.key]) \
-                .with_repository_full_name(row[ghoprf.repository_full_name.key]) \
-                .with_author(authors[node_id])
+            facts[node_id] = PullRequestFacts(
+                data=row[ghoprf.data.key],
+                repository_full_name=row[ghoprf.repository_full_name.key],
+                author=authors[node_id])
     return facts
 
 
@@ -1277,9 +1287,10 @@ async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
             if not activity_days.intersection(date_range):
                 continue
         node_id = row[ghoprf.pr_node_id.key].rstrip()
-        facts[node_id] = pickle.loads(row[ghoprf.data.key]) \
-            .with_repository_full_name(row[ghoprf.repository_full_name.key]) \
-            .with_author(authors[node_id])
+        facts[node_id] = PullRequestFacts(
+            data=row[ghoprf.data.key],
+            repository_full_name=row[ghoprf.repository_full_name.key],
+            author=authors[node_id])
     return facts
 
 
@@ -1311,7 +1322,7 @@ async def load_open_pull_request_facts_all(repos: Collection[str],
     query = select(selected).where(and_(*filters))
     with sentry_sdk.start_span(op="load_open_pull_request_facts_all/fetch"):
         rows = await pdb.fetch_all(query)
-    facts = {row[ghoprf.pr_node_id.key]: pickle.loads(row[ghoprf.data.key]) for row in rows}
+    facts = {row[ghoprf.pr_node_id.key]: PullRequestFacts(row[ghoprf.data.key]) for row in rows}
     return facts
 
 
@@ -1342,7 +1353,7 @@ async def store_open_pull_request_facts(
             number=pr.pr[PullRequest.number.key],
             pr_updated_at=updated_at,
             activity_days=_collect_activity_days(pr, facts, not postgres),
-            data=pickle.dumps(facts),
+            data=facts.data,
         ).create_defaults().explode(with_primary_keys=True))
     if postgres:
         sql = postgres_insert(GitHubOpenPullRequestFacts)

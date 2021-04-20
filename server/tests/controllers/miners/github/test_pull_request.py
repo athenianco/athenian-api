@@ -393,8 +393,8 @@ def validate_pull_request_facts(prmeta: Dict[str, Any], prt: PullRequestFacts):
         if prt.released:
             assert prt.released >= v
     for t in prt.reviews:
-        assert t >= prt.created.to_datetime64(), "review before creation"
-        assert t <= prt.last_review.to_datetime64(), "review after last review"
+        assert t >= prt.created, "review before creation"
+        assert t <= prt.last_review, "review after last review"
     if prt.first_commit:
         assert prt.last_commit >= prt.first_commit
     else:
