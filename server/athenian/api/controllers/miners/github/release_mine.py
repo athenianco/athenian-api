@@ -379,7 +379,8 @@ def _build_mined_releases(releases: pd.DataFrame,
     mentioned_authors = np.concatenate([
         *(f.prs[PullRequest.user_login.key] for f in precomputed_facts.values()),
         *(f.commit_authors for f in precomputed_facts.values()),
-        [prefixer.user_login_map[u] for u in release_authors[release_authors.nonzero()[0]]],
+        [prefixer.user_login_map.get(u, "")  # e.g. deleted users not necessarily become "ghost"-s
+         for u in release_authors[release_authors.nonzero()[0]]],
     ])
     mentioned_authors = np.unique(mentioned_authors[mentioned_authors.nonzero()[0]]).astype("U")
     return result, mentioned_authors, has_precomputed_facts
