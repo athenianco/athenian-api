@@ -20,7 +20,6 @@ async def get_calculator_for_user(
     pdb: DatabaseLike,
     rdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-    raise_err: Optional[bool] = False,
     base_module: Optional[str] = "athenian.api.experiments",
 ) -> Callable:
     """Get the metrics calculator function for the given user."""
@@ -28,7 +27,7 @@ async def get_calculator_for_user(
     def _get_calculator(variation=None):
         return get_calculator(
             service, account_id, meta_ids, mdb, pdb, rdb, cache,
-            variation=variation, raise_err=raise_err, base_module=base_module,
+            variation=variation, base_module=base_module,
         )
 
     feature_name_prefix = METRIC_ENTRIES_VARIATIONS_PREFIX[service]

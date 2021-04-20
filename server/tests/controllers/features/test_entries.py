@@ -48,28 +48,6 @@ def test_get_calculator_missing_implementation_no_error(
     assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
-def test_get_calculator_raise_error(base_testing_module, mdb, pdb, rdb, cache):
-    try:
-        get_calculator(
-            "github", 1, (1, ), mdb, pdb, rdb, cache,
-            variation="test_entries", base_module="missing_module", raise_err=True,
-        )
-    except ModuleNotFoundError:
-        assert True
-    else:
-        raise AssertionError("Expected ModuleNotFoundError not raised")
-
-    try:
-        get_calculator(
-            "github", 1, (1, ), mdb, pdb, rdb, cache,
-            variation="api", base_module="athenian", raise_err=True,
-        )
-    except RuntimeError:
-        assert True
-    else:
-        raise AssertionError("Expected RuntimeError not raised")
-
-
 def test_get_calculator_variation_found(
     base_testing_module, current_module, mdb, pdb, rdb, cache,
 ):

@@ -548,7 +548,6 @@ def get_calculator(
     rdb: Database,
     cache: Optional[aiomcache.Client],
     variation: Optional[str] = None,
-    raise_err: Optional[bool] = False,
     base_module: Optional[str] = "athenian.api.experiments",
 ) -> MetricEntriesCalculator:
     """Get the metrics calculator."""
@@ -563,10 +562,7 @@ def get_calculator(
     try:
         mod = importlib.import_module(f"{base_module}.{variation}")
     except ModuleNotFoundError:
-        if raise_err:
-            raise
-
-        log.warning(
+        log.error(
             "Invalid variation '%s' calculator, using default implementation",
             variation,
         )
@@ -574,12 +570,8 @@ def get_calculator(
     else:
         try:
             cls = mod.MetricEntriesCalculator
-        except AttributeError:
-            if raise_err:
-                raise RuntimeError(
-                    f"Missing `MetricEntriesCalculator` for variation {variation}",
-                )
-
+        except AttributeError as e:
+            sentry_sdk.capture_exception(e)
             log.warning(
                 "Variation '%s' doesn't provide `MetricEntriesCalculator`, "
                 "using default implementation",
