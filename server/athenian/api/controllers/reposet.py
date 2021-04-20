@@ -198,11 +198,11 @@ async def _load_account_reposets(account: int,
                 prefixer = await Prefixer.load(meta_ids, mdb_conn)
                 return prefixer, meta_ids
 
-            prefixer, login = await asyncio.gather(
+            prefixer_meta_ids, login = await asyncio.gather(
                 load_prefixer(), login(), return_exceptions=True)
             if isinstance(login, Exception):
                 raise ResponseError(ForbiddenError(detail=str(login)))
-            if isinstance(prefixer, Exception):
+            if isinstance(prefixer_meta_ids, Exception):
                 meta_ids = {r[0] for r in await mdb_conn.fetch_all(
                     select([NodeUser.acc_id]).where(NodeUser.login == login))}
                 if not meta_ids:
@@ -220,13 +220,17 @@ async def _load_account_reposets(account: int,
                         with_primary_keys=True)
                     await sdb_conn.execute(insert(AccountGitHubAccount).values(values))
             else:
-                prefixer, meta_ids = prefixer
+                prefixer, meta_ids = prefixer_meta_ids
             repo_node_ids = await mdb_conn.fetch_all(
                 select([AccountRepository.repo_node_id])
                 .where(and_(AccountRepository.acc_id.in_(meta_ids),
                             AccountRepository.enabled))
                 .order_by(AccountRepository.repo_full_name))
-            repos = prefixer.resolve_repo_nodes(r[0] for r in repo_node_ids)
+            try:
+                repos = prefixer.resolve_repo_nodes(r[0] for r in repo_node_ids)
+            except KeyError as e:
+                log.warning("account_repos_log does not agree with api_repositories: %s", e)
+                raise_no_source_data()
             rs = RepositorySet(
                 name=RepositorySet.ALL, owner_id=account, items=repos,
             ).create_defaults()
