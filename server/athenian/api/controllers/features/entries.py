@@ -128,7 +128,7 @@ class MetricEntriesCalculator:
         mined_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
             release_settings, fresh, need_jira_mapping(metrics))
-        df_facts = df_from_structs(mined_facts)            
+        df_facts = df_from_structs(mined_facts)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
         groups = group_to_indexes(df_facts, partial(group_by_lines, lines), repo_grouper,
@@ -182,7 +182,7 @@ class MetricEntriesCalculator:
             time_from, time_to, all_repositories, all_participants, labels, jira,
             exclude_inactive, release_settings,
             fresh, False)
-        df_facts = df_from_structs(mined_facts)            
+        df_facts = df_from_structs(mined_facts)
         lines_grouper = partial(group_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
