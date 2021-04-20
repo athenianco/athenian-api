@@ -62,7 +62,7 @@ async def extract_commits(prop: FilterCommitsProperty,
                           mdb: DatabaseLike,
                           cache: Optional[aiomcache.Client],
                           columns: Optional[List[InstrumentedAttribute]] = None,
-                          ):
+                          ) -> pd.DataFrame:
     """Fetch commits that satisfy the given filters."""
     assert isinstance(date_from, datetime)
     assert isinstance(date_to, datetime)

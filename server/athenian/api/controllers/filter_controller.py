@@ -255,24 +255,25 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     users = model.include.users
     utc = timezone.utc
     prefixer = await prefixer.load()
+    repo_name_map, user_login_map = prefixer.repo_name_map, prefixer.user_login_map
     for commit in commits.itertuples():
         author_login = getattr(commit, PushCommit.author_login.key)
         committer_login = getattr(commit, PushCommit.committer_login.key)
         obj = Commit(
-            repository=getattr(commit, PushCommit.repository_full_name.key),
+            repository=repo_name_map[getattr(commit, PushCommit.repository_full_name.key)],
             hash=getattr(commit, PushCommit.sha.key),
             message=getattr(commit, PushCommit.message.key),
             size_added=_nan_to_none(getattr(commit, PushCommit.additions.key)),
             size_removed=_nan_to_none(getattr(commit, PushCommit.deletions.key)),
             files_changed=_nan_to_none(getattr(commit, PushCommit.changed_files.key)),
             author=CommitSignature(
-                login=(prefixer.user_login_map[author_login]) if author_login else None,
+                login=(user_login_map[author_login]) if author_login else None,
                 name=getattr(commit, PushCommit.author_name.key),
                 email=getattr(commit, PushCommit.author_email.key),
                 timestamp=getattr(commit, PushCommit.authored_date.key).replace(tzinfo=utc),
             ),
             committer=CommitSignature(
-                login=(prefixer.user_login_map[committer_login]) if committer_login else None,
+                login=(user_login_map[committer_login]) if committer_login else None,
                 name=getattr(commit, PushCommit.committer_name.key),
                 email=getattr(commit, PushCommit.committer_email.key),
                 timestamp=getattr(commit, PushCommit.committed_date.key).replace(tzinfo=utc),

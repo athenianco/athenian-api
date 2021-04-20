@@ -1036,7 +1036,7 @@ async def test_filter_commits_bypassing_prs_mcuadros(client, cached, headers, ap
                   "hash": "5c6d199dc675465f5e103ea36c0bfcb9d3ebc565",
                   "message": "plumbing: commit.Stats, fix panic on empty chucks\n\n"
                              "Signed-off-by: Máximo Cuadros <mcuadros@gmail.com>",
-                  "repository": "src-d/go-git",
+                  "repository": "github.com/src-d/go-git",
                   "size_added": 4,
                   "size_removed": 0}],
         "include": {"users": {
