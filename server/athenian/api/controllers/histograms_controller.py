@@ -29,14 +29,13 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     filters, repos = await compile_repos_and_devs_prs(filt.for_, request, filt.account, meta_ids)
     time_from, time_to = filt.resolve_time_from_and_to()
     services = set(s for s, _ in filters)
-    res = await gather(
+    release_settings, calculators = await gather(
         Settings.from_request(request, filt.account).list_release_matches(repos),
-        *[get_calculator_for_user(
-            s, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
+        get_calculator_for_user(
+            services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
-        ) for s in services],
+        ),
     )
-    release_settings, calculators = res[0], dict(zip(services, res[1:]))
     result = []
 
     async def calculate_for_set_histograms(service, repos, withgroups, labels, jira, for_set):

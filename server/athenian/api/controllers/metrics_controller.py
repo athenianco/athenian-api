@@ -80,15 +80,18 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     met.exclude_inactive = filt.exclude_inactive
     met.calculated = []
 
-    release_settings = \
-        await Settings.from_request(request, filt.account).list_release_matches(repos)
+    services = set(s for s, _ in filters)
+    release_settings, calculators = await gather(
+        Settings.from_request(request, filt.account).list_release_matches(repos),
+        get_calculator_for_user(
+            services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
+            request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
+        ),
+    )
 
     @sentry_span
     async def calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_set):
-        calculator = await get_calculator_for_user(
-            service, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
-            request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
-        )
+        calculator = calculators[service]
         metric_values = await calculator.calc_pull_request_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
             for_set.lines or [], repos, withgroups, labels, jira,
@@ -347,15 +350,19 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     topics = {DeveloperTopic(t) for t in filt.metrics}
     tasks = []
     for_sets = []
+
+    services = set(s for s, _ in filters)
+    calculators = await get_calculator_for_user(
+        services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
+        request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
+    )
+
     for service, (repos, devs, labels, jira, for_set) in filters:
         if for_set.aggregate_devgroups:
             dev_groups = [[devs[i] for i in group] for group in for_set.aggregate_devgroups]
         else:
             dev_groups = [[dev] for dev in devs]
-        calculator = await get_calculator_for_user(
-            service, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
-            request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
-        )
+        calculator = calculators[service]
         tasks.append(calculator.calc_developer_metrics_github(
             dev_groups, repos, time_intervals, topics, labels, jira, release_settings))
         for_sets.append(for_set)
@@ -427,11 +434,17 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
     del filters
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
+
+    services = grouped_repos.keys()
     tasks = [
         Settings.from_request(request, filt.account).list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
+        get_calculator_for_user(
+            services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
+            request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
+        ),
     ]
-    release_settings, jira_ids = await gather(*tasks)
+    release_settings, jira_ids, calculators = await gather(*tasks)
     met = []
 
     @sentry_span
@@ -442,10 +455,7 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
                               ("pr_author", ReleaseParticipationKind.PR_AUTHOR),
                               ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
         } for with_ in (filt.with_ or [])]
-        calculator = await get_calculator_for_user(
-            service, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
-            request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
-        )
+        calculator = calculators[service]
         release_metric_values, release_matches = await calculator.calc_release_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
             JIRAFilter.from_web(filt.jira, jira_ids), release_settings, prefixer)
