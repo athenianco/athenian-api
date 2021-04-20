@@ -6445,11 +6445,12 @@ components:
         updated timestamp range.
       example:
         updated:
-        - 2020-10-01
-        - 2020-10-07
         - 2020-10-08
+        - 2020-10-07
+        - 2020-10-01
       properties:
         updated:
+          description: Split borders in *descending* order.
           items:
             format: date
             type: string

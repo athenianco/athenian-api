@@ -1,5 +1,3 @@
-from datetime import timedelta
-
 from aiohttp import web
 import numpy as np
 
@@ -25,6 +23,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
+    date_to_orig = filt.request.date_to  # will be +1 day in resolve_filter_prs_parameters()
     # we ignore events and stages because we cannot do anything with them
     repos, _, _, participants, labels, jira, settings, prefixer, meta_ids = \
         await resolve_filter_prs_parameters(filt.request, request)
@@ -56,13 +55,13 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     elif len(other_prs) > 0:
         updateds = other_prs[PullRequest.updated_at.key].values
     else:
-        updateds = np.array([filt.request.date_from, filt.request.date_to - timedelta(days=1)],
-                            dtype="datetime64[ns]")
+        updateds = np.array([filt.request.date_from, date_to_orig], dtype="datetime64[ns]")
     updateds = np.sort(updateds.astype("datetime64[D]"))
     split = updateds[::-filt.batch]
-    split[0] += np.timedelta64(1, "D")
-    if updateds[0] != split[-1]:
-        split = np.concatenate([split, [updateds[0]]])
-    split = np.unique(split)[::-1]  # there can be duplications
-    model = PullRequestPaginationPlan(updated=split.tolist())
+    split = np.concatenate([split, [updateds[0]]])  # append the other end
+    split = np.unique(split)[::-1].tolist()  # there can be duplications
+    if len(split) == 1:
+        # all PRs happened on the same day
+        split *= 2
+    model = PullRequestPaginationPlan(updated=split)
     return model_response(model)

@@ -2,7 +2,10 @@ from datetime import date
 import json
 
 import pytest
+from sqlalchemy import insert
 
+from athenian.api.controllers.settings import ReleaseMatch
+from athenian.api.models.state.models import ReleaseSetting
 from athenian.api.models.web import PullRequestPaginationPlan, PullRequestStage
 
 
@@ -105,7 +108,7 @@ async def test_paginate_prs_jira(client, headers):
         model = PullRequestPaginationPlan.from_dict(obj)
     except Exception as e:
         raise ValueError(text) from e
-    assert model.updated == [date(2018, 4, 4), date(2018, 1, 16)]
+    assert model.updated == [date(2018, 4, 3), date(2018, 1, 16)]
     main_request["jira"]["labels_include"] = ["nope"]
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
@@ -116,7 +119,7 @@ async def test_paginate_prs_jira(client, headers):
         model = PullRequestPaginationPlan.from_dict(obj)
     except Exception as e:
         raise ValueError(text) from e
-    assert model.updated == [date(2018, 4, 2), date(2017, 10, 13)]
+    assert model.updated == [date(2018, 4, 1), date(2017, 10, 13)]
 
 
 async def test_paginate_prs_no_done(client, headers):
@@ -148,7 +151,7 @@ async def test_paginate_prs_no_done(client, headers):
         model = PullRequestPaginationPlan.from_dict(obj)
     except Exception as e:
         raise ValueError(text) from e
-    assert model.updated == [date(2020, 3, 11), date(2020, 2, 28), date(2020, 1, 13)]
+    assert model.updated == [date(2020, 3, 10), date(2020, 2, 28), date(2020, 1, 13)]
     main_request["stages"] = ["done"]
     response = await client.request(
         method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
@@ -161,4 +164,75 @@ async def test_paginate_prs_no_done(client, headers):
         raise ValueError(text) from e
     # exactly the same even though there should be 0 PRs
     # we ignore the stages
-    assert model.updated == [date(2020, 3, 11), date(2020, 2, 28), date(2020, 1, 13)]
+    assert model.updated == [date(2020, 3, 10), date(2020, 2, 28), date(2020, 1, 13)]
+
+
+async def test_paginate_prs_empty(client, headers):
+    print("filter", flush=True)
+    main_request = {
+        "date_from": "2015-01-01",
+        "date_to": "2015-01-01",
+        "account": 1,
+        "in": [],
+        "stages": list(PullRequestStage),
+        "exclude_inactive": True,
+    }
+    # populate pdb
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request)
+    assert response.status == 200
+    await response.read()
+    print("paginate", flush=True)
+    body = {
+        "request": main_request,
+        "batch": 5,
+    }
+    response = await client.request(
+        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    obj = json.loads(text)
+    try:
+        model = PullRequestPaginationPlan.from_dict(obj)
+    except Exception as e:
+        raise ValueError(text) from e
+    assert model.updated == [date(2015, 1, 1), date(2015, 1, 1)]
+
+
+async def test_paginate_prs_same_day(client, headers, sdb):
+    await sdb.execute(insert(ReleaseSetting).values(ReleaseSetting(
+        repository="github.com/src-d/go-git",
+        account_id=1,
+        branches="",
+        tags=".*",
+        match=ReleaseMatch.tag,
+    ).create_defaults().explode(with_primary_keys=True)))
+    print("filter", flush=True)
+    main_request = {
+        "date_from": "2015-10-23",
+        "date_to": "2015-10-23",
+        "account": 1,
+        "in": [],
+        "stages": list(PullRequestStage),
+        "exclude_inactive": True,
+    }
+    # populate pdb
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request)
+    assert response.status == 200
+    await response.read()
+    print("paginate", flush=True)
+    body = {
+        "request": main_request,
+        "batch": 5,
+    }
+    response = await client.request(
+        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    obj = json.loads(text)
+    try:
+        model = PullRequestPaginationPlan.from_dict(obj)
+    except Exception as e:
+        raise ValueError(text) from e
+    assert model.updated == [date(2015, 12, 13), date(2015, 12, 13)]
